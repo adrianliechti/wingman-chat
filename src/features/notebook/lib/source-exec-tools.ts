@@ -203,7 +203,7 @@ export function createSourceExecTools(getSources: () => readonly File[], options
     {
       name: "execute_bash_code",
       description:
-        "Execute bash commands in a sandboxed shell. All notebook sources are preloaded under `/home/user/`, and files created or modified there are saved back as notebook sources. Supports pipes, redirections, loops, jq, yq, grep, sed, awk, and sqlite3.",
+        "Execute bash commands in a sandboxed shell. All notebook sources are preloaded under `/home/user/`, and files created or modified there are saved back as notebook sources. Supports pipes, redirections, loops, jq, yq, grep, sed, awk, and sqlite3. Keep stdout small — it is capped (~10 MiB) and returned to you verbatim, and exceeding it aborts the run; summarize and write large output to a file rather than printing it, and bound the producer when inspecting (`head -c 64 file | xxd`, not `xxd file | head`).",
       strict: true,
       parameters: {
         type: "object",

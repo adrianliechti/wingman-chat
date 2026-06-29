@@ -4,17 +4,14 @@
  * write results back, and propagate deletions. Only the interpreter differs.
  */
 
-import type { CommandContext, ExecResult } from "just-bash/browser";
+import { type Command, type CommandContext, defineCommand, type ExecResult } from "just-bash/browser";
 import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
-import type { CodeExecutionRequest, CodeExecutionResult } from "./interpreterProtocol";
+import { type CodeExecutionRequest, type CodeExecutionResult, NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
+import { decodeStdin } from "./stdin";
 
 export type SandboxCommandFiles = Record<string, { content: string; contentType?: string }>;
-
-// Kept in sync with the workers' own "no output" sentinel so a silent run maps
-// back to empty stdout rather than leaking the placeholder text into the shell.
-const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 async function collectSandboxFiles(ctx: CommandContext): Promise<SandboxCommandFiles> {
   const files: SandboxCommandFiles = {};
@@ -120,4 +117,64 @@ export async function runCodeInSandbox(
     const message = error instanceof Error ? error.message : String(error);
     return { stdout: "", stderr: `${message}\n`, exitCode: 1 };
   }
+}
+
+/** Describes a code-interpreter shell command (e.g. `python`, `node`). */
+export interface InterpreterCommandSpec {
+  /** Command names/aliases (the first is used in error messages). */
+  names: string[];
+  /** Flags that print `versionOutput` and exit, e.g. ["--version", "-V"]. */
+  versionFlags: string[];
+  versionOutput: string;
+  /** Flags that take inline code, e.g. ["-c"] or ["-e", "--eval"]. */
+  codeFlags: string[];
+  /** stderr when a script-file argument can't be read. */
+  notFound: (arg: string) => string;
+  /** stderr when no code is provided by any means. */
+  noCode: string;
+  execute: (request: CodeExecutionRequest) => Promise<CodeExecutionResult>;
+}
+
+/**
+ * Build the bash commands for a code interpreter: resolve code from `-c`/`-e`,
+ * a script-file argument, or piped stdin, then run it through the sandbox.
+ * Only the labels, flags, and executor differ between interpreters.
+ */
+export function createInterpreterCommand(spec: InterpreterCommandSpec): Command[] {
+  const run = async (args: string[], ctx: CommandContext): Promise<ExecResult> => {
+    if (args.some((arg) => spec.versionFlags.includes(arg))) {
+      return { stdout: `${spec.versionOutput}\n`, stderr: "", exitCode: 0 };
+    }
+
+    let code: string | undefined;
+
+    const flagIdx = args.findIndex((arg) => spec.codeFlags.includes(arg));
+    if (flagIdx !== -1) {
+      code = args[flagIdx + 1];
+      if (!code) {
+        return { stdout: "", stderr: `${spec.names[0]}: option ${args[flagIdx]} requires argument\n`, exitCode: 2 };
+      }
+    }
+
+    if (code === undefined && args.length > 0 && !args[0].startsWith("-")) {
+      const scriptPath = args[0].startsWith("/") ? args[0] : `${ctx.cwd}/${args[0]}`;
+      try {
+        code = (await ctx.fs.readFile(scriptPath, "utf-8")) as string;
+      } catch {
+        return { stdout: "", stderr: spec.notFound(args[0]), exitCode: 2 };
+      }
+    }
+
+    if (code === undefined) {
+      code = decodeStdin(ctx.stdin) || undefined;
+    }
+
+    if (code === undefined) {
+      return { stdout: "", stderr: spec.noCode, exitCode: 2 };
+    }
+
+    return runCodeInSandbox(ctx, code, spec.execute);
+  };
+
+  return spec.names.map((name) => defineCommand(name, run));
 }

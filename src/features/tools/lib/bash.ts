@@ -49,14 +49,19 @@ function toOverlayFile(path: string, content: Uint8Array): OverlayFile {
 
 let singleton: BashInstance | null = null;
 
+/** Map an artifact path ("/script.sh" or "script.sh") to its sandbox path under /home/user/. */
+function sandboxPath(artifactPath: string): string {
+  const relative = artifactPath.startsWith("/") ? artifactPath.slice(1) : artifactPath;
+  return `${SANDBOX_HOME}/${relative}`;
+}
+
 /** Create a Bash + InMemoryFs pair. File keys are artifact paths (e.g. "/script.sh"), mapped under /home/user/. */
 export function createBashInstance(files?: Record<string, { content: string; contentType?: string }>): BashInstance {
   const initialFiles: InitialFiles = {};
 
   if (files) {
     for (const [path, file] of Object.entries(files)) {
-      const relativePath = path.startsWith("/") ? path.slice(1) : path;
-      initialFiles[`${SANDBOX_HOME}/${relativePath}`] = toFsContent(file);
+      initialFiles[sandboxPath(path)] = toFsContent(file);
     }
   }
 
@@ -113,12 +118,7 @@ export async function loadArtifactsIntoFs(
   memFs: InMemoryFs,
   files: { path: string; content: string; contentType?: string }[],
 ): Promise<void> {
-  const desiredPaths = new Set(
-    files.map((file) => {
-      const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
-      return `${SANDBOX_HOME}/${relativePath}`;
-    }),
-  );
+  const desiredPaths = new Set(files.map((file) => sandboxPath(file.path)));
 
   for (const fsPath of memFs.getAllPaths()) {
     if (!fsPath.startsWith(`${SANDBOX_HOME}/`) || desiredPaths.has(fsPath)) {
@@ -138,8 +138,7 @@ export async function loadArtifactsIntoFs(
   }
 
   for (const file of files) {
-    const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
-    const fsPath = `${SANDBOX_HOME}/${relativePath}`;
+    const fsPath = sandboxPath(file.path);
 
     const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
     if (dir) {

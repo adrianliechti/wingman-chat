@@ -131,12 +131,14 @@ How to use it:
 3. Use pipes for shell-native transformations.
 4. Use Bash when the task is mostly files, text, JSON, YAML, CSV, or SQLite.
 5. To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`. They mount read-only under `/home/user/skills/<name>/` for that run (using the exact paths from `read_skill`) and are not saved as artifacts.
+6. Keep stdout small: summarize results rather than dumping them, and write large or full-fidelity output to a file (saved as an artifact) instead of printing it.
 
 Limitations:
 - No network access.
 - Only built-in sandbox commands are available.
 - The script runs in a sandbox rooted at `/home/user/`.
-- Execution limits apply.
+- stdout/stderr is capped (~10 MiB), returned to you verbatim, and exceeding it aborts the run. Inspect with bounds (`head -c`, `head`, `grep`, `wc`); there is no SIGPIPE, so bound the *producer*, not the consumer — `head -c 64 file | xxd`, not `xxd file | head`.
+- Other execution limits (command count, loop iterations, call depth) also apply.
 
 ### Choosing and combining tools
 

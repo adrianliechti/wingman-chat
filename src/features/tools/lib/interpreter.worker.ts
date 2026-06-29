@@ -19,9 +19,10 @@ import type {
   ExecuteReply,
   LlmCallOptions,
   RenderInput,
-  RpcReply,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
+import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
+import { callMainThread } from "./interpreterRpc";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
@@ -51,8 +52,6 @@ const PACKAGE_ALIASES: Record<string, string> = {
   bs4: "beautifulsoup4",
   yaml: "pyyaml",
 };
-
-const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 function normalizePackageName(name: string): string {
   // Strip a "." (e.g. "docx.shared"), then PEP 503-normalize (`scikit_learn` →
@@ -370,21 +369,8 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
 // RPC to the main thread — each call ships its own reply port, so responses
 // need no correlation or routing.
 
-function callMain<T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> {
-  const { port1, port2 } = new MessageChannel();
-  return new Promise<T>((resolve, reject) => {
-    port1.onmessage = (event: MessageEvent<RpcReply>) => {
-      port1.close();
-      const reply = event.data;
-      if (reply.ok) {
-        resolve(reply.value as T);
-      } else {
-        reject(new Error(reply.error));
-      }
-    };
-    ctx.postMessage(build(port2), [port2]);
-  });
-}
+const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> =>
+  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build);
 
 /**
  * Bridge behind the Python `llm` helper (llmShim.py), resolved by the main thread.

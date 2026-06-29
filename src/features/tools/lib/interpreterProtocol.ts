@@ -26,6 +26,10 @@ export interface CodeExecutionResult {
   files?: ArtifactFiles;
 }
 
+/** Sentinel a worker returns when code ran successfully but produced no output;
+ *  the shell commands map it back to empty stdout. */
+export const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
+
 export type ExecuteReply = { type: "started" } | { type: "result"; result: CodeExecutionResult };
 
 /** Input image for the `render` helper — bytes plus the path whose basename routes the upload by format. */

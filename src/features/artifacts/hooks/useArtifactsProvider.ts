@@ -519,7 +519,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
         },
         description:
-          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more. To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`: they mount read-only under /home/user/skills/<name>/ for that run.",
+          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more. Keep stdout small — it is capped (~10 MiB) and returned to you verbatim, and exceeding it aborts the run; summarize and write large output to a file (saved as an artifact) rather than printing it, and bound the producer when inspecting (`head -c 64 file | xxd`, not `xxd file | head`). To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`: they mount read-only under /home/user/skills/<name>/ for that run.",
         strict: true,
         parameters: {
           type: "object",

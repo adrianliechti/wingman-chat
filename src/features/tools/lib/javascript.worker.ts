@@ -17,9 +17,10 @@ import type {
   ExecuteMessage,
   ExecuteReply,
   LlmCallOptions,
-  RpcReply,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
+import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
+import { callMainThread } from "./interpreterRpc";
 
 // Typed view of the worker global scope (project compiles against the DOM lib,
 // not the webworker lib).
@@ -28,7 +29,6 @@ const ctx = self as unknown as {
   addEventListener(type: "message", listener: (event: MessageEvent<ExecuteMessage>) => void): void;
 };
 
-const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 const NETWORK_DISABLED = "Network access is disabled in the JavaScript sandbox";
 
 const encoder = new TextEncoder();
@@ -217,18 +217,8 @@ function patchNetwork(): void {
   }
 }
 
-function callMain<T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> {
-  const { port1, port2 } = new MessageChannel();
-  return new Promise<T>((resolve, reject) => {
-    port1.onmessage = (event: MessageEvent<RpcReply>) => {
-      port1.close();
-      const reply = event.data;
-      if (reply.ok) resolve(reply.value as T);
-      else reject(new Error(reply.error));
-    };
-    ctx.postMessage(build(port2), [port2]);
-  });
-}
+const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> =>
+  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build);
 
 /** Behind the `llm(prompt, options?)` helper; resolved by the main thread. */
 function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
