@@ -4,7 +4,6 @@ import {
   Download,
   Eye,
   File as FileIcon2,
-  HardDrive,
   Loader2,
   PanelRightOpen,
   Play,
@@ -23,6 +22,7 @@ import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
+import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
@@ -128,6 +128,19 @@ export function ArtifactsDrawer() {
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
     setRunHandler(() => handler);
   }, []);
+
+  // Download a single artifact by path, logging (not surfacing) failures.
+  const downloadFile = useCallback(
+    async (path: string) => {
+      if (!fs) return;
+      try {
+        await fs.downloadFile(path);
+      } catch (error) {
+        console.error("Failed to download file:", error);
+      }
+    },
+    [fs],
+  );
 
   // Subscribe to filesystem events and load data
   useEffect(() => {
@@ -254,30 +267,8 @@ export function ArtifactsDrawer() {
     // IMPORTANT: Capture files immediately before any async work!
     // The browser clears e.dataTransfer after the sync part of the handler completes
     const droppedFiles = Array.from(e.dataTransfer.files);
-    if (droppedFiles.length === 0) {
-      return;
-    }
-
-    // Ensure a chat and FS exist before writing files
-    const activeFs = await ensureFs();
-
-    setIsProcessing(true);
-    try {
-      for (const file of droppedFiles) {
-        try {
-          // Process file (converts XLSX to CSV automatically)
-          const processedFiles = await processUploadedFile(file);
-
-          for (const processed of processedFiles) {
-            await activeFs.createFile(processed.path, processed.content, processed.contentType);
-            openFile(processed.path);
-          }
-        } catch (error) {
-          console.error(`Error processing file ${file.name}:`, error);
-        }
-      }
-    } finally {
-      setIsProcessing(false);
+    if (droppedFiles.length > 0) {
+      await uploadFiles(droppedFiles);
     }
   };
 
@@ -724,24 +715,7 @@ export function ArtifactsDrawer() {
                   {config.drives.map((drive) => (
                     <DropdownMenuItem
                       key={drive.id}
-                      icon={
-                        drive.icon ? (
-                          <span
-                            className="shrink-0 bg-current inline-block"
-                            style={{
-                              width: 16,
-                              height: 16,
-                              maskImage: `url(${drive.icon})`,
-                              WebkitMaskImage: `url(${drive.icon})`,
-                              maskSize: "contain",
-                              maskRepeat: "no-repeat",
-                              maskPosition: "center",
-                            }}
-                          />
-                        ) : (
-                          <HardDrive size={16} />
-                        )
-                      }
+                      icon={<DriveIcon drive={drive} />}
                       onClick={() => setActiveDrive(drive)}
                     >
                       {drive.name}
@@ -790,13 +764,7 @@ export function ArtifactsDrawer() {
                         return (
                           <button
                             type="button"
-                            onClick={async () => {
-                              try {
-                                await fs.downloadFile(activeFileData.path);
-                              } catch (error) {
-                                console.error("Failed to download file:", error);
-                              }
-                            }}
+                            onClick={() => downloadFile(activeFileData.path)}
                             className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
@@ -823,13 +791,7 @@ export function ArtifactsDrawer() {
                             <MenuItem>
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  try {
-                                    await fs.downloadFile(activeFileData.path);
-                                  } catch (error) {
-                                    console.error("Failed to download file:", error);
-                                  }
-                                }}
+                                onClick={() => downloadFile(activeFileData.path)}
                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
                               >
                                 <Download size={12} className="text-neutral-500" />
@@ -910,13 +872,7 @@ export function ArtifactsDrawer() {
                     notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
                   }
                 }}
-                onDownloadFile={async (path) => {
-                  try {
-                    await fs.downloadFile(path);
-                  } catch (error) {
-                    console.error("Failed to download file:", error);
-                  }
-                }}
+                onDownloadFile={downloadFile}
               />
             </div>
           </ResizablePanel>
