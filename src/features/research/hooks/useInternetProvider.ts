@@ -1,4 +1,4 @@
-import { Globe } from "lucide-react";
+import { Globe, Search } from "lucide-react";
 import { useMemo } from "react";
 import internetInstructionsText from "@/features/research/prompts/internet.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
@@ -105,6 +105,18 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     const searcher = internet.searcher;
     tools.push({
       name: "web_search",
+      display: {
+        header: (args, state) => {
+          const queries = args?.queries;
+          return {
+            icon: Search,
+            label: state.error ? "Search failed" : state.running ? "Searching the web…" : "Searched the web",
+            preview: Array.isArray(queries)
+              ? queries.filter((q): q is string => typeof q === "string").join(", ")
+              : undefined,
+          };
+        },
+      },
       description:
         "Fast web search. Returns markdown grouped by query, each result with title, URL, snippet, and optional metadata. Pass every related query in one call via the `queries` array.",
       parameters: {
@@ -156,6 +168,18 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     const scraper = internet.scraper;
     tools.push({
       name: "web_fetch",
+      display: {
+        header: (args, state) => {
+          const urls = args?.urls;
+          return {
+            icon: Globe,
+            label: state.error ? "Fetch failed" : state.running ? "Fetching…" : "Fetched",
+            preview: Array.isArray(urls)
+              ? urls.filter((u): u is string => typeof u === "string").join(", ")
+              : undefined,
+          };
+        },
+      },
       description:
         "Fetch the full text content of URLs you already have (e.g. from `web_search` results). Pass every URL in one call via the `urls` array.",
       parameters: {
@@ -281,7 +305,7 @@ export function useInternetProvider(): ToolProvider | null {
 
     return {
       id: "internet",
-      name: "Internet",
+      name: "Web Search",
       description: "Access up-to-date information",
       icon: Globe,
       tools: [searchAgent],

@@ -1,0 +1,15 @@
+### Image rendering helper (`render`)
+
+All interpreters expose a `render` helper that generates an image from a text prompt via the configured image generation service — or edits/combines existing images when input images are passed.
+
+- Python: `await render("a watercolor fox", "fox.png")` — async, writes the image file and returns its path
+  - Edit an existing image: `await render("make the sky sunset orange", "out.png", input="photo.png")`; `input` also accepts a list of paths to combine several references
+- JavaScript: `await render("a watercolor fox", "/fox.png")` — async, writes the image and returns its path; pass an array of input paths to edit/combine: `await render("make the sky sunset orange", "/out.png", ["/photo.png"])`
+- Bash: `render -o fox.png "a watercolor fox"` — `-o/--output <file>` is required; pass input image(s) to edit with `-i/--input <file>` (repeatable): `render -i photo.png -o out.png "make the sky sunset orange"`
+
+Optional output controls (all provider-neutral — the service maps each to the model's supported values and ignores what a model can't honor): `aspect_ratio` (e.g. `"1:1"`, `"16:9"`, `"9:16"`), `quality` (`"low"`, `"medium"`, `"high"`) and `background` (`"transparent"`, `"opaque"`).
+- Python (keyword-only): `await render("a logo", "logo.png", aspect_ratio="1:1", background="transparent")`
+- JavaScript (options object after the inputs array): `await render("a banner", "/banner.png", [], { aspectRatio: "16:9", quality: "high" })`
+- Bash flags: `-a/--aspect <ratio>`, `-q/--quality <tier>`, `-b/--background <mode>` — e.g. `render -a 16:9 -b transparent -o logo.png "a logo"`
+
+Each call is a network round trip to a remote image model. Use it for photographic or illustrative imagery; for charts, diagrams, and data visualizations use the plotting libraries instead — and to modify a chart, regenerate it rather than editing its image.

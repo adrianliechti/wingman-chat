@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
-/* Prevent iframes from swallowing mouse events while a resizable panel is being dragged */
-body.resizing iframe {
-  pointer-events: none;
+/* While dragging a resizable panel, cover the page with a transparent overlay
+   so iframes don't swallow the drag. We intentionally do NOT set
+   `pointer-events: none` on the iframes themselves: toggling that on a
+   sandboxed iframe leaves its compositor scroll/hit-test region stale, so the
+   iframe can't be scrolled afterwards until it reloads (e.g. switching files).
+   The overlay sits above everything; mouse events still bubble to the window
+   listeners that drive the resize. */
+body.resizing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  cursor: ew-resize;
 }
 
 /* Keep the resize cursor visible across the whole page while dragging a panel handle,
@@ -69,96 +79,40 @@ html.emoji-native .noto-emoji {
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Hide scrollbar utility */
-@layer utilities {
-  .scrollbar-hide {
-    scrollbar-width: none;
-    /* Firefox */
-    -ms-overflow-style: none;
-    /* IE and Edge */
-  }
-
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-    /* Chrome, Safari, Opera */
-  }
-}
-
 :root {
   --viewport-height: 100dvh;
+  color-scheme: light;
 }
 
-/* Scale the whole UI up on mobile by enlarging the root font size.
-   All Tailwind spacing, sizing, and text utilities are rem-based,
-   so this proportionally enlarges text, buttons, paddings, gaps and
-   icons sized with w-/h- utilities — no per-component changes needed.
+/* Match native UI (scrollbars, form controls, etc.) to the active theme. */
+.dark {
+  color-scheme: dark;
+}
 
-   Note: SVG/img elements with raw width/height attributes (e.g. lucide-react
-   <Icon size={N} />) don't inherit rem scaling, so they're scaled explicitly
-   below. */
-@media (max-width: 639.98px) {
-  html {
-    font-size: 18px;
+/* App-wide scrollbars: thin, and transparent until you interact (iOS-like).
+   Standard scrollbar-* properties only — no -webkit-scrollbar hacks (Chrome 121+,
+   Safari 18.2+, Firefox). Living in @layer base lets Tailwind's scrollbar-*
+   utilities (e.g. `scrollbar-none`) override these per element. */
+@layer base {
+  /* biome-ignore lint: universal selector intentionally lower-specificity than the body.resizing rule above; they set different properties */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    -webkit-overflow-scrolling: touch;
+    overflow-anchor: none;
   }
 
-  /* lucide-react icons: emit width/height attributes in px */
-  .lucide[width="12"] { width: 15px; height: 15px; }
-  .lucide[width="13"] { width: 16px; height: 16px; }
-  .lucide[width="14"] { width: 17px; height: 17px; }
-  .lucide[width="15"] { width: 19px; height: 19px; }
-  .lucide[width="16"] { width: 20px; height: 20px; }
-  .lucide[width="18"] { width: 22px; height: 22px; }
-  .lucide[width="20"] { width: 25px; height: 25px; }
-  .lucide[width="24"] { width: 30px; height: 30px; }
+  *:hover,
+  *:focus-visible,
+  *:active {
+    scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+  }
 
-  /* Custom img-based icons (McpProviderIcon, tool icons, etc.) */
-  img[width="12"][height="12"] { width: 15px; height: 15px; }
-  img[width="14"][height="14"] { width: 17px; height: 17px; }
-  img[width="16"][height="16"] { width: 20px; height: 20px; }
-}
-
-/* Global scrollbar: thin and only visible while interacting (iOS-like) */
-/* biome-ignore lint: lower-specificity universal selector intentionally follows scoped rules above */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  -webkit-overflow-scrolling: touch;
-  overflow-anchor: none;
-}
-
-*::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 999px;
-}
-
-*:hover,
-*:focus-visible,
-*:active {
-  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
-}
-
-*:hover::-webkit-scrollbar-thumb,
-*:focus-visible::-webkit-scrollbar-thumb,
-*:active::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.25);
-}
-
-.dark *:hover,
-.dark *:focus-visible,
-.dark *:active {
-  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
-}
-
-.dark *:hover::-webkit-scrollbar-thumb,
-.dark *:focus-visible::-webkit-scrollbar-thumb,
-.dark *:active::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.35);
+  .dark *:hover,
+  .dark *:focus-visible,
+  .dark *:active {
+    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+  }
 }
 
 /* Prevent horizontal-only scroll containers from blocking vertical page scroll */
@@ -199,10 +153,10 @@ body {
   outline: none;
 }
 
-button,
-[role="button"],
-button[data-headlessui-state],
-[data-headlessui-state=""] {
+button:not(.cursor-ew-resize),
+[role="button"]:not(.cursor-ew-resize),
+button[data-headlessui-state]:not(.cursor-ew-resize),
+[data-headlessui-state=""]:not(.cursor-ew-resize) {
   cursor: pointer;
 }
 

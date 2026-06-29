@@ -1,38 +1,24 @@
 import {
-  Dialog,
-  DialogBackdrop,
-  DialogPanel,
-  DialogTitle,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-} from "@headlessui/react";
-import {
   AudioLines,
   Bot,
-  Check,
-  HardDrive,
   Loader2,
   LoaderCircle,
-  MessageSquare,
   Mic,
-  Paperclip,
-  Plus,
   Rocket,
   ScreenShare,
   Send,
-  Sliders,
   Sparkles,
   Square,
-  TriangleAlert,
   X,
 } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -41,22 +27,37 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
+import { notify } from "@/shared/lib/notify";
+import { readAsDataURL } from "@/shared/lib/utils";
+import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
-import { useBackground } from "@/shell/hooks/useBackground";
+import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { formatArtifactReference } from "./chatMessageUtils";
 
 export function ChatInput() {
   const config = getConfig();
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
-  const { currentAgent, setCurrentAgent } = useAgents();
+  const {
+    sendMessage,
+    models,
+    model,
+    setModel: onModelChange,
+    effort,
+    setEffort,
+    messages,
+    isResponding,
+    stopStreaming,
+    chat,
+  } = useChat();
+  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
+  const { isAvailable: artifactsAvailable } = useArtifacts();
   const { profile } = useSettings();
   const {
     isAvailable: isScreenCaptureAvailable,
@@ -65,60 +66,84 @@ export function ChatInput() {
     stopCapture,
     captureFrame,
   } = useScreenCapture();
-  const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
+  const {
+    providers,
+    getProviderState,
+    getProviderPolicy,
+    setProviderEnabled,
+    setModelOverrides,
+    skillSources,
+    setSkillSources,
+  } = useToolsContext();
   const {
     isAvailable: voiceAvailable,
     isListening,
+    isConnecting,
     audioLevel,
     startVoice,
     stopVoice,
     sendText: sendVoiceText,
   } = useVoice();
   const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
-  const { backgroundSetting } = useBackground();
 
-  // Track if realtime mode model is selected (either via model picker or agent's model)
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
-  // Request microphone permission when entering voice mode so the device
-  // selector can immediately show real device names without an extra click.
+  // Request mic permission once per voice-mode entry so the device selector shows real names.
+  const permissionRequestedRef = useRef(false);
   useEffect(() => {
-    if (isRealtimeSelected && voiceAvailable && inputDevices.length === 0) {
+    if (!isRealtimeSelected || !voiceAvailable) {
+      permissionRequestedRef.current = false;
+      return;
+    }
+    if (inputDevices.length === 0 && !permissionRequestedRef.current) {
+      permissionRequestedRef.current = true;
       void requestAudioPermission();
     }
   }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
 
-  const [showHiddenModels, setShowHiddenModels] = useState(false);
+  // Auto-start voice when entering via the mode toggle (not via a realtime agent).
+  // Attempt once per entry to avoid a retry loop if startVoice() fails.
+  const isRealtimeViaToggle = model?.id === "realtime" && currentAgent?.model !== "realtime";
+  const autoStartAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!isRealtimeViaToggle || !voiceAvailable) {
+      autoStartAttemptedRef.current = false;
+      return;
+    }
+    if (!isListening && !autoStartAttemptedRef.current) {
+      autoStartAttemptedRef.current = true;
+      void startVoice();
+    }
+  }, [isRealtimeViaToggle, voiceAvailable, isListening, startVoice]);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
-  const [attachments, setAttachments] = useState<Content[]>([]);
-  const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  const {
+    attachments,
+    pendingFiles,
+    pendingImages,
+    extractingAttachments,
+    setExtractingAttachments,
+    setPendingFiles,
+    handleFiles,
+    clearAttachments,
+    removeAttachment,
+  } = useFileAttachments({
+    visionFiles: config.vision?.files ?? [],
+    artifactsAvailable,
+    visionMaxFileSize: config.vision?.maxFileSize,
+    artifactsMaxFileSize: config.artifacts?.maxFileSize,
+  });
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
-  const [showMobileSheet, setShowMobileSheet] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
-  const voiceInputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const modeSliderRef = useRef<HTMLDivElement>(null);
-  const [modeSliderStyle, setModeSliderStyle] = useState({ left: 0, width: 0 });
   const profileName = profile?.name;
 
-  useEffect(() => {
-    const container = modeSliderRef.current;
-    if (!container) return;
-    const active = container.querySelector<HTMLElement>(`[data-mode="${isRealtimeSelected ? "voice" : "chat"}"]`);
-    if (!active) return;
-    const cr = container.getBoundingClientRect();
-    const br = active.getBoundingClientRect();
-    setModeSliderStyle({ left: br.left - cr.left, width: br.width });
-  }, [isRealtimeSelected]);
-
-  // Generate static random placeholder text for new chats only
   const randomPlaceholder = useMemo(() => {
     const personalizedVariations = [
       "Hi [Name], ready to get started?",
@@ -144,10 +169,14 @@ export function ChatInput() {
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
 
-  // Show placeholder when input is empty (regardless of focus state)
+  // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
+  const acceptString = useMemo(
+    () => chatAcceptString(config.vision?.files ?? [], artifactsAvailable),
+    [config.vision?.files, artifactsAvailable],
+  );
+
   const shouldShowPlaceholder = !content.trim();
 
-  // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
   const modelTools = useMemo(() => {
@@ -161,32 +190,27 @@ export function ChatInput() {
     return ids;
   }, [model?.tools]);
 
-  // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
+  // Providers visible in the UI: exclude model-configured and artifacts. Shown in
+  // agent mode too — the agent's required tools render locked, optionals toggle.
   const visibleProviders = useMemo(
-    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))),
-    [currentAgent, providers, modelTools],
+    () => providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id)),
+    [providers, modelTools],
   );
 
-  // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
-    // Check if any providers are connected
     const hasConnectedProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected,
     );
 
-    // Check if any providers are initializing
     const hasInitializingProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing,
     );
 
     if (hasInitializingProviders) {
-      // At least one provider initializing - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
     } else if (hasConnectedProviders) {
-      // At least one provider connected - show rocket
       return <Rocket size={14} />;
     } else {
-      // No providers connected - show sparkles
       return <Sparkles size={14} />;
     }
   }, [visibleProviders, getProviderState]);
@@ -196,68 +220,11 @@ export function ChatInput() {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
   }, [model?.tools?.enabled, model?.tools?.disabled, setModelOverrides]);
 
-  const handleFiles = useCallback(
-    async (files: File[]) => {
-      const fileIds = files.map((file, index) => `${file.name}-${index}`);
-
-      // Set all extracting states at once
-      setExtractingAttachments((prev) => new Set([...prev, ...fileIds]));
-
-      const visionFiles = config.vision?.files ?? [];
-
-      const processedContents = await Promise.allSettled(
-        files.map(async (file, index) => {
-          const fileId = fileIds[index];
-          try {
-            let content: Content | null = null;
-
-            // Infer MIME from extension when browser didn't detect it
-            const effectiveType =
-              file.type && file.type !== "application/octet-stream"
-                ? file.type
-                : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
-
-            // Re-wrap with correct type if it was wrong
-            const effectiveFile =
-              effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
-
-            if (visionFiles.includes(effectiveType)) {
-              const blob = await resizeImageBlob(effectiveFile, 1920, 1920);
-              const dataUrl = await readAsDataURL(blob);
-              content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
-            } else if (canConvert(effectiveFile)) {
-              const text = await convertFileToText(file);
-              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
-            }
-
-            return { fileId, content };
-          } catch (error) {
-            console.error(`Error processing file ${file.name}:`, error);
-            return { fileId, content: null };
-          }
-        }),
-      );
-
-      // Batch state updates
-      const validContents = processedContents
-        .filter(
-          (result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
-            result.status === "fulfilled" && result.value.content !== null,
-        )
-        .map((result) => result.value.content);
-
-      setAttachments((prev) => [...prev, ...validContents]);
-      setExtractingAttachments(new Set()); // Clear all at once
-    },
-    [config.vision?.files],
-  );
-
   const isDragging = useDropZone(containerRef, handleFiles);
 
   // Force layout recalculation on mount to fix initial sizing issues
   useEffect(() => {
     if (containerRef.current) {
-      // Force a repaint by reading offsetHeight
       void containerRef.current.offsetHeight;
     }
     if (contentInputRef.current) {
@@ -265,28 +232,20 @@ export function ChatInput() {
     }
   }, []);
 
-  // Auto-focus on desktop devices only (not on touch devices like iPad)
+  // Focus the composer when the active chat changes — starting a new chat or opening an
+  // existing one — so you can type right away. Skipped on touch devices to avoid popping
+  // the on-screen keyboard. rAF defers focus until the newly selected chat has rendered
+  // (Safari ignores focus() called too early in the same tick).
   useEffect(() => {
-    if (messages.length === 0) {
-      // Check if this is a touch device
-      const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-
-      if (!isTouchDevice && contentInputRef.current) {
-        // Small delay to ensure DOM is ready
-        const timer = setTimeout(() => {
-          contentInputRef.current?.focus();
-        }, 100);
-
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [messages.length]);
+    if (window.matchMedia("(pointer: coarse)").matches) return;
+    const raf = requestAnimationFrame(() => contentInputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [chat?.id]);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
 
-      // Prevent submission while responding
       if (isResponding) {
         return;
       }
@@ -294,7 +253,6 @@ export function ChatInput() {
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
 
-        // If continuous capture is active, automatically capture current screen
         if (isContinuousCaptureActive) {
           try {
             const blob = await captureFrame();
@@ -305,7 +263,6 @@ export function ChatInput() {
                 name: `screen-capture-${Date.now()}.png`,
                 data: dataUrl,
               };
-              // Add screen capture as the first attachment
               finalAttachments = [screenContent, ...finalAttachments];
             }
           } catch (error) {
@@ -315,17 +272,58 @@ export function ChatInput() {
 
         const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
 
+        // Persist pending files (and original images) to the workspace at send.
+        const toArtifacts = (list: File[]) =>
+          Promise.all(
+            list.map(async (file) => {
+              try {
+                return await processUploadedFile(file);
+              } catch (error) {
+                console.error(`Failed to process attachment ${file.name}:`, error);
+                return [];
+              }
+            }),
+          ).then((results) => results.flat());
+
+        const fileArtifacts = await toArtifacts(pendingFiles);
+        const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
+        const artifacts = [...fileArtifacts, ...imageArtifacts];
+
+        // Reference every persisted attachment by its workspace path so the
+        // model can read/edit it by name. Images are also shown inline (vision),
+        // but the inline copy carries no filename — without this the model can't
+        // name the file it's looking at. The redundant chip is suppressed in the
+        // UI (see ChatUserMessage) since the image already renders inline.
+        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        if (referencedPaths.length > 0) {
+          const reference: TextContent = {
+            type: "text",
+            text: formatArtifactReference(referencedPaths),
+          };
+          messageContent.push(reference);
+        }
+
         const message: Message = {
           role: Role.User,
           content: messageContent,
         };
 
-        sendMessage(message);
+        sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
         setContent("");
-        setAttachments([]);
+        clearAttachments();
       }
     },
-    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
+    [
+      isResponding,
+      content,
+      attachments,
+      pendingFiles,
+      pendingImages,
+      isContinuousCaptureActive,
+      captureFrame,
+      sendMessage,
+      clearAttachments,
+    ],
   );
 
   const handleAttachmentClick = useCallback(() => {
@@ -336,7 +334,6 @@ export function ChatInput() {
 
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
-      // Show extracting state for each file while downloading
       const names = files.map((f) => f.name);
       setExtractingAttachments((prev) => new Set([...prev, ...names]));
 
@@ -359,7 +356,7 @@ export function ChatInput() {
         });
       }
     },
-    [handleFiles],
+    [handleFiles, setExtractingAttachments],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -385,9 +382,20 @@ export function ChatInput() {
     [handleFiles],
   );
 
-  const handleRemoveAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const handleRemoveAttachment = useCallback(
+    (index: number) => {
+      removeAttachment(index);
+    },
+    [removeAttachment],
+  );
+
+  const handleRemovePendingFile = useCallback(
+    (index: number) => {
+      // Nothing is written to artifacts until send, so removing just drops it.
+      setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setPendingFiles],
+  );
 
   const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
@@ -408,7 +416,6 @@ export function ChatInput() {
     [handleSubmit, isResponding, stopStreaming],
   );
 
-  // Handle transcription button click
   const handleTranscriptionClick = useCallback(async () => {
     if (isTranscribing) {
       setTranscribingContent(true);
@@ -419,6 +426,7 @@ export function ChatInput() {
         }
       } catch (error) {
         console.error("Transcription failed:", error);
+        notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
       } finally {
         setTranscribingContent(false);
       }
@@ -427,35 +435,10 @@ export function ChatInput() {
         await startTranscription();
       } catch (error) {
         console.error("Failed to start transcription:", error);
+        notify.error("Couldn't start recording", "Check your microphone access and try again.");
       }
     }
   }, [isTranscribing, stopTranscription, startTranscription]);
-
-  useEffect(() => {
-    if (!contentInputRef.current) {
-      return;
-    }
-
-    contentInputRef.current.style.height = "auto";
-    contentInputRef.current.style.height = `${contentInputRef.current.scrollHeight}px`;
-
-    if (content.length === 0) {
-      contentInputRef.current.style.height = "auto";
-    }
-  }, [content]);
-
-  useEffect(() => {
-    if (!voiceInputRef.current) {
-      return;
-    }
-
-    voiceInputRef.current.style.height = "auto";
-    voiceInputRef.current.style.height = `${voiceInputRef.current.scrollHeight}px`;
-
-    if (voiceTextInput.length === 0) {
-      voiceInputRef.current.style.height = "auto";
-    }
-  }, [voiceTextInput]);
 
   return (
     <>
@@ -465,21 +448,20 @@ export function ChatInput() {
           className={`relative @container contain-[layout_style] will-change-[height] ${
             isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
+              : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
           } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
             multiple
-            accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
+            accept={acceptString}
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileChange}
           />
 
-          {/* Drop zone overlay */}
           {isDragging && (
-            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-xl">
               <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
                 Drop files here
               </div>
@@ -489,67 +471,42 @@ export function ChatInput() {
             </div>
           )}
 
-          {/* Attachments display */}
-          {(attachments.length > 0 || extractingAttachments.size > 0) && (
-            <div className="p-3">
+          {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
+            <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
+                artifactAttachments={pendingFiles.map((f) => f.name)}
                 extractingAttachments={extractingAttachments}
                 onRemove={handleRemoveAttachment}
+                onRemoveArtifact={handleRemovePendingFile}
               />
             </div>
           )}
 
-          {/* Input area */}
-          <div className="relative flex-1">
+          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
-              <>
-                <textarea
-                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
-                  style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
-                  ref={voiceInputRef}
-                  value={voiceTextInput}
-                  rows={1}
-                  aria-label="Voice text input"
-                  inputMode="text"
-                  enterKeyHint="send"
-                  readOnly={!isListening}
-                  onChange={(e) => isListening && setVoiceTextInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (isListening && e.key === "Enter" && !e.shiftKey && voiceTextInput.trim()) {
-                      e.preventDefault();
-                      sendVoiceText(voiceTextInput.trim());
-                      setVoiceTextInput("");
-                    }
-                  }}
-                />
-
-                {isListening && !voiceTextInput && (
-                  <div
-                    className="absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none flex items-center gap-2 text-neutral-500 dark:text-neutral-400"
-                    aria-live="polite"
-                  >
-                    <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                    </span>
-                    <span className="text-sm">
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Listening</span>
-                      <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
-                    </span>
-                  </div>
-                )}
-              </>
+              <textarea
+                className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                value={voiceTextInput}
+                rows={1}
+                aria-label="Voice text input"
+                inputMode="text"
+                enterKeyHint="send"
+                readOnly={!isListening}
+                onChange={(e) => isListening && setVoiceTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isListening && e.key === "Enter" && !e.shiftKey && voiceTextInput.trim()) {
+                    e.preventDefault();
+                    sendVoiceText(voiceTextInput.trim());
+                    setVoiceTextInput("");
+                  }
+                }}
+              />
             ) : (
               <>
                 <textarea
                   ref={contentInputRef}
-                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
-                  style={{
-                    scrollbarWidth: "thin",
-                    minHeight: "2.5rem",
-                    height: "auto",
-                  }}
+                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                   value={content}
                   rows={1}
                   inputMode="text"
@@ -561,16 +518,25 @@ export function ChatInput() {
 
                     const text = e.clipboardData.getData("text/plain");
 
-                    const imageItems = Array.from(e.clipboardData.items)
-                      .filter((item) => item.type.startsWith("image/"))
+                    // Any pasted file (image, doc, media, …) routes to handleFiles,
+                    // which decides inline-vision vs artifacts. Read synchronously —
+                    // clipboard items are only valid during the event.
+                    const fileItems = Array.from(e.clipboardData.items)
+                      .filter((item) => item.kind === "file")
                       .map((item) => item.getAsFile())
                       .filter(Boolean) as File[];
 
-                    const input = e.currentTarget;
-                    const selectionStart = input.selectionStart ?? content.length;
-                    const selectionEnd = input.selectionEnd ?? content.length;
+                    // A pasted file may also expose a text/plain representation (e.g.
+                    // an OS file copy yields the filename) — don't pollute the textarea.
+                    if (fileItems.length > 0) {
+                      await handleFiles(fileItems);
+                      return;
+                    }
 
                     if (text.trim()) {
+                      const input = e.currentTarget;
+                      const selectionStart = input.selectionStart ?? content.length;
+                      const selectionEnd = input.selectionEnd ?? content.length;
                       const nextContent = `${content.slice(0, selectionStart)}${text}${content.slice(selectionEnd)}`;
                       setContent(nextContent);
 
@@ -579,19 +545,14 @@ export function ChatInput() {
                         input.setSelectionRange(nextPosition, nextPosition);
                       });
                     }
-
-                    if (imageItems.length > 0) {
-                      await handleFiles(imageItems);
-                    }
                   }}
                   aria-label="Chat message input"
                 />
 
-                {/* CSS-animated placeholder */}
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
-                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-600 dark:text-neutral-300 transition-all duration-200",
+                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
                       messages.length === 0 && "typewriter-text",
                     )}
                     style={
@@ -610,24 +571,12 @@ export function ChatInput() {
             )}
           </div>
 
-          {/* Controls */}
-          <div className="relative flex items-center justify-between p-3 pt-0 pb-3">
-            {isRealtimeSelected && !isListening && (
-              <button
-                type="button"
-                className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pb-10 group"
-                onClick={startVoice}
-              >
-                <div className="flex items-center justify-center w-8 h-8 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-600 group-hover:text-neutral-800 dark:group-hover:text-neutral-100 transition-all duration-200">
-                  <Mic size={15} />
-                </div>
-                <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
-                  <span className="hidden @md:inline">Click to start voice conversation</span>
-                  <span className="@md:hidden">Click to start</span>
-                </span>
-              </button>
+          <div
+            className={cn(
+              "relative flex items-center justify-between p-3 pt-0 pb-3 transition-all duration-200",
+              isDragging && "blur-sm",
             )}
-
+          >
             {isRealtimeSelected && isListening && (
               <div
                 className="pointer-events-none absolute inset-0 p-3 pt-0 pb-8 md:pb-3 flex items-center justify-center"
@@ -667,499 +616,218 @@ export function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              {voiceAvailable && !currentAgent?.model && (
-                <div
-                  ref={modeSliderRef}
-                  role="tablist"
-                  aria-label="Input mode"
-                  className={cn(
-                    "relative flex items-center gap-0.5 rounded-full p-0.5",
-                    backgroundSetting
-                      ? "bg-black/15 dark:bg-white/15 ring-1 ring-black/15 dark:ring-white/15 backdrop-blur-sm shadow-sm"
-                      : "bg-neutral-200/50 dark:bg-neutral-800/50",
-                  )}
-                >
-                  {/* Animated slider background */}
-                  {modeSliderStyle.width > 0 && (
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                      style={{
-                        left: `${modeSliderStyle.left}px`,
-                        width: `${modeSliderStyle.width}px`,
-                        height: "calc(100% - 4px)",
-                        top: "2px",
-                      }}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    data-mode="chat"
-                    role="tab"
-                    aria-selected={!isRealtimeSelected}
-                    aria-label="Chat mode"
-                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
-                      !isRealtimeSelected
-                        ? "w-9 text-neutral-900 dark:text-neutral-50"
-                        : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                    }`}
-                    title="Chat mode"
-                    onClick={() => {
-                      if (!isRealtimeSelected) return;
-                      void stopVoice();
-                      const savedId = (() => {
-                        try {
-                          return localStorage.getItem("app_model");
-                        } catch {
-                          return null;
-                        }
-                      })();
-                      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                      onModelChange(restored);
-                    }}
-                  >
-                    <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
-                  </button>
-                  <button
-                    type="button"
-                    data-mode="voice"
-                    role="tab"
-                    aria-selected={isRealtimeSelected}
-                    aria-label="Voice mode"
-                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
-                      isRealtimeSelected
-                        ? "w-9 text-neutral-900 dark:text-neutral-50"
-                        : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                    }`}
-                    title="Voice mode"
-                    onClick={() =>
-                      !isRealtimeSelected
-                        ? onModelChange({
-                            id: "realtime",
-                            name: "Voice Mode",
-                            description: "Real-time voice conversation",
-                          })
-                        : undefined
-                    }
-                  >
-                    <AudioLines size={12} strokeWidth={2.25} className="shrink-0" />
-                  </button>
+              {isRealtimeSelected && isListening && !voiceTextInput && (
+                <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400" aria-live="polite">
+                  <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                  </span>
+                  <span className="text-xs">
+                    <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                      {currentAgent?.name ?? "Listening"}
+                    </span>
+                    <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
+                  </span>
                 </div>
               )}
-
-              {currentAgent?.model ? (
-                /* Agent overrides model — show agent badge instead of model selector */
-                <div className="items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentAgent(null)}
-                    className="flex group items-center gap-1 pl-1 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
-                    title="Deselect agent"
-                  >
-                    <span className="shrink-0 w-3.5 flex justify-center relative">
-                      <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                      <X
-                        size={14}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                      />
-                    </span>
-                    <span className="truncate min-w-0">{currentAgent.name}</span>
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {models.length > 0 && !isRealtimeSelected && (
-                    <Menu>
-                      <MenuButton
-                        onPointerDownCapture={(e) => {
-                          // Commit synchronously so MenuItems mounts with the right list
-                          // on the very first render — otherwise the menu opens with the
-                          // visible-only list and then re-renders bigger, causing a jump.
-                          flushSync(() => setShowHiddenModels(e.altKey));
-                        }}
-                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                      >
-                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom start"
-                        className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-                      >
-                        {models
-                          .filter((m) => m.id !== "realtime" && !m.hidden)
-                          .map((modelItem) => (
-                            <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                          ))}
-                        {showHiddenModels && models.some((m) => m.id !== "realtime" && m.hidden) && (
-                          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
-                            Hidden
-                          </div>
-                        )}
-                        {showHiddenModels &&
-                          models
-                            .filter((m) => m.id !== "realtime" && m.hidden)
-                            .map((modelItem) => (
-                              <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                            ))}
-                      </MenuItems>
-                    </Menu>
-                  )}
-
-                  {currentAgent && (
+              {!isRealtimeSelected && (
+                <ChatInputAddMenu
+                  isScreenCaptureAvailable={isScreenCaptureAvailable}
+                  isContinuousCaptureActive={isContinuousCaptureActive}
+                  canTranscribe={canTranscribe}
+                  isTranscribing={isTranscribing}
+                  isResponding={isResponding}
+                  visibleProviders={visibleProviders}
+                  getProviderState={getProviderState}
+                  getProviderPolicy={getProviderPolicy}
+                  setProviderEnabled={setProviderEnabled}
+                  skillSources={skillSources}
+                  setSkillSources={setSkillSources}
+                  onAttachmentClick={handleAttachmentClick}
+                  onContinuousCaptureToggle={handleContinuousCaptureToggle}
+                  onTranscriptionClick={handleTranscriptionClick}
+                  onDriveSelect={setActiveDrive}
+                />
+              )}
+              {models.length > 0 && !isRealtimeSelected && !currentAgent && (
+                <ModelDropdown
+                  models={models}
+                  value={model?.id ?? ""}
+                  onChange={(modelId) => {
+                    const m = models.find((m) => m.id === modelId);
+                    if (m) onModelChange(m);
+                  }}
+                  effort={
+                    model?.supportedEfforts?.length
+                      ? { options: model.supportedEfforts, value: effort ?? null, onChange: setEffort }
+                      : undefined
+                  }
+                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                  trigger={({ getProps }) => (
                     <button
                       type="button"
-                      onClick={() => setCurrentAgent(null)}
-                      className="hidden lg:flex group items-center gap-1 pl-2 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
-                      title="Deselect agent"
+                      {...getProps()}
+                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
                     >
-                      <span className="shrink-0 w-3.5 flex justify-center relative">
-                        <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                        <X
-                          size={14}
-                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                        />
-                      </span>
-                      <span className="max-w-20 truncate">{currentAgent.name}</span>
+                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                      </Tooltip>
                     </button>
                   )}
-                </>
+                />
               )}
 
-              {voiceAvailable && isRealtimeSelected && (
-                <Menu>
-                  <MenuButton
-                    className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                    title="Select microphone"
-                    aria-label="Select microphone"
-                  >
-                    <span className="shrink-0 flex justify-center">
-                      <Mic size={14} />
-                    </span>
-                    <span className="hidden md:inline truncate min-w-0">
-                      {(() => {
-                        const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
-                        if (selected) return selected.label || "Microphone";
-                        return "Default";
-                      })()}
-                    </span>
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom start"
-                    className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
-                  >
-                    {inputDevices.length === 0 ? (
-                      <MenuItem>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void requestAudioPermission();
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5"
-                        >
-                          <Mic size={14} className="shrink-0" />
-                          <span>Allow microphone access</span>
-                        </button>
-                      </MenuItem>
-                    ) : (
-                      <>
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={() => setInputDevice(undefined)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10"
-                          >
-                            <span className="truncate">System Default</span>
-                          </button>
-                        </MenuItem>
-                        {inputDevices.map((device) => (
-                          <MenuItem key={device.deviceId}>
-                            <button
-                              type="button"
-                              onClick={() => setInputDevice(device.deviceId)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              <span className="truncate">
-                                {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
-                              </span>
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </>
-                    )}
-                  </MenuItems>
-                </Menu>
+              {/* Agent picker — combined trigger + active-agent badge (hidden when listening, agent name shown in hint) */}
+              {currentAgent && !(isRealtimeSelected && isListening) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCurrentAgent(null);
+                    setShowAgentDrawer(false);
+                  }}
+                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  title="Deselect agent"
+                >
+                  <span className="shrink-0 w-3.5 flex justify-center relative">
+                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
+                    <X
+                      size={14}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                    />
+                  </span>
+                  <span className="truncate max-w-28">{currentAgent.name}</span>
+                </button>
+              )}
+              {!isRealtimeSelected && isContinuousCaptureActive && (
+                <button
+                  type="button"
+                  onClick={stopCapture}
+                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200"
+                  title="Stop screen sharing"
+                >
+                  <span className="shrink-0 w-3.5 flex justify-center relative">
+                    <ScreenShare size={14} className="transition-opacity group-hover:opacity-0" />
+                    <X
+                      size={14}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                    />
+                  </span>
+                  <span>Sharing</span>
+                </button>
               )}
             </div>
 
             <div className="flex items-center gap-2 md:gap-1 min-h-9 md:min-h-7">
-              {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu (hidden on mobile) */}
-              <div className="hidden md:contents">
-                {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
-                  // Inline toggle buttons for 2 or fewer providers
-                  visibleProviders.map((provider: ToolProvider) => {
-                    const icon = provider.icon || Sparkles;
-                    const state = getProviderState(provider.id);
-                    const providerEnabled = state === ProviderState.Connected;
-                    const providerInitializing = state === ProviderState.Initializing;
-                    const providerFailed = state === ProviderState.Failed;
-
-                    const renderIcon = () => {
-                      if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
-                      if (providerFailed) return <TriangleAlert size={14} />;
-                      if (typeof icon === "string")
-                        return <McpProviderIcon src={icon} size={14} className="shrink-0 object-contain" />;
-                      const Icon = icon;
-                      return <Icon size={14} />;
-                    };
-
-                    return (
-                      <button
-                        key={provider.id}
-                        type="button"
-                        className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                          providerEnabled
-                            ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
-                            : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        }`}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (providerInitializing) return;
-                          try {
-                            await setProviderEnabled(provider.id, !providerEnabled);
-                          } catch (error) {
-                            console.error(`Failed to toggle provider ${provider.name}:`, error);
-                          }
-                        }}
-                        disabled={providerInitializing}
-                        title={
-                          providerFailed
-                            ? `${provider.name} - Failed to connect (click to retry)`
-                            : providerEnabled
-                              ? `${provider.name} - Click to disable`
-                              : `${provider.name} - Click to enable`
-                        }
-                      >
-                        {renderIcon()}
-                      </button>
-                    );
-                  })
-                ) : visibleProviders.length > 2 ? (
-                  // Menu for more than 2 providers
-                  <Menu>
-                    <MenuButton
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      title="Features"
-                    >
-                      <Sliders size={16} />
-                    </MenuButton>
-                    <MenuItems
-                      modal={false}
-                      transition
-                      anchor="bottom end"
-                      className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
-                    >
-                      {visibleProviders.map((provider: ToolProvider) => {
-                        const icon = provider.icon || Sparkles;
-                        const state = getProviderState(provider.id);
-                        const providerEnabled = state === ProviderState.Connected;
-                        const providerInitializing = state === ProviderState.Initializing;
-                        const providerFailed = state === ProviderState.Failed;
-
-                        const renderIcon = () => {
-                          if (typeof icon === "string")
-                            return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
-                          const Icon = icon;
-                          return <Icon size={16} />;
-                        };
-
-                        return (
-                          <MenuItem key={provider.id}>
-                            <button
-                              type="button"
-                              onClick={async (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                try {
-                                  await setProviderEnabled(provider.id, !providerEnabled);
-                                } catch (error) {
-                                  console.error(`Failed to toggle provider ${provider.name}:`, error);
-                                }
-                              }}
-                              disabled={providerInitializing}
-                              className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                            >
-                              <div className="flex items-center gap-3">
-                                {renderIcon()}
-                                <div className="flex flex-col items-start">
-                                  <span className="font-medium text-sm">{provider.name}</span>
-                                  {provider.description && (
-                                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                                      {provider.description}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 pl-2">
-                                {providerInitializing ? (
-                                  <LoaderCircle
-                                    size={16}
-                                    className="animate-spin text-neutral-600 dark:text-neutral-400"
-                                  />
-                                ) : providerFailed ? (
-                                  <TriangleAlert
-                                    size={16}
-                                    className="text-neutral-600 dark:text-neutral-400"
-                                    strokeWidth={2.5}
-                                  />
-                                ) : providerEnabled ? (
-                                  <Check
-                                    size={16}
-                                    className="text-neutral-800 dark:text-neutral-200"
-                                    strokeWidth={2.5}
-                                  />
-                                ) : (
-                                  <div className="w-4 h-4" />
-                                )}
-                              </div>
-                            </button>
-                          </MenuItem>
-                        );
-                      })}
-                    </MenuItems>
-                  </Menu>
-                ) : null}
-              </div>
-
-              {/* Mobile: Plus button opens bottom sheet */}
-              {!isRealtimeSelected && (
-                <button
-                  type="button"
-                  className="md:hidden p-2.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  title="More options"
-                  onClick={() => setShowMobileSheet(true)}
-                >
-                  <Plus size={16} />
-                </button>
-              )}
-
-              {/* Desktop: Screen capture and attach buttons (hidden on mobile) */}
-              {!isRealtimeSelected && (
-                <div className="hidden md:contents">
-                  {isScreenCaptureAvailable && (
+              {isRealtimeSelected ? (
+                <>
+                  {isListening && voiceTextInput.trim() ? (
+                    // When the user has typed text during a live session, show the
+                    // Send action in the microphone selector's slot.
                     <button
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                        isContinuousCaptureActive
-                          ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
-                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
-                      onClick={handleContinuousCaptureToggle}
-                      title={
-                        isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
-                      }
+                      className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      onClick={() => {
+                        sendVoiceText(voiceTextInput.trim());
+                        setVoiceTextInput("");
+                      }}
+                      title="Send text"
                     >
-                      <ScreenShare size={14} />
-                      {isContinuousCaptureActive && <span className="hidden sm:inline">Capturing</span>}
+                      <Send size={16} />
                     </button>
-                  )}
-
-                  {config.drives.length > 0 ? (
-                    <Menu>
-                      <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
-                        <Paperclip size={16} />
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom end"
-                        className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                      >
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={handleAttachmentClick}
-                            className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
+                  ) : (
+                    voiceAvailable && (
+                      <DropdownMenu
+                        anchor="bottom start"
+                        panelClassName="max-h-[50vh]! min-w-52"
+                        trigger={
+                          <MenuButton
+                            className="flex items-center gap-1.5 pl-1 pr-2 py-0 mr-1 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                            title="Select microphone"
+                            aria-label="Select microphone"
                           >
-                            <Paperclip size={16} />
-                            <span className="font-medium text-sm">Upload</span>
-                          </button>
-                        </MenuItem>
-                        {config.drives.map((fp) => (
-                          <MenuItem key={fp.id}>
-                            <button
-                              type="button"
-                              onClick={() => setActiveDrive(fp)}
-                              className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              {fp.icon ? (
-                                <span
-                                  className="shrink-0 bg-current inline-block"
-                                  style={{
-                                    width: 16,
-                                    height: 16,
-                                    maskImage: `url(${fp.icon})`,
-                                    WebkitMaskImage: `url(${fp.icon})`,
-                                    maskSize: "contain",
-                                    maskRepeat: "no-repeat",
-                                    maskPosition: "center",
-                                  }}
-                                />
-                              ) : (
-                                <HardDrive size={16} />
-                              )}
-                              <span className="font-medium text-sm">{fp.name}</span>
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
+                            <span className="shrink-0 flex justify-center">
+                              <Mic size={14} />
+                            </span>
+                            <span className="hidden @md:inline truncate min-w-0">
+                              {(() => {
+                                const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                                if (selected) return selected.label || "Microphone";
+                                return "Default Mic";
+                              })()}
+                            </span>
+                          </MenuButton>
+                        }
+                      >
+                        {inputDevices.length === 0 ? (
+                          <DropdownMenuItem
+                            icon={<Mic size={14} className="shrink-0" />}
+                            onClick={() => {
+                              void requestAudioPermission();
+                            }}
+                          >
+                            Allow microphone access
+                          </DropdownMenuItem>
+                        ) : (
+                          <>
+                            <DropdownMenuItem onClick={() => setInputDevice(undefined)}>
+                              System Default
+                            </DropdownMenuItem>
+                            {inputDevices.map((device) => (
+                              <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
+                                {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        )}
+                      </DropdownMenu>
+                    )
+                  )}
+                  {isConnecting && !isListening ? (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium"
+                      title="Cancel connecting"
+                      onClick={async () => {
+                        await stopVoice();
+                        const savedId = getSavedModelId();
+                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        onModelChange(restored ?? null);
+                      }}
+                    >
+                      <LoaderCircle size={12} className="animate-spin" />
+                      <span>Cancel</span>
+                    </button>
                   ) : (
                     <button
                       type="button"
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      onClick={handleAttachmentClick}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-neutral-300/50 dark:border-neutral-600/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors text-xs font-medium"
+                      onClick={async () => {
+                        if (!isListening) {
+                          await startVoice();
+                          return;
+                        }
+                        await stopVoice();
+                        const savedId = getSavedModelId();
+                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        onModelChange(restored ?? null);
+                      }}
                     >
-                      <Paperclip size={16} />
+                      {isListening ? (
+                        <>
+                          <Square size={12} />
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <AudioLines size={12} />
+                          <span>Start audio</span>
+                        </>
+                      )}
                     </button>
                   )}
-                </div>
-              )}
-
-              {/* Dynamic Send/Mic/Voice/Loading Button */}
-              {isRealtimeSelected ? (
-                isListening ? (
-                  <>
-                    {voiceTextInput.trim() && (
-                      <button
-                        type="button"
-                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={() => {
-                          sendVoiceText(voiceTextInput.trim());
-                          setVoiceTextInput("");
-                        }}
-                        title="Send text"
-                      >
-                        <Send size={16} />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200 transition-all text-xs font-medium"
-                      onClick={async () => {
-                        await stopVoice();
-                      }}
-                      title="Stop voice mode"
-                    >
-                      <Square size={12} />
-                      <span>Stop</span>
-                    </button>
-                  </>
-                ) : null
+                </>
               ) : isResponding ? (
                 <button
                   type="button"
@@ -1188,7 +856,6 @@ export function ChatInput() {
                     <Loader2 size={16} className="animate-spin" />
                   </button>
                 ) : isTranscribing ? (
-                  // Recording in progress — show stop button on all devices
                   <button
                     type="button"
                     className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
@@ -1199,34 +866,69 @@ export function ChatInput() {
                     <Square size={16} />
                   </button>
                 ) : (
-                  // Not yet recording — desktop shows mic button; mobile uses the + menu
+                  // Not yet recording — desktop shows dictate mic + voice-mode wave; mobile uses the + menu and wave
                   <>
-                    <button
-                      type="button"
-                      className="hidden md:block p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      onClick={handleTranscriptionClick}
-                      title="Start recording"
-                      disabled={isResponding}
-                    >
-                      <Mic size={16} />
-                    </button>
-                    <button
-                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      type="submit"
-                      disabled={isResponding}
-                    >
-                      <Send size={16} />
-                    </button>
+                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+                      <button
+                        type="button"
+                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={handleTranscriptionClick}
+                        disabled={isResponding}
+                      >
+                        <Mic size={16} />
+                      </button>
+                    </Tooltip>
+                    {voiceAvailable && !currentAgent?.model ? (
+                      <Tooltip content="Voice mode" side="bottom">
+                        <button
+                          type="button"
+                          className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          onClick={() =>
+                            onModelChange({
+                              id: "realtime",
+                              name: "Voice Mode",
+                              description: "Real-time voice conversation",
+                            })
+                          }
+                          title="Voice mode"
+                          aria-label="Start voice mode"
+                        >
+                          <AudioLines size={16} />
+                        </button>
+                      </Tooltip>
+                    ) : (
+                      <button
+                        className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                        type="submit"
+                        disabled={isResponding}
+                      >
+                        <Send size={16} />
+                      </button>
+                    )}
                   </>
                 )
+              ) : voiceAvailable && !currentAgent?.model ? (
+                <Tooltip content="Voice mode" side="bottom">
+                  <button
+                    type="button"
+                    className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={() =>
+                      onModelChange({
+                        id: "realtime",
+                        name: "Voice Mode",
+                        description: "Real-time voice conversation",
+                      })
+                    }
+                    title="Voice mode"
+                    aria-label="Start voice mode"
+                  >
+                    <AudioLines size={16} />
+                  </button>
+                </Tooltip>
               ) : (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                  disabled={isResponding}
-                >
-                  <Send size={16} />
-                </button>
+                <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                  <AudioLines size={16} />
+                </span>
               )}
             </div>
           </div>
@@ -1240,217 +942,9 @@ export function ChatInput() {
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
           multiple
-          accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
+          accept={acceptString}
         />
       )}
-
-      {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
-      <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
-        <DialogBackdrop
-          transition
-          className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
-        />
-        <div className="fixed inset-x-0 bottom-0">
-          <DialogPanel
-            transition
-            className="w-full max-h-[75dvh] flex flex-col rounded-t-2xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-2xl border-t border-x border-neutral-200/50 dark:border-neutral-700/50 pb-[env(safe-area-inset-bottom)] duration-300 ease-out data-closed:translate-y-full"
-          >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
-              <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                More Options
-              </DialogTitle>
-              <button
-                type="button"
-                onClick={() => setShowMobileSheet(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Scrollable content */}
-            <div className="overflow-y-auto flex-1">
-              {/* Action cards */}
-              <div className="px-3 pt-2 pb-3 grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleAttachmentClick();
-                    setShowMobileSheet(false);
-                  }}
-                  className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
-                >
-                  <Paperclip size={20} />
-                  <span className="text-xs font-medium leading-tight text-center">Upload File</span>
-                </button>
-
-                {config.drives.map((fp) => (
-                  <button
-                    key={fp.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveDrive(fp);
-                      setShowMobileSheet(false);
-                    }}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
-                  >
-                    {fp.icon ? (
-                      <span
-                        className="bg-current inline-block"
-                        style={{
-                          width: 20,
-                          height: 20,
-                          maskImage: `url(${fp.icon})`,
-                          WebkitMaskImage: `url(${fp.icon})`,
-                          maskSize: "contain",
-                          maskRepeat: "no-repeat",
-                          maskPosition: "center",
-                        }}
-                      />
-                    ) : (
-                      <HardDrive size={20} />
-                    )}
-                    <span className="text-xs font-medium leading-tight text-center">{fp.name}</span>
-                  </button>
-                ))}
-
-                {isScreenCaptureAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleContinuousCaptureToggle();
-                      setShowMobileSheet(false);
-                    }}
-                    className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl transition-colors active:scale-95 ${
-                      isContinuousCaptureActive
-                        ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
-                        : "bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200"
-                    }`}
-                  >
-                    <ScreenShare size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">
-                      {isContinuousCaptureActive ? "Stop Capture" : "Screen Capture"}
-                    </span>
-                  </button>
-                )}
-
-                {canTranscribe && !isTranscribing && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleTranscriptionClick();
-                      setShowMobileSheet(false);
-                    }}
-                    disabled={isResponding}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
-                  >
-                    <Mic size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">Start Recording</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Features section */}
-              {visibleProviders.length > 0 && (
-                <>
-                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                  <div className="px-4 pb-1">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Features
-                    </p>
-                  </div>
-                  <div className="px-2">
-                    {visibleProviders.map((provider: ToolProvider) => {
-                      const icon = provider.icon || Sparkles;
-                      const state = getProviderState(provider.id);
-                      const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
-                      const providerFailed = state === ProviderState.Failed;
-
-                      const renderIcon = () => {
-                        if (providerInitializing) return <LoaderCircle size={16} className="animate-spin" />;
-                        if (providerFailed) return <TriangleAlert size={16} />;
-                        if (typeof icon === "string")
-                          return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
-                        const Icon = icon;
-                        return <Icon size={16} />;
-                      };
-
-                      return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (providerInitializing) return;
-                            try {
-                              await setProviderEnabled(provider.id, !providerEnabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          disabled={providerInitializing}
-                          className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
-                            providerEnabled
-                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                          }`}
-                        >
-                          {renderIcon()}
-                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
-                            <span className="font-medium text-sm">{provider.name}</span>
-                            {provider.description && (
-                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
-                                {provider.description}
-                              </span>
-                            )}
-                          </div>
-                          {providerEnabled && !providerInitializing && !providerFailed && (
-                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
-                          )}
-                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mx-4 my-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                </>
-              )}
-            </div>
-          </DialogPanel>
-        </div>
-      </Dialog>
     </>
-  );
-}
-
-function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (model: Model) => void }) {
-  return (
-    <MenuItem>
-      <button
-        type="button"
-        onClick={() => onSelect(model)}
-        title={model.description}
-        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-      >
-        <div className="flex items-center gap-2.5 w-full">
-          <div className="flex flex-col items-start flex-1 min-w-0">
-            <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
-            {model.description && (
-              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                {model.description}
-              </div>
-            )}
-          </div>
-        </div>
-      </button>
-    </MenuItem>
   );
 }

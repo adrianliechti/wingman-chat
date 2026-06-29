@@ -2,6 +2,8 @@ import { Dialog, Transition } from "@headlessui/react";
 import { ChevronRight, File, Folder, HardDrive, Loader2, RefreshCw, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { confirm } from "@/shared/lib/confirm";
+import { notify } from "@/shared/lib/notify";
 import { deleteDirectory, deleteFile, getRoot } from "@/shared/lib/opfs";
 import { formatBytes } from "@/shared/lib/utils";
 
@@ -177,7 +179,14 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
   const handleDelete = useCallback(
     async (node: TreeNode) => {
       const label = node.kind === "directory" ? "directory" : "file";
-      if (!window.confirm(`Delete ${label} "${node.path}"? This cannot be undone.`)) return;
+      if (
+        !(await confirm({
+          title: `Delete ${label}?`,
+          message: `"${node.path}" will be permanently removed and can't be recovered.`,
+          danger: true,
+        }))
+      )
+        return;
 
       try {
         if (node.kind === "directory") {
@@ -189,7 +198,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
         await loadTree();
       } catch (err) {
         console.error("Failed to delete:", err);
-        alert(`Failed to delete ${node.path}`);
+        notify.error("Couldn't delete", `"${node.path}" could not be removed.`);
       }
     },
     [loadTree],

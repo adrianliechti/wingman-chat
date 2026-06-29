@@ -1,7 +1,8 @@
-import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
+import type { Content, Message, MessageError, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
+import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
@@ -118,8 +119,32 @@ async function dispatchToolCall(
     });
   }
 
+  // Parse before tracing so a malformed-JSON failure (model mis-escaped a
+  // string field like `code`) yields an actionable, model-facing message it can
+  // self-correct from — instead of a raw V8 SyntaxError. `parseToolArguments`
+  // already retries with a repair pass, so reaching the catch means the args are
+  // genuinely unrecoverable.
+  let args: Record<string, unknown>;
+  try {
+    // Pass the tool's schema so a mis-escaped code/command field can be sliced
+    // out by structural boundaries instead of guessed at (or truncated) by the
+    // generic repair pass.
+    args = parseToolArguments(toolCall.arguments, toolArgumentHints(tool.parameters));
+  } catch (error) {
+    if (error instanceof ToolArgumentsParseError) {
+      return toolErrorMessage(
+        toolCall,
+        'Error: The tool arguments were not valid JSON. This usually means a string value (e.g. `code`) contains an unescaped " or \\. Re-send the call with every " escaped as \\", every \\ as \\\\, and newlines as \\n. For long scripts with many quotes, write the code to a .py artifact and run it via `path` to avoid JSON escaping entirely.',
+        { code: "TOOL_ARGS_INVALID_JSON", message: "The tool arguments could not be parsed as JSON." },
+      );
+    }
+    throw error;
+  }
+
   try {
     let resultMeta: Record<string, unknown> | undefined;
+    let resultError: MessageError | undefined;
+    let resultContent: Record<string, unknown> | undefined;
 
     const result = await traceExecuteTool(
       toolCall.name,
@@ -129,7 +154,6 @@ async function dispatchToolCall(
         parentContext: invokeCtx,
       },
       (executeCtx) => {
-        const args = JSON.parse(toolCall.arguments || "{}");
         const baseContext = hooks.createToolContext?.(toolCall);
         const toolContext: ToolContext = {
           ...(baseContext ?? {}),
@@ -140,6 +164,12 @@ async function dispatchToolCall(
           updateMeta: (meta) => {
             resultMeta = { ...resultMeta, ...meta };
             hooks.onToolMeta?.(toolCall.id, { ...resultMeta });
+          },
+          setError: (error) => {
+            resultError = error;
+          },
+          setContent: (content) => {
+            resultContent = content;
           },
           agentContext: executeCtx,
         };
@@ -157,8 +187,10 @@ async function dispatchToolCall(
           arguments: toolCall.arguments,
           result,
           ...(resultMeta ? { meta: resultMeta } : {}),
+          ...(resultContent ? { content: resultContent } : {}),
         },
       ],
+      ...(resultError ? { error: resultError } : {}),
     };
   } catch (error) {
     console.error("Tool failed", error);

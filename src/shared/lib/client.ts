@@ -52,6 +52,70 @@ function expandToSentences(text: string, start: number, end: number): string {
   return text.substring(sentenceStart, sentenceEnd).trim();
 }
 
+// mime.getExtension is lossy for audio containers — it maps audio/webm to
+// ".weba" and audio/ogg to ".oga", neither of which the transcription endpoint
+// accepts (it allows mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm, flac). Map the
+// types we send to an accepted extension before falling back to mime.
+const TRANSCRIBE_EXTENSIONS: Record<string, string> = {
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/opus": "ogg",
+  "audio/mp4": "m4a",
+  "audio/aac": "m4a",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/flac": "flac",
+};
+
+/**
+ * Optional geometry/quality knobs for image generation, forwarded to the
+ * backend's `/v1/render`. All are provider-neutral: the backend maps each to the
+ * target model's supported values (aspect ratios snap to the nearest available)
+ * and silently drops what a model can't honor, so the same options work across
+ * providers.
+ */
+export interface ImageRenderOptions {
+  /** Aspect ratio like "1:1" or "16:9"; snapped to the nearest the model supports. */
+  aspectRatio?: string;
+  /** Quality tier; higher is slower and may cost more. */
+  quality?: "low" | "medium" | "high";
+  /** Output resolution. */
+  resolution?: "512" | "1K" | "2K" | "4K";
+  /** Background handling (only honored by models that support it). */
+  background?: "transparent" | "opaque";
+  /** Desired output format; negotiated via the `Accept` header, not a form field. */
+  format?: "png" | "jpeg" | "webp";
+}
+
+/**
+ * Best-effort human-readable detail from a failed response body, so tool errors
+ * surface the backend's reason instead of a bare status code. Handles both
+ * plain-text errors (e.g. /api/v1/render) and `{ error: { message } }` /
+ * `{ error }` JSON envelopes, truncated so a stray HTML error page can't flood
+ * the message.
+ */
+async function readErrorBody(resp: Response): Promise<string> {
+  let text: string;
+  try {
+    text = (await resp.text()).trim();
+  } catch {
+    return "";
+  }
+  if (!text) return "";
+
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const body = JSON.parse(text);
+      const message = body?.error?.message ?? body?.error ?? body?.message;
+      if (typeof message === "string" && message.trim()) text = message.trim();
+    } catch {
+      // Not JSON after all — fall back to the raw text.
+    }
+  }
+
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
 export class Client {
   private oai: OpenAI;
 
@@ -113,7 +177,7 @@ export class Client {
     tools: Tool[],
     handler?: (content: Content[]) => void,
     options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high";
+      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       signal?: AbortSignal;
@@ -547,15 +611,6 @@ export class Client {
   }
 
   async translate(lang: string, input: string | Blob): Promise<string | Blob> {
-    if (input instanceof Blob && input.size > 10 * 1024 * 1024) {
-      throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
-    }
-    if (typeof input === "string" && input.length > 50000) {
-      throw new Error(
-        `Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of 50,000 characters`,
-      );
-    }
-
     const data = new FormData();
     data.append("lang", lang);
     const headers: Record<string, string> = {};
@@ -665,7 +720,9 @@ export class Client {
   }
 
   async transcribe(model: string, blob: Blob): Promise<string> {
-    const extension = mime.getExtension(blob.type) || "audio";
+    // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
+    const baseType = blob.type.split(";")[0].trim();
+    const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
     const result = await (await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })).json();
     return result.text || "";
@@ -698,14 +755,22 @@ export class Client {
     return result.content || "";
   }
 
-  async generateImage(model: string, prompt: string, images?: Blob[]): Promise<Blob> {
+  async generateImage(model: string, prompt: string, images?: Blob[], options?: ImageRenderOptions): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
     images?.forEach((blob, i) => {
       data.append("file", blob, `image_${i}.${mime.getExtension(blob.type) || "image"}`);
     });
-    return (await this.postRaw("/api/v1/render", data)).blob();
+    if (options?.aspectRatio) data.append("aspect_ratio", options.aspectRatio);
+    if (options?.quality) data.append("quality", options.quality);
+    if (options?.resolution) data.append("resolution", options.resolution);
+    if (options?.background) data.append("background", options.background);
+    // Output format is negotiated via Accept, not a form field (see /v1/render).
+    const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
+    // Rendering — especially high quality or large sizes — can take minutes, so
+    // allow well beyond the default render/translate/search budget.
+    return (await this.postRaw("/api/v1/render", data, headers, 300_000)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -719,7 +784,7 @@ export class Client {
       name: tool.name,
       description: tool.description,
 
-      strict: false,
+      strict: tool.strict ?? false,
       parameters: tool.parameters,
     }));
   }
@@ -786,14 +851,44 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(path: string, data: FormData, headers?: HeadersInit): Promise<Response> {
-    const resp = await fetch(new URL(path, window.location.origin), {
-      method: "POST",
-      headers,
-      body: data,
-    });
+  private async postRaw(
+    path: string,
+    data: FormData,
+    headers?: HeadersInit,
+    timeoutMs = 90_000,
+  ): Promise<Response> {
+    // Raw fetch has no built-in timeout; without this a stalled backend (render,
+    // translate, search) hangs forever — and when called from a Python bridge it
+    // wedges the single interpreter worker and every queued sandbox call. Image
+    // generation can legitimately run for minutes, so its caller passes a larger
+    // budget (see generateImage).
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    let resp: Response;
+    try {
+      resp = await fetch(new URL(path, window.location.origin), {
+        method: "POST",
+        headers,
+        body: data,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // Surface a readable timeout instead of the runtime's opaque abort message
+      // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
+      if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
 
-    if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
+    if (!resp.ok) {
+      const detail = await readErrorBody(resp);
+      throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+    }
     return resp;
   }
 }

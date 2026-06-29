@@ -28,6 +28,9 @@ WORKDIR /app
 COPY --from=app /src/dist ./dist
 COPY --from=server /src/server .
 
+COPY skills ./skills
+COPY notebook ./notebook
+
 EXPOSE 8080
 
 CMD ["./server"]

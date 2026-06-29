@@ -13,3 +13,5 @@ export {
   serializeSkill,
   validateSkillName,
 } from "./lib/skillParser";
+export type { SkillTemplate } from "./lib/templates";
+export { loadSkillTemplate, loadSkillTemplates } from "./lib/templates";

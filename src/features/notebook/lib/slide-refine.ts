@@ -13,6 +13,7 @@ import { getConfig } from "@/shared/config";
 import { blobToDataUrl, dataUrlToBlob } from "@/shared/lib/opfs-core";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { NotebookOutput } from "../types/notebook";
+import { notebookImageOptions } from "./image-options";
 
 const HTML_REFINE_PROMPT =
   "You are refining a single HTML slide. The slide is a self-contained HTML document (1920x1080px, 16:9). " +
@@ -94,7 +95,8 @@ export async function refineSlide(
   // Pass the current slide image as a reference so palette, typography, and
   // layout stay consistent with the rest of the deck.
   const currentBlob = await dataUrlToBlob(current);
-  const imageBlob = await client.generateImage(rendererModel, imagePrompt.trim(), [currentBlob]);
+  const options = notebookImageOptions(rendererModel, { aspect: "3:2", quality: "medium" });
+  const imageBlob = await client.generateImage(rendererModel, imagePrompt.trim(), [currentBlob], options);
   const imageUrl = await blobToDataUrl(imageBlob);
 
   const updated = [...slides];

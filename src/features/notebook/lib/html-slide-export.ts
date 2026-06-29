@@ -680,6 +680,15 @@ async function rasterizeSlideDoc(
     // overlay). A stylesheet keeps layout identical.
     if (options.hideText) {
       hideTextStyle = doc.createElement("style");
+      // Content SVGs are hidden wholesale: the hybrid export re-emits every
+      // SVG as an editable overlay image (pptx-static-parser), so leaving
+      // them in the background would double-paint their shapes — and SVG
+      // <text> paints via `fill`, which the color rules below don't reach.
+      //
+      // The selector MUST be scoped under `body`: this document gets
+      // serialized into an <svg><foreignObject> wrapper for rasterization,
+      // and a bare `svg` selector would match the wrapper root itself,
+      // blanking the entire layer.
       hideTextStyle.textContent = `
         * {
           color: transparent !important;
@@ -687,6 +696,9 @@ async function rasterizeSlideDoc(
           -webkit-text-fill-color: transparent !important;
           text-decoration-color: transparent !important;
           caret-color: transparent !important;
+        }
+        body svg {
+          visibility: hidden !important;
         }
       `;
       doc.head.appendChild(hideTextStyle);
@@ -795,6 +807,8 @@ export async function downloadHtmlSlidesAsPng(htmlSlides: string[], slug: string
   for (let i = 0; i < htmlSlides.length; i++) {
     const dataUrl = await renderSlideToPngDataUrl(htmlSlides[i]);
     const base64 = dataUrl.split(",")[1];
+    // Fail loudly rather than letting JSZip write a corrupt archive.
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to PNG`);
     zip.file(`slide-${i + 1}.png`, base64, { base64: true });
   }
 
@@ -819,6 +833,7 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
 
   for (let i = 0; i < slideCount; i++) {
     const base64 = images[i].split(",")[1];
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to JPEG`);
     zip.file(`ppt/media/image${i + 1}.jpeg`, base64, { base64: true });
 
     zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage());

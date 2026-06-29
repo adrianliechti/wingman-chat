@@ -1,10 +1,54 @@
-import { ArrowRight, BookOpen, FileText, FlaskConical, Globe, Loader2, MessageSquare, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  FileText,
+  FlaskConical,
+  Globe,
+  Loader2,
+  MessageSquare,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 import { Markdown } from "@/shared/ui/Markdown";
 import type { NotebookMessage } from "../types/notebook";
+
+// Short verbs for the tool-activity lines shown in the transcript.
+const TOOL_VERBS: Record<string, string> = {
+  source_list_files: "list sources",
+  source_read_file: "read",
+  source_grep: "grep",
+  source_glob: "glob",
+  source_create_file: "create",
+  source_edit_file: "edit",
+  source_move_file: "move",
+  source_delete_file: "delete",
+  read_skill: "skill",
+  read_skill_resource: "skill file",
+  execute_python_code: "python",
+  execute_javascript_code: "javascript",
+  execute_bash_code: "bash",
+};
+
+/**
+ * Compact labels for a persisted tool-result message (one line per call,
+ * e.g. "edit · notes.md"). Returns null when the message isn't pure tool
+ * traffic and should render as a normal bubble.
+ */
+function toolActivityLabels(msg: NotebookMessage): string[] | null {
+  if (msg.content.length === 0 || !msg.content.every((p) => p.type === "tool_result")) return null;
+  return msg.content.map((part) => {
+    if (part.type !== "tool_result") return "";
+    const verb = TOOL_VERBS[part.name] ?? part.name;
+    const args = tryParseToolArguments(part.arguments) ?? {};
+    const detail = String(args.path ?? args.to ?? args.pattern ?? args.name ?? "");
+    return detail ? `${verb} · ${detail}` : verb;
+  });
+}
 
 interface NotebookChatProps {
   messages: NotebookMessage[];
@@ -54,6 +98,11 @@ export function NotebookChat({
     if (!input.trim() || isChatting) return;
     onSend(input.trim());
     setInput("");
+    // Keep the input focused so the user can keep typing right away — clicking
+    // the send button moves focus to it, so restore it after the re-render.
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -92,8 +141,8 @@ export function NotebookChat({
                     Start building your notebook
                   </p>
                   <p className="text-sm text-neutral-400 dark:text-neutral-500 mb-6 leading-relaxed">
-                    Add sources from the web or upload files, then chat with your sources or generate outputs in the
-                    studio.
+                    Add sources from the web or upload files — or just start chatting to draft notes and build sources
+                    as you go.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
                     <div className="flex items-center gap-1.5">
@@ -117,15 +166,35 @@ export function NotebookChat({
           <div className="p-4 pb-20 space-y-4">
             {messages.map((msg) => {
               const text = getTextFromContent(msg.content);
-              const messageSignature = `${msg.timestamp}:${msg.role}:${text}`;
+              const toolLabels = toolActivityLabels(msg);
+              const messageSignature = `${msg.timestamp}:${msg.role}:${toolLabels?.join("|") ?? text}`;
               const occurrence = (messageKeyCounts.get(messageSignature) ?? 0) + 1;
               messageKeyCounts.set(messageSignature, occurrence);
+              const key = `${messageSignature}:${occurrence}`;
+
+              // Persisted tool traffic: render a muted activity line, not a bubble.
+              if (toolLabels) {
+                return (
+                  <div key={key} className="flex justify-start">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-neutral-400 dark:text-neutral-500">
+                      <Wrench size={11} className="shrink-0" />
+                      {toolLabels.map((label, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: labels are display-only and order-stable
+                        <span key={`${label}:${i}`} className="font-mono">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              // Assistant turns that only carried tool calls have no prose —
+              // the matching activity line above already shows the work.
+              if (msg.role === "assistant" && !text.trim()) return null;
 
               return (
-                <div
-                  key={`${messageSignature}:${occurrence}`}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
+                <div key={key} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-[85%] rounded-xl px-4 py-2.5 ${msg.role === "user" ? "bg-neutral-200 dark:bg-neutral-900" : "bg-neutral-100 dark:bg-neutral-800"}`}
                   >
@@ -231,21 +300,14 @@ export function NotebookChat({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
-            disabled={!hasSources || isChatting}
+            placeholder={hasSources ? "Ask about your sources..." : "Ask anything, or start drafting content..."}
             rows={1}
-            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none py-2 max-h-30 disabled:opacity-50"
-            style={{ height: "auto" }}
-            onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = "auto";
-              target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
-            }}
+            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none py-2 max-h-30 overflow-y-auto field-sizing-content disabled:opacity-50"
           />
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!input.trim() || isChatting || !hasSources}
+            disabled={!input.trim() || isChatting}
             className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           >
             <ArrowRight size={18} />

@@ -95,7 +95,7 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   }, []);
 
   return (
-    <AudioDeviceContext.Provider
+    <AudioDeviceContext
       value={{
         inputDeviceId: settings.inputDeviceId,
         outputDeviceId: settings.outputDeviceId,
@@ -107,6 +107,6 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
       }}
     >
       {children}
-    </AudioDeviceContext.Provider>
+    </AudioDeviceContext>
   );
 }

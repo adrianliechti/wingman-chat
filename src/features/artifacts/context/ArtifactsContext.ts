@@ -3,7 +3,6 @@ import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
-  isEnabled: boolean;
   /**
    * The active filesystem. `null` while no chat is active (e.g. a draft
    * chat before the first message). Injected from the outside via

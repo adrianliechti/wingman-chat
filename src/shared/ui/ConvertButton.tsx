@@ -1,8 +1,8 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { FileDown, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob } from "@/shared/lib/utils";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "./DropdownMenu";
 
 type ConvertButtonProps = {
   markdown: string;
@@ -40,39 +40,20 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
     "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-2 -m-1";
 
   return (
-    <Menu as="div" className="relative">
-      <MenuButton className={buttonClasses} title="Download message" disabled={isConverting}>
-        {isConverting ? (
-          <Loader2 className={`${className || "h-4 w-4"} animate-spin`} />
-        ) : (
-          <FileDown className={className || "h-4 w-4"} />
-        )}
-      </MenuButton>
-      <MenuItems
-        modal={false}
-        transition
-        anchor="top start"
-        className="z-50 mb-1 rounded-lg bg-neutral-50/95 dark:bg-neutral-800/95 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 shadow-lg overflow-hidden origin-bottom-left transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
-      >
-        <MenuItem>
-          <button
-            type="button"
-            onClick={handleDownloadWord}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-700 transition-colors"
-          >
-            Word (.docx)
-          </button>
-        </MenuItem>
-        <MenuItem>
-          <button
-            type="button"
-            onClick={handleDownloadMarkdown}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-700 transition-colors"
-          >
-            Markdown (.md)
-          </button>
-        </MenuItem>
-      </MenuItems>
-    </Menu>
+    <DropdownMenu
+      anchor="top start"
+      trigger={
+        <MenuButton className={buttonClasses} title="Download message" disabled={isConverting}>
+          {isConverting ? (
+            <Loader2 className={`${className || "h-4 w-4"} animate-spin`} />
+          ) : (
+            <FileDown className={className || "h-4 w-4"} />
+          )}
+        </MenuButton>
+      }
+    >
+      <DropdownMenuItem onClick={handleDownloadWord}>Word (.docx)</DropdownMenuItem>
+      <DropdownMenuItem onClick={handleDownloadMarkdown}>Markdown (.md)</DropdownMenuItem>
+    </DropdownMenu>
   );
 };

@@ -1,5 +1,7 @@
+import mime from "mime";
 import { createContext } from "react";
 import { getConfig } from "@/shared/config";
+import { fileMatchesTypeList } from "@/shared/lib/fileTypes";
 import { lookupContentType } from "@/shared/lib/utils";
 
 // Types
@@ -72,18 +74,29 @@ export const supportedLanguages = (): Language[] => {
   }
 };
 
+// translator.files entries may be extensions (".pdf") or MIME types ("application/pdf").
 export const supportedFiles = (): SupportedFile[] => {
   try {
     const config = getConfig();
     if (!config.translator) return [];
-    const fileExtensions = config.translator.files || [];
-    return fileExtensions.flatMap((ext) => {
-      const mime = lookupContentType(ext);
-      return mime ? [{ ext, mime }] : [];
+    return (config.translator.files || []).flatMap((entry) => {
+      if (entry.startsWith(".")) {
+        return [{ ext: entry, mime: lookupContentType(entry) ?? "" }];
+      }
+      const ext = mime.getExtension(entry);
+      return [{ ext: ext ? `.${ext}` : entry, mime: entry }];
     });
   } catch {
-    // Return empty array if config is not loaded yet
     return [];
+  }
+};
+
+export const isSupportedFile = (file: File): boolean => {
+  try {
+    const config = getConfig();
+    return !!config.translator && fileMatchesTypeList(file.name, file.type, config.translator.files || []);
+  } catch {
+    return false;
   }
 };
 

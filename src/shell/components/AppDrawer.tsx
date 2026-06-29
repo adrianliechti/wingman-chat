@@ -1,38 +1,21 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
-import { fitIframeToContainer } from "@/shared/lib/iframeResizer";
+import { useLayoutEffect, useRef } from "react";
 import { useApp } from "@/shell/hooks/useApp";
 
+/**
+ * The app drawer is now just a positioning target: a fullscreen MCP app keeps its
+ * own persistent iframe (in McpApp) and overlays this element's rect, rather
+ * than reloading into a drawer-owned iframe.
+ */
 export function AppDrawer() {
-  const { registerIframe } = useApp();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { registerDrawerTarget } = useApp();
+  const rootRef = useRef<HTMLDivElement>(null);
 
-  // useLayoutEffect ensures the iframe is registered before any useEffect fires.
-  // Cleanup deregisters it on unmount so the context never holds a stale ref.
   useLayoutEffect(() => {
-    registerIframe(iframeRef.current);
-    return () => registerIframe(null);
-  }, [registerIframe]);
-
-  // Keep the iframe sized to fill the available container space
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    const container = containerRef.current;
-    if (!iframe || !container) return;
-    return fitIframeToContainer(iframe, container);
-  }, []);
+    registerDrawerTarget(rootRef.current);
+    return () => registerDrawerTarget(null);
+  }, [registerDrawerTarget]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950">
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
-        <iframe
-          ref={iframeRef}
-          className="border-none"
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-          title="App"
-        />
-      </div>
-    </div>
+    <div ref={rootRef} className="h-full w-full bg-neutral-50 dark:bg-neutral-950 animate-in fade-in duration-200" />
   );
 }

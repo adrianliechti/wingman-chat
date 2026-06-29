@@ -1,6 +1,4 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
-  Check,
   ChevronDown,
   Code,
   Download,
@@ -24,20 +22,27 @@ import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
+import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
+import { DocxEditor } from "@/shared/ui/editors/DocxEditor";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
+import { MediaEditor } from "@/shared/ui/editors/MediaEditor";
+import { MermaidEditor } from "@/shared/ui/editors/MermaidEditor";
 import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
 import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
+import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
+import { XlsxEditor } from "@/shared/ui/editors/XlsxEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
@@ -95,6 +100,7 @@ export function ArtifactsDrawer() {
             }
           } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
+            notify.error("Upload failed", error instanceof Error ? error.message : `"${file.name}" couldn't be added.`);
           }
         }
       } finally {
@@ -323,11 +329,6 @@ export function ArtifactsDrawer() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showFilePicker]);
 
-  // Render the appropriate editor based on file type
-  const renderEditor = () => {
-    return renderFileEditor();
-  };
-
   // Render the file-specific editor
   const renderFileEditor = () => {
     if (!activeFile) {
@@ -339,19 +340,18 @@ export function ArtifactsDrawer() {
         );
       }
       return (
-        <div className="h-full flex items-center justify-center p-8">
+        <div className="h-full flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center">
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
             <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
-              Files, code, and documents created in the conversation will appear here. You can also run Python or shell
-              commands directly.
+              Drop files here or use Upload. Anything you create in the chat appears here too.
             </p>
-            <ul className="space-y-1.5 text-left mb-5">
+            <ul className="space-y-1.5 text-left">
               {[
-                "Analyze this CSV and create a chart.",
-                "Write a Python script to clean up this spreadsheet.",
+                "Make a chart from these numbers.",
                 "Turn these notes into a polished document.",
+                "Create a slide deck about this topic.",
               ].map((example) => (
                 <li
                   key={example}
@@ -361,68 +361,6 @@ export function ArtifactsDrawer() {
                 </li>
               ))}
             </ul>
-            {config.drives.length > 0 ? (
-              <Menu>
-                <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
-                  <Upload size={13} className="shrink-0" />
-                  Upload files
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom"
-                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                >
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
-                    >
-                      <Upload size={16} className="shrink-0" />
-                      <span className="font-medium text-sm truncate">Upload</span>
-                    </button>
-                  </MenuItem>
-                  {config.drives.map((drive) => (
-                    <MenuItem key={drive.id}>
-                      <button
-                        type="button"
-                        onClick={() => setActiveDrive(drive)}
-                        className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        {drive.icon ? (
-                          <span
-                            className="shrink-0 bg-current inline-block"
-                            style={{
-                              width: 16,
-                              height: 16,
-                              maskImage: `url(${drive.icon})`,
-                              WebkitMaskImage: `url(${drive.icon})`,
-                              maskSize: "contain",
-                              maskRepeat: "no-repeat",
-                              maskPosition: "center",
-                            }}
-                          />
-                        ) : (
-                          <HardDrive size={16} />
-                        )}
-                        <span className="font-medium text-sm truncate">{drive.name}</span>
-                      </button>
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Menu>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-              >
-                <Upload size={13} className="shrink-0" />
-                Upload files
-              </button>
-            )}
-            <p className="mt-3 text-xs text-neutral-300 dark:text-neutral-600">or drag &amp; drop anywhere</p>
           </div>
         </div>
       );
@@ -451,11 +389,45 @@ export function ArtifactsDrawer() {
             />
           </div>
         );
+      case "audio":
+      case "video":
+        return (
+          <MediaEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "pdf":
         return <PdfEditor key={editorKey} content={activeFileData.content} />;
-      case "docx":
       case "pptx":
+        return (
+          <PptxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
+      case "docx":
+        return (
+          <DocxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "xlsx":
+        return (
+          <XlsxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "email":
         return (
           <OfficeMarkdownEditor
@@ -495,6 +467,15 @@ export function ArtifactsDrawer() {
       case "svg":
         return (
           <SvgEditor
+            key={editorKey}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
+      case "mermaid":
+        return (
+          <MermaidEditor
             key={editorKey}
             content={activeFileData.content}
             viewMode={viewMode}
@@ -560,7 +541,6 @@ export function ArtifactsDrawer() {
   };
 
   // Update slider position whenever viewMode changes or the switcher mounts (activeFile change)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile triggers remeasurement when preview/code buttons appear or disappear
   useEffect(() => {
     const measure = () => {
       const container = viewSliderRef.current;
@@ -585,16 +565,7 @@ export function ArtifactsDrawer() {
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
-    return ["html", "svg", "csv", "markdown"].includes(kind);
-  };
-
-  // Office binaries (docx/pptx/xlsx) are previewed via extracted markdown —
-  // not a fidelity-preserving render. Surface that to the user so they don't
-  // think the formatting is gone; downloading still gives the real file.
-  const isTextOnlyPreview = () => {
-    if (!activeFileData) return false;
-    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "pptx" || kind === "xlsx" || kind === "email";
+    return ["html", "svg", "mermaid", "csv", "markdown"].includes(kind);
   };
 
   // Handle run button click
@@ -603,6 +574,10 @@ export function ArtifactsDrawer() {
       await runHandler();
     }
   };
+
+  // No file open and nothing in the project — the empty state. The header shows
+  // an "Artifacts" title + Upload action; the body shows the slim onboarding card.
+  const isEmpty = !activeFile && files.length === 0;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
@@ -643,9 +618,14 @@ export function ArtifactsDrawer() {
         {/* Left column: top bar + vertical editor/terminal split */}
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
-          <div className="@container shrink-0 h-10 flex items-center px-2 gap-1">
+          <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
+              {isEmpty && (
+                <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
+                  Artifacts
+                </span>
+              )}
               {activeFile && (
                 <button
                   type="button"
@@ -659,7 +639,7 @@ export function ArtifactsDrawer() {
                 >
                   <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
                   <span
-                    className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
+                    className="text-sm md:text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
                     title={getFileName(activeFile)}
                   >
                     {getFileName(activeFile)}
@@ -668,28 +648,23 @@ export function ArtifactsDrawer() {
                     <ChevronDown
                       size={12}
                       className={cn(
-                        "shrink-0 text-neutral-400 transition-transform duration-150",
+                        "shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400 transition-transform duration-150",
                         showFilePicker && "rotate-180",
                       )}
                     />
                   )}
                 </button>
               )}
-              {/* Hint: office binaries are previewed as extracted text */}
-              {isTextOnlyPreview() && (
-                <span
-                  className="shrink-0 text-xs uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
-                  title="Office documents are previewed as extracted text. Download the file for the original formatting."
-                >
-                  Text preview
-                </span>
-              )}
+              {/* The "Text preview" disclosure for extracted-text rendering
+                  lives inside OfficeMarkdownEditor so it also covers the
+                  fallback paths of the high-fidelity office editors. */}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (
                 <div
                   ref={viewSliderRef}
                   className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
                 >
+                  {/* responsive segmented control */}
                   {/* Animated slider background */}
                   {viewSliderStyle.width > 0 && (
                     <div
@@ -708,13 +683,13 @@ export function ArtifactsDrawer() {
                     onClick={() => setViewMode("preview")}
                     title="Preview"
                     className={cn(
-                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "preview"
                         ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
-                    <Eye size={11} strokeWidth={2.25} />
+                    <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
                   </button>
                   <button
                     type="button"
@@ -722,18 +697,18 @@ export function ArtifactsDrawer() {
                     onClick={() => setViewMode("code")}
                     title="Code"
                     className={cn(
-                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "code"
                         ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
-                    <Code size={11} strokeWidth={2.25} />
+                    <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
                   </button>
                 </div>
               )}
               {showFilePicker && files.length > 1 && (
-                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1">
+                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 overflow-hidden p-1">
                   {files.map((f) => (
                     <button
                       key={f.path}
@@ -743,7 +718,7 @@ export function ArtifactsDrawer() {
                         setShowFilePicker(false);
                       }}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5",
+                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 rounded-lg text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/60 dark:hover:bg-white/5",
                         f.path === activeFile && "font-medium",
                       )}
                     >
@@ -757,6 +732,60 @@ export function ArtifactsDrawer() {
               )}
             </div>
 
+            {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
+            {isEmpty &&
+              (config.drives.length > 0 ? (
+                <DropdownMenu
+                  anchor="bottom end"
+                  trigger={
+                    <MenuButton className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                      <Upload size={12} />
+                      <span className="@[16rem]:inline hidden">Upload</span>
+                    </MenuButton>
+                  }
+                >
+                  <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                    Upload
+                  </DropdownMenuItem>
+                  {config.drives.map((drive) => (
+                    <DropdownMenuItem
+                      key={drive.id}
+                      icon={
+                        drive.icon ? (
+                          <span
+                            className="shrink-0 bg-current inline-block"
+                            style={{
+                              width: 16,
+                              height: 16,
+                              maskImage: `url(${drive.icon})`,
+                              WebkitMaskImage: `url(${drive.icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
+                          />
+                        ) : (
+                          <HardDrive size={16} />
+                        )
+                      }
+                      onClick={() => setActiveDrive(drive)}
+                    >
+                      {drive.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenu>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  title="Upload files"
+                >
+                  <Upload size={12} />
+                  <span className="@[16rem]:inline hidden">Upload</span>
+                </button>
+              ))}
+
             {/* File-specific action group: run, view toggle, word export, download */}
             {(runHandler || activeFileData) && (
               <>
@@ -767,10 +796,14 @@ export function ArtifactsDrawer() {
                       type="button"
                       onClick={handleRun}
                       disabled={isRunning}
-                      className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                      className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
                       title={isRunning ? "Running..." : "Run"}
                     >
-                      {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                      {isRunning ? (
+                        <Loader2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5 animate-spin" />
+                      ) : (
+                        <Play size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                      )}
                     </button>
                   )}
 
@@ -790,10 +823,10 @@ export function ArtifactsDrawer() {
                                 console.error("Failed to download file:", error);
                               }
                             }}
-                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
+                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
-                            <Download size={13} />
+                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
                             <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
@@ -801,10 +834,10 @@ export function ArtifactsDrawer() {
                       return (
                         <Menu>
                           <MenuButton
-                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
+                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
                             title="Download"
                           >
-                            <Download size={13} />
+                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
                             <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
@@ -863,57 +896,39 @@ export function ArtifactsDrawer() {
               </>
             )}
 
-            {/* Workspace action group: panels dropdown */}
             {chat?.id && (
-              <Menu as="div" className="relative">
-                <MenuButton
-                  className="flex items-center gap-0.5 p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                  title="Toggle panels"
-                >
-                  <PanelRightOpen size={14} />
-                  <ChevronDown size={10} className="opacity-60" />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom end"
-                  className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
-                >
-                  {files.length > 0 && (
-                    <MenuItem>
-                      <button
-                        type="button"
-                        onClick={() => setShowFilesBrowser((v) => !v)}
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <Files size={12} className="shrink-0 text-neutral-400" />
-                        <span className="flex-1 text-left">Files</span>
-                        {showFilesBrowser && (
-                          <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-                        )}
-                      </button>
-                    </MenuItem>
-                  )}
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={toggleTerminal}
-                      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <Terminal size={12} className="shrink-0 text-neutral-400" />
-                      <span className="flex-1 text-left">Terminal</span>
-                      {showTerminal && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
-                    </button>
-                  </MenuItem>
-                </MenuItems>
-              </Menu>
+              <DropdownMenu
+                anchor="bottom end"
+                trigger={
+                  <MenuButton
+                    className="flex items-center gap-0.5 p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                    title="Toggle panels"
+                  >
+                    <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                    <ChevronDown size={10} className="w-3 h-3 md:w-2.5 md:h-2.5 opacity-60" />
+                  </MenuButton>
+                }
+              >
+                {files.length > 0 && (
+                  <DropdownMenuItem
+                    icon={<Files size={12} />}
+                    selected={showFilesBrowser}
+                    onClick={() => setShowFilesBrowser((v) => !v)}
+                  >
+                    Files
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem icon={<Terminal size={12} />} selected={showTerminal} onClick={toggleTerminal}>
+                  Terminal
+                </DropdownMenuItem>
+              </DropdownMenu>
             )}
           </div>
 
           {/* Vertical split: editor on top, terminal on bottom */}
           <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
             <ResizablePanel defaultSize={70} minSize={20} className="h-full overflow-hidden relative z-0">
-              {renderEditor()}
+              {renderFileEditor()}
             </ResizablePanel>
 
             {/* Terminal — spans only the left column, below the editor */}
@@ -952,7 +967,7 @@ export function ArtifactsDrawer() {
                     await fs.downloadAsZip();
                   } catch (error) {
                     console.error("Failed to download files:", error);
-                    alert("Failed to download files. Please try again.");
+                    notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
                   }
                 }}
                 onDownloadFile={async (path) => {

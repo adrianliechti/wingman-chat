@@ -18,11 +18,11 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
-import type { ArchitectureDiagram, DataCatalog, MindMapNode, NotebookOutput, ProcessDiagram } from "../types/notebook";
+import type { MindMapNode, NotebookOutput } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
-import { createHtmlSlideTools } from "./html-slide-tools";
-import { createImageSlideTools } from "./image-slide-tools";
-import { podcastStyles } from "./styles";
+import { createHtmlSlideTools, pruneSlideWriteHistory } from "./html-slide-tools";
+import { notebookImageOptions } from "./image-options";
+import { type BuildInstructionsOptions, buildSlidePrompts, podcastStyles } from "./styles";
 import { mergeWavBlobs } from "./wav-utils";
 
 export interface GenerateContext {
@@ -42,6 +42,25 @@ const USER_MESSAGE = (label: string) => ({
   content: [{ type: "text" as const, text: `Generate a ${label.toLowerCase()} from the available sources.` }],
 });
 
+/** Run `fn` over `items` with at most `limit` calls in flight. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 // ── Podcast ────────────────────────────────────────────────────────────
 
 export async function generatePodcast(ctx: GenerateContext, styleId?: string): Promise<Result> {
@@ -50,10 +69,14 @@ export async function generatePodcast(ctx: GenerateContext, styleId?: string): P
   const script = getTextFromContent(result[result.length - 1].content);
   if (!script?.trim()) throw new Error("Could not generate audio script");
 
+  // Surface the script immediately — TTS can run for minutes, and if it fails
+  // the persisted error output still carries the (expensive) script.
+  ctx.onProgress({ content: script });
+
   const ttsModel = config.tts?.model || "";
   const voiceMap = config.tts?.voices ?? {};
   const resolveVoice = (role: string) => voiceMap[role] || role;
-  const voices = podcastStyles.get(styleId).voices ?? ["host"];
+  const voices = podcastStyles.get(styleId)?.voices ?? ["host"];
 
   // Parse script into segments. Multi-voice styles use [1]/[2] speaker tags;
   // single-voice styles treat every paragraph as a segment.
@@ -78,18 +101,24 @@ export async function generatePodcast(ctx: GenerateContext, styleId?: string): P
     for (const para of paragraphs) segments.push({ text: para, voice: voices[0] });
   }
 
-  const audioBlobs = await Promise.all(
-    segments.map(async ({ text, voice }) => {
+  // Bounded concurrency (TTS endpoints rate-limit) with one retry per segment.
+  // Failures are loud: silently skipping a failed segment would splice
+  // sentences out of the middle of the podcast.
+  const audioBlobs = await mapWithConcurrency(segments, 4, async ({ text, voice }) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await ctx.client.generateAudio(ttsModel, text, resolveVoice(voice));
-      } catch {
-        return null;
+      } catch (err) {
+        if (attempt === 1) console.error("TTS segment failed after retry:", err);
       }
-    }),
-  );
+    }
+    return null;
+  });
 
   const validBlobs = audioBlobs.filter((b): b is Blob => b !== null);
-  if (validBlobs.length === 0) throw new Error("Failed to generate audio");
+  if (validBlobs.length < segments.length) {
+    throw new Error(`Failed to generate ${segments.length - validBlobs.length} of ${segments.length} audio segments`);
+  }
 
   const merged = await mergeWavBlobs(validBlobs);
   const audioUrl = await blobToDataUrl(merged);
@@ -106,7 +135,10 @@ export async function generateInfographic(ctx: GenerateContext): Promise<Result>
   if (!imagePrompt?.trim()) throw new Error("Could not generate image prompt");
 
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
-  const imageBlob = await ctx.client.generateImage(rendererModel, imagePrompt);
+  // An infographic is a tall, text-dense poster — render it portrait and at the
+  // top quality/resolution the model offers so the type stays legible.
+  const options = notebookImageOptions(rendererModel, { aspect: "2:3", quality: "high", resolution: "2K" });
+  const imageBlob = await ctx.client.generateImage(rendererModel, imagePrompt, undefined, options);
   const imageUrl = await blobToDataUrl(imageBlob);
 
   return { content: imagePrompt, imageUrl };
@@ -114,44 +146,213 @@ export async function generateInfographic(ctx: GenerateContext): Promise<Result>
 
 // ── Slides — HTML mode ─────────────────────────────────────────────────
 
-export async function generateHtmlSlides(ctx: GenerateContext): Promise<Result> {
+interface SlidePlanItem {
+  archetype: string;
+  title: string;
+  brief: string;
+}
+
+const WRITER_CONCURRENCY = 3;
+
+/**
+ * Two-phase HTML deck generation:
+ *
+ *   Phase 1 (planner): one agent studies the sources, writes the shared
+ *   `styles/theme.css`, and submits a per-slide plan via `set_deck_plan` —
+ *   each brief carries the actual content (data, quotes, citations).
+ *
+ *   Phase 2 (writers): one small agent per slide implements its brief in
+ *   parallel against the shared slide fs. Each writer only ever sees its
+ *   own slide, so token cost is linear in deck size and wall-clock is
+ *   bounded by the slowest slide, not the sum.
+ *
+ * Single-slide decks (one-pagers) keep the original single-loop flow —
+ * planning a one-slide deck is pure overhead.
+ */
+export async function generateHtmlSlides(
+  ctx: GenerateContext,
+  styleId?: string,
+  options?: BuildInstructionsOptions,
+): Promise<Result> {
   const config = getConfig();
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
   const slideFs = new Map<string, string>();
 
-  const fsTools = createHtmlSlideTools(
-    slideFs,
-    ctx.client,
-    rendererModel,
-    () => {
-      const rawSlides = getOrderedHtmlSlides(slideFs);
-      if (rawSlides.length > 0) {
-        const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
-        ctx.onProgress({ slides: [...htmlSlides], slideContentType: "text/html" });
-      }
-    },
-    ctx.getSources,
-  );
+  const onWrite = () => {
+    const rawSlides = getOrderedHtmlSlides(slideFs);
+    if (rawSlides.length > 0) {
+      const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
+      ctx.onProgress({ slides: [...htmlSlides], slideContentType: "text/html" });
+    }
+  };
 
-  const message = {
+  // One-pager: the dedicated single-loop prompt already in ctx.instructions.
+  if (options?.slideCount === 1) {
+    const fsTools = createHtmlSlideTools(slideFs, ctx.client, rendererModel, onWrite, ctx.getSources);
+    const message = {
+      role: "user" as const,
+      content: [
+        {
+          type: "text" as const,
+          text: "Create a polished, professionally-designed slide deck from the available sources.",
+        },
+      ],
+    };
+    await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...fsTools], {
+      agentName: "notebook-slides",
+      prepareMessages: pruneSlideWriteHistory,
+    });
+    return finishHtmlSlides(slideFs);
+  }
+
+  const { planner, writer } = await buildSlidePrompts(styleId, options);
+
+  // ── Phase 1: plan + design system ──
+  let plan: SlidePlanItem[] | null = null;
+  let arc = "";
+
+  const planTools: Tool[] = [
+    {
+      name: "write_file",
+      description:
+        "Write a stylesheet under styles/ (e.g. 'styles/theme.css'). Slides are written later by per-slide writers working from your plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Stylesheet path, e.g. 'styles/theme.css'" },
+          content: { type: "string", description: "CSS content" },
+        },
+        required: ["path", "content"],
+      },
+      function: async (args) => {
+        const path = args.path as string;
+        if (!/^styles\/[\w.-]+\.css$/i.test(path)) {
+          return [{ type: "text" as const, text: `Error: the planner may only write styles/*.css (got ${path}).` }];
+        }
+        slideFs.set(path, args.content as string);
+        return [{ type: "text" as const, text: `OK: wrote ${path} (${(args.content as string).length} bytes)` }];
+      },
+    },
+    {
+      name: "set_deck_plan",
+      description:
+        "Submit the deck plan — one entry per slide, in order. Call after styles/theme.css is written. Calling again replaces the previous plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          arc: { type: "string", description: "The chosen deck arc (e.g. 'Diagnose → Insight → Recommendation')" },
+          slides: {
+            type: "array",
+            description: "One entry per slide, in deck order.",
+            items: {
+              type: "object",
+              properties: {
+                archetype: { type: "string", description: "Layout archetype from the menu" },
+                title: { type: "string", description: "Final insight headline for the slide" },
+                brief: { type: "string", description: "Self-sufficient writer brief incl. data + citations" },
+              },
+              required: ["archetype", "title", "brief"],
+            },
+          },
+        },
+        required: ["slides"],
+      },
+      function: async (args) => {
+        const raw = Array.isArray(args.slides) ? (args.slides as Record<string, unknown>[]) : [];
+        const slides = raw
+          .filter((s) => s && typeof s === "object")
+          .map((s) => ({
+            archetype: String(s.archetype ?? "").trim(),
+            title: String(s.title ?? "").trim(),
+            brief: String(s.brief ?? "").trim(),
+          }))
+          .filter((s) => s.title && s.brief);
+        if (slides.length === 0) {
+          return [
+            {
+              type: "text" as const,
+              text: "Error: `slides` must contain at least one {archetype, title, brief} entry.",
+            },
+          ];
+        }
+        plan = slides;
+        arc = typeof args.arc === "string" ? args.arc : "";
+        const themeNote = slideFs.has("styles/theme.css")
+          ? ""
+          : " WARNING: styles/theme.css has not been written yet — write it before finishing.";
+        return [{ type: "text" as const, text: `OK: deck plan recorded (${slides.length} slides).${themeNote}` }];
+      },
+    },
+  ];
+
+  const planMessage = {
     role: "user" as const,
     content: [
       {
         type: "text" as const,
-        text: "Create a polished, professionally-designed slide deck from the available sources.",
+        text: "Design the deck: study the sources, write styles/theme.css, then submit the plan via set_deck_plan.",
       },
     ],
   };
+  await run(ctx.client, ctx.model, planner, [planMessage], [...ctx.sourceTools, ...planTools], {
+    agentName: "notebook-slides-plan",
+  });
 
-  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...fsTools]);
+  // Cast: `plan` is assigned inside the set_deck_plan tool closure, which TS
+  // control-flow analysis can't see — it still narrows to the initializer.
+  const deckPlan = plan as SlidePlanItem[] | null;
+  if (!deckPlan || deckPlan.length === 0) throw new Error("The planner did not produce a deck plan");
+  if (!slideFs.has("styles/theme.css")) throw new Error("The planner did not produce styles/theme.css");
 
+  const total = deckPlan.length;
+  const theme = slideFs.get("styles/theme.css") ?? "";
+  const spine = deckPlan.map((s, i) => `${i + 1}. ${s.title} — ${s.archetype}`).join("\n");
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  // ── Phase 2: write slides in parallel ──
+  await mapWithConcurrency(deckPlan, WRITER_CONCURRENCY, async (item, i) => {
+    const slidePath = `slides/slide${i + 1}.html`;
+    const slideTools = createHtmlSlideTools(slideFs, ctx.client, rendererModel, onWrite, ctx.getSources, {
+      restrictSlidePath: slidePath,
+    });
+
+    const text =
+      `You are writing slide ${i + 1} of ${total}: "${item.title}" — archetype: ${item.archetype}.\n` +
+      `Write it to ${slidePath}. Page-number caption: "${pad(i + 1)} / ${pad(total)}".\n\n` +
+      (arc ? `Deck arc: ${arc}\n` : "") +
+      `Deck spine:\n${spine}\n\n` +
+      `Shared stylesheet (styles/theme.css — already in place, do not modify):\n\`\`\`css\n${theme}\n\`\`\`\n\n` +
+      `Your brief:\n${item.brief}`;
+
+    try {
+      await run(
+        ctx.client,
+        ctx.model,
+        writer,
+        [{ role: "user" as const, content: [{ type: "text" as const, text }] }],
+        [...ctx.sourceTools, ...slideTools],
+        { agentName: "notebook-slides-write", prepareMessages: pruneSlideWriteHistory },
+      );
+    } catch (error) {
+      // One failed slide must not sink the deck — the gap is visible in the
+      // result and the user can refine/regenerate it.
+      console.error(`[HTML Slides] slide ${i + 1} failed:`, error);
+    }
+    if (!slideFs.has(slidePath)) {
+      console.warn(`[HTML Slides] slide ${i + 1} was not written`);
+    }
+  });
+
+  return finishHtmlSlides(slideFs, `${spine}`);
+}
+
+function finishHtmlSlides(slideFs: Map<string, string>, content?: string): Result {
   const rawSlides = getOrderedHtmlSlides(slideFs);
-  console.log("[HTML Slides] Generation complete, slides:", rawSlides.length);
   if (rawSlides.length === 0) throw new Error("No slides generated");
 
   const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
   return {
-    content: `${htmlSlides.length} slides generated`,
+    content: content || `${htmlSlides.length} slides generated`,
     slides: htmlSlides,
     slideContentType: "text/html",
   };
@@ -159,43 +360,95 @@ export async function generateHtmlSlides(ctx: GenerateContext): Promise<Result> 
 
 // ── Slides — image mode ────────────────────────────────────────────────
 
+const IMAGE_SLIDE_CONCURRENCY = 3;
+
+/**
+ * Image-mode deck generation in two phases:
+ *
+ *   Phase 1 (plan): one agent studies the sources and submits the complete
+ *   ordered list of slide image prompts via `set_slide_plan`.
+ *
+ *   Phase 2 (render): slide 1 is rendered first to establish the deck's visual
+ *   identity, then the rest are rendered in parallel with slide 1 as a style
+ *   reference. Collecting the prompts up front is what lets the renders fan out
+ *   — the old per-slide tool loop forced them strictly sequential.
+ */
 export async function generateImageSlides(ctx: GenerateContext): Promise<Result> {
   const config = getConfig();
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
-  const slideMap = new Map<number, string>();
+  const options = notebookImageOptions(rendererModel, { aspect: "3:2", quality: "medium" });
 
-  const imgTools = createImageSlideTools(slideMap, ctx.client, rendererModel, () => {
-    const ordered = Array.from(slideMap.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([, url]) => url);
-    if (ordered.length > 0) {
-      ctx.onProgress({ slides: [...ordered], slideContentType: "image/png" });
-    }
-  });
+  let plan: string[] = [];
+  const planTool: Tool = {
+    name: "set_slide_plan",
+    description:
+      "Submit the complete, ordered list of slide image prompts for the deck. Each prompt fully describes one full-bleed landscape slide — layout, text content, colours, imagery, and style. Slide 1 establishes the deck's visual identity (palette, type, motif) and the rest are rendered with it as a reference, so describe one coherent visual system across all slides.",
+    parameters: {
+      type: "object",
+      properties: {
+        slides: {
+          type: "array",
+          items: { type: "string", description: "Detailed image-generation prompt for one slide." },
+          description: "Ordered list of slide image prompts.",
+        },
+      },
+      required: ["slides"],
+    },
+    function: async (args: Record<string, unknown>) => {
+      plan = Array.isArray(args.slides)
+        ? args.slides.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : [];
+      return [{ type: "text" as const, text: `OK: planned ${plan.length} slides.` }];
+    },
+  };
 
   const message = {
     role: "user" as const,
     content: [
       {
         type: "text" as const,
-        text: "Create a visually striking slide deck from the available sources. Generate each slide as an AI-generated image.",
+        text: "Plan a visually striking, image-based slide deck from the available sources, then submit every slide's image prompt with set_slide_plan.",
       },
     ],
   };
+  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, planTool]);
+  if (plan.length === 0) throw new Error("No slides planned");
 
-  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...imgTools]);
+  const frame = (prompt: string) => `A professional full-bleed landscape presentation slide (clean design). ${prompt}`;
+  const slides: (string | undefined)[] = new Array(plan.length);
 
-  const ordered = Array.from(slideMap.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([, url]) => url);
-  console.log("[Image Slides] Generation complete, slides:", ordered.length);
+  // Stream the contiguous run of finished slides from the start, so the preview
+  // never shows a later slide in an earlier slot while holes are still filling.
+  const emitProgress = () => {
+    const done: string[] = [];
+    for (const slide of slides) {
+      if (!slide) break;
+      done.push(slide);
+    }
+    if (done.length > 0) ctx.onProgress({ slides: done, slideContentType: "image/png" });
+  };
+
+  // Slide 1 first — it's the style reference every other slide builds on.
+  const firstBlob = await ctx.client.generateImage(rendererModel, frame(plan[0]), undefined, options);
+  slides[0] = await blobToDataUrl(firstBlob);
+  emitProgress();
+
+  // Remaining slides render concurrently against the reference. A single failed
+  // slide leaves its slot empty rather than sinking the whole deck.
+  await mapWithConcurrency(plan.slice(1), IMAGE_SLIDE_CONCURRENCY, async (prompt, i) => {
+    try {
+      const blob = await ctx.client.generateImage(rendererModel, frame(prompt), [firstBlob], options);
+      slides[i + 1] = await blobToDataUrl(blob);
+      emitProgress();
+    } catch (err) {
+      console.warn(`[Image Slides] slide ${i + 2} failed:`, err instanceof Error ? err.message : err);
+    }
+  });
+
+  const ordered = slides.filter((s): s is string => Boolean(s));
   if (ordered.length === 0) throw new Error("No slides generated");
 
-  return {
-    content: `${ordered.length} slides generated`,
-    slides: ordered,
-    slideContentType: "image/png",
-  };
+  return { content: `${ordered.length} slides generated`, slides: ordered, slideContentType: "image/png" };
 }
 
 // ── Quiz ───────────────────────────────────────────────────────────────
@@ -286,578 +539,6 @@ export async function generateMindMap(ctx: GenerateContext): Promise<Result> {
   const tree = buildMindMapTree(parsed.nodes);
   if (!tree) throw new Error("Invalid mind map structure");
   return { content: raw, mindMap: tree };
-}
-
-// ── Process diagram ────────────────────────────────────────────────────
-
-// Process nodes are constrained to a fixed BPMN-style vocabulary so the
-// React Flow renderer can map each `kind` to a concrete shape. Edges may
-// be `sequence` (within a pool/lane) or `message` (across pools).
-export const processNodeKinds = [
-  "start",
-  "end",
-  "task",
-  "subprocess",
-  "decision",
-  "parallel",
-  "event",
-  "data",
-] as const;
-
-// OpenAI structured outputs require every property to be present and either
-// required or `.nullable()` — `.optional()` is rejected. Keep all "soft"
-// fields as `nullable()` and treat `null` as absence in the normaliser.
-export const processSchema = z
-  .object({
-    title: z.string(),
-    summary: z.string().nullable(),
-    lanes: z.array(
-      z
-        .object({
-          id: z.string(),
-          label: z.string(),
-        })
-        .strict(),
-    ),
-    nodes: z.array(
-      z
-        .object({
-          id: z.string(),
-          label: z.string(),
-          kind: z.enum(processNodeKinds),
-          lane: z.string().nullable(),
-          description: z.string().nullable(),
-          control: z.string().nullable(),
-          inferred: z.boolean().nullable(),
-        })
-        .strict(),
-    ),
-    edges: z.array(
-      z
-        .object({
-          id: z.string(),
-          source: z.string(),
-          target: z.string(),
-          label: z.string().nullable(),
-          flow: z.enum(["sequence", "message"]).nullable(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
-
-const PROCESS_PARSE_INSTRUCTIONS =
-  "Convert the following process draft into the exact JSON structure requested. " +
-  "Preserve every lane, node, and edge. Use the exact node ids from the draft so edges still connect. " +
-  "Normalise `kind` to one of: start, end, task, subprocess, decision, parallel, event, data. " +
-  "Set `inferred: true` on every node whose description in the draft is prefixed with `(inferred)` (or is otherwise marked as synthesised). Strip the `(inferred)` prefix from the description itself when you set the flag.";
-
-/** Strip nulls and apply minimal repairs so the diagram renders cleanly. */
-export function normaliseProcess(raw: z.infer<typeof processSchema>): ProcessDiagram {
-  const laneIds = new Set(raw.lanes.map((l) => l.id));
-  const seenNodeIds = new Set<string>();
-  const nodes = raw.nodes
-    .filter((n) => {
-      if (seenNodeIds.has(n.id)) return false;
-      seenNodeIds.add(n.id);
-      return true;
-    })
-    .map((n) => ({
-      id: n.id,
-      label: n.label,
-      kind: n.kind,
-      ...(n.lane && laneIds.has(n.lane) ? { lane: n.lane } : {}),
-      ...(n.description ? { description: n.description } : {}),
-      ...(n.control ? { control: n.control } : {}),
-      ...(n.inferred ? { inferred: true } : {}),
-    }));
-
-  const validIds = new Set(nodes.map((n) => n.id));
-  const seenEdgeIds = new Set<string>();
-  const edges = raw.edges
-    .filter((e) => validIds.has(e.source) && validIds.has(e.target))
-    .filter((e) => {
-      if (seenEdgeIds.has(e.id)) return false;
-      seenEdgeIds.add(e.id);
-      return true;
-    })
-    .map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      ...(e.label ? { label: e.label } : {}),
-      ...(e.flow === "message" ? { flow: "message" as const } : {}),
-    }));
-
-  return {
-    title: raw.title,
-    ...(raw.summary ? { summary: raw.summary } : {}),
-    lanes: raw.lanes,
-    nodes,
-    edges,
-  };
-}
-
-export async function generateProcess(ctx: GenerateContext, styleId?: string): Promise<Result> {
-  // Step 1: tool-calling loop reads sources and drafts the process in
-  // the structured-English template required by the studio prompt.
-  const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Process")], ctx.sourceTools);
-  const raw = getTextFromContent(result[result.length - 1].content);
-  if (!raw?.trim()) throw new Error("Could not generate process draft");
-
-  // Step 2: structured-output pass — convert the draft into strict JSON
-  // matching the React Flow renderer's contract.
-  const parsed = await ctx.client.parse(ctx.model, PROCESS_PARSE_INSTRUCTIONS, raw, processSchema, "process");
-  if (!parsed?.nodes?.length) throw new Error("Invalid process structure");
-
-  const process = normaliseProcess(parsed);
-  if (process.nodes.length === 0) throw new Error("Invalid process structure");
-
-  // Stamp the style id so the renderer / exporters can pick a matching lane
-  // palette. The style isn't part of the LLM contract — it's set by the
-  // dispatching hook based on which style the user picked.
-  if (styleId) process.style = styleId;
-
-  return { content: raw, process };
-}
-
-// ── Architecture diagram (C4 + Deployment as tabs, or Sequence) ────────
-
-export const architectureKinds = ["c4", "sequence"] as const;
-export const architectureViews = ["c4-context", "c4-container", "c4-component", "deployment"] as const;
-
-export const architectureElementKinds = [
-  "person",
-  "system",
-  "external-system",
-  "container",
-  "component",
-  "deployment-node",
-  "actor",
-] as const;
-
-export const architectureRelationKinds = ["uses", "includes", "depends-on", "message", "response"] as const;
-
-const architectureElementSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(architectureElementKinds),
-    label: z.string(),
-    technology: z.string().nullable(),
-    description: z.string().nullable(),
-    parent: z.string().nullable(),
-    stereotype: z.string().nullable(),
-    inferred: z.boolean().nullable(),
-    /** Which views the element appears in. Required for `kind: "c4"`, ignored for sequence. */
-    views: z.array(z.enum(architectureViews)).nullable(),
-  })
-  .strict();
-
-const architectureRelationSchema = z
-  .object({
-    id: z.string(),
-    source: z.string(),
-    target: z.string(),
-    label: z.string().nullable(),
-    technology: z.string().nullable(),
-    kind: z.enum(architectureRelationKinds).nullable(),
-    order: z.number().int().nullable(),
-    inferred: z.boolean().nullable(),
-    views: z.array(z.enum(architectureViews)).nullable(),
-  })
-  .strict();
-
-const architectureGroupSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    kind: z.enum(["system-boundary", "deployment-group"]).nullable(),
-    views: z.array(z.enum(architectureViews)).nullable(),
-  })
-  .strict();
-
-export const architectureSchema = z
-  .object({
-    title: z.string(),
-    summary: z.string().nullable(),
-    kind: z.enum(architectureKinds),
-    elements: z.array(architectureElementSchema),
-    relations: z.array(architectureRelationSchema),
-    groups: z.array(architectureGroupSchema),
-  })
-  .strict();
-
-const ARCH_PARSE_INSTRUCTIONS =
-  "Convert the following architecture draft into the exact JSON structure requested. " +
-  "Preserve every element, relation, and group. Use the exact ids from the draft so relations still connect. " +
-  'For `kind: "c4"` outputs, every element / relation / group MUST have a non-empty `views` array — one or more of: c4-context, c4-container, c4-component, deployment. For `kind: "sequence"`, leave `views` null. ' +
-  "Set `inferred: true` on every element / relation marked `(inferred)` in the draft; leave others null or false. " +
-  "If the draft is silent on a field, return null — do not invent.";
-
-/** Strip nulls and apply minimal repairs so the diagram renders cleanly. */
-export function normaliseArchitecture(raw: z.infer<typeof architectureSchema>): ArchitectureDiagram {
-  const seenElementIds = new Set<string>();
-  const elements = raw.elements
-    .filter((e) => {
-      if (seenElementIds.has(e.id)) return false;
-      seenElementIds.add(e.id);
-      return true;
-    })
-    .map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      label: e.label,
-      ...(e.technology ? { technology: e.technology } : {}),
-      ...(e.description ? { description: e.description } : {}),
-      ...(e.parent ? { parent: e.parent } : {}),
-      ...(e.stereotype ? { stereotype: e.stereotype } : {}),
-      ...(e.inferred ? { inferred: true } : {}),
-      ...(e.views && e.views.length > 0 ? { views: e.views } : {}),
-    }));
-
-  // Drop `parent` references that don't resolve to a known id (elements OR groups).
-  const groupIds = new Set(raw.groups.map((g) => g.id));
-  const validIds = new Set<string>([...elements.map((e) => e.id), ...groupIds]);
-  for (const e of elements) {
-    if (e.parent && !validIds.has(e.parent)) {
-      delete (e as { parent?: string }).parent;
-    }
-  }
-
-  const elementIds = new Set(elements.map((e) => e.id));
-  const seenRelIds = new Set<string>();
-  const relations = raw.relations
-    .filter((r) => elementIds.has(r.source) && elementIds.has(r.target))
-    .filter((r) => {
-      if (seenRelIds.has(r.id)) return false;
-      seenRelIds.add(r.id);
-      return true;
-    })
-    .map((r) => ({
-      id: r.id,
-      source: r.source,
-      target: r.target,
-      ...(r.label ? { label: r.label } : {}),
-      ...(r.technology ? { technology: r.technology } : {}),
-      ...(r.kind ? { kind: r.kind } : {}),
-      ...(r.order !== null && r.order !== undefined ? { order: r.order } : {}),
-      ...(r.inferred ? { inferred: true } : {}),
-      ...(r.views && r.views.length > 0 ? { views: r.views } : {}),
-    }));
-
-  const groups = raw.groups.map((g) => ({
-    id: g.id,
-    label: g.label,
-    ...(g.kind ? { kind: g.kind } : {}),
-    ...(g.views && g.views.length > 0 ? { views: g.views } : {}),
-  }));
-
-  return {
-    title: raw.title,
-    ...(raw.summary ? { summary: raw.summary } : {}),
-    kind: raw.kind,
-    elements,
-    relations,
-    groups,
-  };
-}
-
-export async function generateArchitecture(ctx: GenerateContext): Promise<Result> {
-  // The chosen style ("c4" or "sequence") is in the system prompt; the
-  // schema enforces `kind` to one of the architectureKinds enum values.
-  const result = await run(
-    ctx.client,
-    ctx.model,
-    ctx.instructions,
-    [USER_MESSAGE("Architecture diagram")],
-    ctx.sourceTools,
-  );
-  const raw = getTextFromContent(result[result.length - 1].content);
-  if (!raw?.trim()) throw new Error("Could not generate architecture draft");
-
-  const parsed = await ctx.client.parse(ctx.model, ARCH_PARSE_INSTRUCTIONS, raw, architectureSchema, "architecture");
-  if (!parsed?.elements?.length) throw new Error("Invalid architecture structure");
-
-  const architecture = normaliseArchitecture(parsed);
-  if (architecture.elements.length === 0) throw new Error("Invalid architecture structure");
-
-  return { content: raw, architecture };
-}
-
-// ── Data catalog (DCAT / SKOS+FIBO / OpenLineage / ODCS) ───────────────
-
-export const dataCatalogKinds = ["inventory", "glossary", "lineage", "contracts"] as const;
-export const lineageNodeKinds = ["dataset", "job", "external"] as const;
-export const lineageEdgeKinds = ["ingest", "transform", "publish", "replicate"] as const;
-
-const datasetFieldSchema = z
-  .object({
-    name: z.string(),
-    type: z.string().nullable(),
-    description: z.string().nullable(),
-    classification: z.string().nullable(),
-    nullable: z.boolean().nullable(),
-    primaryKey: z.boolean().nullable(),
-  })
-  .strict();
-
-const datasetSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    title: z.string(),
-    description: z.string().nullable(),
-    domain: z.string().nullable(),
-    system: z.string().nullable(),
-    location: z.string().nullable(),
-    refreshCadence: z.string().nullable(),
-    sla: z.string().nullable(),
-    fields: z.array(datasetFieldSchema).nullable(),
-    owner: z.string().nullable(),
-    steward: z.string().nullable(),
-    contact: z.string().nullable(),
-    sensitivity: z.string().nullable(),
-    regulatoryTags: z.array(z.string()).nullable(),
-    glossaryTerms: z.array(z.string()).nullable(),
-    inferred: z.boolean().nullable(),
-  })
-  .strict();
-
-const glossaryTermSchema = z
-  .object({
-    id: z.string(),
-    term: z.string(),
-    definition: z.string(),
-    ontologyReference: z.string().nullable(),
-    synonyms: z.array(z.string()).nullable(),
-    parent: z.string().nullable(),
-    datasets: z.array(z.string()).nullable(),
-    inferred: z.boolean().nullable(),
-  })
-  .strict();
-
-const lineageNodeSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(lineageNodeKinds),
-    label: z.string(),
-    datasetId: z.string().nullable(),
-    technology: z.string().nullable(),
-    description: z.string().nullable(),
-    inferred: z.boolean().nullable(),
-  })
-  .strict();
-
-const lineageEdgeSchema = z
-  .object({
-    id: z.string(),
-    source: z.string(),
-    target: z.string(),
-    kind: z.enum(lineageEdgeKinds).nullable(),
-    label: z.string().nullable(),
-    inferred: z.boolean().nullable(),
-  })
-  .strict();
-
-const dataContractTermSchema = z
-  .object({
-    term: z.string(),
-    commitment: z.string(),
-  })
-  .strict();
-
-const dataContractSchema = z
-  .object({
-    datasetId: z.string(),
-    version: z.string().nullable(),
-    purpose: z.string().nullable(),
-    qualityRules: z.array(z.string()).nullable(),
-    terms: z.array(dataContractTermSchema).nullable(),
-    inferred: z.boolean().nullable(),
-  })
-  .strict();
-
-export const dataCatalogSchema = z
-  .object({
-    title: z.string(),
-    summary: z.string().nullable(),
-    kind: z.enum(dataCatalogKinds),
-    datasets: z.array(datasetSchema),
-    glossary: z.array(glossaryTermSchema),
-    lineageNodes: z.array(lineageNodeSchema),
-    lineageEdges: z.array(lineageEdgeSchema),
-    contracts: z.array(dataContractSchema),
-  })
-  .strict();
-
-const DATA_CATALOG_PARSE_INSTRUCTIONS =
-  "Convert the following data-catalog draft into the exact JSON structure requested. " +
-  "Preserve every dataset, glossary term, lineage node/edge, and contract from the draft. " +
-  "Use the exact ids from the draft so cross-references still resolve. " +
-  "Set `inferred: true` on every entity the draft marked as inferred (or with `(inferred)` in the description). " +
-  "For fields not present in the draft, return null — do not invent.";
-
-/** Drop nulls, drop dangling cross-references, dedupe ids. */
-export function normaliseDataCatalog(raw: z.infer<typeof dataCatalogSchema>): DataCatalog {
-  const datasetIds = new Set<string>();
-  const datasets = raw.datasets
-    .filter((d) => {
-      if (datasetIds.has(d.id)) return false;
-      datasetIds.add(d.id);
-      return true;
-    })
-    .map((d) => ({
-      id: d.id,
-      name: d.name,
-      title: d.title,
-      ...(d.description ? { description: d.description } : {}),
-      ...(d.domain ? { domain: d.domain } : {}),
-      ...(d.system ? { system: d.system } : {}),
-      ...(d.location ? { location: d.location } : {}),
-      ...(d.refreshCadence ? { refreshCadence: d.refreshCadence } : {}),
-      ...(d.sla ? { sla: d.sla } : {}),
-      ...(d.fields && d.fields.length > 0
-        ? {
-            fields: d.fields.map((f) => ({
-              name: f.name,
-              ...(f.type ? { type: f.type } : {}),
-              ...(f.description ? { description: f.description } : {}),
-              ...(f.classification ? { classification: f.classification } : {}),
-              ...(f.nullable !== null && f.nullable !== undefined ? { nullable: f.nullable } : {}),
-              ...(f.primaryKey ? { primaryKey: true } : {}),
-            })),
-          }
-        : {}),
-      ...(d.owner ? { owner: d.owner } : {}),
-      ...(d.steward ? { steward: d.steward } : {}),
-      ...(d.contact ? { contact: d.contact } : {}),
-      ...(d.sensitivity ? { sensitivity: d.sensitivity } : {}),
-      ...(d.regulatoryTags && d.regulatoryTags.length > 0 ? { regulatoryTags: d.regulatoryTags } : {}),
-      ...(d.glossaryTerms && d.glossaryTerms.length > 0 ? { glossaryTerms: d.glossaryTerms } : {}),
-      ...(d.inferred ? { inferred: true } : {}),
-    }));
-
-  const validDatasetIds = new Set(datasets.map((d) => d.id));
-  const termIds = new Set<string>();
-  const glossary = raw.glossary
-    .filter((t) => {
-      if (termIds.has(t.id)) return false;
-      termIds.add(t.id);
-      return true;
-    })
-    .map((t) => ({
-      id: t.id,
-      term: t.term,
-      definition: t.definition,
-      ...(t.ontologyReference ? { ontologyReference: t.ontologyReference } : {}),
-      ...(t.synonyms && t.synonyms.length > 0 ? { synonyms: t.synonyms } : {}),
-      ...(t.parent ? { parent: t.parent } : {}),
-      ...(t.datasets && t.datasets.length > 0 ? { datasets: t.datasets.filter((id) => validDatasetIds.has(id)) } : {}),
-      ...(t.inferred ? { inferred: true } : {}),
-    }));
-  const validTermIds = new Set(glossary.map((t) => t.id));
-
-  // Drop parent refs / dataset-glossary refs that don't resolve.
-  for (const t of glossary) {
-    if (t.parent && !validTermIds.has(t.parent)) {
-      delete (t as { parent?: string }).parent;
-    }
-  }
-  for (const d of datasets) {
-    if (d.glossaryTerms) {
-      d.glossaryTerms = d.glossaryTerms.filter((id) => validTermIds.has(id));
-      if (d.glossaryTerms.length === 0) delete (d as { glossaryTerms?: string[] }).glossaryTerms;
-    }
-  }
-
-  const lineageNodeIds = new Set<string>();
-  const lineageNodes = raw.lineageNodes
-    .filter((n) => {
-      if (lineageNodeIds.has(n.id)) return false;
-      lineageNodeIds.add(n.id);
-      return true;
-    })
-    .map((n) => ({
-      id: n.id,
-      kind: n.kind,
-      label: n.label,
-      ...(n.datasetId && validDatasetIds.has(n.datasetId) ? { datasetId: n.datasetId } : {}),
-      ...(n.technology ? { technology: n.technology } : {}),
-      ...(n.description ? { description: n.description } : {}),
-      ...(n.inferred ? { inferred: true } : {}),
-    }));
-  const validNodeIds = new Set(lineageNodes.map((n) => n.id));
-
-  const lineageEdgeIds = new Set<string>();
-  const lineageEdges = raw.lineageEdges
-    .filter((e) => validNodeIds.has(e.source) && validNodeIds.has(e.target))
-    .filter((e) => {
-      if (lineageEdgeIds.has(e.id)) return false;
-      lineageEdgeIds.add(e.id);
-      return true;
-    })
-    .map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      ...(e.kind ? { kind: e.kind } : {}),
-      ...(e.label ? { label: e.label } : {}),
-      ...(e.inferred ? { inferred: true } : {}),
-    }));
-
-  // Contracts only for datasets that exist.
-  const seenContractDsIds = new Set<string>();
-  const contracts = raw.contracts
-    .filter((c) => validDatasetIds.has(c.datasetId))
-    .filter((c) => {
-      if (seenContractDsIds.has(c.datasetId)) return false;
-      seenContractDsIds.add(c.datasetId);
-      return true;
-    })
-    .map((c) => ({
-      datasetId: c.datasetId,
-      ...(c.version ? { version: c.version } : {}),
-      ...(c.purpose ? { purpose: c.purpose } : {}),
-      ...(c.qualityRules && c.qualityRules.length > 0 ? { qualityRules: c.qualityRules } : {}),
-      ...(c.terms && c.terms.length > 0
-        ? { terms: c.terms.map((t) => ({ term: t.term, commitment: t.commitment })) }
-        : {}),
-      ...(c.inferred ? { inferred: true } : {}),
-    }));
-
-  return {
-    title: raw.title,
-    ...(raw.summary ? { summary: raw.summary } : {}),
-    kind: raw.kind,
-    datasets,
-    glossary,
-    lineageNodes,
-    lineageEdges,
-    contracts,
-  };
-}
-
-export async function generateDataCatalog(ctx: GenerateContext): Promise<Result> {
-  const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Data catalog")], ctx.sourceTools);
-  const raw = getTextFromContent(result[result.length - 1].content);
-  if (!raw?.trim()) throw new Error("Could not generate data-catalog draft");
-
-  const parsed = await ctx.client.parse(
-    ctx.model,
-    DATA_CATALOG_PARSE_INSTRUCTIONS,
-    raw,
-    dataCatalogSchema,
-    "data_catalog",
-  );
-  if (!parsed?.datasets) throw new Error("Invalid data-catalog structure");
-
-  const dataCatalog = normaliseDataCatalog(parsed);
-  // A catalog with no datasets AND no glossary AND no lineage is empty.
-  if (dataCatalog.datasets.length === 0 && dataCatalog.glossary.length === 0 && dataCatalog.lineageNodes.length === 0) {
-    throw new Error("Invalid data-catalog structure");
-  }
-
-  return { content: raw, dataCatalog };
 }
 
 // ── Report / default text ──────────────────────────────────────────────

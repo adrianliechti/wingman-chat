@@ -1,7 +1,7 @@
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
-import { run as agentRun } from "@/shared/lib/agent";
 import { getConfig } from "@/shared/config";
+import { run as agentRun } from "@/shared/lib/agent";
 import { getTextFromContent, Role, type Tool } from "@/shared/types/chat";
 
 export function createSubagentTool(model: string, providerInstructions: string, baseTools: Tool[]): Tool {

@@ -3,11 +3,11 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
   Coffee,
-  Globe,
   GraduationCap,
   Image,
   Languages,
   MessageCircle,
+  NotebookPen,
   PanelLeftOpen,
   Settings,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import { SettingsButton } from "@/features/settings/components/SettingsButton";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { getConfig } from "@/shared/config";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -44,7 +45,16 @@ function getPageFromPath(pathname: string): Page {
 export function AppLayout() {
   const config = getConfig();
   const currentPage = useRouterState({ select: (s) => getPageFromPath(s.location.pathname) });
-  const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
+  const {
+    showSidebar,
+    setShowSidebar,
+    toggleSidebar,
+    sidebarContent,
+    sidebarWidth,
+    isSidebarResizing,
+    handleSidebarResizeMouseDown,
+    resetSidebarWidth,
+  } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer } = useAgents();
@@ -63,6 +73,10 @@ export function AppLayout() {
       setShowSidebar(false);
     }
   }, [hasPanelOpen, showSidebar, setShowSidebar]);
+
+  // Track desktop breakpoint so the sidebar width is only applied on md+
+  // (mobile keeps its full-width overlay).
+  const isDesktop = useMediaQuery("(min-width: 768px)");
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -145,7 +159,7 @@ export function AppLayout() {
   // Navigation pages
   const pages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
-    { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
+    { key: "notebook" as const, label: "Notebook", icon: <NotebookPen size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
     { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
@@ -155,7 +169,12 @@ export function AppLayout() {
     if (page.key === "canvas") return !!config.renderer;
     return true;
   });
-  const showNavigation = pages.length > 1;
+  // `config.navigation: false` hides the tab bar entirely — only Chat is shown.
+  const showNavigation = config.navigation && pages.length > 1;
+
+  // On desktop the sidebar pushes content aside; when a panel is open it becomes
+  // an overlay instead, and on mobile it's always a full-width overlay.
+  const sidebarPushesContent = isDesktop && showSidebar && !!sidebarContent && !hasPanelOpen;
 
   return (
     <div className="h-dvh w-dvw flex overflow-hidden relative">
@@ -199,10 +218,11 @@ export function AppLayout() {
             transition-transform duration-500 ease-in-out
             ${showSidebar ? "translate-x-0" : "-translate-x-[calc(100%+0.5rem)]"}
             left-0 top-0 bottom-0 right-0 w-full h-full
-            md:w-56 md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
+            md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
             md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
             overflow-hidden
           `}
+          style={isDesktop ? { width: sidebarWidth } : undefined}
           onTouchStart={(e) => {
             (e.currentTarget as HTMLElement).dataset.swipeStartX = String(e.touches[0].clientX);
           }}
@@ -213,6 +233,26 @@ export function AppLayout() {
           }}
         >
           {sidebarContent}
+
+          {/* Resize handle — desktop only. Drag to resize, double-click to reset. */}
+          <button
+            type="button"
+            aria-label="Resize sidebar"
+            className="hidden md:flex absolute top-0 bottom-0 right-0 w-3 z-10 group items-center justify-center cursor-ew-resize"
+            onMouseDown={handleSidebarResizeMouseDown}
+            onDoubleClick={resetSidebarWidth}
+          >
+            <div className="bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-0 group-hover:opacity-60 transition-opacity">
+              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+              </div>
+            </div>
+          </button>
         </aside>
       )}
 
@@ -227,16 +267,18 @@ export function AppLayout() {
       {/* Main app content */}
       <div
         className={cn(
-          "flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out",
-          showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0",
+          "flex-1 flex flex-col overflow-hidden relative z-10 ease-in-out",
+          !isSidebarResizing && "transition-all duration-500",
         )}
+        style={{ marginLeft: sidebarPushesContent ? sidebarWidth + 12 : 0 }}
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
           className={cn(
-            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-[padding] duration-500 ease-in-out",
-            showSidebar && sidebarContent && !hasPanelOpen && "md:pl-62",
+            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm ease-in-out",
+            !isSidebarResizing && "transition-[padding] duration-500",
           )}
+          style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 24 } : undefined}
         >
           <div className="flex items-center justify-between">
             {/* Left section */}

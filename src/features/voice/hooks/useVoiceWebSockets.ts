@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
+import { parseToolArguments } from "@/shared/lib/toolArguments";
 import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type {
   AudioContent,
@@ -38,6 +39,7 @@ export function useVoiceWebSockets(
     callId: string,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
   ) => void,
+  onClosed?: (reason?: { fatal: boolean; message: string }) => void,
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const wavPlayerRef = useRef<AudioStreamPlayer | null>(null);
@@ -48,7 +50,14 @@ export function useVoiceWebSockets(
   const isActiveRef = useRef(false);
   const audioPausedRef = useRef(false);
 
+  // Recent error timestamp; a close shortly after is treated as session-fatal.
+  const lastErrorRef = useRef<{ message: string; at: number } | null>(null);
+
   const pendingResponsesRef = useRef<Map<string, PendingResponse>>(new Map());
+  // response_id → assistant audio item_id, needed to truncate the right item
+  // when the user interrupts (playback outlives response.done, so entries are
+  // only cleared on stop).
+  const audioItemByResponseRef = useRef<Map<string, string>>(new Map());
   const argAccumRef = useRef<Map<string, string>>(new Map());
   const pendingPostToolFireRef = useRef<boolean>(false);
   const toolsRef = useRef<Tool[] | undefined>(undefined);
@@ -59,6 +68,7 @@ export function useVoiceWebSockets(
   const onToolCallRef = useRef(onToolCall);
   const onToolCallDoneRef = useRef(onToolCallDone);
   const onToolResultRef = useRef(onToolResult);
+  const onClosedRef = useRef(onClosed);
 
   useEffect(() => {
     onUserRef.current = onUser;
@@ -66,7 +76,8 @@ export function useVoiceWebSockets(
     onToolCallRef.current = onToolCall;
     onToolCallDoneRef.current = onToolCallDone;
     onToolResultRef.current = onToolResult;
-  }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult]);
+    onClosedRef.current = onClosed;
+  }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult, onClosed]);
 
   const pauseAudio = useCallback(async (interruptPlayback = true) => {
     if (!audioPausedRef.current) {
@@ -74,7 +85,7 @@ export function useVoiceWebSockets(
       await wavRecorderRef.current?.pause();
       // Only flush buffered playback when requested, else the assistant is cut off mid-sentence.
       if (interruptPlayback) {
-        wavPlayerRef.current?.interrupt();
+        void wavPlayerRef.current?.interrupt();
       }
     }
   }, []);
@@ -137,9 +148,11 @@ export function useVoiceWebSockets(
     outputDeviceId?: string,
     onAudioLevel?: (level: number) => void,
     toolContextFactory?: ToolContextFactory,
+    onReady?: () => void,
   ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
+    lastErrorRef.current = null;
 
     toolsRef.current = tools;
     toolContextFactoryRef.current = toolContextFactory;
@@ -161,6 +174,7 @@ export function useVoiceWebSockets(
 
       const buildRecordCallback = () => (data: { mono: ArrayBuffer | null }) => {
         if (!isActiveRef.current || audioPausedRef.current || !data.mono) return;
+        if (ws.readyState !== WebSocket.OPEN) return;
 
         if (onAudioLevel) {
           const samples = new Int16Array(data.mono);
@@ -187,24 +201,37 @@ export function useVoiceWebSockets(
       const startRecording = () => {
         const cb = buildRecordCallback();
         recordCallbackRef.current = cb;
-        recorder.record(cb).catch((error) => {
-          console.error("Failed to start recording:", error);
-        });
+        recorder
+          .record(cb)
+          .then(() => {
+            // Report ready only once the mic is actually capturing.
+            onReady?.();
+          })
+          .catch((error) => {
+            console.error("Failed to start recording:", error);
+            void stop().finally(() =>
+              onClosedRef.current?.({ fatal: true, message: "Couldn't access the microphone." }),
+            );
+          });
       };
 
       let sessionReady = false;
-      const sessionReadyTimeout = window.setTimeout(() => {
-        if (!sessionReady && isActiveRef.current) {
-          sessionReady = true;
-          console.warn("session.updated not received within 3 s — starting recording anyway");
-          startRecording();
-        }
-      }, 3000);
+      let sessionReadyTimeout: number | undefined;
 
       ws.addEventListener("open", () => {
         console.log("WebSocket connected");
 
-        const sessionUpdate = buildSessionUpdate(realtimeModel, transcribeModel, instructions, tools);
+        // Fallback counts from connection open, not from connection attempt —
+        // a slow connect must not start the mic against a non-open socket.
+        sessionReadyTimeout = window.setTimeout(() => {
+          if (!sessionReady && isActiveRef.current) {
+            sessionReady = true;
+            console.warn("session.updated not received within 3 s — starting recording anyway");
+            startRecording();
+          }
+        }, 3000);
+
+        const sessionUpdate = buildSessionUpdate(transcribeModel, instructions, tools);
         ws.send(JSON.stringify(sessionUpdate));
 
         if (messages && messages.length > 0) {
@@ -242,8 +269,10 @@ export function useVoiceWebSockets(
         const eventWs = e.target as WebSocket;
 
         switch (msg.type) {
+          // Only session.updated (the ack of our session.update) means the VAD/
+          // transcription config is live — session.created arrives before the
+          // update is applied. The 3 s fallback covers a rejected update.
           case "session.updated":
-          case "session.created":
             if (!sessionReady) {
               sessionReady = true;
               clearTimeout(sessionReadyTimeout);
@@ -251,14 +280,34 @@ export function useVoiceWebSockets(
             }
             break;
 
-          case "input_audio_buffer.speech_started":
+          case "input_audio_buffer.speech_started": {
             console.log("User started speaking, audio playback will be interrupted");
-            wavPlayerRef.current?.interrupt();
+            const player = wavPlayerRef.current;
+            if (player) {
+              void player.interrupt().then(({ trackId, offsetSamples, wasPlaying }) => {
+                // Tell the server how much the user actually heard, otherwise the
+                // conversation history keeps the full answer the model never delivered.
+                if (!wasPlaying || !trackId || offsetSamples <= 0) return;
+                const itemId = audioItemByResponseRef.current.get(trackId);
+                if (!itemId || eventWs.readyState !== WebSocket.OPEN) return;
+                eventWs.send(
+                  JSON.stringify({
+                    type: "conversation.item.truncate",
+                    item_id: itemId,
+                    content_index: 0,
+                    audio_end_ms: Math.floor((offsetSamples / 24000) * 1000),
+                  }),
+                );
+              });
+            }
             break;
+          }
 
           case "response.created": {
+            // Fallback track id for deltas that carry no response_id. Interrupted
+            // track ids stay blocked so late chunks of a cancelled response never
+            // splice into the next answer.
             trackIdRef.current = crypto.randomUUID();
-            wavPlayerRef.current?.clearInterrupts();
             const createdResponseId = (msg.response as { id?: string })?.id;
             if (createdResponseId) {
               pendingResponsesRef.current.set(createdResponseId, {
@@ -292,11 +341,19 @@ export function useVoiceWebSockets(
             console.error("Transcription failed:", msg.error);
             break;
 
-          case "response.output_audio.delta":
+          case "response.output_audio.delta": {
             if (msg.delta) {
-              playAudioChunk(msg.delta as string, wavPlayerRef.current, trackIdRef.current);
+              // Key playback by the delta's own response so chunks of an already
+              // interrupted response can't be tagged with the new response's track.
+              const deltaResponseId = msg.response_id as string | undefined;
+              const deltaItemId = msg.item_id as string | undefined;
+              if (deltaResponseId && deltaItemId) {
+                audioItemByResponseRef.current.set(deltaResponseId, deltaItemId);
+              }
+              playAudioChunk(msg.delta as string, wavPlayerRef.current, deltaResponseId ?? trackIdRef.current);
             }
             break;
+          }
 
           case "response.output_item.done": {
             const item = msg.item as Record<string, unknown>;
@@ -330,9 +387,15 @@ export function useVoiceWebSockets(
             const responseStatus = responseObj?.status as string | undefined;
 
             if (responseStatus !== "cancelled") {
+              // The message item is not necessarily output[0] — tool-call responses
+              // put function_call items alongside (or before) the message.
               const output = responseObj?.output as Record<string, unknown>[] | undefined;
-              const firstContent = (output?.[0]?.content as Record<string, unknown>[])?.[0];
-              const text = (firstContent?.transcript ?? firstContent?.text) as string | undefined;
+              const messageItem = output?.find((item) => item?.type === "message");
+              const parts = (messageItem?.content as Record<string, unknown>[] | undefined) ?? [];
+              const text = parts
+                .map((part) => (part?.transcript ?? part?.text) as string | undefined)
+                .filter((part): part is string => !!part)
+                .join("");
               if (text) onAssistantRef.current(text);
             }
 
@@ -346,6 +409,13 @@ export function useVoiceWebSockets(
                 if (responseStatus === "cancelled" && deferredCalls.length > 0) {
                   for (const deferred of deferredCalls) {
                     onToolCallDoneRef.current?.(deferred.callId);
+                    // The function_call item is already committed to the conversation —
+                    // give it an output so the next turn doesn't see a dangling call.
+                    sendFunctionOutput(
+                      eventWs,
+                      deferred.callId,
+                      JSON.stringify({ error: "Cancelled: the user interrupted before the tool ran." }),
+                    );
                     entry.callIds.delete(deferred.callId);
                   }
                   pendingResponsesRef.current.delete(doneResponseId);
@@ -364,7 +434,7 @@ export function useVoiceWebSockets(
 
                         let args: Record<string, unknown> | undefined;
                         try {
-                          args = JSON.parse(argsStr) as Record<string, unknown>;
+                          args = parseToolArguments(argsStr);
                         } catch (parseError) {
                           console.error("Malformed tool arguments:", argsStr, parseError);
                         }
@@ -425,9 +495,18 @@ export function useVoiceWebSockets(
             break;
           }
 
-          case "error":
-            console.error("[voice] API error:", (msg.error as Record<string, unknown>) ?? msg.type);
+          case "error": {
+            const apiError = (msg.error as Record<string, unknown>) ?? msg;
+            console.error("[voice] API error:", apiError ?? msg.type);
+            // Record API error so the close handler can surface it and prevent auto-restart loops.
+            const code = typeof apiError?.code === "string" ? apiError.code : "";
+            const message = typeof apiError?.message === "string" ? apiError.message : "";
+            lastErrorRef.current = {
+              message: message || code || "The voice service reported an error.",
+              at: Date.now(),
+            };
             break;
+          }
         }
       });
 
@@ -438,6 +517,17 @@ export function useVoiceWebSockets(
       ws.addEventListener("close", (event) => {
         console.log("WebSocket closed:", event.code, event.reason);
         clearTimeout(sessionReadyTimeout);
+        // Unexpected close (user-initiated stop() flips isActiveRef first):
+        // release mic/player and let the owner reset its UI state.
+        if (isActiveRef.current && wsRef.current === ws) {
+          console.warn("[voice] connection closed unexpectedly — stopping session");
+          // A recent API error before this close means it's fatal; surface it
+          // so the owner can exit realtime mode instead of auto-reconnecting.
+          const recentError =
+            lastErrorRef.current && Date.now() - lastErrorRef.current.at < 5000 ? lastErrorRef.current.message : null;
+          const reason = recentError ? { fatal: true, message: recentError } : undefined;
+          void stop().finally(() => onClosedRef.current?.(reason));
+        }
       });
 
       console.log("Voice session initialized, waiting for session ready...");
@@ -458,7 +548,9 @@ export function useVoiceWebSockets(
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const session: Record<string, unknown> = { type: "realtime" };
       if (instructions !== undefined) session.instructions = instructions;
-      if (tools !== undefined && tools.length > 0) {
+      // Send tools even when empty — an empty array is how stale server-side
+      // tools get cleared; skipping it leaves them callable with no handler.
+      if (tools !== undefined) {
         session.tools = tools.map((tool) => ({
           type: "function",
           name: tool.name,
@@ -478,6 +570,7 @@ export function useVoiceWebSockets(
     audioPausedRef.current = false;
 
     pendingResponsesRef.current.clear();
+    audioItemByResponseRef.current.clear();
     argAccumRef.current.clear();
     pendingPostToolFireRef.current = false;
 
@@ -500,7 +593,11 @@ export function useVoiceWebSockets(
     const ws = wsRef.current;
     if (ws) {
       try {
-        if (ws.readyState === WebSocket.OPEN) ws.close(1000, "User stopped session");
+        // Also close while CONNECTING — otherwise the socket finishes the
+        // handshake later and lives on as a zombie session.
+        if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+          ws.close(1000, "User stopped session");
+        }
       } catch {
         /* best effort */
       }
@@ -518,25 +615,37 @@ export function useVoiceWebSockets(
     }
   }, []); // all state accessed via refs — no deps needed
 
-  // sendText only reads refs → stable with useCallback([])
-  const sendText = useCallback((text: string) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  // sendText only reads refs → stable deps
+  const sendText = useCallback(
+    (text: string) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-    ws.send(
-      JSON.stringify({
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [{ type: "input_text", text }],
-        },
-      }),
-    );
+      // response.create while another response is active is rejected by the
+      // server — cancel the active one first (mirrors a spoken interruption).
+      if (hasOtherActiveResponse()) {
+        ws.send(JSON.stringify({ type: "response.cancel" }));
+        void wavPlayerRef.current?.interrupt();
+      }
+      // The explicit response.create below also answers any finished tool
+      // calls, so a queued post-tool fire would just double-respond.
+      pendingPostToolFireRef.current = false;
 
-    ws.send(JSON.stringify({ type: "response.create" }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // all state accessed via refs — no deps needed
+      ws.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text }],
+          },
+        }),
+      );
+
+      ws.send(JSON.stringify({ type: "response.create" }));
+    },
+    [hasOtherActiveResponse],
+  );
 
   // Clean up all resources on unmount — stop is now stable so we can use it directly
   useEffect(() => {
@@ -595,12 +704,13 @@ function sendFunctionOutput(ws: WebSocket, callId: string, output: string) {
   }
 }
 
-function buildSessionUpdate(realtimeModel: string, transcribeModel: string, instructions?: string, tools?: Tool[]) {
+function buildSessionUpdate(transcribeModel: string, instructions?: string, tools?: Tool[]) {
   return {
     type: "session.update",
     session: {
       type: "realtime",
-      model: realtimeModel,
+      // No `model` here — it is selected via the ?model= query param and the
+      // API rejects session.update for the model field.
 
       ...(instructions && { instructions }),
 

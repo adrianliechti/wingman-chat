@@ -41,5 +41,5 @@ export function EmojiProvider({ children }: { children: ReactNode }) {
     setEmojiMode: handleSetEmojiMode,
   };
 
-  return <EmojiContext.Provider value={value}>{children}</EmojiContext.Provider>;
+  return <EmojiContext value={value}>{children}</EmojiContext>;
 }

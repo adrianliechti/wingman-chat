@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { CodeEditor } from "./CodeEditor";
 
@@ -28,14 +29,15 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
     setError(null);
 
     try {
-      // Read files fresh from filesystem at execution time
-      const files: Record<string, { content: string; contentType?: string }> = {};
-      const fileList = (await fs?.listFiles()) ?? [];
-      for (const file of fileList) {
-        files[file.path] = { content: file.content, contentType: file.contentType };
-      }
-
-      const result = await executeCode({ code: content, files });
+      const result = await withSandboxLock(async () => {
+        // Read files fresh from filesystem at execution time
+        const files: Record<string, { content: string; contentType?: string }> = {};
+        const fileList = (await fs?.listFiles()) ?? [];
+        for (const file of fileList) {
+          files[file.path] = { content: file.content, contentType: file.contentType };
+        }
+        return executeCode({ code: content, files });
+      });
 
       if (result.success) {
         setOutput(result.output);
@@ -82,9 +84,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
             className="flex flex-col border-t border-black/5 dark:border-white/5"
           >
             <div className="flex items-center justify-between px-3 py-1 shrink-0">
-              <span className="text-xs uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                Output
-              </span>
+              <span className="text-xs uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Output</span>
               <button
                 type="button"
                 onClick={handleClear}

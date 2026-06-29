@@ -11,8 +11,6 @@
  * directly.
  */
 
-/* eslint-disable no-restricted-globals */
-
 const SCOPE_PREFIX = "/__preview__/";
 
 /**

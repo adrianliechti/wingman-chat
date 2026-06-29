@@ -29,6 +29,5 @@ export const useSettings = () => {
     // Profile settings
     profile: profileContext.settings,
     updateProfile: profileContext.updateSettings,
-    generateInstructions: profileContext.generateInstructions,
   };
 };

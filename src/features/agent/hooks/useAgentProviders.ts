@@ -1,12 +1,10 @@
-import { BrainCircuit, Package, Sparkles } from "lucide-react";
+import { BrainCircuit, Package } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
 import type { Agent } from "@/features/agent/types/agent";
 import { createRepositoryTools } from "@/features/repository/lib/repository-tools";
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
 import { MCPClient } from "@/features/settings/lib/mcp";
-import { useSkills } from "@/features/skills/hooks/useSkills";
-import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import { getConfig } from "@/shared/config";
 import * as opfs from "@/shared/lib/opfs";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -22,16 +20,17 @@ export interface AgentProviders {
 }
 
 /**
- * Given an Agent, assembles all its ToolProviders:
+ * Given an Agent, assembles its ToolProviders:
  * - Repository provider (if files exist)
- * - Skills provider (filtered to agent.skills IDs from global library)
+ * - Memory provider (if enabled)
  * - Bridge MCP clients (for agent.servers)
- * Also returns the agent.tools list for ToolsProvider to know which built-in tools to activate.
+ * Skills are assembled separately by useSkillsProvider (a single provider across
+ * agent / no-agent modes). Also returns the agent.tools list so ToolsProvider
+ * knows which built-in tools to activate.
  */
 export function useAgentProviders(agent: Agent | null): AgentProviders {
   const agentId = agent?.id || "";
   const { files, queryChunks } = useAgentFiles(agentId);
-  const { skills: allSkills, getSkill } = useSkills();
 
   // Track MCP clients for agent's bridge servers
   const [mcpClients, setMcpClients] = useState<MCPClient[]>([]);
@@ -108,79 +107,6 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     };
   }, [agent, files, queryChunks]);
 
-  // --- Skills provider ---
-  const agentSkillIds = useMemo(() => new Set(agent?.skills || []), [agent?.skills]);
-
-  const enabledSkills = useMemo(() => {
-    if (!agent || agentSkillIds.size === 0) return [];
-    return allSkills.filter((s) => agentSkillIds.has(s.name));
-  }, [agent, allSkills, agentSkillIds]);
-
-  const skillsProvider = useMemo<ToolProvider | null>(() => {
-    if (enabledSkills.length === 0) return null;
-
-    const tools: Tool[] = [
-      {
-        name: "read_skill",
-        description: "Read the full content and instructions of an available skill.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "The name of the skill to read.",
-            },
-          },
-          required: ["name"],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const skillName = args.name as string;
-          if (!skillName) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) }];
-          }
-          const skill = getSkill(skillName);
-          if (!skill) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
-          }
-          if (!agentSkillIds.has(skill.name)) {
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({ error: `Skill "${skillName}" is not enabled for this agent` }),
-              },
-            ];
-          }
-          return [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                name: skill.name,
-                description: skill.description,
-                instructions: skill.content,
-              }),
-            },
-          ];
-        },
-      },
-    ];
-
-    const skillsXml = enabledSkills
-      .map(
-        (skill) =>
-          `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description}</description>\n  </skill>`,
-      )
-      .join("\n");
-
-    return {
-      id: "skills",
-      name: "Skills",
-      description: "Specialized agent skills",
-      icon: Sparkles,
-      instructions: skillsPrompt.replace("{skillsXml}", skillsXml) || undefined,
-      tools,
-    };
-  }, [enabledSkills, getSkill, agentSkillIds]);
-
   // --- Memory provider ---
   const config = getConfig();
   const memoryEnabled = !!config.memory && !!agent?.memory;
@@ -225,6 +151,17 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const tools: Tool[] = [
       {
         name: "write_memory",
+        display: {
+          header: (_args, state) => ({
+            icon: BrainCircuit,
+            label: state.error ? "Save failed" : state.running ? "Saving memory…" : "Saved memory",
+            suppressPreview: true,
+          }),
+          input: (args) => {
+            const content = typeof args?.content === "string" ? args.content : "";
+            return content ? [{ code: content, language: "markdown" }] : [];
+          },
+        },
         description:
           "Write/update your persistent memory. Replaces the entire content. Max 25KB. Keep under 200 lines by consolidating older entries.",
         parameters: {
@@ -289,8 +226,8 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(
-    () => [repositoryProvider, skillsProvider, memoryProvider, ...mcpClients].filter(Boolean) as ToolProvider[],
-    [repositoryProvider, skillsProvider, memoryProvider, mcpClients],
+    () => [repositoryProvider, memoryProvider, ...mcpClients].filter(Boolean) as ToolProvider[],
+    [repositoryProvider, memoryProvider, mcpClients],
   );
 
   const enabledTools = useMemo(() => agent?.tools || [], [agent?.tools]);

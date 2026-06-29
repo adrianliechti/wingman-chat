@@ -11,7 +11,6 @@ import {
   PostMessageTransport,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { trace } from "@opentelemetry/api";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -29,6 +28,8 @@ import {
   McpError,
   ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { trace } from "@opentelemetry/api";
+import { textToDataUrl } from "@/shared/lib/fileContent";
 import {
   type AudioContent,
   type FileContent,
@@ -41,15 +42,18 @@ import {
   type ToolIcon,
   type ToolProvider,
 } from "@/shared/types/chat";
-import { textToDataUrl } from "@/shared/lib/fileContent";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
 
-export type { McpUiDisplayMode };
+export type DisplayMode = McpUiDisplayMode;
 
 export type DisplayModeOptions = {
-  displayMode?: McpUiDisplayMode;
-  onDisplayModeRequested?: (mode: McpUiDisplayMode) => void;
+  displayMode?: DisplayMode;
+  onDisplayModeRequested?: (mode: DisplayMode) => void;
+  /** Report the app's content height to the host. When set, the host owns the
+   *  iframe height (needed for the persistent moved-iframe model); otherwise the
+   *  bridge sets it directly. */
+  onSizeChange?: (height: number) => void;
 };
 
 const HOST_INFO = {
@@ -64,6 +68,13 @@ type UiResourceEntry = {
   content: MCPResourceContents;
   meta?: McpUiResourceMeta;
 };
+
+/** Find the `ui://` resource block in a readResource response and build its entry. */
+function toUiResourceEntry(uri: string, contents: MCPResourceContents[]): UiResourceEntry | null {
+  const content = contents.find((entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"));
+  if (!content) return null;
+  return { uri, content, meta: content._meta?.ui as McpUiResourceMeta | undefined };
+}
 
 type McpServerCapabilities = NonNullable<ReturnType<Client["getServerCapabilities"]>>;
 
@@ -88,6 +99,8 @@ export class MCPClient implements ToolProvider {
   private readonly _configIcon?: ToolIcon;
   private client: Client | null = null;
   private activeBridge: AppBridge | null = null;
+  /** Push a host-initiated display-mode change to the active app (setHostContext). */
+  private applyActiveDisplayMode: ((mode: DisplayMode) => void) | null = null;
   private authProvider: BrowserOAuthClientProvider;
   private activeToolContext: ToolContext | null = null;
 
@@ -198,15 +211,14 @@ export class MCPClient implements ToolProvider {
       };
     });
 
-    // Setup error and close handlers
+    // Log only — the transport auto-reconnects (reconnectionOptions) and the ping
+    // loop calls handleDisconnect() on a genuine failure.
     client.onclose = () => {
       console.warn("MCP client connection closed");
-      //this.handleDisconnect();
     };
 
     client.onerror = (error) => {
       console.error("MCP client connection error:", error);
-      //this.handleDisconnect();
     };
 
     try {
@@ -341,6 +353,7 @@ export class MCPClient implements ToolProvider {
             pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined);
           return {
             name: tool.name,
+            title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
             icon,
 
             description: tool.description || "",
@@ -371,9 +384,9 @@ export class MCPClient implements ToolProvider {
                 const resource = this.uiResources.get(tool.name);
 
                 if (resource && context?.setMeta) {
-                  // Don't render the UI here — InlineMcpApp handles rendering via
+                  // Don't render the UI here — McpApp handles rendering via
                   // restoreToolUI with the correct display mode and target iframe.
-                  // We only persist the metadata so InlineMcpApp knows what to render.
+                  // We only persist the metadata so McpApp knows what to render.
                   const toolUiMeta = tool._meta?.ui as
                     | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
                     | undefined;
@@ -383,6 +396,10 @@ export class MCPClient implements ToolProvider {
                     ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
                     ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
                   });
+
+                  if (normalizedResult.structuredContent) {
+                    context.setContent?.(normalizedResult.structuredContent);
+                  }
                 }
 
                 return await processContent(normalizedResult.content as MCPContentBlock[], activeClient);
@@ -435,6 +452,24 @@ export class MCPClient implements ToolProvider {
       throw new Error(`MCP iframe content window unavailable for ${toolName}`);
     }
 
+    // Tear down any bridge still active for this provider before creating a new
+    // one. Two live bridges would both answer the app's requests, so the guest
+    // sees duplicate JSON-RPC responses ("unknown message ID") and fails.
+    if (this.activeBridge) {
+      const stale = this.activeBridge;
+      this.activeBridge = null;
+      try {
+        await stale.teardownResource({});
+      } catch {
+        // ignore — the stale session may still be booting
+      }
+      try {
+        await stale.close();
+      } catch (error) {
+        console.error("Error closing stale MCP app bridge:", error);
+      }
+    }
+
     const bridge = new AppBridge(
       client,
       HOST_INFO,
@@ -443,10 +478,14 @@ export class MCPClient implements ToolProvider {
     );
 
     this.activeBridge = bridge;
+    // Host-initiated mode changes (our expand button) update the live bridge in
+    // place — no teardown/recreate. Reads the iframe's current rect for dimensions.
+    this.applyActiveDisplayMode = (mode) => bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
 
     renderTarget.registerCleanup(async () => {
       if (this.activeBridge === bridge) {
         this.activeBridge = null;
+        this.applyActiveDisplayMode = null;
       }
 
       try {
@@ -512,10 +551,15 @@ export class MCPClient implements ToolProvider {
       // Only height uses flexible (maxHeight) or unbounded mode, so we apply it here.
 
       if (typeof height === "number" && height > 0) {
-        // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
-        const cappedHeight =
-          displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
-        iframe.style.height = `${cappedHeight}px`;
+        if (displayModeOptions?.onSizeChange) {
+          // Host owns the iframe height (moved-iframe model).
+          displayModeOptions.onSizeChange(height);
+        } else {
+          // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
+          const cappedHeight =
+            displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
+          iframe.style.height = `${cappedHeight}px`;
+        }
       }
     };
 
@@ -529,27 +573,24 @@ export class MCPClient implements ToolProvider {
     };
 
     bridge.onrequestdisplaymode = async ({ mode }) => {
-      const currentMode = displayModeOptions?.displayMode ?? "inline";
-      if (mode === "fullscreen" && currentMode !== "fullscreen") {
-        displayModeOptions?.onDisplayModeRequested?.(mode);
-        // Notify the view of the display mode change and updated container dimensions
-        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
-        return { mode };
-      }
-      if (mode === "inline" && currentMode !== "inline") {
-        displayModeOptions?.onDisplayModeRequested?.(mode);
-        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
-        return { mode };
-      }
-      return { mode: currentMode };
+      // The owning component (McpApp) holds the authoritative display-mode state,
+      // dedupes redundant changes, and pushes the host-context update only once the
+      // iframe is positioned over the drawer (so fullscreen reads the real size, not
+      // the stale inline rect). We must NOT read displayModeOptions.displayMode here —
+      // it's the static snapshot from restore time ("inline") and would wrongly drop
+      // an app's request to return inline. Just forward; McpApp drives the rest.
+      displayModeOptions?.onDisplayModeRequested?.(mode);
+      return { mode };
     };
 
     bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
+      // Best-effort. In the moved-iframe (historical render) path the host context
+      // doesn't wire setContext, and we don't advertise the capability — so an app
+      // that calls this anyway gets a silent no-op rather than an unhandled rejection.
+      if (!context.setContext) {
+        return {};
+      }
       try {
-        if (!context.setContext) {
-          throw new Error("setContext is not supported by the host context");
-        }
-
         await context.setContext(serializeModelContext(content, structuredContent));
         return {};
       } catch (error) {
@@ -608,6 +649,11 @@ export class MCPClient implements ToolProvider {
     await bridge.connect(transport);
   }
 
+  /** Push a host-initiated display-mode change to the active app (no recreate). */
+  applyAppDisplayMode(mode: DisplayMode): void {
+    this.applyActiveDisplayMode?.(mode);
+  }
+
   /**
    * Restore an MCP App UI from persisted chat data.
    * Re-fetches the UI resource if not cached, renders the iframe, and replays stored tool input + result.
@@ -617,6 +663,7 @@ export class MCPClient implements ToolProvider {
     uiResourceUri: string,
     args: Record<string, unknown>,
     storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
+    content: Record<string, unknown> | undefined,
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
@@ -639,26 +686,19 @@ export class MCPClient implements ToolProvider {
         }
         return { type: "text" as const, text: JSON.stringify(c) };
       }),
+      ...(content ? { structuredContent: content } : {}),
     };
 
     // Try to use cached resource, otherwise re-fetch
     let resource = this.uiResources.get(toolName);
     if (!resource) {
       try {
-        const readResult = await this.client.readResource({
-          uri: uiResourceUri,
-        });
-        const content = readResult.contents.find(
-          (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"),
-        );
-        if (!content) {
+        const readResult = await this.client.readResource({ uri: uiResourceUri });
+        const entry = toUiResourceEntry(uiResourceUri, readResult.contents);
+        if (!entry) {
           throw new Error(`Invalid UI resource for ${toolName}`);
         }
-        resource = {
-          uri: uiResourceUri,
-          content,
-          meta: content._meta?.ui as McpUiResourceMeta | undefined,
-        };
+        resource = entry;
         this.uiResources.set(toolName, resource);
       } catch (error) {
         console.error(`Failed to fetch UI resource for ${toolName}:`, error);
@@ -701,19 +741,10 @@ export class MCPClient implements ToolProvider {
       Array.from(uriToTools.entries()).map(async ([uri, toolNames]) => {
         try {
           const result = await client.readResource({ uri });
-          const content = result.contents.find(
-            (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"),
-          );
-
-          if (!content) {
+          const entry = toUiResourceEntry(uri, result.contents);
+          if (!entry) {
             return;
           }
-
-          const entry: UiResourceEntry = {
-            uri,
-            content,
-            meta: content._meta?.ui as McpUiResourceMeta | undefined,
-          };
 
           for (const toolName of toolNames) {
             this.uiResources.set(toolName, entry);
@@ -756,22 +787,13 @@ export class MCPClient implements ToolProvider {
   isConnected(): boolean {
     return this.client !== null;
   }
-
-  /** Whether this client currently has a live app bridge (e.g. from an in-flight tool call). */
-  hasActiveBridge(): boolean {
-    return this.activeBridge !== null;
-  }
 }
 
 type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
 
 /** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
 function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
-  const segment = uri
-    ?.split(/[?#]/)[0]
-    .split("/")
-    .filter(Boolean)
-    .pop();
+  const segment = uri?.split(/[?#]/)[0].split("/").filter(Boolean).pop();
   if (!segment) return fallback;
   try {
     return decodeURIComponent(segment);
@@ -915,7 +937,7 @@ function buildHostCapabilities(
 /** Max height (px) for inline apps to prevent them from dominating the chat scroll. */
 const INLINE_MAX_HEIGHT = 600;
 
-function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: McpUiDisplayMode): McpUiHostContext {
+function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: DisplayMode): McpUiHostContext {
   const isDark = document.documentElement.classList.contains("dark");
   const currentMode = displayMode ?? "inline";
 

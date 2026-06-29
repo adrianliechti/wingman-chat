@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import type { Theme, ThemeContextType } from "./ThemeContext";
 import { ThemeContext } from "./ThemeContext";
 
@@ -12,17 +13,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
 
   // Track real system preference
-  const [systemPref, setSystemPref] = useState<boolean>(
-    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
-
-  // Listen for system preference changes
-  useEffect(() => {
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => setSystemPref(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
+  const systemPref = useMediaQuery("(prefers-color-scheme: dark)");
 
   // Determine effective dark state
   const isDark = theme === "dark" || (theme === "system" && systemPref);
@@ -49,5 +40,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     isDark,
   };
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return <ThemeContext value={value}>{children}</ThemeContext>;
 }

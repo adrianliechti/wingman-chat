@@ -73,5 +73,17 @@ export const OfficeMarkdownEditor = memo(function OfficeMarkdownEditor({
     );
   }
 
-  return <MarkdownEditor content={markdown} path={path} viewMode={viewMode} onViewModeChange={onViewModeChange} />;
+  return (
+    <div className="h-full flex flex-col">
+      {/* Disclosure: this is extracted text, not a fidelity-preserving render.
+          Lives here (not in the drawer) so it also covers the fallback paths
+          taken when a high-fidelity preview fails to convert. */}
+      <div className="shrink-0 px-3 py-1 text-xs text-neutral-500 dark:text-neutral-400 bg-neutral-100/80 dark:bg-neutral-800/60 border-b border-black/5 dark:border-white/5">
+        Text preview — original formatting is not shown. Download the file for the original.
+      </div>
+      <div className="flex-1 min-h-0">
+        <MarkdownEditor content={markdown} path={path} viewMode={viewMode} onViewModeChange={onViewModeChange} />
+      </div>
+    </div>
+  );
 });

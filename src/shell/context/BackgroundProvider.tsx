@@ -9,7 +9,7 @@ const STORAGE_KEY = "app_background";
 /**
  * Provides background packs and current background selection across the app.
  */
-export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({ children }) => {
+export const BackgroundProvider = ({ children }: React.PropsWithChildren) => {
   const backgroundPacks = useMemo<BackgroundPack[]>(() => {
     try {
       const cfg = getConfig();
@@ -73,5 +73,5 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
     backgroundImage,
   };
 
-  return <BackgroundContext.Provider value={value}>{children}</BackgroundContext.Provider>;
+  return <BackgroundContext value={value}>{children}</BackgroundContext>;
 };

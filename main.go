@@ -27,6 +27,16 @@ func main() {
 		prefix = "/api"
 	}
 
-	handler := server.New(cfg, prefix, url, token, dist)
+	skillsDir := os.Getenv("SKILLS_PATH")
+	if skillsDir == "" {
+		skillsDir = "skills"
+	}
+
+	notebookDir := os.Getenv("NOTEBOOKS_PATH")
+	if notebookDir == "" {
+		notebookDir = "notebook"
+	}
+
+	handler := server.New(cfg, prefix, url, token, dist, skillsDir, notebookDir)
 	http.ListenAndServe(":"+port, handler)
 }

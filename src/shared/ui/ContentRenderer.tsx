@@ -2,7 +2,7 @@ import { Download, File } from "lucide-react";
 import mime from "mime";
 import { cn } from "@/shared/lib/cn";
 import { dataUrlToBytes } from "@/shared/lib/fileContent";
-import { downloadBlob, downloadFromUrl, formatBytes, getFileExt } from "@/shared/lib/utils";
+import { downloadBlob, downloadFromUrl, fileExtension, formatBytes } from "@/shared/lib/utils";
 import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
 import { CsvRenderer } from "./renderers/CsvRenderer";
@@ -11,7 +11,6 @@ import { PdfRenderer } from "./renderers/PdfRenderer";
 
 type RenderableContent = AudioContent | FileContent | ImageContent;
 
-// Helper function to check if content is a URL
 function isUrl(content: string): boolean {
   return (
     content.startsWith("http://") ||
@@ -27,7 +26,6 @@ function detectMimeType(data: string, filename?: string): string {
     if (mimeMatch) return mimeMatch[1];
   }
 
-  // Use mime library to get MIME type from file extension
   if (filename) {
     const mimeType = mime.getType(filename);
     if (mimeType) return mimeType;
@@ -36,25 +34,20 @@ function detectMimeType(data: string, filename?: string): string {
   return "application/octet-stream";
 }
 
-// Helper function to download content data
 function downloadContent(data: string, filename: string, mimeType: string) {
   if (isUrl(data)) {
-    // If data is already a URL, use downloadFromUrl
     downloadFromUrl(data, filename);
   } else {
-    // If data is content, create blob and download
     const blob = new Blob([data], { type: mimeType });
     downloadBlob(blob, filename);
   }
 }
 
-// Helper to get filename from content
 function getFilename(content: RenderableContent): string {
   if (content.type === "file") return content.name;
   if (content.type === "image" && content.name) return content.name;
   if (content.type === "audio" && content.name) return content.name;
 
-  // Generate name from mime type for image/audio/file
   if (content.type === "image" || content.type === "audio") {
     const mimeType = detectMimeType(content.data);
     const ext = mime.getExtension(mimeType) || "bin";
@@ -75,7 +68,6 @@ function createContentKeyFactory() {
   };
 }
 
-// Component for image content with minimal styling
 function ImageDisplay({ content, className }: { content: ImageContent; className?: string }) {
   const filename = content.name || "image";
   const mimeType = detectMimeType(content.data, filename);
@@ -109,13 +101,11 @@ function ImageDisplay({ content, className }: { content: ImageContent; className
   );
 }
 
-// Byte size of a data URL payload, formatted (e.g. "17.1 KB"), or null if not a data URL.
 function fileSizeLabel(data: string): string | null {
   const parsed = dataUrlToBytes(data);
   return parsed ? formatBytes(parsed.bytes.length) : null;
 }
 
-// Compact horizontal "attachment" chip: icon + filename + size, click to download.
 function FileDisplay({ content, className }: { content: FileContent; className?: string }) {
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -125,7 +115,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
     downloadContent(content.data, content.name, mimeType);
   };
 
-  const ext = getFileExt(content.name).slice(1).toUpperCase();
+  const ext = fileExtension(content.name).toUpperCase();
   const size = fileSizeLabel(content.data);
 
   return (
@@ -140,19 +130,19 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
         className,
       )}
     >
-      {/* File icon with extension badge */}
       <span className="relative shrink-0">
         <File className="h-9 w-9 text-neutral-400 dark:text-neutral-500" strokeWidth={1.5} />
         {ext && (
-          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white dark:bg-neutral-600">
+          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white dark:bg-neutral-600">
             {ext}
           </span>
         )}
       </span>
 
-      {/* Filename + size */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">{content.name}</span>
+        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          {content.name}
+        </span>
         {size && <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>}
       </span>
 
@@ -161,7 +151,6 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
   );
 }
 
-// Extract text content from data URL (UTF-8 decode the base64 payload)
 function extractTextFromDataUrl(data: string): string {
   const parsed = dataUrlToBytes(data);
   if (parsed) {
@@ -198,9 +187,7 @@ function CsvDisplay({ content }: { content: FileContent }) {
   return <CsvRenderer csv={csv} language="html" name={content.name} />;
 }
 
-// Main content renderer with simple design
 export function ContentRenderer({ content, className }: { content: Content; className?: string }) {
-  // Handle text content - not rendered by this component
   if (
     content.type === "text" ||
     content.type === "reasoning" ||
@@ -210,19 +197,17 @@ export function ContentRenderer({ content, className }: { content: Content; clas
     return null;
   }
 
-  // Handle image content
   if (content.type === "image") {
     return <ImageDisplay content={content} className={className} />;
   }
 
-  // Handle audio content - render as file for now
+  // Render audio as a file for now.
   if (content.type === "audio") {
     const filename = content.name || "audio.mp3";
     const fileContent: FileContent = { type: "file", name: filename, data: content.data };
     return <FileDisplay content={fileContent} className={className} />;
   }
 
-  // Handle file content based on mime type
   if (content.type === "file") {
     const mimeType = detectMimeType(content.data, content.name);
 
@@ -253,7 +238,6 @@ export function ContentRenderer({ content, className }: { content: Content; clas
   return null;
 }
 
-// True when a content block should render as an inline image (preview) rather than a chip.
 function isImageContent(content: RenderableContent): boolean {
   if (content.type === "image") return true;
   if (content.type === "file") return detectMimeType(content.data, content.name).startsWith("image/");
@@ -281,7 +265,6 @@ function SingleContentDisplay({ content }: { content: Content }) {
   return <ContentRenderer content={content} />;
 }
 
-// Multiple contents: a row of image thumbnails followed by a row of file chips.
 function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }) {
   const getContentKey = createContentKeyFactory();
   const images = contents.filter(isImageContent);
@@ -314,9 +297,7 @@ function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }
   );
 }
 
-// Render contents - automatically chooses single or multiple layout
 export function RenderContents({ contents }: { contents: Content[] }) {
-  // Filter to only renderable content (images, files, audio)
   const renderableContents = contents.filter(
     (c): c is RenderableContent => c.type === "image" || c.type === "file" || c.type === "audio",
   );

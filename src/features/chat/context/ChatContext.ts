@@ -1,4 +1,5 @@
 import { createContext } from "react";
+import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { Chat, Message, Model } from "@/shared/types/chat";
 import type {
@@ -14,6 +15,9 @@ export interface ChatContextType {
   models: Model[];
   model: Model | null; // Current effective model (derived from chat.model || selectedModel || models[0])
   setModel: (model: Model | null) => void;
+  /** Per-chat reasoning effort selection; null means the model/backend default. */
+  effort: Model["effort"] | null;
+  setEffort: (effort: Model["effort"] | null) => void;
 
   // Chats
   chats: Chat[];
@@ -38,7 +42,7 @@ export interface ChatContextType {
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
   addMessage: (message: Message) => Promise<void>;
-  sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
+  sendMessage: (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => Promise<void>;
   retryMessage: () => Promise<void>;
   setVoiceToolCall: (toolName: string | null, callId?: string) => void;
 

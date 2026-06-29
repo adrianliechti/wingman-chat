@@ -18,16 +18,7 @@ import {
   writeText,
 } from "@/shared/lib/opfs-core";
 import type { File } from "@/shared/types/file";
-import type {
-  ArchitectureDiagram,
-  DataCatalog,
-  MindMapNode,
-  Notebook,
-  NotebookMessage,
-  NotebookOutput,
-  ProcessDiagram,
-  QuizQuestion,
-} from "../types/notebook";
+import type { MindMapNode, Notebook, NotebookMessage, NotebookOutput, QuizQuestion } from "../types/notebook";
 
 const COLLECTION = "notebooks";
 
@@ -43,7 +34,7 @@ export async function listNotebooks(): Promise<Notebook[]> {
     id: e.id,
     title: e.title || "Untitled",
     customTitle: e.customTitle,
-    createdAt: e.updated,
+    createdAt: e.created ?? e.updated,
     updatedAt: e.updated,
   }));
 }
@@ -58,6 +49,7 @@ export async function saveNotebook(notebook: Notebook): Promise<void> {
     id: notebook.id,
     title: notebook.title,
     customTitle: notebook.customTitle,
+    created: notebook.createdAt,
     updated: notebook.updatedAt,
   });
 }
@@ -129,6 +121,21 @@ export function normalizeSourcePath(raw: string): string {
 }
 
 /**
+ * Canonicalize a path to the form sources are keyed by: no leading slash.
+ *
+ * Tool boundaries (the chat file tools, the code sandbox) may hand us `/foo.csv`
+ * while sources are stored as `foo.csv`; normalizing on the way in keeps a
+ * `/foo.csv` from becoming a duplicate of an existing `foo.csv`. Unlike
+ * {@link normalizeSourcePath} this only strips leading slashes and never throws,
+ * so it's safe to apply to every path crossing a tool boundary.
+ */
+export function normalizeSourceKey(path: string): string {
+  let p = path.trim();
+  while (p.startsWith("/")) p = p.slice(1);
+  return p;
+}
+
+/**
  * Append a default extension to the last path segment if it has none.
  * Short trailing tokens (1–5 chars, alphanumeric) are treated as existing
  * extensions. `ext` should be provided without a leading dot.
@@ -187,8 +194,11 @@ async function readSource(notebookId: string, path: string): Promise<File | unde
   if (!blob) {
     return readLegacySource(notebookId, path);
   }
-  const dataUrl = await blobToDataUrl(blob);
-  return { path, content: dataUrl, contentType: contentType ?? "application/octet-stream" };
+  // Stored as an extension-less `content` file, so stamp the inferred type onto
+  // the data URL rather than trusting the read-back blob type (see blobToDataUrl).
+  const resolvedType = contentType ?? "application/octet-stream";
+  const dataUrl = await blobToDataUrl(blob, resolvedType);
+  return { path, content: dataUrl, contentType: resolvedType };
 }
 
 /**
@@ -349,15 +359,6 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
   if (output.mindMap) {
     await writeJson(`${base}/mindmap.json`, output.mindMap);
   }
-  if (output.process) {
-    await writeJson(`${base}/process.json`, output.process);
-  }
-  if (output.architecture) {
-    await writeJson(`${base}/architecture.json`, output.architecture);
-  }
-  if (output.dataCatalog) {
-    await writeJson(`${base}/data-catalog.json`, output.dataCatalog);
-  }
 
   // Metadata (source of truth for listing)
   const meta: OutputMeta = {
@@ -444,15 +445,6 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   } else if (meta.type === "mindmap") {
     const mindMap = await readJson<MindMapNode>(`${base}/mindmap.json`);
     if (mindMap) output.mindMap = mindMap;
-  } else if (meta.type === "process") {
-    const process = await readJson<ProcessDiagram>(`${base}/process.json`);
-    if (process) output.process = process;
-  } else if (meta.type === "architecture") {
-    const architecture = await readJson<ArchitectureDiagram>(`${base}/architecture.json`);
-    if (architecture) output.architecture = architecture;
-  } else if (meta.type === "data-catalog") {
-    const dataCatalog = await readJson<DataCatalog>(`${base}/data-catalog.json`);
-    if (dataCatalog) output.dataCatalog = dataCatalog;
   }
 
   return output;

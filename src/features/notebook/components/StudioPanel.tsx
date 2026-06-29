@@ -2,23 +2,20 @@ import {
   AlertCircle,
   AudioLines,
   BarChart3,
-  BookMarked,
-  Boxes,
   CircleHelp,
   Download,
   Loader2,
-  MoreHorizontal,
+  MoreVertical,
   Network,
   Presentation,
   StickyNote,
   Table2,
   Trash2,
-  Workflow,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import type { File } from "@/shared/types/file";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import type { BuildInstructionsOptions } from "../lib/styles";
 import type { NotebookOutput, OutputType } from "../types/notebook";
 import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
@@ -48,10 +45,19 @@ const OUTPUT_TYPES: {
   { type: "infographic", label: "Infographic", icon: BarChart3 },
   { type: "quiz", label: "Quiz", icon: CircleHelp },
   { type: "mindmap", label: "Mind Map", icon: Network },
-  { type: "process", label: "Process", icon: Workflow },
-  { type: "architecture", label: "Architecture", icon: Boxes },
-  { type: "data-catalog", label: "Data Catalog", icon: BookMarked },
 ];
+
+/**
+ * An output is previewable once it's done — or, while still generating, as soon
+ * as it has streamed partial content: slides appear one at a time, and a podcast
+ * script lands before its audio. This lets the user open an in-progress output
+ * and watch it build (the SlideViewer follows new slides live).
+ */
+function canPreviewOutput(output: NotebookOutput): boolean {
+  if (output.status === "completed") return true;
+  if (output.status !== "generating") return false;
+  return (output.slides?.length ?? 0) > 0 || Boolean(output.content);
+}
 
 export function StudioPanel({
   sources,
@@ -68,18 +74,7 @@ export function StudioPanel({
   const stableDialogType = useRef<OutputType>("slides");
   if (dialogType) stableDialogType.current = dialogType;
 
-  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
-  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
-
-  const DIALOG_TYPES = new Set<OutputType>([
-    "slides",
-    "podcast",
-    "report",
-    "infographic",
-    "process",
-    "architecture",
-    "data-catalog",
-  ]);
+  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic", "quiz", "mindmap"]);
 
   const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
     onGenerate(_type, styleId, rest);
@@ -132,6 +127,7 @@ export function StudioPanel({
               const Icon = typeInfo?.icon || StickyNote;
               const isGenerating = output.status === "generating";
               const isError = output.status === "error";
+              const previewable = canPreviewOutput(output);
 
               return (
                 <div
@@ -144,13 +140,13 @@ export function StudioPanel({
                   <button
                     type="button"
                     onClick={() => {
-                      if (output.status === "completed") {
+                      if (previewable) {
                         onSelectOutput(output);
                       }
                     }}
                     className={cn(
                       "flex flex-1 min-w-0 items-center gap-2 text-left",
-                      output.status === "completed" ? "cursor-pointer" : "cursor-default",
+                      previewable ? "cursor-pointer" : "cursor-default",
                     )}
                   >
                     <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
@@ -191,27 +187,31 @@ export function StudioPanel({
                   {/* Actions menu — always visible, works on touch */}
                   {!isGenerating && (
                     <div className="shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (openActionMenu === output.id) {
-                            setOpenActionMenu(null);
-                            setActionMenuPos(null);
-                          } else {
-                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                            setActionMenuPos({
-                              top: rect.bottom + 4,
-                              right: window.innerWidth - rect.right,
-                            });
-                            setOpenActionMenu(output.id);
-                          }
-                        }}
-                        className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                        title="Actions"
+                      <DropdownMenu
+                        anchor="bottom end"
+                        trigger={
+                          <MenuButton
+                            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                            title="Actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical size={14} />
+                          </MenuButton>
+                        }
                       >
-                        <MoreHorizontal size={14} />
-                      </button>
+                        {output.status === "completed" && canDownload(output) && (
+                          <DropdownMenuItem icon={<Download size={13} />} onClick={() => onDownloadOutput(output)}>
+                            Download
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          icon={<Trash2 size={13} />}
+                          destructive
+                          onClick={() => onDeleteOutput(output.id)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenu>
                     </div>
                   )}
                 </div>
@@ -220,63 +220,6 @@ export function StudioPanel({
           </div>
         )}
       </div>
-
-      {/* Action popover rendered in a portal to escape overflow clipping */}
-      {openActionMenu &&
-        actionMenuPos &&
-        (() => {
-          const output = outputs.find((o) => o.id === openActionMenu);
-          if (!output) return null;
-          const downloadable = output.status === "completed" && canDownload(output);
-          return createPortal(
-            <>
-              {/* backdrop */}
-              <button
-                type="button"
-                aria-label="Close menu"
-                className="fixed inset-0 z-40 cursor-default"
-                onMouseDown={() => {
-                  setOpenActionMenu(null);
-                  setActionMenuPos(null);
-                }}
-              />
-              <div
-                className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
-                style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
-              >
-                {downloadable && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenActionMenu(null);
-                      setActionMenuPos(null);
-                      onDownloadOutput(output);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  >
-                    <Download size={13} className="text-neutral-400 shrink-0" />
-                    Download
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenActionMenu(null);
-                    setActionMenuPos(null);
-                    onDeleteOutput(output.id);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                >
-                  <Trash2 size={13} className="shrink-0" />
-                  Delete
-                </button>
-              </div>
-            </>,
-            document.body,
-          );
-        })()}
 
       {/* Output generator dialog */}
       <OutputGeneratorDialog

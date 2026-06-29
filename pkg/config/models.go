@@ -37,8 +37,7 @@ type Config struct {
 }
 
 type Support struct {
-	URL   string `json:"url,omitempty" yaml:"url,omitempty"`
-	Email string `json:"email,omitempty" yaml:"email,omitempty"`
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 type Tool struct {
@@ -58,12 +57,13 @@ type Model struct {
 	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
 	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
 	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Instructions     string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	SupportedEfforts []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
 	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
 	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
 	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
 	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
-	Prompts          []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 }
 
 type TTS struct {
@@ -127,6 +127,7 @@ type Notebook struct {
 }
 
 type Chat struct {
+	Instructions  string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
 	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
 	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`

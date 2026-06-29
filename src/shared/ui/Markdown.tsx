@@ -17,15 +17,18 @@ import { cn } from "@/shared/lib/cn";
 import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
+import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
-import { downloadBlob, isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
+import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
+import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
 import { MediaPlayer } from "./MediaPlayer";
 import { CsvRenderer } from "./renderers/CsvRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
+import { RendererFrame } from "./renderers/RendererFrame";
 import { SvgRenderer } from "./renderers/SvgRenderer";
 
 const markdownLinkClassName =
@@ -377,12 +380,7 @@ function ResizableTable({
         <table
           ref={setTableElement}
           {...props}
-          className={cn(
-            "border-collapse border border-neutral-300 dark:border-neutral-700",
-            !widths && "w-full",
-            isResizing && "select-none",
-            className,
-          )}
+          className={cn("border-collapse", !widths && "w-full", isResizing && "select-none", className)}
           style={tableStyle}
         >
           {widths && (
@@ -453,38 +451,39 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
     }
   }, []);
 
-  const actionButtonClassName =
-    "flex items-center gap-1 py-0.5 px-1.5 rounded text-[11px] text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors disabled:opacity-40 disabled:pointer-events-none";
-
   return (
     <>
-      <div className="my-4">
-        <div className="flex justify-end gap-1 mb-1">
-          <button
-            type="button"
-            onClick={copyTable}
-            className={actionButtonClassName}
-            title="Copy table for Excel"
-            aria-label="Copy table for Excel"
-          >
-            {copied ? <CopyCheck size={11} /> : <Copy size={11} />}
-            <span>{copied ? "Copied" : "Copy"}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(true)}
-            className={actionButtonClassName}
-            title="Open in full screen"
-            aria-label="Open table in full screen"
-          >
-            <Maximize2 size={11} />
-            <span>Full screen</span>
-          </button>
-        </div>
+      <RendererFrame
+        label=""
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={copyTable}
+              className={actionButtonClassName}
+              title="Copy table for Excel"
+              aria-label="Copy table for Excel"
+            >
+              {copied ? <CopyCheck size={ACTION_ICON_SIZE} /> : <Copy size={ACTION_ICON_SIZE} />}
+              <span>{copied ? "Copied" : "Copy"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className={actionButtonClassName}
+              title="Open in full screen"
+              aria-label="Open table in full screen"
+            >
+              <Maximize2 size={ACTION_ICON_SIZE} />
+              <span>Full screen</span>
+            </button>
+          </>
+        }
+      >
         <ResizableTable {...props} onTableElement={setInlineTableElement}>
           {children}
         </ResizableTable>
-      </div>
+      </RendererFrame>
 
       <Transition appear show={isFullscreen} as={Fragment}>
         <Dialog as="div" className="relative z-80" onClose={() => setIsFullscreen(false)}>
@@ -509,7 +508,7 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Dialog.Panel className="fixed inset-0 flex flex-col bg-white dark:bg-neutral-900">
+            <Dialog.Panel className="fixed inset-0 flex flex-col bg-white dark:bg-neutral-950">
               <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
                 <div className="flex items-center gap-1">
                   <button
@@ -571,10 +570,18 @@ function createComponents(
   isStreaming: boolean,
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
+  compact = false,
 ): Partial<Components> {
   return {
     pre: ({ children }) => {
       return <>{children}</>;
+    },
+    p: ({ children, ...props }) => {
+      return (
+        <p className={cn("first:mt-0 last:mb-0", compact ? "my-2 leading-normal" : "my-3.5 leading-7")} {...props}>
+          {children}
+        </p>
+      );
     },
     input: ({ type, checked, className, ...props }) => {
       if (type === "checkbox") {
@@ -594,7 +601,10 @@ function createComponents(
     li: ({ children, className, ...props }) => {
       const isTask = typeof className === "string" && className.includes("task-list-item");
       return (
-        <li className={cn("py-1 ml-0", isTask && "task-list-item")} {...props}>
+        <li
+          className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
+          {...props}
+        >
           {children}
         </li>
       );
@@ -609,7 +619,7 @@ function createComponents(
     },
     ol: ({ children, ...props }) => {
       return (
-        <ol className="list-decimal list-inside ml-6 pl-0" {...props}>
+        <ol className="list-decimal list-outside pl-6 ml-0" {...props}>
           {children}
         </ol>
       );
@@ -669,42 +679,78 @@ function createComponents(
     },
     h1: ({ children, ...props }) => {
       return (
-        <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
+        <h1
+          id={slugify(children)}
+          className={
+            compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h1>
       );
     },
     h2: ({ children, ...props }) => {
       return (
-        <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
+        <h2
+          id={slugify(children)}
+          className={
+            compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h2>
       );
     },
     h3: ({ children, ...props }) => {
       return (
-        <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
+        <h3
+          id={slugify(children)}
+          className={
+            compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h3>
       );
     },
     h4: ({ children, ...props }) => {
       return (
-        <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
+        <h4
+          id={slugify(children)}
+          className={
+            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h4>
       );
     },
     h5: ({ children, ...props }) => {
       return (
-        <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
+        <h5
+          id={slugify(children)}
+          className={
+            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h5>
       );
     },
     h6: ({ children, ...props }) => {
       return (
-        <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
+        <h6
+          id={slugify(children)}
+          className={
+            compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"
+          }
+          {...props}
+        >
           {children}
         </h6>
       );
@@ -714,7 +760,7 @@ function createComponents(
     },
     thead: ({ children, ...props }) => {
       return (
-        <thead className="bg-neutral-200 dark:bg-neutral-800" {...props}>
+        <thead className="bg-neutral-100 dark:bg-neutral-900" {...props}>
           {children}
         </thead>
       );
@@ -723,16 +769,12 @@ function createComponents(
       return <tbody {...props}>{children}</tbody>;
     },
     tr: ({ children, ...props }) => {
-      return (
-        <tr className="border-b border-neutral-300 dark:border-neutral-700" {...props}>
-          {children}
-        </tr>
-      );
+      return <tr {...props}>{children}</tr>;
     },
     th: ({ children, ...props }) => {
       return (
         <th
-          className="p-2 text-left font-semibold border-r last:border-r-0 border-neutral-300 dark:border-neutral-700"
+          className="px-3 py-2 text-left text-sm font-semibold border-r last:border-r-0 border-neutral-200 dark:border-neutral-600"
           {...props}
         >
           {children}
@@ -741,14 +783,20 @@ function createComponents(
     },
     td: ({ children, ...props }) => {
       return (
-        <td className="p-2 border-r last:border-r-0 border-neutral-300 dark:border-neutral-700" {...props}>
+        <td
+          className="px-3 py-2 text-sm border-r last:border-r-0 border-neutral-200 dark:border-neutral-600"
+          {...props}
+        >
           {children}
         </td>
       );
     },
     blockquote: ({ children, ...props }) => {
       return (
-        <blockquote className="border-l-4 border-neutral-400 dark:border-neutral-600 pl-4 py-1 my-2 italic" {...props}>
+        <blockquote
+          className="border-l-[3px] border-neutral-300 dark:border-neutral-700 pl-4 my-4 leading-7 text-neutral-600 dark:text-neutral-400 [&>:first-child]:mt-0 [&>:last-child]:mb-0"
+          {...props}
+        >
           {children}
         </blockquote>
       );
@@ -959,6 +1007,7 @@ function createMarkdownProcessor(
   isStreaming: boolean,
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
+  compact = false,
 ) {
   return unified()
     .use(remarkParse)
@@ -971,13 +1020,17 @@ function createMarkdownProcessor(
     .use(rehypeNotoEmoji)
     .use(rehypeReact, {
       ...baseRehypeReactOptions,
-      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef),
+      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact),
     });
 }
 
 type MarkdownProps = {
   children: string;
   isStreaming?: boolean;
+  /**
+   * When true, renders headings at reduced sizes suitable for compact UI contexts.
+   */
+  compact?: boolean;
   /**
    * Optional filesystem for resolving relative `<img>` references. When
    * provided, relative image URLs are looked up in `fs` and served as blob
@@ -993,7 +1046,7 @@ type MarkdownProps = {
 
 let markdownInstanceCounter = 0;
 
-const NonMemoizedMarkdown = ({ children, isStreaming = false, fs, basePath }: MarkdownProps) => {
+const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, fs, basePath }: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
   const lastFlushRef = useRef(0);
   const timerRef = useRef<number>(undefined);
@@ -1007,8 +1060,9 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false, fs, basePath }: Ma
   const resolveAsset = useAssetUrlResolver(fs, basePath);
 
   const processor = useMemo(
-    () => createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset, blockCounterRef),
-    [isStreaming, resolveAsset],
+    () =>
+      createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset, blockCounterRef, compact),
+    [isStreaming, resolveAsset, compact],
   );
 
   useEffect(() => {
@@ -1045,6 +1099,7 @@ export const Markdown = memo(
   (prev, next) =>
     prev.children === next.children &&
     prev.isStreaming === next.isStreaming &&
+    prev.compact === next.compact &&
     prev.fs === next.fs &&
     prev.basePath === next.basePath,
 );

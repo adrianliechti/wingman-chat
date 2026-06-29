@@ -3,6 +3,7 @@ import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
@@ -23,7 +24,6 @@ interface WizardState {
   agentType: "model" | "realtime";
 
   name: string;
-  description: string;
   instructions: string;
 
   selectedSkills: string[];
@@ -41,7 +41,6 @@ export type WizardAction =
   | { type: "SHOW_VALIDATION" }
   | { type: "SET_AGENT_TYPE"; value: "model" | "realtime" }
   | { type: "SET_NAME"; value: string }
-  | { type: "SET_DESCRIPTION"; value: string }
   | { type: "SET_INSTRUCTIONS"; value: string }
   | { type: "TOGGLE_SKILL"; name: string }
   | { type: "TOGGLE_TOOL"; id: string }
@@ -60,7 +59,6 @@ function initialState(): WizardState {
     showValidation: false,
     agentType: "model",
     name: "",
-    description: "",
     instructions: "",
     selectedSkills: [],
     selectedTools: [],
@@ -91,8 +89,6 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
       };
     case "SET_NAME":
       return { ...state, name: action.value };
-    case "SET_DESCRIPTION":
-      return { ...state, description: action.value };
     case "SET_INSTRUCTIONS":
       return { ...state, instructions: action.value };
     case "TOGGLE_SKILL": {
@@ -318,6 +314,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                   onBack={handleBack}
                   onNext={handleNext}
                   onCreate={handleCreate}
+                  onImport={triggerAgentImport}
                   isCreating={isCreating}
                 />
               </Dialog.Panel>

@@ -49,10 +49,6 @@ export function lookupContentType(ext: string): string | undefined {
   return mime.getType(normalizedExt) ?? undefined;
 }
 
-export function readAsText(blob: Blob): Promise<string> {
-  return blob.text();
-}
-
 export function readAsDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -71,6 +67,13 @@ export function readAsDataURL(blob: Blob): Promise<string> {
 }
 
 export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  // Native path (Safari 18.2+, Edge/Chrome 140+) — skips the intermediate
+  // binary string entirely.
+  const fromBase64 = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }).fromBase64;
+  if (typeof fromBase64 === "function") {
+    return fromBase64(base64);
+  }
+
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -146,43 +149,11 @@ export function getFileName(path: string): string {
   return path.split("/").pop() || path;
 }
 
-export function getFileExt(path: string): string {
-  const filename = getFileName(path);
-  const parts = filename.split(".");
-  if (parts.length <= 1) {
-    return "";
-  }
-
-  const extension = parts.pop();
-  return extension ? `.${extension}` : "";
-}
-
-export function isAudioUrl(url: string): boolean {
-  const audioExtensions = [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"];
-
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname.toLowerCase();
-
-    // Check file extensions
-    return audioExtensions.some((ext) => pathname.endsWith(ext));
-  } catch {
-    return false;
-  }
-}
-
-export function isVideoUrl(url: string): boolean {
-  const videoExtensions = [".mp4", ".webm", ".avi", ".mov", ".wmv", ".flv", ".mkv"];
-
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname.toLowerCase();
-
-    // Check file extensions
-    return videoExtensions.some((ext) => pathname.endsWith(ext));
-  } catch {
-    return false;
-  }
+/** Lowercase file extension without the leading dot, or "" if there is none. */
+export function fileExtension(pathOrName: string): string {
+  const name = getFileName(pathOrName);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
 export function formatBytes(bytes: number): string {
@@ -322,7 +293,8 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function filenameFromUrl(src: string): string {
+// Internal to downloadFromUrl — derives a filename for data URLs. Not exported.
+function filenameFromUrl(src: string): string {
   // If it's a data URL, extract the MIME type and derive a simple filename
   if (src.startsWith("data:")) {
     const mimeMatch = src.match(/^data:([^;]+)[;,]/);

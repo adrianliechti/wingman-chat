@@ -4,6 +4,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
 import type { BashInstance } from "@/features/tools/lib/bash";
 import { createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
+import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 
 /**
@@ -287,6 +288,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     async (command: string) => {
       if (!instanceRef.current || !command.trim()) return;
 
+      const instance = instanceRef.current;
       const trimmed = command.trim();
 
       // Handle clear command locally
@@ -307,10 +309,14 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       setHistoryIndex(-1);
 
       try {
-        const result = await instanceRef.current.bash.exec(trimmed, {
-          cwd,
-          env: shellEnvRef.current,
-          replaceEnv: true,
+        const result = await withSandboxLock(async () => {
+          const r = await instance.bash.exec(trimmed, {
+            cwd,
+            env: shellEnvRef.current,
+            replaceEnv: true,
+          });
+          await syncToArtifacts();
+          return r;
         });
 
         const nextEnv = (result as { env?: Record<string, string> }).env ?? shellEnvRef.current;
@@ -330,9 +336,6 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
           }
           return newEntries;
         });
-
-        // Sync filesystem changes back to artifacts
-        await syncToArtifacts();
       } catch (error) {
         setEntries((prev) => [
           ...prev,

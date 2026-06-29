@@ -12,6 +12,8 @@ export interface AgentContextType {
   showAgentDrawer: boolean;
   setShowAgentDrawer: (show: boolean) => void;
   toggleAgentDrawer: () => void;
+  agentDrawerView: "list" | "details";
+  setAgentDrawerView: (view: "list" | "details") => void;
   // File operations (repository files within an agent)
   upsertFile: (agentId: string, file: RepositoryFile) => void;
   removeFile: (agentId: string, fileId: string) => void;

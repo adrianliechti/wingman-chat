@@ -33,7 +33,7 @@ export function IdentityStep({ instructions, dispatch }: IdentityStepProps) {
           className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors resize-y"
         />
         <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-          The soul of your agent — the instructions it follows in every conversation.
+          Instructions entered here are automatically included in the agent's prompt every time it runs.
         </p>
       </div>
     </div>

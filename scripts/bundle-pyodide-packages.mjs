@@ -3,18 +3,21 @@
  * Downloads Python wheels for offline use into public/pyodide/:
  *   - Pyodide built-in wheels (numpy, pandas, …) from the Pyodide CDN.
  *     Hashes are verified against pyodide-lock.json on download and on cache.
- *   - Pure-Python PyPI wheels (seaborn, plotly, …) from PyPI.
+ *   - Pure-Python PyPI wheels (seaborn, openpyxl, …) from PyPI.
  *     Hashes are verified against PyPI's published digests.sha256.
  *
- * Writes pypi-manifest.json so the runtime loader knows:
- *   - which Pyodide built-ins to preload via `pyodide.loadPackage()`
- *   - which sibling PyPI wheels to install in the same `micropip.install()`
- *     batch (otherwise micropip falls back to fetching them from pypi.org).
+ * The PyPI wheels aren't in Pyodide's lock, so we *inject* them into the copied
+ * public/pyodide/pyodide-lock.json — synthesizing each entry's `imports` (from
+ * the wheel contents), `depends` (from the resolved dep graph), version and
+ * sha256. The runtime then loads them through Pyodide's normal lock-driven loader
+ * (`loadPackagesFromImports` / `loadPackage`) exactly like the built-ins — no
+ * separate manifest or micropip orchestration needed.
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import JSZip from "jszip";
 
 // --- Config -----------------------------------------------------------------
 
@@ -39,12 +42,34 @@ const PYODIDE_BUILTIN_TARGETS = [
   "typing-extensions",
   "six",
   "pyyaml",
+  "tzdata",
+  // NOTE: sqlite3, ssl, and lzma used to be listed here. As of Pyodide 314
+  // (PEP 783) they are no longer separately-loadable packages — they ship in
+  // the base interpreter, so `import sqlite3` / `ssl` / `lzma` just works with
+  // nothing to load. `ssl` is a no-OpenSSL stub (constants/SSLContext config
+  // work; actual TLS does not — it never did in the browser). The OpenSSL-backed
+  // `hashlib` digests are likewise gone (no package to bundle); base stdlib
+  // hashlib (common digests + a pure-Python pbkdf2_hmac fallback) is built in.
+  // Data & document handling. xlrd/python-calamine read legacy .xls/.xlsb/.ods
+  // that openpyxl can't; pydantic is ubiquitous for data modeling/validation.
+  "xlrd",
+  "python-calamine",
+  "pydantic",
+  // Image processing beyond Pillow.
+  "opencv-python",
+  "scikit-image",
+  "imageio",
+  // Gradient-boosting ML (complements scikit-learn / statsmodels).
+  "xgboost",
+  "lightgbm",
+  // Commonly imported helpers. requests works only for CORS-permitted endpoints
+  // in the worker sandbox (no general network), but importing it must not fail.
+  "requests",
+  "regex",
 ];
 
 const PYPI_PACKAGES = [
   "seaborn",
-  "tenacity",
-  "plotly",
   "et-xmlfile",
   "openpyxl",
   "xlsxwriter",
@@ -52,12 +77,45 @@ const PYPI_PACKAGES = [
   "python-pptx",
   "docx2txt",
   "pypdf",
+  // Pinned to the exact pdfminer.six pdfplumber depends on, so we bundle the
+  // version it was tested against rather than whatever PyPI serves as latest.
+  "pdfminer.six==20251230",
+  "pdfplumber",
   "reportlab",
   "markdown",
+  "markdownify",
+  "tabulate",
   // Pin to last release before red-black-tree-mod was added — that dep only
   // ships as an sdist and our bundler only handles pure-Python wheels.
   "extract-msg==0.36.5",
 ];
+
+// Native-binary deps that have no pure wheel but are only imported lazily by
+// their dependents for features we don't use. We bundle the dependent anyway and
+// simply omit these from its `depends`, so Pyodide's loader never tries to fetch
+// them; the lazy `import` only fires for the unused feature. Names must be PEP
+// 503 normalized.
+//   pypdfium2 — pdfplumber needs it only for page.to_image() rendering, not for
+//               extract_text()/extract_tables().
+const MOCKED_NATIVE_DEPS = new Set(["pypdfium2"]);
+
+// Per-package dependency edges to drop from a dependent's `depends`. Unlike
+// MOCKED_NATIVE_DEPS (native wheels lazily imported), these are pure-Python deps
+// that either form a load-time CYCLE that hangs Pyodide's resolver or simply
+// can't run under Emscripten. We still want the dependent (for one small,
+// self-contained submodule), so we keep it but sever these edges — both from the
+// bundle (BFS) and from the lock's `depends` (so loadPackage never pulls them).
+// Keys and values must be PEP 503 normalized.
+//   oletools — only reached via extract-msg → RTFDE → `oletools.common.codepages`
+//   (a pure codepage table). Its other deps are CLI/GUI tooling we never touch:
+//     pcodedmp   — VBA p-code disassembler; depends back on oletools, so the
+//                  `oletools → pcodedmp → oletools` cycle makes loadPackage()
+//                  (hence `import extract_msg`) hang forever.
+//     easygui    — Tkinter GUI; cannot import under Emscripten (no _tkinter).
+//     colorclass — ANSI color for CLI output; dead weight headless.
+const PRUNED_DEPS = {
+  oletools: new Set(["pcodedmp", "easygui", "colorclass"]),
+};
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -161,14 +219,11 @@ function parseCoreRequires(requiresDist) {
 
 /**
  * Walks the PyPI dep graph rooted at `pypiPackages` and returns:
- *   builtins:         full set of Pyodide built-ins to bundle (lockfile names)
- *   pypi:             full set of pure PyPI packages to bundle (normalized)
- *   builtinDepsByPkg: per-PyPI-package transitive built-in deps. Runtime
- *                     preloads these via `pyodide.loadPackage` before
- *                     `micropip.install` so micropip resolves them locally.
- *   pypiDepsByPkg:    per-PyPI-package transitive *PyPI* deps. Runtime adds
- *                     these to the same `micropip.install` batch — otherwise
- *                     micropip falls back to fetching them from pypi.org.
+ *   builtins:        full set of Pyodide built-ins to bundle (lockfile names)
+ *   pypi:            full set of pure PyPI packages to bundle (normalized)
+ *   directDepsByPkg: per-PyPI-package *direct* deps (lock keys), for that
+ *                    package's `depends` field in the lock. Pyodide's loader
+ *                    walks `depends` itself, so direct (not transitive) is right.
  */
 async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) {
   const lockNameByNormalized = new Map(Object.keys(pyodideLock.packages).map((n) => [normalizePkgName(n), n]));
@@ -208,6 +263,8 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
   while (queue.length > 0) {
     const pkg = queue.shift();
     for (const dep of await fetchDeps(pkg)) {
+      if (MOCKED_NATIVE_DEPS.has(dep)) continue; // native dep we omit; see MOCKED_NATIVE_DEPS
+      if (PRUNED_DEPS[pkg]?.has(dep)) continue; // cycle / non-WASM edge we sever; see PRUNED_DEPS
       if (isBuiltin(dep)) {
         if (!builtins.has(dep)) {
           builtins.add(dep);
@@ -221,38 +278,58 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
     }
   }
 
-  // Phase 2: per-root sub-graph walk, splitting transitive deps into the
-  // two buckets the runtime loader needs.
-  const builtinDepsByPkg = {};
-  const pypiDepsByPkg = {};
-  for (const root of pypi) {
-    const visited = new Set();
-    const stack = [root];
-    const builtinDeps = new Set();
-    const pypiDeps = new Set();
-    while (stack.length > 0) {
-      const p = stack.pop();
-      if (visited.has(p)) continue;
-      visited.add(p);
-      for (const dep of depsCache.get(p) || []) {
-        if (isBuiltin(dep)) {
-          builtinDeps.add(builtinOriginal(dep));
-        } else if (dep !== root) {
-          pypiDeps.add(dep);
-          stack.push(dep);
-        }
-      }
+  // Phase 2: each PyPI package's direct deps, as lock keys, for its `depends`.
+  // Drop native deps we mock-omit and self-references; everything else is bundled
+  // (a built-in already in the lock, or another injected PyPI package).
+  const directDepsByPkg = {};
+  for (const pkg of pypi) {
+    const deps = new Set();
+    for (const dep of depsCache.get(pkg) || []) {
+      if (MOCKED_NATIVE_DEPS.has(dep) || dep === pkg) continue;
+      if (PRUNED_DEPS[pkg]?.has(dep)) continue; // see PRUNED_DEPS
+      if (isBuiltin(dep)) deps.add(builtinOriginal(dep));
+      else if (pypi.has(dep)) deps.add(dep);
     }
-    if (builtinDeps.size > 0) builtinDepsByPkg[root] = [...builtinDeps];
-    if (pypiDeps.size > 0) pypiDepsByPkg[root] = [...pypiDeps];
+    directDepsByPkg[pkg] = [...deps];
   }
 
   return {
     builtins: [...builtins].map(builtinOriginal),
     pypi: [...pypi],
-    builtinDepsByPkg,
-    pypiDepsByPkg,
+    directDepsByPkg,
   };
+}
+
+/**
+ * Top-level importable names of a wheel — what `top_level.txt` would contain
+ * (used to build the lock's `imports` field so `loadPackagesFromImports` can map
+ * `import bs4` → beautifulsoup4). Many modern wheels omit `top_level.txt`, so we
+ * derive from the always-present file listing: a dir with `__init__.py` is a
+ * package, a top-level `*.py` is a module; `.dist-info`/`.data` are skipped.
+ */
+async function extractWheelImports(buffer, label) {
+  const zip = await JSZip.loadAsync(buffer);
+  const names = Object.keys(zip.files);
+
+  const topLevelTxt = names.find((n) => /\.dist-info\/top_level\.txt$/.test(n));
+  if (topLevelTxt) {
+    const text = await zip.files[topLevelTxt].async("string");
+    const mods = text
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (mods.length) return [...new Set(mods)];
+  }
+
+  const imports = new Set();
+  for (const n of names) {
+    const seg = n.split("/")[0];
+    if (!seg || seg.endsWith(".dist-info") || seg.endsWith(".data")) continue;
+    if (n === `${seg}/__init__.py`) imports.add(seg);
+    else if (n === seg && seg.endsWith(".py")) imports.add(seg.slice(0, -3));
+  }
+  if (imports.size === 0) throw new Error(`could not determine import names for ${label}`);
+  return [...imports];
 }
 
 // --- Wheel bundling ---------------------------------------------------------
@@ -260,16 +337,20 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
 async function bundlePyodideBuiltins(builtinTargets, pyodideLock, cdnBase) {
   console.log("Bundling Pyodide built-in packages from CDN...");
 
+  // Pyodide's lock lists some `depends` with underscores (e.g. `pydantic_core`,
+  // `lazy_loader`) while the keys are dash-normalized (`pydantic-core`); resolve
+  // through a normalized index so those transitive deps actually get bundled.
+  const keyByNormalized = new Map(Object.keys(pyodideLock.packages).map((n) => [normalizePkgName(n), n]));
   const allPkgs = new Set();
   function collect(name) {
-    if (allPkgs.has(name)) return;
-    const pkg = pyodideLock.packages[name];
-    if (!pkg) {
+    const key = keyByNormalized.get(normalizePkgName(name));
+    if (!key) {
       console.warn(`  ⚠ ${name} not found in pyodide-lock.json, skipping`);
       return;
     }
-    allPkgs.add(name);
-    for (const dep of pkg.depends || []) collect(dep);
+    if (allPkgs.has(key)) return;
+    allPkgs.add(key);
+    for (const dep of pyodideLock.packages[key].depends || []) collect(dep);
   }
   builtinTargets.forEach(collect);
 
@@ -311,11 +392,11 @@ async function bundlePyodideBuiltins(builtinTargets, pyodideLock, cdnBase) {
   return expectedWheelFiles;
 }
 
-async function bundlePypiPackages(pypiPackages, builtinDepsByPkg, pypiDepsByPkg) {
+async function bundlePypiWheels(pypiPackages, directDepsByPkg) {
   console.log("Bundling extra PyPI packages...");
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  const manifest = {};
+  const entries = [];
   const expectedWheelFiles = new Set();
 
   for (const pkg of pypiPackages) {
@@ -332,16 +413,72 @@ async function bundlePypiPackages(pypiPackages, builtinDepsByPkg, pypiDepsByPkg)
       console.log(" done");
     }
 
+    const buffer = fs.readFileSync(dest);
     const key = normalizePkgName(pkg);
-    const entry = { filename: wheel.filename };
-    if (builtinDepsByPkg[key]?.length) entry.pyodideBuiltinDeps = builtinDepsByPkg[key];
-    if (pypiDepsByPkg[key]?.length) entry.pyodidePypiDeps = pypiDepsByPkg[key];
-    manifest[key] = entry;
+    // Lock entry mirrors how Pyodide describes its own pure-Python packages.
+    entries.push({
+      name: key,
+      version: wheel.version,
+      file_name: wheel.filename,
+      install_dir: "site",
+      sha256: wheel.sha256 ?? sha256(buffer),
+      package_type: "package",
+      imports: await extractWheelImports(buffer, label),
+      depends: directDepsByPkg[key] ?? [],
+      unvendored_tests: false,
+    });
   }
 
-  fs.writeFileSync(path.join(OUTPUT_DIR, "pypi-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log("  Manifest written to", path.join(OUTPUT_DIR, "pypi-manifest.json"));
-  return expectedWheelFiles;
+  return { entries, expectedWheelFiles };
+}
+
+/** Add the bundled PyPI packages to the copied lock so Pyodide can load them. */
+function injectPypiIntoLock(entries) {
+  const lockPath = path.join(OUTPUT_DIR, "pyodide-lock.json");
+  const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  for (const entry of entries) {
+    if (lock.packages[entry.name]) console.warn(`  ⚠ overwriting existing lock entry for ${entry.name}`);
+    lock.packages[entry.name] = entry;
+  }
+  fs.writeFileSync(lockPath, `${JSON.stringify(lock)}\n`);
+  console.log(`  Injected ${entries.length} PyPI packages into pyodide-lock.json`);
+}
+
+/**
+ * Fail the build on any cycle in the lock's `depends` graph. Pyodide's
+ * loadPackage() walks `depends` recursively with no cycle guard, so a cyclic
+ * edge makes it — and any `import` that triggers it — hang forever. That is the
+ * exact trap `oletools → pcodedmp → oletools` set for `import extract_msg`
+ * (silent infinite hang) before PRUNED_DEPS severed it. This static check turns
+ * a would-be runtime hang into a loud build failure, covering future additions.
+ */
+function assertAcyclicLock() {
+  const lockPath = path.join(OUTPUT_DIR, "pyodide-lock.json");
+  const { packages } = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  const keyByNormalized = new Map(Object.keys(packages).map((n) => [normalizePkgName(n), n]));
+  const VISITING = 1;
+  const DONE = 2;
+  const state = new Map();
+  const stack = [];
+
+  const walk = (key) => {
+    state.set(key, VISITING);
+    stack.push(key);
+    for (const dep of packages[key].depends) {
+      const depKey = keyByNormalized.get(normalizePkgName(dep));
+      if (!depKey) continue; // dep not bundled (e.g. mocked native) — no edge
+      if (state.get(depKey) === VISITING) {
+        const cycle = stack.slice(stack.indexOf(depKey)).concat(depKey).join(" → ");
+        throw new Error(`dependency cycle in pyodide-lock.json: ${cycle}`);
+      }
+      if (!state.has(depKey)) walk(depKey);
+    }
+    stack.pop();
+    state.set(key, DONE);
+  };
+
+  for (const key of Object.keys(packages)) if (!state.has(key)) walk(key);
+  console.log("  ✓ no dependency cycles in pyodide-lock.json");
 }
 
 // --- Main -------------------------------------------------------------------
@@ -350,6 +487,14 @@ function copyPyodideRuntime() {
   const pyodideDir = path.resolve("node_modules/pyodide");
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const extensions = [".js", ".mjs", ".wasm", ".zip", ".json"];
+
+  // Clear stale runtime files first so renamed/removed artifacts from a prior
+  // Pyodide version don't linger (e.g. pyodide.asm.js → pyodide.asm.mjs in 314,
+  // or the dropped libopenssl-*.zip). Wheels are pruned by pruneUnexpectedWheelFiles.
+  for (const file of fs.readdirSync(OUTPUT_DIR)) {
+    if (!file.endsWith(".whl")) fs.unlinkSync(path.join(OUTPUT_DIR, file));
+  }
+
   for (const file of fs.readdirSync(pyodideDir)) {
     if (extensions.some((ext) => file.endsWith(ext))) {
       fs.copyFileSync(path.join(pyodideDir, file), path.join(OUTPUT_DIR, file));
@@ -383,15 +528,24 @@ async function main() {
   }
 
   console.log("Resolving transitive dependencies of PyPI packages...");
-  const { builtins, pypi, builtinDepsByPkg, pypiDepsByPkg } = await resolveTransitiveDeps(
+  const { builtins, pypi, directDepsByPkg } = await resolveTransitiveDeps(
     pypiNames,
     pyodideLock,
     PYODIDE_BUILTIN_TARGETS,
   );
 
   const builtinWheelFiles = await bundlePyodideBuiltins(builtins, pyodideLock, cdnBase);
-  const pypiWheelFiles = await bundlePypiPackages(pypi, builtinDepsByPkg, pypiDepsByPkg);
+  const { entries, expectedWheelFiles: pypiWheelFiles } = await bundlePypiWheels(pypi, directDepsByPkg);
+  injectPypiIntoLock(entries);
+  assertAcyclicLock();
   pruneUnexpectedWheelFiles(new Set([...builtinWheelFiles, ...pypiWheelFiles]));
+
+  // Remove the manifest from the previous (micropip-based) scheme if present.
+  const staleManifest = path.join(OUTPUT_DIR, "pypi-manifest.json");
+  if (fs.existsSync(staleManifest)) {
+    fs.unlinkSync(staleManifest);
+    console.log("  - removed stale pypi-manifest.json");
+  }
   console.log("Done.");
 }
 

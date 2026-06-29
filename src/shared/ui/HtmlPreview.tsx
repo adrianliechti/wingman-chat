@@ -1,7 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import type { File } from "@/shared/types/file";
-import type { FileSystem } from "@/shared/types/file";
 import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
+import type { File, FileSystem } from "@/shared/types/file";
 
 export interface HtmlPreviewProps {
   /**

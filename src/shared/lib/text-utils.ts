@@ -309,17 +309,6 @@ export function truncateLine(line: string, maxLength: number = 500): string {
 }
 
 /**
- * Get file extension from filename.
- */
-export function getExtension(filename: string): string {
-  const lastDot = filename.lastIndexOf(".");
-  if (lastDot === -1 || lastDot === 0) {
-    return "";
-  }
-  return filename.slice(lastDot + 1).toLowerCase();
-}
-
-/**
  * Get the base name (filename without path) from a file path.
  */
 export function getBaseName(filepath: string): string {

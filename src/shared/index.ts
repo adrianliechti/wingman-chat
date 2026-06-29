@@ -14,6 +14,8 @@ export { copyToClipboard } from "./lib/copy";
 // Lib - Document conversion
 export { docxToMarkdown } from "./lib/docx";
 export { markdownToDocx } from "./lib/markdownToDocx";
+// Lib - Media types
+export { isAudioUrl, isVideoUrl } from "./lib/mediaTypes";
 // Lib - Models
 export { modelName, modelType } from "./lib/models";
 export type {
@@ -91,18 +93,14 @@ export {
   decodeDataURL,
   downloadBlob,
   downloadFromUrl,
-  filenameFromUrl,
+  fileExtension,
   formatBytes,
-  getFileExt,
   getFileName,
-  isAudioUrl,
-  isVideoUrl,
   lookupContentType,
   markdownToHtml,
   markdownToText,
   parseDataUrl,
   readAsDataURL,
-  readAsText,
   resizeImageBlob,
   serializeToolResultForApi,
   simplifyMarkdown,

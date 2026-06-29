@@ -4,27 +4,12 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { cn } from "@/shared/lib/cn";
-import { getToolDisplayName } from "@/shared/lib/utils";
-import type { Content, Message, ToolResultContent } from "@/shared/types/chat";
+import type { Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
-import { getToolCallPreview } from "./chatMessageUtils";
-import { InlineMcpApp } from "./InlineMcpApp";
-
-function extractCodeFromArguments(arguments_: string): { code: string; packages?: string[] } | null {
-  try {
-    const args = JSON.parse(arguments_);
-    if (args.code && typeof args.code === "string") {
-      return {
-        code: args.code,
-        packages: args.packages,
-      };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { McpApp } from "./McpApp";
+import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
 
 type ChatToolMessageProps = {
   message: Message;
@@ -40,71 +25,28 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
   const toolResult = toolResultParts[0]; // Usually just one
 
-  const toolIcon = useMemo(() => {
-    if (!toolResult?.name) return undefined;
-    for (const provider of providers) {
-      const tool = provider.tools.find((t) => t.name === toolResult.name);
-      if (tool?.icon) return tool.icon;
-    }
-    return undefined;
-  }, [toolResult?.name, providers]);
+  const toolDef = useMemo(() => findTool(providers, toolResult?.name), [providers, toolResult?.name]);
+  const toolIcon = toolDef?.icon;
   const isToolError = !!message.error;
-  const codeData = toolResult?.arguments ? extractCodeFromArguments(toolResult.arguments) : null;
-  const queryPreview =
-    !codeData && toolResult?.arguments ? getToolCallPreview(toolResult.name || "", toolResult.arguments) : null;
-
-  // Helper to replace long data URLs with placeholder for display
-  const sanitizeForDisplay = (obj: unknown): unknown => {
-    if (typeof obj === "string") {
-      // Replace data URLs with placeholder
-      if (obj.startsWith("data:")) {
-        const match = obj.match(/^data:([^;,]+)/);
-        const mimeType = match ? match[1] : "unknown";
-        return `[${mimeType} data]`;
-      }
-      return obj;
-    }
-    if (Array.isArray(obj)) {
-      return obj.map(sanitizeForDisplay);
-    }
-    if (obj && typeof obj === "object") {
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(obj)) {
-        result[key] = sanitizeForDisplay(value);
-      }
-      return result;
-    }
-    return obj;
-  };
-
-  const renderContent = (content: Content[], name?: string) => {
-    // Check if all content is text
-    const allText = content.every((c) => c.type === "text");
-    if (allText && content.length === 1 && content[0].type === "text") {
-      const text = content[0].text;
-      // Try to parse as JSON
-      try {
-        const parsed = JSON.parse(text);
-        const sanitized = sanitizeForDisplay(parsed);
-        const formatted = JSON.stringify(sanitized, null, 2);
-        return <CodeRenderer code={formatted} language="json" name={name} />;
-      } catch {
-        // Not JSON, render as text
-        return <CodeRenderer code={text} language="text" name={name} />;
-      }
-    } else {
-      // Content[] with mixed types - sanitize and stringify for display
-      const sanitized = sanitizeForDisplay(content);
-      const formatted = JSON.stringify(sanitized, null, 2);
-      return <CodeRenderer code={formatted} language="json" name={name} />;
-    }
-  };
-
-  const getPreviewText = () => {
-    if (codeData) return codeData.code.split("\\n")[0];
-    if (queryPreview) return queryPreview;
-    return null;
-  };
+  // When a result carries an MCP UI app, the app is the primary renderer; per the
+  // MCP Apps spec the `content` blocks are for model context / text-only fallback,
+  // so we don't also render the (redundant) media inline.
+  //
+  // We also require the app's provider to be registered: restoring a chat whose app
+  // belongs to an inactive agent (or an MCP filtered out by RBAC) means the client
+  // isn't available, so we fall back to the raw result instead of a broken app. Once
+  // the provider appears (e.g. the agent is activated) this flips true and McpApp mounts.
+  const appProviderId = toolResult?.meta?.toolProvider;
+  const hasMcpApp =
+    typeof appProviderId === "string" &&
+    typeof toolResult?.meta?.toolResource === "string" &&
+    providers.some((p) => p.id === appProviderId);
+  const header = resolveToolHeader(toolDef, toolResult?.name ?? "", toolResult?.arguments, { error: isToolError });
+  const inputBlocks = useMemo(() => resolveToolInput(toolDef, toolResult?.arguments), [toolDef, toolResult?.arguments]);
+  const outputBlock = useMemo(
+    () => (message.error || !toolResult?.result ? null : resolveToolOutput(toolDef, toolResult.result)),
+    [toolDef, message.error, toolResult?.result],
+  );
 
   return (
     <div className="pb-2 max-w-full">
@@ -124,22 +66,29 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
             <div className="flex items-center gap-2 min-w-0">
               {isToolError ? (
                 <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
+              ) : header.Icon ? (
+                <header.Icon className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               ) : toolIcon ? (
-                <img src={toolIcon} alt="" className="shrink-0 w-3 h-3 object-contain" />
+                <McpProviderIcon
+                  src={toolIcon}
+                  size={12}
+                  className="shrink-0 w-3 h-3 object-contain text-neutral-400 dark:text-neutral-500"
+                />
               ) : (
                 <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               )}
               <span
                 className={cn(
-                  "text-xs font-medium whitespace-nowrap",
+                  "text-xs whitespace-nowrap truncate",
+                  header.mono ? "font-mono" : "font-medium",
                   isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400",
                 )}
               >
-                {isToolError ? "Tool Error" : `${toolResult?.name ? getToolDisplayName(toolResult.name) : "Tool"}`}
+                {isToolError && !header.Icon ? "Tool Error" : header.label}
               </span>
-              {!toolResultExpanded && getPreviewText() && (
+              {header.preview && (
                 <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                  {getPreviewText()}
+                  {header.preview}
                 </span>
               )}
             </div>
@@ -147,35 +96,39 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
         </button>
 
         {toolResultExpanded && (
-          <div className="ml-4.5 mt-2">
-            {codeData ? (
-              <CodeRenderer code={codeData.code} language="python" />
+          <div className="mt-1">
+            {/* Input — the tool's blocks, or a best-effort arguments block */}
+            {inputBlocks.map((block) => (
+              <CodeRenderer
+                key={block.name ?? block.language}
+                code={block.code}
+                language={block.language}
+                name={block.name}
+                subtle
+              />
+            ))}
+            {/* Output — the error, or the tool's / best-effort result block */}
+            {message.error ? (
+              <CodeRenderer code={message.error.message} language="text" name="Error" subtle />
             ) : (
-              toolResult?.arguments && renderContent([{ type: "text", text: toolResult.arguments }], "Arguments")
+              outputBlock && (
+                <CodeRenderer code={outputBlock.code} language={outputBlock.language} name={outputBlock.name} subtle />
+              )
             )}
-            {(message.error || toolResult?.result) &&
-              (message.error ? (
-                <CodeRenderer code={message.error.message} language="text" name="Error" />
-              ) : (
-                renderContent(toolResult?.result || [], "Result")
-              ))}
           </div>
         )}
 
-        {/* Always render media content (images, audio, files) from tool results */}
-        {toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
-          <div className="mt-2">
-            <RenderContents contents={toolResult.result} />
-          </div>
-        )}
+        {/* Render media content (images, audio, files) — unless an MCP app owns the display */}
+        {!hasMcpApp &&
+          toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
+            <div className="mt-2">
+              <RenderContents contents={toolResult.result} />
+            </div>
+          )}
 
-        {/* Render inline MCP app for tool results with UI metadata */}
-        {typeof toolResult?.meta?.toolProvider === "string" && typeof toolResult?.meta?.toolResource === "string" && (
-          <InlineMcpApp
-            key={`${chat?.id}-${index}`}
-            toolResult={toolResult}
-            isLastFullscreenApp={isLastFullscreenApp}
-          />
+        {/* Render the MCP UI app (inline or fullscreen) for tool results with UI metadata */}
+        {hasMcpApp && (
+          <McpApp key={`${chat?.id}-${index}`} toolResult={toolResult} isLastFullscreenApp={isLastFullscreenApp} />
         )}
       </div>
     </div>

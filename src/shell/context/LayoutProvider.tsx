@@ -34,5 +34,5 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     setLayoutMode: handleSetLayoutMode,
   };
 
-  return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
+  return <LayoutContext value={value}>{children}</LayoutContext>;
 }
