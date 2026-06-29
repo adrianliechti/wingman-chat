@@ -1,6 +1,6 @@
 /**
- * Execution tools (Python + Bash) for notebooks. Mirrors the artifact chat's
- * execute tools, but with notebook sources as the filesystem root.
+ * Execution tools (Python + JavaScript) for notebooks. Mirrors the artifact
+ * chat's execute tools, but with notebook sources as the filesystem root.
  *
  * Symmetric mapping: notebook source `data.csv` ↔ sandbox `/home/user/data.csv`.
  *
@@ -9,7 +9,6 @@
  * users remove sources through the UI).
  */
 
-import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
@@ -62,8 +61,8 @@ export interface SourceExecToolsOptions {
 }
 
 /**
- * Create execution tools (python + bash) that expose notebook sources as the
- * working filesystem, mounted at `/home/user/` and persisted back via `onWrite`.
+ * Create execution tools (python + javascript) that expose notebook sources as
+ * the working filesystem, mounted at `/home/user/` and persisted back via `onWrite`.
  */
 export function createSourceExecTools(getSources: () => readonly File[], options: SourceExecToolsOptions): Tool[] {
   const { onWrite } = options;
@@ -194,69 +193,6 @@ export function createSourceExecTools(getSources: () => readonly File[], options
               {
                 type: "text" as const,
                 text: `JavaScript execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-              },
-            ];
-          }
-        });
-      },
-    },
-    {
-      name: "execute_bash_code",
-      description:
-        "Execute bash commands in a sandboxed shell. All notebook sources are preloaded under `/home/user/`, and files created or modified there are saved back as notebook sources. Supports pipes, redirections, loops, jq, yq, grep, sed, awk, and sqlite3. Keep stdout small — it is capped (~10 MiB) and returned to you verbatim, and exceeding it aborts the run; summarize and write large output to a file rather than printing it, and bound the producer when inspecting (`head -c 64 file | xxd`, not `xxd file | head`).",
-      strict: true,
-      parameters: {
-        type: "object",
-        properties: {
-          command: {
-            type: "string",
-            description: "The bash command or script to execute. Full shell syntax supported.",
-          },
-        },
-        required: ["command"],
-        additionalProperties: false,
-      },
-      function: async (args: Record<string, unknown>) => {
-        const command = typeof args.command === "string" ? args.command : "";
-        if (!command.trim()) {
-          return [{ type: "text" as const, text: "Error: `command` is required." }];
-        }
-
-        // Same locking rationale as the python tool above — the bash
-        // runtime is additionally a singleton working tree.
-        return withSandboxLock(async () => {
-          const before = sourcesToFileMap(getSources());
-          const { memFs } = getSingleton();
-
-          try {
-            const inputFiles = Object.entries(before).map(([path, rec]) => ({
-              path,
-              content: rec.content,
-              contentType: rec.contentType,
-            }));
-            await loadArtifactsIntoFs(memFs, inputFiles);
-
-            const result = await executeBash({ command });
-
-            const after = normalizeMapKeys(await readFilesFromFs(memFs));
-            const written = await persistWrites(before, after);
-
-            const parts: string[] = [];
-            if (result.stdout) parts.push(result.stdout);
-            if (result.stderr) parts.push(`stderr: ${result.stderr}`);
-            if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
-            if (written.length > 0) parts.push(`Saved sources: ${written.join(", ")}`);
-
-            const output = parts.join("\n") || "Command executed successfully (no output)";
-            if (!result.success) {
-              return [{ type: "text" as const, text: `Error: ${output}` }];
-            }
-            return [{ type: "text" as const, text: output }];
-          } catch (err) {
-            return [
-              {
-                type: "text" as const,
-                text: `Bash execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
               },
             ];
           }

@@ -3,11 +3,10 @@
 A sandboxed environment for actually doing work on the user's files — not just
 describing it. Reach for it whenever the real answer depends on running something
 against real data: compute it, parse it, transform it, or produce the file, rather
-than estimating by hand. Three tools share one artifact filesystem:
+than estimating by hand. Two tools share one artifact filesystem:
 
 - `execute_python_code` — Run Python code via Pyodide
 - `execute_javascript_code` — Run JavaScript in a sandboxed Web Worker (browser-native APIs, no network)
-- `execute_bash_code` — Run bash commands/scripts via a sandboxed shell
 
 ### Working principles
 
@@ -31,13 +30,13 @@ than estimating by hand. Three tools share one artifact filesystem:
 ### Shared rules
 
 - Artifact files are available to every tool run and changes are written back after execution.
-- Use artifact files and explicit paths as the source of truth. Do not rely on prior shell cwd, shell variables, or transient runtime state.
+- Use artifact files and explicit paths as the source of truth. Do not rely on in-memory state from a previous run (variables, working directory, or loaded data) — re-read what you need.
 
 ### Filesystem mapping
 
 Artifact paths (what you see in the file list) are always absolute and start with `/`, for example `/analysis/data.csv` or `/scripts/report.py`.
 
-`execute_python_code` and `execute_bash_code` mount artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`. After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped).
+`execute_python_code` mounts artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`. After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped).
 
 `execute_javascript_code` does not mount a real filesystem — it reads and writes artifacts through the injected `vfs` helper, addressed by artifact path (e.g. `/analysis/data.csv`). Files written via `vfs` are synced back as artifacts.
 
@@ -50,6 +49,7 @@ Use Python for:
 - Pandas/numpy-style table and array work
 - Analytical and statistical charts with matplotlib / seaborn (write PNG or SVG files)
 - Office document processing such as Excel, Word, PowerPoint, and PDF (see the Office Documents section for library-specific guidance)
+- File, text, JSON, CSV, and SQL work — parse and transform files with the stdlib (`json`, `csv`, `re`, `pathlib`, `zipfile`, `glob`) and query data with the built-in `sqlite3`; pandas handles CSV/tabular munging
 - Complex parsing or multi-step logic that benefits from real execution
 
 How to use it:
@@ -112,41 +112,12 @@ Limitations:
 - No DOM and no Window-only APIs: `document`, `AudioContext`/Web Audio, and `MediaRecorder` are unavailable in the worker. Use `OffscreenCanvas` and WebCodecs instead.
 - No npm packages — only the worker's built-in Web APIs and the bundled `mediabunny`, `echarts`, and `jsPDF`.
 
-### Bash Interpreter (`execute_bash_code`)
-
-Use Bash for:
-- File inspection, file moves, renames, and directory scans
-- Text pipelines with grep, sed, awk, sort, uniq, cut, tr, head, tail, wc
-- JSON with `jq`, YAML/XML/TOML with `yq`, CSV with `xan`, and SQL with `sqlite3`
-- Quick data extraction, format conversion, and multi-step shell pipelines
-
-Available commands:
-- The usual text and file utilities: grep, sed, awk, sort, uniq, cut, tr, head, tail, wc, find, diff, xargs, tar, gzip, and the standard coreutils.
-- Bundled data tools worth knowing (not always preinstalled elsewhere): `jq` (JSON), `yq` (YAML/XML/TOML), `xan` (CSV), `sqlite3` (SQL).
-- Full shell syntax: pipes, redirections, chaining, variables, loops, functions, conditionals, globs.
-
-How to use it:
-1. Put the full script or command in `command`.
-2. Prefer explicit paths instead of assuming the previous cwd still matters.
-3. Use pipes for shell-native transformations.
-4. Use Bash when the task is mostly files, text, JSON, YAML, CSV, or SQLite.
-5. To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`. They mount read-only under `/home/user/skills/<name>/` for that run (using the exact paths from `read_skill`) and are not saved as artifacts.
-6. Keep stdout small: summarize results rather than dumping them, and write large or full-fidelity output to a file (saved as an artifact) instead of printing it.
-
-Limitations:
-- No network access.
-- Only built-in sandbox commands are available.
-- The script runs in a sandbox rooted at `/home/user/`.
-- stdout/stderr is capped (~10 MiB), returned to you verbatim, and exceeding it aborts the run. Inspect with bounds (`head -c`, `head`, `grep`, `wc`); there is no SIGPIPE, so bound the *producer*, not the consumer — `head -c 64 file | xxd`, not `xxd file | head`.
-- Other execution limits (command count, loop iterations, call depth) also apply.
-
 ### Choosing and combining tools
 
-Pick whatever is most efficient — one runtime or several. The tools share one artifact filesystem, so handing work from one to another is cheap: write a file in one, read it in the next. There's no need to force everything into a single runtime, and no need to split work that one runtime already handles cleanly — use your judgment.
+Pick whatever is most efficient — one runtime or both. The tools share one artifact filesystem, so handing work from one to another is cheap: write a file in one, read it in the next. There's no need to force everything into a single runtime, and no need to split work that one runtime already handles cleanly — use your judgment.
 
 Rough strengths, as orientation rather than rules:
-- **Python** — computation, statistics, data and tabular work (pandas), and document libraries (PDF, Excel, Word, PowerPoint). The broadest toolbox.
+- **Python** — computation, statistics, data and tabular work (pandas), file/text/JSON/CSV/SQL munging (stdlib + built-in `sqlite3`), and document libraries (PDF, Excel, Word, PowerPoint). The broadest toolbox.
 - **JavaScript** — browser-native APIs (WebCodecs, OffscreenCanvas, Web Crypto, WebAssembly) and clean vector deliverables (echarts → SVG, jsPDF).
-- **Bash** — shell pipelines and file/path work (grep/sed/awk, `jq`/`yq`/`xan`/`sqlite3`, find, renames).
 
-When a later step wants a different runtime's strength, hand off through an artifact file — for example, compute series in Python, write `/chart_data.json`, then render an echarts SVG in JavaScript; or slice a large file with `xan`/`jq` in Bash, then analyze it in Python. When one runtime already does the job, stay in it — e.g. chart a DataFrame in place with matplotlib instead of shipping it to JavaScript.
+When a later step wants a different runtime's strength, hand off through an artifact file — for example, compute series in Python, write `/chart_data.json`, then render an echarts SVG in JavaScript. When one runtime already does the job, stay in it — e.g. chart a DataFrame in place with matplotlib instead of shipping it to JavaScript.

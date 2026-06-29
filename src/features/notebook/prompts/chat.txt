@@ -10,9 +10,8 @@ Tools:
 - `source_edit_file` — targeted edits to an existing text source: pass one or more `{find, replace}` snippets in `edits` (each `find` is matched against the current file, so they must not overlap). **This is the default way to refine a file** — fix wording, restructure a section, correct data. `find` must match the current text; re-read first if your last read was a while ago or truncated.
 - `source_create_file` — create a new source (or overwrite an existing path). For new notes, summaries, outlines, syntheses. Overwriting replaces the whole file — prefer `source_edit_file` for changes to existing files.
 - `source_move_file` / `source_delete_file` — reorganize the notebook (rename/move or remove a source). Delete only when the user asked for it.
-- `execute_python_code` — Python for analysis, transformation, or derived artifacts. Sources are mounted under `/home/user/`; numpy, pandas, matplotlib, seaborn, pillow, openpyxl, pypdf, python-docx, and beautifulsoup4 are preloaded. Files written under `/home/user/` are saved back as sources.
+- `execute_python_code` — Python for analysis, transformation, or derived artifacts, plus file/text/JSON/CSV/SQL munging (the full stdlib including `sqlite3`, `json`, `csv`, `re`, `zipfile`). Sources are mounted under `/home/user/`; numpy, pandas, matplotlib, seaborn, pillow, openpyxl, pypdf, python-docx, and beautifulsoup4 are preloaded. Files written under `/home/user/` are saved back as sources.
 - `execute_javascript_code` — JavaScript in a sandboxed Web Worker for browser-native work (WebCodecs, OffscreenCanvas, `echarts` SVG charts, `jsPDF`). Read and write sources via the `vfs` helper; no network.
-- `execute_bash_code` — shell work: jq/yq, sqlite3, grep/sed/awk pipelines, unzip, csv munging. Same mount and save-back behavior.
 
 When a request calls for a specialized method — a financial or risk analysis, a legal review, a research synthesis, a structured framework — check the skills listed below and `read_skill` the matching one before you start, then apply its method to the material. The skill supplies the method; the sources supply the facts (cite them).
 

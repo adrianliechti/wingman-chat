@@ -474,7 +474,7 @@ export function useNotebook(notebookId?: string) {
   }, []);
 
   /**
-   * Write (or overwrite) a source at the given path. Used by the python/bash
+   * Write (or overwrite) a source at the given path. Used by the python/javascript
    * execution tools to persist files the sandbox produced back into the
    * notebook. Paths are taken verbatim; content may be utf-8 text or a
    * `data:` URL for binary payloads.

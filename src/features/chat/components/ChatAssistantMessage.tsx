@@ -217,7 +217,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // sticky after trackpad taps, so the buttons wouldn't reliably hide.
   const [hovered, setHovered] = useState(false);
 
-  // Files written during this turn (create_file + python/bash), surfaced as
+  // Files written during this turn (create_file + python/javascript), surfaced as
   // clickable chips on the turn's completion message rather than auto-opening
   // the artifacts drawer.
   const turnArtifactPaths = useMemo(

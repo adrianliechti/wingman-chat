@@ -1,4 +1,4 @@
-import { Braces, Shapes, SquareCode, SquareTerminal } from "lucide-react";
+import { Braces, Shapes, SquareCode } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
@@ -11,7 +11,6 @@ import synthesizeInstructionsText from "@/features/artifacts/prompts/synthesize.
 import transcribeInstructionsText from "@/features/artifacts/prompts/transcribe.txt?raw";
 import translateInstructionsText from "@/features/artifacts/prompts/translate.txt?raw";
 import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw";
-import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
@@ -231,7 +230,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                   path: file.path,
                   contentType: file.contentType,
                   binary: true,
-                  note: "Binary file. Use Python/bash tools to process it at /home/user/.",
+                  note: "Binary file. Use the Python tool to process it at /home/user/.",
                 }
               : {
                   path: file.path,
@@ -429,7 +428,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           additionalProperties: false,
         },
         // Same snapshot → execute → sync-back section under the sandbox lock as
-        // the Python/Bash tools: parallel tool calls would otherwise commit
+        // the Python tool: parallel tool calls would otherwise commit
         // stale full snapshots over each other's outputs.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
           withSandboxLock(async () => {
@@ -501,114 +500,6 @@ export function useArtifactsProvider(): ToolProvider | null {
             }
           }),
       },
-      {
-        name: "execute_bash_code",
-        display: {
-          header: (args, state) => {
-            const command = typeof args?.command === "string" ? args.command.trim() : "";
-            // Frame the command with a verb (and show the command as the mono
-            // preview) so it reads like the other tools across every state.
-            const label = state.error ? "Command failed" : state.running ? "Running" : "Ran";
-            return command
-              ? { icon: SquareTerminal, label, preview: command }
-              : { icon: SquareTerminal, label: state.running ? "Running…" : label };
-          },
-          input: (args) => {
-            const command = typeof args?.command === "string" ? args.command.trim() : "";
-            return command ? [{ code: command, language: "bash" }] : [];
-          },
-        },
-        description:
-          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more. Keep stdout small — it is capped (~10 MiB) and returned to you verbatim, and exceeding it aborts the run; summarize and write large output to a file (saved as an artifact) rather than printing it, and bound the producer when inspecting (`head -c 64 file | xxd`, not `xxd file | head`). To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`: they mount read-only under /home/user/skills/<name>/ for that run.",
-        strict: true,
-        parameters: {
-          type: "object",
-          properties: {
-            command: {
-              type: "string",
-              description:
-                "The bash command or script to execute. Supports full shell syntax: pipes (|), redirections (>, >>), chaining (&&, ||, ;), variables, loops, functions, and glob patterns.",
-            },
-            skills: {
-              type: ["array", "null"],
-              items: { type: "string" },
-              description:
-                "Optional skill names whose bundled resources to mount under /home/user/skills/<name>/ for this run (use the resource paths from read_skill). Mounted read-only; not saved as artifacts.",
-            },
-          },
-          required: ["command", "skills"],
-          additionalProperties: false,
-        },
-        // Runs under the sandbox lock for the same reason as the Python tool —
-        // and because the bash runtime itself is a singleton working tree.
-        function: (args: Record<string, unknown>, context?: ToolContext) =>
-          withSandboxLock(async () => {
-            const fs = fsRef.current;
-            const { command } = args;
-
-            if (typeof command !== "string" || !command.trim()) {
-              return executionFailure(context, "Error: `command` is required (a non-empty bash command or script).");
-            }
-
-            try {
-              // Load artifact files into bash's InMemoryFs before execution, then
-              // mount any requested skills' resources read-only for this run.
-              // Reconcile even without an artifacts fs — the singleton persists
-              // across chats, so skipping this would leave a previous chat's
-              // files readable here.
-              const { memFs } = getSingleton();
-              const fileMap: SandboxFiles = {};
-              if (fs) {
-                const snapshot = await fs.getOverlaySnapshot();
-                for (const [path, file] of Object.entries(snapshot)) {
-                  fileMap[path] = { content: file.content, contentType: file.contentType };
-                }
-              }
-              const skillKeys = mergeSkillFiles(fileMap, await mountSkillFiles(asStringArray(args.skills)));
-              const artifactFiles = Object.entries(fileMap).map(([path, file]) => ({
-                path,
-                content: file.content,
-                contentType: file.contentType,
-              }));
-              await loadArtifactsIntoFs(memFs, artifactFiles);
-
-              const result = await executeBash({
-                command,
-              });
-
-              // Save changed files back to artifacts after execution and surface
-              // the ones written so the chat can show them as chips on the
-              // assistant's response. Strip mounted skill resources so they don't
-              // persist as artifacts.
-              if (fs) {
-                const currentFiles = await readFilesFromFs(memFs);
-                for (const key of skillKeys) delete currentFiles[key];
-
-                const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
-                const written = [...summary.createdPaths, ...summary.updatedPaths];
-                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
-              }
-
-              const parts: string[] = [];
-              if (result.stdout) parts.push(result.stdout);
-              if (result.stderr) parts.push(`stderr: ${result.stderr}`);
-              if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
-
-              const output = parts.join("\n") || "Command executed successfully (no output)";
-
-              if (!result.success) {
-                return executionFailure(context, `Error: ${output}`);
-              }
-
-              return [{ type: "text" as const, text: output }];
-            } catch (error) {
-              return executionFailure(
-                context,
-                `Bash execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-              );
-            }
-          }),
-      },
     ];
 
     return [...fileTools, ...contextTools, ...executionTools];
@@ -625,7 +516,7 @@ export function useArtifactsProvider(): ToolProvider | null {
     return {
       id: "artifacts",
       name: "Artifacts",
-      description: "Create and edit files, run Python and Bash code",
+      description: "Create and edit files, run Python and JavaScript code",
       icon: Shapes,
       instructions: [
         artifactsInstructionsText,

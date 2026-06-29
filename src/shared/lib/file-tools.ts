@@ -163,7 +163,7 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
       if (isDataUrl(content)) {
         const ct = file.contentType ?? "application/octet-stream";
         return text(
-          `# ${path} (binary, ${ct})\n[Binary file — not shown as text. Use Python/bash tools to process it (the file is available in the sandbox).]`,
+          `# ${path} (binary, ${ct})\n[Binary file — not shown as text. Use the Python tool to process it (the file is available in the sandbox).]`,
         );
       }
 

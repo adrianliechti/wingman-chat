@@ -68,7 +68,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
     return {
       tools: async () => {
-        // Make the active chat model available to the python/bash `llm` helper
+        // Make the active chat model available to the python `llm` helper
         // so it inherits whatever the user is currently chatting with.
         setInterpreterModel(model?.id ?? null);
 

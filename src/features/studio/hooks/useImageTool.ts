@@ -188,7 +188,7 @@ export function useImageTool(): Tool | null {
           const dataUrl = await readAsDataURL(imageBlob);
 
           // Save to the artifacts workspace so the image is downloadable, editable
-          // by path, and usable by the Python/Bash tools. Best-effort — a save
+          // by path, and usable by the Python tool. Best-effort — a save
           // failure must not discard a successfully generated image.
           let name: string | undefined;
           const activeFs = fsRef.current;

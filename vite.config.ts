@@ -8,7 +8,6 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite-plus";
 
 const src = path.resolve(import.meta.dirname, "src");
-const shim = (file: string) => path.resolve(src, "shared/lib", file);
 
 // ── Dev parity for the server's /skills and /notebooks inventory endpoints ──
 // In production these are served by the Go server (pkg/server/library) from the
@@ -223,11 +222,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": src,
-      // just-bash imports Node built-ins that don't exist in the browser
-      "node:zlib": shim("zlib-shim.ts"),
-      zlib: shim("zlib-shim.ts"),
-      "node:dns": shim("dns-shim.ts"),
-      dns: shim("dns-shim.ts"),
     },
   },
   optimizeDeps: {
@@ -288,7 +282,6 @@ export default defineConfig({
             { name: "vendor-react", test: /node_modules[\\/](react|react-dom)[\\/]/ },
             { name: "vendor-openai", test: /node_modules[\\/]openai[\\/]/ },
             { name: "vendor-reactflow", test: /node_modules[\\/]@xyflow[\\/]/ },
-            { name: "vendor-bash", test: /node_modules[\\/]just-bash[\\/]/ },
             { name: "vendor-docx", test: /node_modules[\\/](docx|marked|jspdf)[\\/]/ },
             { name: "vendor-pdf", test: /node_modules[\\/]pdfjs-dist[\\/]/ },
             {

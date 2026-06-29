@@ -28,7 +28,7 @@ const TOOL_NAMESPACE = "source_";
  * freshly-created sources are visible to later tool calls within the same
  * agent run. Binary sources (images, audio, …) are stored as `data:` URLs;
  * they are returned verbatim so the shared read/edit/grep tools detect them
- * and render the standard "binary — use the Python/bash tools" notice rather
+ * and render the standard "binary — use the Python tool" notice rather
  * than dumping a multi-KB base64 blob into the model's context.
  */
 function readSource(getSources: () => File[]) {

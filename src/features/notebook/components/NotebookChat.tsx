@@ -31,7 +31,6 @@ const TOOL_VERBS: Record<string, string> = {
   read_skill_resource: "skill file",
   execute_python_code: "python",
   execute_javascript_code: "javascript",
-  execute_bash_code: "bash",
 };
 
 /**

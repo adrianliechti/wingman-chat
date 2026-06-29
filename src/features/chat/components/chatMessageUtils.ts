@@ -3,12 +3,7 @@ import type { Message, TextContent, ToolResultContent } from "@/shared/types/cha
 
 // Artifacts-provider tools that produce/write files (unnamespaced — the
 // notebook source tools use a `source_` prefix and a different filesystem).
-const ARTIFACT_WRITE_TOOLS = new Set([
-  "create_file",
-  "execute_python_code",
-  "execute_javascript_code",
-  "execute_bash_code",
-]);
+const ARTIFACT_WRITE_TOOLS = new Set(["create_file", "execute_python_code", "execute_javascript_code"]);
 
 // User attachments are uploaded into the artifacts workspace and referenced in
 // the sent message by this prose line so the model knows to read them. The UI
@@ -44,7 +39,7 @@ function toolResultArtifactPaths(result: ToolResultContent): string[] {
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
     return path ? [path] : [];
   }
-  // execute_python_code / execute_bash_code report written files via meta.
+  // execute_python_code / execute_javascript_code report written files via meta.
   const files = result.meta?.artifactFiles;
   return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
 }
