@@ -1,4 +1,14 @@
-import { Download, Edit2, Folder, FolderOpen, HardDrive, MoreVertical, Trash, Upload } from "lucide-react";
+import {
+  Download,
+  Edit2,
+  Folder,
+  FolderOpen,
+  HardDrive,
+  MoreVertical,
+  PanelRightClose,
+  Trash,
+  Upload,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { DriveConfig } from "@/shared/config";
@@ -204,6 +214,7 @@ interface ArtifactsBrowserProps {
   onUploadDrive?: (drive: DriveConfig) => void;
   onDownloadAll?: () => void;
   onDownloadFile?: (path: string) => void;
+  onClose?: () => void;
 }
 
 export function ArtifactsBrowser({
@@ -217,6 +228,7 @@ export function ArtifactsBrowser({
   onUploadDrive,
   onDownloadAll,
   onDownloadFile,
+  onClose,
 }: ArtifactsBrowserProps) {
   const hasDrives = drives.length > 0 && !!onUploadDrive;
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -326,12 +338,21 @@ export function ArtifactsBrowser({
     <div className="w-full h-full flex flex-col">
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
-        <div className="pt-1 min-w-full">
-          {/* Root folder row */}
-          <div className="flex items-center gap-1 pl-3 pr-2 py-2 min-w-0 group">
-            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">
-              Files
-            </span>
+        <div className="min-w-full">
+          {/* Root folder row — height matches the editor top bar so the close
+              button lines up with the open button it replaces. */}
+          <div className="flex items-center gap-1 pl-1.5 pr-2 h-12 md:h-10 min-w-0 group">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                title="Hide files"
+                className="shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <PanelRightClose size={14} />
+              </button>
+            )}
+            <div className="flex-1" />
             {(onUploadLocal || hasDrives || onDownloadAll) && (
               <DropdownMenu
                 anchor="bottom start"

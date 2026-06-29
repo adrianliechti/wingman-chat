@@ -4,13 +4,11 @@ import {
   Download,
   Eye,
   File as FileIcon2,
-  Files,
   HardDrive,
   Loader2,
   PanelRightOpen,
   Play,
   Shapes,
-  Terminal,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,7 +25,6 @@ import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
-import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
 import { DocxEditor } from "@/shared/ui/editors/DocxEditor";
@@ -50,17 +47,15 @@ import { ArtifactsBrowser } from "./ArtifactsBrowser";
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
-  const { chat, ensureChat } = useChat();
+  const { ensureChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
-  const [showTerminal, setShowTerminal] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const filePickerRef = useRef<HTMLDivElement>(null);
-  const [terminalMounted, setTerminalMounted] = useState(false);
   const [showFilesBrowser, setShowFilesBrowser] = useState(false);
   const viewSliderRef = useRef<HTMLDivElement>(null);
   const [viewSliderStyle, setViewSliderStyle] = useState({ left: 0, width: 0 });
@@ -128,16 +123,6 @@ export function ArtifactsDrawer() {
     },
     [uploadFiles],
   );
-
-  // Toggle terminal panel (auto-creates chat if needed)
-  const toggleTerminal = useCallback(async () => {
-    const opening = !showTerminal;
-    if (opening) {
-      await ensureFs();
-      setTerminalMounted(true);
-    }
-    setShowTerminal(opening);
-  }, [showTerminal, ensureFs]);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
@@ -523,16 +508,6 @@ export function ArtifactsDrawer() {
             />
           );
         }
-        if (lang === "sh" || lang === "bash") {
-          return (
-            <BashEditor
-              key={editorKey}
-              initialScript={activeFileData.content}
-              onRunReady={onRunReady}
-              onRunningChange={setIsRunning}
-            />
-          );
-        }
         return <CodeEditor key={editorKey} content={activeFileData.content} language={lang} />;
       }
       default:
@@ -612,9 +587,9 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Outer horizontal split: left = top bar + editor + terminal; right = files browser (full height) */}
+      {/* Outer horizontal split: left = top bar + editor; right = files browser (full height) */}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-        {/* Left column: top bar + vertical editor/terminal split */}
+        {/* Left column: top bar + editor */}
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
           <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
@@ -891,64 +866,29 @@ export function ArtifactsDrawer() {
                     })()}
                 </div>
 
-                {chat?.id && <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />}
+                {files.length > 0 && !showFilesBrowser && (
+                  <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
+                )}
               </>
             )}
 
-            {chat?.id && (
-              <DropdownMenu
-                anchor="bottom end"
-                trigger={
-                  <MenuButton
-                    className="flex items-center gap-0.5 p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                    title="Toggle panels"
-                  >
-                    <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                    <ChevronDown size={10} className="w-3 h-3 md:w-2.5 md:h-2.5 opacity-60" />
-                  </MenuButton>
-                }
+            {files.length > 0 && !showFilesBrowser && (
+              <button
+                type="button"
+                onClick={() => setShowFilesBrowser(true)}
+                className="flex items-center p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                title="Show files"
               >
-                {files.length > 0 && (
-                  <DropdownMenuItem
-                    icon={<Files size={12} />}
-                    selected={showFilesBrowser}
-                    onClick={() => setShowFilesBrowser((v) => !v)}
-                  >
-                    Files
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem icon={<Terminal size={12} />} selected={showTerminal} onClick={toggleTerminal}>
-                  Terminal
-                </DropdownMenuItem>
-              </DropdownMenu>
+                <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+              </button>
             )}
           </div>
 
-          {/* Vertical split: editor on top, terminal on bottom */}
-          <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
-            <ResizablePanel defaultSize={70} minSize={20} className="h-full overflow-hidden relative z-0">
-              {renderFileEditor()}
-            </ResizablePanel>
-
-            {/* Terminal — spans only the left column, below the editor */}
-            {terminalMounted && showTerminal && (
-              <ResizablePanel defaultSize={30} minSize={80}>
-                <div className="h-full relative z-10 border-t border-black/10 dark:border-white/10 shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.5)]">
-                  <BashEditor key="terminal" visible={showTerminal} />
-                </div>
-              </ResizablePanel>
-            )}
-          </ResizablePanelGroup>
-
-          {/* Keep terminal mounted but hidden when closed */}
-          {terminalMounted && !showTerminal && (
-            <div className="hidden">
-              <BashEditor key="terminal" visible={false} />
-            </div>
-          )}
+          {/* Editor fills the left column */}
+          <div className="flex-1 min-h-0 overflow-hidden relative z-0">{renderFileEditor()}</div>
         </ResizablePanel>
 
-        {/* Files browser — right panel spanning full drawer height (including header and over terminal) */}
+        {/* Files browser — right panel shown alongside the editor */}
         {files.length > 0 && fs && showFilesBrowser && (
           <ResizablePanel defaultSize={25} minSize={120}>
             <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
@@ -959,6 +899,7 @@ export function ArtifactsDrawer() {
                 onFileClick={openFile}
                 drives={config.drives}
                 isProcessing={isProcessing}
+                onClose={() => setShowFilesBrowser(false)}
                 onUploadLocal={() => fileInputRef.current?.click()}
                 onUploadDrive={(drive) => setActiveDrive(drive)}
                 onDownloadAll={async () => {

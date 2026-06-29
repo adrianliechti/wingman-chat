@@ -1,9 +1,8 @@
 ### Transcription helper (`transcribe`)
 
-All interpreters expose a `transcribe` helper that converts an audio (or video) file to text via the configured speech-to-text service. It handles common formats like WAV, MP3, M4A, OGG, MP4 and WebM. Video files are handled directly — the helper extracts the audio track in the browser before transcribing, so pass the video as-is without converting it first.
+Both the Python and JavaScript interpreters expose a `transcribe` helper that converts an audio (or video) file to text via the configured speech-to-text service. It handles common formats like WAV, MP3, M4A, OGG, MP4 and WebM. Video files are handled directly — the helper extracts the audio track in the browser before transcribing, so pass the video as-is without converting it first.
 
 - Python: `text = await transcribe("/home/user/meeting.mp3")` — async, returns `str`
 - JavaScript: `const text = await transcribe("/meeting.mp3")` — async, returns a string
-- Bash: `transcribe meeting.mp3` — writes the text to stdout; `-o/--output <file>` writes it to a file instead
 
 One call per recording: it is a network round trip — pass the whole file, never split it into chunks first.

@@ -4,14 +4,7 @@ import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { javascriptCommands } from "./javascriptCommand";
-import { llmCommands } from "./llmCommand";
-import { ocrCommands } from "./ocrCommand";
 import { pythonCommands } from "./pythonCommand";
-import { renderCommands } from "./renderCommand";
-import { synthesizeCommands } from "./synthesizeCommand";
-import { transcribeCommands } from "./transcribeCommand";
-import { translateCommands } from "./translateCommand";
-import { visionCommands } from "./visionCommand";
 
 export interface BashExecutionRequest {
   command: string;
@@ -71,17 +64,7 @@ export function createBashInstance(files?: Record<string, { content: string; con
   const bash = new Bash({
     fs: memFs,
     cwd: SANDBOX_HOME,
-    customCommands: [
-      ...pythonCommands,
-      ...javascriptCommands,
-      ...llmCommands,
-      ...ocrCommands,
-      ...visionCommands,
-      ...renderCommands,
-      ...synthesizeCommands,
-      ...transcribeCommands,
-      ...translateCommands,
-    ],
+    customCommands: [...pythonCommands, ...javascriptCommands],
     executionLimits: {
       maxCallDepth: 50,
       maxCommandCount: 10000,
@@ -90,28 +73,6 @@ export function createBashInstance(files?: Record<string, { content: string; con
   });
 
   return { bash, memFs };
-}
-
-export function getBashCwd(instance: BashInstance): string {
-  return instance.bash.getCwd();
-}
-
-export function getBashEnv(instance: BashInstance): Record<string, string> {
-  return instance.bash.getEnv();
-}
-
-export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Promise<string> {
-  const candidate = cwd?.trim();
-  if (!candidate) {
-    return SANDBOX_HOME;
-  }
-
-  try {
-    const stat = await memFs.stat(candidate);
-    return stat.isDirectory ? candidate : SANDBOX_HOME;
-  } catch {
-    return SANDBOX_HOME;
-  }
 }
 
 /** Execute a bash command on the singleton instance, which persists FS state across calls in one session. */

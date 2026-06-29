@@ -1,19 +1,6 @@
-import { type Command, type CommandContext, defineCommand, type ExecResult } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { parseFlags, resolvePath, writeOutputFile } from "./commandUtils";
-import { decodeStdin } from "./stdin";
-
-const TRANSLATE_FLAGS = {
-  "-l": "lang",
-  "--lang": "lang",
-  "-i": "input",
-  "--input": "input",
-  "-o": "output",
-  "--output": "output",
-};
-const TRANSLATE_USAGE = 'usage: translate -l <lang> ["text" | -i input.file -o output.file]';
 
 function requireTranslator() {
   const config = getConfig();
@@ -68,56 +55,3 @@ export async function runTranslateFile(lang: string, bytes: Uint8Array, path: st
   }
   return data;
 }
-
-async function executeTranslate(args: string[], ctx: CommandContext): Promise<ExecResult> {
-  const { options, rest, error } = parseFlags("translate", args, TRANSLATE_FLAGS);
-  if (error) {
-    return { stdout: "", stderr: `${error}\n`, exitCode: 2 };
-  }
-
-  const lang = options.lang?.at(-1);
-  if (!lang) {
-    return { stdout: "", stderr: `${TRANSLATE_USAGE}\n`, exitCode: 2 };
-  }
-
-  const input = options.input?.at(-1);
-  const output = options.output?.at(-1);
-
-  try {
-    // File mode: read the input file, translate it, write the result.
-    if (input) {
-      if (!output) {
-        return { stdout: "", stderr: "translate: file translation requires -o/--output\n", exitCode: 2 };
-      }
-      const fsPath = resolvePath(input, ctx.cwd);
-      let bytes: Uint8Array;
-      try {
-        // readFileBuffer, not readFile — the latter decodes to UTF-8, which
-        // destroys binary formats like PDF or docx.
-        bytes = await ctx.fs.readFileBuffer(fsPath);
-      } catch {
-        return { stdout: "", stderr: `translate: cannot read file: ${input}\n`, exitCode: 1 };
-      }
-      const data = await runTranslateFile(lang, bytes, fsPath);
-      await writeOutputFile(ctx.fs, resolvePath(output, ctx.cwd), data);
-      return { stdout: "", stderr: "", exitCode: 0 };
-    }
-
-    // Text mode: translate args (or piped stdin), print or write the result.
-    const text = rest.join(" ").trim() || decodeStdin(ctx.stdin);
-    if (!text) {
-      return { stdout: "", stderr: "translate: no text provided (pass as args or pipe via stdin)\n", exitCode: 2 };
-    }
-    const result = await runTranslateText(lang, text);
-    if (output) {
-      await writeOutputFile(ctx.fs, resolvePath(output, ctx.cwd), result);
-      return { stdout: "", stderr: "", exitCode: 0 };
-    }
-    return { stdout: result.endsWith("\n") ? result : `${result}\n`, stderr: "", exitCode: 0 };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { stdout: "", stderr: `${message}\n`, exitCode: 1 };
-  }
-}
-
-export const translateCommands: Command[] = [defineCommand("translate", executeTranslate)];

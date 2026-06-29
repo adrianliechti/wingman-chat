@@ -1,8 +1,7 @@
-import type { Command } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { defineFileToTextCommand, resolveModel } from "./commandUtils";
+import { resolveModel } from "./commandUtils";
 import { extractAudioForTranscription } from "./extractAudio";
 
 export async function runTranscribe(bytes: Uint8Array, path: string): Promise<string> {
@@ -45,11 +44,3 @@ export async function runTranscribe(bytes: Uint8Array, path: string): Promise<st
   );
   return text;
 }
-
-export const transcribeCommands: Command[] = [
-  defineFileToTextCommand({
-    name: "transcribe",
-    usage: "usage: transcribe [-o output.txt] <audio>",
-    run: runTranscribe,
-  }),
-];

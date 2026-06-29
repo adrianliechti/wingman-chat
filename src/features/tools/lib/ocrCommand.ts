@@ -1,8 +1,6 @@
-import type { Command } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { defineFileToTextCommand } from "./commandUtils";
 
 export async function runOcr(bytes: Uint8Array, path: string): Promise<string> {
   const config = getConfig();
@@ -24,7 +22,3 @@ export async function runOcr(bytes: Uint8Array, path: string): Promise<string> {
   console.debug(`ocr: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);
   return text;
 }
-
-export const ocrCommands: Command[] = [
-  defineFileToTextCommand({ name: "ocr", usage: "usage: ocr [-o output.txt] <file>", run: runOcr }),
-];

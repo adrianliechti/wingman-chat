@@ -1,10 +1,8 @@
-import type { Command } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { bytesToDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 import { getTextFromContent, Role } from "@/shared/types/chat";
-import { defineFileToTextCommand } from "./commandUtils";
 import { getModel } from "./llmCommand";
 
 const DEFAULT_PROMPT =
@@ -52,12 +50,3 @@ export async function runVision(bytes: Uint8Array, path: string, prompt?: string
   console.debug(`vision: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);
   return text;
 }
-
-export const visionCommands: Command[] = [
-  defineFileToTextCommand({
-    name: "vision",
-    usage: 'usage: vision [-o output.txt] <image> ["prompt"]',
-    acceptsPrompt: true,
-    run: runVision,
-  }),
-];
