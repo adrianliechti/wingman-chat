@@ -18,6 +18,7 @@ Provide the contract file, URL, or text to review.
 ### Step 1: Accept the Contract
 
 Accept the contract in any of these formats:
+
 - **File upload**: PDF, DOCX, or other document format
 - **URL**: Link to a contract in your contract lifecycle management system, cloud storage, or other document system
 - **Pasted text**: Contract text pasted directly into the conversation
@@ -40,11 +41,13 @@ If the user provides partial context, proceed with what you have and note assump
 Look for the organization's contract review playbook in local settings (e.g., a `legal.local.md` or similar configuration file).
 
 The playbook should define:
+
 - **Standard positions**: The organization's preferred terms for each major clause type
 - **Acceptable ranges**: Terms that can be agreed to without escalation
 - **Escalation triggers**: Terms that require senior counsel review or outside counsel involvement
 
 **If no playbook is configured:**
+
 - Inform the user that no playbook was found
 - Offer two options:
   1. Help the user set up their playbook (walk through defining positions for key clauses)
@@ -63,20 +66,20 @@ Apply the following review process:
 
 Analyze the contract systematically, covering at minimum:
 
-| Clause Category | Key Review Points |
-|----------------|-------------------|
-| **Limitation of Liability** | Cap amount, carveouts, mutual vs. unilateral, consequential damages |
-| **Indemnification** | Scope, mutual vs. unilateral, cap, IP infringement, data breach |
-| **IP Ownership** | Pre-existing IP, developed IP, work-for-hire, license grants, assignment |
-| **Data Protection** | DPA requirement, processing terms, sub-processors, breach notification, cross-border transfers |
-| **Confidentiality** | Scope, term, carveouts, return/destruction obligations |
-| **Representations & Warranties** | Scope, disclaimers, survival period |
-| **Term & Termination** | Duration, renewal, termination for convenience, termination for cause, wind-down |
-| **Governing Law & Dispute Resolution** | Jurisdiction, venue, arbitration vs. litigation |
-| **Insurance** | Coverage requirements, minimums, evidence of coverage |
-| **Assignment** | Consent requirements, change of control, exceptions |
-| **Force Majeure** | Scope, notification, termination rights |
-| **Payment Terms** | Net terms, late fees, taxes, price escalation |
+| Clause Category                        | Key Review Points                                                                              |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Limitation of Liability**            | Cap amount, carveouts, mutual vs. unilateral, consequential damages                            |
+| **Indemnification**                    | Scope, mutual vs. unilateral, cap, IP infringement, data breach                                |
+| **IP Ownership**                       | Pre-existing IP, developed IP, work-for-hire, license grants, assignment                       |
+| **Data Protection**                    | DPA requirement, processing terms, sub-processors, breach notification, cross-border transfers |
+| **Confidentiality**                    | Scope, term, carveouts, return/destruction obligations                                         |
+| **Representations & Warranties**       | Scope, disclaimers, survival period                                                            |
+| **Term & Termination**                 | Duration, renewal, termination for convenience, termination for cause, wind-down               |
+| **Governing Law & Dispute Resolution** | Jurisdiction, venue, arbitration vs. litigation                                                |
+| **Insurance**                          | Coverage requirements, minimums, evidence of coverage                                          |
+| **Assignment**                         | Consent requirements, change of control, exceptions                                            |
+| **Force Majeure**                      | Scope, notification, termination rights                                                        |
+| **Payment Terms**                      | Net terms, late fees, taxes, price escalation                                                  |
 
 For each clause, assess against the playbook (or generic standards) and note whether it is present, absent, or unusual.
 
@@ -85,6 +88,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Limitation of Liability
 
 **Key elements to review:**
+
 - Cap amount (fixed amount, multiple of fees, or uncapped)
 - Whether the cap is mutual or applies differently to each party
 - Carveouts from the cap (what liabilities are uncapped)
@@ -94,6 +98,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Whether the cap applies per-claim, per-year, or aggregate
 
 **Common issues:**
+
 - Cap set at a fraction of fees paid (e.g., "fees paid in the prior 3 months" on a low-value contract)
 - Asymmetric carveouts favoring the drafter
 - Broad carveouts that effectively eliminate the cap (e.g., "any breach of Section X" where Section X covers most obligations)
@@ -102,6 +107,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Indemnification
 
 **Key elements to review:**
+
 - Whether indemnification is mutual or unilateral
 - Scope: what triggers the indemnification obligation (IP infringement, data breach, bodily injury, breach of reps and warranties)
 - Whether indemnification is capped (often subject to the overall liability cap, or sometimes uncapped)
@@ -110,6 +116,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Relationship between indemnification and the limitation of liability clause
 
 **Common issues:**
+
 - Unilateral indemnification for IP infringement when both parties contribute IP
 - Indemnification for "any breach" (too broad; essentially converts the liability cap to uncapped liability)
 - No right to control defense of claims
@@ -118,6 +125,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Intellectual Property
 
 **Key elements to review:**
+
 - Ownership of pre-existing IP (each party should retain their own)
 - Ownership of IP developed during the engagement
 - Work-for-hire provisions and their scope
@@ -126,6 +134,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Feedback clauses (grants on suggestions or improvements)
 
 **Common issues:**
+
 - Broad IP assignment that could capture the customer's pre-existing IP
 - Work-for-hire provisions extending beyond the deliverables
 - Unrestricted feedback clauses granting perpetual, irrevocable licenses
@@ -134,6 +143,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Data Protection
 
 **Key elements to review:**
+
 - Whether a Data Processing Agreement/Addendum (DPA) is required
 - Data controller vs. data processor classification
 - Sub-processor rights and notification obligations
@@ -144,6 +154,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Purpose limitation for data processing
 
 **Common issues:**
+
 - No DPA when personal data is being processed
 - Blanket authorization for sub-processors without notification
 - Breach notification timeline longer than regulatory requirements
@@ -153,6 +164,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Term and Termination
 
 **Key elements to review:**
+
 - Initial term and renewal terms
 - Auto-renewal provisions and notice periods
 - Termination for convenience: available? notice period? early termination fees?
@@ -161,6 +173,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Wind-down period and obligations
 
 **Common issues:**
+
 - Long initial terms with no termination for convenience
 - Auto-renewal with short notice windows (e.g., 30-day notice for annual renewal)
 - No cure period for termination for cause
@@ -170,6 +183,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 ##### Governing Law and Dispute Resolution
 
 **Key elements to review:**
+
 - Choice of law (governing jurisdiction)
 - Dispute resolution mechanism (litigation, arbitration, mediation first)
 - Venue and jurisdiction for litigation
@@ -179,6 +193,7 @@ For each clause, assess against the playbook (or generic standards) and note whe
 - Prevailing party attorney's fees
 
 **Common issues:**
+
 - Unfavorable jurisdiction (unusual or remote venue)
 - Mandatory arbitration with rules favorable to the drafter
 - Waiver of jury trial without corresponding protections
@@ -193,6 +208,7 @@ Classify each deviation from the playbook using a three-tier system:
 The clause aligns with or is better than the organization's standard position. Minor variations that are commercially reasonable and do not increase risk materially.
 
 **Examples:**
+
 - Liability cap at 18 months of fees when standard is 12 months (better for the customer)
 - Mutual NDA term of 2 years when standard is 3 years (shorter but reasonable)
 - Governing law in a well-established commercial jurisdiction close to the preferred one
@@ -204,12 +220,14 @@ The clause aligns with or is better than the organization's standard position. M
 The clause falls outside the standard position but within a negotiable range. The term is common in the market but not the organization's preference. Requires attention and likely negotiation, but not escalation.
 
 **Examples:**
+
 - Liability cap at 6 months of fees when standard is 12 months (below standard but negotiable)
 - Unilateral indemnification for IP infringement when standard is mutual (common market position but not preferred)
 - Auto-renewal with 60-day notice when standard is 90 days
 - Governing law in an acceptable but not preferred jurisdiction
 
 **Action**: Generate specific redline language. Provide fallback position. Estimate business impact of accepting vs. negotiating.
+
 - **Include**: Specific redline language to bring the term back to standard position
 - **Include**: Fallback position if the counterparty pushes back
 - **Include**: Business impact of accepting as-is vs. negotiating
@@ -219,6 +237,7 @@ The clause falls outside the standard position but within a negotiable range. Th
 The clause falls outside acceptable range, triggers a defined escalation criterion, or poses material risk. Requires senior counsel review, outside counsel involvement, or business decision-maker sign-off.
 
 **Examples:**
+
 - Uncapped liability or no limitation of liability clause
 - Unilateral broad indemnification with no cap
 - IP assignment of pre-existing IP
@@ -227,6 +246,7 @@ The clause falls outside acceptable range, triggers a defined escalation criteri
 - Governing law in a problematic jurisdiction with mandatory arbitration
 
 **Action**: Explain the specific risk. Provide market-standard alternative language. Estimate exposure. Recommend escalation path.
+
 - **Include**: Why this is a RED flag (specific risk)
 - **Include**: What the standard market position looks like
 - **Include**: Business impact and potential exposure
@@ -235,6 +255,7 @@ The clause falls outside acceptable range, triggers a defined escalation criteri
 ### Step 6: Generate Redline Suggestions
 
 For each YELLOW and RED deviation, provide:
+
 - **Current language**: Quote the relevant contract text
 - **Suggested redline**: Specific alternative language
 - **Rationale**: Brief explanation suitable for sharing with the counterparty
@@ -254,6 +275,7 @@ When generating redline suggestions:
 #### Redline Format
 
 For each redline:
+
 ```
 **Clause**: [Section reference and clause name]
 **Current language**: "[exact quote from the contract]"
@@ -266,6 +288,7 @@ For each redline:
 ### Step 7: Business Impact Summary
 
 Provide a summary section covering:
+
 - **Overall risk assessment**: High-level view of the contract's risk profile
 - **Top 3 issues**: The most important items to address
 - **Negotiation strategy**: Recommended approach (which issues to lead with, what to concede)
@@ -277,6 +300,7 @@ When presenting redlines, organize by negotiation priority:
 
 **Tier 1 -- Must-Haves (Deal Breakers)**
 Issues where the organization cannot proceed without resolution:
+
 - Uncapped or materially insufficient liability protections
 - Missing data protection requirements for regulated data
 - IP provisions that could jeopardize core assets
@@ -284,6 +308,7 @@ Issues where the organization cannot proceed without resolution:
 
 **Tier 2 -- Should-Haves (Strong Preferences)**
 Issues that materially affect risk but have negotiation room:
+
 - Liability cap adjustments within range
 - Indemnification scope and mutuality
 - Termination flexibility
@@ -291,6 +316,7 @@ Issues that materially affect risk but have negotiation room:
 
 **Tier 3 -- Nice-to-Haves (Concession Candidates)**
 Issues that improve the position but can be conceded strategically:
+
 - Preferred governing law (if alternative is acceptable)
 - Notice period preferences
 - Minor definitional improvements
@@ -301,6 +327,7 @@ Issues that improve the position but can be conceded strategically:
 ### Step 8: Contract System Routing (If Connected)
 
 If a Contract Lifecycle Management system is connected:
+
 - Recommend the appropriate approval workflow based on contract type and risk level
 - Suggest the correct routing path (e.g., standard approval, senior counsel, outside counsel)
 - Note any required approvals based on contract value or risk flags

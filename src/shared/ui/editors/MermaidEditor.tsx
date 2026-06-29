@@ -40,7 +40,7 @@ function MermaidPreview({ content }: { content: string }) {
     let cancelled = false;
     setSvg(null);
     setError(null);
-    (async () => {
+    void (async () => {
       try {
         const mermaid = (await import("mermaid")).default;
         const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
@@ -73,7 +73,6 @@ function MermaidPreview({ content }: { content: string }) {
   return (
     <div
       className="h-full overflow-auto p-4 flex items-start justify-center [&>svg]:max-w-full [&>svg]:h-auto"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid output, rendered with securityLevel "strict"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

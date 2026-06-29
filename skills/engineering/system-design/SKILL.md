@@ -10,17 +10,20 @@ Help design systems and evaluate architectural decisions.
 ## Framework
 
 ### 1. Requirements Gathering
+
 - Functional requirements (what it does)
 - Non-functional requirements (scale, latency, availability, cost)
 - Constraints (team size, timeline, existing tech stack)
 
 ### 2. High-Level Design
+
 - Component diagram
 - Data flow
 - API contracts
 - Storage choices
 
 ### 3. Deep Dive
+
 - Data model design
 - API endpoint design (REST, GraphQL, gRPC)
 - Caching strategy
@@ -28,12 +31,14 @@ Help design systems and evaluate architectural decisions.
 - Error handling and retry logic
 
 ### 4. Scale and Reliability
+
 - Load estimation
 - Horizontal vs. vertical scaling
 - Failover and redundancy
 - Monitoring and alerting
 
 ### 5. Trade-off Analysis
+
 - Every decision has trade-offs. Make them explicit.
 - Consider: complexity, cost, team familiarity, time to market, maintainability
 

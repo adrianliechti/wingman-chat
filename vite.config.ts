@@ -5,7 +5,7 @@ import path from "node:path";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin } from "vite-plus";
 
 const src = path.resolve(import.meta.dirname, "src");
 const shim = (file: string) => path.resolve(src, "shared/lib", file);
@@ -15,11 +15,12 @@ const shim = (file: string) => path.resolve(src, "shared/lib", file);
 // runtime ./skills and ./notebook dirs. That server isn't running under
 // `npm run dev`, so this plugin serves the same inventory + content locally.
 
-// biome-ignore lint/suspicious/noExplicitAny: tiny frontmatter parser with mixed value types
+// tiny frontmatter parser with mixed value types
+// oxlint-disable-next-line typescript/no-explicit-any
 function parseFrontmatter(text: string): Record<string, any> {
   const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!m) return {};
-  // biome-ignore lint/suspicious/noExplicitAny: see above
+  // oxlint-disable-next-line typescript/no-explicit-any
   const out: Record<string, any> = {};
   for (const line of m[1].split("\n")) {
     const i = line.indexOf(":");
@@ -219,6 +220,8 @@ const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 
 // https://vite.dev/config/
 export default defineConfig({
+  fmt: { printWidth: 120 },
+  lint: { options: { typeAware: true, typeCheck: true } },
   resolve: {
     alias: {
       "@": src,

@@ -32,6 +32,7 @@ Generate a comprehensive data profile for a table or uploaded file. Understand i
 Before analyzing any data, understand its structure:
 
 **Table-level questions:**
+
 - How many rows and columns?
 - What is the grain (one row per what)?
 - What is the primary key? Is it unique?
@@ -39,6 +40,7 @@ Before analyzing any data, understand its structure:
 - How far back does the data go?
 
 **Column classification** — categorize each column as one of:
+
 - **Identifier**: Unique keys, foreign keys, entity IDs
 - **Dimension**: Categorical attributes for grouping/filtering (status, type, region, category)
 - **Metric**: Quantitative values for measurement (revenue, count, duration, score)
@@ -52,18 +54,21 @@ Before analyzing any data, understand its structure:
 Run the following profiling checks:
 
 **Table-level metrics:**
+
 - Total row count
 - Column count and types breakdown
 - Approximate table size (if available from metadata)
 - Date range coverage (min/max of date columns)
 
 **All columns:**
+
 - Null count and null rate
 - Distinct count and cardinality ratio (distinct / total)
 - Most common values (top 5-10 with frequencies)
 - Least common values (bottom 5 to spot anomalies)
 
 **Numeric columns (metrics):**
+
 ```
 min, max, mean, median (p50)
 standard deviation
@@ -73,6 +78,7 @@ negative count (if unexpected)
 ```
 
 **String columns (dimensions, text):**
+
 ```
 min length, max length, avg length
 empty string count
@@ -82,6 +88,7 @@ leading/trailing whitespace count
 ```
 
 **Date/timestamp columns:**
+
 ```
 min date, max date
 null dates
@@ -91,6 +98,7 @@ gaps in time series
 ```
 
 **Boolean columns:**
+
 ```
 true count, false count, null count
 true rate
@@ -167,6 +175,7 @@ Suggest 3-5 specific analyses the user could run next:
 ### Completeness Score
 
 Rate each column:
+
 - **Complete** (>99% non-null): Green
 - **Mostly complete** (95-99%): Yellow -- investigate the nulls
 - **Incomplete** (80-95%): Orange -- understand why and whether it matters
@@ -175,6 +184,7 @@ Rate each column:
 ### Consistency Checks
 
 Look for:
+
 - **Value format inconsistency**: Same concept represented differently ("USA", "US", "United States", "us")
 - **Type inconsistency**: Numbers stored as strings, dates in various formats
 - **Referential integrity**: Foreign keys that don't match any parent record
@@ -184,6 +194,7 @@ Look for:
 ### Accuracy Indicators
 
 Red flags that suggest accuracy issues:
+
 - **Placeholder values**: 0, -1, 999999, "N/A", "TBD", "test", "xxx"
 - **Default values**: Suspiciously high frequency of a single value
 - **Stale data**: Updated_at shows no recent changes in an active system
@@ -202,6 +213,7 @@ Red flags that suggest accuracy issues:
 ### Distribution Analysis
 
 For numeric columns, characterize the distribution:
+
 - **Normal**: Mean and median are close, bell-shaped
 - **Skewed right**: Long tail of high values (common for revenue, session duration)
 - **Skewed left**: Long tail of low values (less common)
@@ -212,6 +224,7 @@ For numeric columns, characterize the distribution:
 ### Temporal Patterns
 
 For time series data, look for:
+
 - **Trend**: Sustained upward or downward movement
 - **Seasonality**: Repeating patterns (weekly, monthly, quarterly, annual)
 - **Day-of-week effects**: Weekday vs. weekend differences
@@ -222,6 +235,7 @@ For time series data, look for:
 ### Segmentation Discovery
 
 Identify natural segments by:
+
 - Finding categorical columns with 3-20 distinct values
 - Comparing metric distributions across segment values
 - Looking for segments with significantly different behavior
@@ -230,6 +244,7 @@ Identify natural segments by:
 ### Correlation Exploration
 
 Between numeric columns:
+
 - Compute correlation matrix for all metric pairs
 - Flag strong correlations (|r| > 0.7) for investigation
 - Note: Correlation does not imply causation -- flag this explicitly
@@ -253,23 +268,26 @@ When documenting a dataset for team use:
 
 ### Key Columns
 
-| Column | Type | Description | Example Values | Notes |
-|--------|------|-------------|----------------|-------|
-| user_id | STRING | Unique user identifier | "usr_abc123" | FK to users.id |
-| event_type | STRING | Type of event | "click", "view", "purchase" | 15 distinct values |
-| revenue | DECIMAL | Transaction revenue | 29.99, 149.00 | Null for non-purchase events |
-| created_at | TIMESTAMP | When the event occurred | 2024-01-15 14:23:01 | Partitioned on this column |
+| Column     | Type      | Description             | Example Values              | Notes                        |
+| ---------- | --------- | ----------------------- | --------------------------- | ---------------------------- |
+| user_id    | STRING    | Unique user identifier  | "usr_abc123"                | FK to users.id               |
+| event_type | STRING    | Type of event           | "click", "view", "purchase" | 15 distinct values           |
+| revenue    | DECIMAL   | Transaction revenue     | 29.99, 149.00               | Null for non-purchase events |
+| created_at | TIMESTAMP | When the event occurred | 2024-01-15 14:23:01         | Partitioned on this column   |
 
 ### Relationships
+
 - Joins to `users` on `user_id`
 - Joins to `products` on `product_id`
 - Parent of `event_details` (1:many on event_id)
 
 ### Known Issues
+
 - [List any known data quality issues]
 - [Note any gotchas for analysts]
 
 ### Common Query Patterns
+
 - [Typical use cases for this table]
 ```
 

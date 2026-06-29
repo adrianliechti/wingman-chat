@@ -244,7 +244,6 @@ export function CanvasInput({
       {/* Input area */}
       <div className="relative flex-1">
         <textarea
-          // biome-ignore lint/a11y/noAutofocus: the canvas composer opts in via the autoFocus prop
           autoFocus={autoFocus}
           className="block w-full px-4 pt-4 pb-2 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content resize-none bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
           value={prompt}

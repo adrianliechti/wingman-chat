@@ -61,7 +61,6 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
   const openPicker = () => inputRef.current?.click();
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Drag-and-drop needs drag events on the surface; the Add action and empty-state card provide the accessible path.
     <div
       className="relative"
       onDragOver={
@@ -81,7 +80,7 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
               e.preventDefault();
               e.stopPropagation();
               setIsDragOver(false);
-              if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+              if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
             }
       }
     >
@@ -100,7 +99,7 @@ export function SkillResourcesEditor({ resources, onChange }: SkillResourcesEdit
         multiple
         className="hidden"
         onChange={(e) => {
-          if (e.target.files) addFiles(e.target.files);
+          if (e.target.files) void addFiles(e.target.files);
           e.target.value = "";
         }}
       />

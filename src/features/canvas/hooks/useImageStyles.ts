@@ -27,7 +27,7 @@ export function useImageStyles(): { styles: ImageStyle[]; prompts: Record<string
       }
     };
 
-    load();
+    void load();
     return () => {
       cancelled = true;
     };

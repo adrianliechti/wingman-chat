@@ -60,6 +60,7 @@ print("wrote podcast.wav")
 ```
 
 Notes:
+
 - Keep each `synthesize` call to a reasonable chunk (a paragraph or a turn) rather than one giant
   call or hundreds of tiny ones.
 - Voice ids/names come from the selected style skill or the user's request; pass `None` for the

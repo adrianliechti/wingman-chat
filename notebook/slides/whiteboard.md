@@ -21,14 +21,14 @@ default: true
 
 ```css
 :root {
-  --bg: #F8F8F8;
-  --ink: #2D2D2D;
-  --ink-muted: #5C5C5C;
-  --accent: #E87D3E;     /* warm orange */
-  --accent-2: #3EB5A5;   /* teal */
-  --accent-3: #4A9FD9;   /* sky blue */
-  --accent-4: #5DB861;   /* leaf green */
-  --accent-5: #E8635A;   /* coral red */
+  --bg: #f8f8f8;
+  --ink: #2d2d2d;
+  --ink-muted: #5c5c5c;
+  --accent: #e87d3e; /* warm orange */
+  --accent-2: #3eb5a5; /* teal */
+  --accent-3: #4a9fd9; /* sky blue */
+  --accent-4: #5db861; /* leaf green */
+  --accent-5: #e8635a; /* coral red */
   --font-display: "Inter", "Söhne", system-ui, -apple-system, "Helvetica Neue", Helvetica, sans-serif;
   --font-body: "Inter", system-ui, -apple-system, "Helvetica Neue", Helvetica, sans-serif;
 }

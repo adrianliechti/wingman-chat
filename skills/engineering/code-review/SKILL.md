@@ -35,6 +35,7 @@ If no specific file or URL is provided, ask what to review.
 ## Review Dimensions
 
 ### Security
+
 - SQL injection, XSS, CSRF
 - Authentication and authorization flaws
 - Secrets or credentials in code
@@ -43,6 +44,7 @@ If no specific file or URL is provided, ask what to review.
 - SSRF
 
 ### Performance
+
 - N+1 queries
 - Unnecessary memory allocations
 - Algorithmic complexity (O(n²) in hot paths)
@@ -51,6 +53,7 @@ If no specific file or URL is provided, ask what to review.
 - Resource leaks
 
 ### Correctness
+
 - Edge cases (empty input, null, overflow)
 - Race conditions and concurrency issues
 - Error handling and propagation
@@ -58,6 +61,7 @@ If no specific file or URL is provided, ask what to review.
 - Type safety
 
 ### Maintainability
+
 - Naming clarity
 - Single responsibility
 - Duplication
@@ -70,36 +74,44 @@ If no specific file or URL is provided, ask what to review.
 ## Code Review: [PR title or file]
 
 ### Summary
+
 [1-2 sentence overview of the changes and overall quality]
 
 ### Critical Issues
-| # | File | Line | Issue | Severity |
-|---|------|------|-------|----------|
-| 1 | [file] | [line] | [description] | 🔴 Critical |
+
+| #   | File   | Line   | Issue         | Severity    |
+| --- | ------ | ------ | ------------- | ----------- |
+| 1   | [file] | [line] | [description] | 🔴 Critical |
 
 ### Suggestions
-| # | File | Line | Suggestion | Category |
-|---|------|------|------------|----------|
-| 1 | [file] | [line] | [description] | Performance |
+
+| #   | File   | Line   | Suggestion    | Category    |
+| --- | ------ | ------ | ------------- | ----------- |
+| 1   | [file] | [line] | [description] | Performance |
 
 ### What Looks Good
+
 - [Positive observations]
 
 ### Verdict
+
 [Approve / Request Changes / Needs Discussion]
 ```
 
 ## If Connectors Available
 
 If **source control** is connected:
+
 - Pull the PR diff automatically from the URL
 - Check CI status and test results
 
 If **project tracker** is connected:
+
 - Link findings to related tickets
 - Verify the PR addresses the stated requirements
 
 If **knowledge base** is connected:
+
 - Check changes against team coding standards and style guides
 
 ## Tips

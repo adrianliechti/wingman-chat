@@ -8,6 +8,7 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ## Features
 
 ### Chat
+
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
 - **Rich Markdown rendering** — GitHub-flavored Markdown, syntax highlighting (Shiki), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
@@ -17,6 +18,7 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **Screen capture** to share what you're looking at with the model.
 
 ### Tools & Agents
+
 - **In-browser code interpreter** — a sandboxed Python runtime (Pyodide) with bundled scientific
   packages. The model writes and runs real code; charts, files, and results land back in the chat.
 - **Web search & browsing** for grounded, up-to-date answers.
@@ -25,7 +27,9 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **Built-in tool shims** for OCR, vision, translation, transcription, speech synthesis, and rendering.
 
 ### Studio — documents, visuals & media
+
 Ask for a real deliverable and Wingman builds it for real, then drops it in your workspace:
+
 - **Slide decks** (`.pptx`), **Word documents** (`.docx`), **spreadsheets** (`.xlsx`), and **PDFs**.
 - **Charts, dashboards, and data visualizations** built from real numbers.
 - **Diagrams** — BPMN, swimlane, C4, sequence, mind maps, and other process/architecture diagrams.
@@ -34,39 +38,48 @@ Ask for a real deliverable and Wingman builds it for real, then drops it in your
 - **Generated images** (when an image tool is configured) and **podcast-style audio**.
 
 ### Artifacts workspace
+
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
 and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
 
 ### Notebook
+
 Turn source material into polished, long-form output: **reports**, **slide decks**, **infographics**,
 **podcasts** (briefing, debate, deep-dive, overview, story formats).
 **quizzes**, **mind maps**, and **podcasts** (briefing, debate, deep-dive, overview, story formats).
 
 ### Repository (retrieval)
+
 Upload files into a repository; Wingman extracts and embeds them so the model can answer questions
 grounded in your own documents.
 
 ### Voice
+
 Real-time voice conversations with configurable speech-to-text, text-to-speech, and voice models,
 including live transcription.
 
 ### Translate
+
 A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
 across many languages.
 
 ### Canvas
+
 A focused surface for generating and iterating on images.
 
 ### Skills library
+
 100+ reusable, domain-specific skills the model can read on demand — spanning engineering, product,
 design, data, finance, legal, HR, marketing, sales, operations, customer support, knowledge, writing,
 and the Studio output formats. Skills are plain Markdown, so they're easy to add, edit, and share.
 
 ### Cloud drives
+
 Optional integrations to bring in documents from **OneDrive**, **SharePoint** (via Microsoft Graph),
 or a **local** directory.
 
 ### Platform & UX
+
 - **Themes** (light / dark) with configurable backgrounds, and a PWA-capable install.
 - **Memory** for retaining context across conversations (when enabled).
 - **OpenTelemetry** traces, metrics, and logs for observability.
@@ -74,12 +87,12 @@ or a **local** directory.
 
 ## Architecture
 
-| Layer | Stack |
-| --- | --- |
-| Frontend | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
-| Code execution | Pyodide (Python in WebAssembly), bundled at build time |
-| Server | Go — static hosting, API proxy, skills/notebook libraries, drive providers, OpenTelemetry |
-| Packaging | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`) |
+| Layer          | Stack                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
+| Code execution | Pyodide (Python in WebAssembly), bundled at build time                                      |
+| Server         | Go — static hosting, API proxy, skills/notebook libraries, drive providers, OpenTelemetry   |
+| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
 prefix (default `/api`) to the configured platform, and mounts the `skills/` and `notebook/`
@@ -88,6 +101,7 @@ directories as libraries the client can read.
 ## Getting started
 
 ### Prerequisites
+
 - Node.js (LTS) and npm
 - Go 1.x (only to run the server locally)
 - Access to a Wingman or OpenAI-compatible API endpoint
@@ -128,15 +142,18 @@ docker run -it --rm -p 8000:8000 \
 Wingman is configured through environment variables, YAML files, and a runtime `public/config.json`.
 
 **Connection**
+
 - `WINGMAN_URL` / `OPENAI_BASE_URL` — platform API base URL (required)
 - `WINGMAN_TOKEN` / `OPENAI_API_KEY` — API token
 - `PORT` (default `8000`), `PREFIX` (default `/api`)
 - `SKILLS_PATH` (default `skills`), `NOTEBOOKS_PATH` (default `notebook`)
 
 **Branding**
+
 - `TITLE`, `DISCLAIMER`, `SUPPORT_URL`, `BRIDGE_URL`
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
+
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`

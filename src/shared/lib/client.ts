@@ -710,9 +710,9 @@ export class Client {
         resolve();
       };
 
-      audio.onerror = (error) => {
+      audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
-        reject(new Error(`Audio playback failed: ${error}`));
+        reject(new Error("Audio playback failed"));
       };
 
       audio.play().catch(reject);
@@ -813,7 +813,6 @@ export class Client {
     };
   }
 
-  // biome-ignore lint: zod schema type is complex
   async parse<T extends z.ZodType<any>>(
     model: string,
     instructions: string,
@@ -851,12 +850,7 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(
-    path: string,
-    data: FormData,
-    headers?: HeadersInit,
-    timeoutMs = 90_000,
-  ): Promise<Response> {
+  private async postRaw(path: string, data: FormData, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image

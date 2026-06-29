@@ -46,10 +46,10 @@ I'll run web searches immediately. If you have enrichment or CRM connected, I'll
 
 Connect your tools to supercharge this skill:
 
-| Connector | What It Adds |
-|-----------|--------------|
-| **Enrichment** | Verified emails, phone numbers, tech stack, org chart, funding details |
-| **CRM** | Prior relationship history, past opportunities, existing contacts, notes |
+| Connector      | What It Adds                                                             |
+| -------------- | ------------------------------------------------------------------------ |
+| **Enrichment** | Verified emails, phone numbers, tech stack, org chart, funding details   |
+| **CRM**        | Prior relationship history, past opportunities, existing contacts, notes |
 
 > **No connectors?** No problem. Web search provides solid research for any company or person.
 
@@ -73,26 +73,29 @@ Connect your tools to supercharge this skill:
 
 ## Company Profile
 
-| Field | Value |
-|-------|-------|
-| **Company** | [Name] |
-| **Website** | [URL] |
-| **Industry** | [Industry] |
-| **Size** | [Employee count] |
-| **Headquarters** | [Location] |
-| **Founded** | [Year] |
-| **Funding** | [Stage + amount if known] |
-| **Revenue** | [Estimate if available] |
+| Field            | Value                     |
+| ---------------- | ------------------------- |
+| **Company**      | [Name]                    |
+| **Website**      | [URL]                     |
+| **Industry**     | [Industry]                |
+| **Size**         | [Employee count]          |
+| **Headquarters** | [Location]                |
+| **Founded**      | [Year]                    |
+| **Funding**      | [Stage + amount if known] |
+| **Revenue**      | [Estimate if available]   |
 
 ### What They Do
+
 [1-2 sentence description of their business, product, and customers]
 
 ### Recent News
+
 - **[Headline]** — [Date] — [Why it matters for your outreach]
 - **[Headline]** — [Date] — [Why it matters]
 
 ### Hiring Signals
-- [X] open roles in [Department]
+
+- [x] open roles in [Department]
 - Notable: [Relevant roles like Engineering, Sales, AI/ML]
 - Growth indicator: [Hiring velocity interpretation]
 
@@ -101,14 +104,16 @@ Connect your tools to supercharge this skill:
 ## Key People
 
 ### [Name] — [Title]
-| Field | Detail |
-|-------|--------|
-| **LinkedIn** | [URL] |
+
+| Field          | Detail                       |
+| -------------- | ---------------------------- |
+| **LinkedIn**   | [URL]                        |
 | **Background** | [Prior companies, education] |
-| **Tenure** | [Time at company] |
-| **Email** | [If enrichment connected] |
+| **Tenure**     | [Time at company]            |
+| **Email**      | [If enrichment connected]    |
 
 **Talking Points:**
+
 - [Personal hook based on background]
 - [Professional hook based on role]
 
@@ -118,12 +123,12 @@ Connect your tools to supercharge this skill:
 
 ## Tech Stack [If Enrichment Connected]
 
-| Category | Tools |
-|----------|-------|
-| **Cloud** | [AWS, GCP, Azure, etc.] |
-| **Data** | [Snowflake, Databricks, etc.] |
-| **CRM** | [e.g. Salesforce, HubSpot] |
-| **Other** | [Relevant tools] |
+| Category  | Tools                         |
+| --------- | ----------------------------- |
+| **Cloud** | [AWS, GCP, Azure, etc.]       |
+| **Data**  | [Snowflake, Databricks, etc.] |
+| **CRM**   | [e.g. Salesforce, HubSpot]    |
+| **Other** | [Relevant tools]              |
 
 **Integration Opportunity:** [How your product fits with their stack]
 
@@ -131,12 +136,12 @@ Connect your tools to supercharge this skill:
 
 ## Prior Relationship [If CRM Connected]
 
-| Field | Detail |
-|-------|--------|
-| **Status** | [New / Prior prospect / Customer / Churned] |
-| **Last Contact** | [Date and type] |
-| **Previous Opps** | [Won/Lost and why] |
-| **Known Contacts** | [Names already in CRM] |
+| Field              | Detail                                      |
+| ------------------ | ------------------------------------------- |
+| **Status**         | [New / Prior prospect / Customer / Churned] |
+| **Last Contact**   | [Date and type]                             |
+| **Previous Opps**  | [Won/Lost and why]                          |
+| **Known Contacts** | [Names already in CRM]                      |
 
 **History:** [Summary of past relationship]
 
@@ -145,13 +150,16 @@ Connect your tools to supercharge this skill:
 ## Qualification Signals
 
 ### Positive Signals
+
 - ✅ [Signal and evidence]
 - ✅ [Signal and evidence]
 
 ### Potential Concerns
+
 - ⚠️ [Concern and what to watch for]
 
 ### Unknown (Ask in Discovery)
+
 - ❓ [Gap in understanding]
 
 ---
@@ -163,6 +171,7 @@ Connect your tools to supercharge this skill:
 **Opening Hook:** [What to lead with based on research]
 
 **Discovery Questions:**
+
 1. [Question about their situation]
 2. [Question about pain points]
 3. [Question about decision process]
@@ -170,6 +179,7 @@ Connect your tools to supercharge this skill:
 ---
 
 ## Sources
+
 - [Source 1](URL)
 - [Source 2](URL)
 ```
@@ -202,6 +212,7 @@ Run these searches:
 ```
 
 **Extract:**
+
 - Company description and positioning
 - Recent news (last 90 days)
 - Leadership team
@@ -220,6 +231,7 @@ If enrichment tools available:
 ```
 
 **Enrichment adds:**
+
 - Verified contact info
 - Complete org chart
 - Precise employee count
@@ -237,6 +249,7 @@ If CRM available:
 ```
 
 **CRM adds:**
+
 - Prior relationship context
 - What happened before (won/lost deals)
 - Who we've talked to
@@ -258,15 +271,19 @@ If CRM available:
 ## Research Variations
 
 ### Company Research
+
 Focus on: Business overview, news, hiring, leadership
 
 ### Person Research
+
 Focus on: Background, role, LinkedIn activity, talking points
 
 ### Competitor Research
+
 Focus on: Product comparison, positioning, win/loss patterns
 
 ### Pre-Meeting Research
+
 Focus on: Attendee backgrounds, recent news, relationship history
 
 ---

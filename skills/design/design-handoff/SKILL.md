@@ -14,18 +14,21 @@ If a Figma URL is provided, pull the design from Figma. Otherwise, work from the
 ## What to Include
 
 ### Visual Specifications
+
 - Exact measurements (padding, margins, widths)
 - Design token references (colors, typography, spacing)
 - Responsive breakpoints and behavior
 - Component variants and states
 
 ### Interaction Specifications
+
 - Click/tap behavior
 - Hover states
 - Transitions and animations (duration, easing)
 - Gesture support (swipe, pinch, long-press)
 
 ### Content Specifications
+
 - Character limits
 - Truncation behavior
 - Empty states
@@ -33,12 +36,14 @@ If a Figma URL is provided, pull the design from Figma. Otherwise, work from the
 - Error states
 
 ### Edge Cases
+
 - Minimum/maximum content
 - International text (longer strings)
 - Slow connections
 - Missing data
 
 ### Accessibility
+
 - Focus order
 - ARIA labels and roles
 - Keyboard interactions
@@ -57,49 +62,58 @@ If a Figma URL is provided, pull the design from Figma. Otherwise, work from the
 ## Handoff Spec: [Feature/Screen Name]
 
 ### Overview
+
 [What this screen/feature does, user context]
 
 ### Layout
+
 [Grid system, breakpoints, responsive behavior]
 
 ### Design Tokens Used
-| Token | Value | Usage |
-|-------|-------|-------|
-| `color-primary` | #[hex] | CTA buttons, links |
-| `spacing-md` | [X]px | Between sections |
-| `font-heading-lg` | [size/weight/family] | Page title |
+
+| Token             | Value                | Usage              |
+| ----------------- | -------------------- | ------------------ |
+| `color-primary`   | #[hex]               | CTA buttons, links |
+| `spacing-md`      | [X]px                | Between sections   |
+| `font-heading-lg` | [size/weight/family] | Page title         |
 
 ### Components
-| Component | Variant | Props | Notes |
-|-----------|---------|-------|-------|
+
+| Component   | Variant   | Props   | Notes              |
+| ----------- | --------- | ------- | ------------------ |
 | [Component] | [Variant] | [Props] | [Special behavior] |
 
 ### States and Interactions
-| Element | State | Behavior |
-|---------|-------|----------|
-| [CTA Button] | Hover | [Background darken 10%] |
-| [CTA Button] | Loading | [Spinner, disabled] |
-| [Form] | Error | [Red border, error message below] |
+
+| Element      | State   | Behavior                          |
+| ------------ | ------- | --------------------------------- |
+| [CTA Button] | Hover   | [Background darken 10%]           |
+| [CTA Button] | Loading | [Spinner, disabled]               |
+| [Form]       | Error   | [Red border, error message below] |
 
 ### Responsive Behavior
-| Breakpoint | Changes |
-|------------|---------|
-| Desktop (>1024px) | [Default layout] |
-| Tablet (768-1024px) | [What changes] |
-| Mobile (<768px) | [What changes] |
+
+| Breakpoint          | Changes          |
+| ------------------- | ---------------- |
+| Desktop (>1024px)   | [Default layout] |
+| Tablet (768-1024px) | [What changes]   |
+| Mobile (<768px)     | [What changes]   |
 
 ### Edge Cases
+
 - **Empty state**: [What to show when no data]
 - **Long text**: [Truncation rules]
 - **Loading**: [Skeleton or spinner]
 - **Error**: [Error state appearance]
 
 ### Animation / Motion
-| Element | Trigger | Animation | Duration | Easing |
-|---------|---------|-----------|----------|--------|
-| [Element] | [Trigger] | [Description] | [ms] | [easing] |
+
+| Element   | Trigger   | Animation     | Duration | Easing   |
+| --------- | --------- | ------------- | -------- | -------- |
+| [Element] | [Trigger] | [Description] | [ms]     | [easing] |
 
 ### Accessibility Notes
+
 - [Focus order]
 - [ARIA labels needed]
 - [Keyboard interactions]
@@ -108,10 +122,12 @@ If a Figma URL is provided, pull the design from Figma. Otherwise, work from the
 ## If Connectors Available
 
 If **design tool** is connected:
+
 - Pull exact measurements, tokens, and component specs from Figma
 - Export assets and generate a complete spec sheet
 
 If **project tracker** is connected:
+
 - Link the handoff to the implementation ticket
 - Create sub-tasks for each section of the spec
 

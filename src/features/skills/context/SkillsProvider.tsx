@@ -30,7 +30,7 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
       }
     };
 
-    loadSkills();
+    void loadSkills();
   }, []);
 
   // Debounced save function

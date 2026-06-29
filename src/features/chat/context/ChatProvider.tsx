@@ -303,7 +303,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setChatId(id);
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       setPendingConsent(null);
-      closeApp();
+      void closeApp();
 
       // When starting a new chat, reset realtime model back to the last saved chat model
       if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {

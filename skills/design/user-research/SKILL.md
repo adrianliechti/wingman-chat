@@ -9,14 +9,14 @@ Help plan, execute, and synthesize user research studies.
 
 ## Research Methods
 
-| Method | Best For | Sample Size | Time |
-|--------|----------|-------------|------|
-| User interviews | Deep understanding of needs and motivations | 5-8 | 2-4 weeks |
-| Usability testing | Evaluating a specific design or flow | 5-8 | 1-2 weeks |
-| Surveys | Quantifying attitudes and preferences | 100+ | 1-2 weeks |
-| Card sorting | Information architecture decisions | 15-30 | 1 week |
-| Diary studies | Understanding behavior over time | 10-15 | 2-8 weeks |
-| A/B testing | Comparing specific design choices | Statistical significance | 1-4 weeks |
+| Method            | Best For                                    | Sample Size              | Time      |
+| ----------------- | ------------------------------------------- | ------------------------ | --------- |
+| User interviews   | Deep understanding of needs and motivations | 5-8                      | 2-4 weeks |
+| Usability testing | Evaluating a specific design or flow        | 5-8                      | 1-2 weeks |
+| Surveys           | Quantifying attitudes and preferences       | 100+                     | 1-2 weeks |
+| Card sorting      | Information architecture decisions          | 15-30                    | 1 week    |
+| Diary studies     | Understanding behavior over time            | 10-15                    | 2-8 weeks |
+| A/B testing       | Comparing specific design choices           | Statistical significance | 1-4 weeks |
 
 ## Interview Guide Structure
 

@@ -247,7 +247,7 @@ export class AudioStreamPlayer {
       this.workletNode = null;
     }
     if (this.context) {
-      this.context.close();
+      void this.context.close();
       this.context = null;
     }
   }

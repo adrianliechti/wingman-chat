@@ -32,6 +32,7 @@ A morning summary of everything a legal team member needs to know to start their
 Check each connected source for legal-relevant items:
 
 **Email (if connected):**
+
 - New contract requests or review requests
 - Compliance questions or reports
 - Responses from counterparties on active negotiations
@@ -40,22 +41,26 @@ Check each connected source for legal-relevant items:
 - Regulatory or legal update newsletters
 
 **Calendar (if connected):**
+
 - Today's meetings that need legal prep (board meetings, deal reviews, vendor calls)
 - Upcoming deadlines this week (contract expirations, filing deadlines, response deadlines)
 - Recurring legal team syncs
 
 **Chat (if connected):**
+
 - Overnight messages in legal team channels
 - Direct messages requesting legal input
 - Mentions of legal-relevant topics (contract, compliance, privacy, NDA, terms)
 - Escalations or urgent requests
 
 **Contract lifecycle management (if connected):**
+
 - Contracts awaiting review or signature
 - Approaching expiration dates (next 30 days)
 - Newly executed agreements
 
 **CRM (if connected):**
+
 - Deals moving to stages that require legal involvement
 - New opportunities flagged for legal review
 
@@ -132,6 +137,7 @@ Research and brief on a specific legal question or topic across available source
 ```
 
 #### Important Notes
+
 - Topic briefs synthesize what is available in connected sources; they do not substitute for formal legal research
 - If the topic requires current legal authority or case law, recommend the user consult a legal research platform or qualified counsel in the applicable jurisdiction
 - Always note the limitations of the sources searched
@@ -191,6 +197,7 @@ Rapid briefing for developing situations that require immediate legal attention 
 ```
 
 #### Important Notes for Incident Briefs
+
 - Speed matters. Produce the brief quickly with available information rather than waiting for complete information
 - Flag any litigation hold or preservation obligations immediately
 - Note privilege considerations (mark the brief as privileged / work product if appropriate under local law)

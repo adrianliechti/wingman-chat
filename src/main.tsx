@@ -8,6 +8,7 @@ import { loadNotebooks } from "./features/notebook/lib/notebooks.ts";
 import { initTelemetry } from "./features/repository/lib/telemetry";
 import { loadConfig } from "./shared/config.ts";
 import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
+import { errorText } from "./shared/lib/errors.ts";
 
 /**
  * Display a fatal error message to the user when the app fails to start.
@@ -44,7 +45,7 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
           max-width: 600px;
           overflow: auto;
           text-align: left;
-        ">${error instanceof Error ? error.message : String(error)}</pre>`
+        ">${errorText(error)}</pre>`
             : ""
         }
         <button onclick="location.reload()" style="
@@ -93,4 +94,4 @@ const bootstrap = async () => {
   }
 };
 
-bootstrap();
+void bootstrap();

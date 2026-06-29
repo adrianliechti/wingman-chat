@@ -10,6 +10,7 @@ Draft a professional, customer-facing response tailored to the situation, custom
 ## Usage
 
 Examples:
+
 - `/draft-response Acme Corp is asking when the new dashboard feature will ship`
 - `/draft-response Customer escalation — their integration has been down for 2 days`
 - `/draft-response Responding to a feature request we won't be building`
@@ -33,26 +34,31 @@ Parse the user's input to determine:
 Gather relevant background from available sources:
 
 **email:**
+
 - Previous correspondence with this customer on this topic
 - Any commitments or timelines previously shared
 - Tone and style of the existing thread
 
 **chat:**
+
 - Internal discussions about this customer or topic
 - Any guidance from product, engineering, or leadership
 - Similar situations and how they were handled
 
 **CRM (if connected):**
+
 - Account details and plan level
 - Contact information and key stakeholders
 - Previous escalations or sensitive issues
 
 **support platform (if connected):**
+
 - Related tickets and their resolution
 - Known issues or workarounds
 - SLA status and response time commitments
 
 **knowledge base:**
+
 - Official documentation or help articles to reference
 - Product roadmap information (if shareable)
 - Policy or process documentation
@@ -98,6 +104,7 @@ Before presenting the draft, verify:
 ### 5. Offer Iterations
 
 After presenting the draft:
+
 - "Want me to adjust the tone? (more formal, more casual, more empathetic, more direct)"
 - "Should I add or remove any specific points?"
 - "Want me to make this shorter/longer?"
@@ -155,32 +162,35 @@ For most customer communications, follow this structure:
 
 ### Tone Spectrum
 
-| Situation | Tone | Characteristics |
-|-----------|------|----------------|
-| Good news / wins | Celebratory | Enthusiastic, warm, congratulatory, forward-looking |
-| Routine update | Professional | Clear, concise, informative, friendly |
-| Technical response | Precise | Accurate, detailed, structured, patient |
-| Delayed delivery | Accountable | Honest, apologetic, action-oriented, specific |
-| Bad news | Candid | Direct, empathetic, solution-oriented, respectful |
-| Issue / outage | Urgent | Immediate, transparent, actionable, reassuring |
-| Escalation | Executive | Composed, ownership-taking, plan-presenting, confident |
-| Billing / account | Precise | Clear, factual, empathetic, resolution-focused |
+| Situation          | Tone         | Characteristics                                        |
+| ------------------ | ------------ | ------------------------------------------------------ |
+| Good news / wins   | Celebratory  | Enthusiastic, warm, congratulatory, forward-looking    |
+| Routine update     | Professional | Clear, concise, informative, friendly                  |
+| Technical response | Precise      | Accurate, detailed, structured, patient                |
+| Delayed delivery   | Accountable  | Honest, apologetic, action-oriented, specific          |
+| Bad news           | Candid       | Direct, empathetic, solution-oriented, respectful      |
+| Issue / outage     | Urgent       | Immediate, transparent, actionable, reassuring         |
+| Escalation         | Executive    | Composed, ownership-taking, plan-presenting, confident |
+| Billing / account  | Precise      | Clear, factual, empathetic, resolution-focused         |
 
 ### Tone Adjustments by Relationship Stage
 
 **New Customer (0-3 months):**
+
 - More formal and professional
 - Extra context and explanation (don't assume knowledge)
 - Proactively offer help and resources
 - Build trust through reliability and responsiveness
 
 **Established Customer (3+ months):**
+
 - Warm and collaborative
 - Can reference shared history and previous conversations
 - More direct and efficient communication
 - Show awareness of their goals and priorities
 
 **Frustrated or Escalated Customer:**
+
 - Extra empathy and acknowledgment
 - Urgency in response times
 - Concrete action plans with specific commitments
@@ -189,6 +199,7 @@ For most customer communications, follow this structure:
 ### Writing Style Rules
 
 **DO:**
+
 - Use active voice ("We'll investigate" not "This will be investigated")
 - Use "I" for personal commitments and "we" for team commitments
 - Name specific people when assigning actions ("Sarah from our engineering team will...")
@@ -197,6 +208,7 @@ For most customer communications, follow this structure:
 - Break up long responses with headers or bullet points
 
 **DON'T:**
+
 - Use corporate jargon or buzzwords ("synergy", "leverage", "paradigm shift")
 - Deflect blame to other teams, systems, or processes
 - Use passive voice to avoid ownership ("Mistakes were made")
@@ -207,12 +219,14 @@ For most customer communications, follow this structure:
 ## Situation-Specific Approaches
 
 **Answering a product question:**
+
 - Lead with the direct answer
 - Provide relevant documentation links
 - Offer to connect them with the right resource if needed
 - If you don't know the answer: say so honestly, commit to finding out, give a timeline
 
 **Responding to an issue or bug:**
+
 - Acknowledge the impact on their work
 - State what you know about the issue and its status
 - Provide workaround if available
@@ -220,6 +234,7 @@ For most customer communications, follow this structure:
 - Commit to updates at regular intervals
 
 **Handling an escalation:**
+
 - Acknowledge the severity and their frustration
 - Take ownership (no deflecting or excuse-making)
 - Provide a clear action plan with timeline
@@ -227,6 +242,7 @@ For most customer communications, follow this structure:
 - Offer a meeting or call if appropriate for the severity
 
 **Delivering bad news (feature sunset, delay, can't-fix):**
+
 - Be direct — don't bury the news
 - Explain the reasoning honestly
 - Acknowledge the impact on them specifically
@@ -234,12 +250,14 @@ For most customer communications, follow this structure:
 - Provide a clear path forward
 
 **Sharing good news (feature launch, milestone, recognition):**
+
 - Lead with the positive outcome
 - Connect it to their specific goals or use case
 - Suggest next steps to capitalize on the good news
 - Express genuine enthusiasm
 
 **Declining a request (feature request, discount, exception):**
+
 - Acknowledge the request and its reasoning
 - Be honest about the decision
 - Explain the why without being dismissive
@@ -375,17 +393,18 @@ Best,
 
 ### Follow-up Cadence
 
-| Situation | Follow-up Timing |
-|-----------|-----------------|
-| Unanswered question | 2-3 business days |
-| Open support issue | Daily until resolved for critical, 2-3 days for standard |
-| Post-meeting action items | Within 24 hours (send notes), then check at deadline |
-| General check-in | As needed for ongoing issues |
-| After delivering bad news | 1 week to check on impact and sentiment |
+| Situation                 | Follow-up Timing                                         |
+| ------------------------- | -------------------------------------------------------- |
+| Unanswered question       | 2-3 business days                                        |
+| Open support issue        | Daily until resolved for critical, 2-3 days for standard |
+| Post-meeting action items | Within 24 hours (send notes), then check at deadline     |
+| General check-in          | As needed for ongoing issues                             |
+| After delivering bad news | 1 week to check on impact and sentiment                  |
 
 ### When to Escalate
 
 **Escalate to your manager when:**
+
 - Customer threatens to cancel or significantly downsell
 - Customer requests exception to policy you can't authorize
 - An issue has been unresolved for longer than SLA allows
@@ -393,12 +412,14 @@ Best,
 - You've made an error that needs senior involvement to resolve
 
 **Escalate to product/engineering when:**
+
 - Bug is critical and blocking the customer's business
 - Feature gap is causing a competitive loss
 - Customer has unique technical requirements beyond standard support
 - Integration issues require engineering investigation
 
 **Escalation format:**
+
 ```
 ESCALATION: [Customer Name] — [One-line summary]
 

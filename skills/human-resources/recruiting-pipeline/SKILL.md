@@ -9,14 +9,14 @@ Help manage the recruiting pipeline from sourcing through offer acceptance.
 
 ## Pipeline Stages
 
-| Stage | Description | Key Actions |
-|-------|-------------|-------------|
-| Sourced | Identified and reached out | Personalized outreach |
-| Screen | Phone/video screen | Evaluate basic fit |
-| Interview | On-site or panel interviews | Structured evaluation |
-| Debrief | Team decision | Calibrate feedback |
-| Offer | Extending offer | Comp package, negotiation |
-| Accepted | Offer accepted | Transition to onboarding |
+| Stage     | Description                 | Key Actions               |
+| --------- | --------------------------- | ------------------------- |
+| Sourced   | Identified and reached out  | Personalized outreach     |
+| Screen    | Phone/video screen          | Evaluate basic fit        |
+| Interview | On-site or panel interviews | Structured evaluation     |
+| Debrief   | Team decision               | Calibrate feedback        |
+| Offer     | Extending offer             | Comp package, negotiation |
+| Accepted  | Offer accepted              | Transition to onboarding  |
 
 ## Metrics to Track
 

@@ -40,28 +40,34 @@ If your tools are connected, just say `/standup` and I'll gather everything auto
 ## Standup — [YYYY-MM-DD]
 
 ### Yesterday
+
 - [Completed item with ticket reference if available]
 - [Completed item]
 
 ### Today
+
 - [Planned item with ticket reference]
 - [Planned item]
 
 ### Blockers
+
 - [Blocker with context and who can help]
 ```
 
 ## If Connectors Available
 
 If **source control** is connected:
+
 - Pull recent commits and PRs (opened, reviewed, merged)
 - Summarize code changes at a high level
 
 If **project tracker** is connected:
+
 - Pull tickets moved to "in progress" or "done"
 - Show upcoming sprint items
 
 If **chat** is connected:
+
 - Scan for relevant discussions and decisions
 - Flag threads needing your response
 

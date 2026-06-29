@@ -61,16 +61,19 @@ If any check raises concerns, investigate and note caveats.
 ### 5. Present Findings
 
 **For quick answers:**
+
 - State the answer directly with relevant context
 - Include the query used (collapsed or in a code block) for reproducibility
 
 **For full analyses:**
+
 - Lead with the key finding or insight
 - Support with data tables and/or visualizations
 - Note methodology and any caveats
 - Suggest follow-up questions
 
 **For formal reports:**
+
 - Executive summary with key takeaways
 - Methodology section explaining approach and data sources
 - Detailed findings with supporting evidence

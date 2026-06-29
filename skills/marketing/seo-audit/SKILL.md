@@ -37,17 +37,21 @@ Gather the following from the user. If not provided, ask before proceeding:
 Research keywords related to the user's domain, topic, or target keywords.
 
 **If SEO tools are connected:**
+
 - Pull keyword data, search volume, keyword difficulty scores, and ranking positions automatically
 - Identify keywords the site currently ranks for and where it's gaining or losing ground
 
 **If product analytics are connected:**
+
 - Cross-reference keyword targets with actual organic traffic data to validate which keywords are driving visits and conversions
 
 **If tools are not connected:**
+
 - Use web search to research the keyword landscape
 - Note: "For more precise volume and difficulty data, connect an SEO tool like Ahrefs or Semrush via MCP. The audit will auto-populate with ranking data."
 
 For each keyword opportunity, assess:
+
 - **Primary keywords** — high-intent terms directly tied to the user's product or service
 - **Secondary keywords** — supporting terms and variations
 - **Search volume signals** — relative demand (high, medium, low) based on available data
@@ -110,6 +114,7 @@ For each competitor, compare:
 ### Executive Summary
 
 Open with a 3-5 sentence summary of overall SEO health. Highlight:
+
 - The site's biggest strength
 - The top 3 priorities that will have the most impact
 - An overall assessment: strong foundation, needs work, or critical issues
@@ -117,7 +122,7 @@ Open with a 3-5 sentence summary of overall SEO health. Highlight:
 ### Keyword Opportunity Table
 
 | Keyword | Est. Difficulty | Opportunity Score | Current Ranking | Intent | Recommended Content Type |
-|---------|----------------|-------------------|-----------------|--------|--------------------------|
+| ------- | --------------- | ----------------- | --------------- | ------ | ------------------------ |
 
 Opportunity score: high, medium, or low — based on the combination of search demand, difficulty, and relevance to the user's business.
 
@@ -126,9 +131,10 @@ Include 15-25 keyword opportunities, sorted by opportunity score.
 ### On-Page Issues Table
 
 | Page | Issue | Severity | Recommended Fix |
-|------|-------|----------|-----------------|
+| ---- | ----- | -------- | --------------- |
 
 Severity levels:
+
 - **Critical** — directly hurting rankings or preventing indexation
 - **High** — significant impact on SEO performance
 - **Medium** — best practice violation, moderate impact
@@ -137,6 +143,7 @@ Severity levels:
 ### Content Gap Recommendations
 
 For each content gap identified, provide:
+
 - **Topic or keyword** to target
 - **Why it matters** — search demand, competitor coverage, funnel stage
 - **Recommended format** — blog post, landing page, guide, comparison page, etc.
@@ -146,14 +153,14 @@ For each content gap identified, provide:
 ### Technical SEO Checklist
 
 | Check | Status | Details |
-|-------|--------|---------|
+| ----- | ------ | ------- |
 
 Status: Pass, Fail, or Warning.
 
 ### Competitor Comparison Summary
 
 | Dimension | Your Site | Competitor A | Competitor B | Winner |
-|-----------|-----------|--------------|--------------|--------|
+| --------- | --------- | ------------ | ------------ | ------ |
 
 Include rows for: keyword count, content depth, publishing frequency, backlink signals, technical score, SERP feature presence.
 
@@ -162,14 +169,17 @@ Include rows for: keyword count, content depth, publishing frequency, backlink s
 Split recommendations into two categories:
 
 **Quick Wins (do this week):**
+
 - Actions that take under 2 hours and have immediate impact
 - Examples: fix title tags, add meta descriptions, fix broken links, add alt text
 
 **Strategic Investments (plan for this quarter):**
+
 - Actions that require more effort but drive long-term growth
 - Examples: build a topic cluster, create a pillar page, launch a link-building campaign, overhaul site structure
 
 For each action item, include:
+
 - What to do (specific and concrete)
 - Expected impact (high, medium, low)
 - Effort estimate
@@ -180,6 +190,7 @@ For each action item, include:
 After presenting the audit, ask:
 
 "Would you like me to:
+
 - Draft content briefs for the top keyword opportunities?
 - Create optimized title tags and meta descriptions for your key pages?
 - Build a content calendar based on the gap analysis?

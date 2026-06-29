@@ -25,13 +25,13 @@ description: "Professional business style with structured layouts and accent col
 
 ```css
 :root {
-  --bg: #FFFFFF;
-  --ink: #1B2A4A;
-  --ink-muted: #4B5563;
-  --accent: #2E8B8B;
-  --accent-2: #D4862F;   /* amber — max ONE per slide */
-  --muted: #E8E8E8;
-  --line: #1B2A4A;       /* thin dividers, 1px */
+  --bg: #ffffff;
+  --ink: #1b2a4a;
+  --ink-muted: #4b5563;
+  --accent: #2e8b8b;
+  --accent-2: #d4862f; /* amber — max ONE per slide */
+  --muted: #e8e8e8;
+  --line: #1b2a4a; /* thin dividers, 1px */
   --font-display: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
   --font-body: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
 }

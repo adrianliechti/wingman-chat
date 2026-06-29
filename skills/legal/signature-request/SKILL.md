@@ -18,6 +18,7 @@ Provide the document or contract to send for signature.
 ### Step 1: Accept the Document
 
 Accept the document in any format:
+
 - **File upload**: PDF, DOCX
 - **URL**: Link to a document in cloud storage or the contract lifecycle management system
 - **Reference**: "The Acme Corp MSA we finalized yesterday"
@@ -41,6 +42,7 @@ Before routing for signature, verify:
 ### Step 3: Configure Signing
 
 Gather signing details:
+
 - **Signers**: Who needs to sign? (names, emails, titles)
 - **Signing order**: Sequential or parallel?
 - **Internal approval**: Does anyone need to approve before the counterparty signs?
@@ -49,12 +51,14 @@ Gather signing details:
 ### Step 4: Route for Signature
 
 **If an e-signature tool is connected:**
+
 - Create the signature envelope/request
 - Set signing fields and order
 - Add any required initials or date fields
 - Send for signature
 
 **If not connected:**
+
 - Generate a signing instruction document
 - Provide the document formatted for wet signature or manual e-sign
 - List all signers with contact information
@@ -65,26 +69,32 @@ Gather signing details:
 ## Signature Request: [Document Title]
 
 ### Document Details
+
 - **Type**: [MSA / NDA / SOW / Amendment / etc.]
 - **Parties**: [Party A] and [Party B]
 - **Pages**: [X]
 
 ### Pre-Signature Check: [PASS / ISSUES FOUND]
+
 [List any issues that need attention before sending]
 
 ### Signing Configuration
-| Order | Signer | Email | Role |
-|-------|--------|-------|------|
-| 1 | [Name] | [email] | [Party A Authorized Signatory] |
-| 2 | [Name] | [email] | [Party B Authorized Signatory] |
+
+| Order | Signer | Email   | Role                           |
+| ----- | ------ | ------- | ------------------------------ |
+| 1     | [Name] | [email] | [Party A Authorized Signatory] |
+| 2     | [Name] | [email] | [Party B Authorized Signatory] |
 
 ### CC Recipients
+
 - [Name] — [email]
 
 ### Status
+
 [Sent for signature / Ready to send / Issues to resolve first]
 
 ### Next Steps
+
 - [What to expect after sending]
 - [Expected turnaround time]
 - [Follow-up if not signed within X days]

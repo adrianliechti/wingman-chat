@@ -9,11 +9,11 @@ Systematically identify, assess, and plan mitigations for operational risks.
 
 ## Risk Assessment Matrix
 
-| | Low Impact | Medium Impact | High Impact |
-|---|-----------|---------------|-------------|
-| **High Likelihood** | Medium | High | Critical |
-| **Medium Likelihood** | Low | Medium | High |
-| **Low Likelihood** | Low | Low | Medium |
+|                       | Low Impact | Medium Impact | High Impact |
+| --------------------- | ---------- | ------------- | ----------- |
+| **High Likelihood**   | Medium     | High          | Critical    |
+| **Medium Likelihood** | Low        | Medium        | High        |
+| **Low Likelihood**    | Low        | Low           | Medium      |
 
 ## Risk Categories
 
@@ -27,6 +27,7 @@ Systematically identify, assess, and plan mitigations for operational risks.
 ## Risk Register Format
 
 For each risk, document:
+
 - **Description**: What could happen
 - **Likelihood**: High / Medium / Low
 - **Impact**: High / Medium / Low

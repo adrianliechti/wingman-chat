@@ -194,7 +194,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (state === ProviderState.Failed) {
-                      setProviderEnabled(server.id, true);
+                      void setProviderEnabled(server.id, true);
                     } else {
                       toggleServer(agent.id, server.id);
                     }

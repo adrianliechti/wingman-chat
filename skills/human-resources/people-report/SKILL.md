@@ -17,24 +17,28 @@ Generate people analytics reports from your HR data. Analyze workforce data to s
 ## Key Metrics
 
 ### Retention
+
 - Overall attrition rate (voluntary + involuntary)
 - Regrettable attrition rate
 - Average tenure
 - Flight risk indicators
 
 ### Diversity
+
 - Representation by level, team, and function
 - Pipeline diversity (hiring funnel by demographic)
 - Promotion rates by group
 - Pay equity analysis
 
 ### Engagement
+
 - Survey scores and trends
 - eNPS (Employee Net Promoter Score)
 - Participation rates
 - Open-ended feedback themes
 
 ### Productivity
+
 - Revenue per employee
 - Span of control efficiency
 - Time to productivity for new hires
@@ -50,6 +54,7 @@ Generate people analytics reports from your HR data. Analyze workforce data to s
 ## What I Need From You
 
 Upload a CSV or describe your data. Helpful fields:
+
 - Employee name/ID, department, team
 - Title, level, location
 - Start date, end date (if applicable)
@@ -62,29 +67,36 @@ Upload a CSV or describe your data. Helpful fields:
 ## People Report: [Type] — [Date]
 
 ### Executive Summary
+
 [2-3 key takeaways]
 
 ### Key Metrics
-| Metric | Value | Trend |
-|--------|-------|-------|
+
+| Metric   | Value   | Trend          |
+| -------- | ------- | -------------- |
 | [Metric] | [Value] | [up/down/flat] |
 
 ### Detailed Analysis
+
 [Charts, tables, and narrative for the specific report type]
 
 ### Recommendations
+
 - [Data-driven recommendation]
 - [Action item]
 
 ### Methodology
+
 [How the numbers were calculated, any caveats]
 ```
 
 ## If Connectors Available
 
 If an **HRIS** is connected:
+
 - Pull live employee data — headcount, tenure, department, level
 - Generate reports without needing a CSV upload
 
 If a **chat** tool is connected:
+
 - Offer to share the report summary in a relevant channel

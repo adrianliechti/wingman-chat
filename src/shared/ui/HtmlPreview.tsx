@@ -105,7 +105,7 @@ export function HtmlPreview({
     let cancelled = false;
     let localSession: PreviewSession | null = null;
 
-    (async () => {
+    void (async () => {
       try {
         const newSession = await createPreviewSession();
         if (cancelled) {

@@ -10,6 +10,7 @@ This skill helps write internal communications using common internal-communicati
 ## When to use this skill
 
 Use this skill for:
+
 - 3P updates (Progress, Plans, Problems)
 - Company newsletters
 - FAQ responses
@@ -27,6 +28,7 @@ A 3P update stands for "Progress, Plans, Problems." The main audience is executi
 3Ps can cover a team of any size, ranging all the way up to the entire company. The bigger the team, the less granular the tasks should be. For example, a "mobile team" might have "shipped feature" or "fixed bugs," whereas the whole company might have meatier 3Ps, like "hired 20 new people" or "closed 10 new deals."
 
 They represent the work of the team across a time period, almost always one week. They include three sections:
+
 1. **Progress**: what the team has accomplished over the period. Focus mainly on things shipped, milestones achieved, tasks completed, etc.
 2. **Plans**: what the team plans to do over the next period. Focus on what's top-of-mind and high priority for the team.
 3. **Problems**: anything slowing the team down — too few people, bugs or blockers preventing progress, a deal that fell through, etc.
@@ -34,6 +36,7 @@ They represent the work of the team across a time period, almost always one week
 Before writing, make sure you know the team name. If it's not specified, ask explicitly which team you're writing for.
 
 **Gathering context:** Whenever possible, pull from available sources to get the information you need (focusing on the relevant time period):
+
 - Messaging (e.g. Slack): posts from team members with their updates — ideally posts in large channels with lots of reactions
 - Documents (e.g. Google Drive): docs from critical team members with lots of views
 - Email: threads with substantial relevant content or many responses
@@ -42,6 +45,7 @@ Before writing, make sure you know the team name. If it's not specified, ask exp
 Scope: Progress and Problems cover roughly the past week; Plans cover today through the next week. If you don't have access to sources, ask the user what they want to cover — they may provide the content directly, in which case you're mostly just formatting.
 
 **Workflow:**
+
 1. Clarify scope: confirm the team name and time period (usually past week for Progress/Problems, next week for Plans)
 2. Gather information: use available tools or ask the user directly
 3. Draft the update following the strict formatting below
@@ -63,11 +67,13 @@ Each section should be no more than 1-3 sentences: clear and to the point. It sh
 A company-wide newsletter summarizes the past week/month of a company for the entire company to read. It should be roughly 20-25 bullet points long. It's typically sent via messaging and email, so make it consumable for that.
 
 Ideally it includes:
+
 - **Lots of links**: relevant documents, prominent messages in announce channels and from executives, company-wide emails, and significant things that have happened.
 - **Short and to-the-point**: each bullet should be no longer than ~1-2 sentences.
 - **"We" tense**: you are part of the company, so many bullets should say "we did this" or "we did that."
 
 **Gathering context:** If you have access to the following, use them; if not, let the user know their results would improve with access.
+
 - Messaging: look for posts in channels with many people and lots of reactions or thread responses
 - Email: company-wide announcements from executives
 - Calendar: meetings with large attendee lists (All-Hands, big announcements); any attached documents make great links
@@ -79,6 +85,7 @@ If you don't have access, ask the user what they want to cover; you'll mostly be
 **Sections:** A large company has many teams and initiatives. Break the update into sections of similar things — clusters like {product development, go to market, finance}, {recruiting, execution, vision}, or {external news, internal news}. Make sure the different areas of the company are highlighted well.
 
 **Prioritization** — Focus on:
+
 - Company-wide impact (not team-specific details)
 - Announcements from leadership
 - Major milestones and achievements
@@ -86,6 +93,7 @@ If you don't have access, ask the user what they want to cover; you'll mostly be
 - External recognition or press
 
 Avoid:
+
 - Overly granular team updates (save those for 3Ps)
 - Information only relevant to small groups
 - Duplicate information already communicated
@@ -124,6 +132,7 @@ Each week, lots of questions get asked across a company. The goal is to summariz
 Interesting areas often include: recent corporate events (fundraising, new executives, etc.), upcoming launches, hiring progress, and changes to vision or focus.
 
 **Gathering context:** Use available tools where communication and work happen:
+
 - Messaging: questions in response to widely-discussed posts, questions with many reactions, or anything showing that many employees want the same answers
 - Email: emails with FAQs written directly in them
 - Documents: FAQs added directly or inferred from doc contents
@@ -138,6 +147,7 @@ Interesting areas often include: recent corporate events (fundraising, new execu
 **Guidance:** Be holistic. Don't focus only on the requesting user or their team — try to capture the entire company by reading across all available tools, producing responses relevant to everyone.
 
 **Answer guidelines:**
+
 - Base answers on official company communications when possible
 - If information is uncertain, indicate that clearly
 - Link to authoritative sources (docs, announcements, emails)
@@ -149,12 +159,14 @@ Interesting areas often include: recent corporate events (fundraising, new execu
 For internal communication that doesn't fit the standard formats above (3P updates, newsletters, or FAQs).
 
 Before proceeding:
+
 1. Ask the user about their target audience
 2. Understand the communication's purpose
 3. Clarify the desired tone (formal, casual, urgent, informational)
 4. Confirm any specific formatting requirements
 
 General principles:
+
 - Be clear and concise
 - Use active voice
 - Put the most important information first

@@ -191,7 +191,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (sourceText.trim() && !selectedFile && sourceText !== lastTranslatedText) {
-        performTranslate(targetLang, sourceText, tone, style);
+        void performTranslate(targetLang, sourceText, tone, style);
       }
     }, 1000);
 
@@ -213,7 +213,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   useEffect(() => {
     if (shouldRetranslate) {
       setShouldRetranslate(false);
-      performTranslate(targetLang, sourceText, tone, style);
+      void performTranslate(targetLang, sourceText, tone, style);
     }
   }, [shouldRetranslate, performTranslate, targetLang, sourceText, tone, style]);
 

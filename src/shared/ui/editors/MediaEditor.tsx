@@ -60,7 +60,6 @@ export const MediaEditor = memo(function MediaEditor({ path, content, contentTyp
     <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
       <div className="w-full max-w-2xl text-center">
         {isVideo ? (
-          // biome-ignore lint/a11y/useMediaCaption: generated/uploaded media has no caption tracks
           <video
             controls
             src={src ?? undefined}
@@ -68,7 +67,6 @@ export const MediaEditor = memo(function MediaEditor({ path, content, contentTyp
             className="w-full max-h-[70vh] rounded-md shadow-sm bg-black"
           />
         ) : (
-          // biome-ignore lint/a11y/useMediaCaption: generated/uploaded media has no caption tracks
           <audio controls src={src ?? undefined} onError={() => setFailed(true)} className="w-full" />
         )}
         <p className="mt-3 text-xs text-neutral-400 dark:text-neutral-500">{getFileName(path)}</p>

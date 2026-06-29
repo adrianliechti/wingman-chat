@@ -9,11 +9,11 @@ Research first, then draft. This skill never sends generic outreach - it always 
 
 ## Connectors (Optional)
 
-| Connector | What It Adds |
-|-----------|--------------|
-| **Enrichment** | Verified email, phone, background details |
-| **CRM** | Prior relationship context, existing contacts |
-| **Email** | Create draft directly in your inbox |
+| Connector      | What It Adds                                  |
+| -------------- | --------------------------------------------- |
+| **Enrichment** | Verified email, phone, background details     |
+| **CRM**        | Prior relationship context, existing contacts |
+| **Email**      | Create draft directly in your inbox           |
 
 > **No connectors?** Web research works great. I'll output the email text for you to copy.
 
@@ -48,6 +48,7 @@ Research first, then draft. This skill never sends generic outreach - it always 
 
 ```markdown
 # Outreach Draft: [Person] @ [Company]
+
 **Generated:** [Date] | **Research Sources:** [Web, Enrichment, CRM]
 
 ---
@@ -72,6 +73,7 @@ Research first, then draft. This skill never sends generic outreach - it always 
 ---
 
 **Subject Line Alternatives:**
+
 1. [Option 2]
 2. [Option 3]
 
@@ -89,12 +91,12 @@ Research first, then draft. This skill never sends generic outreach - it always 
 
 ## Why This Approach
 
-| Element | Based On |
-|---------|----------|
+| Element | Based On                                  |
+| ------- | ----------------------------------------- |
 | Opening | [Research finding that makes it personal] |
-| Hook | [Their priority/pain point] |
-| Proof | [Relevant customer story] |
-| CTA | [Low-friction ask] |
+| Hook    | [Their priority/pain point]               |
+| Proof   | [Relevant customer story]                 |
+| CTA     | [Low-friction ask]                        |
 
 ---
 
@@ -135,6 +137,7 @@ Input patterns:
 ### Step 2: Research First (Always)
 
 **Research the prospect before drafting:**
+
 ```
 1. Web search for company + person
 2. If Enrichment connected: Get verified contact info, background
@@ -142,6 +145,7 @@ Input patterns:
 ```
 
 **Must find before drafting:**
+
 - Who they are (title, background)
 - What the company does
 - Recent news or trigger
@@ -161,6 +165,7 @@ Priority order for hooks:
 ### Step 4: Draft Message
 
 **Email Structure (AIDA):**
+
 ```
 SUBJECT: [Personalized, <50 chars, no spam words]
 
@@ -176,12 +181,14 @@ SUBJECT: [Personalized, <50 chars, no spam words]
 ```
 
 **LinkedIn Connection Request (<300 chars):**
+
 ```
 Hi [Name], [Mutual connection/shared interest/genuine compliment].
 Would love to connect. [No pitch]
 ```
 
 **LinkedIn Follow-up Message:**
+
 ```
 Thanks for connecting! [Value-first: insight, article, observation]
 
@@ -207,13 +214,13 @@ If not available:
 
 ## Capability by Connector
 
-| Capability | Web Only | + Enrichment | + CRM | + Email |
-|------------|----------|--------------|-------|---------|
-| Personalized opening | Basic | Deep | With history | Same |
-| Verified email | No | Yes | Yes | Yes |
-| Background details | Public only | Full | Full | Full |
-| Prior relationship | No | No | Yes | Yes |
-| Auto-create draft | No | No | No | Yes |
+| Capability           | Web Only    | + Enrichment | + CRM        | + Email |
+| -------------------- | ----------- | ------------ | ------------ | ------- |
+| Personalized opening | Basic       | Deep         | With history | Same    |
+| Verified email       | No          | Yes          | Yes          | Yes     |
+| Background details   | Public only | Full         | Full         | Full    |
+| Prior relationship   | No          | No           | Yes          | Yes     |
+| Auto-create draft    | No          | No           | No           | Yes     |
 
 ---
 
@@ -293,6 +300,7 @@ Hi [Name],
 4. **Simple lists** — If listing items, use plain dashes. No fancy formatting.
 
 **Good:**
+
 ```
 Here's what I can share:
 - Case study from a similar company
@@ -301,6 +309,7 @@ Here's what I can share:
 ```
 
 **Bad:**
+
 ```
 **What I Can Offer:**
 - **Case study** from a similar company
@@ -312,24 +321,29 @@ Here's what I can share:
 ## What NOT to Do
 
 **Generic openers:**
+
 - "I hope this email finds you well"
 - "I'm reaching out because..."
 - "I wanted to introduce myself"
 
 **Feature dumps:**
+
 - Long paragraphs about your product
 - Multiple value props at once
 - No clear CTA
 
 **Fake personalization:**
+
 - "I noticed you work at [Company]" (obviously)
 - "Congrats on your role" (without context)
 
 **Markdown in emails:**
-- Using **bold** or *italic* asterisks
+
+- Using **bold** or _italic_ asterisks
 - Headers or formatted lists that won't render
 
 **Instead:**
+
 - Lead with something specific you learned
 - One clear value prop
 - One clear ask
@@ -365,19 +379,23 @@ IF warm intro possible:
 - Value prop: [One sentence - what you help with]
 
 ## Signature
+
 [Your preferred email signature]
 
 ## Proof Points
+
 - [Customer 1]: [Result]
 - [Customer 2]: [Result]
 - [Customer 3]: [Result]
 
 ## CTA Options
+
 - Default: "Worth a 15-min call?"
 - Softer: "Open to learning more?"
 - Specific: "Can I send over a quick demo?"
 
 ## Tone
+
 - [Professional / Casual / Direct]
 - Industry-specific language: [Yes/No]
 ```
@@ -389,6 +407,7 @@ IF warm intro possible:
 **Input:** "draft outreach to the Head of Engineering at Notion"
 
 **Research finds:**
+
 - Name: David Tibbitts
 - Recent news: Notion launched AI features
 - Hiring: 5 ML engineer roles open
@@ -400,6 +419,7 @@ IF warm intro possible:
 # Outreach Draft: David Tibbitts @ Notion
 
 ## Research Summary
+
 **Target:** David Tibbitts, Head of Engineering at Notion
 **Hook:** They're scaling AI features and hiring ML talent
 **Goal:** Intro call about AI infrastructure
@@ -430,11 +450,13 @@ Best,
 ---
 
 **Subject Alternatives:**
+
 1. Notion AI + scaling question
 2. Quick thought on Notion's ML hiring
 
 ---
 
 ## Email Draft Status
+
 Draft created - check your email
 ```

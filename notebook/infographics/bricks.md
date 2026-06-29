@@ -5,6 +5,7 @@ label: "Bricks"
 ## Visual Style — Bricks
 
 Create a bold, brick-stacked block infographic:
+
 - Strong, saturated color palette: each section uses a distinct bold color block — cobalt blue (#1B4DFF), crimson (#DC2626), emerald (#059669), amber (#D97706), purple (#7C3AED), charcoal (#374151)
 - Layout built from stacked rectangular blocks/bricks of different widths and heights, tightly packed like a masonry wall
 - Each brick contains a self-contained piece of content: a heading, a stat, a mini-chart, or an icon with label

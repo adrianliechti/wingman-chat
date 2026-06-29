@@ -21,7 +21,7 @@ honest answer.
    data, build a realistic sample matching the described schema and label it as sample.
 3. **Build** the file (layout below): a small `Dashboard` class holds `rawData` / `filteredData` and
    re-renders KPIs, charts, and the table whenever a filter changes.
-4. **Verify like a bug hunt** — open it, exercise *every* filter, confirm KPIs/charts/table all update
+4. **Verify like a bug hunt** — open it, exercise _every_ filter, confirm KPIs/charts/table all update
    and the console is clean. Done when a full pass finds nothing, not when it first renders.
 
 ## Layout
@@ -54,20 +54,38 @@ PLOTLYJS = pio.get_plotlyjs()      # the full library as a string — embed in o
 ```
 
 ```javascript
-const COLORS = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3', '#937860'];
-const LAYOUT = { margin: { t: 24, r: 16, b: 40, l: 56 }, colorway: COLORS, font: { size: 12 },
-                 paper_bgcolor: 'transparent', plot_bgcolor: 'transparent' };
+const COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B3", "#937860"];
+const LAYOUT = {
+  margin: { t: 24, r: 16, b: 40, l: 56 },
+  colorway: COLORS,
+  font: { size: 12 },
+  paper_bgcolor: "transparent",
+  plot_bgcolor: "transparent",
+};
 const CONFIG = { displayModeBar: false, responsive: true };
 
-function drawCharts(rows) {                            // call on load and after every filter change
-  const byCat = groupSum(rows, 'category', 'value');  // your aggregation helpers
-  Plotly.react('chart-bar',
-    [{ type: 'bar', x: byCat.labels, y: byCat.values, marker: { color: COLORS[0] } }],
-    { ...LAYOUT, title: 'Value by category' }, CONFIG);
-  Plotly.react('chart-line',
-    series.map((s, i) => ({ type: 'scatter', mode: 'lines+markers', name: s.label, x: s.x, y: s.y,
-                            line: { color: COLORS[i % COLORS.length] } })),
-    { ...LAYOUT, title: 'Trend' }, CONFIG);
+function drawCharts(rows) {
+  // call on load and after every filter change
+  const byCat = groupSum(rows, "category", "value"); // your aggregation helpers
+  Plotly.react(
+    "chart-bar",
+    [{ type: "bar", x: byCat.labels, y: byCat.values, marker: { color: COLORS[0] } }],
+    { ...LAYOUT, title: "Value by category" },
+    CONFIG,
+  );
+  Plotly.react(
+    "chart-line",
+    series.map((s, i) => ({
+      type: "scatter",
+      mode: "lines+markers",
+      name: s.label,
+      x: s.x,
+      y: s.y,
+      line: { color: COLORS[i % COLORS.length] },
+    })),
+    { ...LAYOUT, title: "Trend" },
+    CONFIG,
+  );
 }
 ```
 
@@ -93,5 +111,6 @@ only for a single part-to-whole; for >~10k points switch the trace to `scattergl
   table); paginate tables beyond ~200 visible rows.
 
 ## Deliver
+
 Save as `<slug>.html` (it embeds Plotly, ~3.5 MB, so it opens offline); one-line hand-off. It's a
 point-in-time snapshot — for live data, point the user at a BI tool. To revise, edit the file in place.

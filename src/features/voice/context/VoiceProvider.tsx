@@ -90,13 +90,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   function onUserTranscriptCallback(text: string) {
     if (text.trim()) {
-      addMessage({ role: Role.User, content: [{ type: "text", text }] });
+      void addMessage({ role: Role.User, content: [{ type: "text", text }] });
     }
   }
 
   function onAssistantTranscriptCallback(text: string) {
     if (text.trim()) {
-      addMessage({ role: Role.Assistant, content: [{ type: "text", text }] });
+      void addMessage({ role: Role.Assistant, content: [{ type: "text", text }] });
     }
   }
 
@@ -134,7 +134,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     callId: string,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
   ) {
-    addMessage({
+    void addMessage({
       role: Role.User,
       content: [
         {
@@ -298,7 +298,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const sendVoiceText = useCallback(
     (text: string) => {
-      addMessage({ role: Role.User, content: [{ type: "text", text }] });
+      void addMessage({ role: Role.User, content: [{ type: "text", text }] });
       sendText(text);
     },
     [addMessage, sendText],

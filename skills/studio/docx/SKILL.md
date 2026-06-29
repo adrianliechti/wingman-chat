@@ -9,6 +9,7 @@ Build `.docx` files with **`python-docx`** in the interpreter. Save the file to 
 renders in the side panel.
 
 ## Get the content first
+
 Pull the real facts/figures/quotes from the conversation and workspace files before building. Lead
 with the conclusion (executive summary), then support it. Short sections, one point each; tables for
 anything comparative; cite figures. No filler.
@@ -50,6 +51,7 @@ print("wrote report.docx")
 ```
 
 Notes:
+
 - **Headings**: `add_heading(text, level)` (0 = title, 1–4 = sections). Style headings via the
   built-in `Heading N` styles or set run fonts/colors for a custom look.
 - **Images**: `doc.add_picture("chart.png", width=Inches(6))` — generate charts with `matplotlib`
@@ -61,6 +63,7 @@ Notes:
   via `font.name` and `RGBColor.from_string("RRGGBB")`.
 
 ## Conventions
+
 - **Use named styles, not hand-rolled formatting.** `add_heading(text, level)` and the built-in
   `Heading N` / `Normal` styles cascade correctly; setting `font.bold`/`font.size` by hand on every
   paragraph drifts. When inserting into an existing doc, match its body font.
@@ -69,5 +72,6 @@ Notes:
 - **Long docs (3+ sections)**: state the section outline first, then build section by section.
 
 ## Deliver
+
 Save with a slugged name (`report.docx`); tell the user it's ready in one line. To revise, open the
 saved file and modify it.

@@ -311,7 +311,7 @@ async function extractWheelImports(buffer, label) {
   const zip = await JSZip.loadAsync(buffer);
   const names = Object.keys(zip.files);
 
-  const topLevelTxt = names.find((n) => /\.dist-info\/top_level\.txt$/.test(n));
+  const topLevelTxt = names.find((n) => n.endsWith(".dist-info/top_level.txt"));
   if (topLevelTxt) {
     const text = await zip.files[topLevelTxt].async("string");
     const mods = text
@@ -361,7 +361,7 @@ async function bundlePyodideBuiltins(builtinTargets, pyodideLock, cdnBase) {
     cached = 0,
     redownloaded = 0;
 
-  for (const name of [...allPkgs].sort()) {
+  for (const name of [...allPkgs].sort((a, b) => a.localeCompare(b))) {
     const pkg = pyodideLock.packages[name];
     expectedWheelFiles.add(pkg.file_name);
     const dest = path.join(OUTPUT_DIR, pkg.file_name);

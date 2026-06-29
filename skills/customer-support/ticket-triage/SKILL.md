@@ -10,6 +10,7 @@ Categorize, prioritize, and route an incoming support ticket or customer issue. 
 ## Usage
 
 Examples:
+
 - `/ticket-triage Customer says their dashboard has been showing a blank page since this morning`
 - `/ticket-triage "I was charged twice for my subscription this month"`
 - `/ticket-triage User can't connect their SSO — getting a 403 error on the callback URL`
@@ -86,6 +87,7 @@ Use the auto-response templates below as a starting point.]
 ### 6. Offer Next Steps
 
 After presenting the triage:
+
 - "Want me to draft a full response to the customer?"
 - "Should I search for more context on this issue?"
 - "Want me to check if this is a known bug in the tracker?"
@@ -97,17 +99,17 @@ After presenting the triage:
 
 Assign every ticket a **primary category** and optionally a **secondary category**:
 
-| Category | Description | Signal Words |
-|----------|-------------|-------------|
-| **Bug** | Product is behaving incorrectly or unexpectedly | Error, broken, crash, not working, unexpected, wrong, failing |
-| **How-to** | Customer needs guidance on using the product | How do I, can I, where is, setting up, configure, help with |
-| **Feature request** | Customer wants a capability that doesn't exist | Would be great if, wish I could, any plans to, requesting |
-| **Billing** | Payment, subscription, invoice, or pricing issues | Charge, invoice, payment, subscription, refund, upgrade, downgrade |
-| **Account** | Account access, permissions, settings, or user management | Login, password, access, permission, SSO, locked out, can't sign in |
-| **Integration** | Issues connecting to third-party tools or APIs | API, webhook, integration, connect, OAuth, sync, third-party |
-| **Security** | Security concerns, data access, or compliance questions | Data breach, unauthorized, compliance, GDPR, SOC 2, vulnerability |
-| **Data** | Data quality, migration, import/export issues | Missing data, export, import, migration, incorrect data, duplicates |
-| **Performance** | Speed, reliability, or availability issues | Slow, timeout, latency, down, unavailable, degraded |
+| Category            | Description                                               | Signal Words                                                        |
+| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Bug**             | Product is behaving incorrectly or unexpectedly           | Error, broken, crash, not working, unexpected, wrong, failing       |
+| **How-to**          | Customer needs guidance on using the product              | How do I, can I, where is, setting up, configure, help with         |
+| **Feature request** | Customer wants a capability that doesn't exist            | Would be great if, wish I could, any plans to, requesting           |
+| **Billing**         | Payment, subscription, invoice, or pricing issues         | Charge, invoice, payment, subscription, refund, upgrade, downgrade  |
+| **Account**         | Account access, permissions, settings, or user management | Login, password, access, permission, SSO, locked out, can't sign in |
+| **Integration**     | Issues connecting to third-party tools or APIs            | API, webhook, integration, connect, OAuth, sync, third-party        |
+| **Security**        | Security concerns, data access, or compliance questions   | Data breach, unauthorized, compliance, GDPR, SOC 2, vulnerability   |
+| **Data**            | Data quality, migration, import/export issues             | Missing data, export, import, migration, incorrect data, duplicates |
+| **Performance**     | Speed, reliability, or availability issues                | Slow, timeout, latency, down, unavailable, degraded                 |
 
 ### Category Determination Tips
 
@@ -121,6 +123,7 @@ Assign every ticket a **primary category** and optionally a **secondary category
 ## Priority Framework
 
 ### P1 — Critical
+
 **Criteria:** Production system down, data loss or corruption, security breach, all or most users affected.
 
 - The customer cannot use the product at all
@@ -131,6 +134,7 @@ Assign every ticket a **primary category** and optionally a **secondary category
 **SLA expectation:** Respond within 1 hour. Continuous work until resolved or mitigated. Updates every 1-2 hours.
 
 ### P2 — High
+
 **Criteria:** Major feature broken, significant workflow blocked, many users affected, no workaround.
 
 - A core workflow is broken but the product is partially usable
@@ -141,6 +145,7 @@ Assign every ticket a **primary category** and optionally a **secondary category
 **SLA expectation:** Respond within 4 hours. Active investigation same day. Updates every 4 hours.
 
 ### P3 — Medium
+
 **Criteria:** Feature partially broken, workaround available, single user or small team affected.
 
 - A feature isn't working correctly but a workaround exists
@@ -151,6 +156,7 @@ Assign every ticket a **primary category** and optionally a **secondary category
 **SLA expectation:** Respond within 1 business day. Resolution or update within 3 business days.
 
 ### P4 — Low
+
 **Criteria:** Minor inconvenience, cosmetic issue, general question, feature request.
 
 - Cosmetic or UI issues that don't affect functionality
@@ -163,6 +169,7 @@ Assign every ticket a **primary category** and optionally a **secondary category
 ### Priority Escalation Triggers
 
 Automatically bump priority up when:
+
 - Customer has been waiting longer than the SLA allows
 - Multiple customers report the same issue (pattern detected)
 - The customer explicitly escalates or mentions executive involvement
@@ -173,14 +180,14 @@ Automatically bump priority up when:
 
 Route tickets based on category and complexity:
 
-| Route to | When |
-|----------|------|
-| **Tier 1 (frontline support)** | How-to questions, known issues with documented solutions, billing inquiries, password resets |
-| **Tier 2 (senior support)** | Bugs requiring investigation, complex configuration, integration troubleshooting, account issues |
-| **Engineering** | Confirmed bugs needing code fixes, infrastructure issues, performance degradation |
-| **Product** | Feature requests with significant demand, design decisions, workflow gaps |
-| **Security** | Data access concerns, vulnerability reports, compliance questions |
-| **Billing/Finance** | Refund requests, contract disputes, complex billing adjustments |
+| Route to                       | When                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Tier 1 (frontline support)** | How-to questions, known issues with documented solutions, billing inquiries, password resets     |
+| **Tier 2 (senior support)**    | Bugs requiring investigation, complex configuration, integration troubleshooting, account issues |
+| **Engineering**                | Confirmed bugs needing code fixes, infrastructure issues, performance degradation                |
+| **Product**                    | Feature requests with significant demand, design decisions, workflow gaps                        |
+| **Security**                   | Data access concerns, vulnerability reports, compliance questions                                |
+| **Billing/Finance**            | Refund requests, contract disputes, complex billing adjustments                                  |
 
 ## Duplicate Detection
 
@@ -192,6 +199,7 @@ Before creating a new ticket or routing, check for duplicates:
 4. **Check known issues**: Compare against documented known issues
 
 **If a duplicate is found:**
+
 - Link the new ticket to the existing one
 - Notify the customer that this is a known issue being tracked
 - Add any new information from the new report to the existing ticket
@@ -200,6 +208,7 @@ Before creating a new ticket or routing, check for duplicates:
 ## Auto-Response Templates by Category
 
 ### Bug — Initial Response
+
 ```
 Thank you for reporting this. I can see how [specific impact]
 would be disruptive for your work.
@@ -212,6 +221,7 @@ I'll update you within [SLA timeframe] with what we find.
 ```
 
 ### How-to — Initial Response
+
 ```
 Great question! [Direct answer or link to documentation]
 
@@ -223,6 +233,7 @@ questions.
 ```
 
 ### Feature Request — Initial Response
+
 ```
 Thank you for this suggestion — I can see why [capability]
 would be valuable for your workflow.
@@ -236,6 +247,7 @@ directly informs our roadmap priorities.
 ```
 
 ### Billing — Initial Response
+
 ```
 I understand billing issues need prompt attention. Let me
 look into this for you.
@@ -246,6 +258,7 @@ an answer for you within [timeframe]."]
 ```
 
 ### Security — Initial Response
+
 ```
 Thank you for flagging this — we take security concerns
 seriously and are reviewing this immediately.

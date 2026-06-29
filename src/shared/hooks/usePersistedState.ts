@@ -106,7 +106,7 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
       }
     };
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;

@@ -18,6 +18,7 @@ Different situations call for different modes of thinking. Identify which mode f
 Use when the PM has a problem area but has not yet defined what to solve. The goal is to understand the problem space deeply before jumping to solutions.
 
 **What to do:**
+
 - Ask "who has this problem?" and "what are they doing about it today?" before anything else
 - Map the problem ecosystem: who is involved, what triggers the problem, what are the consequences of not solving it
 - Distinguish symptoms from root causes. PMs often describe symptoms. Keep asking "why" until you hit something structural.
@@ -25,6 +26,7 @@ Use when the PM has a problem area but has not yet defined what to solve. The go
 - Ask how the problem varies across user segments — it rarely affects everyone the same way
 
 **Useful questions:**
+
 - "What happens if we do nothing? Who suffers and how?"
 - "Who has solved a version of this problem in a different context?"
 - "Is this a problem of awareness, ability, or motivation?"
@@ -35,6 +37,7 @@ Use when the PM has a problem area but has not yet defined what to solve. The go
 Use when the problem is well-defined and the PM needs to generate multiple possible solutions. The goal is divergent thinking — quantity over quality.
 
 **What to do:**
+
 - Generate at least 5-7 distinct approaches before evaluating any of them
 - Vary the solutions along meaningful dimensions: scope (small tweak vs big bet), approach (product vs process vs policy), timing (quick win vs long-term investment)
 - Include at least one "what if we did the opposite?" option
@@ -42,6 +45,7 @@ Use when the problem is well-defined and the PM needs to generate multiple possi
 - Resist the urge to converge too early. If the PM latches onto the first decent idea, push them to keep going.
 
 **Ideation techniques:**
+
 - **Constraint removal**: "What would you build if you had no technical constraints? No budget constraints? No political constraints?" Then work backward to what is feasible.
 - **Analogies**: "How does [another industry] solve this? What can we steal from that approach?"
 - **Inversion**: "How would we make this problem worse? Now reverse each of those."
@@ -53,6 +57,7 @@ Use when the problem is well-defined and the PM needs to generate multiple possi
 Use when the PM has an idea or direction and needs to stress-test it. The goal is to find the weak points before investing in execution.
 
 **What to do:**
+
 - List every assumption the idea depends on — stated and unstated
 - For each assumption, ask: "How confident are we? What evidence do we have? What would disprove this?"
 - Identify the riskiest assumption — the one that, if wrong, kills the idea entirely
@@ -60,6 +65,7 @@ Use when the PM has an idea or direction and needs to stress-test it. The goal i
 - Play devil's advocate: argue the strongest possible case against the idea
 
 **Assumption categories to probe:**
+
 - **User assumptions**: "Users want this" — How do we know? From what evidence? How many users?
 - **Problem assumptions**: "This is a real problem" — How often does it occur? How much do users care?
 - **Solution assumptions**: "This solution will work" — Why this approach? What alternatives did we dismiss?
@@ -72,6 +78,7 @@ Use when the PM has an idea or direction and needs to stress-test it. The goal i
 Use when the PM is thinking about direction, positioning, or big bets — not a specific feature. The goal is to explore the strategic landscape.
 
 **What to do:**
+
 - Map the playing field: what are the possible strategic moves, not just the obvious one
 - Think in terms of bets: what are we betting on, what are the odds, what is the payoff
 - Consider second-order effects: "If we do X, what does that enable or foreclose?"
@@ -89,6 +96,7 @@ Reframe problems as opportunities. Turn a pain point into an actionable question
 **Structure**: "How might we [desired outcome] for [user] without [constraint]?"
 
 **Tips:**
+
 - Too broad: "How might we improve onboarding?" — could mean anything
 - Too narrow: "How might we add a tooltip to step 3?" — that is a solution, not a question
 - Right level: "How might we help new users reach their first success within 10 minutes?"
@@ -101,6 +109,7 @@ Think from the user's job, not from features or demographics.
 **Structure**: "When [situation], I want to [motivation] so I can [expected outcome]."
 
 **Tips:**
+
 - The job is stable even when solutions change. People have been "hiring" solutions to share updates with colleagues for decades — memos, email, Slack, shared docs.
 - Functional jobs (get something done) are easier to identify. Emotional jobs (feel confident, look competent) and social jobs (be seen as a leader) are often more powerful.
 - Ask "What did they fire to hire your product?" — this reveals the real competitive set.
@@ -125,6 +134,7 @@ Desired Outcome
 ```
 
 **Tips:**
+
 - Opportunities come from research, not imagination. Every opportunity should trace back to evidence.
 - Multiple solutions per opportunity. If you only have one solution, you have not explored enough.
 - Multiple experiments per solution. Find the cheapest way to test before building.
@@ -163,6 +173,7 @@ A decision-tempo framework from military strategy that excels in fast-moving, co
 4. **Act**: Execute the decision. Ship something. Run the experiment. Make the change. Then immediately return to Observe with new data.
 
 **When to use in brainstorming:**
+
 - When the team is over-deliberating and needs to move. OODA favors tempo over perfection.
 - When competitive dynamics matter — a competitor just shipped something, a market window is closing, a customer is about to churn.
 - When the brainstorm keeps circling without converging. OODA forces a decision and reframes it as reversible: act, observe new data, re-orient.

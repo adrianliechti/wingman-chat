@@ -50,7 +50,7 @@ export function loadSkillTemplates(): Promise<SkillTemplate[]> {
     .catch(() => []);
 
   // Don't cache an empty/failed result permanently — let a later call retry.
-  indexPromise.then((templates) => {
+  void indexPromise.then((templates) => {
     if (templates.length === 0) indexPromise = null;
   });
 
@@ -75,7 +75,7 @@ export function loadSkillTemplate(path: string): Promise<ParsedSkill | null> {
     .catch(() => null);
 
   // Drop failed entries so a later attempt can fire a new request.
-  promise.then((skill) => {
+  void promise.then((skill) => {
     if (!skill) contentCache.delete(path);
   });
   contentCache.set(path, promise);
@@ -101,7 +101,7 @@ export function loadSkillResource(skillPath: string, resourcePath: string): Prom
     })
     .catch(() => null);
 
-  promise.then((content) => {
+  void promise.then((content) => {
     if (content === null) resourceCache.delete(url);
   });
   resourceCache.set(url, promise);

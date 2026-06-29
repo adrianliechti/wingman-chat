@@ -17,12 +17,14 @@ local image/data assets by relative path — the preview serves sibling artifact
 renders in the side panel.
 
 ## Ground it in the subject
+
 If the brief doesn't pin down the product/subject, pin it yourself: name one concrete subject, its
 audience, and the page's single job, and state your choice. The subject's own world — its materials,
 artifacts, and vernacular — is where distinctive choices come from. Build with the brief's real
 content throughout.
 
 ## Design principles
+
 - **The hero is a thesis.** Open with the most characteristic thing in the subject's world (a
   headline, image, animation, live demo). A big number + small label + gradient accent is the
   template answer — use only if it's truly best.
@@ -38,13 +40,15 @@ content throughout.
   in spacing, type, and detail. Elegance is executing the chosen vision well.
 
 ## Avoid the AI-design defaults
+
 Current AI design clusters on three looks: (1) warm cream (~#F4F1EA) + high-contrast serif display +
 terracotta accent; (2) near-black + a single acid-green/vermilion accent; (3) broadsheet layout with
-hairline rules, zero radius, dense columns. All are legitimate *for some briefs*, but they appear
+hairline rules, zero radius, dense columns. All are legitimate _for some briefs_, but they appear
 regardless of subject. Where the brief pins a direction, follow it exactly. Where it leaves an axis
-free, **don't spend that freedom on a default** — make a choice for *this* subject.
+free, **don't spend that freedom on a default** — make a choice for _this_ subject.
 
 ## Process: plan → critique → build
+
 1. Brainstorm a compact **token system**: Color (4–6 named hex values), Type (2+ roles — a
    characterful display face used with restraint, a body face, a utility face), Layout (a concept,
    with one-line prose + ASCII wireframes), and a **Signature** (the one element the page is
@@ -56,12 +60,14 @@ free, **don't spend that freedom on a default** — make a choice for *this* sub
    other's margins/paddings; structure selectors carefully.
 
 ## Restraint and self-critique
+
 Spend your boldness in one place — let the signature element be the memorable thing and keep
 everything around it quiet. Build to a quality floor without announcing it: responsive to mobile,
 visible keyboard focus, reduced-motion respected. Chanel's rule: before leaving the house, remove one
 accessory.
 
 ## Writing in the design
+
 Words are design material, not decoration. Write from the user's side of the screen (name things by
 what people control, not how the system is built). Active voice; an action keeps its name through the
 flow ("Publish" → "Published"). Treat errors and empty states as direction, not mood. Sentence case,

@@ -246,3 +246,10 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     message: "An unexpected error occurred while generating the response.",
   };
 }
+
+/** Best-effort human-readable text for a caught value of unknown type. */
+export function errorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
+}

@@ -58,7 +58,7 @@ export const PdfEditor = memo(function PdfEditor({ content }: PdfEditorProps) {
       }
     };
 
-    render();
+    void render();
 
     return () => {
       cancelled = true;

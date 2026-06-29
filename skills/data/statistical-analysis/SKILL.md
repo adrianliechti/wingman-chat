@@ -13,11 +13,11 @@ Descriptive statistics, trend analysis, outlier detection, hypothesis testing, a
 
 Choose the right measure of center based on the data:
 
-| Situation | Use | Why |
-|---|---|---|
-| Symmetric distribution, no outliers | Mean | Most efficient estimator |
-| Skewed distribution | Median | Robust to outliers |
-| Categorical or ordinal data | Mode | Only option for non-numeric |
+| Situation                                            | Use           | Why                             |
+| ---------------------------------------------------- | ------------- | ------------------------------- |
+| Symmetric distribution, no outliers                  | Mean          | Most efficient estimator        |
+| Skewed distribution                                  | Median        | Robust to outliers              |
+| Categorical or ordinal data                          | Mode          | Only option for non-numeric     |
 | Highly skewed with outliers (e.g., revenue per user) | Median + mean | Report both; the gap shows skew |
 
 **Always report mean and median together for business metrics.** If they diverge significantly, the data is skewed and the mean alone is misleading.
@@ -61,6 +61,7 @@ Characterize every numeric distribution you analyze:
 ### Identifying Trends
 
 **Moving averages** to smooth noise:
+
 ```python
 # 7-day moving average (good for daily data with weekly seasonality)
 df['ma_7d'] = df['metric'].rolling(window=7, min_periods=1).mean()
@@ -70,12 +71,14 @@ df['ma_28d'] = df['metric'].rolling(window=28, min_periods=1).mean()
 ```
 
 **Period-over-period comparison**:
+
 - Week-over-week (WoW): Compare to same day last week
 - Month-over-month (MoM): Compare to same month prior
 - Year-over-year (YoY): Gold standard for seasonal businesses
 - Same-day-last-year: Compare specific calendar day
 
 **Growth rates**:
+
 ```
 Simple growth: (current - previous) / previous
 CAGR: (ending / beginning) ^ (1 / years) - 1
@@ -85,6 +88,7 @@ Log growth: ln(current / previous)  -- better for volatile series
 ### Seasonality Detection
 
 Check for periodic patterns:
+
 1. Plot the raw time series -- visual inspection first
 2. Compute day-of-week averages: is there a clear weekly pattern?
 3. Compute month-of-year averages: is there an annual cycle?
@@ -100,6 +104,7 @@ For business analysts (not data scientists), use straightforward methods:
 - **Moving average forecast**: Use trailing average as the forecast.
 
 **Always communicate uncertainty**. Provide a range, not a point estimate:
+
 - "We expect 10K-12K signups next month based on the 3-month trend"
 - NOT "We will get exactly 11,234 signups next month"
 
@@ -110,12 +115,14 @@ For business analysts (not data scientists), use straightforward methods:
 ### Statistical Methods
 
 **Z-score method** (for normally distributed data):
+
 ```python
 z_scores = (df['value'] - df['value'].mean()) / df['value'].std()
 outliers = df[abs(z_scores) > 3]  # More than 3 standard deviations
 ```
 
 **IQR method** (robust to non-normal distributions):
+
 ```python
 Q1 = df['value'].quantile(0.25)
 Q3 = df['value'].quantile(0.75)
@@ -126,6 +133,7 @@ outliers = df[(df['value'] < lower_bound) | (df['value'] > upper_bound)]
 ```
 
 **Percentile method** (simplest):
+
 ```python
 outliers = df[(df['value'] < df['value'].quantile(0.01)) |
               (df['value'] > df['value'].quantile(0.99))]
@@ -171,14 +179,14 @@ Use hypothesis testing when you need to determine whether an observed difference
 
 ### Common Tests
 
-| Scenario | Test | When to Use |
-|---|---|---|
-| Compare two group means | t-test (independent) | Normal data, two groups |
-| Compare two group proportions | z-test for proportions | Conversion rates, binary outcomes |
-| Compare paired measurements | Paired t-test | Before/after on same entities |
-| Compare 3+ group means | ANOVA | Multiple segments or variants |
-| Non-normal data, two groups | Mann-Whitney U test | Skewed metrics, ordinal data |
-| Association between categories | Chi-squared test | Two categorical variables |
+| Scenario                       | Test                   | When to Use                       |
+| ------------------------------ | ---------------------- | --------------------------------- |
+| Compare two group means        | t-test (independent)   | Normal data, two groups           |
+| Compare two group proportions  | z-test for proportions | Conversion rates, binary outcomes |
+| Compare paired measurements    | Paired t-test          | Before/after on same entities     |
+| Compare 3+ group means         | ANOVA                  | Multiple segments or variants     |
+| Non-normal data, two groups    | Mann-Whitney U test    | Skewed metrics, ordinal data      |
+| Association between categories | Chi-squared test       | Two categorical variables         |
 
 ### Practical Significance vs. Statistical Significance
 
@@ -187,6 +195,7 @@ Use hypothesis testing when you need to determine whether an observed difference
 **Practical significance** means the difference is large enough to matter for business decisions.
 
 A difference can be statistically significant but practically meaningless (common with large samples). Always report:
+
 - **Effect size**: How big is the difference? (e.g., "Variant B improved conversion by 0.3 percentage points")
 - **Confidence interval**: What's the range of plausible true effects?
 - **Business impact**: What does this translate to in revenue, users, or other business terms?
@@ -203,6 +212,7 @@ A difference can be statistically significant but practically meaningless (commo
 ### Correlation Is Not Causation
 
 When you find a correlation, explicitly consider:
+
 - **Reverse causation**: Maybe B causes A, not A causes B
 - **Confounding variables**: Maybe C causes both A and B
 - **Coincidence**: With enough variables, spurious correlations are inevitable
@@ -213,6 +223,7 @@ When you find a correlation, explicitly consider:
 ### Multiple Comparisons Problem
 
 When you test many hypotheses, some will be "significant" by chance:
+
 - Testing 20 metrics at p=0.05 means ~1 will be falsely significant
 - If you looked at many segments before finding one that's different, note that
 - Adjust for multiple comparisons with Bonferroni correction (divide alpha by number of tests) or report how many tests were run
@@ -220,12 +231,14 @@ When you test many hypotheses, some will be "significant" by chance:
 ### Simpson's Paradox
 
 A trend in aggregated data can reverse when data is segmented:
+
 - Always check whether the conclusion holds across key segments
 - Example: Overall conversion goes up, but conversion goes down in every segment -- because the mix shifted toward a higher-converting segment
 
 ### Survivorship Bias
 
 You can only analyze entities that "survived" to be in your dataset:
+
 - Analyzing active users ignores those who churned
 - Analyzing successful companies ignores those that failed
 - Always ask: "Who is missing from this dataset, and would their inclusion change the conclusion?"
@@ -233,12 +246,14 @@ You can only analyze entities that "survived" to be in your dataset:
 ### Ecological Fallacy
 
 Aggregate trends may not apply to individuals:
+
 - "Countries with higher X have higher Y" does NOT mean "individuals with higher X have higher Y"
 - Be careful about applying group-level findings to individual cases
 
 ### Anchoring on Specific Numbers
 
 Be wary of false precision:
+
 - "Churn will be 4.73% next quarter" implies more certainty than is warranted
 - Prefer ranges: "We expect churn between 4-6% based on historical patterns"
 - Round appropriately: "About 5%" is often more honest than "4.73%"

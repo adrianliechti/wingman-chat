@@ -94,7 +94,7 @@ export async function refineSlide(
 
   // Pass the current slide image as a reference so palette, typography, and
   // layout stay consistent with the rest of the deck.
-  const currentBlob = await dataUrlToBlob(current);
+  const currentBlob = dataUrlToBlob(current);
   const options = notebookImageOptions(rendererModel, { aspect: "3:2", quality: "medium" });
   const imageBlob = await client.generateImage(rendererModel, imagePrompt.trim(), [currentBlob], options);
   const imageUrl = await blobToDataUrl(imageBlob);

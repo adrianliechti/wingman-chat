@@ -20,59 +20,71 @@ Synthesize user research data into actionable insights. See the **user-research*
 
 ```markdown
 ## Research Synthesis: [Study Name]
+
 **Method:** [Interviews / Survey / Usability Test] | **Participants:** [X]
 **Date:** [YYYY-MM-DD range] | **Researcher:** [Name]
 
 ### Executive Summary
+
 [3-4 sentence overview of key findings]
 
 ### Key Themes
 
 #### Theme 1: [Name]
+
 **Prevalence:** [X of Y participants]
 **Summary:** [What this theme is about]
 **Supporting Evidence:**
+
 - "[Quote]" — P[X]
 - "[Quote]" — P[X]
-**Implication:** [What this means for the product]
+  **Implication:** [What this means for the product]
 
 #### Theme 2: [Name]
+
 [Same format]
 
 ### Insights → Opportunities
 
-| Insight | Opportunity | Impact | Effort |
-|---------|-------------|--------|--------|
+| Insight           | Opportunity        | Impact       | Effort       |
+| ----------------- | ------------------ | ------------ | ------------ |
 | [What we learned] | [What we could do] | High/Med/Low | High/Med/Low |
 
 ### User Segments Identified
-| Segment | Characteristics | Needs | Size |
-|---------|----------------|-------|------|
-| [Name] | [Description] | [Key needs] | [Rough %] |
+
+| Segment | Characteristics | Needs       | Size      |
+| ------- | --------------- | ----------- | --------- |
+| [Name]  | [Description]   | [Key needs] | [Rough %] |
 
 ### Recommendations
+
 1. **[High priority]** — [Why, based on which findings]
 2. **[Medium priority]** — [Why]
 3. **[Lower priority]** — [Why]
 
 ### Questions for Further Research
+
 - [What we still don't know]
 
 ### Methodology Notes
+
 [How the research was conducted, any limitations or biases to note]
 ```
 
 ## If Connectors Available
 
 If **user feedback** is connected:
+
 - Pull support tickets, feature requests, and NPS responses to supplement research data
 - Cross-reference themes with real user complaints and requests
 
 If **product analytics** is connected:
+
 - Validate qualitative findings with usage data and behavioral metrics
 - Quantify the impact of identified pain points
 
 If **knowledge base** is connected:
+
 - Search for prior research studies and findings to compare against
 - Publish the synthesis to your research repository
 

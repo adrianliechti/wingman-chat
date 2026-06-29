@@ -113,7 +113,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
       else closeDialog();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      save();
+      void save();
     }
   };
 

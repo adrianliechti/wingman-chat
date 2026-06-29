@@ -74,7 +74,7 @@ export function ChatPage() {
       setModel(restored ?? null);
     }
     if (isListening) {
-      stopVoice();
+      void stopVoice();
     }
     newChat();
   }, [model, models, setModel, isListening, stopVoice, newChat]);
@@ -97,7 +97,7 @@ export function ChatPage() {
         selectChat(routeChatId);
       } else {
         // The chat ID in the URL doesn't exist — redirect to new chat
-        navigate({ to: "/chat", replace: true });
+        void navigate({ to: "/chat", replace: true });
       }
     } else if (!routeChatId && activeChatId) {
       // Only reset when the route previously had a chatId (explicit navigation away).
@@ -117,7 +117,7 @@ export function ChatPage() {
     const currentChatId = chat?.id ?? null;
 
     if (currentChatId && !routeChatId && previousChatId === null) {
-      navigate({ to: "/chat/$chatId", params: { chatId: currentChatId }, replace: true });
+      void navigate({ to: "/chat/$chatId", params: { chatId: currentChatId }, replace: true });
     }
 
     previousChatIdRef.current = currentChatId;

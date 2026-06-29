@@ -173,7 +173,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
   }, []);
 
   useEffect(() => {
-    if (isOpen) loadTree();
+    if (isOpen) void loadTree();
   }, [isOpen, loadTree]);
 
   const handleDelete = useCallback(

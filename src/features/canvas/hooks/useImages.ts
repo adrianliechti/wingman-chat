@@ -144,7 +144,7 @@ export function useImages() {
       }
     }
 
-    load();
+    void load();
   }, []);
 
   const createImage = useCallback(async (image: Omit<Image, "id" | "created" | "updated">) => {

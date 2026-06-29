@@ -48,7 +48,7 @@ async function mapWithConcurrency<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  const results = Array.from<R>({ length: items.length });
   let next = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (true) {
@@ -262,9 +262,9 @@ export async function generateHtmlSlides(
         const slides = raw
           .filter((s) => s && typeof s === "object")
           .map((s) => ({
-            archetype: String(s.archetype ?? "").trim(),
-            title: String(s.title ?? "").trim(),
-            brief: String(s.brief ?? "").trim(),
+            archetype: typeof s.archetype === "string" ? s.archetype.trim() : "",
+            title: typeof s.title === "string" ? s.title.trim() : "",
+            brief: typeof s.brief === "string" ? s.brief.trim() : "",
           }))
           .filter((s) => s.title && s.brief);
         if (slides.length === 0) {
@@ -415,7 +415,7 @@ export async function generateImageSlides(ctx: GenerateContext): Promise<Result>
   if (plan.length === 0) throw new Error("No slides planned");
 
   const frame = (prompt: string) => `A professional full-bleed landscape presentation slide (clean design). ${prompt}`;
-  const slides: (string | undefined)[] = new Array(plan.length);
+  const slides = Array.from<string | undefined>({ length: plan.length });
 
   // Stream the contiguous run of finished slides from the start, so the preview
   // never shows a later slide in an earlier slot while holes are still filling.

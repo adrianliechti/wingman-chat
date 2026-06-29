@@ -192,8 +192,8 @@ export function ArtifactsDrawer() {
     };
 
     // Load initial data
-    loadFiles();
-    loadActiveFile();
+    void loadFiles();
+    void loadActiveFile();
 
     // Subscribe to events for subsequent updates.
     // Reload the sidebar list for every filesystem change, but only refresh
@@ -580,7 +580,6 @@ export function ArtifactsDrawer() {
   const isEmpty = !activeFile && files.length === 0;
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0 bg-neutral-50 dark:bg-neutral-950"
       onDragEnter={handleDragEnter}

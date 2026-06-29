@@ -49,7 +49,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setActiveFile((current) => {
       if (!current) return current;
       // Kick off async existence check; updates state when resolved.
-      fs.fileExists(current).then((exists) => {
+      void fs.fileExists(current).then((exists) => {
         if (!cancelled && !exists) {
           setActiveFile((prev) => (prev === current ? null : prev));
         }

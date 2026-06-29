@@ -168,7 +168,7 @@ export function useChats() {
       }
     }
 
-    load();
+    void load();
   }, []);
 
   // Debounced save function

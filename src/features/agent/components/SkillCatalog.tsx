@@ -242,7 +242,7 @@ export function SkillCatalog({
 
   const openPreview = useCallback(
     (skill: Skill) => {
-      discardAndRun(() => {
+      void discardAndRun(() => {
         setSelectedSkill(skill);
         setEditMode(false);
       });
@@ -338,7 +338,7 @@ export function SkillCatalog({
 
   const switchTab = useCallback(
     (next: "mine" | "templates") => {
-      discardAndRun(() => {
+      void discardAndRun(() => {
         setTab(next);
         setSearch("");
         setTemplateCategory("");
@@ -356,7 +356,7 @@ export function SkillCatalog({
       setSelectedTemplate(template);
       setTemplateContent(null);
       setTemplateLoading(true);
-      loadTemplate(template.path)
+      void loadTemplate(template.path)
         .then((parsed) => setTemplateContent(parsed))
         .finally(() => setTemplateLoading(false));
     },

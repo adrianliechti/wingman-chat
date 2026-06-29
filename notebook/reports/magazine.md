@@ -6,12 +6,14 @@ description: "An editorial-style article designed for broad audiences"
 ## Visual Design & Content Structure
 
 Create a modern magazine-style editorial report:
+
 - White background with bold typographic contrasts — oversized headlines, pull quotes, and editorial flair
 - Vibrant but tasteful color palette: coral (#ff6b6b), deep teal (#2ec4b6), warm charcoal (#264653), soft peach (#ffecd2)
 - Multi-column sections where appropriate, asymmetric layouts for visual interest
 - Modern typography: bold condensed headings (uppercase, tracked), lightweight body text (16px, 1.7 line-height)
 
 Organize with:
+
 1. **Hero Header** — large bold title with a colored accent bar or background block, plus a one-line summary
 2. **Lead Story** — opening narrative in a slightly larger font, setting the scene
 3. **Feature Sections** — key topics as mini-articles with bold section headers, pull quotes in accent colors, and inline visualizations

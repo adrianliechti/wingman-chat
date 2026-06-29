@@ -15,7 +15,7 @@ Excel recalculates formulas when the file is opened.)
 - **Zero formula errors** — no `#REF!`, `#DIV/0!`, `#VALUE!`, `#N/A`, `#NAME?`. Verify ranges and
   references.
 - **Use formulas, not hardcoded values.** Let Excel compute, so the model stays live:
-  - ✅ `ws["B10"] = "=SUM(B2:B9)"`  ·  ✅ `ws["C5"] = "=(C4-C2)/C2"`
+  - ✅ `ws["B10"] = "=SUM(B2:B9)"` · ✅ `ws["C5"] = "=(C4-C2)/C2"`
   - ❌ computing the total in Python and writing the number.
 - **Assumptions in their own cells**, referenced by formulas: `=B5*(1+$B$6)`, not `=B5*1.05`.
 - When editing an existing file, **match its conventions exactly** — don't impose new formatting.
@@ -23,6 +23,7 @@ Excel recalculates formulas when the file is opened.)
 ## Financial-model conventions (when modelling)
 
 Color-code cell **text** so reviewers can read the model:
+
 - **Blue** `(0,0,255)` — hardcoded inputs / assumptions a user changes.
 - **Black** `(0,0,0)` — formulas and calculations.
 - **Green** `(0,128,0)` — links to other sheets in the same workbook.
@@ -30,6 +31,7 @@ Color-code cell **text** so reviewers can read the model:
 - **Yellow fill** `(255,255,0)` — key assumptions needing attention.
 
 Number formats:
+
 - Years as text ("2024", not "2,024"); currency `$#,##0` with units in the header ("Revenue ($mm)").
 - Zeros shown as "-": `"$#,##0;($#,##0);-"`. Percentages `0.0%`. Multiples `0.0x`. Negatives in
   parentheses `(123)`.
@@ -60,16 +62,18 @@ print("wrote model.xlsx")
 
 - **Multiple sheets**: `wb.create_sheet("Assumptions")`. **Charts**: openpyxl `BarChart`/`LineChart`
   from cell ranges, or embed a `matplotlib` image. **From a DataFrame**: `df.to_excel("out.xlsx",
-  index=False)` then reopen with openpyxl to format.
+index=False)` then reopen with openpyxl to format.
 - **Sensitivity tables**: use an **odd grid** (5×5, 7×7) so the base case sits dead-center; highlight
   that center cell yellow.
 - **Editing an existing file**: `load_workbook("model.xlsx")`, change what's needed, re-save; write
   cells without re-applying formats to preserve the existing look.
 
 ## Before you finish
+
 Check: zero formula errors (`#REF! / #DIV/0! / #VALUE! / #N/A / #NAME?`); ranges still correct after
 any row/column inserts; every assumption is a labeled cell (never a magic number buried in a formula)
 with a `Source:` note; charts point at the right ranges.
 
 ## Deliver
+
 Save as `<slug>.xlsx`; one-line hand-off. To revise, open the saved file and modify it.

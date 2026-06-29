@@ -21,12 +21,14 @@ Upload a CSV or paste your comp bands. I'll analyze placement, identify outliers
 ## Compensation Framework
 
 ### Components of Total Compensation
+
 - **Base salary**: Cash compensation
 - **Equity**: Shares, options, or other equity
 - **Bonus**: Annual target bonus, signing bonus
 - **Benefits**: Health, retirement, perks (harder to quantify)
 
 ### Key Variables
+
 - **Role**: Function and specialization
 - **Level**: IC levels, management levels
 - **Location**: Geographic pay adjustments
@@ -34,6 +36,7 @@ Upload a CSV or paste your comp bands. I'll analyze placement, identify outliers
 - **Industry**: Tech vs. finance vs. healthcare
 
 ### Data Sources
+
 - **With a compensation data source**: Pull verified benchmarks
 - **Without**: Use web research, public salary data, and user-provided context
 - Always note data freshness and source limitations
@@ -46,21 +49,24 @@ Provide percentile bands (25th, 50th, 75th, 90th) for base, equity, and total co
 ## Compensation Analysis: [Role/Scope]
 
 ### Market Benchmarks
+
 | Percentile | Base | Equity | Total Comp |
-|------------|------|--------|------------|
-| 25th | [X] | [X] | [X] |
-| 50th | [X] | [X] | [X] |
-| 75th | [X] | [X] | [X] |
-| 90th | [X] | [X] | [X] |
+| ---------- | ---- | ------ | ---------- |
+| 25th       | [X]  | [X]    | [X]        |
+| 50th       | [X]  | [X]    | [X]        |
+| 75th       | [X]  | [X]    | [X]        |
+| 90th       | [X]  | [X]    | [X]        |
 
 **Sources:** [Web research, compensation data tools, or user-provided data]
 
 ### Band Analysis (if data provided)
-| Employee | Current Base | Band Min | Band Mid | Band Max | Position |
-|----------|-------------|----------|----------|----------|----------|
-| [Name] | [X] | [X] | [X] | [X] | [Below/At/Above] |
+
+| Employee | Current Base | Band Min | Band Mid | Band Max | Position         |
+| -------- | ------------ | -------- | -------- | -------- | ---------------- |
+| [Name]   | [X]          | [X]      | [X]      | [X]      | [Below/At/Above] |
 
 ### Recommendations
+
 - [Specific compensation recommendations]
 - [Equity considerations]
 - [Retention risks if applicable]
@@ -69,10 +75,12 @@ Provide percentile bands (25th, 50th, 75th, 90th) for base, equity, and total co
 ## If Connectors Available
 
 If a **compensation data source** is connected:
+
 - Pull verified market benchmarks by role, level, and location
 - Compare your bands against real-time market data
 
 If an **HRIS** is connected:
+
 - Pull current employee comp data for band analysis
 - Identify outliers and retention risks automatically
 

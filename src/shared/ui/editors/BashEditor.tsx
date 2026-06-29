@@ -171,7 +171,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       }
     };
 
-    init();
+    void init();
 
     return () => {
       cancelled = true;
@@ -433,7 +433,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
         e.preventDefault();
         const cmd = input;
         setInput("");
-        executeCommand(cmd);
+        void executeCommand(cmd);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         if (history.length === 0) return;

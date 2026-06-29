@@ -5,6 +5,7 @@ label: "Bento Grid"
 ## Visual Style — Bento Grid
 
 Create a bento box grid-style infographic:
+
 - Modern color palette: white (#FFFFFF) cards on a soft gray (#F0F0F0) or dark (#1A1A2E) background, with one vibrant accent color per card section
 - Bento-box layout: content organized in a tight asymmetric grid of rounded-rectangle cards of varying sizes — some tall, some wide, some square
 - Each card contains one focused piece of information: a stat, a chart, an icon, or a short text block

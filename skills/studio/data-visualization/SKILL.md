@@ -6,7 +6,7 @@ description: Create effective data visualizations with Python (matplotlib, seabo
 # Data Visualization
 
 Rigorous charts of a **real dataset** with Python (`matplotlib` / `seaborn`; `plotly` for interactive).
-For an explanatory diagram or a quick illustrative chart that *teaches a concept*, use `visualize`.
+For an explanatory diagram or a quick illustrative chart that _teaches a concept_, use `visualize`.
 
 ## Before you chart
 
@@ -18,17 +18,17 @@ Saving the file renders it in the side panel.
 
 ## Pick the chart — by what you're showing
 
-| Showing | Chart | Alternatives |
-|---|---|---|
-| trend over time | line | area (cumulative) |
-| comparison across categories | bar (horizontal if many) | lollipop, dot plot |
-| ranking | horizontal bar | slope (two periods) |
-| part-to-whole | stacked bar | treemap, waffle |
-| distribution | histogram | box / violin (compare groups) |
-| correlation (2 vars) | scatter | bubble (3rd var → size) |
-| correlation (many vars) | heatmap (corr matrix) | pair plot |
-| flow / drop-off | sankey / funnel | |
-| many KPIs at once | small multiples | |
+| Showing                      | Chart                    | Alternatives                  |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| trend over time              | line                     | area (cumulative)             |
+| comparison across categories | bar (horizontal if many) | lollipop, dot plot            |
+| ranking                      | horizontal bar           | slope (two periods)           |
+| part-to-whole                | stacked bar              | treemap, waffle               |
+| distribution                 | histogram                | box / violin (compare groups) |
+| correlation (2 vars)         | scatter                  | bubble (3rd var → size)       |
+| correlation (many vars)      | heatmap (corr matrix)    | pair plot                     |
+| flow / drop-off              | sankey / funnel          |                               |
+| many KPIs at once            | small multiples          |                               |
 
 **Avoid:** pie and donut — humans misjudge angles; use bars (a donut only for a single KPI). **3D charts
 — never** (they distort and add nothing). Dual-axis only with both axes clearly labelled (it implies a
@@ -88,6 +88,7 @@ fig.write_html('chart.html', include_plotlyjs=True)   # INLINES plotly.js → wo
   data is uncertain; don't rotate axis labels 90° if you can shorten or wrap them.
 
 ## Before sharing — checklist
+
 - [ ] Title = the insight; axes labelled with units; legend clear and not over the data.
 - [ ] Works without color (direct labels / line styles / patterns differentiate the series).
 - [ ] Source and date range noted; text readable at standard zoom (≥ 10pt labels, ≥ 12pt titles).

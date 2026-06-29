@@ -9,6 +9,7 @@ Build `.pptx` files with **`python-pptx`** in the interpreter. Save to the works
 the side panel.
 
 ## Get the content first, then design
+
 Pull the real material from the conversation/workspace. Then commit to ONE visual system before slide
 1 (read `theme-factory` for a ready palette + fonts, or pick your own):
 
@@ -27,7 +28,7 @@ Pull the real material from the conversation/workspace. Then commit to ONE visua
   The title must be **≥ 1.75× the body size**.
 - **Pick a palette archetype** per deck — corporate-neutral / warm-editorial / bold-startup /
   academic-muted / playful-bright — and commit to it. Make it **content-informed**: if swapping the
-  palette into an unrelated deck would still work, it's too generic — tie the colors to *this* topic.
+  palette into an unrelated deck would still work, it's too generic — tie the colors to _this_ topic.
   **One color dominates** (~60% of the deck), 1–2 supporting tones, one sharp accent — never equal
   weight. **Do not reflexively default to a dark-blue background.** Two background colors max (content +
   section dividers). `read_skill theme-factory` for ready palettes.
@@ -66,6 +67,7 @@ print("wrote presentation.pptx")
 ```
 
 Notes:
+
 - Use `add_textbox` on the **blank** layout (`slide_layouts[6]`) for full control; set explicit
   positions so nothing collides; keep ~0.7–1.0in outer margins.
 - **Charts**: use a real chart, never shapes faking one. Native `add_chart` with `CategoryChartData` —
@@ -78,6 +80,7 @@ Notes:
   re-save — don't rebuild from scratch when revising. Keep the template's masters/layouts.
 
 ## Verify before handing off
+
 **Assume the first build has problems** — go slide by slide hunting for them, don't just confirm the
 file exists. On each slide check: no text box runs past the slide edge or overlaps another; titles fit
 one line (a title that wrapped to two breaks decorative lines positioned for one); every figure is
@@ -85,5 +88,6 @@ real and sourced; no leftover placeholder; nothing below 14pt; even margins and 
 find and re-check the affected slides — one fix often creates the next problem.
 
 ## Deliver
+
 Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, open the saved file and
 modify it.

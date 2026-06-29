@@ -16,6 +16,7 @@ Methodology and best practices for account reconciliation, including GL-to-suble
 Compare the general ledger control account balance to the detailed subledger balance.
 
 **Common accounts:**
+
 - Accounts receivable (GL control vs AR subledger aging)
 - Accounts payable (GL control vs AP subledger aging)
 - Fixed assets (GL control vs fixed asset register)
@@ -24,12 +25,14 @@ Compare the general ledger control account balance to the detailed subledger bal
 - Accrued liabilities (GL control vs accrual detail schedules)
 
 **Process:**
+
 1. Pull GL balance for the control account as of period end
 2. Pull subledger trial balance or detail report as of the same date
 3. Compare totals — they should match if posting is real-time
 4. Investigate any differences (timing of posting, manual entries not reflected, interface errors)
 
 **Common causes of differences:**
+
 - Manual journal entries posted to the control account but not reflected in the subledger
 - Subledger transactions not yet interfaced to the GL
 - Timing differences in batch posting
@@ -41,6 +44,7 @@ Compare the general ledger control account balance to the detailed subledger bal
 Compare the GL cash balance to the bank statement balance.
 
 **Process:**
+
 1. Obtain the bank statement balance as of period end
 2. Pull the GL cash account balance as of the same date
 3. Identify outstanding checks (issued but not cleared at the bank)
@@ -71,6 +75,7 @@ Difference:                         0.00
 Reconcile balances between related entities to ensure they net to zero on consolidation.
 
 **Process:**
+
 1. Pull intercompany receivable/payable balances for each entity pair
 2. Compare Entity A's receivable from Entity B to Entity B's payable to Entity A
 3. Identify and resolve differences
@@ -78,6 +83,7 @@ Reconcile balances between related entities to ensure they net to zero on consol
 5. Verify elimination entries are correct for consolidation
 
 **Common causes of differences:**
+
 - Transactions recorded by one entity but not the other (timing)
 - Different FX rates used by each entity
 - Misclassification (intercompany vs third-party)
@@ -124,17 +130,17 @@ Items that cannot be immediately explained:
 
 Track the age of reconciling items to identify stale items requiring escalation:
 
-| Age Bucket | Status | Action |
-|-----------|--------|--------|
-| 0-30 days | Current | Monitor — within normal processing cycle |
-| 31-60 days | Aging | Investigate — follow up on why item has not cleared |
-| 61-90 days | Overdue | Escalate — notify supervisor, document investigation |
-| 90+ days | Stale | Escalate to management — potential write-off or adjustment needed |
+| Age Bucket | Status  | Action                                                            |
+| ---------- | ------- | ----------------------------------------------------------------- |
+| 0-30 days  | Current | Monitor — within normal processing cycle                          |
+| 31-60 days | Aging   | Investigate — follow up on why item has not cleared               |
+| 61-90 days | Overdue | Escalate — notify supervisor, document investigation              |
+| 90+ days   | Stale   | Escalate to management — potential write-off or adjustment needed |
 
 ### Aging Report Format
 
-| Item # | Description | Amount | Date Originated | Age (Days) | Category | Status | Owner |
-|--------|-------------|--------|-----------------|------------|----------|--------|-------|
+| Item # | Description | Amount | Date Originated | Age (Days) | Category | Status   | Owner  |
+| ------ | ----------- | ------ | --------------- | ---------- | -------- | -------- | ------ |
 | 1      | [Detail]    | X,XXX  | [Date]          | XX         | [Type]   | [Status] | [Name] |
 
 ### Trending
@@ -150,17 +156,17 @@ Track reconciling item totals over time to identify growing balances:
 
 Define escalation triggers based on your organization's risk tolerance:
 
-| Trigger | Threshold (Example) | Escalation |
-|---------|---------------------|------------|
-| Individual item amount | Above a low threshold | Supervisor review |
-| Individual item amount | Above a higher threshold | Controller review |
-| Total reconciling items | Above a defined threshold | Controller review |
-| Item age | > 60 days | Supervisor follow-up |
-| Item age | > 90 days | Controller / management review |
-| Unreconciled difference | Any amount | Cannot close — must resolve or document |
-| Growing trend | 3+ consecutive periods | Process improvement investigation |
+| Trigger                 | Threshold (Example)       | Escalation                              |
+| ----------------------- | ------------------------- | --------------------------------------- |
+| Individual item amount  | Above a low threshold     | Supervisor review                       |
+| Individual item amount  | Above a higher threshold  | Controller review                       |
+| Total reconciling items | Above a defined threshold | Controller review                       |
+| Item age                | > 60 days                 | Supervisor follow-up                    |
+| Item age                | > 90 days                 | Controller / management review          |
+| Unreconciled difference | Any amount                | Cannot close — must resolve or document |
+| Growing trend           | 3+ consecutive periods    | Process improvement investigation       |
 
-*Note: Set thresholds based on your organization's materiality level and risk appetite. The examples above are illustrative.*
+_Note: Set thresholds based on your organization's materiality level and risk appetite. The examples above are illustrative._
 
 ## Reconciliation Best Practices
 

@@ -5,6 +5,7 @@ label: "Instructional"
 ## Visual Style — Instructional
 
 Create a clear, step-by-step instructional infographic:
+
 - Friendly color palette: bright blue (#4A90D9), orange (#F5A623), green (#7ED321), light gray (#F5F5F5) background, dark text (#333333)
 - Numbered steps with large circled numbers as visual anchors
 - Clear directional flow: top-to-bottom or left-to-right with arrows and connectors between steps

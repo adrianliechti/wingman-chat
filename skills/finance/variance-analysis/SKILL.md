@@ -16,6 +16,7 @@ Techniques for decomposing variances, materiality thresholds, narrative generati
 The most fundamental variance decomposition. Used for revenue, cost of goods, and any metric that can be expressed as Price x Volume.
 
 **Formula:**
+
 ```
 Total Variance = Actual - Budget (or Prior)
 
@@ -28,6 +29,7 @@ Verification:  Volume Effect + Price Effect = Total Variance
 ```
 
 **Three-way decomposition (separating mix):**
+
 ```
 Volume Effect = (Actual Volume - Budget Volume) x Budget Price x Budget Mix
 Price Effect  = (Actual Price - Budget Price) x Budget Volume x Actual Mix
@@ -35,6 +37,7 @@ Mix Effect    = Budget Price x Budget Volume x (Actual Mix - Budget Mix)
 ```
 
 **Example — Revenue variance:**
+
 - Budget: 10,000 units at 50 = 500,000
 - Actual: 11,000 units at 48 = 528,000
 - Total variance: +28,000 favorable
@@ -47,12 +50,14 @@ Mix Effect    = Budget Price x Budget Volume x (Actual Mix - Budget Mix)
 Used when analyzing blended rates across segments with different unit economics.
 
 **Formula:**
+
 ```
 Rate Effect = Sum of (Actual Volume_i x (Actual Rate_i - Budget Rate_i))
 Mix Effect  = Sum of (Budget Rate_i x (Actual Volume_i - Expected Volume_i at Budget Mix))
 ```
 
 **Example — Gross margin variance:**
+
 - Product A: 60% margin, Product B: 40% margin
 - Budget mix: 50% A, 50% B → Blended margin 50%
 - Actual mix: 40% A, 60% B → Blended margin 48%
@@ -102,14 +107,14 @@ Materiality thresholds determine which variances require investigation and narra
 
 ### Recommended Threshold Framework
 
-| Comparison Type | Amount Threshold | Percentage Threshold | Trigger |
-|----------------|-----------------|---------------------|---------|
-| Actual vs Budget | Organization-specific | 10% | Either exceeded |
-| Actual vs Prior Period | Organization-specific | 15% | Either exceeded |
-| Actual vs Forecast | Organization-specific | 5% | Either exceeded |
-| Sequential (MoM) | Organization-specific | 20% | Either exceeded |
+| Comparison Type        | Amount Threshold      | Percentage Threshold | Trigger         |
+| ---------------------- | --------------------- | -------------------- | --------------- |
+| Actual vs Budget       | Organization-specific | 10%                  | Either exceeded |
+| Actual vs Prior Period | Organization-specific | 15%                  | Either exceeded |
+| Actual vs Forecast     | Organization-specific | 5%                   | Either exceeded |
+| Sequential (MoM)       | Organization-specific | 20%                  | Either exceeded |
 
-*Set amount thresholds based on your organization's size. Common practice: 0.5%-1% of revenue for income statement items.*
+_Set amount thresholds based on your organization's size. Common practice: 0.5%-1% of revenue for income statement items._
 
 ### Investigation Priority
 
@@ -198,17 +203,17 @@ Net Variance: +550K (+5.5% favorable)
 
 Complement the waterfall with a reconciliation table:
 
-| Driver | Amount | % of Variance | Cumulative |
-|--------|--------|---------------|------------|
-| Volume growth | +800K | 145% | +800K |
-| Expansion revenue | +400K | 73% | +1,200K |
-| Price reductions | -200K | -36% | +1,000K |
-| Churn / contraction | -350K | -64% | +650K |
-| FX tailwind | +50K | 9% | +700K |
-| Timing (deal slippage) | -150K | -27% | +550K |
-| **Total variance** | **+550K** | **100%** | |
+| Driver                 | Amount    | % of Variance | Cumulative |
+| ---------------------- | --------- | ------------- | ---------- |
+| Volume growth          | +800K     | 145%          | +800K      |
+| Expansion revenue      | +400K     | 73%           | +1,200K    |
+| Price reductions       | -200K     | -36%          | +1,000K    |
+| Churn / contraction    | -350K     | -64%          | +650K      |
+| FX tailwind            | +50K      | 9%            | +700K      |
+| Timing (deal slippage) | -150K     | -27%          | +550K      |
+| **Total variance**     | **+550K** | **100%**      |            |
 
-*Note: Percentages can exceed 100% for individual drivers when there are offsetting items.*
+_Note: Percentages can exceed 100% for individual drivers when there are offsetting items._
 
 ### Waterfall Best Practices
 
@@ -223,11 +228,11 @@ Complement the waterfall with a reconciliation table:
 
 ### Three-Way Comparison Framework
 
-| Metric | Budget | Forecast | Actual | Bud Var (amt) | Bud Var (%) | Fcast Var (amt) | Fcast Var (%) |
-|--------|--------|----------|--------|---------------|-------------|-----------------|---------------|
-| Revenue | X | X | X | X | X% | X | X% |
-| COGS | X | X | X | X | X% | X | X% |
-| Gross Profit | X | X | X | X | X% | X | X% |
+| Metric       | Budget | Forecast | Actual | Bud Var (amt) | Bud Var (%) | Fcast Var (amt) | Fcast Var (%) |
+| ------------ | ------ | -------- | ------ | ------------- | ----------- | --------------- | ------------- |
+| Revenue      | X      | X        | X      | X             | X%          | X               | X%            |
+| COGS         | X      | X        | X      | X             | X%          | X               | X%            |
+| Gross Profit | X      | X        | X      | X             | X%          | X               | X%            |
 
 ### When to Use Each Comparison
 
@@ -247,12 +252,12 @@ Forecast Accuracy = 1 - |Actual - Forecast| / |Actual|
 MAPE (Mean Absolute Percentage Error) = Average of |Actual - Forecast| / |Actual| across periods
 ```
 
-| Period | Forecast | Actual | Variance | Accuracy |
-|--------|----------|--------|----------|----------|
-| Jan    | X        | X      | X (X%)   | XX%      |
-| Feb    | X        | X      | X (X%)   | XX%      |
-| ...    | ...      | ...    | ...      | ...      |
-| **Avg**|          |        | **MAPE** | **XX%**  |
+| Period  | Forecast | Actual | Variance | Accuracy |
+| ------- | -------- | ------ | -------- | -------- |
+| Jan     | X        | X      | X (X%)   | XX%      |
+| Feb     | X        | X      | X (X%)   | XX%      |
+| ...     | ...      | ...    | ...      | ...      |
+| **Avg** |          |        | **MAPE** | **XX%**  |
 
 ### Variance Trending
 

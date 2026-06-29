@@ -118,7 +118,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (isDir) handleExpand();
+            if (isDir) void handleExpand();
           }}
           className={cn("p-0.5 rounded transition-transform", isDir ? "cursor-pointer" : "invisible")}
           aria-label={expanded ? `Collapse ${entry.name}` : `Expand ${entry.name}`}
@@ -144,7 +144,8 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
           disabled={isDisabled}
           onClick={() => {
             if (isDisabled) return;
-            isDir ? handleExpand() : onToggleSelect(entry);
+            if (isDir) void handleExpand();
+            else onToggleSelect(entry);
           }}
         >
           {isDir ? (

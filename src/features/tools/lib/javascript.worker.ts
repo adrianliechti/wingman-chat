@@ -312,11 +312,14 @@ function formatValue(value: unknown): string {
   if (typeof value === "object") {
     try {
       // JSON.stringify throws on circular references — fall back to String().
+      // oxlint-disable-next-line typescript/no-base-to-string -- last-resort formatting of an arbitrary runtime value
       return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? `${v}n` : v), 2) ?? String(value);
     } catch {
+      // oxlint-disable-next-line typescript/no-base-to-string -- last-resort formatting of an arbitrary runtime value
       return String(value);
     }
   }
+  // oxlint-disable-next-line typescript/no-base-to-string -- remaining primitives (number/boolean) stringify safely
   return String(value);
 }
 

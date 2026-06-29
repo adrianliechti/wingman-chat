@@ -49,6 +49,7 @@ Tell me what happened: "Had a discovery call with Acme Corp. Met with their VP E
 ## Output
 
 ### Internal Summary
+
 ```markdown
 ## Call Summary: [Company] — [Date]
 
@@ -57,33 +58,41 @@ Tell me what happened: "Had a discovery call with Acme Corp. Met with their VP E
 **Duration:** [If known]
 
 ### Key Discussion Points
+
 1. [Topic] — [What was discussed, decisions made]
 2. [Topic] — [Summary]
 
 ### Customer Priorities
+
 - [Priority 1 they expressed]
 - [Priority 2]
 
 ### Objections / Concerns Raised
+
 - [Concern] — [How you addressed it / status]
 
 ### Competitive Intel
+
 - [Any competitor mentions, what was said]
 
 ### Action Items
-| Owner | Action | Due |
-|-------|--------|-----|
-| [You] | [Task] | [Date] |
+
+| Owner      | Action | Due    |
+| ---------- | ------ | ------ |
+| [You]      | [Task] | [Date] |
 | [Customer] | [Task] | [Date] |
 
 ### Next Steps
+
 - [Agreed next step with timeline]
 
 ### Deal Impact
+
 - [How this call affects the opportunity — stage change, risk, acceleration]
 ```
 
 ### Customer Follow-Up Email
+
 ```
 Subject: [Meeting recap + next steps]
 
@@ -113,6 +122,7 @@ When drafting customer-facing emails:
 4. **Keep it scannable** — If listing items, use plain dashes or numbers, not fancy formatting.
 
 **Good:**
+
 ```
 Here's what we discussed:
 - Quote for 20 seats at 480/seat/year
@@ -121,6 +131,7 @@ Here's what we discussed:
 ```
 
 **Bad:**
+
 ```
 **What You Need from Us:**
 - Quote for 20 seats at 480/seat/year
@@ -131,17 +142,20 @@ Here's what we discussed:
 ## If Connectors Available
 
 **Transcripts connected (e.g. Gong, Fireflies):**
+
 - I'll search for the call automatically
 - Pull the full transcript
 - Extract key moments flagged by the platform
 
 **CRM connected:**
+
 - I'll offer to update the opportunity stage
 - Log the call as an activity
 - Create tasks for action items
 - Update next steps field
 
 **Email connected:**
+
 - I'll offer to create a draft in your email
 - Or send directly if you approve
 

@@ -48,7 +48,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
       }
     };
 
-    highlight();
+    void highlight();
   }, [content, language, isDark]);
 
   return (

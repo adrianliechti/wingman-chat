@@ -10,7 +10,9 @@ Manage your design system — audit for consistency, document components, or des
 ## Components of a Design System
 
 ### Design Tokens
+
 Atomic values that define the visual language:
+
 - Colors (brand, semantic, neutral)
 - Typography (scale, weights, line heights)
 - Spacing (scale, component padding)
@@ -19,7 +21,9 @@ Atomic values that define the visual language:
 - Motion (durations, easings)
 
 ### Components
+
 Reusable UI elements with defined:
+
 - Variants (primary, secondary, ghost)
 - States (default, hover, active, disabled, loading, error)
 - Sizes (sm, md, lg)
@@ -27,7 +31,9 @@ Reusable UI elements with defined:
 - Accessibility (ARIA, keyboard)
 
 ### Patterns
+
 Common UI solutions combining components:
+
 - Forms (input groups, validation, submission)
 - Navigation (sidebar, tabs, breadcrumbs)
 - Data display (tables, cards, lists)
@@ -46,27 +52,32 @@ Common UI solutions combining components:
 ## Design System Audit
 
 ### Summary
+
 **Components reviewed:** [X] | **Issues found:** [X] | **Score:** [X/100]
 
 ### Naming Consistency
-| Issue | Components | Recommendation |
-|-------|------------|----------------|
-| [Inconsistent naming] | [List] | [Standard to adopt] |
+
+| Issue                 | Components | Recommendation      |
+| --------------------- | ---------- | ------------------- |
+| [Inconsistent naming] | [List]     | [Standard to adopt] |
 
 ### Token Coverage
-| Category | Defined | Hardcoded Values Found |
-|----------|---------|----------------------|
-| Colors | [X] | [X] instances of hardcoded hex |
-| Spacing | [X] | [X] instances of arbitrary values |
-| Typography | [X] | [X] instances of custom fonts/sizes |
+
+| Category   | Defined | Hardcoded Values Found              |
+| ---------- | ------- | ----------------------------------- |
+| Colors     | [X]     | [X] instances of hardcoded hex      |
+| Spacing    | [X]     | [X] instances of arbitrary values   |
+| Typography | [X]     | [X] instances of custom fonts/sizes |
 
 ### Component Completeness
+
 | Component | States | Variants | Docs | Score |
-|-----------|--------|----------|------|-------|
-| Button | ✅ | ✅ | ⚠️ | 8/10 |
-| Input | ✅ | ⚠️ | ❌ | 5/10 |
+| --------- | ------ | -------- | ---- | ----- |
+| Button    | ✅     | ✅       | ⚠️   | 8/10  |
+| Input     | ✅     | ⚠️       | ❌   | 5/10  |
 
 ### Priority Actions
+
 1. [Most impactful improvement]
 2. [Second priority]
 3. [Third priority]
@@ -78,39 +89,46 @@ Common UI solutions combining components:
 ## Component: [Name]
 
 ### Description
+
 [What this component is and when to use it]
 
 ### Variants
-| Variant | Use When |
-|---------|----------|
-| [Primary] | [Main actions] |
+
+| Variant     | Use When             |
+| ----------- | -------------------- |
+| [Primary]   | [Main actions]       |
 | [Secondary] | [Supporting actions] |
 
 ### Props / Properties
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| [prop] | [type] | [default] | [description] |
+
+| Property | Type   | Default   | Description   |
+| -------- | ------ | --------- | ------------- |
+| [prop]   | [type] | [default] | [description] |
 
 ### States
-| State | Visual | Behavior |
-|-------|--------|----------|
-| Default | [description] | — |
-| Hover | [description] | [interaction] |
-| Active | [description] | [interaction] |
+
+| State    | Visual        | Behavior        |
+| -------- | ------------- | --------------- |
+| Default  | [description] | —               |
+| Hover    | [description] | [interaction]   |
+| Active   | [description] | [interaction]   |
 | Disabled | [description] | Non-interactive |
-| Loading | [description] | [animation] |
+| Loading  | [description] | [animation]     |
 
 ### Accessibility
+
 - **Role**: [ARIA role]
 - **Keyboard**: [Tab, Enter, Escape behavior]
 - **Screen reader**: [Announced as...]
 
 ### Do's and Don'ts
-| ✅ Do | ❌ Don't |
-|------|---------|
+
+| ✅ Do           | ❌ Don't       |
+| --------------- | -------------- |
 | [Best practice] | [Anti-pattern] |
 
 ### Code Example
+
 [Framework-appropriate code snippet]
 ```
 
@@ -120,44 +138,52 @@ Common UI solutions combining components:
 ## New Component: [Name]
 
 ### Problem
+
 [What user need or gap this component addresses]
 
 ### Existing Patterns
-| Related Component | Similarity | Why It's Not Enough |
-|-------------------|-----------|---------------------|
-| [Component] | [What's shared] | [What's missing] |
+
+| Related Component | Similarity      | Why It's Not Enough |
+| ----------------- | --------------- | ------------------- |
+| [Component]       | [What's shared] | [What's missing]    |
 
 ### Proposed Design
 
 #### API / Props
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| [prop] | [type] | [default] | [description] |
+
+| Property | Type   | Default   | Description   |
+| -------- | ------ | --------- | ------------- |
+| [prop]   | [type] | [default] | [description] |
 
 #### Variants
-| Variant | Use When | Visual |
-|---------|----------|--------|
+
+| Variant   | Use When   | Visual        |
+| --------- | ---------- | ------------- |
 | [Variant] | [Scenario] | [Description] |
 
 #### States
-| State | Behavior | Notes |
-|-------|----------|-------|
-| Default | [Description] | — |
-| Hover | [Description] | [Interaction] |
+
+| State    | Behavior      | Notes           |
+| -------- | ------------- | --------------- |
+| Default  | [Description] | —               |
+| Hover    | [Description] | [Interaction]   |
 | Disabled | [Description] | Non-interactive |
-| Loading | [Description] | [Animation] |
+| Loading  | [Description] | [Animation]     |
 
 #### Tokens Used
+
 - Colors: [Which tokens]
 - Spacing: [Which tokens]
 - Typography: [Which tokens]
 
 ### Accessibility
+
 - **Role**: [ARIA role]
 - **Keyboard**: [Expected interactions]
 - **Screen reader**: [Announced as...]
 
 ### Open Questions
+
 - [Decision that needs design review]
 - [Edge case to resolve]
 ```
@@ -165,10 +191,12 @@ Common UI solutions combining components:
 ## If Connectors Available
 
 If **design tool** is connected:
+
 - Audit components directly in Figma — check naming, variants, and token usage
 - Pull component properties and layer structure for documentation
 
 If **knowledge base** is connected:
+
 - Search for existing component documentation and usage guidelines
 - Publish updated documentation to your wiki
 

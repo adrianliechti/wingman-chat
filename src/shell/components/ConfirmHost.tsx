@@ -60,7 +60,6 @@ export function ConfirmHost() {
                   </button>
                   <button
                     type="button"
-                    // biome-ignore lint/a11y/noAutofocus: focusing the action in a modal confirm is expected
                     autoFocus
                     onClick={() => settleConfirm(true)}
                     className={cn(

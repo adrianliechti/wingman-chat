@@ -30,7 +30,6 @@ export function ChatMessageEditor({
       <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto self-stretch">
         <div className="flex flex-col gap-2">
           <textarea
-            // biome-ignore lint/a11y/noAutofocus: focus the editor immediately when the user opens a message to edit
             autoFocus
             value={editContent}
             onChange={(e) => onEditContentChange(e.target.value)}

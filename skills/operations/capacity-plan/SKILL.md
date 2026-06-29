@@ -17,18 +17,21 @@ Analyze team capacity and plan resource allocation.
 ## Planning Dimensions
 
 ### People
+
 - Available headcount and skills
 - Current allocation and utilization
 - Planned hires and timeline
 - Contractor and vendor capacity
 
 ### Budget
+
 - Operating budget by category
 - Project-specific budgets
 - Variance tracking
 - Forecast vs. actual
 
 ### Time
+
 - Project timelines and dependencies
 - Critical path analysis
 - Buffer and contingency planning
@@ -36,11 +39,11 @@ Analyze team capacity and plan resource allocation.
 
 ## Utilization Targets
 
-| Role Type | Target Utilization | Notes |
-|-----------|-------------------|-------|
-| IC / Specialist | 75-80% | Leave room for reactive work and growth |
-| Manager | 60-70% | Management overhead, meetings, 1:1s |
-| On-call / Support | 50-60% | Interrupt-driven work is unpredictable |
+| Role Type         | Target Utilization | Notes                                   |
+| ----------------- | ------------------ | --------------------------------------- |
+| IC / Specialist   | 75-80%             | Leave room for reactive work and growth |
+| Manager           | 60-70%             | Management overhead, meetings, 1:1s     |
+| On-call / Support | 50-60%             | Interrupt-driven work is unpredictable  |
 
 ## Common Pitfalls
 
@@ -53,47 +56,56 @@ Analyze team capacity and plan resource allocation.
 
 ```markdown
 ## Capacity Plan: [Team/Project]
+
 **Period:** [Date range] | **Team Size:** [X]
 
 ### Current Utilization
+
 | Person/Role | Capacity | Allocated | Available | Utilization |
-|-------------|----------|-----------|-----------|-------------|
-| [Name/Role] | [hrs/wk] | [hrs/wk] | [hrs/wk] | [X]% |
+| ----------- | -------- | --------- | --------- | ----------- |
+| [Name/Role] | [hrs/wk] | [hrs/wk]  | [hrs/wk]  | [X]%        |
 
 ### Capacity Summary
+
 - **Total capacity**: [X] hours/week
 - **Currently allocated**: [X] hours/week ([X]%)
 - **Available**: [X] hours/week ([X]%)
 - **Overallocated**: [X people above 100%]
 
 ### Upcoming Demand
-| Project/Initiative | Start | End | Resources Needed | Gap |
-|--------------------|-------|-----|-----------------|-----|
-| [Project] | [Date] | [Date] | [X FTEs] | [Covered/Gap] |
+
+| Project/Initiative | Start  | End    | Resources Needed | Gap           |
+| ------------------ | ------ | ------ | ---------------- | ------------- |
+| [Project]          | [Date] | [Date] | [X FTEs]         | [Covered/Gap] |
 
 ### Bottlenecks
+
 - [Skill or role that's oversubscribed]
 - [Time period with a crunch]
 
 ### Recommendations
+
 1. [Hire / Contract / Reprioritize / Delay]
 2. [Specific action]
 
 ### Scenarios
-| Scenario | Outcome |
-|----------|---------|
-| Do nothing | [What happens] |
-| Hire [X] | [What changes] |
+
+| Scenario         | Outcome         |
+| ---------------- | --------------- |
+| Do nothing       | [What happens]  |
+| Hire [X]         | [What changes]  |
 | Deprioritize [Y] | [What frees up] |
 ```
 
 ## If Connectors Available
 
 If **project tracker** is connected:
+
 - Pull current workload and ticket assignments automatically
 - Show upcoming sprint or quarter commitments per person
 
 If **calendar** is connected:
+
 - Factor in PTO, holidays, and recurring meeting load
 - Calculate actual available hours per person
 

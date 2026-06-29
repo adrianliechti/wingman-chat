@@ -35,10 +35,12 @@ Get fully prepared for any sales call in minutes. This skill works with whatever
 When you run this skill, I'll ask for what I need:
 
 **Required:**
+
 - Company or contact name
 - Meeting type (discovery, demo, negotiation, check-in, etc.)
 
 **Helpful if you have it:**
+
 - Who's attending (names and titles)
 - Any context you want me to know (paste prior notes, emails, etc.)
 
@@ -50,13 +52,13 @@ If you've connected your CRM, email, or other tools, I'll pull context automatic
 
 Connect your tools to supercharge this skill:
 
-| Connector | What It Adds |
-|-----------|--------------|
-| **CRM** | Account details, contact history, open deals, recent activities |
-| **Email** | Recent threads with the company, open questions, attachments shared |
-| **Chat** | Internal chat discussions (e.g. Slack) about the account, colleague insights |
-| **Transcripts** | Prior call recordings, topics covered, competitor mentions |
-| **Calendar** | Auto-find the meeting, pull attendees and description |
+| Connector       | What It Adds                                                                 |
+| --------------- | ---------------------------------------------------------------------------- |
+| **CRM**         | Account details, contact history, open deals, recent activities              |
+| **Email**       | Recent threads with the company, open questions, attachments shared          |
+| **Chat**        | Internal chat discussions (e.g. Slack) about the account, colleague insights |
+| **Transcripts** | Prior call recordings, topics covered, competitor mentions                   |
+| **Calendar**    | Auto-find the meeting, pull attendees and description                        |
 
 > **No connectors?** No problem. Just tell me about the meeting and paste any context you have. I'll research the rest.
 
@@ -75,19 +77,20 @@ Connect your tools to supercharge this skill:
 
 ## Account Snapshot
 
-| Field | Value |
-|-------|-------|
-| **Company** | [Name] |
-| **Industry** | [Industry] |
-| **Size** | [Employees / Revenue if known] |
-| **Status** | [New prospect / Active opportunity / Customer] |
-| **Last Touch** | [Date and summary] |
+| Field          | Value                                          |
+| -------------- | ---------------------------------------------- |
+| **Company**    | [Name]                                         |
+| **Industry**   | [Industry]                                     |
+| **Size**       | [Employees / Revenue if known]                 |
+| **Status**     | [New prospect / Active opportunity / Customer] |
+| **Last Touch** | [Date and summary]                             |
 
 ---
 
 ## Who You're Meeting
 
 ### [Name] — [Title]
+
 - **Background:** [Career history, education if found]
 - **LinkedIn:** [URL]
 - **Role in Deal:** [Decision maker / Champion / Evaluator / etc.]
@@ -101,11 +104,13 @@ Connect your tools to supercharge this skill:
 ## Context & History
 
 **What's happened so far:**
+
 - [Key point from prior interactions]
 - [Open commitments or action items]
 - [Any concerns or objections raised]
 
 **Recent news about [Company]:**
+
 - [News item 1 — why it matters]
 - [News item 2 — why it matters]
 
@@ -135,10 +140,10 @@ Ask these to fill gaps in your understanding:
 
 ## Potential Objections
 
-| Objection | Suggested Response |
-|-----------|-------------------|
+| Objection                           | Suggested Response  |
+| ----------------------------------- | ------------------- |
 | [Likely objection based on context] | [How to address it] |
-| [Common objection for this stage] | [How to address it] |
+| [Common objection for this stage]   | [How to address it] |
 
 ---
 
@@ -151,6 +156,7 @@ Ask these to fill gaps in your understanding:
 ## After the Call
 
 Run **call-summary** to:
+
 - Extract action items
 - Update your CRM
 - Draft follow-up email
@@ -163,6 +169,7 @@ Run **call-summary** to:
 ### Step 1: Gather Context
 
 **If connectors available:**
+
 ```
 1. Calendar → Find upcoming meeting matching company name
    - Pull: title, time, attendees, description, attachments
@@ -185,6 +192,7 @@ Run **call-summary** to:
 ```
 
 **If no connectors:**
+
 ```
 1. Ask user:
    - "What company are you meeting with?"
@@ -198,6 +206,7 @@ Run **call-summary** to:
 ### Step 2: Research Supplement
 
 **Always run (web search):**
+
 ```
 1. "[Company] news" — last 30 days
 2. "[Company] funding" — recent announcements
@@ -221,21 +230,25 @@ Run **call-summary** to:
 ## Meeting Type Variations
 
 ### Discovery Call
+
 - Focus on: Understanding their world, pain points, priorities
 - Agenda emphasis: Questions > Talking
 - Key output: Qualification signals, next step proposal
 
 ### Demo / Presentation
+
 - Focus on: Their specific use case, tailored examples
 - Agenda emphasis: Show relevant features, get feedback
 - Key output: Technical requirements, decision timeline
 
 ### Negotiation / Proposal Review
+
 - Focus on: Addressing concerns, justifying value
 - Agenda emphasis: Handle objections, close gaps
 - Key output: Path to agreement, clear next steps
 
 ### Check-in / QBR
+
 - Focus on: Value delivered, expansion opportunities
 - Agenda emphasis: Review wins, surface new needs
 - Key output: Renewal confidence, upsell pipeline

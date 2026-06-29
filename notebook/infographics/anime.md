@@ -5,6 +5,7 @@ label: "Anime"
 ## Visual Style — Anime
 
 Create a vibrant anime/manga-inspired infographic:
+
 - Bold, saturated color palette: electric blue (#2D5BFF), hot pink (#FF2D78), bright yellow (#FFD32D), deep purple (#7B2DFF), white
 - Dynamic composition with diagonal lines, speed lines, and dramatic angles
 - Anime-style character illustrations or chibi mascots presenting information

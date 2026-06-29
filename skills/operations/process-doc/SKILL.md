@@ -15,20 +15,25 @@ Walk me through the process — describe it, paste existing docs, or just tell m
 
 ```markdown
 ## Process Document: [Process Name]
+
 **Owner:** [Person/Team] | **Last Updated:** [Date] | **Review Cadence:** [Quarterly/Annually]
 
 ### Purpose
+
 [Why this process exists and what it accomplishes]
 
 ### Scope
+
 [What's included and excluded]
 
 ### RACI Matrix
-| Step | Responsible | Accountable | Consulted | Informed |
-|------|------------|-------------|-----------|----------|
+
+| Step   | Responsible   | Accountable   | Consulted    | Informed      |
+| ------ | ------------- | ------------- | ------------ | ------------- |
 | [Step] | [Who does it] | [Who owns it] | [Who to ask] | [Who to tell] |
 
 ### Process Flow
+
 [ASCII flowchart or step-by-step description]
 
 > For a rendered swimlane/BPMN diagram instead of ASCII, the `process-diagram` capability draws it as
@@ -37,35 +42,42 @@ Walk me through the process — describe it, paste existing docs, or just tell m
 ### Detailed Steps
 
 #### Step 1: [Name]
+
 - **Who**: [Role]
 - **When**: [Trigger or timing]
 - **How**: [Detailed instructions]
 - **Output**: [What this step produces]
 
 #### Step 2: [Name]
+
 [Same format]
 
 ### Exceptions and Edge Cases
-| Scenario | What to Do |
-|----------|-----------|
+
+| Scenario    | What to Do         |
+| ----------- | ------------------ |
 | [Exception] | [How to handle it] |
 
 ### Metrics
-| Metric | Target | How to Measure |
-|--------|--------|----------------|
-| [Metric] | [Target] | [Method] |
+
+| Metric   | Target   | How to Measure |
+| -------- | -------- | -------------- |
+| [Metric] | [Target] | [Method]       |
 
 ### Related Documents
+
 - [Link to related process or policy]
 ```
 
 ## If Connectors Available
 
 If **knowledge base** is connected:
+
 - Search for existing process documentation to update rather than duplicate
 - Publish the completed SOP to your wiki
 
 If **project tracker** is connected:
+
 - Link the process to related projects and workflows
 - Create tasks for process improvement action items
 

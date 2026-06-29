@@ -31,15 +31,19 @@ Use this structure by default:
 ## Digest
 
 ### Needs attention
+
 - ...
 
 ### Decisions and updates
+
 - ...
 
 ### Documents and references
+
 - ...
 
 ### Open questions
+
 - ...
 
 Sources: ...

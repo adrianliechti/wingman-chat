@@ -19,7 +19,7 @@ const CLOSE = ")]}⟩⌉⌋";
 const PUNCT = ",;";
 
 // Integrals place limits beside the operator; sums/products place them above/below.
-const INTEGRAL_OPS = new Set([..."∫∬∭∮∯∰∱∲∳⨌"]);
+const INTEGRAL_OPS = new Set("∫∬∭∮∯∰∱∲∳⨌");
 
 /** OMML `m:val` of a named child property element. */
 function mval(el: Element | undefined, name: string): string | null {

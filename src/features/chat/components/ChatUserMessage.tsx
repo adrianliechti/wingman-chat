@@ -136,7 +136,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleConfirmEdit();
+      void handleConfirmEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCancelEdit();
@@ -144,7 +144,6 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   };
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: hover only toggles the action bar; the buttons stay focusable on their own
     <div
       className="flex justify-end pb-2 text-neutral-900 dark:text-neutral-200 min-w-0 overflow-hidden"
       onMouseEnter={() => setHovered(true)}

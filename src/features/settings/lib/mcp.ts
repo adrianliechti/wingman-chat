@@ -428,7 +428,7 @@ export class MCPClient implements ToolProvider {
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
-    const render = context.render;
+    const render = context.render?.bind(context);
     const client = this.client;
 
     if (!render) {
@@ -909,15 +909,11 @@ function buildHostCapabilities(
   };
 
   if (serverCapabilities?.tools) {
-    capabilities.serverTools = {
-      ...(serverCapabilities.tools.listChanged ? { listChanged: true } : {}),
-    };
+    capabilities.serverTools = serverCapabilities.tools.listChanged ? { listChanged: true } : {};
   }
 
   if (serverCapabilities?.resources) {
-    capabilities.serverResources = {
-      ...(serverCapabilities.resources.listChanged ? { listChanged: true } : {}),
-    };
+    capabilities.serverResources = serverCapabilities.resources.listChanged ? { listChanged: true } : {};
   }
 
   if (supportsMessages) {

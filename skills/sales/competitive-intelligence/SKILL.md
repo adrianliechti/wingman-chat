@@ -42,10 +42,12 @@ Research your competitors extensively and generate an **interactive HTML battlec
 When you run this skill, I'll ask for context:
 
 **Required:**
+
 - What company do you work for? (or I'll detect from your email)
 - Who are your main competitors? (1-5 names)
 
 **Optional:**
+
 - Which competitor do you want to focus on first?
 - Any specific deals where you're competing against them?
 - Pain points you've heard from customers about competitors?
@@ -56,12 +58,12 @@ If I already have your seller context from a previous session, I'll confirm and 
 
 ## Connectors (Optional)
 
-| Connector | What It Adds |
-|-----------|--------------|
-| **CRM** | Win/loss history against each competitor, deal-level competitor tracking |
-| **Docs** | Existing battlecards, product comparison docs, competitive playbooks |
-| **Chat** | Internal chat intel (e.g. Slack) — what your team is hearing from the field |
-| **Transcripts** | Competitor mentions in customer calls, objections raised |
+| Connector       | What It Adds                                                                |
+| --------------- | --------------------------------------------------------------------------- |
+| **CRM**         | Win/loss history against each competitor, deal-level competitor tracking    |
+| **Docs**        | Existing battlecards, product comparison docs, competitive playbooks        |
+| **Chat**        | Internal chat intel (e.g. Slack) — what your team is hearing from the field |
+| **Transcripts** | Competitor mentions in customer calls, objections raised                    |
 
 > **No connectors?** Web research works great. I'll pull everything from public sources — product pages, pricing, blogs, release notes, reviews, job postings.
 
@@ -69,7 +71,7 @@ If I already have your seller context from a previous session, I'll confirm and 
 
 ## Output: Interactive HTML Battlecard
 
-The battlecard *content* (the research, positioning, and matrix below) is the sales work here; the
+The battlecard _content_ (the research, positioning, and matrix below) is the sales work here; the
 HTML is just the medium. For a more polished visual treatment, the `frontend-design` capability can
 elevate the layout/typography — `read_skill frontend-design` if it's available. Keep it
 **self-contained and offline** (inline CSS/JS, no CDN) either way.
@@ -77,14 +79,18 @@ elevate the layout/typography — `read_skill frontend-design` if it's available
 The skill generates a **self-contained HTML file** with:
 
 ### 1. Comparison Matrix (Landing View)
+
 Overview comparing you vs. all competitors at a glance:
+
 - Feature comparison grid
 - Pricing comparison
 - Market positioning
 - Win rate indicators (if CRM connected)
 
 ### 2. Competitor Tabs (Click to Expand)
+
 Each competitor gets a clickable card that expands to show:
+
 - Company profile (size, funding, target market)
 - What they sell and how they position
 - Recent releases (last 90 days)
@@ -95,6 +101,7 @@ Each competitor gets a clickable card that expands to show:
 - Landmine questions
 
 ### 3. Your Company Card
+
 - Your releases (last 90 days)
 - Your key differentiators
 - Proof points and customer quotes
@@ -106,59 +113,59 @@ Each competitor gets a clickable card that expands to show:
 ```html
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <title>Battlecard: [Your Company] vs Competitors</title>
     <style>
-        /* Dark theme, professional styling */
-        /* Tabbed navigation */
-        /* Expandable cards */
-        /* Responsive design */
+      /* Dark theme, professional styling */
+      /* Tabbed navigation */
+      /* Expandable cards */
+      /* Responsive design */
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <!-- Header with your company + date -->
     <header>
-        <h1>[Your Company] Competitive Battlecard</h1>
-        <p>Generated: [Date] | Competitors: [List]</p>
+      <h1>[Your Company] Competitive Battlecard</h1>
+      <p>Generated: [Date] | Competitors: [List]</p>
     </header>
 
     <!-- Tab Navigation -->
     <nav class="tabs">
-        <button class="tab active" data-tab="matrix">Comparison Matrix</button>
-        <button class="tab" data-tab="competitor-1">[Competitor 1]</button>
-        <button class="tab" data-tab="competitor-2">[Competitor 2]</button>
-        <button class="tab" data-tab="competitor-3">[Competitor 3]</button>
+      <button class="tab active" data-tab="matrix">Comparison Matrix</button>
+      <button class="tab" data-tab="competitor-1">[Competitor 1]</button>
+      <button class="tab" data-tab="competitor-2">[Competitor 2]</button>
+      <button class="tab" data-tab="competitor-3">[Competitor 3]</button>
     </nav>
 
     <!-- Comparison Matrix Tab -->
     <section id="matrix" class="tab-content active">
-        <h2>Head-to-Head Comparison</h2>
-        <table class="comparison-matrix">
-            <!-- Feature rows with you vs each competitor -->
-        </table>
+      <h2>Head-to-Head Comparison</h2>
+      <table class="comparison-matrix">
+        <!-- Feature rows with you vs each competitor -->
+      </table>
 
-        <h2>Quick Win/Loss Guide</h2>
-        <div class="win-loss-grid">
-            <!-- Per-competitor: when you win, when you lose -->
-        </div>
+      <h2>Quick Win/Loss Guide</h2>
+      <div class="win-loss-grid">
+        <!-- Per-competitor: when you win, when you lose -->
+      </div>
     </section>
 
     <!-- Individual Competitor Tabs -->
     <section id="competitor-1" class="tab-content">
-        <div class="battlecard">
-            <div class="profile"><!-- Company info --></div>
-            <div class="differentiation"><!-- Where they win / you win --></div>
-            <div class="talk-tracks"><!-- Scenario-based positioning --></div>
-            <div class="objections"><!-- Common objections + responses --></div>
-            <div class="landmines"><!-- Questions to ask --></div>
-        </div>
+      <div class="battlecard">
+        <div class="profile"><!-- Company info --></div>
+        <div class="differentiation"><!-- Where they win / you win --></div>
+        <div class="talk-tracks"><!-- Scenario-based positioning --></div>
+        <div class="objections"><!-- Common objections + responses --></div>
+        <div class="landmines"><!-- Questions to ask --></div>
+      </div>
     </section>
 
     <script>
-        // Tab switching logic
-        // Expand/collapse sections
+      // Tab switching logic
+      // Expand/collapse sections
     </script>
-</body>
+  </body>
 </html>
 ```
 
@@ -167,37 +174,40 @@ Each competitor gets a clickable card that expands to show:
 ## Visual Design
 
 ### Color System
+
 ```css
 :root {
-    /* Dark theme base */
-    --bg-primary: #0a0d14;
-    --bg-elevated: #0f131c;
-    --bg-surface: #161b28;
-    --bg-hover: #1e2536;
+  /* Dark theme base */
+  --bg-primary: #0a0d14;
+  --bg-elevated: #0f131c;
+  --bg-surface: #161b28;
+  --bg-hover: #1e2536;
 
-    /* Text */
-    --text-primary: #ffffff;
-    --text-secondary: rgba(255, 255, 255, 0.7);
-    --text-muted: rgba(255, 255, 255, 0.5);
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
 
-    /* Accent (your brand or neutral) */
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
+  /* Accent (your brand or neutral) */
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
 
-    /* Status indicators */
-    --you-win: #10b981;
-    --they-win: #ef4444;
-    --tie: #f59e0b;
+  /* Status indicators */
+  --you-win: #10b981;
+  --they-win: #ef4444;
+  --tie: #f59e0b;
 }
 ```
 
 ### Card Design
+
 - Rounded corners (12px)
 - Subtle borders (1px, low opacity)
 - Hover states with slight elevation
 - Smooth transitions (200ms)
 
 ### Comparison Matrix
+
 - Sticky header row
 - Color-coded winner indicators (green = you, red = them, yellow = tie)
 - Expandable rows for detail
@@ -350,6 +360,7 @@ competitor:
 ---
 
 **Summary**
+
 - **Your Company**: [Name]
 - **Competitors Analyzed**: [List]
 - **Data Sources**: Web research [+ CRM] [+ Docs] [+ Transcripts]
@@ -357,6 +368,7 @@ competitor:
 ---
 
 **How to Use**
+
 - **Before a call**: Open the relevant competitor tab, review talk tracks
 - **During a call**: Reference landmine questions
 - **After win/loss**: Update with new intel
@@ -364,6 +376,7 @@ competitor:
 ---
 
 **Sharing Options**
+
 - **Local file**: Open in any browser
 - **Host it**: Upload to Netlify, Vercel, or internal wiki
 - **Share directly**: Send the HTML file to teammates
@@ -380,12 +393,12 @@ Run this skill again to refresh with latest intel. Recommended: monthly or befor
 
 Competitive intel gets stale. Recommended refresh:
 
-| Trigger | Action |
-|---------|--------|
-| **Monthly** | Quick refresh — new releases, news, pricing changes |
-| **Before major deal** | Deep refresh for specific competitor in that deal |
-| **After win/loss** | Update patterns with new data |
-| **Competitor announcement** | Immediate update on that competitor |
+| Trigger                     | Action                                              |
+| --------------------------- | --------------------------------------------------- |
+| **Monthly**                 | Quick refresh — new releases, news, pricing changes |
+| **Before major deal**       | Deep refresh for specific competitor in that deal   |
+| **After win/loss**          | Update patterns with new data                       |
+| **Competitor announcement** | Immediate update on that competitor                 |
 
 ---
 

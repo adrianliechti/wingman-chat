@@ -18,6 +18,7 @@ Provide the vendor name to check. If no vendor name is provided, prompt the user
 ### Step 1: Identify the Vendor
 
 Accept the vendor name from the user. Handle common variations:
+
 - Full legal name vs. trade name (e.g., "Alphabet Inc." vs. "Google")
 - Abbreviations (e.g., "AWS" vs. "Amazon Web Services")
 - Parent/subsidiary relationships
@@ -29,32 +30,42 @@ Ask the user to clarify if the vendor name is ambiguous.
 Search for the vendor across all available connected systems, in priority order:
 
 #### Contract Lifecycle Management -- If Connected
+
 Search for all contracts involving the vendor:
+
 - Active agreements
 - Expired agreements (last 3 years)
 - Agreements in negotiation or pending signature
 - Amendments and addenda
 
 #### CRM -- If Connected
+
 Search for the vendor/account record:
+
 - Account status and relationship type
 - Associated opportunities or deals
 - Contact information for vendor's legal/contracts team
 
 #### Email -- If Connected
+
 Search for recent relevant correspondence:
+
 - Contract-related emails (last 6 months)
 - NDA or agreement attachments
 - Negotiation threads
 
 #### Documents (e.g., the document store) -- If Connected
+
 Search for:
+
 - Executed agreements
 - Redlines and drafts
 - Due diligence materials
 
 #### Chat (e.g., Slack, Teams) -- If Connected
+
 Search for recent mentions:
+
 - Contract requests involving this vendor
 - Legal questions about the vendor
 - Relevant team discussions (last 3 months)
@@ -63,15 +74,15 @@ Search for recent mentions:
 
 For each agreement found, report:
 
-| Field | Details |
-|-------|---------|
-| **Agreement Type** | NDA, MSA, SOW, DPA, SLA, License Agreement, etc. |
-| **Status** | Active, Expired, In Negotiation, Pending Signature |
-| **Effective Date** | When the agreement started |
-| **Expiration Date** | When it expires or renews |
-| **Auto-Renewal** | Yes/No, with renewal term and notice period |
-| **Key Terms** | Liability cap, governing law, termination provisions |
-| **Amendments** | Any amendments or addenda on file |
+| Field               | Details                                              |
+| ------------------- | ---------------------------------------------------- |
+| **Agreement Type**  | NDA, MSA, SOW, DPA, SLA, License Agreement, etc.     |
+| **Status**          | Active, Expired, In Negotiation, Pending Signature   |
+| **Effective Date**  | When the agreement started                           |
+| **Expiration Date** | When it expires or renews                            |
+| **Auto-Renewal**    | Yes/No, with renewal term and notice period          |
+| **Key Terms**       | Liability cap, governing law, termination provisions |
+| **Amendments**      | Any amendments or addenda on file                    |
 
 ### Step 4: Gap Analysis
 

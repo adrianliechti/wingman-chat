@@ -326,7 +326,7 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
       }
     }
 
-    render();
+    void render();
     return () => {
       cancelled = true;
     };

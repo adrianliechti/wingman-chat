@@ -23,16 +23,16 @@ description: "Warm earthy tones with organic shapes and natural imagery"
 
 ```css
 :root {
-  --bg: #FAF6F0;         /* warm cream */
-  --ink: #3D3025;        /* deep brown — body text */
-  --ink-display: #2D5016; /* forest green — titles */
-  --ink-muted: #6B5E4F;
-  --accent: #7A9B6D;     /* sage */
-  --accent-2: #C4704B;   /* terracotta */
-  --accent-warm: #D4A54A; /* golden ochre — highlights */
-  --accent-rose: #C17B7B; /* dusty rose */
-  --accent-lavender: #8B7FA8;
-  --muted: #E8DFD0;      /* faint wash */
+  --bg: #faf6f0; /* warm cream */
+  --ink: #3d3025; /* deep brown — body text */
+  --ink-display: #2d5016; /* forest green — titles */
+  --ink-muted: #6b5e4f;
+  --accent: #7a9b6d; /* sage */
+  --accent-2: #c4704b; /* terracotta */
+  --accent-warm: #d4a54a; /* golden ochre — highlights */
+  --accent-rose: #c17b7b; /* dusty rose */
+  --accent-lavender: #8b7fa8;
+  --muted: #e8dfd0; /* faint wash */
   --font-display: "Playfair Display", "Cormorant Garamond", "Source Serif Pro", Georgia, "Times New Roman", serif;
   --font-body: "Source Serif Pro", "Lora", Georgia, "Times New Roman", serif;
 }

@@ -50,6 +50,7 @@ story = [
 doc.build(story)
 print("wrote report.pdf")
 ```
+
 For a richly designed one-pager, you can instead build HTML and render it, or place a `matplotlib`/
 `render()` image with `canvas.drawImage`.
 
@@ -79,4 +80,5 @@ with pdfplumber.open("in.pdf") as pdf:
 ```
 
 ## Deliver
+
 Save as `<slug>.pdf`; one-line hand-off. To revise, edit and re-run.

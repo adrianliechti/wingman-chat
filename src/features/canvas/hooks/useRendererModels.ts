@@ -43,7 +43,7 @@ export function useRendererModels(): Model[] {
       }
     };
 
-    load();
+    void load();
     return () => {
       cancelled = true;
     };

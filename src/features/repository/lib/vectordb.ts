@@ -1,3 +1,5 @@
+import { errorText } from "@/shared/lib/errors";
+
 export interface Document {
   id: string;
   source: string;
@@ -93,7 +95,7 @@ export class VectorDB {
         this.addDocument(doc);
       }
     } catch (error) {
-      throw new Error(`Failed to import database: ${error}`);
+      throw new Error(`Failed to import database: ${errorText(error)}`);
     }
   }
 }

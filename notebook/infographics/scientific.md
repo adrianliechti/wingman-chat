@@ -5,6 +5,7 @@ label: "Scientific"
 ## Visual Style — Scientific
 
 Create a scientific journal-style infographic:
+
 - Muted, precise color palette: deep charcoal (#2D3436), scientific blue (#0984E3), muted teal (#00B894), warm gray (#636E72), accent red (#D63031) for highlights
 - Clean serif or technical sans-serif typography (think Nature, Science journal layouts)
 - Grid-based layout with numbered figures and labeled diagrams

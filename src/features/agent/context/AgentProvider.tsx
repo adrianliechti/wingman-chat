@@ -343,7 +343,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    loadData();
+    void loadData();
   }, []);
 
   // Debounced save function

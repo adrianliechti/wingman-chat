@@ -23,12 +23,12 @@ description: "Grid-based typography-first design inspired by Swiss graphic style
 
 ```css
 :root {
-  --bg: #FFFFFF;
+  --bg: #ffffff;
   --ink: #000000;
-  --ink-muted: #4D4D4D;
-  --accent: #E20000;     /* signal red — max ONE element per slide, often zero */
-  --muted: #000000;      /* same ink — rules and color blocks only */
-  --line: #000000;       /* 1px rules — horizontal or vertical only */
+  --ink-muted: #4d4d4d;
+  --accent: #e20000; /* signal red — max ONE element per slide, often zero */
+  --muted: #000000; /* same ink — rules and color blocks only */
+  --line: #000000; /* 1px rules — horizontal or vertical only */
   --font-display: "Helvetica Neue", Helvetica, "Inter", "Arial Black", Arial, sans-serif;
   --font-body: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
 }

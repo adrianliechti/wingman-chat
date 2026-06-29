@@ -12,12 +12,14 @@ Multi-source research on a customer question, product topic, or account-related 
 ### 1. Parse the Research Request
 
 Identify what type of research is needed:
+
 - **Customer question**: Something a customer has asked that needs an answer (e.g., "Does our product support SSO with Okta?")
 - **Issue investigation**: Background on a reported problem (e.g., "Has this bug been reported before? What's the known workaround?")
 - **Account context**: History with a specific customer (e.g., "What did we tell Acme Corp last time they asked about this?")
 - **Topic research**: General topic relevant to support work (e.g., "Best practices for webhook retry logic")
 
 Before searching, clarify what you're actually trying to find:
+
 - Is this a factual question with a definitive answer?
 - Is this a contextual question requiring multiple perspectives?
 - Is this an exploratory question where the scope is still being defined?
@@ -28,26 +30,31 @@ Before searching, clarify what you're actually trying to find:
 Search systematically through the source tiers below, adapting to what is connected. Don't stop at the first result — cross-reference across sources.
 
 **Tier 1 — Official Internal Sources (highest confidence):**
+
 - knowledge base (if connected): product docs, runbooks, FAQs, policy documents
 - cloud storage: internal documents, specs, guides, past research
 - Product roadmap (internal-facing): feature timelines, priorities
 
 **Tier 2 — Organizational Context:**
+
 - CRM notes: account notes, activity history, previous answers, opportunity details
 - support platform (if connected): previous resolutions, known issues, workarounds
 - Meeting notes: previous discussions, decisions, commitments
 
 **Tier 3 — Team Communications:**
+
 - chat: search for the topic in relevant channels; check if teammates have discussed or answered this before
 - email: search for previous correspondence on this topic
 - Calendar notes: meeting agendas and post-meeting notes
 
 **Tier 4 — External Sources:**
+
 - Web search: official documentation, blog posts, community forums
 - Public knowledge bases, help centers, release notes
 - Third-party documentation: integration partners, complementary tools
 
 **Tier 5 — Inferred or Analogical (use when direct sources don't yield answers):**
+
 - Similar situations: how similar questions were handled before
 - Analogous customers: what worked for comparable accounts
 - General best practices: industry standards and norms
@@ -130,37 +137,41 @@ This helps build institutional knowledge and reduces duplicate research effort a
 
 ### Confidence by Source Tier
 
-| Tier | Source Type | Confidence | Notes |
-|------|-------------|------------|-------|
-| 1 | Official internal docs, KB, policies | **High** | Trust unless clearly outdated — check dates |
-| 2 | CRM, support tickets, meeting notes | **Medium-High** | May be subjective or incomplete |
-| 3 | Chat, email, calendar notes | **Medium** | Informal, may be out of context or speculative |
-| 4 | Web, forums, third-party docs | **Low-Medium** | May not reflect your specific situation |
-| 5 | Inference, analogies, best practices | **Low** | Clearly flag as inference, not fact |
+| Tier | Source Type                          | Confidence      | Notes                                          |
+| ---- | ------------------------------------ | --------------- | ---------------------------------------------- |
+| 1    | Official internal docs, KB, policies | **High**        | Trust unless clearly outdated — check dates    |
+| 2    | CRM, support tickets, meeting notes  | **Medium-High** | May be subjective or incomplete                |
+| 3    | Chat, email, calendar notes          | **Medium**      | Informal, may be out of context or speculative |
+| 4    | Web, forums, third-party docs        | **Low-Medium**  | May not reflect your specific situation        |
+| 5    | Inference, analogies, best practices | **Low**         | Clearly flag as inference, not fact            |
 
 ### Confidence Levels
 
 Always assign and communicate a confidence level:
 
 **High Confidence:**
+
 - Answer confirmed by official documentation or authoritative source
 - Multiple sources corroborate the same answer
 - Information is current (verified within a reasonable timeframe)
 - "I'm confident this is accurate based on [source]."
 
 **Medium Confidence:**
+
 - Answer found in informal sources (chat, email) but not official docs
 - Single source without corroboration
 - Information may be slightly outdated but likely still valid
 - "Based on [source], this appears to be the case, but I'd recommend confirming with [team/person]."
 
 **Low Confidence:**
+
 - Answer is inferred from related information
 - Sources are outdated or potentially unreliable
 - Contradictory information found across sources
 - "I wasn't able to find a definitive answer. Based on [context], my best assessment is [answer], but this should be verified before sharing with the customer."
 
 **Unable to Determine:**
+
 - No relevant information found in any source
 - Question requires specialized knowledge not available in sources
 - "I couldn't find information about this. I recommend reaching out to [suggested expert/team] for a definitive answer."
@@ -168,6 +179,7 @@ Always assign and communicate a confidence level:
 ### Handling Contradictions
 
 When sources disagree:
+
 1. Note the contradiction explicitly
 2. Identify which source is more authoritative or more recent
 3. Present both perspectives with context
@@ -177,6 +189,7 @@ When sources disagree:
 ## When to Escalate vs. Answer Directly
 
 ### Answer Directly When:
+
 - Official documentation clearly addresses the question
 - Multiple reliable sources corroborate the answer
 - The question is factual and non-sensitive
@@ -184,6 +197,7 @@ When sources disagree:
 - You've answered similar questions before with confirmed accuracy
 
 ### Escalate or Verify When:
+
 - The answer involves product roadmap commitments or timelines
 - Pricing, legal terms, or contract-specific questions
 - Security, compliance, or data handling questions
@@ -194,6 +208,7 @@ When sources disagree:
 - The customer is at risk and the wrong answer could exacerbate the situation
 
 ### Escalation Path:
+
 1. **Subject matter expert**: For technical or domain-specific questions
 2. **Product team**: For roadmap, feature, or capability questions
 3. **Legal/compliance**: For terms, privacy, security, or regulatory questions
@@ -206,6 +221,7 @@ When sources disagree:
 After completing research, capture the knowledge for future use.
 
 ### When to Document:
+
 - Question has come up before or likely will again
 - Research took significant effort to compile
 - Answer required synthesizing multiple sources
@@ -213,6 +229,7 @@ After completing research, capture the knowledge for future use.
 - Answer involves nuance that's easy to get wrong
 
 ### Documentation Format:
+
 ```
 ## [Question/Topic]
 
@@ -236,6 +253,7 @@ After completing research, capture the knowledge for future use.
 ```
 
 ### Knowledge Base Hygiene:
+
 - Date-stamp all entries
 - Flag entries that reference specific product versions or features
 - Review and update entries quarterly

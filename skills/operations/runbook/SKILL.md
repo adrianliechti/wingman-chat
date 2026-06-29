@@ -11,13 +11,16 @@ Create a step-by-step operational runbook for a recurring task or procedure.
 
 ```markdown
 ## Runbook: [Task Name]
+
 **Owner:** [Team/Person] | **Frequency:** [Daily/Weekly/Monthly/As Needed]
 **Last Updated:** [Date] | **Last Run:** [Date]
 
 ### Purpose
+
 [What this runbook accomplishes and when to use it]
 
 ### Prerequisites
+
 - [ ] [Access or permission needed]
 - [ ] [Tool or system required]
 - [ ] [Data or input needed]
@@ -26,14 +29,18 @@ Create a step-by-step operational runbook for a recurring task or procedure.
 
 #### Step 1: [Name]
 ```
+
 [Exact command, action, or instruction]
+
 ```
 **Expected result:** [What should happen]
 **If it fails:** [What to do]
 
 #### Step 2: [Name]
 ```
+
 [Exact command, action, or instruction]
+
 ```
 **Expected result:** [What should happen]
 **If it fails:** [What to do]
@@ -64,10 +71,12 @@ Create a step-by-step operational runbook for a recurring task or procedure.
 ## If Connectors Available
 
 If **knowledge base** is connected:
+
 - Search for existing runbooks to update rather than create from scratch
 - Publish the completed runbook to your ops wiki
 
 If **ITSM** is connected:
+
 - Link the runbook to related incident types and change requests
 - Auto-populate escalation contacts from on-call schedules
 

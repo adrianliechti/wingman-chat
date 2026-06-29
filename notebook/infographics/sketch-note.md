@@ -5,6 +5,7 @@ label: "Sketch Note"
 ## Visual Style — Sketch Note
 
 Create a hand-drawn sketch-note style infographic:
+
 - Looks like it was drawn by hand on paper or a whiteboard with markers and pens
 - Wobbly lines, imperfect shapes, hand-lettered typography with varying weight
 - Multi-color palette: warm orange, teal, navy, coral, and leaf green on a white or cream background

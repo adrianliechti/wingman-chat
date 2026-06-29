@@ -29,9 +29,13 @@ const light = process.argv.includes("--light");
 const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
 
 // [name, code, { extras?, heavy? }]
+/** @type {Array<[string, string, ({ extras?: string[]; heavy?: boolean })?]>} */
 const CASES = [
   // --- Base-interpreter stdlib (built in since Pyodide 314, no loading) ---
-  ["stdlib sqlite3", "import sqlite3\nc=sqlite3.connect(':memory:')\nc.execute('create table t(x)')\nc.execute('insert into t values(42)')\nc.execute('select x from t').fetchone()[0]"],
+  [
+    "stdlib sqlite3",
+    "import sqlite3\nc=sqlite3.connect(':memory:')\nc.execute('create table t(x)')\nc.execute('insert into t values(42)')\nc.execute('select x from t').fetchone()[0]",
+  ],
   ["stdlib ssl", "import ssl\nssl.create_default_context() is not None"],
   ["stdlib lzma", "import lzma\nlzma.decompress(lzma.compress(b'x'*200))==b'x'*200"],
   // Base stdlib hashlib ships the common digests + a pure-Python pbkdf2_hmac;
@@ -39,11 +43,22 @@ const CASES = [
   ["stdlib hashlib (base digests)", "import hashlib\nhashlib.sha256(b'abc').hexdigest()[:8]"],
 
   // --- tzdata / zoneinfo (data-only; loadFor must detect it) ---
-  ["tzdata via zoneinfo", "from zoneinfo import ZoneInfo\nfrom datetime import datetime\ndatetime(2026,6,14,tzinfo=ZoneInfo('Europe/Zurich')).utcoffset() is not None"],
+  [
+    "tzdata via zoneinfo",
+    "from zoneinfo import ZoneInfo\nfrom datetime import datetime\ndatetime(2026,6,14,tzinfo=ZoneInfo('Europe/Zurich')).utcoffset() is not None",
+  ],
 
   // --- Core data stack ---
-  ["numpy + pandas", "import numpy as np, pandas as pd\nint(pd.DataFrame({'a':np.arange(5)})['a'].sum())", { heavy: true }],
-  ["pandas tz_convert (tzdata)", "import pandas as pd\nstr(pd.Timestamp('2026-06-14 12:00').tz_localize('Europe/Zurich').tz_convert('UTC').tz)", { heavy: true }],
+  [
+    "numpy + pandas",
+    "import numpy as np, pandas as pd\nint(pd.DataFrame({'a':np.arange(5)})['a'].sum())",
+    { heavy: true },
+  ],
+  [
+    "pandas tz_convert (tzdata)",
+    "import pandas as pd\nstr(pd.Timestamp('2026-06-14 12:00').tz_localize('Europe/Zurich').tz_convert('UTC').tz)",
+    { heavy: true },
+  ],
 
   // --- Validation ---
   ["pydantic v2", "from pydantic import BaseModel\nclass M(BaseModel):\n  x:int\nM(x='5').x"],
@@ -61,13 +76,33 @@ const CASES = [
   ["import extract_msg (.msg → rtfde → oletools)", "import extract_msg\nextract_msg.__version__"],
 
   // --- Images (heavy) ---
-  ["opencv (cv2)", "import cv2, numpy as np\ncv2.cvtColor(np.zeros((4,4,3),np.uint8),cv2.COLOR_BGR2GRAY).shape==(4,4)", { heavy: true }],
-  ["scikit-image", "import numpy as np\nfrom skimage.filters import gaussian\ngaussian(np.zeros((8,8)),sigma=1).shape==(8,8)", { heavy: true }],
-  ["imageio png (+ Pillow)", "import PIL, numpy as np\nimport imageio.v3 as iio\nb=iio.imwrite('<bytes>',np.zeros((8,8,3),'uint8'),extension='.png')\niio.imread(b).shape[:2]==(8,8)", { heavy: true }],
+  [
+    "opencv (cv2)",
+    "import cv2, numpy as np\ncv2.cvtColor(np.zeros((4,4,3),np.uint8),cv2.COLOR_BGR2GRAY).shape==(4,4)",
+    { heavy: true },
+  ],
+  [
+    "scikit-image",
+    "import numpy as np\nfrom skimage.filters import gaussian\ngaussian(np.zeros((8,8)),sigma=1).shape==(8,8)",
+    { heavy: true },
+  ],
+  [
+    "imageio png (+ Pillow)",
+    "import PIL, numpy as np\nimport imageio.v3 as iio\nb=iio.imwrite('<bytes>',np.zeros((8,8,3),'uint8'),extension='.png')\niio.imread(b).shape[:2]==(8,8)",
+    { heavy: true },
+  ],
 
   // --- ML (heavy) ---
-  ["xgboost", "import numpy as np, xgboost as xgb\nr=np.random.default_rng(0); X=r.random((40,3)); y=(X[:,0]>.5).astype(int)\nbool(xgb.train({'objective':'binary:logistic','max_depth':2}, xgb.DMatrix(X,label=y), num_boost_round=2).predict(xgb.DMatrix(X)).shape==(40,))", { heavy: true }],
-  ["lightgbm", "import numpy as np, lightgbm as lgb\nr=np.random.default_rng(0); X=r.random((60,3)); y=(X[:,0]>.5).astype(int)\nbool(lgb.train({'objective':'binary','num_leaves':5,'verbose':-1}, lgb.Dataset(X,label=y), num_boost_round=3).predict(X).shape==(60,))", { heavy: true }],
+  [
+    "xgboost",
+    "import numpy as np, xgboost as xgb\nr=np.random.default_rng(0); X=r.random((40,3)); y=(X[:,0]>.5).astype(int)\nbool(xgb.train({'objective':'binary:logistic','max_depth':2}, xgb.DMatrix(X,label=y), num_boost_round=2).predict(xgb.DMatrix(X)).shape==(40,))",
+    { heavy: true },
+  ],
+  [
+    "lightgbm",
+    "import numpy as np, lightgbm as lgb\nr=np.random.default_rng(0); X=r.random((60,3)); y=(X[:,0]>.5).astype(int)\nbool(lgb.train({'objective':'binary','num_leaves':5,'verbose':-1}, lgb.Dataset(X,label=y), num_boost_round=3).predict(X).shape==(60,))",
+    { heavy: true },
+  ],
 
   // --- Misc helpers ---
   ["regex (unicode props)", "import regex\nbool(regex.fullmatch(r'\\p{Greek}+','αβγ'))"],
@@ -90,7 +125,7 @@ async function loadFor(code, extras = []) {
     try {
       await py.loadPackage(pkg, { errorCallback: warn });
     } catch (err) {
-      console.warn(`  skipped ${pkg}: ${err}`);
+      console.warn(`  skipped ${pkg}: ${String(err)}`);
     }
   }
 }

@@ -30,23 +30,27 @@ User runs `/brand-review` or asks to review, check, or audit content against bra
 Evaluate the content against each of these dimensions:
 
 #### Voice and Tone
+
 - Does the content match the defined brand voice attributes?
 - Is the tone appropriate for the content type and audience?
 - Are there shifts in voice that feel inconsistent?
 - Flag specific sentences or phrases that deviate with an explanation of why
 
 #### Terminology and Language
+
 - Are preferred brand terms used correctly?
 - Are any "avoid" terms or phrases present?
 - Is jargon level appropriate for the target audience?
 - Are product names, feature names, and branded terms used correctly (capitalization, formatting)?
 
 #### Messaging Pillars
+
 - Does the content align with defined messaging pillars or value propositions?
 - Are claims consistent with approved messaging?
 - Is the content reinforcing or contradicting brand positioning?
 
 #### Style Guide Compliance
+
 - Grammar and punctuation per style guide (e.g., Oxford comma, title case vs. sentence case)
 - Formatting conventions (headers, lists, emphasis)
 - Number formatting, date formatting
@@ -57,17 +61,20 @@ Evaluate the content against each of these dimensions:
 Evaluate the content for:
 
 #### Clarity
+
 - Is the main message clear within the first paragraph?
 - Are sentences concise and easy to understand?
 - Is the structure logical and easy to follow?
 - Are there ambiguous statements or unclear references?
 
 #### Consistency
+
 - Is the tone consistent throughout?
 - Are terms used consistently (no switching between synonyms for the same concept)?
 - Is formatting consistent (headers, lists, capitalization)?
 
 #### Professionalism
+
 - Is the content free of typos, grammatical errors, and awkward phrasing?
 - Is the tone appropriate for the intended audience?
 - Are claims supported or substantiated?
@@ -75,6 +82,7 @@ Evaluate the content for:
 ### Legal and Compliance Flags (Always Checked)
 
 Regardless of whether brand guidelines are configured, flag:
+
 - **Unsubstantiated claims** — superlatives ("best", "fastest", "only") without evidence or qualification
 - **Missing disclaimers** — financial claims, health claims, or guarantees that may need legal disclaimers
 - **Comparative claims** — comparisons to competitors that could be challenged
@@ -102,19 +110,20 @@ A complete brand voice document should cover these areas:
 
 When defining or evaluating brand voice, position attributes on a spectrum:
 
-| Spectrum | One End | Other End |
-|----------|---------|-----------|
-| Formality | Formal, institutional | Casual, conversational |
-| Authority | Expert, authoritative | Peer-level, collaborative |
-| Emotion | Warm, empathetic | Direct, matter-of-fact |
-| Complexity | Technical, precise | Simple, accessible |
-| Energy | Bold, energetic | Calm, measured |
-| Humor | Playful, witty | Serious, earnest |
-| Innovation | Cutting-edge, forward-looking | Established, proven |
+| Spectrum   | One End                       | Other End                 |
+| ---------- | ----------------------------- | ------------------------- |
+| Formality  | Formal, institutional         | Casual, conversational    |
+| Authority  | Expert, authoritative         | Peer-level, collaborative |
+| Emotion    | Warm, empathetic              | Direct, matter-of-fact    |
+| Complexity | Technical, precise            | Simple, accessible        |
+| Energy     | Bold, energetic               | Calm, measured            |
+| Humor      | Playful, witty                | Serious, earnest          |
+| Innovation | Cutting-edge, forward-looking | Established, proven       |
 
 For each chosen attribute, document it in this format:
 
 **[Attribute name]**
+
 - **We are**: [what this means in practice]
 - **We are not**: [common misinterpretation to avoid]
 - **This sounds like**: [example sentence demonstrating the attribute]
@@ -123,6 +132,7 @@ For each chosen attribute, document it in this format:
 Example:
 
 **Approachable**
+
 - **We are**: friendly, clear, jargon-free, welcoming to beginners and experts alike
 - **We are not**: dumbed-down, overly casual, or lacking substance
 - **This sounds like**: "Here's how to get started — it takes about five minutes."
@@ -134,31 +144,33 @@ The brand voice stays consistent, but tone adapts to context. Tone is the emotio
 
 #### Tone by Channel
 
-| Channel | Tone Adaptation | Example |
-|---------|----------------|---------|
-| Blog | Informative, conversational, educational | "Let's walk through how this works and why it matters for your team." |
-| Social media (LinkedIn) | Professional, thought-provoking, concise | "Three things we learned from running 50 campaigns this quarter." |
-| Social media (Twitter/X) | Punchy, direct, sometimes witty | "Your landing page has 3 seconds. Make them count." |
-| Email marketing | Personal, helpful, action-oriented | "We put together something we think you'll find useful." |
-| Sales collateral | Confident, benefit-driven, specific | "Teams using our platform reduce reporting time by 40%." |
-| Support/Help docs | Clear, patient, step-by-step | "If you see this error, here's how to fix it." |
-| Press release | Formal, factual, newsworthy | "The company today announced the launch of..." |
-| Error messages | Empathetic, helpful, blame-free | "Something went wrong on our end. We're looking into it." |
+| Channel                  | Tone Adaptation                          | Example                                                               |
+| ------------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
+| Blog                     | Informative, conversational, educational | "Let's walk through how this works and why it matters for your team." |
+| Social media (LinkedIn)  | Professional, thought-provoking, concise | "Three things we learned from running 50 campaigns this quarter."     |
+| Social media (Twitter/X) | Punchy, direct, sometimes witty          | "Your landing page has 3 seconds. Make them count."                   |
+| Email marketing          | Personal, helpful, action-oriented       | "We put together something we think you'll find useful."              |
+| Sales collateral         | Confident, benefit-driven, specific      | "Teams using our platform reduce reporting time by 40%."              |
+| Support/Help docs        | Clear, patient, step-by-step             | "If you see this error, here's how to fix it."                        |
+| Press release            | Formal, factual, newsworthy              | "The company today announced the launch of..."                        |
+| Error messages           | Empathetic, helpful, blame-free          | "Something went wrong on our end. We're looking into it."             |
 
 #### Tone by Situation
 
-| Situation | Tone Adaptation |
-|-----------|----------------|
-| Product launch | Excited, confident, forward-looking |
-| Incident or outage | Transparent, empathetic, accountable |
-| Customer success story | Celebratory, specific, crediting the customer |
-| Thought leadership | Authoritative, nuanced, evidence-based |
-| Onboarding | Welcoming, encouraging, clear |
-| Bad news (price increase, deprecation) | Honest, respectful, solution-oriented |
-| Competitive comparison | Confident but fair, fact-based, not disparaging |
+| Situation                              | Tone Adaptation                                 |
+| -------------------------------------- | ----------------------------------------------- |
+| Product launch                         | Excited, confident, forward-looking             |
+| Incident or outage                     | Transparent, empathetic, accountable            |
+| Customer success story                 | Celebratory, specific, crediting the customer   |
+| Thought leadership                     | Authoritative, nuanced, evidence-based          |
+| Onboarding                             | Welcoming, encouraging, clear                   |
+| Bad news (price increase, deprecation) | Honest, respectful, solution-oriented           |
+| Competitive comparison                 | Confident but fair, fact-based, not disparaging |
 
 #### Tone Adaptation Rule
+
 The voice attributes remain fixed. Tone dials them up or down based on context. For example, if a brand is "bold and warm":
+
 - In a product launch, dial up boldness
 - In an incident response, dial up warmth
 - Neither attribute disappears; the balance shifts
@@ -166,21 +178,23 @@ The voice attributes remain fixed. Tone dials them up or down based on context. 
 ### Style Guide Enforcement
 
 #### Grammar and Mechanics
+
 Document and enforce these choices consistently:
 
-| Rule | Options | Example |
-|------|---------|---------|
-| Oxford comma | Yes / No | "fast, reliable, and secure" vs. "fast, reliable and secure" |
-| Sentence case vs. title case (headings) | Sentence / Title | "How to get started" vs. "How to Get Started" |
-| Contractions | Use / Avoid | "we're" vs. "we are" |
-| Em dash spacing | No spaces / Spaces | "this—and more" vs. "this — and more" |
-| Numbers | Spell out 1-9, numerals 10+ / Always numerals | "five features" vs. "5 features" |
-| Percent | % / percent | "50%" vs. "50 percent" |
-| Date format | DD Month YYYY / DD/MM/YYYY / ISO 8601 / etc. | "15 January 2025" or "2025-01-15" |
-| Time format | 12-hour / 24-hour | "3:00 PM" vs. "15:00" |
-| Lists | Periods / No periods on fragments | "Set up your account." vs. "Set up your account" |
+| Rule                                    | Options                                       | Example                                                      |
+| --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
+| Oxford comma                            | Yes / No                                      | "fast, reliable, and secure" vs. "fast, reliable and secure" |
+| Sentence case vs. title case (headings) | Sentence / Title                              | "How to get started" vs. "How to Get Started"                |
+| Contractions                            | Use / Avoid                                   | "we're" vs. "we are"                                         |
+| Em dash spacing                         | No spaces / Spaces                            | "this—and more" vs. "this — and more"                        |
+| Numbers                                 | Spell out 1-9, numerals 10+ / Always numerals | "five features" vs. "5 features"                             |
+| Percent                                 | % / percent                                   | "50%" vs. "50 percent"                                       |
+| Date format                             | DD Month YYYY / DD/MM/YYYY / ISO 8601 / etc.  | "15 January 2025" or "2025-01-15"                            |
+| Time format                             | 12-hour / 24-hour                             | "3:00 PM" vs. "15:00"                                        |
+| Lists                                   | Periods / No periods on fragments             | "Set up your account." vs. "Set up your account"             |
 
 #### Formatting Conventions
+
 - Heading hierarchy (when to use H1, H2, H3)
 - Bold and italic usage (bold for emphasis, italic for titles/terms)
 - Link text (descriptive vs. "click here" — always descriptive)
@@ -189,6 +203,7 @@ Document and enforce these choices consistently:
 - Callout or highlight box usage
 
 #### Punctuation and Emphasis
+
 - Exclamation mark policy (limited use, never more than one)
 - Ellipsis usage (avoid in most professional contexts)
 - ALL CAPS policy (avoid; use bold for emphasis instead)
@@ -200,16 +215,17 @@ Document and enforce these choices consistently:
 
 Maintain a list of preferred terms and their incorrect alternatives:
 
-| Use This | Not This | Notes |
-|----------|----------|-------|
-| sign up (verb) | signup (verb) | "signup" is the noun form |
-| log in (verb) | login (verb) | "login" is the noun/adjective form |
-| set up (verb) | setup (verb) | "setup" is the noun/adjective form |
-| email | e-mail | No hyphen |
-| website | web site | One word |
-| data is (singular) | data are | Unless the publication requires plural |
+| Use This           | Not This      | Notes                                  |
+| ------------------ | ------------- | -------------------------------------- |
+| sign up (verb)     | signup (verb) | "signup" is the noun form              |
+| log in (verb)      | login (verb)  | "login" is the noun/adjective form     |
+| set up (verb)      | setup (verb)  | "setup" is the noun/adjective form     |
+| email              | e-mail        | No hyphen                              |
+| website            | web site      | One word                               |
+| data is (singular) | data are      | Unless the publication requires plural |
 
 #### Product and Feature Names
+
 - Official capitalization for product names
 - When to use the full product name vs. shorthand
 - Whether to use "the" before product names
@@ -217,6 +233,7 @@ Maintain a list of preferred terms and their incorrect alternatives:
 - Trademark and registration symbols (when required and when to omit)
 
 #### Inclusive Language
+
 - Use gender-neutral language (they/them for unknown individuals)
 - Avoid ableist language ("crazy", "blind spot", "lame")
 - Use person-first language where appropriate
@@ -224,12 +241,14 @@ Maintain a list of preferred terms and their incorrect alternatives:
 - Use "simple" or "straightforward" instead of "easy" (what is easy varies by person)
 
 #### Industry Jargon Management
+
 - Define which technical terms the audience understands without explanation
 - List jargon that should always be defined or replaced with plain language
 - Specify which acronyms need to be spelled out on first use
 - Audience-specific glossary for terms that mean different things to different readers
 
 #### Competitor and Category Terms
+
 - How to refer to your product category (use your preferred framing)
 - How to refer to competitors (by name or generically)
 - Terms competitors have coined that you should avoid (to prevent reinforcing their positioning)
@@ -240,6 +259,7 @@ Maintain a list of preferred terms and their incorrect alternatives:
 Present the review as:
 
 ### Summary
+
 - Overall assessment: how well the content aligns with brand standards (or general quality)
 - 1-2 sentence summary of the biggest strengths
 - 1-2 sentence summary of the most important improvements
@@ -249,9 +269,10 @@ Present the review as:
 For each issue found, provide:
 
 | Issue | Location | Severity | Suggestion |
-|-------|----------|----------|------------|
+| ----- | -------- | -------- | ---------- |
 
 Where severity is:
+
 - **High** — contradicts brand voice, contains compliance risk, or significantly undermines messaging
 - **Medium** — inconsistent with guidelines but not damaging
 - **Low** — minor style or preference issue
@@ -267,6 +288,7 @@ List any legal or compliance concerns separately with recommended actions.
 ## After Review
 
 Ask: "Would you like me to:
+
 - Revise the full content with these suggestions applied?
 - Focus on fixing just the high-severity issues?
 - Review additional content against the same guidelines?

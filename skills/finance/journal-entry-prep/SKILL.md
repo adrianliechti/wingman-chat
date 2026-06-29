@@ -26,6 +26,7 @@ Best practices, standard entry types, documentation requirements, and review wor
    |      |              | **Total**    | X,XXX | X,XXX  |            |          |
    Reversal: [Yes/No — date]
    ```
+
 4. **Review** against the checklist below (debits = credits, correct period, valid codes, within
    approval authority, accruals flagged to auto-reverse).
 5. **Output** — the entry, supporting calculations, a prior-period comparison, and posting
@@ -38,16 +39,19 @@ Best practices, standard entry types, documentation requirements, and review wor
 Accrue for goods or services received but not yet invoiced at period end.
 
 **Typical entry:**
+
 - Debit: Expense account (or capitalize if asset-qualifying)
 - Credit: Accrued liabilities
 
 **Sources for calculation:**
+
 - Open purchase orders with confirmed receipts
 - Contracts with services rendered but unbilled
 - Recurring vendor arrangements (utilities, subscriptions, professional services)
 - Employee expense reports submitted but not yet processed
 
 **Key considerations:**
+
 - Reverse in the following period (auto-reversal recommended)
 - Use consistent estimation methodology period over period
 - Document basis for estimates (PO amount, contract terms, historical run-rate)
@@ -58,15 +62,18 @@ Accrue for goods or services received but not yet invoiced at period end.
 Book periodic depreciation expense for tangible and intangible assets.
 
 **Typical entry:**
+
 - Debit: Depreciation/amortization expense (by department or cost center)
 - Credit: Accumulated depreciation/amortization
 
 **Depreciation methods:**
+
 - **Straight-line:** (Cost - Salvage) / Useful life — most common for financial reporting
 - **Declining balance:** Accelerated method applying fixed rate to net book value
 - **Units of production:** Based on actual usage or output vs total expected
 
 **Key considerations:**
+
 - Run depreciation from the fixed asset register or schedule
 - Verify new additions are set up with correct useful life and method
 - Check for disposals or impairments requiring write-off
@@ -77,10 +84,12 @@ Book periodic depreciation expense for tangible and intangible assets.
 Amortize prepaid expenses over their benefit period.
 
 **Typical entry:**
+
 - Debit: Expense account (insurance, software, rent, etc.)
 - Credit: Prepaid expense
 
 **Common prepaid categories:**
+
 - Insurance premiums (typically 12-month policies)
 - Software licenses and subscriptions
 - Prepaid rent (if applicable under lease terms)
@@ -88,6 +97,7 @@ Amortize prepaid expenses over their benefit period.
 - Conference and event deposits
 
 **Key considerations:**
+
 - Maintain an amortization schedule with start/end dates and monthly amounts
 - Review for any prepaid items that should be fully expensed (immaterial amounts)
 - Check for cancelled or terminated contracts requiring accelerated amortization
@@ -99,23 +109,28 @@ Accrue compensation and related costs for the period.
 
 **Typical entries:**
 
-*Salary accrual (for pay periods not aligned with month-end):*
+_Salary accrual (for pay periods not aligned with month-end):_
+
 - Debit: Salary expense (by department)
 - Credit: Accrued payroll
 
-*Bonus accrual:*
+_Bonus accrual:_
+
 - Debit: Bonus expense (by department)
 - Credit: Accrued bonus
 
-*Benefits accrual:*
+_Benefits accrual:_
+
 - Debit: Benefits expense
 - Credit: Accrued benefits
 
-*Payroll tax accrual:*
+_Payroll tax accrual:_
+
 - Debit: Payroll tax expense
 - Credit: Accrued payroll taxes
 
 **Key considerations:**
+
 - Calculate salary accrual based on working days in the period vs pay period
 - Bonus accruals should reflect plan terms (target amounts, performance metrics, payout timing)
 - Include employer-side payroll taxes and benefits (social charges, health, retirement contributions)
@@ -127,19 +142,23 @@ Recognize revenue based on performance obligations and delivery.
 
 **Typical entries:**
 
-*Recognize previously deferred revenue:*
+_Recognize previously deferred revenue:_
+
 - Debit: Deferred revenue
 - Credit: Revenue
 
-*Recognize revenue with new receivable:*
+_Recognize revenue with new receivable:_
+
 - Debit: Accounts receivable
 - Credit: Revenue
 
-*Defer revenue received in advance:*
+_Defer revenue received in advance:_
+
 - Debit: Cash / Accounts receivable
 - Credit: Deferred revenue
 
 **Key considerations:**
+
 - Follow a consistent five-step framework for contracts with customers
 - Identify distinct performance obligations in each contract
 - Determine transaction price (including variable consideration)
@@ -163,16 +182,16 @@ Every journal entry should have:
 
 ### Typical Approval Matrix
 
-| Entry Type | Amount Threshold | Approver |
-|-----------|-----------------|----------|
-| Standard recurring | Any amount | Accounting manager |
-| Non-recurring / manual | Low | Accounting manager |
-| Non-recurring / manual | Medium | Controller |
-| Non-recurring / manual | High | CFO / VP Finance |
-| Top-side / consolidation | Any amount | Controller or above |
-| Out-of-period adjustments | Any amount | Controller or above |
+| Entry Type                | Amount Threshold | Approver            |
+| ------------------------- | ---------------- | ------------------- |
+| Standard recurring        | Any amount       | Accounting manager  |
+| Non-recurring / manual    | Low              | Accounting manager  |
+| Non-recurring / manual    | Medium           | Controller          |
+| Non-recurring / manual    | High             | CFO / VP Finance    |
+| Top-side / consolidation  | Any amount       | Controller or above |
+| Out-of-period adjustments | Any amount       | Controller or above |
 
-*Note: Thresholds should be set based on your organization's materiality and risk tolerance.*
+_Note: Thresholds should be set based on your organization's materiality and risk tolerance._
 
 ### Review Checklist
 

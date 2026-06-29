@@ -24,7 +24,7 @@ or a grid of `Rectangle`s to "lay out the infographic", stop: wrong tool.
 
 Modern image models render text well, so write the real title, stats, and labels straight into the
 prompt and trust `render()` with them — don't pre-emptively strip the text out and letter it by hand.
-What trips a renderer up isn't text, it's *too much* text: cram a whole deck of exact copy into one
+What trips a renderer up isn't text, it's _too much_ text: cram a whole deck of exact copy into one
 image and words start to garble. The fix is to **distil** (next step), not to avoid text.
 
 ## 1. Gather and distil

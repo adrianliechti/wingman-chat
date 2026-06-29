@@ -5,6 +5,7 @@ label: "Professional"
 ## Visual Style — Professional
 
 Create a clean, corporate professional infographic:
+
 - Sophisticated color palette: navy (#0B2545), steel blue (#3E6D9C), slate gray (#6C757D), white, with gold (#C9A227) or teal (#2EC4B6) accent
 - Clean sans-serif typography with strong hierarchy — large bold headings, medium subheads, refined body text
 - Precise geometric layouts with clear grid alignment and generous whitespace

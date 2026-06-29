@@ -83,7 +83,7 @@ export function useModels() {
       }
     };
 
-    loadModels();
+    void loadModels();
   }, [config.client, config.models]);
 
   // Function to update selected model and save to localStorage

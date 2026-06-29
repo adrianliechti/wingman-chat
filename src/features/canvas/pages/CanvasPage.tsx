@@ -230,7 +230,7 @@ export function CanvasPage() {
     (files: File[]) => {
       const imageFiles = files.filter((f) => f.type.startsWith("image/"));
       if (imageFiles.length > 0) {
-        handleImageUpload(imageFiles);
+        void handleImageUpload(imageFiles);
       }
     },
     [handleImageUpload],
@@ -550,7 +550,7 @@ export function CanvasPage() {
           multiple
           onChange={(e) => {
             if (e.target.files) {
-              handleImageUpload(e.target.files);
+              void handleImageUpload(e.target.files);
               e.target.value = "";
             }
           }}

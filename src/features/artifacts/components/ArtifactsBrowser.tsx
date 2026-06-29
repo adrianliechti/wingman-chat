@@ -485,7 +485,7 @@ export function ArtifactsBrowser({
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  handleRenameSubmit();
+                  void handleRenameSubmit();
                 } else if (e.key === "Escape") {
                   handleRenameCancel();
                 }

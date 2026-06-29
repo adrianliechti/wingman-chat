@@ -105,7 +105,7 @@ export function AgentDrawer() {
 
     setPendingWizardFiles(null);
 
-    (async () => {
+    void (async () => {
       for (const file of pendingWizardFiles) {
         await addFile(file);
       }
@@ -489,7 +489,7 @@ export function AgentDrawer() {
                                   )
                                     return;
                                   if (isActive) setCurrentAgent(null);
-                                  deleteAgent(agent.id);
+                                  void deleteAgent(agent.id);
                                 }}
                               >
                                 Delete
@@ -519,7 +519,7 @@ export function AgentDrawer() {
               }))
             )
               return;
-            deleteAgent(currentAgent.id);
+            void deleteAgent(currentAgent.id);
             handleAgentSelect(null);
           }}
         />

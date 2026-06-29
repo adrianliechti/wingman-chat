@@ -75,7 +75,6 @@ export const PptxEditor = memo(function PptxEditor({ path, content, contentType 
         <div className="flex items-center gap-2">
           {result.slides.map((_, i) => (
             <button
-              // biome-ignore lint/suspicious/noArrayIndexKey: slides are static once converted
               key={i}
               ref={(el) => {
                 thumbRefs.current[i] = el;
@@ -249,7 +248,7 @@ function useSlideThumbnails(htmlSlides: string[] | undefined, slideW: number, sl
       }
     }
 
-    render();
+    void render();
     return () => {
       cancelled = true;
     };

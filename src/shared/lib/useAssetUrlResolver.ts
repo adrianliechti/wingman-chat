@@ -60,7 +60,7 @@ export function useAssetUrlResolver(
   //   "pending"  → in-flight fetch
   //   string     → resolved blob URL
   //   null       → known not-found (avoid retry loops)
-  const cacheRef = useRef<Map<string, string | null | "pending">>(new Map());
+  const cacheRef = useRef<Map<string, string | null>>(new Map());
   // Bump on each change so <img> tags re-render with the resolved URL.
   const [, setTick] = useState(0);
   const bump = useCallback(() => setTick((t) => t + 1), []);

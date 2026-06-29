@@ -26,14 +26,14 @@ description: "Bold dark backgrounds with high-contrast text and vibrant highligh
 ```css
 :root {
   --bg: #111118;
-  --bg-elevated: #1E1E30;
-  --bg-chart: #1A1A2E;
-  --ink: #FFFFFF;
-  --ink-muted: #A0A0B8;
-  --accent: #0A84FF;     /* electric blue */
-  --accent-2: #8B5CF6;   /* violet — pair with blue for gradients */
-  --accent-warn: #FF6B6B; /* coral — alerts / critical only */
-  --muted: #2A2A44;      /* card borders, grid lines */
+  --bg-elevated: #1e1e30;
+  --bg-chart: #1a1a2e;
+  --ink: #ffffff;
+  --ink-muted: #a0a0b8;
+  --accent: #0a84ff; /* electric blue */
+  --accent-2: #8b5cf6; /* violet — pair with blue for gradients */
+  --accent-warn: #ff6b6b; /* coral — alerts / critical only */
+  --muted: #2a2a44; /* card borders, grid lines */
   --font-display: "SF Pro Display", "Inter", system-ui, -apple-system, sans-serif;
   --font-body: "SF Pro Text", "Inter", system-ui, -apple-system, sans-serif;
 }

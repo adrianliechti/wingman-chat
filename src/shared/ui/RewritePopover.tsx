@@ -69,7 +69,7 @@ export function RewritePopover({
       }
     };
 
-    loadAlternatives();
+    void loadAlternatives();
   }, [selectedText, fullText, selectionStart, selectionEnd, config.client, config.translator?.model, hasLoaded]);
 
   // Handle escape key and click outside

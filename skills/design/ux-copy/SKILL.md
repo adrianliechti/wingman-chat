@@ -25,35 +25,45 @@ Write or review UX copy for any interface context.
 ## Copy Patterns
 
 ### CTAs
+
 - Start with a verb: "Start free trial", "Save changes", "Download report"
 - Be specific: "Create account" not "Submit"
 - Match the outcome to the label
 
 ### Error Messages
+
 Structure: What happened + Why + How to fix
+
 - "Payment declined. Your card was declined by your bank. Try a different card or contact your bank."
 
 ### Empty States
+
 Structure: What this is + Why it's empty + How to start
+
 - "No projects yet. Create your first project to start collaborating with your team."
 
 ### Confirmation Dialogs
+
 - Make the action clear: "Delete 3 files?" not "Are you sure?"
 - Describe consequences: "This can't be undone"
 - Label buttons with the action: "Delete files" / "Keep files" not "OK" / "Cancel"
 
 ### Tooltips
+
 - Concise, helpful, never obvious
 
 ### Loading States
+
 - Set expectations, reduce anxiety
 
 ### Onboarding
+
 - Progressive disclosure, one concept at a time
 
 ## Voice and Tone
 
 Adapt tone to context:
+
 - **Success**: Celebratory but not over the top
 - **Error**: Empathetic and helpful
 - **Warning**: Clear and actionable
@@ -65,29 +75,35 @@ Adapt tone to context:
 ## UX Copy: [Context]
 
 ### Recommended Copy
+
 **[Element]**: [Copy]
 
 ### Alternatives
-| Option | Copy | Tone | Best For |
-|--------|------|------|----------|
-| A | [Copy] | [Tone] | [When to use] |
-| B | [Copy] | [Tone] | [When to use] |
-| C | [Copy] | [Tone] | [When to use] |
+
+| Option | Copy   | Tone   | Best For      |
+| ------ | ------ | ------ | ------------- |
+| A      | [Copy] | [Tone] | [When to use] |
+| B      | [Copy] | [Tone] | [When to use] |
+| C      | [Copy] | [Tone] | [When to use] |
 
 ### Rationale
+
 [Why this copy works — user context, clarity, action-orientation]
 
 ### Localization Notes
+
 [Anything translators should know — idioms to avoid, character expansion, cultural context]
 ```
 
 ## If Connectors Available
 
 If **knowledge base** is connected:
+
 - Pull your brand voice guidelines and content style guide
 - Check for existing copy patterns and terminology standards
 
 If **design tool** is connected:
+
 - View the screen context in Figma to understand the full user flow
 - Check character limits and layout constraints from the design
 

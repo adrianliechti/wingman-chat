@@ -156,7 +156,7 @@ async function dispatchToolCall(
       (executeCtx) => {
         const baseContext = hooks.createToolContext?.(toolCall);
         const toolContext: ToolContext = {
-          ...(baseContext ?? {}),
+          ...baseContext,
           setMeta: (meta) => {
             resultMeta = meta;
             hooks.onToolMeta?.(toolCall.id, { ...meta });

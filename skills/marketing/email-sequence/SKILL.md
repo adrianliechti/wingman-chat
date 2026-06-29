@@ -58,18 +58,22 @@ Before drafting any emails, define the overall sequence architecture:
 For each email in the sequence, produce:
 
 #### Subject Line
+
 - Provide 2-3 options per email
 - Vary approaches: curiosity, benefit-driven, urgency, personalization, question-based
 - Keep under 50 characters where possible; note preview behavior on mobile
 
 #### Preview Text
+
 - 40-90 characters that complement (not repeat) the subject line
 - Should add context or intrigue that increases open likelihood
 
 #### Email Purpose
+
 - One sentence explaining why this email exists and what it moves the recipient toward
 
 #### Body Copy
+
 - Full draft ready to use
 - Clear hierarchy: hook, body, CTA
 - Short paragraphs (2-3 sentences max)
@@ -77,14 +81,17 @@ For each email in the sequence, produce:
 - Personalization tokens where relevant (e.g., first name, company name, product used)
 
 #### Primary CTA
+
 - Button text and destination
 - One primary CTA per email (secondary CTA only if appropriate for the sequence stage)
 
 #### Timing
+
 - Days after the trigger event or after the previous email
 - Note if timing should adjust based on engagement (e.g., "send sooner if they opened but did not click")
 
 #### Segment/Condition Notes
+
 - Who receives this email vs. who skips it
 - Any behavioral or attribute-based conditions (e.g., "only send to users who have not completed setup")
 
@@ -103,12 +110,12 @@ Define the flow control for the sequence:
 
 Provide expected benchmarks based on the sequence type so the user can set targets:
 
-| Metric | Onboarding | Lead Nurture | Re-engagement | Win-back |
-|--------|-----------|--------------|---------------|----------|
-| Open rate | 50-70% | 20-30% | 15-25% | 15-20% |
-| Click-through rate | 10-20% | 3-7% | 2-5% | 2-4% |
-| Conversion rate | 15-30% | 2-5% | 3-8% | 1-3% |
-| Unsubscribe rate | <0.5% | <0.5% | 1-2% | 1-3% |
+| Metric             | Onboarding | Lead Nurture | Re-engagement | Win-back |
+| ------------------ | ---------- | ------------ | ------------- | -------- |
+| Open rate          | 50-70%     | 20-30%       | 15-25%        | 15-20%   |
+| Click-through rate | 10-20%     | 3-7%         | 2-5%          | 2-4%     |
+| Conversion rate    | 15-30%     | 2-5%         | 3-8%          | 1-3%     |
+| Unsubscribe rate   | <0.5%      | <0.5%        | 1-2%          | 1-3%     |
 
 Adjust benchmarks based on industry and audience if the user has provided that context.
 
@@ -143,16 +150,19 @@ Introduction and what they will learn -- Lesson 1: foundational concept -- Lesso
 ## Tool Integration
 
 ### If email marketing is connected (e.g., Klaviyo, Mailchimp, Customer.io)
+
 - Reference how to set up the sequence as a flow or automation in the platform
 - Note any platform-specific features to use (e.g., smart send time, conditional splits, A/B testing)
 - Map the branching logic to the platform's visual flow builder concepts
 
 ### If marketing automation or CRM is connected (e.g., HubSpot, Marketo)
+
 - Reference lead scoring data to inform segmentation and exit conditions
 - Use lifecycle stage data to tailor messaging per segment
 - Note how to set enrollment triggers based on CRM properties or list membership
 
 ### If no tools are connected
+
 - Deliver all email content in copy-paste-ready format
 - Include a setup checklist the user can follow in any email platform:
   1. Create the automation or flow
@@ -167,13 +177,15 @@ Present the complete sequence with the following sections:
 
 ### Sequence Overview Table
 
-| # | Subject Line | Purpose | Timing | Primary CTA | Condition |
-|---|-------------|---------|--------|-------------|-----------|
+| #   | Subject Line | Purpose | Timing | Primary CTA | Condition |
+| --- | ------------ | ------- | ------ | ----------- | --------- |
 
 ### Full Email Drafts
+
 Each email with subject line options, preview text, purpose, body copy, CTA, timing, and segment notes.
 
 ### Sequence Flow Diagram
+
 A text-based diagram showing the email flow, branching paths, and exit points. Use a clear format such as:
 
 ```
@@ -195,13 +207,16 @@ A text-based diagram showing the email flow, branching paths, and exit points. U
 ```
 
 ### Branching Logic Notes
+
 Summary of all conditions, exits, and suppressions in a reference list.
 
 ### A/B Test Suggestions
+
 - 2-3 recommended A/B tests (subject lines, CTA text, send time, email length)
 - What to test, how to split, and how to measure the winner
 
 ### Metrics to Track
+
 - Primary conversion metric for the sequence
 - Per-email metrics: open rate, CTR, unsubscribe rate
 - Sequence-level metrics: overall conversion rate, time to conversion, drop-off points
@@ -210,6 +225,7 @@ Summary of all conditions, exits, and suppressions in a reference list.
 ## After the Sequence
 
 Ask: "Would you like me to:
+
 - Revise the copy or tone for any specific email?
 - Add a branching path for a specific scenario?
 - Create a variation of this sequence for a different audience segment?

@@ -12,6 +12,7 @@ Generate financial statements with period-over-period comparison and variance an
 ## Usage
 
 Provide:
+
 - `period-type` — The reporting period type:
   - `monthly` — Single month P&L with prior month and prior year month comparison
   - `quarterly` — Quarter P&L with prior quarter and prior year quarter comparison
@@ -24,11 +25,13 @@ Provide:
 ### 1. Gather Financial Data
 
 If an ERP or data warehouse is connected:
+
 - Pull trial balance or income statement data for the specified period
 - Pull comparison period data (prior period, prior year, budget/forecast)
 - Pull account hierarchy and groupings for presentation
 
 If no data source is connected, prompt the user to provide:
+
 - Current period revenue and expense data (by account or category)
 - Comparison period data (prior period, prior year, and/or budget)
 - Any known adjustments or reclassifications
@@ -90,6 +93,7 @@ For each line item, calculate and flag material variances.
 #### Variance Calculation
 
 For each line item, calculate:
+
 - **Amount variance:** Current period - Prior period (or current period - budget)
 - **Percentage variance:** (Current - Prior) / |Prior| x 100
 - **Basis point change:** For margins and ratios, express change in basis points (1 bp = 0.01%)
@@ -103,13 +107,13 @@ Define what constitutes a "material" variance requiring investigation. Common ap
 - **Combined:** Either the amount OR percentage threshold is exceeded
 - **Scaled:** Different thresholds for different line items based on their size and volatility
 
-*Example thresholds (adjust for your organization, expressed as a share of the relevant line item):*
+_Example thresholds (adjust for your organization, expressed as a share of the relevant line item):_
 
 | Line Item Size | Amount Threshold | Percentage Threshold |
-|---------------|-----------------|---------------------|
-| Large         | High            | 5%                  |
-| Medium        | Moderate        | 10%                 |
-| Small         | Low             | 15%                 |
+| -------------- | ---------------- | -------------------- |
+| Large          | High             | 5%                   |
+| Medium         | Moderate         | 10%                  |
+| Small          | Low              | 15%                  |
 
 #### Variance Decomposition
 
@@ -126,6 +130,7 @@ Break down total variance into component drivers:
 #### Investigation and Narrative
 
 For each material variance:
+
 1. Quantify the variance (amount and %)
 2. Identify whether favorable or unfavorable
 3. Decompose into drivers using the categories above
@@ -150,13 +155,14 @@ Effective tax rate (%)        XX.X%      XX.X%      X.X pp
 
 List all material variances requiring investigation:
 
-| Line Item | Variance (amt) | Variance (%) | Direction | Preliminary Driver | Action |
-|-----------|---------------|-------------|-----------|-------------------|--------|
-| [Item]    | X,XXX         | X.X%        | Unfav.    | [If known]        | Investigate |
+| Line Item | Variance (amt) | Variance (%) | Direction | Preliminary Driver | Action      |
+| --------- | -------------- | ------------ | --------- | ------------------ | ----------- |
+| [Item]    | X,XXX          | X.X%         | Unfav.    | [If known]         | Investigate |
 
 ### 6. Output
 
 Provide:
+
 1. Formatted income statement with comparisons
 2. Key metrics summary
 3. Material variance listing with investigation flags

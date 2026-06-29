@@ -114,7 +114,7 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   });
 
   useEffect(() => {
-    renderApp();
+    void renderApp();
     return () => {
       if (cleanupRef.current) {
         const cleanup = cleanupRef.current;
@@ -133,7 +133,7 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
     } else if (activeAppKey === appKey) {
       // Back inline → fully release the drawer so the nav toggle disappears
       // (it's effectively a "close drawer" button; an empty drawer must not reopen).
-      closeApp();
+      void closeApp();
     }
   }, [bridgeReady, isFullscreen, appKey, activeAppKey, setActiveAppKey, closeApp, showDrawer]);
 

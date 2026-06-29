@@ -137,7 +137,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.agentId === agentId) {
-        opfs.readText(memoryPath).then((text) => setMemoryContent(text || ""));
+        void opfs.readText(memoryPath).then((text) => setMemoryContent(text || ""));
       }
     };
     window.addEventListener("memory-updated", handler);

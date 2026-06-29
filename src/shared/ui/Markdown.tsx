@@ -386,7 +386,6 @@ function ResizableTable({
           {widths && (
             <colgroup>
               {widths.map((w, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: column order is positional
                 <col key={i} style={{ width: w }} />
               ))}
             </colgroup>
@@ -395,7 +394,6 @@ function ResizableTable({
         </table>
         {columnRights.map((right, i) => (
           <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: column order is positional
             key={i}
             aria-hidden="true"
             className="group/handle absolute top-0 bottom-0 w-2 -ml-1 cursor-col-resize z-10 touch-none"

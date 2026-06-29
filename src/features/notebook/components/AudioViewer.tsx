@@ -63,7 +63,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
     if (isPlaying) {
       audio.pause();
     } else {
-      audio.play();
+      void audio.play();
     }
   };
 
@@ -71,7 +71,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
     const audio = audioRef.current;
     if (!audio) return;
     audio.currentTime = 0;
-    audio.play();
+    void audio.play();
   };
 
   const seek = (e: React.ChangeEvent<HTMLInputElement>) => {

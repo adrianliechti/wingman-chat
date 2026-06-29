@@ -175,7 +175,7 @@ export function useFieldRecorder(options: FieldRecorderOptions = {}): UseFieldRe
 
     // Wait for all in-flight transcriptions
     if (inflightRef.current.size > 0) {
-      await Promise.all([...inflightRef.current]);
+      await Promise.all(inflightRef.current);
     }
 
     // Assemble combined transcript

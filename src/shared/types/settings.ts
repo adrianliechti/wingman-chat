@@ -3,11 +3,7 @@
 // Profile settings
 export type { ProfileSettings } from "@/features/settings/context/ProfileContext";
 // Background settings
-export type {
-  BackgroundItem,
-  BackgroundPack,
-  BackgroundSetting,
-} from "@/shell/context/BackgroundContext";
+export type { BackgroundItem, BackgroundPack, BackgroundSetting } from "@/shell/context/BackgroundContext";
 
 // Emoji settings
 export type { EmojiMode } from "@/shell/context/EmojiContext";

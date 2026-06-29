@@ -218,7 +218,7 @@ export function useNotebook(notebookId?: string) {
     if (notebookRef.current?.id === notebookId) return;
     // Clear stale data immediately to avoid showing old notebook content
     setNotebook(null);
-    initNotebook(notebookId);
+    void initNotebook(notebookId);
   }, [notebookId, initNotebook]);
 
   // ── Title ──────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(nb.id, source);
-      store.touchNotebook(nb.id);
+      void store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [ensureNotebook, reservePath],
@@ -318,7 +318,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(nb.id, source);
-      store.touchNotebook(nb.id);
+      void store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [ensureNotebook, reservePath],
@@ -381,7 +381,7 @@ export function useNotebook(notebookId?: string) {
         added.push(audioSource);
       }
 
-      store.touchNotebook(nb.id);
+      void store.touchNotebook(nb.id);
       setSources((prev) => {
         const paths = new Set(added.map((s) => s.path));
         return [...prev.filter((s) => !paths.has(s.path)), ...added];
@@ -420,7 +420,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(nb.id, source);
-      store.touchNotebook(nb.id);
+      void store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [ensureNotebook, reservePath],
@@ -433,7 +433,7 @@ export function useNotebook(notebookId?: string) {
     const nb = notebookRef.current;
     if (!nb) return;
     await store.removeSource(nb.id, path);
-    store.touchNotebook(nb.id);
+    void store.touchNotebook(nb.id);
     setSources((prev) => prev.filter((s) => s.path !== path));
   }, []);
 
@@ -469,7 +469,7 @@ export function useNotebook(notebookId?: string) {
 
     await store.addSource(nb.id, renamed);
     await store.removeSource(nb.id, oldPath);
-    store.touchNotebook(nb.id);
+    void store.touchNotebook(nb.id);
     setSources((prev) => prev.map((s) => (s.path === oldPath ? renamed : s)));
   }, []);
 
@@ -484,7 +484,7 @@ export function useNotebook(notebookId?: string) {
     if (!nb) return;
     const source: File = contentType ? { path, content, contentType } : { path, content };
     await store.addSource(nb.id, source);
-    store.touchNotebook(nb.id);
+    void store.touchNotebook(nb.id);
     setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
   }, []);
 
@@ -528,7 +528,7 @@ export function useNotebook(notebookId?: string) {
         const instructions = [chatInstructions, skills?.instructions].filter(Boolean).join("\n\n");
 
         // Build Message[] for the LLM (strip timestamps)
-        const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
+        const conversation = newMessages.map(({ timestamp: _timestamp, ...msg }) => msg);
 
         const result = await run(client, getModel(), instructions, conversation, tools, {
           agentName: "notebook",
@@ -549,7 +549,7 @@ export function useNotebook(notebookId?: string) {
         const finalMessages = [...newMessages, ...agentMessages];
         setMessages(finalMessages);
         await store.saveMessages(nb.id, finalMessages);
-        store.touchNotebook(nb.id);
+        void store.touchNotebook(nb.id);
       } catch (err) {
         setStreamingContent(null);
 
@@ -570,7 +570,7 @@ export function useNotebook(notebookId?: string) {
         await store.saveMessages(nb.id, finalMessages).catch((saveErr) => {
           console.error("Failed to persist messages after chat error:", saveErr);
         });
-        store.touchNotebook(nb.id);
+        void store.touchNotebook(nb.id);
       } finally {
         setIsChatting(false);
       }
@@ -650,7 +650,7 @@ export function useNotebook(notebookId?: string) {
           const completed: NotebookOutput = { ...latest, ...partial, status: "completed" };
           setOutputs((prev) => prev.map((o) => (o.id === output.id ? completed : o)));
           await store.addOutput(notebookId, completed);
-          store.touchNotebook(notebookId);
+          void store.touchNotebook(notebookId);
         })
         .catch(async (err) => {
           const errored: NotebookOutput = {
@@ -663,7 +663,7 @@ export function useNotebook(notebookId?: string) {
           // reload instead of silently disappearing.
           try {
             await store.addOutput(notebookId, errored);
-            store.touchNotebook(notebookId);
+            void store.touchNotebook(notebookId);
           } catch (persistErr) {
             console.error("Failed to persist errored output:", persistErr);
           }
@@ -686,7 +686,7 @@ export function useNotebook(notebookId?: string) {
       if (!notebook) return;
       setOutputs((prev) => prev.map((o) => (o.id === output.id ? output : o)));
       await store.updateOutput(notebook.id, output);
-      store.touchNotebook(notebook.id);
+      void store.touchNotebook(notebook.id);
     },
     [notebook],
   );

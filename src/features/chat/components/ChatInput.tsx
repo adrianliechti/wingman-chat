@@ -308,7 +308,7 @@ export function ChatInput() {
           content: messageContent,
         };
 
-        sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
+        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
         setContent("");
         clearAttachments();
       }
@@ -347,7 +347,7 @@ export function ChatInput() {
           }),
         );
 
-        handleFiles(fetched);
+        void handleFiles(fetched);
       } finally {
         setExtractingAttachments((prev) => {
           const next = new Set(prev);
@@ -375,7 +375,7 @@ export function ChatInput() {
     (e: ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files) {
-        handleFiles(Array.from(files));
+        void handleFiles(Array.from(files));
         e.target.value = "";
       }
     },
@@ -410,7 +410,7 @@ export function ChatInput() {
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSubmit(e as unknown as FormEvent);
+        void handleSubmit(e as unknown as FormEvent);
       }
     },
     [handleSubmit, isResponding, stopStreaming],

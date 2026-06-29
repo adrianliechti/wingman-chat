@@ -505,7 +505,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         name: "execute_bash_code",
         display: {
           header: (args, state) => {
-            const command = String(args?.command ?? "").trim();
+            const command = typeof args?.command === "string" ? args.command.trim() : "";
             // Frame the command with a verb (and show the command as the mono
             // preview) so it reads like the other tools across every state.
             const label = state.error ? "Command failed" : state.running ? "Running" : "Ran";
@@ -514,7 +514,7 @@ export function useArtifactsProvider(): ToolProvider | null {
               : { icon: SquareTerminal, label: state.running ? "Running…" : label };
           },
           input: (args) => {
-            const command = String(args?.command ?? "").trim();
+            const command = typeof args?.command === "string" ? args.command.trim() : "";
             return command ? [{ code: command, language: "bash" }] : [];
           },
         },

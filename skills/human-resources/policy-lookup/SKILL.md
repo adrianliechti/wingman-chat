@@ -43,6 +43,7 @@ Look up and explain company policies in plain language. Answer employee question
 5. Point to who to contact for edge cases
 
 **Important guardrails:**
+
 - Always cite the source document and section
 - If no policy is found, say so clearly rather than guessing
 - For legal or compliance questions, recommend consulting HR or legal directly
@@ -53,28 +54,35 @@ Look up and explain company policies in plain language. Answer employee question
 ## Policy: [Topic]
 
 ### Quick Answer
+
 [1-2 sentence direct answer to their question]
 
 ### Details
+
 [Relevant policy details, explained in plain language]
 
 ### Exceptions / Special Cases
+
 [Any relevant exceptions or edge cases]
 
 ### Who to Contact
+
 [Person or team for questions beyond what's documented]
 
 ### Source
+
 [Where this information came from — document name, page, or section]
 ```
 
 ## If Connectors Available
 
 If a **knowledge base** is connected:
+
 - Search employee handbook and policy documents automatically
 - Cite the specific document, section, and page number
 
 If an **HRIS** is connected:
+
 - Pull employee-specific details like PTO balance, benefits elections, and enrollment status
 
 ## Tips

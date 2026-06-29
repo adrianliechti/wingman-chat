@@ -224,7 +224,7 @@ export function SourcesPanel({
           className="hidden"
           onChange={(e) => {
             if (e.target.files) {
-              handleFiles(Array.from(e.target.files));
+              void handleFiles(Array.from(e.target.files));
               e.target.value = "";
             }
           }}
@@ -406,7 +406,7 @@ function WebSearchOverlay({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  handleSearch();
+                  void handleSearch();
                 }
               }}
               placeholder="What are you looking for?"
@@ -566,7 +566,7 @@ function WebScrapeOverlay({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  handleFetch();
+                  void handleFetch();
                 }
               }}
               placeholder="https://example.com"
@@ -927,7 +927,7 @@ function SourceEditOverlay({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      handleSave();
+      void handleSave();
     }
   };
 
@@ -978,7 +978,6 @@ function SourceEditOverlay({
                   {binary ? (
                     <div className="flex items-center justify-center min-h-50 rounded-md bg-neutral-50 dark:bg-neutral-800/40 px-3 py-3">
                       {isAudio ? (
-                        // biome-ignore lint/a11y/useMediaCaption: user-recorded audio, no captions available
                         <audio controls className="w-full" src={source.content} />
                       ) : isImage ? (
                         <img

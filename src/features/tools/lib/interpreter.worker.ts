@@ -221,7 +221,7 @@ async function ensurePackagesLoaded(
     try {
       await pyodide.loadPackage(pkg, { errorCallback: warn });
     } catch (err) {
-      console.warn(`package load: skipped ${pkg} (${err})`);
+      console.warn(`package load: skipped ${pkg} (${String(err)})`);
     }
   }
 }

@@ -90,7 +90,7 @@ export function NotebookPage() {
       const list = await loadNotebooks();
       if (list.length > 0) {
         const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace });
       }
     },
     [loadNotebooks, navigate],
@@ -117,13 +117,13 @@ export function NotebookPage() {
       }
       // Notebook was lazily created (first source added) — push its id into the URL
       if (notebook?.id && prevId === undefined) {
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: notebook.id }, replace: true });
-        loadNotebooks();
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: notebook.id }, replace: true });
+        void loadNotebooks();
         return;
       }
       if (prevId !== undefined && loaded) {
         // Nav link clicked while on page — go to latest
-        goToLatest();
+        void goToLatest();
       }
       return;
     }
@@ -133,7 +133,7 @@ export function NotebookPage() {
   const handleNew = useCallback(() => {
     setViewingOutput(null);
     isNewRequestedRef.current = true;
-    navigate({ to: "/notebook" });
+    void navigate({ to: "/notebook" });
   }, [navigate, setViewingOutput]);
 
   // Delete notebook
@@ -146,9 +146,9 @@ export function NotebookPage() {
         setViewingOutput(null);
         if (list.length > 0) {
           const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-          navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id } });
+          void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id } });
         } else {
-          navigate({ to: "/notebook" });
+          void navigate({ to: "/notebook" });
         }
       }
     },
@@ -169,7 +169,7 @@ export function NotebookPage() {
     (id: string) => {
       if (id !== notebookId) {
         setViewingOutput(null);
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
       }
     },
     [notebookId, navigate, setViewingOutput],
@@ -192,7 +192,7 @@ export function NotebookPage() {
         await loadNotebooks();
         if (ids.length > 0) {
           setViewingOutput(null);
-          navigate({ to: "/notebook/$notebookId", params: { notebookId: ids[0] } });
+          void navigate({ to: "/notebook/$notebookId", params: { notebookId: ids[0] } });
         }
       } catch (error) {
         console.error("Failed to import notebook:", error);
@@ -205,12 +205,12 @@ export function NotebookPage() {
   // Initial load: auto-select the most recent notebook if none is in the URL.
   useEffect(() => {
     if (loaded) return;
-    loadNotebooks().then((list) => {
+    void loadNotebooks().then((list) => {
       setLoaded(true);
       if (notebookId) return;
       if (list.length > 0) {
         const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace: true });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace: true });
       }
     });
   }, [loaded, loadNotebooks, notebookId, navigate]);
