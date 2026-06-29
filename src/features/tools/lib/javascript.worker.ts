@@ -311,16 +311,17 @@ function formatValue(value: unknown): string {
   if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
   if (typeof value === "object") {
     try {
-      // JSON.stringify throws on circular references — fall back to String().
-      // oxlint-disable-next-line typescript/no-base-to-string -- last-resort formatting of an arbitrary runtime value
-      return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? `${v}n` : v), 2) ?? String(value);
+      // JSON.stringify only returns undefined here for the rare object whose
+      // toJSON() yields undefined; fall back to the object tag in that case.
+      return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? `${v}n` : v), 2) ?? "[object Object]";
     } catch {
-      // oxlint-disable-next-line typescript/no-base-to-string -- last-resort formatting of an arbitrary runtime value
-      return String(value);
+      // Circular references throw — use the explicit object tag as a last resort.
+      return Object.prototype.toString.call(value);
     }
   }
-  // oxlint-disable-next-line typescript/no-base-to-string -- remaining primitives (number/boolean) stringify safely
-  return String(value);
+  // Everything else (string/null/undefined/bigint/function/symbol/object) is
+  // handled above; only number and boolean reach here.
+  return String(value as number | boolean);
 }
 
 function makeConsole(append: (line: string) => void) {

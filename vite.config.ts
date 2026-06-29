@@ -16,11 +16,9 @@ const shim = (file: string) => path.resolve(src, "shared/lib", file);
 // `npm run dev`, so this plugin serves the same inventory + content locally.
 
 // tiny frontmatter parser with mixed value types
-// oxlint-disable-next-line typescript/no-explicit-any
 function parseFrontmatter(text: string): Record<string, any> {
   const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!m) return {};
-  // oxlint-disable-next-line typescript/no-explicit-any
   const out: Record<string, any> = {};
   for (const line of m[1].split("\n")) {
     const i = line.indexOf(":");

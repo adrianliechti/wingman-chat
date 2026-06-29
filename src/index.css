@@ -20,9 +20,9 @@ body.resizing::after {
    over per-element cursor styles (buttons, links, iframes, etc.). */
 body.resizing,
 body.resizing * {
-  /* biome-ignore lint: required to override per-element cursors during drag */
+  /* required to override per-element cursors during drag */
   cursor: ew-resize !important;
-  /* biome-ignore lint: required to override per-element user-select during drag */
+  /* required to override per-element user-select during drag */
   user-select: none !important;
 }
 
@@ -94,7 +94,7 @@ html.emoji-native .noto-emoji {
    Safari 18.2+, Firefox). Living in @layer base lets Tailwind's scrollbar-*
    utilities (e.g. `scrollbar-none`) override these per element. */
 @layer base {
-  /* biome-ignore lint: universal selector intentionally lower-specificity than the body.resizing rule above; they set different properties */
+  /* universal selector intentionally lower-specificity than the body.resizing rule above; they set different properties */
   * {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
