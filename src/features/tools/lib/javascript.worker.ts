@@ -8,6 +8,7 @@
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import type {
   ArtifactFile,
@@ -272,6 +273,20 @@ function buildBridges(vfs: Vfs) {
         port,
       }));
       return writeBytes(output, data);
+    },
+    // Render PDF pages to PNG via pdf.js on the main thread; returns the written
+    // paths. The runtime has no in-process rasterizer, so this is the only path
+    // from a PDF page to pixels.
+    rasterizePdf: async (path: string, options?: { scale?: number; pages?: number[] }): Promise<string[]> => {
+      const rendered = await callMain<RasterizedPage[]>((port) => ({
+        type: "pdf-rasterize-request",
+        data: readBytes(path),
+        pages: options?.pages,
+        scale: options?.scale,
+        port,
+      }));
+      const stem = path.replace(/\.pdf$/i, "");
+      return rendered.map(({ page, data }) => writeBytes(`${stem}-${page}.png`, data));
     },
   };
 }

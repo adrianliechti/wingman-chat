@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { getDirectory, readIndex } from "@/shared/lib/opfs-core";
@@ -65,6 +64,7 @@ export async function exportNotebookAsZip(notebookId: string, title?: string): P
  * `notebooks/{id}/…` so the archive is self-describing.
  */
 export async function exportNotebooksAsZip(): Promise<void> {
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
 
   try {
@@ -104,6 +104,7 @@ export async function exportNotebooksAsZip(): Promise<void> {
  * @returns The ids of the imported notebooks.
  */
 export async function importNotebooksFromZip(file: Blob): Promise<string[]> {
+  const { default: JSZip } = await import("jszip");
   const zip = await JSZip.loadAsync(file);
   const entries = Object.entries(zip.files).filter(([path]) => !isJunkZipEntry(path));
   const paths = entries.map(([path]) => path);

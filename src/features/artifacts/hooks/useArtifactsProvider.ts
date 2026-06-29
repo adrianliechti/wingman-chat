@@ -6,6 +6,7 @@ import interpreterInstructionsText from "@/features/artifacts/prompts/interprete
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import ocrInstructionsText from "@/features/artifacts/prompts/ocr.txt?raw";
 import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
+import rasterizeInstructionsText from "@/features/artifacts/prompts/rasterize.txt?raw";
 import renderInstructionsText from "@/features/artifacts/prompts/render.txt?raw";
 import synthesizeInstructionsText from "@/features/artifacts/prompts/synthesize.txt?raw";
 import transcribeInstructionsText from "@/features/artifacts/prompts/transcribe.txt?raw";
@@ -522,6 +523,8 @@ export function useArtifactsProvider(): ToolProvider | null {
         artifactsInstructionsText,
         interpreterInstructionsText,
         officeInstructionsText,
+        // Always available — pdf.js rasterization needs no backing service.
+        rasterizeInstructionsText,
         llmInstructionsText,
         // Only advertise the `ocr`, `vision`, `render`, `synthesize`,
         // `transcribe`, and `translate` helpers when their backing services

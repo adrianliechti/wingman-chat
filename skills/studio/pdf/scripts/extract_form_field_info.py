@@ -65,8 +65,19 @@ def get_field_info(reader: PdfReader):
         for ann in annotations:
             field_id = get_full_annotation_field_id(ann)
             if field_id in field_info_by_id:
-                field_info_by_id[field_id]["page"] = page_index + 1
-                field_info_by_id[field_id]["rect"] = ann.get('/Rect')
+                info = field_info_by_id[field_id]
+                info["page"] = page_index + 1
+                info["rect"] = ann.get('/Rect')
+                # Recover checkbox on/off states from the widget appearance dict
+                # when get_fields() didn't surface /_States_.
+                if info.get("type") == "checkbox" and "checked_value" not in info:
+                    try:
+                        on_values = [v for v in ann["/AP"]["/N"] if v != "/Off"]
+                    except (KeyError, TypeError):
+                        on_values = []
+                    if len(on_values) == 1:
+                        info["checked_value"] = on_values[0]
+                        info["unchecked_value"] = "/Off"
             elif field_id in possible_radio_names:
                 try:
                     on_values = [v for v in ann["/AP"]["/N"] if v != "/Off"]

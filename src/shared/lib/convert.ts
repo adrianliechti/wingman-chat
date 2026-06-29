@@ -1,10 +1,11 @@
 import { getConfig } from "@/shared/config";
-import { docxToMarkdown } from "./docx";
 import { fileMatchesTypeList, inferContentTypeFromPath, isTextContentType } from "./fileTypes";
-import { pdfToMarkdown } from "./pdf";
-import { pptxToMarkdown } from "./pptx";
 import { formatBytes } from "./utils";
-import { csvToMarkdownTable, xlsxToCsv } from "./xlsx";
+
+// The DOCX/XLSX/PPTX/PDF converters each drag in heavy dependencies (jszip,
+// pdfjs) that aren't needed until a user actually attaches such a file, so they
+// are imported on demand inside the dispatch below — keeping them out of the
+// initial bundle.
 
 // MIME constants
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -217,6 +218,7 @@ export async function convertFileToText(file: File): Promise<string> {
   const name = file.name.toLowerCase();
 
   if (name.endsWith(".xlsx") || file.type === MIME_XLSX) {
+    const { csvToMarkdownTable, xlsxToCsv } = await import("./xlsx");
     const results = await xlsxToCsv(file);
     if (results.length === 0) return "";
     if (results.length === 1) return csvToMarkdownTable(results[0].csv);
@@ -224,14 +226,17 @@ export async function convertFileToText(file: File): Promise<string> {
   }
 
   if (name.endsWith(".docx") || file.type === MIME_DOCX) {
+    const { docxToMarkdown } = await import("./docx");
     return docxToMarkdown(file);
   }
 
   if (name.endsWith(".pptx") || file.type === MIME_PPTX) {
+    const { pptxToMarkdown } = await import("./pptx");
     return pptxToMarkdown(file);
   }
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
+    const { pdfToMarkdown } = await import("./pdf");
     return pdfToMarkdown(file);
   }
 

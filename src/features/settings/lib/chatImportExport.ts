@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import * as opfs from "@/shared/lib/opfs";
 import { migrateChat } from "./v1Migration";
 
@@ -11,6 +10,7 @@ import { migrateChat } from "./v1Migration";
  * rebuild then surfaces as phantom chats.
  */
 export async function importChatsFromZip(file: File): Promise<void> {
+  const { default: JSZip } = await import("jszip");
   const zip = await JSZip.loadAsync(file);
   const paths = Object.keys(zip.files).filter((p) => !opfs.isJunkZipEntry(p));
   const looksLikeChats = paths.some((p) => /(^|\/)chat\.json$/.test(p) || p === "index.json");

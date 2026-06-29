@@ -55,7 +55,8 @@ function walkFiles(dir: string, match: (name: string) => boolean): string[] {
   return out;
 }
 
-const toRel = (root: string, p: string) => path.relative(root, p).split(path.sep).join("/");
+const toRel = (root: string, p: string) =>
+  path.relative(root, p).split(path.sep).join("/");
 
 // Mirror of the Go server's skill-resource listing (pkg/server/library): list
 // every bundled file except the SKILL.md itself and hidden files (e.g. .DS_Store).
@@ -97,7 +98,10 @@ function inventorySkills(root: string) {
       };
     })
     .filter((e) => e.name)
-    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
+    );
 }
 
 function inventoryNotebooks(root: string) {
@@ -118,7 +122,10 @@ function inventoryNotebooks(root: string) {
       };
     })
     .sort(
-      (a, b) => a.type.localeCompare(b.type) || Number(b.default) - Number(a.default) || a.label.localeCompare(b.label),
+      (a, b) =>
+        a.type.localeCompare(b.type) ||
+        Number(b.default) - Number(a.default) ||
+        a.label.localeCompare(b.label),
     );
 }
 
@@ -126,7 +133,12 @@ function libraryDevPlugin(): Plugin {
   const SKILLS = "skills";
   const NOTEBOOK = "notebook";
 
-  const sendFile = (res: ServerResponse, root: string, urlRel: string, strip: boolean) => {
+  const sendFile = (
+    res: ServerResponse,
+    root: string,
+    urlRel: string,
+    strip: boolean,
+  ) => {
     const clean = path.posix.normalize(`/${urlRel}`).replace(/^\/+/, "");
     const full = path.join(root, clean);
     if (
@@ -154,9 +166,17 @@ function libraryDevPlugin(): Plugin {
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? "").split("?")[0];
         if (url === "/skills") return json(res, inventorySkills(SKILLS));
-        if (url.startsWith("/skills/")) return sendFile(res, SKILLS, decodeURIComponent(url.slice(8)), false);
-        if (url === "/notebooks") return json(res, inventoryNotebooks(NOTEBOOK));
-        if (url.startsWith("/notebooks/")) return sendFile(res, NOTEBOOK, decodeURIComponent(url.slice(11)), true);
+        if (url.startsWith("/skills/"))
+          return sendFile(res, SKILLS, decodeURIComponent(url.slice(8)), false);
+        if (url === "/notebooks")
+          return json(res, inventoryNotebooks(NOTEBOOK));
+        if (url.startsWith("/notebooks/"))
+          return sendFile(
+            res,
+            NOTEBOOK,
+            decodeURIComponent(url.slice(11)),
+            true,
+          );
         next();
       });
     },
@@ -173,7 +193,9 @@ function libraryDevPlugin(): Plugin {
 // resolve in production too.
 function pdfjsAssetsPlugin(): Plugin {
   const dirs = ["wasm", "iccs", "cmaps", "standard_fonts"];
-  const pkgRoot = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
+  const pkgRoot = path.dirname(
+    createRequire(import.meta.url).resolve("pdfjs-dist/package.json"),
+  );
 
   const copyDir = (from: string, to: string) => {
     fs.mkdirSync(to, { recursive: true });
@@ -197,21 +219,31 @@ function pdfjsAssetsPlugin(): Plugin {
         const url = (req.url ?? "").split("?")[0];
         const m = url.match(/^\/pdfjs\/([^/]+)\/(.+)$/);
         if (!m || !dirs.includes(m[1])) return next();
-        const full = path.join(pkgRoot, m[1], path.posix.normalize(`/${m[2]}`).replace(/^\/+/, ""));
-        if (!path.resolve(full).startsWith(path.join(pkgRoot, m[1])) || !fs.existsSync(full)) return next();
+        const full = path.join(
+          pkgRoot,
+          m[1],
+          path.posix.normalize(`/${m[2]}`).replace(/^\/+/, ""),
+        );
+        if (
+          !path.resolve(full).startsWith(path.join(pkgRoot, m[1])) ||
+          !fs.existsSync(full)
+        )
+          return next();
         res.end(fs.readFileSync(full));
       });
     },
     closeBundle() {
       for (const dir of dirs) {
         const from = path.join(pkgRoot, dir);
-        if (fs.existsSync(from)) copyDir(from, path.resolve(outDir, "pdfjs", dir));
+        if (fs.existsSync(from))
+          copyDir(from, path.resolve(outDir, "pdfjs", dir));
       }
     },
   };
 }
 
-const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
+const wingmanUrl =
+  process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 
@@ -275,22 +307,6 @@ export default defineConfig({
           return;
         }
         warn(warning);
-      },
-      output: {
-        codeSplitting: {
-          groups: [
-            { name: "vendor-react", test: /node_modules[\\/](react|react-dom)[\\/]/ },
-            { name: "vendor-openai", test: /node_modules[\\/]openai[\\/]/ },
-            { name: "vendor-reactflow", test: /node_modules[\\/]@xyflow[\\/]/ },
-            { name: "vendor-docx", test: /node_modules[\\/](docx|marked|jspdf)[\\/]/ },
-            { name: "vendor-pdf", test: /node_modules[\\/]pdfjs-dist[\\/]/ },
-            {
-              name: "vendor-markdown",
-              test: /node_modules[\\/](unified|rehype-|remark-|emoji-regex|@fontsource[\\/]noto-emoji|katex)[\\/]/,
-            },
-            { name: "vendor-ui", test: /node_modules[\\/](@headlessui|@floating-ui|lucide-react)[\\/]/ },
-          ],
-        },
       },
     },
   },

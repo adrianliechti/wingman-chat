@@ -18,9 +18,30 @@ When filling PDF forms, use the listed helper scripts instead of rewriting the s
 - `scripts/extract_form_structure.py` — extract labels, lines, and checkboxes from non-fillable PDFs.
 - `scripts/check_bounding_boxes.py` — validate annotation bounding boxes before filling.
 - `scripts/fill_pdf_form_with_annotations.py` — add text annotations to non-fillable forms.
-- `scripts/create_validation_image.py` — draw field boxes over a page image for visual checking.
+- `scripts/create_validation_image.py` — draw field boxes over a page image (render one first with `rasterize_pdf`; see below).
 
 Load the needed script with `read_skill_resource` before using or adapting it.
+
+## Rendering pages to images (`rasterize_pdf`)
+
+There is no in-process PDF rasterizer here — `pypdfium2`, PyMuPDF, and poppler are all absent, so
+`pdfplumber`'s `page.to_image()` raises `ModuleNotFoundError: No module named 'pypdfium2'`. Use the
+`rasterize_pdf` helper instead; it renders pages with pdf.js and returns the written PNG paths.
+
+```python
+from PIL import Image
+pages = await rasterize_pdf("incident_report.pdf", scale=2.0, pages=[1])
+img = Image.open(pages[0])   # feed to create_validation_image.py, vision(), OCR, etc.
+```
+
+`scale=1.0` ≈ 72 DPI (2.0 ≈ 144 DPI); `pages` takes a number, a list, or None for all pages. Higher
+scale means larger images, so any pixel coordinates you draw scale with it.
+
+For **non-fillable** forms you usually don't need a raster at all: take coordinates from
+`extract_form_structure.py` (vector text, lines, and rects), then fill with
+`fill_pdf_form_with_annotations.py` using **PDF coordinates** — give each page entry a
+`pdf_width`/`pdf_height` and pdfplumber-style top-left bounding boxes. Reach for `rasterize_pdf` +
+`create_validation_image.py` when you want to eyeball where the boxes land.
 
 ## Create a PDF (reportlab)
 

@@ -1,6 +1,5 @@
 import { FileDown, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob } from "@/shared/lib/utils";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "./DropdownMenu";
 
@@ -27,6 +26,7 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
   const handleDownloadWord = async () => {
     setIsConverting(true);
     try {
+      const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
       const blob = await markdownToDocx(markdown);
       downloadBlob(blob, generateFilename("docx"));
     } catch (error) {

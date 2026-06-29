@@ -1,7 +1,7 @@
 /**
  * Message protocol between the main thread and the Pyodide interpreter worker.
- * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate)
- * need the main thread, so the worker calls back over RPC.
+ * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate/
+ * rasterize_pdf) need the main thread, so the worker calls back over RPC.
  */
 
 import type { ImageRenderOptions } from "@/shared/lib/client";
@@ -61,6 +61,7 @@ export type WorkerToMainMessage =
   | { type: "synthesize-request"; text: string; voice?: string; port: MessagePort }
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
-  | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort };
+  | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort }
+  | { type: "pdf-rasterize-request"; data: Uint8Array; pages?: number[]; scale?: number; port: MessagePort };
 
 export type RpcReply = { ok: true; value: unknown } | { ok: false; error: string };

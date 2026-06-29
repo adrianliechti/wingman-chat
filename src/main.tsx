@@ -5,7 +5,6 @@ import "./index.css";
 import App from "./App.tsx";
 
 import { loadNotebooks } from "./features/notebook/lib/notebooks.ts";
-import { initTelemetry } from "./features/repository/lib/telemetry";
 import { loadConfig } from "./shared/config.ts";
 import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
 import { errorText } from "./shared/lib/errors.ts";
@@ -68,6 +67,8 @@ const bootstrap = async () => {
     const [config] = await Promise.all([loadConfig(), loadNotebooks(), prepareInitialEmojiRendering()]);
 
     if (config?.telemetry) {
+      // Loaded on demand so the OpenTelemetry SDK stays out of the initial bundle.
+      const { initTelemetry } = await import("./features/repository/lib/telemetry");
       initTelemetry();
     }
 

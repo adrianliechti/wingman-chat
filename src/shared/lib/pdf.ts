@@ -205,6 +205,80 @@ function isBulletLine(line: string): boolean {
   return BULLET_RE.test(line);
 }
 
+// ============================================================================
+// Rasterization (PDF pages → PNG)
+// ============================================================================
+
+export interface RasterizedPage {
+  /** 1-based page number. */
+  page: number;
+  /** PNG-encoded page image. */
+  data: Uint8Array;
+}
+
+export interface RasterizeOptions {
+  /** 1-based page numbers to render; omitted or empty renders every page. */
+  pages?: number[];
+  /** Viewport scale; 1 ≈ 72 DPI. Defaults to 2 (≈144 DPI), clamped to 8. */
+  scale?: number;
+}
+
+/**
+ * Rasterizes PDF pages to PNG bytes with pdf.js. The sandbox runtimes have no
+ * in-process PDF rasterizer (pypdfium2/PyMuPDF/poppler are all absent), so the
+ * Python `rasterize_pdf` and JS `rasterizePdf` helpers reach this over the
+ * worker→main bridge. Must run on the main thread — it renders to a DOM canvas.
+ */
+export async function rasterizePdf(bytes: Uint8Array, options?: RasterizeOptions): Promise<RasterizedPage[]> {
+  // Clamp the upper bound: this renders on the main thread, and an oversized
+  // canvas silently yields a blank image (or throws) past browser limits.
+  const scale = Math.min(options?.scale && options.scale > 0 ? options.scale : 2, 8);
+  const loadingTask = getDocument({ data: bytes, useSystemFonts: true, ...pdfAssetOptions });
+  const pdf = await loadingTask.promise;
+  try {
+    const requested =
+      options?.pages && options.pages.length > 0
+        ? options.pages.filter((n) => Number.isInteger(n) && n >= 1 && n <= pdf.numPages)
+        : Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+    // De-dup while preserving the caller's order.
+    const wanted = [...new Set(requested)];
+    if (wanted.length === 0) {
+      throw new Error(
+        `rasterize_pdf: no valid pages in ${JSON.stringify(options?.pages)} (document has ${pdf.numPages} page(s))`,
+      );
+    }
+
+    const pages: RasterizedPage[] = [];
+    for (const n of wanted) {
+      const page = await pdf.getPage(n);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("rasterize_pdf: 2D canvas context unavailable");
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      pages.push({ page: n, data: await canvasToPng(canvas) });
+      page.cleanup();
+    }
+    return pages;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("rasterize_pdf: canvas.toBlob produced no image"));
+        return;
+      }
+      blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
+    }, "image/png");
+  });
+}
+
 function computeMedianFontSize(items: TextItem[]): number {
   const sizes = items.map((it) => Math.abs(it.transform[3]) || Math.abs(it.transform[0])).filter((s) => s > 0);
 

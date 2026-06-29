@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import { downloadBlob } from "@/shared/lib/utils";
 
 /**
@@ -208,6 +207,7 @@ export async function downloadSkillsAsZip(skills: Skill[], filename: string = "s
     throw new Error("No skills to download");
   }
 
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
 
   for (const skill of skills) {

@@ -1,3 +1,4 @@
+import { lazyRouteComponent } from "@tanstack/react-router";
 import {
   ChevronDown,
   Code,
@@ -10,7 +11,7 @@ import {
   Shapes,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
@@ -18,31 +19,39 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
-import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
-import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
-import { DocxEditor } from "@/shared/ui/editors/DocxEditor";
-import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
-import { JsEditor } from "@/shared/ui/editors/JsEditor";
-import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
-import { MediaEditor } from "@/shared/ui/editors/MediaEditor";
-import { MermaidEditor } from "@/shared/ui/editors/MermaidEditor";
-import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
-import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
-import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
-import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
-import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
-import { TextEditor } from "@/shared/ui/editors/TextEditor";
-import { XlsxEditor } from "@/shared/ui/editors/XlsxEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
+
+// Editors are loaded on demand. Each pulls in heavy, format-specific
+// dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, shiki, …)
+// that the chat view never needs until a user actually opens that file type.
+// `lazyRouteComponent` is the same primitive the router uses — it also reloads
+// gracefully when a chunk goes missing after a deploy.
+const CodeEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CodeEditor"), "CodeEditor");
+const CsvEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CsvEditor"), "CsvEditor");
+const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
+const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
+const JsEditor = lazyRouteComponent(() => import("@/shared/ui/editors/JsEditor"), "JsEditor");
+const MarkdownEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MarkdownEditor"), "MarkdownEditor");
+const MediaEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MediaEditor"), "MediaEditor");
+const MermaidEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MermaidEditor"), "MermaidEditor");
+const OfficeMarkdownEditor = lazyRouteComponent(
+  () => import("@/shared/ui/editors/OfficeMarkdownEditor"),
+  "OfficeMarkdownEditor",
+);
+const PdfEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PdfEditor"), "PdfEditor");
+const PptxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PptxEditor"), "PptxEditor");
+const PythonEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PythonEditor"), "PythonEditor");
+const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor"), "SvgEditor");
+const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
+const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
 
 export function ArtifactsDrawer() {
   const config = getConfig();
@@ -803,6 +812,7 @@ export function ArtifactsDrawer() {
                                 type="button"
                                 onClick={async () => {
                                   try {
+                                    const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
                                     const blob = await markdownToDocx(activeFileData.content);
                                     const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
                                     downloadBlob(blob, `${baseName}.docx`);
@@ -847,7 +857,17 @@ export function ArtifactsDrawer() {
           </div>
 
           {/* Editor fills the left column */}
-          <div className="flex-1 min-h-0 overflow-hidden relative z-0">{renderFileEditor()}</div>
+          <div className="flex-1 min-h-0 overflow-hidden relative z-0">
+            <Suspense
+              fallback={
+                <div className="h-full flex items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                </div>
+              }
+            >
+              {renderFileEditor()}
+            </Suspense>
+          </div>
         </ResizablePanel>
 
         {/* Files browser — right panel shown alongside the editor */}

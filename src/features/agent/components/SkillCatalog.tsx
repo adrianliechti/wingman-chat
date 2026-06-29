@@ -1,5 +1,4 @@
 import { Dialog, Transition } from "@headlessui/react";
-import JSZip from "jszip";
 import {
   ArrowLeft,
   Check,
@@ -400,6 +399,7 @@ export function SkillCatalog({
     for (const file of files) {
       try {
         if (file.name.endsWith(".zip")) {
+          const { default: JSZip } = await import("jszip");
           const zip = await JSZip.loadAsync(file);
           for (const [filename, zipEntry] of Object.entries(zip.files)) {
             if (zipEntry.dir || !filename.endsWith(".md")) continue;

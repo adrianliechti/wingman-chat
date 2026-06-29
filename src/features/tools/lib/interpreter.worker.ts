@@ -8,6 +8,7 @@ import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodid
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import type { RasterizedPage } from "@/shared/lib/pdf";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import ASYNCIO_SHIM from "./asyncioShim.py?raw";
 import type {
@@ -25,6 +26,7 @@ import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
 import { callMainThread } from "./interpreterRpc";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
+import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
@@ -271,6 +273,9 @@ function loadPyodide(): Promise<PyodideInterface> {
         p.globals.set("_wingman_translate_file", (lang: string, output: string, input: string) =>
           requestTranslateFile(p, lang, output, input),
         );
+        p.globals.set("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
+          requestRasterizePdf(p, path, optionsJson),
+        );
         await p.runPythonAsync(LLM_SHIM);
         await p.runPythonAsync(OCR_SHIM);
         await p.runPythonAsync(VISION_SHIM);
@@ -278,6 +283,7 @@ function loadPyodide(): Promise<PyodideInterface> {
         await p.runPythonAsync(SYNTHESIZE_SHIM);
         await p.runPythonAsync(TRANSCRIBE_SHIM);
         await p.runPythonAsync(TRANSLATE_SHIM);
+        await p.runPythonAsync(PDF_RASTERIZE_SHIM);
         await p.runPythonAsync(ASYNCIO_SHIM);
         rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
         console.log("Pyodide loaded successfully");
@@ -486,6 +492,44 @@ async function requestTranslateFile(
   }));
   writeWorkerFile(pyodide, output, result);
   return output;
+}
+
+/**
+ * Bridge behind the Python `rasterize_pdf` helper (pdfRasterizeShim.py); reads
+ * the PDF from the FS, renders the requested pages to PNG on the main thread via
+ * pdf.js, writes each `{stem}-{page}.png` back, and returns the paths as JSON.
+ */
+async function requestRasterizePdf(
+  pyodide: PyodideInterface,
+  path: string,
+  optionsJson: string | null,
+): Promise<string> {
+  const data = readWorkerFile(pyodide, path, "rasterize_pdf");
+  let pages: number[] | undefined;
+  let scale: number | undefined;
+  if (optionsJson) {
+    try {
+      const opts = JSON.parse(optionsJson) as { pages?: number[] | null; scale?: number };
+      if (Array.isArray(opts.pages)) pages = opts.pages;
+      if (typeof opts.scale === "number") scale = opts.scale;
+    } catch {
+      // Malformed options — render every page at the default scale.
+    }
+  }
+  const rendered = await callMain<RasterizedPage[]>((port) => ({
+    type: "pdf-rasterize-request",
+    data,
+    pages,
+    scale,
+    port,
+  }));
+  const stem = path.replace(/\.pdf$/i, "");
+  const paths = rendered.map(({ page, data: png }) => {
+    const output = `${stem}-${page}.png`;
+    writeWorkerFile(pyodide, output, png);
+    return output;
+  });
+  return JSON.stringify(paths);
 }
 
 // Executions are serialized: the Pyodide FS and sync bookkeeping are shared

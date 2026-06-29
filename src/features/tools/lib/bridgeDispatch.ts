@@ -31,6 +31,11 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage): Promise<unknown
       return runTranslateText(message.lang, message.text);
     case "translate-file-request":
       return runTranslateFile(message.lang, message.data, message.path);
+    case "pdf-rasterize-request":
+      // Loaded on demand — pdf.js (~400 kB) stays out of the initial bundle.
+      return import("@/shared/lib/pdf").then(({ rasterizePdf }) =>
+        rasterizePdf(message.data, { pages: message.pages, scale: message.scale }),
+      );
     default:
       return Promise.reject(new Error(`Unsupported bridge request: ${(message as { type: string }).type}`));
   }
