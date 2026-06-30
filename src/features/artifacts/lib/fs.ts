@@ -1,5 +1,4 @@
 import { contentToBlob, contentToZipValue } from "@/shared/lib/fileContent";
-import { loadJSZip } from "@/shared/lib/lazy";
 import * as opfs from "@/shared/lib/opfs";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
@@ -372,7 +371,7 @@ export class FileSystemManager implements FileSystem {
       throw new Error("No files to download");
     }
 
-    const JSZip = await loadJSZip();
+    const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
     for (const file of files) {
       // Remove leading slash if present for cleaner zip structure

@@ -1,11 +1,11 @@
-import { lazy } from "@/shared/lib/lazy";
-
 // Lazy KaTeX wiring for the markdown renderer.
 //
 // KaTeX plus its stylesheet/fonts is ~250 KB and only matters for content that
 // contains math. Keeping it out of `Markdown.tsx`'s static imports keeps it out
 // of the initial bundle; the whole stack loads on first use as a single chunk
-// (see katexBundle) and is memoized via the shared `lazy` registry primitive.
+// (see katexBundle). The dynamic import() is itself the cache — Vite/ESM fetch
+// and evaluate the chunk exactly once and hand the same namespace to every
+// later caller.
 
 /** The two math plugins the markdown pipeline wires in once math is detected. */
 export type MathPlugins = {
@@ -13,8 +13,8 @@ export type MathPlugins = {
   rehypeKatex: typeof import("rehype-katex").default;
 };
 
-// One memoized dynamic import → one chunk for the entire KaTeX stack.
-const loadKatexBundle = lazy("katex", () => import("./katexBundle"));
+// One dynamic import → one chunk for the entire KaTeX stack.
+const loadKatexBundle = () => import("./katexBundle");
 
 /**
  * Load the remark/rehype math plugins (and the KaTeX stylesheet). Wired into the

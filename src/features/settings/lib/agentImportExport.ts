@@ -1,6 +1,5 @@
 import type JSZip from "jszip";
 import { confirm } from "@/shared/lib/confirm";
-import { loadJSZip } from "@/shared/lib/lazy";
 import { notify } from "@/shared/lib/notify";
 import { getDirectory, readIndex, readText, writeBlob, writeJson, writeText } from "@/shared/lib/opfs-core";
 import {
@@ -55,7 +54,7 @@ async function addSkillsToZip(skillNames: string[], parent: JSZip): Promise<void
  * This makes each agent folder self-contained for sharing.
  */
 export async function exportAgentsAsZip(): Promise<void> {
-  const JSZip = await loadJSZip();
+  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
   try {
@@ -94,7 +93,7 @@ export async function exportSingleAgentAsZip(
   agentId: string,
   { includeMemory = false }: { includeMemory?: boolean } = {},
 ): Promise<void> {
-  const JSZip = await loadJSZip();
+  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
   // Add agent's own files (AGENTS.md, servers.json, files/, etc.) at the root
@@ -143,7 +142,7 @@ export async function exportSingleAgentAsZip(
  * Merges with existing data and rebuilds indices.
  */
 export async function importAgentsFromZip(file: Blob): Promise<void> {
-  const JSZip = await loadJSZip();
+  const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(file);
   const entries = Object.entries(zip.files).filter(([path]) => !isJunkZipEntry(path));
 

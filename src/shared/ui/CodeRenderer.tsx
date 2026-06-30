@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { loadShiki } from "@/shared/lib/lazy";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
@@ -107,7 +106,7 @@ const CodeRenderer = memo(
 
       const highlight = async () => {
         try {
-          const { codeToHtml } = await loadShiki();
+          const { codeToHtml } = await import("shiki");
           const highlighted = await codeToHtml(code, {
             lang: normalizedLanguage,
             theme: isDark ? "one-dark-pro" : "one-light",

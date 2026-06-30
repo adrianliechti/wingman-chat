@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
-import { loadHtml2Canvas } from "@/shared/lib/lazy";
 import { pptxToHtml } from "@/shared/lib/pptxToHtml";
 import { OfficeMarkdownEditor } from "./OfficeMarkdownEditor";
 import { OFFICE_IFRAME_SANDBOX, useOfficeConversion } from "./useOfficeConversion";
@@ -216,7 +215,7 @@ function useSlideThumbnails(htmlSlides: string[] | undefined, slideW: number, sl
           await new Promise<void>((resolve) => setTimeout(resolve, 80));
 
           try {
-            const html2canvas = await loadHtml2Canvas();
+            const html2canvas = (await import("html2canvas")).default;
             const body = iframe.contentDocument?.body;
             if (!body) continue;
 

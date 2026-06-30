@@ -6,7 +6,6 @@
  */
 
 import type JSZip from "jszip";
-import { loadJSZip } from "@/shared/lib/lazy";
 import { getDirectory, getRoot, type IndexEntry, readJson, readText, writeBlob, writeJson } from "./opfs-core";
 import { downloadBlob } from "./utils";
 
@@ -68,7 +67,7 @@ export async function extractZipEntry(entry: JSZip.JSZipObject, targetPath: stri
  * Use empty string or '/' for root.
  */
 export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
-  const JSZip = await loadJSZip();
+  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
   try {
@@ -88,7 +87,7 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
  * Rebuilds the folder index automatically after import.
  */
 export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Promise<void> {
-  const JSZip = await loadJSZip();
+  const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(zipBlob);
 
   await getDirectory(folderPath, { create: true });

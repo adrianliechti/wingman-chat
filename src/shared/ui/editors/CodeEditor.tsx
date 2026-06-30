@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { loadShiki } from "@/shared/lib/lazy";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 
@@ -24,7 +23,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
       try {
         const langId = language.toLowerCase();
 
-        const { codeToHtml } = await loadShiki();
+        const { codeToHtml } = await import("shiki");
 
         const highlighted = await codeToHtml(content, {
           lang: langId || "text",

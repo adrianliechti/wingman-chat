@@ -28,7 +28,6 @@ import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
-import { loadJSZip } from "@/shared/lib/lazy";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 import { SkillResourcesEditor } from "./SkillResourcesEditor";
@@ -400,7 +399,7 @@ export function SkillCatalog({
     for (const file of files) {
       try {
         if (file.name.endsWith(".zip")) {
-          const JSZip = await loadJSZip();
+          const JSZip = (await import("jszip")).default;
           const zip = await JSZip.loadAsync(file);
           for (const [filename, zipEntry] of Object.entries(zip.files)) {
             if (zipEntry.dir || !filename.endsWith(".md")) continue;

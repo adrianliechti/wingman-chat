@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadHtml2Canvas } from "@/shared/lib/lazy";
 import { refineSlide } from "../lib/slide-refine";
 import type { NotebookOutput } from "../types/notebook";
 
@@ -294,7 +293,7 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
           try {
-            const html2canvas = await loadHtml2Canvas();
+            const html2canvas = (await import("html2canvas")).default;
             const body = iframe.contentDocument?.body;
             if (!body) continue;
 

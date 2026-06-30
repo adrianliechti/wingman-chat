@@ -14,7 +14,6 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Download, FileCode, ImageIcon, Settings2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { loadHtml2Canvas } from "@/shared/lib/lazy";
 import { escapeXml } from "../lib/pptx-utils";
 import type { MindMapNode } from "../types/notebook";
 import { MindMapCustomEdge } from "./mindmap/MindMapEdge";
@@ -183,7 +182,7 @@ function MindMapInner({ root }: MindMapViewerProps) {
   const exportPng = useCallback(async () => {
     const el = flowRef.current?.querySelector(".react-flow__viewport") as HTMLElement | null;
     if (!el) return;
-    const html2canvas = await loadHtml2Canvas();
+    const html2canvas = (await import("html2canvas")).default;
     const canvas = await html2canvas(el, {
       backgroundColor: null,
       scale: 2,
