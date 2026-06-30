@@ -1,5 +1,6 @@
 import { BrainCircuit, Package } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { deriveTitleFromPath } from "@/features/agent/lib/memoryParser";
 import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
 import type { Agent } from "@/features/agent/types/agent";
 import { createRepositoryTools } from "@/features/repository/lib/repository-tools";
@@ -110,119 +111,229 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   // --- Memory provider ---
   const config = getConfig();
   const memoryEnabled = !!config.memory && !!agent?.memory;
-  const memoryPath = memoryEnabled ? `agents/${agentId}/MEMORY.md` : "";
-  const [memoryContent, setMemoryContent] = useState<string>("");
+  const [memoryIndex, setMemoryIndex] = useState<string>("");
 
-  // Load memory content from OPFS when memory is enabled
+  // Load (and migrate, if needed) the memory bundle's index when memory is enabled
   useEffect(() => {
     let cancelled = false;
+    if (!memoryEnabled) {
+      setMemoryIndex("");
+      return;
+    }
 
-    const loadMemoryContent = async () => {
-      const text = memoryPath ? await opfs.readText(memoryPath) : "";
+    const loadMemoryIndex = async () => {
+      await opfs.ensureMemoryMigrated(agentId);
+      const index = await opfs.readMemoryIndex(agentId);
       if (!cancelled) {
-        setMemoryContent(text || "");
+        setMemoryIndex(index);
       }
     };
 
-    loadMemoryContent().catch(console.error);
+    loadMemoryIndex().catch(console.error);
 
     return () => {
       cancelled = true;
     };
-  }, [memoryPath]);
+  }, [memoryEnabled, agentId]);
 
-  // Re-read memory when the agent writes to it mid-conversation
+  // Re-read the index when the agent writes/deletes memory mid-conversation
   useEffect(() => {
     if (!memoryEnabled) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.agentId === agentId) {
-        void opfs.readText(memoryPath).then((text) => setMemoryContent(text || ""));
+        void opfs.readMemoryIndex(agentId).then(setMemoryIndex);
       }
     };
     window.addEventListener("memory-updated", handler);
     return () => window.removeEventListener("memory-updated", handler);
-  }, [memoryEnabled, agentId, memoryPath]);
+  }, [memoryEnabled, agentId]);
 
   const memoryProvider = useMemo<ToolProvider | null>(() => {
     if (!memoryEnabled) return null;
 
-    const agentPath = `agents/${agentId}`;
+    const notifyMemoryUpdated = () => window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } }));
+
+    // Human-friendly label for a memory tool call: the entry's title, falling
+    // back to a title derived from its filename (no raw "*.md" in the chat).
+    const memoryLabel = (args: Record<string, unknown> | null): string => {
+      const title = typeof args?.title === "string" ? args.title.trim() : "";
+      if (title) return title;
+      const path = typeof args?.path === "string" ? args.path : "";
+      return path ? deriveTitleFromPath(path) : "memory";
+    };
+
     const tools: Tool[] = [
       {
-        name: "write_memory",
+        name: "list_memory",
         display: {
-          header: (_args, state) => ({
-            icon: BrainCircuit,
-            label: state.error ? "Save failed" : state.running ? "Saving memory…" : "Saved memory",
-            suppressPreview: true,
-          }),
-          input: (args) => {
-            const content = typeof args?.content === "string" ? args.content : "";
-            return content ? [{ code: content, language: "markdown" }] : [];
-          },
+          header: () => ({ icon: BrainCircuit, label: "Recalled memory", suppressPreview: true }),
         },
         description:
-          "Write/update your persistent memory. Replaces the entire content. Max 25KB. Keep under 200 lines by consolidating older entries.",
+          "List your persistent memory entries (title, type, tags, last updated) without loading their full content.",
+        parameters: { type: "object", properties: {}, required: [] },
+        function: async () => {
+          const entries = await opfs.listMemoryEntries(agentId);
+          return [{ type: "text" as const, text: JSON.stringify(entries) }];
+        },
+      },
+      {
+        name: "read_memory",
+        display: {
+          header: (args) => ({
+            icon: BrainCircuit,
+            label: `Recalled ${memoryLabel(args)}`,
+            suppressPreview: true,
+          }),
+        },
+        description: "Read one memory entry's full frontmatter and body, given a path from list_memory.",
         parameters: {
           type: "object",
           properties: {
-            content: {
-              type: "string",
-              description: "The full memory content to save (markdown format).",
-            },
+            path: { type: "string", description: 'Memory file path from list_memory, e.g. "project-context.md".' },
           },
-          required: ["content"],
+          required: ["path"],
         },
         function: async (args: Record<string, unknown>) => {
-          const content = args.content as string;
-          if (!content) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "No content provided" }) }];
+          const path = args.path as string;
+          const doc = await opfs.readMemoryDoc(agentId, path);
+          if (!doc) {
+            return [{ type: "text" as const, text: JSON.stringify({ error: `No memory entry at ${path}` }) }];
           }
-
-          const byteSize = new TextEncoder().encode(content).length;
-          const maxBytes = 25 * 1024;
-          if (byteSize > maxBytes) {
+          return [{ type: "text" as const, text: JSON.stringify({ ...doc.frontmatter, body: doc.body }) }];
+        },
+      },
+      {
+        name: "write_memory",
+        display: {
+          header: (args, state) => ({
+            icon: BrainCircuit,
+            label: state.error
+              ? "Couldn't remember"
+              : state.running
+                ? "Remembering…"
+                : `Remembered ${memoryLabel(args)}`,
+            suppressPreview: true,
+          }),
+          input: (args) => {
+            const body = typeof args?.body === "string" ? args.body : "";
+            return body ? [{ code: body, language: "markdown" }] : [];
+          },
+        },
+        description:
+          "Create or update one memory entry. Use an existing path (from list_memory) to update it, or a new path to create one. Max 4KB per entry — split large topics across multiple entries instead of growing one.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description:
+                'Filename for this entry, e.g. "project-context.md". Lowercase, hyphenated, ending in ".md".',
+            },
+            type: {
+              type: "string",
+              description: 'Category, e.g. "User Preference", "Project Context", "Decision", "Feedback", "Reference".',
+            },
+            title: { type: "string", description: "Short title for this entry." },
+            description: { type: "string", description: "One-line summary, used in the memory index." },
+            resource: {
+              type: "string",
+              description: "Optional canonical URI if this entry describes an external resource.",
+            },
+            tags: { type: "array", items: { type: "string" }, description: "Optional tags for filtering." },
+            body: { type: "string", description: "Full markdown body content for this entry." },
+          },
+          required: ["path", "type", "title", "body"],
+        },
+        function: async (args: Record<string, unknown>) => {
+          const path = args.path as string;
+          const type = args.type as string;
+          const title = args.title as string;
+          const body = args.body as string;
+          if (!path || !type || !title || !body) {
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: "path, type, title, and body are required" }) },
+            ];
+          }
+          if (!/^[a-z0-9-]+\.md$/.test(path) || path === "index.md" || path === "log.md") {
             return [
               {
                 type: "text" as const,
-                text: `Error: Memory content is ${Math.round(byteSize / 1024)}KB which exceeds the 25KB limit. Please consolidate or remove less important entries and try again.`,
+                text: JSON.stringify({
+                  error: 'path must be a lowercase, hyphenated "*.md" filename (not index.md/log.md)',
+                }),
               },
             ];
           }
 
-          await opfs.writeText(`${agentPath}/MEMORY.md`, content);
-          window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } }));
+          const byteSize = new TextEncoder().encode(body).length;
+          const maxBytes = 4 * 1024;
+          if (byteSize > maxBytes) {
+            return [
+              {
+                type: "text" as const,
+                text: `Error: Entry body is ${Math.round(byteSize / 1024)}KB which exceeds the 4KB-per-entry limit. Split this into multiple entries instead.`,
+              },
+            ];
+          }
 
-          const lineCount = content.split("\n").length;
-          const warnBytes = 12 * 1024;
-          let response = "Memory updated successfully.";
-          if (byteSize > warnBytes || lineCount > 150) {
-            response += ` Warning: Memory is ${(byteSize / 1024).toFixed(1)}KB / ${lineCount} lines. Consider consolidating to stay under 12KB / 200 lines.`;
+          const description = typeof args.description === "string" ? args.description : undefined;
+          const resource = typeof args.resource === "string" ? args.resource : undefined;
+          const tags = Array.isArray(args.tags)
+            ? args.tags.filter((t): t is string => typeof t === "string")
+            : undefined;
+
+          await opfs.writeMemoryDoc(agentId, path, { type, title, description, resource, tags }, body);
+          notifyMemoryUpdated();
+
+          const entries = await opfs.listMemoryEntries(agentId);
+          let response = `Memory entry "${path}" saved.`;
+          if (entries.length > 20) {
+            response += ` You now have ${entries.length} entries — consider consolidating related ones.`;
           }
           return [{ type: "text" as const, text: response }];
         },
       },
+      {
+        name: "delete_memory",
+        display: {
+          header: (args) => ({
+            icon: BrainCircuit,
+            label: `Forgot ${memoryLabel(args)}`,
+            suppressPreview: true,
+          }),
+        },
+        description: "Delete one memory entry that is stale or no longer relevant.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Memory file path from list_memory to delete." },
+          },
+          required: ["path"],
+        },
+        function: async (args: Record<string, unknown>) => {
+          const path = args.path as string;
+          await opfs.deleteMemoryDoc(agentId, path);
+          notifyMemoryUpdated();
+          return [{ type: "text" as const, text: `Memory entry "${path}" deleted.` }];
+        },
+      },
     ];
 
-    const memorySection = memoryContent.trim()
-      ? (() => {
-          const bytes = new TextEncoder().encode(memoryContent).length;
-          const lines = memoryContent.split("\n").length;
-          const meta = `<!-- ${(bytes / 1024).toFixed(1)}KB, ${lines} lines -->`;
-          return `\n\n<memory>\n${meta}\n${memoryContent.trim()}\n</memory>`;
-        })()
-      : "\n\nNo memories yet.";
+    // Strip the index file's OKF frontmatter (okf_version) before injecting — it's
+    // plumbing the model doesn't need; the <memory-index> tag already labels the block.
+    const indexBody = memoryIndex.replace(/^---\n[\s\S]*?\n---\n+/, "").trim();
+    const indexSection = indexBody ? `\n\n<memory-index>\n${indexBody}\n</memory-index>` : "\n\nNo memories yet.";
 
     return {
       id: "memory",
       name: "Memory",
-      description: "Persistent memory across conversations",
+      description: "Persistent structured memory across conversations",
       icon: BrainCircuit,
-      instructions: memoryPrompt + memorySection,
+      instructions: memoryPrompt + indexSection,
       tools,
     };
-  }, [memoryEnabled, memoryContent, agentId]);
+  }, [memoryEnabled, memoryIndex, agentId]);
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(

@@ -1,7 +1,8 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Edit, Pencil, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
+import { ChevronLeft, ExternalLink, Pencil, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { slugifyMemoryPath } from "@/features/agent/lib/memoryParser";
 import type { Agent } from "@/features/agent/types/agent";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -10,116 +11,162 @@ import { Markdown } from "@/shared/ui/Markdown";
 import { Section } from "./Section";
 import { SectionEmptyState } from "./SectionEmptyState";
 
+const ENTRIES_VISIBLE_DEFAULT = 4;
+
 interface MemorySectionProps {
   agent: Agent;
 }
 
+type DialogView = "detail" | "edit";
+
+function notifyMemoryUpdated(agentId: string) {
+  window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } }));
+}
+
 export function MemorySection({ agent }: MemorySectionProps) {
   const { updateAgent } = useAgents();
-  const [content, setContent] = useState<string | undefined>();
+  const [entries, setEntries] = useState<opfs.MemoryEntry[]>([]);
+  const [showAll, setShowAll] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
+  const [view, setView] = useState<DialogView>("detail");
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<opfs.MemoryDoc | null>(null);
 
-  const memoryPath = `agents/${agent.id}/MEMORY.md`;
+  const [editType, setEditType] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editBody, setEditBody] = useState("");
 
-  const loadMemory = useCallback(async () => {
+  const loadEntries = useCallback(async () => {
     if (!agent.memory) {
-      setContent(undefined);
+      setEntries([]);
       return;
     }
-    const text = await opfs.readText(memoryPath);
-    setContent(text || "");
-  }, [agent.memory, memoryPath]);
+    await opfs.ensureMemoryMigrated(agent.id);
+    setEntries(await opfs.listMemoryEntries(agent.id));
+  }, [agent.memory, agent.id]);
 
   useEffect(() => {
-    void loadMemory();
-  }, [loadMemory]);
+    void loadEntries();
+  }, [loadEntries]);
 
-  // Live-update when the agent writes memory
+  // Live-update when the agent writes/deletes memory mid-conversation
   useEffect(() => {
     if (!agent.memory) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.agentId === agent.id) {
-        void loadMemory();
-      }
+      if (detail?.agentId === agent.id) void loadEntries();
     };
     window.addEventListener("memory-updated", handler);
     return () => window.removeEventListener("memory-updated", handler);
-  }, [agent.memory, agent.id, loadMemory]);
+  }, [agent.memory, agent.id, loadEntries]);
 
-  const toggleMemory = () => {
-    updateAgent(agent.id, { memory: !agent.memory });
-  };
+  const toggleMemory = () => updateAgent(agent.id, { memory: !agent.memory });
 
-  const openDialog = (editMode = false) => {
+  const openEntry = async (path: string) => {
+    const doc = await opfs.readMemoryDoc(agent.id, path);
+    if (!doc) return;
+    setSelectedPath(path);
+    setSelectedDoc(doc);
+    setView("detail");
     setIsDialogOpen(true);
-    if (editMode || !content?.trim()) {
-      setEditValue(content || "");
-      setIsEditing(true);
-    } else {
-      setIsEditing(false);
-      setEditValue("");
-    }
   };
 
-  const startEditing = () => {
-    setEditValue(content || "");
-    setIsEditing(true);
+  const openCreate = () => {
+    setSelectedPath(null);
+    setSelectedDoc(null);
+    setEditType("");
+    setEditTitle("");
+    setEditDescription("");
+    setEditTags("");
+    setEditBody("");
+    setView("edit");
+    setIsDialogOpen(true);
   };
 
-  const cancelEditing = () => {
-    setIsEditing(false);
-    setEditValue("");
+  const startEdit = () => {
+    if (!selectedDoc) return;
+    setEditType(selectedDoc.frontmatter.type);
+    setEditTitle(selectedDoc.frontmatter.title);
+    setEditDescription(selectedDoc.frontmatter.description || "");
+    setEditTags((selectedDoc.frontmatter.tags || []).join(", "));
+    setEditBody(selectedDoc.body);
+    setView("edit");
   };
 
-  const save = async () => {
-    const trimmed = editValue.trim();
-    if (trimmed) {
-      await opfs.writeText(memoryPath, trimmed);
-    } else {
-      await opfs.deleteFile(memoryPath);
-    }
-    setContent(trimmed);
-    setIsEditing(false);
-  };
-
-  const clearMemory = async () => {
-    if (
-      !(await confirm({
-        title: "Clear agent memory?",
-        message: "All stored memory for this agent will be permanently erased and can't be recovered.",
-        danger: true,
-      }))
-    )
-      return;
-    await opfs.deleteFile(memoryPath);
-    setContent("");
-    setEditValue("");
-    setIsEditing(false);
+  const cancelEdit = () => {
+    if (selectedPath) setView("detail");
+    else closeDialog();
   };
 
   const closeDialog = () => {
     setIsDialogOpen(false);
-    setIsEditing(false);
-    setEditValue("");
+    setSelectedPath(null);
+    setSelectedDoc(null);
+  };
+
+  const save = async () => {
+    const title = editTitle.trim();
+    if (!title) return;
+    const type = editType.trim() || "Reference";
+    const tags = editTags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const description = editDescription.trim() || undefined;
+    const body = editBody.trim();
+
+    let path = selectedPath;
+    if (!path) {
+      const existing = new Set(entries.map((e) => e.path));
+      const slug = slugifyMemoryPath(title);
+      path = `${slug}.md`;
+      let n = 2;
+      while (existing.has(path)) path = `${slug}-${n++}.md`;
+    }
+
+    await opfs.writeMemoryDoc(agent.id, path, { type, title, description, tags: tags.length ? tags : undefined }, body);
+    notifyMemoryUpdated(agent.id);
+    await openEntry(path);
+  };
+
+  const handleDelete = async (path: string, fromDialog: boolean) => {
+    const entry = entries.find((e) => e.path === path);
+    if (
+      !(await confirm({
+        title: "Delete memory entry?",
+        message: `"${entry?.title || path}" will be permanently removed and can't be recovered.`,
+        danger: true,
+      }))
+    )
+      return;
+
+    await opfs.deleteMemoryDoc(agent.id, path);
+    notifyMemoryUpdated(agent.id);
+    if (fromDialog && selectedPath === path) closeDialog();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      if (isEditing) cancelEditing();
+      if (view === "edit" && selectedPath) setView("detail");
       else closeDialog();
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && view === "edit") {
       e.preventDefault();
       void save();
     }
   };
 
+  const inputClass =
+    "mt-1 w-full px-3 py-1.5 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors";
+  const labelClass = "text-xs font-medium text-neutral-500 dark:text-neutral-400";
+
+  const visibleEntries = showAll ? entries : entries.slice(0, ENTRIES_VISIBLE_DEFAULT);
+
   return (
     <>
-      {/* Memory Dialog */}
+      {/* Entry Dialog — view or edit a single entry */}
       <Transition appear show={isDialogOpen} as={Fragment}>
         <Dialog as="div" className="relative z-80" onClose={closeDialog}>
           <Transition.Child
@@ -144,102 +191,164 @@ export function MemorySection({ agent }: MemorySectionProps) {
                 leaveFrom="opacity-100 scale-100"
                 leaveTo="opacity-0 scale-95"
               >
-                <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
+                <Dialog.Panel
+                  className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all"
+                  onKeyDown={handleKeyDown}
+                >
                   {/* Header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                      Memory
-                      {content && (
-                        <span className="ml-2 text-xs font-normal text-neutral-400">
-                          {(new TextEncoder().encode(content).length / 1024).toFixed(1)}KB
-                        </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {view === "edit" && selectedPath && (
+                        <button
+                          type="button"
+                          onClick={() => setView("detail")}
+                          className="p-1 -ml-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors shrink-0"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
                       )}
-                    </Dialog.Title>
+                      <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                        {view === "detail"
+                          ? selectedDoc?.frontmatter.title || "Entry"
+                          : selectedPath
+                            ? "Edit Entry"
+                            : "New Entry"}
+                      </Dialog.Title>
+                    </div>
                     <button
                       type="button"
                       onClick={closeDialog}
-                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors shrink-0"
                     >
                       <X size={16} />
                     </button>
                   </div>
 
                   {/* Content */}
-                  <div className="px-5 py-3.5">
-                    {isEditing ? (
-                      <>
-                        <textarea
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          rows={14}
-                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
-                          placeholder="No memories yet. The agent will write here as you chat."
-                          autoFocus
-                        />
-                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                          Memory is written by the agent during conversations. You can also edit it manually.
-                        </p>
-                      </>
-                    ) : (
-                      <div className="max-h-96 overflow-auto">
-                        {content?.trim() ? (
-                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-                            <Markdown>{content}</Markdown>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
-                            No memories yet. The agent will write here as you chat.
-                          </p>
+                  <div className="px-5 py-3.5 max-h-96 overflow-auto">
+                    {view === "detail" && selectedDoc && (
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                          <span className="text-[10px] uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                            {selectedDoc.frontmatter.type}
+                          </span>
+                          {selectedDoc.frontmatter.tags?.map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        {selectedDoc.frontmatter.resource && (
+                          <a
+                            href={selectedDoc.frontmatter.resource}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 mb-3 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
+                          >
+                            <ExternalLink size={12} className="shrink-0" />
+                            {selectedDoc.frontmatter.resource}
+                          </a>
                         )}
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
+                          <Markdown>{selectedDoc.body}</Markdown>
+                        </div>
+                      </div>
+                    )}
+
+                    {view === "edit" && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className={labelClass}>Title</label>
+                          <input
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            className={inputClass}
+                            placeholder="Short title"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Type</label>
+                            <input
+                              value={editType}
+                              onChange={(e) => setEditType(e.target.value)}
+                              className={inputClass}
+                              placeholder="Project Context"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Tags</label>
+                            <input
+                              value={editTags}
+                              onChange={(e) => setEditTags(e.target.value)}
+                              className={inputClass}
+                              placeholder="comma, separated"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Description</label>
+                          <input
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className={inputClass}
+                            placeholder="One-line summary"
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Body</label>
+                          <textarea
+                            value={editBody}
+                            onChange={(e) => setEditBody(e.target.value)}
+                            rows={10}
+                            className={cn(inputClass, "resize-y min-h-40")}
+                            placeholder="Markdown content"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
 
                   {/* Footer */}
                   <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
-                    {isEditing ? (
+                    {view === "detail" && selectedPath && (
                       <>
                         <button
                           type="button"
-                          onClick={clearMemory}
-                          disabled={!editValue.trim()}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-red-300/60 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          onClick={() => void handleDelete(selectedPath, true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-red-300/60 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 transition-colors"
                         >
-                          <Trash2 size={13} /> Clear
+                          <Trash2 size={13} /> Delete
                         </button>
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={cancelEditing}
-                            className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={save}
-                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-colors"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
                         <button
                           type="button"
-                          onClick={startEditing}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                          onClick={startEdit}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-colors"
                         >
                           <Pencil size={13} /> Edit
                         </button>
+                      </>
+                    )}
+                    {view === "edit" && (
+                      <>
                         <button
                           type="button"
-                          onClick={closeDialog}
+                          onClick={cancelEdit}
                           className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
                         >
-                          Close
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void save()}
+                          disabled={!editTitle.trim()}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Save
                         </button>
                       </>
                     )}
@@ -253,53 +362,67 @@ export function MemorySection({ agent }: MemorySectionProps) {
 
       <Section
         title="Memory"
+        count={entries.length}
         isOpen={true}
         collapsible={false}
         headerAction={
-          <div className="flex items-center gap-2">
-            {agent.memory && content?.trim() && (
-              <button
-                type="button"
-                onClick={() => openDialog(true)}
-                className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-              >
-                <Edit size={12} /> Edit
-              </button>
+          <button
+            type="button"
+            onClick={toggleMemory}
+            className={cn(
+              "shrink-0",
+              agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
             )}
-            <button
-              type="button"
-              onClick={toggleMemory}
-              className={cn(
-                "shrink-0",
-                agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
-              )}
-              title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
-            >
-              {agent.memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-            </button>
-          </div>
+            title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
+          >
+            {agent.memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+          </button>
         }
       >
         {agent.memory ? (
-          content?.trim() ? (
-            <button
-              type="button"
-              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer w-full text-left"
-              onClick={() => openDialog(false)}
-            >
-              <div className="relative px-3.5 pt-3 pb-3">
-                <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
-                  <Markdown compact>{content}</Markdown>
+          entries.length > 0 ? (
+            <div className="space-y-0.5">
+              {visibleEntries.map((e) => (
+                <div
+                  key={e.path}
+                  className="group flex items-center gap-2 rounded-lg px-1 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 transition-colors"
+                >
+                  <button
+                    type="button"
+                    onClick={() => void openEntry(e.path)}
+                    className="flex-1 min-w-0 text-left py-1.5"
+                    title={e.description || e.type}
+                  >
+                    <span className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
+                      {e.title || e.description}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(e.path, false)}
+                    className="shrink-0 p-1 rounded text-neutral-400 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete entry"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
-              </div>
-            </button>
+              ))}
+              {entries.length > ENTRIES_VISIBLE_DEFAULT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="w-full text-left px-1 py-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                >
+                  {showAll ? "Show less" : `+${entries.length - ENTRIES_VISIBLE_DEFAULT} more`}
+                </button>
+              )}
+            </div>
           ) : (
             <SectionEmptyState
-              icon={<Edit size={12} />}
+              icon={<Plus size={12} />}
               label="No memories yet"
-              description="The agent will write here as you chat"
-              onClick={openDialog}
+              description="The agent will write here as you chat, or add one yourself"
+              onClick={openCreate}
             />
           )
         ) : (

@@ -12,7 +12,6 @@ import {
   Plus,
   Rocket,
   Sparkles,
-  SquarePen,
   Trash2,
   Upload,
   X,
@@ -38,11 +37,9 @@ import { AgentWizard } from "./wizard/AgentWizard";
 
 interface AgentDetailsProps {
   agent: Agent;
-  onDelete: () => void;
-  onExport: () => void;
 }
 
-function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
+function AgentDetails({ agent }: AgentDetailsProps) {
   const config = getConfig();
 
   return (
@@ -53,24 +50,6 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <SkillsSection agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection agent={agent} />}
-      <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onExport}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
-        >
-          <Download size={12} />
-          Export
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-500 hover:text-red-600 border border-red-200/80 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-        >
-          <Trash2 size={12} />
-          Delete
-        </button>
-      </div>
     </div>
   );
 }
@@ -154,15 +133,6 @@ export function AgentDrawer() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelInlineEdit();
-    }
-  };
-
-  const handleAgentSelect = (agent: Agent | null) => {
-    setCurrentAgent(agent);
-    if (!agent) {
-      setShowAgentDrawer(false);
-    } else {
-      setView("details");
     }
   };
 
@@ -472,8 +442,11 @@ export function AgentDrawer() {
                               <DropdownMenuItem icon={<PenLine size={12} />} onClick={() => startInlineEdit(agent)}>
                                 Rename
                               </DropdownMenuItem>
-                              <DropdownMenuItem icon={<SquarePen size={12} />} onClick={() => handleListSelect(agent)}>
-                                Edit
+                              <DropdownMenuItem
+                                icon={<Download size={12} />}
+                                onClick={() => exportSingleAgentAsZip(agent.id)}
+                              >
+                                Export
                               </DropdownMenuItem>
                               <DropdownMenuDivider />
                               <DropdownMenuItem
@@ -506,23 +479,7 @@ export function AgentDrawer() {
         </div>
       ) : /* Details view */
       currentAgent ? (
-        <AgentDetails
-          key={currentAgent.id}
-          agent={currentAgent}
-          onExport={() => exportSingleAgentAsZip(currentAgent.id)}
-          onDelete={async () => {
-            if (
-              !(await confirm({
-                title: "Delete agent?",
-                message: `"${currentAgent.name}" will be permanently removed. This can't be undone.`,
-                danger: true,
-              }))
-            )
-              return;
-            void deleteAgent(currentAgent.id);
-            handleAgentSelect(null);
-          }}
-        />
+        <AgentDetails key={currentAgent.id} agent={currentAgent} />
       ) : null}
 
       <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />

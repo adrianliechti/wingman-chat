@@ -100,9 +100,10 @@ export async function exportSingleAgentAsZip(
   const agentHandle = await getDirectory(`agents/${agentId}`);
   await addDirectoryToZip(agentHandle, zip);
 
-  // Strip MEMORY.md unless explicitly requested
+  // Strip memory (legacy single-file and bundle form) unless explicitly requested
   if (!includeMemory) {
     zip.remove("MEMORY.md");
+    zip.remove("memory");
   }
 
   // Bundle skills referenced in the agent's frontmatter
@@ -302,7 +303,7 @@ async function importFlatAgentFromZip(entries: [string, JSZip.JSZipObject][]): P
       continue;
     }
 
-    // Everything else (AGENTS.md, servers.json, MEMORY.md, files/…)
+    // Everything else (AGENTS.md, servers.json, memory/, files/…)
     // goes under agents/{newId}/
     await extractZipEntry(zipEntry, `agents/${newId}/${relativePath}`);
   }

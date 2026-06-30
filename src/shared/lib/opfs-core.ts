@@ -14,6 +14,11 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *   └── assets/               # Optional templates, data files
  *   /skills/index.json        # Skills index for fast listing
  *
+ *   /agents/{id}/memory/
+ *   ├── index.md               # Auto-generated table of contents (no frontmatter)
+ *   ├── log.md                 # Append-only change history
+ *   └── {slug}.md              # Concept doc - YAML frontmatter + markdown body
+ *
  *   /chats/{id}/
  *   ├── chat.json             # Metadata + messages (with blob refs)
  *   ├── blobs/{uuid}.bin      # Co-located message blobs (images, audio)
