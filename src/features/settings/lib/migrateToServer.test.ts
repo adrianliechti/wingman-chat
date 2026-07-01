@@ -68,7 +68,7 @@ describe("migrateLocalChatsToServer", () => {
 
   it("drops a local copy with no updated timestamp on collision", async () => {
     listChats.mockResolvedValue([{ id: "c1", headSeq: 5, updated: "2026-01-01T00:00:00Z" }]);
-    const { sync, asChatSync } = fakeSync([{ id: "c1", updated: null }]);
+    const { asChatSync } = fakeSync([{ id: "c1", updated: null }]);
 
     const result = await migrateLocalChatsToServer(asChatSync);
 

@@ -186,11 +186,13 @@ function pdfjsAssetsPlugin(): Plugin {
   };
 
   let outDir = "dist";
+  let isBuild = false;
 
   return {
     name: "pdfjs-assets",
     configResolved(config) {
       outDir = config.build.outDir;
+      isBuild = config.command === "build";
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
@@ -203,6 +205,7 @@ function pdfjsAssetsPlugin(): Plugin {
       });
     },
     closeBundle() {
+      if (!isBuild) return;
       for (const dir of dirs) {
         const from = path.join(pkgRoot, dir);
         if (fs.existsSync(from)) copyDir(from, path.resolve(outDir, "pdfjs", dir));
