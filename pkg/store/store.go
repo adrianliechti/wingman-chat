@@ -1,4 +1,4 @@
-package chatstore
+package store
 
 import (
 	"context"
@@ -105,12 +105,12 @@ type Provider interface {
 }
 
 var (
-	ErrNotFound         = errors.New("chatstore: not found")
-	ErrSeqConflict      = errors.New("chatstore: seq conflict")
-	ErrKeystoreConflict = errors.New("chatstore: keystore etag conflict")
-	ErrFileConflict     = errors.New("chatstore: file etag conflict")
-	ErrInvalidID        = errors.New("chatstore: invalid id")
-	ErrFrameTooLarge    = errors.New("chatstore: frame too large")
+	ErrNotFound         = errors.New("store: not found")
+	ErrSeqConflict      = errors.New("store: seq conflict")
+	ErrKeystoreConflict = errors.New("store: keystore etag conflict")
+	ErrFileConflict     = errors.New("store: file etag conflict")
+	ErrInvalidID        = errors.New("store: invalid id")
+	ErrFrameTooLarge    = errors.New("store: frame too large")
 )
 
 // MaxFrameBytes caps a single base64-encoded frame envelope. Blobs go

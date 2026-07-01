@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
 // Synced file tree. Contents are encrypted client-side; the real OPFS
@@ -70,7 +70,7 @@ func (p *Provider) saveFileManifest(userID string, m map[string]fileManifestEntr
 	return writeAtomic(p.fileManifestPath(userID), data)
 }
 
-func (p *Provider) ListFiles(_ context.Context, userID string) ([]chatstore.FileMeta, error) {
+func (p *Provider) ListFiles(_ context.Context, userID string) ([]store.FileMeta, error) {
 	lock := p.fileLock(userID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -80,9 +80,9 @@ func (p *Provider) ListFiles(_ context.Context, userID string) ([]chatstore.File
 		return nil, err
 	}
 
-	out := make([]chatstore.FileMeta, 0, len(manifest))
+	out := make([]store.FileMeta, 0, len(manifest))
 	for id, e := range manifest {
-		out = append(out, chatstore.FileMeta{ID: id, ETag: e.ETag, Updated: e.Updated, Size: e.Size})
+		out = append(out, store.FileMeta{ID: id, ETag: e.ETag, Updated: e.Updated, Size: e.Size})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
@@ -103,12 +103,12 @@ func (p *Provider) GetFile(_ context.Context, userID, fileID string) (io.ReadClo
 
 	entry, ok := manifest[fileID]
 	if !ok {
-		return nil, "", chatstore.ErrNotFound
+		return nil, "", store.ErrNotFound
 	}
 
 	f, err := os.Open(p.filePath(userID, fileID))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, "", chatstore.ErrNotFound
+		return nil, "", store.ErrNotFound
 	}
 	if err != nil {
 		return nil, "", err
@@ -136,11 +136,11 @@ func (p *Provider) PutFile(_ context.Context, userID, fileID string, r io.Reader
 		// unconditional
 	case ifMatch == "*":
 		if exists {
-			return "", chatstore.ErrFileConflict
+			return "", store.ErrFileConflict
 		}
 	default:
 		if !exists || current.ETag != ifMatch {
-			return "", chatstore.ErrFileConflict
+			return "", store.ErrFileConflict
 		}
 	}
 

@@ -1,4 +1,4 @@
-package chatstore
+package store
 
 import (
 	"bufio"
@@ -11,14 +11,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
 type Handler struct {
-	store chatstore.Provider
+	store store.Provider
 }
 
-func New(store chatstore.Provider) *Handler {
+func New(store store.Provider) *Handler {
 	return &Handler{store: store}
 }
 
@@ -106,7 +106,7 @@ func (h *Handler) handleGetKeystore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, etag, err := h.store.GetKeystore(r.Context(), userID)
-	if errors.Is(err, chatstore.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no keystore", http.StatusNotFound)
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handler) handlePutKeystore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	etag, err := h.store.PutKeystore(r.Context(), userID, body, cas)
-	if errors.Is(err, chatstore.ErrKeystoreConflict) {
+	if errors.Is(err, store.ErrKeystoreConflict) {
 		http.Error(w, "keystore conflict", http.StatusPreconditionFailed)
 		return
 	}
@@ -170,7 +170,7 @@ func (h *Handler) handleListChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if chats == nil {
-		chats = []chatstore.ChatMeta{}
+		chats = []store.ChatMeta{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(chats)
@@ -195,7 +195,7 @@ func (h *Handler) handleReadEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reader, err := h.store.ReadEvents(r.Context(), userID, chatID, fromSeq)
-	if errors.Is(err, chatstore.ErrInvalidID) {
+	if errors.Is(err, store.ErrInvalidID) {
 		http.Error(w, "invalid chat id", http.StatusBadRequest)
 		return
 	}
@@ -234,7 +234,7 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scanner := bufio.NewScanner(r.Body)
-	scanner.Buffer(make([]byte, 64*1024), chatstore.MaxFrameBytes+4*1024)
+	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
 
 	var ids []string
 	var frames [][]byte
@@ -267,13 +267,13 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.store.AppendEvents(r.Context(), userID, chatID, expectedSeq, ids, frames)
 	switch {
-	case errors.Is(err, chatstore.ErrInvalidID):
+	case errors.Is(err, store.ErrInvalidID):
 		http.Error(w, "invalid chat id", http.StatusBadRequest)
 		return
-	case errors.Is(err, chatstore.ErrSeqConflict):
+	case errors.Is(err, store.ErrSeqConflict):
 		http.Error(w, "seq conflict", http.StatusConflict)
 		return
-	case errors.Is(err, chatstore.ErrFrameTooLarge):
+	case errors.Is(err, store.ErrFrameTooLarge):
 		http.Error(w, "frame too large", http.StatusRequestEntityTooLarge)
 		return
 	case err != nil:
@@ -304,7 +304,7 @@ func (h *Handler) handleCompactChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.CompactChat(r.Context(), userID, chatID, beforeSeq); err != nil {
-		if errors.Is(err, chatstore.ErrInvalidID) {
+		if errors.Is(err, store.ErrInvalidID) {
 			http.Error(w, "invalid chat id", http.StatusBadRequest)
 			return
 		}
@@ -322,7 +322,7 @@ func (h *Handler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
 	exists, err := h.store.BlobExists(r.Context(), userID, blobID)
-	if errors.Is(err, chatstore.ErrInvalidID) {
+	if errors.Is(err, store.ErrInvalidID) {
 		http.Error(w, "invalid blob id", http.StatusBadRequest)
 		return
 	}
@@ -346,7 +346,7 @@ func (h *Handler) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	chatID := r.PathValue("id")
 
 	if err := h.store.DeleteChat(r.Context(), userID, chatID); err != nil {
-		if errors.Is(err, chatstore.ErrInvalidID) {
+		if errors.Is(err, store.ErrInvalidID) {
 			http.Error(w, "invalid chat id", http.StatusBadRequest)
 			return
 		}
@@ -366,11 +366,11 @@ func (h *Handler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
 	reader, err := h.store.GetBlob(r.Context(), userID, blobID)
-	if errors.Is(err, chatstore.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if errors.Is(err, chatstore.ErrInvalidID) {
+	if errors.Is(err, store.ErrInvalidID) {
 		http.Error(w, "invalid blob id", http.StatusBadRequest)
 		return
 	}
@@ -393,7 +393,7 @@ func (h *Handler) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
 	if err := h.store.PutBlob(r.Context(), userID, blobID, r.Body); err != nil {
-		if errors.Is(err, chatstore.ErrInvalidID) {
+		if errors.Is(err, store.ErrInvalidID) {
 			http.Error(w, "invalid blob id", http.StatusBadRequest)
 			return
 		}
@@ -416,7 +416,7 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if files == nil {
-		files = []chatstore.FileMeta{}
+		files = []store.FileMeta{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(files)
@@ -431,11 +431,11 @@ func (h *Handler) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	fileID := r.PathValue("id")
 
 	reader, etag, err := h.store.GetFile(r.Context(), userID, fileID)
-	if errors.Is(err, chatstore.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if errors.Is(err, chatstore.ErrInvalidID) {
+	if errors.Is(err, store.ErrInvalidID) {
 		http.Error(w, "invalid file id", http.StatusBadRequest)
 		return
 	}
@@ -470,11 +470,11 @@ func (h *Handler) handlePutFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	etag, err := h.store.PutFile(r.Context(), userID, fileID, r.Body, cas)
-	if errors.Is(err, chatstore.ErrFileConflict) {
+	if errors.Is(err, store.ErrFileConflict) {
 		http.Error(w, "file conflict", http.StatusPreconditionFailed)
 		return
 	}
-	if errors.Is(err, chatstore.ErrInvalidID) {
+	if errors.Is(err, store.ErrInvalidID) {
 		http.Error(w, "invalid file id", http.StatusBadRequest)
 		return
 	}
@@ -496,7 +496,7 @@ func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	fileID := r.PathValue("id")
 
 	if err := h.store.DeleteFile(r.Context(), userID, fileID); err != nil {
-		if errors.Is(err, chatstore.ErrInvalidID) {
+		if errors.Is(err, store.ErrInvalidID) {
 			http.Error(w, "invalid file id", http.StatusBadRequest)
 			return
 		}
@@ -516,7 +516,7 @@ func (h *Handler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	blobID := r.PathValue("id")
 
 	if err := h.store.DeleteBlob(r.Context(), userID, blobID); err != nil {
-		if errors.Is(err, chatstore.ErrInvalidID) {
+		if errors.Is(err, store.ErrInvalidID) {
 			http.Error(w, "invalid blob id", http.StatusBadRequest)
 			return
 		}

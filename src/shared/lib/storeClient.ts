@@ -1,7 +1,7 @@
 /**
- * Thin HTTP wrapper around the server chatstore API.
+ * Thin HTTP wrapper around the server store API.
  *
- * Routes follow `/api/v1/...` (see pkg/server/chatstore/handler.go).
+ * Routes follow `/api/v1/...` (see pkg/server/store/handler.go).
  * The server identifies the user via reverse-proxy headers, so this
  * client never needs to send any auth itself.
  */

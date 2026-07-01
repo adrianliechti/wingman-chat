@@ -18,7 +18,7 @@
 
 import type { Chat } from "@/shared/types/chat";
 import { applyEntriesInPlace, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
-import * as api from "./chatstoreClient";
+import * as api from "./storeClient";
 import { type DEK, decryptBlob, decryptEvent, encryptBlob, encryptEvent, hashFrame, ZERO_HASH } from "./crypto";
 import { collectChatBlobIds, extractChatBlobs, getChatBlob, rehydrateChatBlobs, type StoredChat } from "./opfs-chat";
 import {

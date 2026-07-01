@@ -15,7 +15,7 @@
  * resolve last-write-wins by file mtime.
  */
 
-import * as api from "./chatstoreClient";
+import * as api from "./storeClient";
 import { type DEK, decryptFile, encryptFile } from "./crypto";
 import {
   deleteDirectory,

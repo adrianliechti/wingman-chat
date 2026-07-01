@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
 func newFileProvider(t *testing.T) *Provider {
@@ -57,12 +57,12 @@ func TestFileCAS(t *testing.T) {
 	}
 
 	// create-only on existing → conflict
-	if _, err := p.PutFile(ctx, "alice", fileID, strings.NewReader("v2"), "*"); !errors.Is(err, chatstore.ErrFileConflict) {
+	if _, err := p.PutFile(ctx, "alice", fileID, strings.NewReader("v2"), "*"); !errors.Is(err, store.ErrFileConflict) {
 		t.Fatalf("want ErrFileConflict, got %v", err)
 	}
 
 	// stale etag → conflict
-	if _, err := p.PutFile(ctx, "alice", fileID, strings.NewReader("v2"), "bogus"); !errors.Is(err, chatstore.ErrFileConflict) {
+	if _, err := p.PutFile(ctx, "alice", fileID, strings.NewReader("v2"), "bogus"); !errors.Is(err, store.ErrFileConflict) {
 		t.Fatalf("want ErrFileConflict, got %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestFileListAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := p.GetFile(ctx, "alice", fileID); !errors.Is(err, chatstore.ErrNotFound) {
+	if _, _, err := p.GetFile(ctx, "alice", fileID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestFileUserIsolationAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := p.GetFile(ctx, "bob", fileID); !errors.Is(err, chatstore.ErrNotFound) {
+	if _, _, err := p.GetFile(ctx, "bob", fileID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("bob must not see alice's file, got %v", err)
 	}
 	list, _ := p.ListFiles(ctx, "bob")
@@ -138,11 +138,11 @@ func TestFileUserIsolationAndValidation(t *testing.T) {
 		t.Fatalf("bob's list must be empty: %+v", list)
 	}
 
-	if _, err := p.PutFile(ctx, "alice", "../escape", strings.NewReader("x"), ""); !errors.Is(err, chatstore.ErrInvalidID) {
+	if _, err := p.PutFile(ctx, "alice", "../escape", strings.NewReader("x"), ""); !errors.Is(err, store.ErrInvalidID) {
 		t.Fatalf("want ErrInvalidID, got %v", err)
 	}
 	// the manifest name must not be usable as a file id
-	if _, err := p.PutFile(ctx, "alice", "index.json", strings.NewReader("x"), ""); !errors.Is(err, chatstore.ErrInvalidID) {
+	if _, err := p.PutFile(ctx, "alice", "index.json", strings.NewReader("x"), ""); !errors.Is(err, store.ErrInvalidID) {
 		t.Fatalf("want ErrInvalidID for index.json, got %v", err)
 	}
 }

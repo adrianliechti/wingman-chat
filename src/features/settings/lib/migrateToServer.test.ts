@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatSync } from "@/shared/lib/chatSync";
-import * as api from "@/shared/lib/chatstoreClient";
+import * as api from "@/shared/lib/storeClient";
 import { migrateLocalChatsToServer } from "./migrateToServer";
 
-vi.mock("@/shared/lib/chatstoreClient", () => ({
+vi.mock("@/shared/lib/storeClient", () => ({
   listChats: vi.fn(),
 }));
 

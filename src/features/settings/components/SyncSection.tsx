@@ -1,6 +1,6 @@
 import { Lock, LockOpen, RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import * as chatSession from "@/shared/lib/chatSession";
+import * as storeSession from "@/shared/lib/storeSession";
 import { notify } from "@/shared/lib/notify";
 import { type SessionStatus, useSyncStatus } from "../hooks/useSyncStatus";
 
@@ -37,7 +37,7 @@ export function SyncSection() {
   async function onSyncNow() {
     setSyncBusy(true);
     try {
-      await chatSession.syncNow();
+      await storeSession.syncNow();
     } catch (err) {
       notify.error("Sync failed", err);
     } finally {
@@ -64,7 +64,7 @@ export function SyncSection() {
     setError(null);
     setBusy(true);
     try {
-      await chatSession.unlock(oldPin);
+      await storeSession.unlock(oldPin);
       resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unlock failed");
@@ -80,7 +80,7 @@ export function SyncSection() {
     if (newPin !== confirmPin) return setError("PINs do not match");
     setBusy(true);
     try {
-      await chatSession.setPin(newPin);
+      await storeSession.setPin(newPin);
       resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set PIN");
@@ -96,7 +96,7 @@ export function SyncSection() {
     if (newPin !== confirmPin) return setError("New PINs do not match");
     setBusy(true);
     try {
-      await chatSession.changePin(oldPin, newPin);
+      await storeSession.changePin(oldPin, newPin);
       resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to change PIN");
@@ -109,7 +109,7 @@ export function SyncSection() {
     setError(null);
     setBusy(true);
     try {
-      await chatSession.removePin(oldPin);
+      await storeSession.removePin(oldPin);
       resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove PIN");

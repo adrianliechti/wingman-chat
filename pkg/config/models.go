@@ -31,7 +31,7 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
-	ChatStore *ChatStore `json:"chatstore,omitempty" yaml:"chatstore,omitempty"`
+	Store *Store `json:"store,omitempty" yaml:"store,omitempty"`
 
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
@@ -159,11 +159,12 @@ type Risk struct {
 	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
-// ChatStore configures the server-side chat store. Its presence in the
+// Store configures the server-side user data store (chats, files,
+// keystore — all encrypted client-side). Its presence in the
 // JSON-serialized config is the frontend's signal to switch from
 // OPFS-only mode to server-synced mode. Sensitive fields (Path) stay
 // server-private via the json:"-" tag.
-type ChatStore struct {
+type Store struct {
 	Type string `json:"-" yaml:"type,omitempty"`
 	Path string `json:"-" yaml:"path,omitempty"`
 }

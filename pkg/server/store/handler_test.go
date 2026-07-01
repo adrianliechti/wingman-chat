@@ -1,4 +1,4 @@
-package chatstore
+package store
 
 import (
 	"encoding/json"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore/file"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store/file"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -68,14 +68,14 @@ func readBody(t *testing.T, res *http.Response) string {
 	return string(b)
 }
 
-func appendEvents(t *testing.T, srv *httptest.Server, user, chatID string, expectedSeq int64, events ...string) chatstore.AppendResult {
+func appendEvents(t *testing.T, srv *httptest.Server, user, chatID string, expectedSeq int64, events ...string) store.AppendResult {
 	t.Helper()
 
 	res := do(t, srv, user, "POST", "/v1/chats/"+chatID+"/events", strings.Join(events, "\n"),
 		map[string]string{"X-Expected-Seq": fmt.Sprint(expectedSeq)})
 	wantStatus(t, res, http.StatusOK)
 
-	var out chatstore.AppendResult
+	var out store.AppendResult
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestListChats(t *testing.T) {
 	appendEvents(t, srv, "alice", chatID, 0, event("e1", "ZnJhbWUx"))
 
 	res = do(t, srv, "alice", "GET", "/v1/chats", "", nil)
-	var chats []chatstore.ChatMeta
+	var chats []store.ChatMeta
 	if err := json.NewDecoder(res.Body).Decode(&chats); err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestFileLifecycle(t *testing.T) {
 	}
 
 	res = do(t, srv, "alice", "GET", "/v1/files", "", nil)
-	var list []chatstore.FileMeta
+	var list []store.FileMeta
 	if err := json.NewDecoder(res.Body).Decode(&list); err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestFrameTooLarge(t *testing.T) {
 	srv := newTestServer(t)
 	chatID := "99999999-9999-9999-9999-999999999999"
 
-	frame := strings.Repeat("A", chatstore.MaxFrameBytes+1)
+	frame := strings.Repeat("A", store.MaxFrameBytes+1)
 	res := do(t, srv, "alice", "POST", "/v1/chats/"+chatID+"/events", event("e1", frame),
 		map[string]string{"X-Expected-Seq": "0"})
 	wantStatus(t, res, http.StatusRequestEntityTooLarge)

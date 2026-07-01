@@ -11,7 +11,7 @@
  */
 
 import type { ChatSync } from "@/shared/lib/chatSync";
-import * as api from "@/shared/lib/chatstoreClient";
+import * as api from "@/shared/lib/storeClient";
 
 export async function migrateLocalChatsToServer(sync: ChatSync): Promise<{ uploaded: number; dropped: number }> {
   const unsynced = sync.unsyncedChats();

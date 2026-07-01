@@ -122,14 +122,14 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Optimizer = v
 	}
 
-	withFeature("CHATSTORE_ENABLED", &cfg.ChatStore, func(s *ChatStore) {
-		envOverride("CHATSTORE_TYPE", &s.Type)
-		envOverride("CHATSTORE_PATH", &s.Path)
+	withFeature("STORE_ENABLED", &cfg.Store, func(s *Store) {
+		envOverride("STORE_TYPE", &s.Type)
+		envOverride("STORE_PATH", &s.Path)
 		if s.Type == "" {
 			s.Type = "file"
 		}
 		if s.Path == "" {
-			s.Path = "./data/chats"
+			s.Path = "./data/store"
 		}
 	})
 

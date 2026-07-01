@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import * as chatSession from "@/shared/lib/chatSession";
+import * as storeSession from "@/shared/lib/storeSession";
 import type { SyncActivity } from "@/shared/lib/chatSync";
 import type { FileSyncActivity } from "@/shared/lib/fileSync";
 
@@ -35,17 +35,17 @@ function computeHealth(session: SessionStatus, chat: SyncActivity | null, files:
 }
 
 export function useSyncStatus(): SyncStatus {
-  const [session, setSession] = useState<SessionStatus>(() => chatSession.getSession().status);
+  const [session, setSession] = useState<SessionStatus>(() => storeSession.getSession().status);
   const [pinProtected, setPinProtected] = useState(false);
   const [chat, setChat] = useState<SyncActivity | null>(null);
   const [files, setFiles] = useState<FileSyncActivity | null>(null);
 
   useEffect(() => {
-    void chatSession.initSession();
+    void storeSession.initSession();
     // Unlock replaces the sync instances, so re-subscribe on every "ready".
     let unsubChat: (() => void) | undefined;
     let unsubFiles: (() => void) | undefined;
-    const unsub = chatSession.subscribeSession((s) => {
+    const unsub = storeSession.subscribeSession((s) => {
       setSession(s.status);
       if (s.status === "ready" || s.status === "locked") {
         setPinProtected(s.keystore.keystore.pinProtected === true);

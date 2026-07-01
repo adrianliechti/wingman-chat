@@ -14,7 +14,7 @@
  * regret.
  */
 
-import * as api from "./chatstoreClient";
+import * as api from "./storeClient";
 import {
   type DEK,
   fromBase64,

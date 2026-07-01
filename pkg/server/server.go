@@ -7,15 +7,15 @@ import (
 	"net/url"
 	"os"
 
-	chatstorepkg "github.com/adrianliechti/wingman-chat/pkg/chatstore"
-	chatstorefile "github.com/adrianliechti/wingman-chat/pkg/chatstore/file"
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/server/api"
-	chatstoresrv "github.com/adrianliechti/wingman-chat/pkg/server/chatstore"
 	"github.com/adrianliechti/wingman-chat/pkg/server/drive"
 	"github.com/adrianliechti/wingman-chat/pkg/server/library"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
+	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
+	storefile "github.com/adrianliechti/wingman-chat/pkg/store/file"
 )
 
 func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.FS, skillsDir, notebookDir string) http.Handler {
@@ -31,22 +31,22 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 		drive.New(cfg.Drives).Attach(mux, prefix)
 	}
 
-	if cfg.ChatStore != nil {
-		var provider chatstorepkg.Provider
+	if cfg.Store != nil {
+		var provider store.Provider
 		var err error
 
-		switch cfg.ChatStore.Type {
+		switch cfg.Store.Type {
 		case "file", "":
-			provider, err = chatstorefile.New(cfg.ChatStore.Path)
+			provider, err = storefile.New(cfg.Store.Path)
 		default:
-			err = fmt.Errorf("unknown chatstore type: %s", cfg.ChatStore.Type)
+			err = fmt.Errorf("unknown store type: %s", cfg.Store.Type)
 		}
 
 		if err != nil {
-			panic(fmt.Errorf("chatstore: %w", err))
+			panic(fmt.Errorf("store: %w", err))
 		}
 
-		chatstoresrv.New(provider).Attach(mux, prefix)
+		storesrv.New(provider).Attach(mux, prefix)
 	}
 
 	if dirExists(skillsDir) {

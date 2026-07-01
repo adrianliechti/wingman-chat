@@ -16,12 +16,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
-var _ chatstore.Provider = (*Provider)(nil)
+var _ store.Provider = (*Provider)(nil)
 
-// Provider is a file-backed implementation of chatstore.Provider.
+// Provider is a file-backed implementation of store.Provider.
 //
 // Layout:
 //
@@ -84,7 +84,7 @@ func userHash(userID string) string {
 
 func validateID(id string) error {
 	if !uuidLike.MatchString(id) {
-		return chatstore.ErrInvalidID
+		return store.ErrInvalidID
 	}
 	return nil
 }
@@ -159,7 +159,7 @@ func (p *Provider) keystoreBackupPath(userID string) string {
 func (p *Provider) GetKeystore(_ context.Context, userID string) ([]byte, string, error) {
 	data, err := os.ReadFile(p.keystorePath(userID))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, "", chatstore.ErrNotFound
+		return nil, "", store.ErrNotFound
 	}
 	if err != nil {
 		return nil, "", err
@@ -185,11 +185,11 @@ func (p *Provider) PutKeystore(_ context.Context, userID string, data []byte, if
 		// unconditional
 	case "*":
 		if exists {
-			return "", chatstore.ErrKeystoreConflict
+			return "", store.ErrKeystoreConflict
 		}
 	default:
 		if !exists || etagOf(current) != ifMatch {
-			return "", chatstore.ErrKeystoreConflict
+			return "", store.ErrKeystoreConflict
 		}
 	}
 
@@ -220,18 +220,18 @@ func (p *Provider) chatDedupPath(userID, chatID string) string {
 	return filepath.Join(p.chatsDir(userID), chatID+".ids")
 }
 
-func (p *Provider) ListChats(_ context.Context, userID string) ([]chatstore.ChatMeta, error) {
+func (p *Provider) ListChats(_ context.Context, userID string) ([]store.ChatMeta, error) {
 	dir := p.chatsDir(userID)
 
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return []chatstore.ChatMeta{}, nil
+		return []store.ChatMeta{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]chatstore.ChatMeta, 0, len(entries))
+	out := make([]store.ChatMeta, 0, len(entries))
 
 	for _, e := range entries {
 		if e.IsDir() {
@@ -257,7 +257,7 @@ func (p *Provider) ListChats(_ context.Context, userID string) ([]chatstore.Chat
 
 		head, _ := readHead(p.chatHeadPath(userID, chatID))
 
-		out = append(out, chatstore.ChatMeta{
+		out = append(out, store.ChatMeta{
 			ID:      chatID,
 			HeadSeq: head,
 			Updated: info.ModTime(),
@@ -384,18 +384,18 @@ type frameLine struct {
 	Frame string `json:"frame"`
 }
 
-func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (chatstore.AppendResult, error) {
+func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expectedSeq int64, eventIDs []string, frames [][]byte) (store.AppendResult, error) {
 	if err := validateID(chatID); err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	if len(eventIDs) != len(frames) {
-		return chatstore.AppendResult{}, fmt.Errorf("chatstore: %d ids vs %d frames", len(eventIDs), len(frames))
+		return store.AppendResult{}, fmt.Errorf("store: %d ids vs %d frames", len(eventIDs), len(frames))
 	}
 
 	for _, f := range frames {
-		if len(f) > chatstore.MaxFrameBytes {
-			return chatstore.AppendResult{}, chatstore.ErrFrameTooLarge
+		if len(f) > store.MaxFrameBytes {
+			return store.AppendResult{}, store.ErrFrameTooLarge
 		}
 	}
 
@@ -404,37 +404,37 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 	defer lock.Unlock()
 
 	if err := ensureDir(p.chatsDir(userID)); err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	logPath := p.chatLogPath(userID, chatID)
 
 	if _, err := os.Stat(logPath); err == nil {
 		if err := truncatePartialLine(logPath); err != nil {
-			return chatstore.AppendResult{}, err
+			return store.AppendResult{}, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	head, err := readHead(p.chatHeadPath(userID, chatID))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	if expectedSeq != head {
-		return chatstore.AppendResult{}, chatstore.ErrSeqConflict
+		return store.AppendResult{}, store.ErrSeqConflict
 	}
 
 	dedupPath := p.chatDedupPath(userID, chatID)
 	dedupSet, dedupHistory, err := loadDedup(dedupPath)
 	if err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 	defer f.Close()
 
@@ -456,12 +456,12 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 			Frame: string(frames[i]),
 		})
 		if err != nil {
-			return chatstore.AppendResult{}, err
+			return store.AppendResult{}, err
 		}
 		line = append(line, '\n')
 
 		if _, err := f.Write(line); err != nil {
-			return chatstore.AppendResult{}, err
+			return store.AppendResult{}, err
 		}
 
 		dedupSet[digest] = struct{}{}
@@ -469,20 +469,20 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 	}
 
 	if err := f.Sync(); err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
 	if seq != head {
 		if err := writeHead(p.chatHeadPath(userID, chatID), seq); err != nil {
-			return chatstore.AppendResult{}, err
+			return store.AppendResult{}, err
 		}
 	}
 
 	if err := saveDedup(dedupPath, dedupHistory); err != nil {
-		return chatstore.AppendResult{}, err
+		return store.AppendResult{}, err
 	}
 
-	return chatstore.AppendResult{NewSeq: seq, Deduped: deduped}, nil
+	return store.AppendResult{NewSeq: seq, Deduped: deduped}, nil
 }
 
 func (p *Provider) ReadEvents(_ context.Context, userID, chatID string, fromSeq int64) (io.ReadCloser, error) {
@@ -507,7 +507,7 @@ func (p *Provider) ReadEvents(_ context.Context, userID, chatID string, fromSeq 
 		defer pw.Close()
 
 		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 64*1024), chatstore.MaxFrameBytes+4*1024)
+		scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
 
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -572,7 +572,7 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 	tmpPath := tmp.Name()
 
 	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 64*1024), chatstore.MaxFrameBytes+4*1024)
+	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
 	kept := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -664,7 +664,7 @@ func (p *Provider) GetBlob(_ context.Context, userID, blobID string) (io.ReadClo
 
 	f, err := os.Open(p.blobPath(userID, blobID))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, chatstore.ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	if err != nil {
 		return nil, err

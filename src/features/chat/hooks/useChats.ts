@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
-import * as chatSession from "@/shared/lib/chatSession";
+import * as storeSession from "@/shared/lib/storeSession";
 import type { StoredChat } from "@/shared/lib/opfs";
 import * as opfs from "@/shared/lib/opfs";
 import type { Chat } from "@/shared/types/chat";
 
 const COLLECTION = "chats";
 
-// OPFS-only path (used when the server chatstore is not enabled in config).
+// OPFS-only path (used when the server store is not enabled in config).
 // Each chat is stored as: /chats/{id}/chat.json with blobs in /chats/{id}/blobs/
 
 async function storeChatLocal(chat: Chat): Promise<void> {
@@ -76,24 +76,24 @@ function getExpiredChatIds(entries: opfs.IndexEntry[], retentionDays: number): s
 // Server-synced path -----------------------------------------------------
 
 async function storeChatRemote(chat: Chat): Promise<void> {
-  const session = await chatSession.whenReady();
+  const session = await storeSession.whenReady();
   await session.sync.saveChat(chat);
 }
 
 async function removeChatRemote(id: string): Promise<void> {
-  const session = await chatSession.whenReady();
+  const session = await storeSession.whenReady();
   await session.sync.deleteChat(id);
 }
 
 async function loadAllRemote(): Promise<Chat[]> {
-  const session = await chatSession.whenReady();
+  const session = await storeSession.whenReady();
   return session.sync.pull();
 }
 
 // Dispatch ---------------------------------------------------------------
 
 function isServerMode(): boolean {
-  return chatSession.isEnabled();
+  return storeSession.isEnabled();
 }
 
 async function storeChat(chat: Chat): Promise<void> {
@@ -144,7 +144,7 @@ export function useChats() {
 
     // Kick off session bootstrapping in parallel; load() awaits readiness
     // internally via whenReady() if we're in server mode.
-    void chatSession.initSession();
+    void storeSession.initSession();
     void load();
 
     // Re-load when the session transitions to "ready" after a PIN unlock,
@@ -152,7 +152,7 @@ export function useChats() {
     // (manual sync, focus re-pull, 409 recovery). Unlock replaces the
     // ChatSync instance, so re-subscribe on every "ready".
     let unsubRemote: (() => void) | undefined;
-    const unsub = chatSession.subscribeSession((s) => {
+    const unsub = storeSession.subscribeSession((s) => {
       if (s.status !== "ready") return;
       void load();
       unsubRemote?.();

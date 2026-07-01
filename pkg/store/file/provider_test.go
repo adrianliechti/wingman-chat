@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/adrianliechti/wingman-chat/pkg/chatstore"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
 )
 
 func newTestProvider(t *testing.T) *Provider {
@@ -28,7 +28,7 @@ func TestKeystoreCASLifecycle(t *testing.T) {
 	p := newTestProvider(t)
 	ctx := context.Background()
 
-	if _, _, err := p.GetKeystore(ctx, "alice"); !errors.Is(err, chatstore.ErrNotFound) {
+	if _, _, err := p.GetKeystore(ctx, "alice"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 
@@ -37,11 +37,11 @@ func TestKeystoreCASLifecycle(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"v":2}`), "*"); !errors.Is(err, chatstore.ErrKeystoreConflict) {
+	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"v":2}`), "*"); !errors.Is(err, store.ErrKeystoreConflict) {
 		t.Fatalf("expected conflict on second create, got %v", err)
 	}
 
-	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"v":2}`), "wrong"); !errors.Is(err, chatstore.ErrKeystoreConflict) {
+	if _, err := p.PutKeystore(ctx, "alice", []byte(`{"v":2}`), "wrong"); !errors.Is(err, store.ErrKeystoreConflict) {
 		t.Fatalf("expected conflict on wrong etag, got %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestSeqConflict(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 
-	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"e2"}, [][]byte{[]byte("Y")}); !errors.Is(err, chatstore.ErrSeqConflict) {
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"e2"}, [][]byte{[]byte("Y")}); !errors.Is(err, store.ErrSeqConflict) {
 		t.Fatalf("expected seq conflict, got %v", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestConcurrentAppend(t *testing.T) {
 				mu.Lock()
 				winners++
 				mu.Unlock()
-			} else if !errors.Is(err, chatstore.ErrSeqConflict) {
+			} else if !errors.Is(err, store.ErrSeqConflict) {
 				t.Errorf("unexpected error: %v", err)
 			}
 		}(i)
@@ -237,7 +237,7 @@ func TestRejectInvalidChatID(t *testing.T) {
 	ctx := context.Background()
 
 	for _, bad := range []string{"", "../etc/passwd", "with spaces", "x"} {
-		if _, err := p.AppendEvents(ctx, "alice", bad, 0, []string{"e"}, [][]byte{[]byte("x")}); !errors.Is(err, chatstore.ErrInvalidID) {
+		if _, err := p.AppendEvents(ctx, "alice", bad, 0, []string{"e"}, [][]byte{[]byte("x")}); !errors.Is(err, store.ErrInvalidID) {
 			t.Fatalf("expected ErrInvalidID for %q, got %v", bad, err)
 		}
 	}
@@ -297,7 +297,7 @@ func TestBlobRoundTrip(t *testing.T) {
 	if err := p.DeleteBlob(ctx, "alice", blob); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := p.GetBlob(ctx, "alice", blob); !errors.Is(err, chatstore.ErrNotFound) {
+	if _, err := p.GetBlob(ctx, "alice", blob); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 }
@@ -339,7 +339,7 @@ func TestBlobExists(t *testing.T) {
 		t.Fatalf("expected true, got %v %v", exists, err)
 	}
 
-	if _, err := p.BlobExists(ctx, "alice", "../etc/passwd"); !errors.Is(err, chatstore.ErrInvalidID) {
+	if _, err := p.BlobExists(ctx, "alice", "../etc/passwd"); !errors.Is(err, store.ErrInvalidID) {
 		t.Fatalf("expected ErrInvalidID, got %v", err)
 	}
 }
@@ -395,8 +395,8 @@ func TestFrameSizeLimit(t *testing.T) {
 	ctx := context.Background()
 	const chat = "77777777-7777-7777-7777-777777777777"
 
-	big := make([]byte, chatstore.MaxFrameBytes+1)
-	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"big"}, [][]byte{big}); !errors.Is(err, chatstore.ErrFrameTooLarge) {
+	big := make([]byte, store.MaxFrameBytes+1)
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"big"}, [][]byte{big}); !errors.Is(err, store.ErrFrameTooLarge) {
 		t.Fatalf("expected ErrFrameTooLarge, got %v", err)
 	}
 }

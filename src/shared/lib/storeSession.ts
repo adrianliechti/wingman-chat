@@ -14,7 +14,7 @@
 import { migrateLocalChatsToServer } from "@/features/settings/lib/migrateToServer";
 import { getConfig } from "@/shared/config";
 import { ChatSync } from "./chatSync";
-import * as api from "./chatstoreClient";
+import * as api from "./storeClient";
 import type { DEK } from "./crypto";
 import { FileSync } from "./fileSync";
 import * as keystore from "./keystore";
@@ -53,7 +53,7 @@ function setSession(next: Session) {
   if (next.status === "ready") {
     // Best-effort reconciliation of never-synced local chats; idempotent
     // and cheap when there is nothing to reconcile.
-    void migrateLocalChatsToServer(next.sync).catch((err) => console.error("chatSession: reconciliation failed", err));
+    void migrateLocalChatsToServer(next.sync).catch((err) => console.error("storeSession: reconciliation failed", err));
   }
 }
 
@@ -68,7 +68,7 @@ export function getSession(): Session {
 }
 
 export function isEnabled(): boolean {
-  return getConfig().chatstore === true;
+  return getConfig().store === true;
 }
 
 async function readySession(userId: string, dek: DEK, ks: keystore.KeystoreState): Promise<ReadySession> {
@@ -156,7 +156,7 @@ export async function initSession(): Promise<Session> {
         setSession({ status: "locked", userId: me.id, keystore: state });
       }
     } catch (err) {
-      console.error("chatSession.init failed", err);
+      console.error("storeSession.init failed", err);
       setSession({ status: "error", error: err });
     }
     return session;
@@ -217,7 +217,7 @@ export async function whenReady(): Promise<ReadySession> {
         reject(s.error);
       } else if (s.status === "disabled") {
         unsub();
-        reject(new Error("chatstore disabled"));
+        reject(new Error("store disabled"));
       }
     });
   });
