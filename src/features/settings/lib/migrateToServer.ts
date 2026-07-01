@@ -1,47 +1,58 @@
 /**
- * One-time migration safety check for users transitioning from
- * OPFS-only mode to server-synced mode.
+ * Reconciliation for chats that exist locally but were never synced —
+ * legacy OPFS-only chats promoted by `ChatSync.hydrateFromOpfs()`, or
+ * chats created while the server was unreachable.
  *
- * Legacy `chats/{id}/chat.json` files are picked up by
- * `ChatSync.hydrateFromOpfs()` and promoted to pending targets, so the
- * actual upload happens via the normal flush path. This module exists
- * to handle the corner case where the same user already has chats on
- * the server (from another device): in that case we drop the legacy
- * pending targets rather than overwrite the remote state.
+ * Chat ids are UUIDs, so plain union is safe: ids unknown to the server
+ * are flushed through the normal save path. An id the server already
+ * knows means the same chat diverged (synced once, then used offline);
+ * last write wins by `updated` timestamp, matching the sync engine's
+ * conflict policy everywhere else.
  */
 
 import type { ChatSync } from "@/shared/lib/chatSync";
 import * as api from "@/shared/lib/chatstoreClient";
-import { readJson, writeJson } from "@/shared/lib/opfs-core";
 
-const FLAG_PATH = "_sync/migrated.json";
-
-interface Flag {
-  done: true;
-  ts: string;
-}
-
-export async function migrateLocalChatsToServer(sync: ChatSync): Promise<{ flushed: number }> {
-  const existing = await readJson<Flag>(FLAG_PATH);
-  if (existing?.done) {
-    void sync.flushPending();
-    return { flushed: 0 };
+export async function migrateLocalChatsToServer(sync: ChatSync): Promise<{ uploaded: number; dropped: number }> {
+  const unsynced = sync.unsyncedChats();
+  if (unsynced.length === 0) {
+    await sync.flushPending();
+    return { uploaded: 0, dropped: 0 };
   }
 
   const remote = await api.listChats();
-  if (remote.length > 0) {
-    // Server already populated — by design we do not overwrite it from
-    // a fresh device's local OPFS. The pending targets carrying legacy
-    // chat.json content stay only in memory; mark migration done so
-    // they won't be flushed on subsequent runs. (User can still export
-    // / import via ZIP for explicit reconciliation.)
-    console.warn("migrateLocalChatsToServer: server already has chats; skipping local upload");
-    await writeJson<Flag>(FLAG_PATH, { done: true, ts: new Date().toISOString() });
-    return { flushed: 0 };
+  const remoteById = new Map(remote.map((r) => [r.id, r]));
+
+  const upload: string[] = [];
+  let dropped = 0;
+
+  for (const { id, updated } of unsynced) {
+    const server = remoteById.get(id);
+    if (server) {
+      const localTime = updated ? Date.parse(updated) : 0;
+      const serverTime = Date.parse(server.updated) || 0;
+      if (localTime <= serverTime) {
+        await sync.dropUnsyncedChat(id);
+        dropped++;
+        continue;
+      }
+    }
+    upload.push(id);
   }
 
-  // Flush whatever pending targets hydrateFromOpfs promoted. Idempotent.
+  // saveChat uploads blobs itself, but these targets were hydrated from
+  // disk — push their blobs before the events reference them.
+  for (const id of upload) {
+    await sync.ensureBlobsUploaded(id);
+  }
+
+  if (dropped > 0) {
+    console.log(`chat reconciliation: dropped ${dropped} local chat(s) superseded by server versions`);
+  }
+  if (upload.length > 0) {
+    console.log(`chat reconciliation: uploading ${upload.length} local-only chat(s)`);
+  }
+
   await sync.flushPending();
-  await writeJson<Flag>(FLAG_PATH, { done: true, ts: new Date().toISOString() });
-  return { flushed: 0 };
+  return { uploaded: upload.length, dropped };
 }

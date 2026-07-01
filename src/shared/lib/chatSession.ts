@@ -49,9 +49,9 @@ function setSession(next: Session) {
   session = next;
   for (const l of listeners) l(next);
   if (next.status === "ready") {
-    // Best-effort one-shot migration; the function is idempotent and
-    // logs its own errors.
-    void migrateLocalChatsToServer(next.sync).catch((err) => console.error("chatSession: migration failed", err));
+    // Best-effort reconciliation of never-synced local chats; idempotent
+    // and cheap when there is nothing to reconcile.
+    void migrateLocalChatsToServer(next.sync).catch((err) => console.error("chatSession: reconciliation failed", err));
   }
 }
 

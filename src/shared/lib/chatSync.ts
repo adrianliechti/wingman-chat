@@ -146,6 +146,33 @@ export class ChatSync {
     return out;
   }
 
+  /** Chats held as pending targets that have never been synced (no server
+   *  head) — legacy OPFS-only chats promoted by hydrateFromOpfs, or chats
+   *  created while the server was unreachable. */
+  unsyncedChats(): { id: string; updated: string | null }[] {
+    const out: { id: string; updated: string | null }[] = [];
+    for (const [id, stored] of this.pendingTargets) {
+      if (this.state.heads[id] === undefined) out.push({ id, updated: stored.updated });
+    }
+    return out;
+  }
+
+  /** Discard a never-synced local chat (reconciliation decided the server
+   *  version wins). Refuses to touch chats with a server head. */
+  async dropUnsyncedChat(chatId: string): Promise<void> {
+    if (this.state.heads[chatId] !== undefined) return;
+    this.pendingTargets.delete(chatId);
+    await deleteDirectory(`chats/${chatId}`);
+  }
+
+  /** Upload locally-stored blobs this chat references that the server is
+   *  missing. Needed for pending targets hydrated from disk — saveChat
+   *  only uploads blobs for chats saved through it. */
+  async ensureBlobsUploaded(chatId: string): Promise<void> {
+    const stored = this.pendingTargets.get(chatId);
+    if (stored) await this.uploadMissingBlobs(chatId, stored);
+  }
+
   /** Persist a chat as a delta. Idempotent on retry. */
   async saveChat(chat: Chat): Promise<void> {
     const stored = await this.uploadBlobsAndExtract(chat);
@@ -242,16 +269,19 @@ export class ChatSync {
 
   private async uploadBlobsAndExtract(chat: Chat): Promise<StoredChat> {
     const stored = await extractChatBlobs(chat);
-    const blobIds = collectChatBlobIds(stored);
-    for (const blobId of blobIds) {
+    await this.uploadMissingBlobs(chat.id, stored);
+    return stored;
+  }
+
+  private async uploadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
+    for (const blobId of collectChatBlobIds(stored)) {
       if (await api.headBlob(blobId)) continue;
-      const blob = await getChatBlob(chat.id, blobId);
+      const blob = await getChatBlob(chatId, blobId);
       if (!blob) continue;
       const plain = new Uint8Array(await blob.arrayBuffer());
       const cipher = await encryptBlob(this.dek, plain, this.userId, blobId);
       await api.putBlob(blobId, cipher);
     }
-    return stored;
   }
 
   /** Compute the delta for one chat and post it. Returns true on
