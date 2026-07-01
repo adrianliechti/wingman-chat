@@ -7,11 +7,10 @@
  *   { version: 2, kid: 1, pinProtected: false, dek: "<base64 raw key>" }
  *   { version: 2, kid: 1, pinProtected: true,  wrappedDek, nonce, kdf }
  *
- * `kid` names the key inside every frame envelope; version-1 keystores
- * predate it and imply kid 1. The server treats this body as opaque.
- * CAS via If-Match prevents concurrent stomp; the server keeps
- * `keystore.prev.json` as a one-version backup against immediate user
- * regret.
+ * `kid` names the key inside every frame envelope. The server treats
+ * this body as opaque. CAS via If-Match prevents concurrent stomp; the
+ * server keeps `keystore.prev.json` as a one-version backup against
+ * immediate user regret.
  */
 
 import * as api from "./storeClient";
@@ -26,16 +25,16 @@ import {
 } from "./crypto";
 
 export interface PlainKeystore {
-  version: 1 | 2;
-  /** Key id stamped into frame envelopes; absent in version-1 keystores (implies 1). */
-  kid?: number;
+  version: 2;
+  /** Key id stamped into frame envelopes. */
+  kid: number;
   pinProtected: false;
   dek: string; // base64 32 bytes
 }
 
 export interface ProtectedKeystore {
-  version: 1 | 2;
-  kid?: number;
+  version: 2;
+  kid: number;
   pinProtected: true;
   wrappedDek: string;
   nonce: string;
@@ -53,14 +52,10 @@ export function isPinProtected(k: Keystore): k is ProtectedKeystore {
   return k.pinProtected === true;
 }
 
-function keystoreKid(k: Keystore): number {
-  return k.kid ?? 1;
-}
-
 function dekFromPlain(k: PlainKeystore): DEK {
   const raw = fromBase64(k.dek);
   if (raw.length !== 32) throw new Error("invalid DEK length");
-  return { raw, kid: keystoreKid(k) };
+  return { raw, kid: k.kid };
 }
 
 function plainFromDek(dek: DEK): PlainKeystore {
@@ -114,7 +109,7 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
   if (!isPinProtected(state.keystore)) {
     return dekFromPlain(state.keystore);
   }
-  return unwrapDEKWithPin(state.keystore, pin, userId, keystoreKid(state.keystore));
+  return unwrapDEKWithPin(state.keystore, pin, userId, state.keystore.kid);
 }
 
 /**

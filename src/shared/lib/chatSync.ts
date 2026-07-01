@@ -33,7 +33,6 @@ import {
   appendBlob,
   deleteDirectory,
   deleteFile,
-  fileExists,
   listDirectories,
   readJson,
   readText,
@@ -69,7 +68,6 @@ async function saveState(state: SyncState): Promise<void> {
 // Per-chat paths in OPFS
 const logPath = (chatId: string) => `chats/${chatId}/log.jsonl`;
 const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
-const legacyChatJsonPath = (chatId: string) => `chats/${chatId}/chat.json`;
 
 /** Read the local mirror without a DEK — logs and pending targets are
  *  plaintext locally; the PIN only protects the server copies. Lets the
@@ -82,7 +80,6 @@ export async function readLocalMirror(): Promise<Chat[]> {
       const text = await readText(logPath(id));
       if (text) stored = replayLog(id, decodeLines(text)).chat ?? undefined;
     }
-    if (!stored) stored = await readJson<StoredChat>(legacyChatJsonPath(id));
     if (stored) out.push(await rehydrateChatBlobs(stored));
   }
   return out;
@@ -229,33 +226,6 @@ export class ChatSync {
     return out;
   }
 
-  /** Chats held as pending targets that have never been synced (no server
-   *  head) — legacy OPFS-only chats promoted by hydrateFromOpfs, or chats
-   *  created while the server was unreachable. */
-  unsyncedChats(): { id: string; updated: string | null }[] {
-    const out: { id: string; updated: string | null }[] = [];
-    for (const [id, stored] of this.pendingTargets) {
-      if (this.state.heads[id] === undefined) out.push({ id, updated: stored.updated });
-    }
-    return out;
-  }
-
-  /** Discard a never-synced local chat (reconciliation decided the server
-   *  version wins). Refuses to touch chats with a server head. */
-  async dropUnsyncedChat(chatId: string): Promise<void> {
-    if (this.state.heads[chatId] !== undefined) return;
-    this.pendingTargets.delete(chatId);
-    await deleteDirectory(`chats/${chatId}`);
-  }
-
-  /** Upload locally-stored blobs this chat references that the server is
-   *  missing. Needed for pending targets hydrated from disk — saveChat
-   *  only uploads blobs for chats saved through it. */
-  async ensureBlobsUploaded(chatId: string): Promise<void> {
-    const stored = this.pendingTargets.get(chatId);
-    if (stored) await this.uploadMissingBlobs(chatId, stored);
-  }
-
   /** Persist a chat as a delta. Idempotent on retry. */
   async saveChat(chat: Chat): Promise<void> {
     const stored = await this.uploadBlobsAndExtract(chat);
@@ -329,21 +299,6 @@ export class ChatSync {
   private async hydrateFromOpfs(): Promise<void> {
     const ids = await listDirectories("chats");
     for (const id of ids) {
-      // Migrate legacy chat.json → log.jsonl if needed.
-      const hasLog = await fileExists(logPath(id));
-      if (!hasLog) {
-        const legacy = await readJson<StoredChat>(legacyChatJsonPath(id));
-        if (legacy) {
-          // Seed log from legacy chat. This represents a chat that was
-          // saved locally but has never been synced — so we leave
-          // lastSynced empty and stash it as a pending target instead.
-          this.pendingTargets.set(id, legacy);
-          await writeJson(targetPath(id), legacy);
-          await deleteFile(legacyChatJsonPath(id));
-          continue;
-        }
-      }
-
       // Replay log → lastSynced.
       const text = await readText(logPath(id));
       if (text) {

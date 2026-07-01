@@ -59,26 +59,10 @@ describe("event encryption", () => {
     await expect(decryptEvent(await generateDEK(1), frame, "user1", "chat1", 1)).rejects.toThrow(/key id 2/);
   });
 
-  it("decrypts legacy headerless frames", async () => {
+  it("rejects frames without the versioned header", async () => {
     const dek = await generateDEK();
-    const payload = JSON.stringify({ legacy: true });
-
-    // Reconstruct the v1 wire format by hand: nonce(12) || ct || tag.
-    const key = await crypto.subtle.importKey("raw", dek.raw, { name: "AES-GCM" }, false, ["encrypt"]);
-    const nonce = crypto.getRandomValues(new Uint8Array(12));
-    const aad = new TextEncoder().encode("event:user1:chat1:3");
-    const ct = new Uint8Array(
-      await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv: nonce, additionalData: aad },
-        key,
-        new TextEncoder().encode(payload),
-      ),
-    );
-    const frame = new Uint8Array(nonce.length + ct.length);
-    frame.set(nonce, 0);
-    frame.set(ct, nonce.length);
-
-    expect(await decryptEvent(dek, toBase64(frame), "user1", "chat1", 3)).toEqual({ legacy: true });
+    const headerless = toBase64(crypto.getRandomValues(new Uint8Array(64)).fill(0x00, 0, 1));
+    await expect(decryptEvent(dek, headerless, "user1", "chat1", 1)).rejects.toThrow(/frame version/);
   });
 });
 

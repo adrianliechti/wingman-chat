@@ -166,13 +166,11 @@ export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: strin
 // Event encryption -------------------------------------------------------
 //
 // Wire format for a "frame" (the base64 payload the server stores):
-//   v2 (all new writes): 0x02 || kid(1) || nonce(12) || ciphertext || tag(16)
-//   v1 (legacy):                          nonce(12) || ciphertext || tag(16)
+//   0x02 || kid(1) || nonce(12) || ciphertext || tag(16)
 //
 // The kid byte is a routing hint, not authenticated data — a tampered kid
 // selects the wrong key and the GCM tag check fails, same as any other
-// corruption. Legacy frames have no header; a v1 nonce can start with 0x02
-// by chance, so decryption tries the v2 parse first and falls back.
+// corruption.
 
 async function aesGcmEncryptBytes(dek: DEK, plaintext: Uint8Array, aad: string): Promise<Bytes> {
   const key = await importDekForAesGcm(dek);
@@ -196,44 +194,28 @@ async function aesGcmEncrypt(dek: DEK, plaintext: Uint8Array, aad: string): Prom
   return toBase64(await aesGcmEncryptBytes(dek, plaintext, aad));
 }
 
-async function aesGcmDecryptAt(dek: DEK, bytes: Bytes, offset: number, aad: string): Promise<Bytes> {
-  const nonce = bufFrom(bytes.slice(offset, offset + NONCE_BYTES));
-  const ct = bufFrom(bytes.slice(offset + NONCE_BYTES));
-  const key = await importDekForAesGcm(dek);
-  const pt = new Uint8Array(
-    await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce, additionalData: encodeUtf8(aad) }, key, ct),
-  );
-  return bufFrom(pt);
-}
-
 async function aesGcmDecrypt(dek: DEK, frame: string, aad: string): Promise<Bytes> {
   return aesGcmDecryptBytes(dek, fromBase64(frame), aad);
 }
 
 async function aesGcmDecryptBytes(dek: DEK, bytes: Bytes, aad: string): Promise<Bytes> {
-  if (bytes.length < NONCE_BYTES + GCM_TAG_BYTES) {
+  if (bytes.length < 2 + NONCE_BYTES + GCM_TAG_BYTES) {
     throw new Error("frame too short");
   }
-
-  const isV2 = bytes[0] === FRAME_V2 && bytes.length >= 2 + NONCE_BYTES + GCM_TAG_BYTES;
-
-  if (isV2 && bytes[1] === dek.kid) {
-    try {
-      return await aesGcmDecryptAt(dek, bytes, 2, aad);
-    } catch {
-      // Could be a legacy frame whose random nonce starts with 0x02 and
-      // whose second byte happens to match the kid — fall through.
-    }
+  if (bytes[0] !== FRAME_V2) {
+    throw new Error(`unknown frame version ${bytes[0]}`);
+  }
+  if (bytes[1] !== dek.kid) {
+    throw new Error(`frame encrypted with unknown key id ${bytes[1]} (have ${dek.kid})`);
   }
 
-  try {
-    return await aesGcmDecryptAt(dek, bytes, 0, aad);
-  } catch (err) {
-    if (isV2 && bytes[1] !== dek.kid) {
-      throw new Error(`frame encrypted with unknown key id ${bytes[1]} (have ${dek.kid})`);
-    }
-    throw err;
-  }
+  const nonce = bufFrom(bytes.slice(2, 2 + NONCE_BYTES));
+  const ct = bufFrom(bytes.slice(2 + NONCE_BYTES));
+  const key = await importDekForAesGcm(dek);
+  const pt = new Uint8Array(
+    await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce, additionalData: encodeUtf8(aad) }, key, ct),
+  );
+  return bufFrom(pt);
 }
 
 function eventAad(userId: string, chatId: string, seq: number): string {

@@ -11,7 +11,6 @@
  *      may rotate the DEK / re-init sync.
  */
 
-import { migrateLocalChatsToServer } from "@/features/settings/lib/migrateToServer";
 import { getConfig } from "@/shared/config";
 import { ChatSync } from "./chatSync";
 import * as api from "./storeClient";
@@ -51,9 +50,9 @@ function setSession(next: Session) {
   session = next;
   for (const l of listeners) l(next);
   if (next.status === "ready") {
-    // Best-effort reconciliation of never-synced local chats; idempotent
-    // and cheap when there is nothing to reconcile.
-    void migrateLocalChatsToServer(next.sync).catch((err) => console.error("storeSession: reconciliation failed", err));
+    // Push anything that didn't reach the server last session (crash,
+    // network blip). Cheap no-op when nothing is pending.
+    void next.sync.flushPending().catch((err) => console.error("storeSession: flush failed", err));
   }
 }
 
