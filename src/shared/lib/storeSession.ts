@@ -208,17 +208,22 @@ export async function whenReady(): Promise<ReadySession> {
   await initSession();
   if (session.status === "ready") return session;
   return new Promise((resolve, reject) => {
-    const unsub = subscribeSession((s) => {
-      if (s.status === "ready") {
-        unsub();
-        resolve(s);
-      } else if (s.status === "error") {
-        unsub();
-        reject(s.error);
-      } else if (s.status === "disabled") {
-        unsub();
-        reject(new Error("store disabled"));
-      }
+    // subscribeSession invokes the callback synchronously with the current
+    // state — before `unsub` is assigned — so settle via a flag instead of
+    // unsubscribing from inside the callback.
+    let settled = false;
+    let unsub: (() => void) | null = null;
+    const settle = (fn: () => void) => {
+      settled = true;
+      fn();
+      unsub?.();
+    };
+    unsub = subscribeSession((s) => {
+      if (settled) return;
+      if (s.status === "ready") settle(() => resolve(s));
+      else if (s.status === "error") settle(() => reject(s.error));
+      else if (s.status === "disabled") settle(() => reject(new Error("store disabled")));
     });
+    if (settled) unsub();
   });
 }
