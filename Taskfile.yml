@@ -10,6 +10,7 @@ tasks:
     env:
       PORT: "8080"
       PREFIX: "/"
+      CHATSTORE_ENABLED: "true"
     cmds:
       - go run .
 

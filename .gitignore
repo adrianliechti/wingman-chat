@@ -25,4 +25,5 @@ dist-ssr
 *.sw?
 /public/config.json
 /public/pyodide
+/data
 .env
