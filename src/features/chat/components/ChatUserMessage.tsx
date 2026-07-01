@@ -1,5 +1,6 @@
 import { Pencil } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useState } from "react";
+import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
 import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
@@ -7,36 +8,69 @@ import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageEditor } from "./ChatMessageEditor";
+import { formatArtifactReference, parseArtifactReference } from "./chatMessageUtils";
 
 type ChatUserMessageProps = {
   message: Message;
   index: number;
   isResponding?: boolean;
   isLast?: boolean;
-  onGoToLatest?: () => void;
 };
 
-export const ChatUserMessage = memo(function ChatUserMessage({
-  message,
-  index,
-  isResponding,
-  onGoToLatest,
-}: ChatUserMessageProps) {
+export const ChatUserMessage = memo(function ChatUserMessage({ message, index, isResponding }: ChatUserMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
+  // Drive the action-bar reveal with JS hover instead of CSS :hover — Safari
+  // leaves :hover sticky (notably after a trackpad tap), so the buttons wouldn't
+  // hide on mouse-leave.
+  const [hovered, setHovered] = useState(false);
   // Get first text content only (user's typed message)
   const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
   const [editContent, setEditContent] = useState(textContent);
   // Get additional text parts (file attachments) - all text content after the first one
   const textParts = message.content.filter((p): p is TextContent => p.type === "text");
   const additionalTextContent = textParts.slice(1);
-  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);
+  // Names of attachments already rendered inline (images/audio/files). Their
+  // artifact reference is still sent so the model knows the workspace path, but
+  // the chip would just duplicate the inline preview — so suppress it here.
+  const inlineMediaNames = new Set(
+    message.content
+      .filter(
+        (p): p is ImageContent | AudioContent | FileContent =>
+          p.type === "image" || p.type === "audio" || p.type === "file",
+      )
+      .map((p) => p.name)
+      .filter((n): n is string => !!n),
+  );
+  const basename = (path: string) => path.split("/").pop() ?? path;
+  // Split off artifact-attachment references — rendered as clickable chips that
+  // open the file in the artifacts editor — from any other plain text parts.
+  const attachedArtifactPaths: string[] = [];
+  const plainTextAttachments: TextContent[] = [];
+  // For the editor: a reference that only points at inline media (images) would
+  // render a second time as a file tile, so split those paths out into
+  // `mediaRefPaths` (re-attached on submit, tied to the surviving media) and keep
+  // just the genuine file/plain-text parts editable.
+  const mediaRefPaths: string[] = [];
+  const editableAdditionalText: TextContent[] = [];
+  for (const part of additionalTextContent) {
+    const paths = parseArtifactReference(part.text);
+    if (!paths.length) {
+      plainTextAttachments.push(part);
+      editableAdditionalText.push(part);
+      continue;
+    }
+    const nonInline = paths.filter((p) => !inlineMediaNames.has(basename(p)));
+    attachedArtifactPaths.push(...nonInline);
+    mediaRefPaths.push(...paths.filter((p) => inlineMediaNames.has(basename(p))));
+    if (nonInline.length) editableAdditionalText.push({ type: "text", text: formatArtifactReference(nonInline) });
+  }
+  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(editableAdditionalText);
   // Get media content (images, audio, files) for editing
   const mediaContent = message.content.filter(
     (p): p is ImageContent | AudioContent | FileContent =>
       p.type === "image" || p.type === "audio" || p.type === "file",
   );
   const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { sendMessage, chat } = useChat();
 
   // Check for images and files in content
@@ -45,38 +79,14 @@ export const ChatUserMessage = memo(function ChatUserMessage({
   ) as Content[];
   const hasMedia = mediaParts.length > 0;
 
-  // Auto-resize textarea and focus when entering edit mode
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [isEditing]);
-
-  // Auto-resize textarea on content change
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, []);
-
   const handleEditContentChange = (value: string) => {
     setEditContent(value);
-
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-      }
-    });
   };
 
   const handleStartEdit = () => {
     if (isResponding) return;
     setEditContent(textContent);
-    setEditAdditionalTextContent(additionalTextContent);
+    setEditAdditionalTextContent(editableAdditionalText);
     setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
@@ -84,7 +94,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditContent(textContent);
-    setEditAdditionalTextContent(additionalTextContent);
+    setEditAdditionalTextContent(editableAdditionalText);
     setEditMediaContent(mediaContent);
   };
 
@@ -101,7 +111,6 @@ export const ChatUserMessage = memo(function ChatUserMessage({
     if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat)
       return;
 
-    onGoToLatest?.();
     setIsEditing(false);
 
     // Truncate history and send edited message, preserving additional text content (file attachments) and media
@@ -112,6 +121,14 @@ export const ChatUserMessage = memo(function ChatUserMessage({
     }
     newContent.push(...editAdditionalTextContent);
     newContent.push(...editMediaContent);
+    // Re-attach the workspace reference for media that survived editing (it was
+    // hidden from the editor to avoid showing the image twice) so the model still
+    // learns each image's artifact path. Dropped media drops its reference.
+    const survivingMediaNames = new Set(editMediaContent.map((m) => m.name).filter((n): n is string => !!n));
+    const keptMediaRefs = mediaRefPaths.filter((p) => survivingMediaNames.has(basename(p)));
+    if (keptMediaRefs.length) {
+      newContent.push({ type: "text", text: formatArtifactReference(keptMediaRefs) });
+    }
     const editedMessage = { ...message, content: newContent };
     await sendMessage(editedMessage, truncatedHistory);
   };
@@ -119,7 +136,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleConfirmEdit();
+      void handleConfirmEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       handleCancelEdit();
@@ -127,14 +144,17 @@ export const ChatUserMessage = memo(function ChatUserMessage({
   };
 
   return (
-    <div className="flex justify-end pb-2 group text-neutral-900 dark:text-neutral-200">
-      <div className={cn("flex flex-col items-end", isEditing && "flex-1")}>
+    <div
+      className="flex justify-end pb-2 text-neutral-900 dark:text-neutral-200 min-w-0 overflow-hidden"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className={cn("flex flex-col items-end min-w-0", isEditing ? "flex-1" : "max-w-[85%]")}>
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
             onEditContentChange={handleEditContentChange}
             onKeyDown={handleKeyDown}
-            textareaRef={textareaRef}
             editAdditionalTextContent={editAdditionalTextContent}
             onRemoveAdditionalText={handleRemoveAdditionalText}
             editMediaContent={editMediaContent}
@@ -144,12 +164,20 @@ export const ChatUserMessage = memo(function ChatUserMessage({
           />
         ) : (
           <>
-            <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto">
-              <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
-              {/* Show additional text content (file attachments) as attachment tiles */}
-              {additionalTextContent.length > 0 && (
+            <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
+              <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere] min-w-0">{textContent}</pre>
+              {/* Artifact attachments — clickable chips that open the file in the editor */}
+              {attachedArtifactPaths.length > 0 && (
+                <div className="pt-2 flex flex-wrap gap-2">
+                  {attachedArtifactPaths.map((path) => (
+                    <ArtifactChip key={path} path={path} />
+                  ))}
+                </div>
+              )}
+              {/* Any remaining plain text attachments as attachment tiles */}
+              {plainTextAttachments.length > 0 && (
                 <div className="pt-2">
-                  <ChatInputAttachments attachments={additionalTextContent} extractingAttachments={new Set()} />
+                  <ChatInputAttachments attachments={plainTextAttachments} extractingAttachments={new Set()} />
                 </div>
               )}
 
@@ -164,13 +192,13 @@ export const ChatUserMessage = memo(function ChatUserMessage({
             <div
               className={cn(
                 "flex items-center gap-2 justify-end mt-1 pr-1 transition-opacity duration-200",
-                isResponding ? "invisible" : "opacity-0 group-hover:opacity-100",
+                isResponding ? "invisible" : hovered ? "opacity-100" : "opacity-100 md:opacity-0",
               )}
             >
               <CopyButton markdown={textContent} className="h-4 w-4" />
               <button
                 onClick={handleStartEdit}
-                className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors"
+                className="p-2 -m-1 text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100"
                 title="Edit message"
                 type="button"
               >

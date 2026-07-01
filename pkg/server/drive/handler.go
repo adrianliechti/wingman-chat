@@ -12,6 +12,7 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
 	"github.com/adrianliechti/wingman-chat/pkg/drive/local"
+	"github.com/adrianliechti/wingman-chat/pkg/drive/obo"
 	"github.com/adrianliechti/wingman-chat/pkg/drive/onedrive"
 	"github.com/adrianliechti/wingman-chat/pkg/drive/sharepoint"
 )
@@ -47,6 +48,23 @@ func New(cfgs []config.Drive) *Handler {
 		if err != nil {
 			fmt.Printf("drive %q: %v\n", cfg.ID, err)
 			continue
+		}
+
+		if cfg.Auth != nil {
+			scope := cfg.Auth.Scope
+
+			if scope == "" {
+				scope = "https://graph.microsoft.com/.default"
+			}
+
+			exchanger, err := obo.New(cfg.Auth.Issuer, cfg.Auth.ClientID, cfg.Auth.ClientSecret, scope)
+
+			if err != nil {
+				fmt.Printf("drive %q: %v\n", cfg.ID, err)
+				continue
+			}
+
+			p = obo.Wrap(p, exchanger)
 		}
 
 		h.drives[cfg.ID] = p

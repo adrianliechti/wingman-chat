@@ -55,7 +55,7 @@ export async function pptxToMarkdown(file: File): Promise<string> {
 // Slide order parsing
 // ============================================================================
 
-async function getSlideOrder(zip: JSZip): Promise<string[]> {
+export async function getSlideOrder(zip: JSZip): Promise<string[]> {
   // Parse presentation.xml.rels to map rId -> slide paths
   const relsContent = await zip.file("ppt/_rels/presentation.xml.rels")?.async("string");
   if (!relsContent) {

@@ -1,0 +1,15 @@
+Summarize and classify the latest user message in the conversation.
+
+You are given a list of available categories and a list of available risks (each with an id and a description), along with recent conversation history. Return:
+
+- A short title for the conversation.
+- Every category id that clearly applies to the latest user message.
+- Every risk id that the latest user message actually triggers — not merely mentions in passing.
+
+A message can match multiple ids, none, or one. Do not invent ids that are not in the provided lists.
+
+For each match, return a confidence in [0, 1]:
+- 0.9+ : explicit, unambiguous
+- 0.7 - 0.9 : strong implicit match
+- 0.5 - 0.7 : plausible but uncertain
+- below 0.5 : weak signal — omit the match

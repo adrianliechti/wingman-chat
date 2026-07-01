@@ -1,59 +1,33 @@
 /**
  * Output styles and instruction templates for the notebook studio.
  *
- * This module owns all of the prompt text (slide/podcast/report/infographic
- * style prompts + the studio instruction templates) and exposes:
- *   - per-type style registries (user config can override defaults)
+ * Studio instruction templates and slide-common rules are bundled here
+ * via `?raw` imports. Per-type style prompts come from the server's notebook
+ * inventory (`notebooks.ts`, served by `GET /notebooks`) and are fetched on
+ * demand (see `resolvePrompt`). User-supplied styles from `config.notebook.*`
+ * override the built-ins and can be inline strings or URLs the same way.
+ *
+ * Exposes:
+ *   - per-type style registries (`config.notebook.*` overrides defaults)
  *   - `OUTPUT_META` — title + template + default style per output type
  *   - `buildInstructions(type, styleId)` — assembles the final system prompt
  */
 
 import { getConfig } from "@/shared/config";
 import chatInstructions from "../prompts/chat.txt?raw";
-import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
-import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
-import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
-import infographicStyleBricks from "../prompts/infographic-style-bricks.txt?raw";
-import infographicStyleClay from "../prompts/infographic-style-clay.txt?raw";
-import infographicStyleEditorial from "../prompts/infographic-style-editorial.txt?raw";
-import infographicStyleInstructional from "../prompts/infographic-style-instructional.txt?raw";
-import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw";
-import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
-import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
-import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
-import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import architectureStyleC4 from "../prompts/architecture-style-c4.txt?raw";
-import architectureStyleSequence from "../prompts/architecture-style-sequence.txt?raw";
-import processStyleBpmn from "../prompts/process-style-bpmn.txt?raw";
-import processStyleItil from "../prompts/process-style-itil.txt?raw";
-import processStyleSdlc from "../prompts/process-style-sdlc.txt?raw";
-import processStyleSwimlane from "../prompts/process-style-swimlane.txt?raw";
-import processStyleThreeLines from "../prompts/process-style-three-lines.txt?raw";
-import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
-import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
-import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
-import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
-import reportStyleResearch from "../prompts/report-style-research.txt?raw";
 import slideCommonRules from "../prompts/slide-style-common.txt?raw";
-import slideStyleConsulting from "../prompts/slide-style-consulting.txt?raw";
-import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
-import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
-import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
-import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
-import studioArchitectureInstructions from "../prompts/studio-architecture.txt?raw";
-import studioDataCatalogInstructions from "../prompts/studio-data-catalog.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
-import studioProcessInstructions from "../prompts/studio-process.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
 import studioSlideImageInstructions from "../prompts/studio-slide-images.txt?raw";
+import studioSlideOnePagerInstructions from "../prompts/studio-slide-one-pager.txt?raw";
+import studioSlidePlannerInstructions from "../prompts/studio-slide-planner.txt?raw";
+import studioSlideWriterInstructions from "../prompts/studio-slide-writer.txt?raw";
 import type { OutputType } from "../types/notebook";
+import { notebookStyles } from "./notebooks";
 
 // ── Public prompt exports ──────────────────────────────────────────────
 
@@ -64,219 +38,83 @@ export { chatInstructions };
 export interface Style {
   id: string;
   label: string;
+  /**
+   * Either inline prompt text, or a URL fetched lazily and cached.
+   * URLs are detected by an `http(s)://` prefix or a leading `/`
+   * (e.g. `/notebooks/<type>/<id>.md` served by the inventory endpoint).
+   */
   prompt: string;
   description?: string;
   voices?: string[];
 }
 
-export interface StyleRegistry {
-  /** All styles available for this type (defaults or config overrides). */
-  getAll(): Style[];
-  /** Resolve a style by id, falling back to the first available. */
-  get(id?: string): Style;
+// ── Lazy prompt loading from URL ──────────────────────────────────────
+
+const promptCache = new Map<string, Promise<string>>();
+
+/**
+ * Resolve a prompt value — if it looks like a URL (`http(s)://…` or a
+ * page-absolute `/…` path served from `public/`), fetch and cache it.
+ * Anything else is treated as inline text and returned as-is.
+ */
+async function resolvePrompt(value: string): Promise<string> {
+  if (!value) return "";
+  if (!/^(https?:\/\/|\/)/.test(value)) return value;
+
+  const cached = promptCache.get(value);
+  if (cached) return cached;
+
+  const promise = fetch(value).then((resp) => {
+    if (!resp.ok) throw new Error(`failed to fetch prompt from ${value}: ${resp.status} ${resp.statusText}`);
+    return resp.text();
+  });
+  // Drop failed entries so a later attempt can fire a new request.
+  promise.catch(() => promptCache.delete(value));
+  promptCache.set(value, promise);
+  return promise;
 }
 
-function makeRegistry(defaults: Style[], override: () => Style[] | undefined): StyleRegistry {
+export interface StyleRegistry {
+  /** All styles available for this type (config overrides, else inventory built-ins). */
+  getAll(): Style[];
+  /** Resolve a style by id, falling back to the first available; undefined if none exist. */
+  get(id?: string): Style | undefined;
+}
+
+type NotebookStyleType = "slides" | "podcasts" | "reports" | "infographics";
+
+/**
+ * Registry for one output type. Built-in styles come from the server notebook
+ * inventory (`notebooks.ts`, loaded at startup); a matching `config.notebook.<type>`
+ * array, when present, overrides them. Resolution is lazy because both sources are
+ * populated after this module is first evaluated.
+ */
+function styleRegistry(type: NotebookStyleType): StyleRegistry {
   const resolve = (): Style[] => {
-    const o = override();
-    return o && o.length > 0 ? o : defaults;
+    const overrides = getConfig().notebook?.[type] as { name: string; prompt: string; voices?: string[] }[] | undefined;
+
+    if (overrides && overrides.length > 0) {
+      return overrides.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt, voices: s.voices }));
+    }
+
+    return notebookStyles(type);
   };
+
   return {
     getAll: resolve,
     get: (id) => {
       const all = resolve();
-      return all.find((s) => s.id === id) ?? all[0] ?? defaults[0];
+      return all.find((s) => s.id === id) ?? all[0];
     },
   };
 }
 
 const toId = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
-// ── Registries ─────────────────────────────────────────────────────────
-
-export const slideStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "whiteboard",
-      label: "Whiteboard",
-      description: "Clean minimal design with hand-drawn feel and open whitespace",
-      prompt: slideStyleWhiteboard,
-    },
-    {
-      id: "consulting",
-      label: "Consulting",
-      description: "Professional business style with structured layouts and accent colors",
-      prompt: slideStyleConsulting,
-    },
-    {
-      id: "dark",
-      label: "Dark",
-      description: "Bold dark backgrounds with high-contrast text and vibrant highlights",
-      prompt: slideStyleDark,
-    },
-    {
-      id: "swiss",
-      label: "Swiss",
-      description: "Grid-based typography-first design inspired by Swiss graphic style",
-      prompt: slideStyleSwiss,
-    },
-    {
-      id: "nature",
-      label: "Nature",
-      description: "Warm earthy tones with organic shapes and natural imagery",
-      prompt: slideStyleNature,
-    },
-  ],
-  () => getConfig().canvas?.slides?.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt })),
-);
-
-export const podcastStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "overview",
-      label: "Overview",
-      description: "A single-host overview of the key points and main takeaways",
-      prompt: podcastStyleOverview,
-      voices: ["host"],
-    },
-    {
-      id: "deep-dive",
-      label: "Deep Dive",
-      description: "An in-depth exploration of the topic with detailed analysis",
-      prompt: podcastStyleDeepDive,
-      voices: ["analyst"],
-    },
-    {
-      id: "briefing",
-      label: "Briefing",
-      description: "A concise narrated briefing of the essential facts",
-      prompt: podcastStyleBriefing,
-      voices: ["narrator"],
-    },
-    {
-      id: "story",
-      label: "Story",
-      description: "A narrative retelling that weaves sources into a compelling story",
-      prompt: podcastStyleStory,
-      voices: ["storyteller"],
-    },
-    {
-      id: "debate",
-      label: "Debate",
-      description: "A two-host debate examining different perspectives",
-      prompt: podcastStyleDebate,
-      voices: ["host", "skeptic"],
-    },
-  ],
-  () =>
-    getConfig().canvas?.podcasts?.map((p) => ({
-      id: toId(p.name),
-      label: p.name,
-      prompt: p.prompt,
-      voices: p.voices ?? ["host"],
-    })),
-);
-
-export const reportStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "executive",
-      label: "Executive",
-      description: "A polished summary with key findings and recommendations",
-      prompt: reportStyleExecutive,
-    },
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      description: "A data-focused report with metrics and visual indicators",
-      prompt: reportStyleDashboard,
-    },
-    {
-      id: "research",
-      label: "Research",
-      description: "An academic-style analysis with methodology and citations",
-      prompt: reportStyleResearch,
-    },
-    {
-      id: "magazine",
-      label: "Magazine",
-      description: "An editorial-style article designed for broad audiences",
-      prompt: reportStyleMagazine,
-    },
-  ],
-  () => getConfig().canvas?.reports?.map((r) => ({ id: toId(r.name), label: r.name, prompt: r.prompt })),
-);
-
-export const processStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "bpmn",
-      label: "BPMN 2.0",
-      description: "Standard banking / insurance notation — pools, lanes, gateways, events",
-      prompt: processStyleBpmn,
-    },
-    {
-      id: "swimlane",
-      label: "Swimlane",
-      description: "Role-based flowchart that makes cross-team hand-offs explicit",
-      prompt: processStyleSwimlane,
-    },
-    {
-      id: "itil",
-      label: "ITIL / ITSM",
-      description: "Change, incident, problem, or request flows aligned with ITIL",
-      prompt: processStyleItil,
-    },
-    {
-      id: "sdlc",
-      label: "SDLC",
-      description: "Requirements → design → build → release → operate, with SOX gates",
-      prompt: processStyleSdlc,
-    },
-    {
-      id: "three-lines",
-      label: "3 Lines of Defence",
-      description: "Governance view — business / risk & compliance / internal audit",
-      prompt: processStyleThreeLines,
-    },
-  ],
-  () => getConfig().canvas?.processes?.map((p) => ({ id: toId(p.name), label: p.name, prompt: p.prompt })),
-);
-
-export const architectureStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "c4",
-      label: "C4 Model",
-      description: "Context · Container · Component · Deployment — all four views, switchable as tabs",
-      prompt: architectureStyleC4,
-    },
-    {
-      id: "sequence",
-      label: "Sequence",
-      description: "UML sequence — actors and ordered messages for one flow",
-      prompt: architectureStyleSequence,
-    },
-  ],
-  () => getConfig().canvas?.architectures?.map((a) => ({ id: toId(a.name), label: a.name, prompt: a.prompt })),
-);
-
-export const infographicStyles: StyleRegistry = makeRegistry(
-  [
-    { id: "auto", label: "Auto-select", prompt: infographicStyleAuto },
-    { id: "sketch-note", label: "Sketch Note", prompt: infographicStyleSketchNote },
-    { id: "kawaii", label: "Kawaii", prompt: infographicStyleKawaii },
-    { id: "professional", label: "Professional", prompt: infographicStyleProfessional },
-    { id: "scientific", label: "Scientific", prompt: infographicStyleScientific },
-    { id: "anime", label: "Anime", prompt: infographicStyleAnime },
-    { id: "clay", label: "Clay", prompt: infographicStyleClay },
-    { id: "editorial", label: "Editorial", prompt: infographicStyleEditorial },
-    { id: "instructional", label: "Instructional", prompt: infographicStyleInstructional },
-    { id: "bento", label: "Bento Grid", prompt: infographicStyleBento },
-    { id: "bricks", label: "Bricks", prompt: infographicStyleBricks },
-  ],
-  () => getConfig().canvas?.infographics?.map((i) => ({ id: toId(i.name), label: i.name, prompt: i.prompt })),
-);
+export const slideStyles = styleRegistry("slides");
+export const podcastStyles = styleRegistry("podcasts");
+export const reportStyles = styleRegistry("reports");
+export const infographicStyles = styleRegistry("infographics");
 
 // ── Output metadata ────────────────────────────────────────────────────
 
@@ -316,24 +154,6 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
   },
   quiz: { title: "Quiz", template: studioQuizInstructions },
   mindmap: { title: "Mind Map", template: studioMindMapInstructions },
-  process: {
-    title: "Process",
-    template: studioProcessInstructions,
-    styles: processStyles,
-    defaultStyleId: "bpmn",
-  },
-  architecture: {
-    title: "Architecture",
-    template: studioArchitectureInstructions,
-    styles: architectureStyles,
-    defaultStyleId: "c4",
-  },
-  "data-catalog": {
-    title: "Data Catalog",
-    template: studioDataCatalogInstructions,
-    // No style picker — the catalog generation populates all four sections
-    // (inventory / glossary / lineage / contracts) in a single pass.
-  },
 };
 
 // ── Instruction assembly ───────────────────────────────────────────────
@@ -347,6 +167,12 @@ export interface BuildInstructionsOptions {
   instructions?: string;
   /** Slide generation mode: "html" for editable/structured, "images" for AI-generated visuals. */
   slideMode?: "html" | "images";
+  /** Quiz: exact number of questions to produce. */
+  questionCount?: number;
+  /** Quiz: target difficulty level. */
+  difficulty?: "easy" | "medium" | "hard" | "mixed";
+  /** Mind map: number of hierarchy levels deep (root counts as level 1). */
+  depth?: number;
 }
 
 /**
@@ -364,47 +190,108 @@ export interface BuildInstructionsOptions {
  * override block so they take precedence over any defaults baked into the
  * template prompts.
  */
-export function buildInstructions(type: OutputType, styleId?: string, options?: BuildInstructionsOptions): string {
+export async function buildInstructions(
+  type: OutputType,
+  styleId?: string,
+  options?: BuildInstructionsOptions,
+): Promise<string> {
   let prompt: string;
+  const isOnePager = type === "slides" && options?.slideCount === 1 && options?.slideMode !== "images";
 
   if (type === "slides" && options?.slideMode === "images") {
     prompt = studioSlideImageInstructions;
 
     const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
-    prompt += `\n\n${style.prompt}\n`;
+    if (style) {
+      prompt += `\n\n${await resolvePrompt(style.prompt)}\n`;
+    }
   } else {
     const meta = OUTPUT_META[type];
-    prompt = meta.template;
+    prompt = isOnePager ? studioSlideOnePagerInstructions : meta.template;
 
     if (type === "slides") {
       prompt = prompt.replace("{{COMMON_RULES}}", slideCommonRules);
     }
 
     if (meta.styles) {
+      // `get` can return undefined only when the notebook inventory is empty
+      // (e.g. a missing/empty notebook dir); fall back to no style section.
       const style = meta.styles.get(styleId ?? meta.defaultStyleId);
-      prompt = prompt.replace("{{STYLE_SECTION}}", style.prompt);
+      const styleText = style ? await resolvePrompt(style.prompt) : "";
+      prompt = prompt.replace("{{STYLE_SECTION}}", styleText);
     }
   }
 
+  return prompt + buildOverridesBlock(options, { slideCount: type === "slides" && !isOnePager });
+}
+
+/** Render the trailing "User overrides" block shared by all prompt builders. */
+function buildOverridesBlock(
+  options: BuildInstructionsOptions | undefined,
+  include: { slideCount?: boolean } = {},
+): string {
   const overrides: string[] = [];
   if (options?.language) {
     overrides.push(
       `- Write **all output text in ${options.language}** (titles, body copy, labels, captions, speaker lines). This overrides any language used in the source material.`,
     );
   }
-  if (type === "slides" && options?.slideCount && options.slideCount > 0) {
+  if (include.slideCount && options?.slideCount && options.slideCount > 0) {
     const n = Math.round(options.slideCount);
     overrides.push(
-      `- Produce **exactly ${n} slides**. This overrides any slide count mentioned elsewhere in the instructions (e.g. "8–12 slides"). Plan the deck arc to fit this exact length.`,
+      `- Produce **exactly ${n} ${n === 1 ? "slide" : "slides"}**. This overrides any slide count mentioned elsewhere in the instructions (e.g. "8–12 slides"). Plan the deck arc to fit this exact length.`,
+    );
+  }
+  if (options?.questionCount && options.questionCount > 0) {
+    const n = Math.round(options.questionCount);
+    overrides.push(
+      `- Produce **exactly ${n} question${n === 1 ? "" : "s"}**. This overrides any count mentioned elsewhere in the instructions.`,
+    );
+  }
+  if (options?.difficulty) {
+    overrides.push(
+      options.difficulty === "mixed"
+        ? "- Use a **deliberate mix of difficulty levels** (easy, medium, and hard) across the questions."
+        : `- Target an overall **${options.difficulty}** difficulty for the questions.`,
+    );
+  }
+  if (options?.depth && options.depth > 0) {
+    const d = Math.round(options.depth);
+    overrides.push(
+      `- Build the mind map **${d} level${d === 1 ? "" : "s"} deep** (the root is level 1). Keep branches reasonably balanced and don't nest deeper than ${d}.`,
     );
   }
   if (options?.instructions) {
     overrides.push(`- Additional user instructions: ${options.instructions}`);
   }
 
-  if (overrides.length > 0) {
-    prompt += `\n\n---\n\n## User overrides (highest priority)\n\n${overrides.join("\n")}\n`;
-  }
+  if (overrides.length === 0) return "";
+  return `\n\n---\n\n## User overrides (highest priority)\n\n${overrides.join("\n")}\n`;
+}
 
-  return prompt;
+/**
+ * System prompts for the two-phase HTML deck pipeline: one planner
+ * conversation produces the spine + theme.css + per-slide briefs, then one
+ * small writer conversation per slide implements its brief in parallel.
+ * Both share the same style section; the writer additionally gets the
+ * common layout rules it must obey when emitting HTML.
+ */
+export async function buildSlidePrompts(
+  styleId?: string,
+  options?: BuildInstructionsOptions,
+): Promise<{ planner: string; writer: string }> {
+  const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
+  const styleText = style ? await resolvePrompt(style.prompt) : "";
+
+  // The planner owns deck-level overrides (slide count); writers inherit
+  // language/user instructions so copy on every slide complies.
+  const planner =
+    studioSlidePlannerInstructions.replace("{{STYLE_SECTION}}", styleText) +
+    buildOverridesBlock(options, { slideCount: true });
+  const writer =
+    studioSlideWriterInstructions
+      .replace("{{COMMON_RULES}}", slideCommonRules)
+      .replace("{{STYLE_SECTION}}", styleText) + buildOverridesBlock(options);
+
+  return { planner, writer };
 }

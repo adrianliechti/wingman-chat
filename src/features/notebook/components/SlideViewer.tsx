@@ -293,7 +293,7 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
           try {
-            const { default: html2canvas } = await import("html2canvas");
+            const html2canvas = (await import("html2canvas")).default;
             const body = iframe.contentDocument?.body;
             if (!body) continue;
 
@@ -326,7 +326,7 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
       }
     }
 
-    render();
+    void render();
     return () => {
       cancelled = true;
     };

@@ -2,7 +2,7 @@ import mime from "mime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod/v3";
-import instructionsSummarizeChat from "@/features/chat/prompts/chat-title.txt?raw";
+import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
@@ -19,9 +19,11 @@ import type {
   ModelType,
   ReasoningContent,
   Tool,
+  ToolCallContent,
   ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import type { AgentContext } from "@/shared/types/telemetry";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
@@ -48,6 +50,70 @@ function expandToSentences(text: string, start: number, end: number): string {
   }
   if (sentenceStart === -1) return text.substring(start, end).trim();
   return text.substring(sentenceStart, sentenceEnd).trim();
+}
+
+// mime.getExtension is lossy for audio containers — it maps audio/webm to
+// ".weba" and audio/ogg to ".oga", neither of which the transcription endpoint
+// accepts (it allows mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm, flac). Map the
+// types we send to an accepted extension before falling back to mime.
+const TRANSCRIBE_EXTENSIONS: Record<string, string> = {
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/opus": "ogg",
+  "audio/mp4": "m4a",
+  "audio/aac": "m4a",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/flac": "flac",
+};
+
+/**
+ * Optional geometry/quality knobs for image generation, forwarded to the
+ * backend's `/v1/render`. All are provider-neutral: the backend maps each to the
+ * target model's supported values (aspect ratios snap to the nearest available)
+ * and silently drops what a model can't honor, so the same options work across
+ * providers.
+ */
+export interface ImageRenderOptions {
+  /** Aspect ratio like "1:1" or "16:9"; snapped to the nearest the model supports. */
+  aspectRatio?: string;
+  /** Quality tier; higher is slower and may cost more. */
+  quality?: "low" | "medium" | "high";
+  /** Output resolution. */
+  resolution?: "512" | "1K" | "2K" | "4K";
+  /** Background handling (only honored by models that support it). */
+  background?: "transparent" | "opaque";
+  /** Desired output format; negotiated via the `Accept` header, not a form field. */
+  format?: "png" | "jpeg" | "webp";
+}
+
+/**
+ * Best-effort human-readable detail from a failed response body, so tool errors
+ * surface the backend's reason instead of a bare status code. Handles both
+ * plain-text errors (e.g. /api/v1/render) and `{ error: { message } }` /
+ * `{ error }` JSON envelopes, truncated so a stray HTML error page can't flood
+ * the message.
+ */
+async function readErrorBody(resp: Response): Promise<string> {
+  let text: string;
+  try {
+    text = (await resp.text()).trim();
+  } catch {
+    return "";
+  }
+  if (!text) return "";
+
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const body = JSON.parse(text);
+      const message = body?.error?.message ?? body?.error ?? body?.message;
+      if (typeof message === "string" && message.trim()) text = message.trim();
+    } catch {
+      // Not JSON after all — fall back to the raw text.
+    }
+  }
+
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
 
 export class Client {
@@ -85,6 +151,25 @@ export class Client {
     return mappedModels;
   }
 
+  // Lists the MCP servers the backend currently exposes (RBAC-filtered). The
+  // OpenAI SDK has no helper for this endpoint, so we hit `/v1/mcp` directly
+  // (same `{ object: "list", data: [...] }` shape as `/v1/models`).
+  async listMCPs(): Promise<string[]> {
+    const resp = await fetch(new URL("/api/v1/mcp", window.location.origin));
+
+    if (!resp.ok) {
+      throw new Error(`failed to list mcps: ${resp.status}`);
+    }
+
+    const body = await resp.json();
+
+    if (!Array.isArray(body?.data)) {
+      return [];
+    }
+
+    return body.data.map((mcp: { id: string }) => mcp.id);
+  }
+
   async complete(
     model: string,
     instructions: string,
@@ -92,10 +177,11 @@ export class Client {
     tools: Tool[],
     handler?: (content: Content[]) => void,
     options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high";
+      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       signal?: AbortSignal;
+      parentContext?: AgentContext;
     },
   ): Promise<Message> {
     return traceGenAI(
@@ -227,6 +313,11 @@ export class Client {
 
         const emit = () => handler?.([...contentParts]);
 
+        // Track in-flight tool calls by their output index so we can grow their
+        // arguments as deltas arrive. (output_index is present on every event;
+        // the item id is optional and the call id isn't on the delta events.)
+        const toolCallsByIndex = new Map<number, ToolCallContent>();
+
         const runner = this.oai.responses
           .stream({
             model: model,
@@ -267,14 +358,43 @@ export class Client {
             }
             emit();
           })
-          .on("response.output_item.done", (event) => {
+          // Materialize the tool-call part as soon as the call starts, so its
+          // spinner appears right after the intro instead of only once the model
+          // has finished writing all the arguments.
+          .on("response.output_item.added", (event) => {
             if (event.item.type === "function_call") {
-              contentParts.push({
+              const part: ToolCallContent = {
                 type: "tool_call",
                 id: event.item.call_id,
                 name: event.item.name,
-                arguments: event.item.arguments,
-              });
+                arguments: event.item.arguments ?? "",
+              };
+              toolCallsByIndex.set(event.output_index, part);
+              contentParts.push(part);
+              emit();
+            }
+          })
+          // Grow the arguments live as the model writes them (e.g. the Python script).
+          .on("response.function_call_arguments.delta", (event) => {
+            const part = toolCallsByIndex.get(event.output_index);
+            if (part) {
+              part.arguments += event.delta;
+              emit();
+            }
+          })
+          .on("response.output_item.done", (event) => {
+            if (event.item.type === "function_call") {
+              const existing = toolCallsByIndex.get(event.output_index);
+              if (existing) {
+                existing.arguments = event.item.arguments; // authoritative final value
+              } else {
+                contentParts.push({
+                  type: "tool_call",
+                  id: event.item.call_id,
+                  name: event.item.name,
+                  arguments: event.item.arguments,
+                });
+              }
               emit();
             }
           });
@@ -318,39 +438,73 @@ export class Client {
           throw error;
         }
       },
-      { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
+      options?.parentContext,
     ); // end traceGenAI
   }
 
-  async summarizeChat(
+  async classifyChat(
     model: string,
     input: Message[],
     categories: Array<{ id: string; description: string }> = [],
-  ): Promise<{ title: string | null; categories: string[] }> {
+    risks: Array<{ id: string; description: string }> = [],
+  ): Promise<{
+    title: string | null;
+    categories: Array<{ id: string; confidence: number }>;
+    risks: Array<{ id: string; confidence: number }>;
+  }> {
     const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-    const ids = categories.map((c) => c.id);
-    const schema =
-      ids.length > 0
-        ? z
-            .object({
-              title: z.string(),
-              categories: z.array(z.enum(ids as [string, ...string[]])),
-            })
-            .strict()
-        : z
-            .object({
-              title: z.string(),
-              categories: z.array(z.string()),
-            })
-            .strict();
+    const categoryIds = categories.map((c) => c.id);
+    const riskIds = risks.map((r) => r.id);
+
+    const categoryIdSchema = categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
+    const riskIdSchema = riskIds.length > 0 ? z.enum(riskIds as [string, ...string[]]) : z.string();
+
+    const confidenceSchema = z
+      .number()
+      .describe(
+        "Model confidence that this category or risk applies to the latest user message. " +
+          "A value between 0 and 1, where higher values denote higher confidence. " +
+          "Omit matches with confidence below ~0.5.",
+      );
+
+    const schema = z
+      .object({
+        title: z.string().describe("Short, descriptive title for the conversation. Less than 10 words, no quotes."),
+        categories: z
+          .array(
+            z
+              .object({
+                id: categoryIdSchema.describe("Id of a category from the provided list."),
+                confidence: confidenceSchema,
+              })
+              .strict(),
+          )
+          .describe("Categories that clearly apply to the latest user message. May be empty."),
+        risks: z
+          .array(
+            z
+              .object({
+                id: riskIdSchema.describe("Id of a risk from the provided list."),
+                confidence: confidenceSchema,
+              })
+              .strict(),
+          )
+          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
+      })
+      .strict();
+
     const result = await this.parse(
       model,
-      instructionsSummarizeChat,
-      JSON.stringify({ categories, history }),
+      instructionsClassifyChat,
+      JSON.stringify({ categories, risks, history }),
       schema,
-      "summarize_chat",
+      "classify_chat",
     );
-    return { title: result?.title ?? null, categories: result?.categories ?? [] };
+    return {
+      title: result?.title ?? null,
+      categories: result?.categories ?? [],
+      risks: result?.risks ?? [],
+    };
   }
 
   /**
@@ -457,15 +611,6 @@ export class Client {
   }
 
   async translate(lang: string, input: string | Blob): Promise<string | Blob> {
-    if (input instanceof Blob && input.size > 10 * 1024 * 1024) {
-      throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
-    }
-    if (typeof input === "string" && input.length > 50000) {
-      throw new Error(
-        `Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of 50,000 characters`,
-      );
-    }
-
     const data = new FormData();
     data.append("lang", lang);
     const headers: Record<string, string> = {};
@@ -565,9 +710,9 @@ export class Client {
         resolve();
       };
 
-      audio.onerror = (error) => {
+      audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
-        reject(new Error(`Audio playback failed: ${error}`));
+        reject(new Error("Audio playback failed"));
       };
 
       audio.play().catch(reject);
@@ -575,7 +720,9 @@ export class Client {
   }
 
   async transcribe(model: string, blob: Blob): Promise<string> {
-    const extension = mime.getExtension(blob.type) || "audio";
+    // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
+    const baseType = blob.type.split(";")[0].trim();
+    const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
     const result = await (await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })).json();
     return result.text || "";
@@ -608,14 +755,22 @@ export class Client {
     return result.content || "";
   }
 
-  async generateImage(model: string, prompt: string, images?: Blob[]): Promise<Blob> {
+  async generateImage(model: string, prompt: string, images?: Blob[], options?: ImageRenderOptions): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
     images?.forEach((blob, i) => {
       data.append("file", blob, `image_${i}.${mime.getExtension(blob.type) || "image"}`);
     });
-    return (await this.postRaw("/api/v1/render", data)).blob();
+    if (options?.aspectRatio) data.append("aspect_ratio", options.aspectRatio);
+    if (options?.quality) data.append("quality", options.quality);
+    if (options?.resolution) data.append("resolution", options.resolution);
+    if (options?.background) data.append("background", options.background);
+    // Output format is negotiated via Accept, not a form field (see /v1/render).
+    const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
+    // Rendering — especially high quality or large sizes — can take minutes, so
+    // allow well beyond the default render/translate/search budget.
+    return (await this.postRaw("/api/v1/render", data, headers, 300_000)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -629,7 +784,7 @@ export class Client {
       name: tool.name,
       description: tool.description,
 
-      strict: false,
+      strict: tool.strict ?? false,
       parameters: tool.parameters,
     }));
   }
@@ -658,39 +813,35 @@ export class Client {
     };
   }
 
-  // biome-ignore lint: zod schema type is complex
   async parse<T extends z.ZodType<any>>(
     model: string,
     instructions: string,
     input: string,
     schema: T,
     name: string,
+    parentContext?: AgentContext,
   ): Promise<z.infer<T> | null> {
-    return traceGenAI(name, model, async () => {
-      try {
-        const response = await this.oai.responses.parse({
-          model,
-          instructions,
-          input,
-          truncation: "auto",
-          text: { format: zodTextFormat(schema, name) },
-        });
-        return { result: response.output_parsed ?? null };
-      } catch (error) {
-        // Propagate user-initiated cancellations; otherwise degrade gracefully.
-        // Transient errors (rate limits, 5xx, connection issues) have already
-        // been retried by the SDK (see `maxRetries` in the constructor), so
-        // re-throwing them here would not improve reliability — callers of
-        // these utility methods (titles, suggestions, conversions, rewrites)
-        // expect a best-effort result with a fallback.
-        if (isAbortError(error)) {
-          throw error;
+    return traceGenAI(
+      name,
+      model,
+      async () => {
+        try {
+          const response = await this.oai.responses.parse({
+            model,
+            instructions,
+            input,
+            truncation: "auto",
+            text: { format: zodTextFormat(schema, name) },
+          });
+          return { result: response.output_parsed ?? null };
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          console.error(`Error in ${name}:`, error);
+          return { result: null };
         }
-
-        console.error(`Error in ${name}:`, error);
-        return { result: null };
-      }
-    });
+      },
+      parentContext,
+    );
   }
 
   private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {
@@ -699,14 +850,39 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(path: string, data: FormData, headers?: HeadersInit): Promise<Response> {
-    const resp = await fetch(new URL(path, window.location.origin), {
-      method: "POST",
-      headers,
-      body: data,
-    });
+  private async postRaw(path: string, data: FormData, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
+    // Raw fetch has no built-in timeout; without this a stalled backend (render,
+    // translate, search) hangs forever — and when called from a Python bridge it
+    // wedges the single interpreter worker and every queued sandbox call. Image
+    // generation can legitimately run for minutes, so its caller passes a larger
+    // budget (see generateImage).
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    let resp: Response;
+    try {
+      resp = await fetch(new URL(path, window.location.origin), {
+        method: "POST",
+        headers,
+        body: data,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // Surface a readable timeout instead of the runtime's opaque abort message
+      // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
+      if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
 
-    if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
+    if (!resp.ok) {
+      const detail = await readErrorBody(resp);
+      throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+    }
     return resp;
   }
 }

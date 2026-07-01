@@ -1,7 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import type { File } from "@/shared/types/file";
-import type { FileSystem } from "@/shared/types/file";
 import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
+import type { File, FileSystem } from "@/shared/types/file";
 
 export interface HtmlPreviewProps {
   /**
@@ -106,7 +105,7 @@ export function HtmlPreview({
     let cancelled = false;
     let localSession: PreviewSession | null = null;
 
-    (async () => {
+    void (async () => {
       try {
         const newSession = await createPreviewSession();
         if (cancelled) {

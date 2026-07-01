@@ -1,4 +1,3 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +5,7 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { cn } from "@/shared/lib/cn";
 import { type Chat, getTextFromContent } from "@/shared/types/chat";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
 export function ChatSidebar() {
@@ -335,83 +335,48 @@ export function ChatSidebar() {
                 setShowSidebar(false);
               }
             }}
-            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
+            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
             title={displayTitle}
           >
             {displayTitle}
           </button>
         )}
         {renamingChatId !== chatItem.id && (
-          <Menu>
-            <MenuButton
-              className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
-              onClick={(e) => e.stopPropagation()}
+          <DropdownMenu
+            anchor="bottom end"
+            trigger={
+              <MenuButton
+                className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical size={16} />
+              </MenuButton>
+            }
+          >
+            <DropdownMenuItem icon={<Pencil size={14} />} onClick={() => startRename(chatItem)}>
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={chatItem.customIndex != null ? <PinOff size={14} /> : <Pin size={14} />}
+              onClick={() => (chatItem.customIndex != null ? unpinChat(chatItem) : pinChat(chatItem))}
             >
-              <MoreVertical size={16} />
-            </MenuButton>
-            <MenuItems
-              modal={false}
-              transition
-              anchor="bottom end"
-              className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+              {chatItem.customIndex != null ? "Unpin" : "Pin"}
+            </DropdownMenuItem>
+            <DropdownMenuItem icon={<GitBranch size={14} />} onClick={() => forkChat(chatItem)}>
+              Fork
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<Trash size={14} />}
+              destructive
+              onClick={() => {
+                const wasActive = chatItem.id === chat?.id;
+                deleteChat(chatItem.id);
+                if (wasActive) newChat();
+              }}
             >
-              <MenuItem>
-                <button
-                  type="button"
-                  onClick={() => startRename(chatItem)}
-                  className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-                >
-                  <Pencil size={14} />
-                  Rename
-                </button>
-              </MenuItem>
-              <MenuItem>
-                {chatItem.customIndex != null ? (
-                  <button
-                    type="button"
-                    onClick={() => unpinChat(chatItem)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-                  >
-                    <PinOff size={14} />
-                    Unpin
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => pinChat(chatItem)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-                  >
-                    <Pin size={14} />
-                    Pin
-                  </button>
-                )}
-              </MenuItem>
-              <MenuItem>
-                <button
-                  type="button"
-                  onClick={() => forkChat(chatItem)}
-                  className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-                >
-                  <GitBranch size={14} />
-                  Fork
-                </button>
-              </MenuItem>
-              <MenuItem>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const wasActive = chatItem.id === chat?.id;
-                    deleteChat(chatItem.id);
-                    if (wasActive) newChat();
-                  }}
-                  className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
-                >
-                  <Trash size={14} />
-                  Delete
-                </button>
-              </MenuItem>
-            </MenuItems>
-          </Menu>
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenu>
         )}
       </div>
     );
@@ -475,35 +440,28 @@ export function ChatSidebar() {
           <div className="pl-1 pr-2 pt-2">
             <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
               <span>Pinned</span>
-              <Menu>
-                <MenuButton
-                  className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
-                  onClick={(e) => e.stopPropagation()}
+              <DropdownMenu
+                anchor="bottom end"
+                trigger={
+                  <MenuButton
+                    className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical size={16} />
+                  </MenuButton>
+                }
+              >
+                <DropdownMenuItem
+                  icon={<PinOff size={14} />}
+                  onClick={() => {
+                    pinnedChats.forEach((c) => {
+                      unpinChat(c);
+                    });
+                  }}
                 >
-                  <MoreVertical size={16} />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom end"
-                  className="w-40 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
-                >
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        pinnedChats.forEach((c) => {
-                          unpinChat(c);
-                        });
-                      }}
-                      className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                    >
-                      <PinOff size={14} />
-                      Unpin All
-                    </button>
-                  </MenuItem>
-                </MenuItems>
-              </Menu>
+                  Unpin All
+                </DropdownMenuItem>
+              </DropdownMenu>
             </div>
             {pinnedChats.map((chatItem) => (
               <div key={chatItem.id}>{renderChatItem(chatItem, { draggable: true })}</div>
@@ -538,37 +496,31 @@ export function ChatSidebar() {
                   >
                     <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                       <span>{group.category}</span>
-                      <Menu>
-                        <MenuButton
-                          className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
-                          onClick={(e) => e.stopPropagation()}
+                      <DropdownMenu
+                        anchor="bottom end"
+                        trigger={
+                          <MenuButton
+                            className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical size={16} />
+                          </MenuButton>
+                        }
+                      >
+                        <DropdownMenuItem
+                          icon={<Trash size={14} />}
+                          destructive
+                          onClick={() => {
+                            const hasActive = group.chats.some((c) => c.id === chat?.id);
+                            group.chats.forEach((chatItem) => {
+                              deleteChat(chatItem.id);
+                            });
+                            if (hasActive) newChat();
+                          }}
                         >
-                          <MoreVertical size={16} />
-                        </MenuButton>
-                        <MenuItems
-                          modal={false}
-                          transition
-                          anchor="bottom end"
-                          className="w-40 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
-                        >
-                          <MenuItem>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const hasActive = group.chats.some((c) => c.id === chat?.id);
-                                group.chats.forEach((chatItem) => {
-                                  deleteChat(chatItem.id);
-                                });
-                                if (hasActive) newChat();
-                              }}
-                              className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                            >
-                              <Trash size={14} />
-                              Delete All
-                            </button>
-                          </MenuItem>
-                        </MenuItems>
-                      </Menu>
+                          Delete All
+                        </DropdownMenuItem>
+                      </DropdownMenu>
                     </div>
                   </div>
                 );

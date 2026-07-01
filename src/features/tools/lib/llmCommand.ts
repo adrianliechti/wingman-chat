@@ -1,45 +1,32 @@
-import { type Command, type CommandContext, defineCommand, type ExecResult } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role } from "@/shared/types/chat";
-import { decodeStdin } from "./stdin";
+import type { LlmCallOptions } from "./interpreterProtocol";
 
-let model: string | null = null;
+// Default model for `llm` calls — kept in sync with the chat's selected model
+// by ChatProvider. Per-call options override it.
+let defaultModel: string | null = null;
 
 export function setModel(newModel: string | null): void {
-  model = newModel;
+  defaultModel = newModel;
 }
 
-export async function runLlm(prompt: string): Promise<string> {
+export function getModel(): string | null {
+  return defaultModel;
+}
+
+export async function runLlm(prompt: string, options: LlmCallOptions = {}): Promise<string> {
+  const model = options.model || defaultModel;
   if (!model) {
     throw new Error("llm: no model");
   }
 
   const result = await getConfig().client.complete(
     model,
-    "",
+    options.system ?? "",
     [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
     [],
+    undefined,
+    options.effort ? { effort: options.effort } : undefined,
   );
   return getTextFromContent(result.content);
 }
-
-async function executeLlm(args: string[], ctx: CommandContext): Promise<ExecResult> {
-  let prompt = args.join(" ").trim();
-  if (!prompt) {
-    prompt = decodeStdin(ctx.stdin);
-  }
-
-  if (!prompt) {
-    return { stdout: "", stderr: "llm: no prompt provided (pass as args or pipe via stdin)\n", exitCode: 2 };
-  }
-
-  try {
-    const text = await runLlm(prompt);
-    return { stdout: text.endsWith("\n") ? text : `${text}\n`, stderr: "", exitCode: 0 };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { stdout: "", stderr: `${message}\n`, exitCode: 1 };
-  }
-}
-
-export const llmCommands: Command[] = [defineCommand("llm", executeLlm)];

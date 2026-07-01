@@ -1,4 +1,3 @@
-import { marked } from "marked";
 import mime from "mime";
 import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 
@@ -49,10 +48,6 @@ export function lookupContentType(ext: string): string | undefined {
   return mime.getType(normalizedExt) ?? undefined;
 }
 
-export function readAsText(blob: Blob): Promise<string> {
-  return blob.text();
-}
-
 export function readAsDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -71,6 +66,13 @@ export function readAsDataURL(blob: Blob): Promise<string> {
 }
 
 export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  // Native path (Safari 18.2+, Edge/Chrome 140+) — skips the intermediate
+  // binary string entirely.
+  const fromBase64 = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }).fromBase64;
+  if (typeof fromBase64 === "function") {
+    return fromBase64(base64);
+  }
+
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -146,43 +148,11 @@ export function getFileName(path: string): string {
   return path.split("/").pop() || path;
 }
 
-export function getFileExt(path: string): string {
-  const filename = getFileName(path);
-  const parts = filename.split(".");
-  if (parts.length <= 1) {
-    return "";
-  }
-
-  const extension = parts.pop();
-  return extension ? `.${extension}` : "";
-}
-
-export function isAudioUrl(url: string): boolean {
-  const audioExtensions = [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"];
-
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname.toLowerCase();
-
-    // Check file extensions
-    return audioExtensions.some((ext) => pathname.endsWith(ext));
-  } catch {
-    return false;
-  }
-}
-
-export function isVideoUrl(url: string): boolean {
-  const videoExtensions = [".mp4", ".webm", ".avi", ".mov", ".wmv", ".flv", ".mkv"];
-
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname.toLowerCase();
-
-    // Check file extensions
-    return videoExtensions.some((ext) => pathname.endsWith(ext));
-  } catch {
-    return false;
-  }
+/** Lowercase file extension without the leading dot, or "" if there is none. */
+export function fileExtension(pathOrName: string): string {
+  const name = getFileName(pathOrName);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
 export function formatBytes(bytes: number): string {
@@ -202,111 +172,6 @@ export function getToolDisplayName(toolName: string): string {
     .join(" ");
 }
 
-export function markdownToHtml(markdown: string): string {
-  if (!markdown) return "";
-
-  try {
-    let html = marked.parse(markdown, { gfm: true, breaks: false }) as string;
-
-    // Add Word-compatible styling for tables
-    html = html
-      .replace(
-        /<table>/g,
-        '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; border: 1px solid black;">',
-      )
-      .replace(/<td>/g, '<td style="border: 1px solid black; padding: 4px;">')
-      .replace(/<th>/g, '<th style="border: 1px solid black; padding: 4px; font-weight: bold;">');
-
-    return html;
-  } catch (error) {
-    console.error("Failed to convert markdown to HTML:", error);
-    return markdown;
-  }
-}
-
-export function markdownToText(markdown: string): string {
-  if (!markdown) return "";
-
-  const escapeHtml = (text: string) =>
-    text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-
-  const unescapeHtml = (text: string) =>
-    text
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&");
-
-  // Extract code blocks and inline code first to protect them from transformations
-  const codeBlocks: string[] = [];
-  const inlineCodes: string[] = [];
-  const CODE_BLOCK_PLACEHOLDER = "\u0000CB\u0000";
-  const INLINE_CODE_PLACEHOLDER = "\u0000IC\u0000";
-
-  // Extract fenced code blocks first
-  let processed = markdown.replace(/```[\s\S]*?\n([\s\S]*?)```/g, (_, code) => {
-    codeBlocks.push(code.trim());
-    return CODE_BLOCK_PLACEHOLDER;
-  });
-
-  // Extract inline code
-  processed = processed.replace(/`([^`]+)`/g, (_, code) => {
-    inlineCodes.push(code);
-    return INLINE_CODE_PLACEHOLDER;
-  });
-
-  // Simple markdown patterns to plain text (now safe from code content)
-  const text = processed
-    // Remove HTML tags
-    .replace(/<[^>]*>/g, "")
-    // Headers - just the text with double newline
-    .replace(/^#{1,6}\s+(.+)$/gm, "$1\n")
-    // Bold/italic - keep text only (using word boundaries to avoid breaking identifiers)
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "$1")
-    .replace(/(?<!\w)_(.+?)_(?!\w)/g, "$1")
-    // Strikethrough
-    .replace(/~~(.*?)~~/g, "$1")
-    // Links - keep text only
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
-    // Images - keep alt text
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    // Lists - keep items with newlines
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    // Blockquotes
-    .replace(/^\s*>\s+/gm, "")
-    // Horizontal rules
-    .replace(/^[\s]*[-*_]{3,}[\s]*$/gm, "")
-    // Tables - preserve structure roughly
-    .replace(/\|/g, " ")
-    .replace(/^[\s]*:?-+:?[\s]*$/gm, "")
-    // Restore code blocks
-    .replace(new RegExp(CODE_BLOCK_PLACEHOLDER, "g"), () => {
-      const code = codeBlocks.shift() || "";
-      return `${escapeHtml(code)}\n\n`;
-    })
-    // Restore inline code
-    .replace(new RegExp(INLINE_CODE_PLACEHOLDER, "g"), () => {
-      const code = inlineCodes.shift() || "";
-      return escapeHtml(code);
-    })
-    // Multiple blank lines to double newline
-    .replace(/\n{3,}/g, "\n\n")
-    // Trim
-    .trim();
-
-  return unescapeHtml(text);
-}
-
 export function downloadFromUrl(url: string, filename: string = ""): void {
   const link = document.createElement("a");
   link.href = url;
@@ -322,7 +187,8 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function filenameFromUrl(src: string): string {
+// Internal to downloadFromUrl — derives a filename for data URLs. Not exported.
+function filenameFromUrl(src: string): string {
   // If it's a data URL, extract the MIME type and derive a simple filename
   if (src.startsWith("data:")) {
     const mimeMatch = src.match(/^data:([^;]+)[;,]/);

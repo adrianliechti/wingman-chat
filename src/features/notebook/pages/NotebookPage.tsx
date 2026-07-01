@@ -1,17 +1,15 @@
 import { Outlet, useMatch, useNavigate } from "@tanstack/react-router";
-import { Download, PlusIcon, X } from "lucide-react";
+import { Download, Loader2, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { notify } from "@/shared/lib/notify";
 import { Markdown } from "@/shared/ui/Markdown";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-import { ArchitectureViewer } from "../components/ArchitectureViewer";
 import { AudioViewer } from "../components/AudioViewer";
-import { DataCatalogViewer } from "../components/DataCatalogViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
 import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
-import { ProcessViewer } from "../components/ProcessViewer";
 import { QuizViewer } from "../components/QuizViewer";
 import { ReportViewer } from "../components/ReportViewer";
 import { SlideViewer } from "../components/SlideViewer";
@@ -19,6 +17,7 @@ import { SourcesPanel } from "../components/SourcesPanel";
 import { StudioPanel } from "../components/StudioPanel";
 import { useNotebook } from "../hooks/useNotebook";
 import { useOutputDownload } from "../hooks/useOutputDownload";
+import { exportNotebookAsZip, importNotebooksFromZip } from "../lib/notebookImportExport";
 import * as store from "../lib/opfs-notebook";
 import type { Notebook, NotebookOutput } from "../types/notebook";
 
@@ -91,7 +90,7 @@ export function NotebookPage() {
       const list = await loadNotebooks();
       if (list.length > 0) {
         const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace });
       }
     },
     [loadNotebooks, navigate],
@@ -118,13 +117,13 @@ export function NotebookPage() {
       }
       // Notebook was lazily created (first source added) — push its id into the URL
       if (notebook?.id && prevId === undefined) {
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: notebook.id }, replace: true });
-        loadNotebooks();
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: notebook.id }, replace: true });
+        void loadNotebooks();
         return;
       }
       if (prevId !== undefined && loaded) {
         // Nav link clicked while on page — go to latest
-        goToLatest();
+        void goToLatest();
       }
       return;
     }
@@ -134,7 +133,7 @@ export function NotebookPage() {
   const handleNew = useCallback(() => {
     setViewingOutput(null);
     isNewRequestedRef.current = true;
-    navigate({ to: "/notebook" });
+    void navigate({ to: "/notebook" });
   }, [navigate, setViewingOutput]);
 
   // Delete notebook
@@ -147,9 +146,9 @@ export function NotebookPage() {
         setViewingOutput(null);
         if (list.length > 0) {
           const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-          navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id } });
+          void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id } });
         } else {
-          navigate({ to: "/notebook" });
+          void navigate({ to: "/notebook" });
         }
       }
     },
@@ -170,21 +169,48 @@ export function NotebookPage() {
     (id: string) => {
       if (id !== notebookId) {
         setViewingOutput(null);
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
       }
     },
     [notebookId, navigate, setViewingOutput],
   );
 
+  // Export notebook as a ZIP download
+  const handleExport = useCallback(
+    (id: string) => {
+      const nb = notebooks.find((n) => n.id === id);
+      void exportNotebookAsZip(id, nb?.customTitle ?? nb?.title);
+    },
+    [notebooks],
+  );
+
+  // Import notebook(s) from a ZIP (single or bulk export), then open the first
+  const handleImport = useCallback(
+    async (file: File) => {
+      try {
+        const ids = await importNotebooksFromZip(file);
+        await loadNotebooks();
+        if (ids.length > 0) {
+          setViewingOutput(null);
+          void navigate({ to: "/notebook/$notebookId", params: { notebookId: ids[0] } });
+        }
+      } catch (error) {
+        console.error("Failed to import notebook:", error);
+        notify.error("Couldn't import notebook", "Check the file and try again.");
+      }
+    },
+    [loadNotebooks, navigate, setViewingOutput],
+  );
+
   // Initial load: auto-select the most recent notebook if none is in the URL.
   useEffect(() => {
     if (loaded) return;
-    loadNotebooks().then((list) => {
+    void loadNotebooks().then((list) => {
       setLoaded(true);
       if (notebookId) return;
       if (list.length > 0) {
         const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace: true });
+        void navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace: true });
       }
     });
   }, [loaded, loadNotebooks, notebookId, navigate]);
@@ -200,9 +226,11 @@ export function NotebookPage() {
         onDelete={handleDelete}
         onRename={handleRename}
         onNew={handleNew}
+        onExport={handleExport}
+        onImport={handleImport}
       />
     );
-  }, [notebooks, notebookId, handleSelect, handleDelete, handleRename, handleNew, loaded]);
+  }, [notebooks, notebookId, handleSelect, handleDelete, handleRename, handleNew, handleExport, handleImport, loaded]);
 
   useEffect(() => {
     setSidebarContent(sidebarContent);
@@ -237,6 +265,68 @@ export function NotebookPage() {
     [setViewingOutput],
   );
 
+  // Shared between the desktop panels and the mobile layout/bottom sheets so
+  // the two breakpoints can't drift apart.
+  const sourcesPanel = (
+    <SourcesPanel
+      sources={sources}
+      isSearching={isSearching}
+      searchWeb={searchWeb}
+      addSearchResult={addSearchResult}
+      scrapeWeb={scrapeWeb}
+      addScrapeResult={addScrapeResult}
+      onFileAdd={addFileSource}
+      onTextAdd={addTextSource}
+      onDeleteSource={deleteSource}
+      onRenameSource={renameSource}
+      onUpdateSource={writeSource}
+    />
+  );
+
+  const studioPanel = (
+    <StudioPanel
+      sources={sources}
+      outputs={outputs}
+      onGenerate={generateOutput}
+      onDeleteOutput={deleteOutput}
+      onSelectOutput={handleSelectOutput}
+      onDownloadOutput={download.trigger}
+      canDownload={download.canDownload}
+    />
+  );
+
+  const centerContent = loading ? (
+    <div className="h-full" />
+  ) : viewingOutput ? (
+    <OutputView
+      output={viewingOutput}
+      download={download}
+      onClose={() => setViewingOutput(null)}
+      onRefine={updateOutput}
+    />
+  ) : (
+    <NotebookChat
+      messages={messages}
+      sources={sources}
+      isChatting={isChatting}
+      streamingContent={streamingContent}
+      onSend={sendMessage}
+      showSourcesActive={showSourcesDrawer}
+      showStudioActive={showStudioDrawer}
+      isSearching={isSearching}
+      outputCount={outputs.filter((o) => o.status === "completed").length}
+      isGeneratingOutput={outputs.some((o) => o.status === "generating")}
+      onShowSources={() => {
+        setShowStudioDrawer(false);
+        setShowSourcesDrawer((v) => !v);
+      }}
+      onShowStudio={() => {
+        setShowSourcesDrawer(false);
+        setShowStudioDrawer((v) => !v);
+      }}
+    />
+  );
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       {/* Render the child route (provides :notebookId param, renders nothing visible) */}
@@ -260,230 +350,37 @@ export function NotebookPage() {
           </>
         )}
         {/* ── Desktop: Resizable 3-column layout ── */}
-        <ResizablePanelGroup orientation="horizontal" className="hidden md:flex h-full">
-          <ResizablePanel
-            defaultSize={300}
-            minSize={160}
-            className="h-full overflow-hidden"
-            onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
-          >
-            {loading ? (
-              <div className="h-full" />
-            ) : (
-              <SourcesPanel
-                sources={sources}
-                isSearching={isSearching}
-                searchWeb={searchWeb}
-                addSearchResult={addSearchResult}
-                scrapeWeb={scrapeWeb}
-                addScrapeResult={addScrapeResult}
-                onFileAdd={addFileSource}
-                onTextAdd={addTextSource}
-                onDeleteSource={deleteSource}
-                onRenameSource={renameSource}
-                onUpdateSource={writeSource}
-              />
-            )}
-          </ResizablePanel>
+        <div className="hidden md:flex h-full flex-1 min-w-0">
+          <ResizablePanelGroup orientation="horizontal" className="h-full">
+            <ResizablePanel
+              defaultSize={300}
+              minSize={160}
+              className="h-full overflow-hidden"
+              onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
+            >
+              {loading ? <div className="h-full" /> : sourcesPanel}
+            </ResizablePanel>
 
-          <ResizableHandle />
+            <ResizableHandle />
 
-          <ResizablePanel
-            minSize={200}
-            className="h-full overflow-hidden"
-            onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
-          >
-            {loading ? (
-              <div className="h-full" />
-            ) : viewingOutput ? (
-              <div className="h-full flex flex-col relative">
-                {/* Output buttons */}
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                  {download.canDownload(viewingOutput) && (
-                    <button
-                      type="button"
-                      onClick={() => download.trigger(viewingOutput)}
-                      className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                      title="Download…"
-                    >
-                      <Download size={16} className="text-neutral-500" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setViewingOutputId(null)}
-                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                    title="Back to chat"
-                  >
-                    <X size={16} className="text-neutral-500" />
-                  </button>
-                </div>
+            <ResizablePanel
+              minSize={200}
+              className="h-full overflow-hidden"
+              onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
+            >
+              {centerContent}
+            </ResizablePanel>
 
-                {/* Output content */}
-                <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
-                  {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
-                    <QuizViewer questions={viewingOutput.quiz} />
-                  ) : viewingOutput.mindMap ? (
-                    <MindMapViewer root={viewingOutput.mindMap} />
-                  ) : viewingOutput.process ? (
-                    <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.architecture ? (
-                    <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.dataCatalog ? (
-                    <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.audioUrl ? (
-                    <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                  ) : viewingOutput.type === "slides" ? (
-                    <SlideViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.imageUrl ? (
-                    <div className="h-full overflow-y-auto p-6">
-                      <div className="flex flex-col items-center gap-4">
-                        <img
-                          src={viewingOutput.imageUrl}
-                          alt={viewingOutput.title}
-                          className="max-w-full rounded-lg shadow-md"
-                        />
-                      </div>
-                    </div>
-                  ) : viewingOutput.type === "report" ? (
-                    <ReportViewer content={viewingOutput.content} />
-                  ) : (
-                    <div className="h-full overflow-y-auto p-6">
-                      <div className="prose prose-neutral dark:prose-invert max-w-none">
-                        <Markdown>{viewingOutput.content}</Markdown>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <NotebookChat
-                messages={messages}
-                sources={sources}
-                isChatting={isChatting}
-                streamingContent={streamingContent}
-                onSend={sendMessage}
-                showSourcesActive={showSourcesDrawer}
-                showStudioActive={showStudioDrawer}
-                isSearching={isSearching}
-                outputCount={outputs.filter((o) => o.status === "completed").length}
-                isGeneratingOutput={outputs.some((o) => o.status === "generating")}
-                onShowSources={() => {
-                  setShowStudioDrawer(false);
-                  setShowSourcesDrawer((v) => !v);
-                }}
-                onShowStudio={() => {
-                  setShowSourcesDrawer(false);
-                  setShowStudioDrawer((v) => !v);
-                }}
-              />
-            )}
-          </ResizablePanel>
+            <ResizableHandle />
 
-          <ResizableHandle />
-
-          <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
-            {loading ? (
-              <div className="h-full" />
-            ) : (
-              <StudioPanel
-                sources={sources}
-                outputs={outputs}
-                onGenerate={generateOutput}
-                onDeleteOutput={deleteOutput}
-                onSelectOutput={handleSelectOutput}
-                onDownloadOutput={download.trigger}
-                canDownload={download.canDownload}
-              />
-            )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
+              {loading ? <div className="h-full" /> : studioPanel}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
 
         {/* ── Mobile: Center content (full width) ── */}
-        <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">
-          {loading ? (
-            <div className="h-full" />
-          ) : viewingOutput ? (
-            <div className="h-full flex flex-col relative">
-              <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {download.canDownload(viewingOutput) && (
-                  <button
-                    type="button"
-                    onClick={() => download.trigger(viewingOutput)}
-                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                    title="Download…"
-                  >
-                    <Download size={16} className="text-neutral-500" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setViewingOutputId(null)}
-                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  title="Back to chat"
-                >
-                  <X size={16} className="text-neutral-500" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
-                {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
-                  <QuizViewer questions={viewingOutput.quiz} />
-                ) : viewingOutput.mindMap ? (
-                  <MindMapViewer root={viewingOutput.mindMap} />
-                ) : viewingOutput.process ? (
-                  <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.architecture ? (
-                  <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.dataCatalog ? (
-                  <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.audioUrl ? (
-                  <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                ) : viewingOutput.type === "slides" ? (
-                  <SlideViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.imageUrl ? (
-                  <div className="h-full overflow-y-auto p-6">
-                    <div className="flex flex-col items-center gap-4">
-                      <img
-                        src={viewingOutput.imageUrl}
-                        alt={viewingOutput.title}
-                        className="max-w-full rounded-lg shadow-md"
-                      />
-                    </div>
-                  </div>
-                ) : viewingOutput.type === "report" ? (
-                  <ReportViewer content={viewingOutput.content} />
-                ) : (
-                  <div className="h-full overflow-y-auto p-6">
-                    <div className="prose prose-neutral dark:prose-invert max-w-none">
-                      <Markdown>{viewingOutput.content}</Markdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <NotebookChat
-              messages={messages}
-              sources={sources}
-              isChatting={isChatting}
-              streamingContent={streamingContent}
-              onSend={sendMessage}
-              showSourcesActive={showSourcesDrawer}
-              showStudioActive={showStudioDrawer}
-              isSearching={isSearching}
-              outputCount={outputs.filter((o) => o.status === "completed").length}
-              isGeneratingOutput={outputs.some((o) => o.status === "generating")}
-              onShowSources={() => {
-                setShowStudioDrawer(false);
-                setShowSourcesDrawer((v) => !v);
-              }}
-              onShowStudio={() => {
-                setShowSourcesDrawer(false);
-                setShowStudioDrawer((v) => !v);
-              }}
-            />
-          )}
-        </div>
+        <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">{centerContent}</div>
 
         {/* ── Mobile: backdrop ── */}
         <button
@@ -507,21 +404,7 @@ export function NotebookPage() {
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
           </div>
-          {!loading && (
-            <SourcesPanel
-              sources={sources}
-              isSearching={isSearching}
-              searchWeb={searchWeb}
-              addSearchResult={addSearchResult}
-              scrapeWeb={scrapeWeb}
-              addScrapeResult={addScrapeResult}
-              onFileAdd={addFileSource}
-              onTextAdd={addTextSource}
-              onDeleteSource={deleteSource}
-              onRenameSource={renameSource}
-              onUpdateSource={writeSource}
-            />
-          )}
+          {!loading && sourcesPanel}
         </div>
 
         {/* ── Mobile: Studio bottom sheet ── */}
@@ -533,21 +416,83 @@ export function NotebookPage() {
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
           </div>
-          {!loading && (
-            <StudioPanel
-              sources={sources}
-              outputs={outputs}
-              onGenerate={generateOutput}
-              onDeleteOutput={deleteOutput}
-              onSelectOutput={handleSelectOutput}
-              onDownloadOutput={download.trigger}
-              canDownload={download.canDownload}
-            />
-          )}
+          {!loading && studioPanel}
         </div>
       </main>
 
       {download.modals}
+    </div>
+  );
+}
+
+interface OutputViewProps {
+  output: NotebookOutput;
+  download: ReturnType<typeof useOutputDownload>;
+  onClose: () => void;
+  onRefine: (output: NotebookOutput) => Promise<void>;
+}
+
+/** Output preview with download/close actions — shared by desktop and mobile. */
+function OutputView({ output, download, onClose, onRefine }: OutputViewProps) {
+  const isGenerating = output.status === "generating";
+  return (
+    <div className="h-full flex flex-col relative">
+      {/* Live generation indicator — the viewer below (e.g. SlideViewer) updates
+          as partial results stream in. */}
+      {isGenerating && (
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm border border-neutral-200/70 dark:border-neutral-700/70 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <Loader2 size={12} className="animate-spin" />
+          <span>Generating…</span>
+        </div>
+      )}
+      {/* Output buttons */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {!isGenerating && download.canDownload(output) && (
+          <button
+            type="button"
+            onClick={() => download.trigger(output)}
+            className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            title="Download…"
+          >
+            <Download size={16} className="text-neutral-500" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          title="Back to chat"
+        >
+          <X size={16} className="text-neutral-500" />
+        </button>
+      </div>
+
+      {/* Output content */}
+      <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
+        {output.quiz && output.quiz.length > 0 ? (
+          <QuizViewer questions={output.quiz} />
+        ) : output.mindMap ? (
+          <MindMapViewer root={output.mindMap} />
+        ) : output.audioUrl ? (
+          <AudioViewer content={output.content} audioUrl={output.audioUrl} />
+        ) : output.type === "slides" ? (
+          <SlideViewer output={output} onRefine={onRefine} />
+        ) : output.imageUrl ? (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="flex flex-col items-center gap-4">
+              <img src={output.imageUrl} alt={output.title} className="max-w-full rounded-lg shadow-md" />
+            </div>
+          </div>
+        ) : output.type === "report" ? (
+          <ReportViewer content={output.content} />
+        ) : (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="prose prose-neutral dark:prose-invert max-w-none">
+              <Markdown>{output.content}</Markdown>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

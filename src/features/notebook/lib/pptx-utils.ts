@@ -20,6 +20,33 @@ export function pxToEmu(px: number): number {
   return Math.round(px * EMU_PER_PX);
 }
 
+/**
+ * Pull a data URL out of an `<img>` element. Returns the `src` directly when
+ * it's already a `data:` URL; otherwise canvas-copies the pixels into a fresh
+ * data URL. Pass `hostDoc` to create the canvas in a specific document — useful
+ * when the img is from an iframe and you want the canvas in the parent realm
+ * so `toDataURL` doesn't taint. Cross-origin sources throw on `toDataURL` and
+ * are silently skipped.
+ */
+export function imgToDataUrl(img: HTMLImageElement, hostDoc: Document = document): string | null {
+  if (img.src.startsWith("data:")) return img.src;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (w <= 0 || h <= 0) return null;
+  if (img.naturalWidth > 0 && !img.complete) return null;
+  try {
+    const c = hostDoc.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const cx = c.getContext("2d");
+    if (!cx) return null;
+    cx.drawImage(img, 0, 0);
+    return c.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
 export function cssColorToHex(color: string): string {
   const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (match) {

@@ -14,5 +14,5 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setRightActions,
   };
 
-  return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
+  return <NavigationContext value={value}>{children}</NavigationContext>;
 }

@@ -39,8 +39,7 @@ type Config struct {
 }
 
 type Support struct {
-	URL   string `json:"url,omitempty" yaml:"url,omitempty"`
-	Email string `json:"email,omitempty" yaml:"email,omitempty"`
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 type Tool struct {
@@ -60,12 +59,13 @@ type Model struct {
 	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
 	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
 	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Instructions     string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	SupportedEfforts []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
 	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
 	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
 	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
 	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
-	Prompts          []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 }
 
 type TTS struct {
@@ -118,18 +118,45 @@ type Repository struct {
 type Memory struct{}
 
 type Notebook struct {
-	Model        string                `json:"model,omitempty" yaml:"model,omitempty"`
-	Renderer     string                `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-	Slides       []NotebookSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
-	Podcasts     []NotebookPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
-	Reports      []NotebookReport      `json:"reports,omitempty" yaml:"reports,omitempty"`
-	Infographics []NotebookInfographic `json:"infographics,omitempty" yaml:"infographics,omitempty"`
+	Model         string                 `json:"model,omitempty" yaml:"model,omitempty"`
+	Renderer      string                 `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+	Slides        []NotebookSlide        `json:"slides,omitempty" yaml:"slides,omitempty"`
+	Podcasts      []NotebookPodcast      `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+	Reports       []NotebookReport       `json:"reports,omitempty" yaml:"reports,omitempty"`
+	Infographics  []NotebookInfographic  `json:"infographics,omitempty" yaml:"infographics,omitempty"`
+	Processes     []NotebookProcess      `json:"processes,omitempty" yaml:"processes,omitempty"`
+	Architectures []NotebookArchitecture `json:"architectures,omitempty" yaml:"architectures,omitempty"`
 }
 
 type Chat struct {
+	Instructions  string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
 	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
 	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`
+
+	Classification *Classification `json:"classification,omitempty" yaml:"classification,omitempty"`
+	Categories     []Category      `json:"categories,omitempty" yaml:"categories,omitempty"`
+	Risks          []Risk          `json:"risks,omitempty" yaml:"risks,omitempty"`
+}
+
+type Classification struct {
+	Model     string  `json:"model,omitempty" yaml:"model,omitempty"`
+	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+type Category struct {
+	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Consent     any     `json:"consent,omitempty" yaml:"consent,omitempty"`
+	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+type Risk struct {
+	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
+	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
+	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 // ChatStore configures the server-side chat store. Its presence in the
@@ -174,6 +201,16 @@ type NotebookInfographic struct {
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
+type NotebookProcess struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+type NotebookArchitecture struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
 type Bridge struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
@@ -185,4 +222,13 @@ type Drive struct {
 	Path string `json:"-" yaml:"path,omitempty"`
 	URL  string `json:"-" yaml:"url,omitempty"`
 	Icon string `json:"icon,omitempty" yaml:"icon,omitempty"`
+
+	Auth *DriveAuth `json:"-" yaml:"auth,omitempty"`
+}
+
+type DriveAuth struct {
+	Issuer       string `json:"-" yaml:"issuer,omitempty"`
+	ClientID     string `json:"-" yaml:"client_id,omitempty"`
+	ClientSecret string `json:"-" yaml:"client_secret,omitempty"`
+	Scope        string `json:"-" yaml:"scope,omitempty"`
 }

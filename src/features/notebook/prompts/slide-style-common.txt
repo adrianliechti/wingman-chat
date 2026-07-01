@@ -19,6 +19,7 @@ Before writing slide 1:
 - Pick **at most two** type families (display + body). Declare them as `--font-display` and `--font-body`.
 - Pick a **palette of 4–6 colors max**: one dominant, one secondary, one accent, plus 1–2 neutrals. Use the 60/30/10 weighting.
 - Pick a **type scale** and **spacing scale** as CSS custom properties. Reuse them everywhere.
+- **Commit to a visual motif** — pick ONE distinctive repeated element and carry it across every slide. Examples: rounded image frames with a 2px accent border; icons housed in coloured circles in a fixed size; a thick single-side bar on the left of every title; a fixed corner ornament; a consistent caption pill. The motif is the deck's signature — it's what makes a deck feel *designed* rather than templated. Pick one, declare it as a CSS class, reuse it.
 
 Consistency across slides is what separates "professional deck" from "ten random slides."
 
@@ -50,6 +51,7 @@ A slide title is a **headline, not a paragraph**. Treat it like a newspaper kick
 
 - **Target ≤ 60 characters, hard cap 80.** This is a hard cap — not "around 80".
 - **Never wrap past 2 lines.** If `text-wrap: balance` produces 3 lines, the title is too long; rewrite, don't shrink the font.
+- **Lead with a verb.** Titles read as findings, not topics: *grew, stalled, missed, fell, outpaced, slipped, delayed*. A title with no verb is almost always a topic label dressed up as a sentence. Topic labels ("Revenue", "Q3 Performance", "EMEA Overview") are forbidden.
 - **Push detail into the subtitle.** The subtitle (32–44px) carries qualifiers, dates, source notes, scoping — not the title.
 
 Good (≤ 60 chars, 1 line):
@@ -65,11 +67,45 @@ Bad (over cap / wraps to 3+ lines):
 
 No text-only slides. Every slide includes at least one of: a chart, an image, a hero number, a framework diagram, a quote treated as a visual element, or a dramatic typographic composition.
 
+### Claim ↔ Evidence
+
+The fastest way to mark a deck as AI-generated is unsourced numbers. Every quantitative claim on a slide must be traceable to its source on the same slide:
+
+- **Co-locate the citation with the number.** A small caption beneath/beside the chart, KPI, or stat. Format: `Source: <source name> · <scope/date>` (e.g. `Source: 10-K FY24 §2.3`, `Source: Internal BI · Q3 2024`).
+- **No floating numbers.** Every figure traces to source text you actually read with `source_read_file` or `source_grep`. Never round to a "nicer" number than the source supports.
+- **Surface disagreement, don't hide it.** If two sources give different numbers, say so on the slide ("Internal BI: $128M; 10-K §2.3: $124M — reconciliation pending"). Picking one silently is dishonest.
+- **Quotes are claims too.** Pull-quote slides need attribution: speaker, role, source/date.
+- **Define acronyms on first use.** "(MRR — Monthly Recurring Revenue)" the first time it appears on the deck. If you have 4+ specialised terms, add a small glossary on a final endnote slide.
+
 ### Spacing & Margins
 
 - Outer margin: **minimum 80px**; prefer 96–160px.
 - Use the 8-based spacing scale: `4, 8, 16, 24, 32, 48, 64, 96, 128, 160`.
 - Never crowd to the pixel edge. Whitespace is the design.
+
+### Layout discipline — how to NOT overlap
+
+The framework runs a runtime canvas validator on every `write_file` of a slide. It detects content extending past any of the four canvas edges and flags any pair of text elements physically overlapping by more than 12px in both axes — reported back via the `write_file` response. To get it right the first time and avoid retry loops, build layouts from these primitives:
+
+- **Use CSS Grid with pinned row heights** for any multi-region layout. Never use `grid-template-rows: auto auto auto` for a fixed-canvas slide — that's how the footer ends up on top of the body. Pin each region to a px height or `1fr` for the one that should absorb the leftover space:
+
+  ```css
+  .slide__layout {
+    display: grid;
+    grid-template-rows: 140px 1fr 100px;   /* header · body · footer */
+    height: 1080px;
+  }
+  ```
+
+- **`min-width: 0; min-height: 0` on grid/flex children.** Without these, a text-heavy child refuses to shrink and pushes its neighbours sideways (or down) instead of wrapping/clipping locally. This is the single most common cause of "text bleeds into the next column" bugs.
+
+- **`overflow: hidden` per region, not just at `.slide`.** When a card outgrows its row, hidden clips it inside that row — the validator can still detect the overflow, but the visual page doesn't cascade into the region below.
+
+- **Avoid `position: absolute` inside content areas.** Absolute positioning is what lets two text blocks land at the same `top` coordinate and overlap silently. Keep absolute positioning for true overlays (a label on a hero image, a corner ornament) and use grid/flex for everything else.
+
+- **Cap card heights when you have multiple side-by-side cards** carrying different amounts of text. Use `max-height` per card + `display: -webkit-box; -webkit-line-clamp: N; -webkit-box-orient: vertical; overflow: hidden` on the variable-length copy line. Better to truncate one card's so-what line than to push the whole layout offscreen.
+
+- **The validator returns specific pair selectors and overlap dimensions in px.** When `write_file` reports a TEXT OVERLAP, the response tells you exactly which two elements collide. Move or resize the larger of the two — never shrink type below 24px to "fit". And bleed-off images (`<img>` overflowing the canvas) are tolerated as decorative; the validator does not report them as bugs.
 
 ### AVOID (AI-slop checklist)
 

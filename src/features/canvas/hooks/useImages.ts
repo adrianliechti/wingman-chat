@@ -65,9 +65,11 @@ async function loadImage(id: string): Promise<Image | undefined> {
 
     if (!meta) return undefined;
 
-    // Load image (legacy files used .bin instead of .png)
+    // Load image (legacy files used .bin instead of .png). Stamp image/png so a
+    // legacy `.bin` read-back type (application/macbinary on Safari) can't leak
+    // into the data URL.
     const blob = (await opfs.readBlob(`${imagePath}/image.png`)) ?? (await opfs.readBlob(`${imagePath}/image.bin`));
-    const data = blob ? await opfs.blobToDataUrl(blob) : "";
+    const data = blob ? await opfs.blobToDataUrl(blob, "image/png") : "";
 
     return {
       ...meta,
@@ -142,7 +144,7 @@ export function useImages() {
       }
     }
 
-    load();
+    void load();
   }, []);
 
   const createImage = useCallback(async (image: Omit<Image, "id" | "created" | "updated">) => {

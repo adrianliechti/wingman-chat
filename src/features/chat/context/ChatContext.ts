@@ -1,13 +1,23 @@
 import { createContext } from "react";
+import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { Chat, Message, Model } from "@/shared/types/chat";
-import type { ConsentResult, ElicitationResult, PendingConsent, PendingElicitation } from "@/shared/types/elicitation";
+import type {
+  ConsentResult,
+  Elicitation,
+  ElicitationResult,
+  PendingConsent,
+  PendingElicitation,
+} from "@/shared/types/elicitation";
 
 export interface ChatContextType {
   // Models
   models: Model[];
   model: Model | null; // Current effective model (derived from chat.model || selectedModel || models[0])
   setModel: (model: Model | null) => void;
+  /** Per-chat reasoning effort selection; null means the model/backend default. */
+  effort: Model["effort"] | null;
+  setEffort: (effort: Model["effort"] | null) => void;
 
   // Chats
   chats: Chat[];
@@ -32,18 +42,20 @@ export interface ChatContextType {
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
   addMessage: (message: Message) => Promise<void>;
-  sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
+  sendMessage: (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => Promise<void>;
   retryMessage: () => Promise<void>;
-  setVoiceToolCall: (toolName: string | null) => void;
+  setVoiceToolCall: (toolName: string | null, callId?: string) => void;
 
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
+  requestElicitation: (toolCallId: string, toolName: string, elicitation: Elicitation) => Promise<ElicitationResult>;
 
   /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
   toolMeta: Record<string, Record<string, unknown>>;
+  updateToolMeta: (toolCallId: string, meta: Record<string, unknown>) => void;
 
-  // Category consent state (post-turn advisory overlay)
+  // Post-turn advisory overlay — covers both category consent and risk warnings.
   pendingConsent: PendingConsent | null;
   resolveConsent: (result: ConsentResult) => void;
 }

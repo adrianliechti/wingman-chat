@@ -37,7 +37,7 @@ export function useCompanion(url: string | undefined): { available: boolean } {
       if (!cancelled) setAvailable(result);
     }
 
-    poll();
+    void poll();
     const id = window.setInterval(poll, POLL_INTERVAL_MS);
 
     return () => {

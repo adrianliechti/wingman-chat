@@ -68,7 +68,9 @@ export async function downloadHtmlSlidesAsHybridPptx(
     // Background image
     mediaCounter++;
     const bgMediaName = `media${mediaCounter}.jpeg`;
-    zip.file(`ppt/media/${bgMediaName}`, jpeg.split(",")[1], { base64: true });
+    const bgBase64 = jpeg.split(",")[1];
+    if (!bgBase64) throw new Error(`Failed to render slide ${slideNum} background`);
+    zip.file(`ppt/media/${bgMediaName}`, bgBase64, { base64: true });
 
     // Extract images as separate editable objects
     const imageElements = parsed.elements.filter((el) => el.type === "image" && el.imageData);
@@ -122,7 +124,8 @@ ${rels.join("\n")}
 
 // ── Slide XML builder ───────────────────────────────────────────────────────
 
-function buildSlideXml(
+// Exported for the export↔preview roundtrip tests.
+export function buildSlideXml(
   textElements: ParsedElement[],
   imageElements: ParsedElement[],
   imageMedia: { rId: string; mediaPath: string }[],
@@ -162,6 +165,12 @@ function buildSlideXml(
     if (!el.paragraphs?.length) continue;
     const id = nextId++;
 
+    // Pre-wrapped elements carry one paragraph per measured visual line:
+    // disable wrapping so no renderer can break the lines differently from
+    // the rasterized background. Lists keep wrapping (multi-line items) and
+    // get autofit as the safety net for renderer metric drift.
+    const bodyPrAttrs = `wrap="${el.preWrapped ? "none" : "square"}" rtlCol="0" anchor="t" lIns="0" tIns="0" rIns="0" bIns="0"`;
+
     parts.push(`    <p:sp>
       <p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
       <p:spPr>
@@ -171,7 +180,7 @@ function buildSlideXml(
         <a:ln><a:noFill/></a:ln>
       </p:spPr>
       <p:txBody>
-        <a:bodyPr wrap="square" rtlCol="0" anchor="t" lIns="0" tIns="0" rIns="0" bIns="0"/>
+        <a:bodyPr ${bodyPrAttrs}>${el.preWrapped ? "" : "<a:normAutofit/>"}</a:bodyPr>
         <a:lstStyle/>
 ${buildParagraphsXml(el.paragraphs, el)}
       </p:txBody>
@@ -265,6 +274,14 @@ function fitImageToRect(img: ParsedElement): {
   return base;
 }
 
+/**
+ * PowerPoint's "single" line spacing (spcPct 100%) renders at roughly 1.2×
+ * the font size for common fonts — the same value browsers use for
+ * line-height "normal". Dividing the measured CSS ratio by it converts a
+ * CSS line-height into the spcPct that reproduces the measured box heights.
+ */
+const PPTX_SINGLE_SPACING = 1.2;
+
 function buildParagraphsXml(paragraphs: ParsedParagraph[], parent: ParsedElement): string {
   return paragraphs
     .map((p) => {
@@ -277,10 +294,22 @@ function buildParagraphsXml(paragraphs: ParsedParagraph[], parent: ParsedElement
       const bulletXml = p.isBullet ? `<a:buFont typeface="Arial"/><a:buChar char="&#x2022;"/>` : "";
       const { escaped, preserve } = escapeTextForPptx(p.text);
 
+      // Line spacing: reproduce the measured CSS line-height so multi-line
+      // text occupies exactly the box height the parser measured. Without
+      // this, tight hero titles (line-height ~1.0) overflow their boxes and
+      // misalign with the rasterized background.
+      const lnSpcPct = Math.round(((p.lineHeightRatio ?? 1.2) / PPTX_SINGLE_SPACING) * 100000);
+      const spacingXml =
+        `<a:lnSpc><a:spcPct val="${lnSpcPct}"/></a:lnSpc>` +
+        `<a:spcBef><a:spcPts val="0"/></a:spcBef><a:spcAft><a:spcPts val="0"/></a:spcAft>`;
+
+      // Letter spacing: rPr `spc` is in hundredths of a point.
+      const spcAttr = p.letterSpacingPx ? ` spc="${Math.round(fontSizeToPptx(p.letterSpacingPx))}"` : "";
+
       return `      <a:p>
-        <a:pPr algn="${align}"${p.isBullet ? ' marL="342900" indent="-342900"' : ""}>${bulletXml}</a:pPr>
+        <a:pPr algn="${align}"${p.isBullet ? ' marL="342900" indent="-342900"' : ""}>${spacingXml}${bulletXml}</a:pPr>
         <a:r>
-          <a:rPr lang="en-US" sz="${sz}"${bold}${italic} dirty="0">
+          <a:rPr lang="en-US" sz="${sz}"${bold}${italic}${spcAttr} dirty="0">
             <a:solidFill><a:srgbClr val="${colorHex}"/></a:solidFill>
             <a:latin typeface="${escapeXml(font)}"/>
           </a:rPr>

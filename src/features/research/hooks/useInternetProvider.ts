@@ -1,4 +1,4 @@
-import { Globe } from "lucide-react";
+import { Globe, Search } from "lucide-react";
 import { useMemo } from "react";
 import internetInstructionsText from "@/features/research/prompts/internet.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
@@ -19,9 +19,48 @@ function clip(text: string, max: number): string {
   return `${text.slice(0, max)}\n\n…[truncated, ${text.length - max} more chars]`;
 }
 
+/**
+ * Normalize a tool argument that should be `string[]`. Models sometimes pass
+ * a bare string, or a JSON-stringified array (`"[\"a\", \"b\"]"`); coerce
+ * both into a real array of non-empty strings.
+ */
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+        }
+      } catch {
+        // Malformed array-like string (model garbled the JSON). Best-effort:
+        // strip the brackets and split on top-level commas.
+        const inner = trimmed.replace(/^\[+/, "").replace(/\]+$/, "");
+        const parts = inner.split(",").map((p) =>
+          p
+            .trim()
+            .replace(/^["']|["']$/g, "")
+            .trim(),
+        );
+        const cleaned = parts.filter((p) => p.length > 0);
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+  return [];
+}
+
 function summarizeQueries(queries: string[]): string {
   if (queries.length === 1) {
+    // If the model still smuggled an array-like payload into a single string,
+    // don't render the raw `[...]` to the user — show a generic label.
     const q = queries[0];
+    if (q.startsWith("[") || q.includes('","')) return "the web";
     return q.length > STATUS_QUERY_PREVIEW_CHARS ? `${q.slice(0, STATUS_QUERY_PREVIEW_CHARS)}…` : q;
   }
   return `${queries.length} queries`;
@@ -66,6 +105,18 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     const searcher = internet.searcher;
     tools.push({
       name: "web_search",
+      display: {
+        header: (args, state) => {
+          const queries = args?.queries;
+          return {
+            icon: Search,
+            label: state.error ? "Search failed" : state.running ? "Searching the web…" : "Searched the web",
+            preview: Array.isArray(queries)
+              ? queries.filter((q): q is string => typeof q === "string").join(", ")
+              : undefined,
+          };
+        },
+      },
       description:
         "Fast web search. Returns markdown grouped by query, each result with title, URL, snippet, and optional metadata. Pass every related query in one call via the `queries` array.",
       parameters: {
@@ -86,8 +137,10 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
         required: ["queries"],
       },
       function: async (args) => {
-        const queries = (args.queries as string[] | undefined)?.filter((q) => typeof q === "string" && q.trim()) ?? [];
-        const domains = args.domains as string[] | undefined;
+        // Tolerate models that pass `queries` as a single string, or as a
+        // JSON-stringified array (e.g. `"[\"a\", \"b\"]"`).
+        const queries = coerceStringArray(args.queries);
+        const domains = coerceStringArray(args.domains);
 
         if (queries.length === 0) {
           return [{ type: "text" as const, text: "No queries provided." }];
@@ -115,6 +168,18 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     const scraper = internet.scraper;
     tools.push({
       name: "web_fetch",
+      display: {
+        header: (args, state) => {
+          const urls = args?.urls;
+          return {
+            icon: Globe,
+            label: state.error ? "Fetch failed" : state.running ? "Fetching…" : "Fetched",
+            preview: Array.isArray(urls)
+              ? urls.filter((u): u is string => typeof u === "string").join(", ")
+              : undefined,
+          };
+        },
+      },
       description:
         "Fetch the full text content of URLs you already have (e.g. from `web_search` results). Pass every URL in one call via the `urls` array.",
       parameters: {
@@ -130,7 +195,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
         required: ["urls"],
       },
       function: async (args) => {
-        const urls = (args.urls as string[] | undefined)?.filter((u) => typeof u === "string" && u.trim()) ?? [];
+        const urls = coerceStringArray(args.urls);
         if (urls.length === 0) {
           return [{ type: "text" as const, text: "No URLs provided." }];
         }
@@ -215,7 +280,14 @@ export function useInternetProvider(): ToolProvider | null {
             internetInstructionsText,
             [{ role: Role.User, content: [{ type: "text", text: instructions }] }],
             innerTools,
-            { options: { signal: context?.signal } },
+            {
+              agentName: "research",
+              options: { signal: context?.signal },
+              // Nest the inner research agent under the outer execute_tool span
+              // explicitly — the elicitation `await` above has already dropped
+              // the active context.
+              parentContext: context?.agentContext,
+            },
           );
           const last = conversation[conversation.length - 1];
           const text = last ? getTextFromContent(last.content).trim() : "";
@@ -233,7 +305,7 @@ export function useInternetProvider(): ToolProvider | null {
 
     return {
       id: "internet",
-      name: "Internet",
+      name: "Web Search",
       description: "Access up-to-date information",
       icon: Globe,
       tools: [searchAgent],

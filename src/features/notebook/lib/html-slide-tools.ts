@@ -5,14 +5,18 @@
 
 import type { Client } from "@/shared/lib/client";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
-import type { TextContent, Tool } from "@/shared/types/chat";
+import type { Message, TextContent, Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 import { assembleSlideHtml } from "./html-slide-assembly";
+import { notebookImageOptions } from "./image-options";
+import { CANVAS_H, CANVAS_W } from "./pptx-utils";
 
-const CANVAS_W = 1920;
-const CANVAS_H = 1080;
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
-const OVERLAP_TOLERANCE = 4; // px – ignore sub-pixel rounding noise on text overlaps
+// Tolerance for text-text overlap detection. Set high enough to ignore
+// decorative typography where letterforms touch (large drop-cap-style markers
+// next to a heading, ligatures, etc.) but low enough to catch real layout
+// collisions, which are almost always tens of pixels in both axes.
+const OVERLAP_TOLERANCE = 12;
 const MIN_VERTICAL_FILL = 0.35; // below this, the slide looks empty
 const MAX_REPORTED_OVERLAPS = 5; // cap so the feedback message stays actionable
 const MAX_ERROR_RETRIES = 2; // total error-bearing writes per slide before we let it pass
@@ -75,6 +79,28 @@ const NO_MEASUREMENT: SlideMeasurement = {
 };
 
 /**
+ * Extract just the `<tag.class>` / `<tag#id>` / `<tag>` prefix from a
+ * `describeElement` descriptor, dropping the appended text excerpt. Used
+ * to compare element identity across retries — the model's edits change
+ * the text inside the same element, so we compare on the selector only.
+ */
+function selectorKey(descriptor: string): string {
+  const i = descriptor.indexOf(' "');
+  return i >= 0 ? descriptor.slice(0, i) : descriptor;
+}
+
+/**
+ * True if a selector key carries an id or class — i.e. it identifies a
+ * specific element, not just any tag of that name. We only treat the
+ * same-offender condition as fired when the key is specific enough to
+ * be meaningful; matching on bare `<p>` or `<div>` would produce false
+ * positives across structurally-different elements.
+ */
+function isSpecificSelector(key: string): boolean {
+  return key.includes(".") || key.includes("#");
+}
+
+/**
  * Build a short, selector-like description of an element so the model can
  * locate it in its own source. Prefers id, then first class, falls back to
  * the tag name, and appends a short text excerpt when present.
@@ -117,7 +143,26 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         const doc = iframe.contentDocument;
         if (!doc) return; // not ready yet
         const slide = doc.querySelector(".slide") as HTMLElement | null;
-        if (!slide) return; // about:blank or missing .slide — wait for next onload
+        if (!slide) {
+          // Two cases:
+          //   1. about:blank before srcdoc parses (body empty) — wait for next onload.
+          //   2. Document parsed but the model omitted `class="slide"` on the root —
+          //      this is a silent-failure bug, surface it loudly and short-circuit.
+          if (doc.body?.children.length) {
+            const root = doc.body.children[0] as HTMLElement;
+            const rootTag = root.tagName.toLowerCase();
+            const rootClass = root.className || "(no class)";
+            console.warn(
+              `[HTML Slides] measureSlide: slide root missing class="slide" — found <${rootTag} class="${rootClass}">. ` +
+                "Overflow and overlap detection skipped for this write. " +
+                'Add the `slide` class to the root element (multiple classes are fine, e.g. class="slide onepager").',
+            );
+            clearTimeout(timeout);
+            iframe.remove();
+            resolve(NO_MEASUREMENT);
+          }
+          return;
+        }
 
         clearTimeout(timeout);
 
@@ -151,6 +196,16 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         for (const el of slide.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) continue;
+          // Skip <img> when picking the worst overflow offender per edge.
+          // Decorative image bleeds (botanical corners, full-bleed photos,
+          // hero textures positioned to extend past the canvas) are a
+          // common, intentional design move. If we let them win the
+          // per-edge offender pick, they mask real layout bugs — a text
+          // block runaway under the same edge stays invisible to the
+          // model. Track only text/layout containers here; the canvas
+          // already clips the visual output via overflow: hidden on
+          // `.slide`, so visually nothing leaks regardless.
+          if (el.tagName === "IMG") continue;
           if (r.top < minTop) {
             minTop = r.top;
             topEl = el;
@@ -265,12 +320,22 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
   });
 }
 
+export interface HtmlSlideToolOptions {
+  /**
+   * When set, write_file/edit_file may only modify this one slide file plus
+   * `images/*` — `styles/*` and other slides are rejected. Used by the
+   * per-slide writer agents that run in parallel against the shared fs.
+   */
+  restrictSlidePath?: string;
+}
+
 export function createHtmlSlideTools(
   fs: Map<string, string>,
   client: Client,
   rendererModel: string,
   onWrite: () => void,
   getSources?: () => File[],
+  opts?: HtmlSlideToolOptions,
 ): Tool[] {
   const textResult = (text: string): TextContent[] => [{ type: "text", text }];
 
@@ -280,9 +345,226 @@ export function createHtmlSlideTools(
     return base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^_+|_+$/g, "") || "image";
   };
 
-  // Counts error-bearing writes per slide path. We use this to give up after
-  // MAX_ERROR_RETRIES so a model that can't fix its layout doesn't loop forever.
-  const errorAttempts = new Map<string, number>();
+  // Per-slide retry state. `attempts` counts error-bearing writes so we can
+  // give up after MAX_ERROR_RETRIES instead of looping forever. `edges`
+  // remembers which canvas edges overflowed on the previous attempt — if any
+  // still overflow now, the model moved content between regions rather than
+  // cutting it, and we escalate the feedback. `offendersByEdge` remembers the
+  // specific offending element selector per edge — if the SAME element still
+  // overflows the same edge on retry, the fix is to shorten THAT element's
+  // content rather than cut elsewhere.
+  type Edge = "top" | "right" | "bottom" | "left";
+  interface RetryState {
+    attempts: number;
+    edges: Set<Edge>;
+    offendersByEdge: Partial<Record<Edge, string>>;
+  }
+  const retryState = new Map<string, RetryState>();
+
+  // Per-slide writers run in parallel against the shared fs — reject writes
+  // outside the writer's own lane so agents can't clobber each other.
+  const checkPathAllowed = (path: string): string | null => {
+    const restrict = opts?.restrictSlidePath;
+    if (!restrict || path === restrict || path.startsWith("images/")) return null;
+    return `Error: this writer may only modify ${restrict} (and images/*). ${path} is owned by another agent.`;
+  };
+
+  const isSlidePath = (path: string) => /^slides\/slide\d+\.html$/i.test(path);
+
+  /**
+   * Measure a just-written slide and build the model-facing feedback
+   * (overflow errors, overlap errors, soft hints, retry escalation).
+   * Shared by write_file and edit_file.
+   */
+  const slideFeedback = async (path: string, content: string, verb: "wrote" | "edited"): Promise<TextContent[]> => {
+    const wroteLabel = `${verb === "wrote" ? "Wrote" : "Edited"} ${path} (${content.length} bytes)`;
+    {
+      const assembled = assembleSlideHtml(content, fs);
+      const m = await measureSlide(assembled);
+      const ov = m.overflow;
+
+      // Hard errors — objective layout bugs the model must fix.
+      //   1. Content clipped beyond the canvas.
+      //   2. Text elements physically overlapping each other.
+      // Both are unambiguous and have stable thresholds, so flagging
+      // them as errors won't cause rewrite loops once fixed.
+      const errors: string[] = [];
+      const offenders = m.overflowOffenders;
+      const currentEdges = new Set<Edge>();
+      if (ov.top > OVERFLOW_TOLERANCE) {
+        currentEdges.add("top");
+        errors.push(`Top: ${ov.top}px above the slide${offenders.top ? ` — caused by ${offenders.top}` : ""}`);
+      }
+      if (ov.bottom > OVERFLOW_TOLERANCE) {
+        currentEdges.add("bottom");
+        errors.push(
+          `Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`,
+        );
+      }
+      if (ov.left > OVERFLOW_TOLERANCE) {
+        currentEdges.add("left");
+        errors.push(`Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`);
+      }
+      if (ov.right > OVERFLOW_TOLERANCE) {
+        currentEdges.add("right");
+        errors.push(
+          `Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`,
+        );
+      }
+
+      // Walk the current edges once to find:
+      //   - `recurringEdges`: edges that also overflowed last attempt
+      //     (model moved content rather than cutting it → ⛔ message)
+      //   - `recurringSameOffender`: subset where the same element is
+      //     also at fault (cut must target THAT element → ⛔⛔ message).
+      // Element identity is compared on the selector prefix
+      // (`<tag.class>` / `<tag#id>`) — the text excerpt changes between
+      // attempts as the model edits. Bare-tag selectors (no id/class)
+      // are skipped to avoid false positives across different elements
+      // of the same tag.
+      const prior = retryState.get(path);
+      const recurringEdges: Edge[] = [];
+      const recurringSameOffender: { edge: Edge; descriptor: string }[] = [];
+      if (prior) {
+        for (const edge of currentEdges) {
+          if (!prior.edges.has(edge)) continue;
+          recurringEdges.push(edge);
+          const now = offenders[edge];
+          const before = prior.offendersByEdge[edge];
+          if (!now || !before) continue;
+          const key = selectorKey(now);
+          if (isSpecificSelector(key) && key === selectorKey(before)) {
+            recurringSameOffender.push({ edge, descriptor: now });
+          }
+        }
+      }
+
+      // Soft hints — taste calls, not bugs. Don't block on these.
+      const hints: string[] = [];
+      if (m.verticalFill > 0 && m.verticalFill < MIN_VERTICAL_FILL) {
+        hints.push(
+          `Content only fills ${Math.round(m.verticalFill * 100)}% of the slide height — the slide looks empty. Add more content or grow the hero element to use the canvas.`,
+        );
+      }
+      if (m.titleLines > TITLE_LINE_CAP || m.titleChars > TITLE_CHAR_CAP) {
+        hints.push(
+          `Title is ${m.titleChars} chars on ${m.titleLines} line(s) — shorten to ≤ ${TITLE_CHAR_CAP} chars / ≤ ${TITLE_LINE_CAP} lines, or move qualifiers into the subtitle.`,
+        );
+      }
+      if (m.headerHeight > 0) {
+        const headerFraction = m.headerHeight / CANVAS_H;
+        if (headerFraction > HEADER_HEIGHT_FRACTION_CAP) {
+          hints.push(
+            `Header (title + subtitle) is ${m.headerHeight}px = ${Math.round(headerFraction * 100)}% of slide height — keep ≤ ${Math.round(HEADER_HEIGHT_FRACTION_CAP * 100)}% (${Math.round(HEADER_HEIGHT_FRACTION_CAP * CANVAS_H)}px). Drop the title font size to 56–72px (display-title sizes 96–140px are for cover/section slides only) or shorten the title.`,
+          );
+        }
+      }
+
+      const hasErrors = errors.length > 0 || m.textOverlaps.length > 0;
+      if (hasErrors) {
+        const attempts = (prior?.attempts ?? 0) + 1;
+        retryState.set(path, { attempts, edges: currentEdges, offendersByEdge: offenders });
+
+        // One structured log per error write so a developer watching the
+        // console can see exactly what the model was told and how the
+        // loop is progressing. Total attempts shown is MAX_ERROR_RETRIES + 1
+        // (the initial write plus the retries).
+        const totalBudget = MAX_ERROR_RETRIES + 1;
+        const issueLines: string[] = [];
+        for (const e of errors) issueLines.push(`    overflow ${e}`);
+        for (const o of m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS)) {
+          issueLines.push(`    overlap ${o.a} ↔ ${o.b} ${o.width}×${o.height}px`);
+        }
+        const moreOverlaps = m.textOverlaps.length - Math.min(MAX_REPORTED_OVERLAPS, m.textOverlaps.length);
+        if (moreOverlaps > 0) issueLines.push(`    overlap …and ${moreOverlaps} more`);
+        console.debug(
+          `[HTML Slides] ${path} attempt ${attempts}/${totalBudget} — ` +
+            `${errors.length} overflow, ${m.textOverlaps.length} overlaps ` +
+            `(${content.length} bytes)\n` +
+            issueLines.join("\n"),
+        );
+
+        // Give up after MAX_ERROR_RETRIES so we don't loop forever on a
+        // slide the model can't fix. Report the issues but tell the
+        // model to move on.
+        if (attempts > MAX_ERROR_RETRIES) {
+          console.warn(`[HTML Slides] ${path} still has issues after ${attempts} attempts — accepting and moving on.`);
+          return textResult(
+            `${wroteLabel}. Layout still has issues but accepting it after ${attempts} attempts — DO NOT rewrite this slide again, continue with the remaining slides.`,
+          );
+        }
+
+        const parts = [wroteLabel];
+        if (errors.length > 0) {
+          let overflowMsg =
+            `\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
+            errors.map((e) => `  - ${e}`).join("\n") +
+            `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`;
+          if (recurringEdges.length > 0) {
+            const edgeList = recurringEdges.join(", ");
+            overflowMsg +=
+              `\n\n⛔ The ${edgeList} edge${recurringEdges.length > 1 ? "s are" : " is"} still overflowing after your last fix. ` +
+              "You moved content but didn't reduce it — the total content weight hasn't changed. " +
+              "STOP shuffling content between regions. **Cut content this time**: shorter copy, fewer bullets, drop a region, " +
+              "or apply `line-clamp` to truncate verbose lines. The canvas is a fixed " +
+              `${CANVAS_W}×${CANVAS_H} box and your content has to shrink, not relocate.`;
+          }
+          if (recurringSameOffender.length > 0) {
+            const lines = recurringSameOffender
+              .map(({ edge, descriptor }) => `  - ${descriptor} is still overflowing the ${edge} edge`)
+              .join("\n");
+            overflowMsg +=
+              `\n\n⛔⛔ The SAME element is causing overflow on the same edge across attempts:\n${lines}\n` +
+              "The fix is not elsewhere on the slide — **shorten the content of this specific element**. " +
+              "If it's a footer with a source citation, abbreviate the source (e.g. 'Smithsonian, 2024' not the full URL or page-range). " +
+              "If it's a header subtitle, drop scope qualifiers and keep only audience + date. " +
+              "Cutting body content won't help if the offender is in the chrome.";
+          }
+          parts.push(overflowMsg);
+        }
+        if (m.textOverlaps.length > 0) {
+          const shown = m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS);
+          const more = m.textOverlaps.length - shown.length;
+          parts.push(
+            `\n⚠️ TEXT OVERLAP: ${m.textOverlaps.length} pair(s) of text elements physically overlap each other — text is unreadable where they collide. Fix layout (spacing, grid, or z-order) so they don't intersect:\n` +
+              shown.map((o) => `  - ${o.a} overlaps ${o.b} by ${o.width}×${o.height}px`).join("\n") +
+              (more > 0 ? `\n  - …and ${more} more` : ""),
+          );
+        }
+        if (hints.length > 0) {
+          parts.push(
+            `\nHints (not blocking, address only if they make the slide better):\n` +
+              hints.map((h) => `  - ${h}`).join("\n"),
+          );
+        }
+        return textResult(parts.join(""));
+      }
+
+      // Clean write — clear the retry state so a future edit to the same
+      // slide gets a fresh budget. Surface convergence in the log so a
+      // developer can see the loop actually fixed something.
+      const priorAttempts = prior?.attempts ?? 0;
+      retryState.delete(path);
+      const fillPct = Math.round(m.verticalFill * 100);
+      if (priorAttempts > 0) {
+        console.debug(
+          `[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes) — ` +
+            `resolved after ${priorAttempts} ${priorAttempts === 1 ? "retry" : "retries"}`,
+        );
+      } else {
+        console.debug(`[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes)`);
+      }
+
+      if (hints.length > 0) {
+        return textResult(
+          `${wroteLabel}\n\nHints (not blocking, address only if they make the slide better):\n` +
+            hints.map((h) => `  - ${h}`).join("\n"),
+        );
+      }
+    }
+
+    return textResult(`OK: ${verb} ${path} (${content.length} bytes)`);
+  };
 
   return [
     {
@@ -307,153 +589,82 @@ export function createHtmlSlideTools(
         const path = args.path as string;
         const content = args.content as string;
 
+        const denied = checkPathAllowed(path);
+        if (denied) return textResult(denied);
+
         fs.set(path, content);
         onWrite();
 
-        const isSlide = /^slides\/slide\d+\.html$/i.test(path);
-        if (!isSlide) {
-          console.log(`[HTML Slides] Wrote ${path} (${content.length} bytes)`);
+        if (!isSlidePath(path)) {
+          return textResult(`OK: wrote ${path} (${content.length} bytes)`);
         }
 
         // Validate slide bounds and give model corrective feedback
-        if (isSlide) {
-          const assembled = assembleSlideHtml(content, fs);
-          const m = await measureSlide(assembled);
-          const ov = m.overflow;
+        return slideFeedback(path, content, "wrote");
+      },
+    },
+    {
+      name: "edit_file",
+      description:
+        "Replace an exact text snippet in a previously written file. Prefer this over write_file when fixing validator feedback — only the changed snippet needs to be sent. `find` must match the current file content exactly (including whitespace).",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "File path to edit, e.g. 'slides/slide1.html'",
+          },
+          find: {
+            type: "string",
+            description: "Exact text to replace (must occur in the file; must be unique unless replace_all is true)",
+          },
+          replace: {
+            type: "string",
+            description: "Replacement text (empty string deletes the matched text)",
+          },
+          replace_all: {
+            type: "boolean",
+            description: "Replace every occurrence instead of requiring a unique match (default false)",
+          },
+        },
+        required: ["path", "find", "replace"],
+      },
+      function: async (args) => {
+        const path = args.path as string;
+        const find = args.find as string;
+        const replace = typeof args.replace === "string" ? (args.replace as string) : "";
+        const replaceAll = args.replace_all === true;
 
-          // Hard errors — objective layout bugs the model must fix.
-          //   1. Content clipped beyond the canvas.
-          //   2. Text elements physically overlapping each other.
-          // Both are unambiguous and have stable thresholds, so flagging
-          // them as errors won't cause rewrite loops once fixed.
-          const errors: string[] = [];
-          const offenders = m.overflowOffenders;
-          if (ov.top > OVERFLOW_TOLERANCE) {
-            errors.push(`Top: ${ov.top}px above the slide${offenders.top ? ` — caused by ${offenders.top}` : ""}`);
-          }
-          if (ov.bottom > OVERFLOW_TOLERANCE) {
-            errors.push(
-              `Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`,
-            );
-          }
-          if (ov.left > OVERFLOW_TOLERANCE) {
-            errors.push(
-              `Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`,
-            );
-          }
-          if (ov.right > OVERFLOW_TOLERANCE) {
-            errors.push(
-              `Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`,
-            );
-          }
+        const denied = checkPathAllowed(path);
+        if (denied) return textResult(denied);
 
-          // Soft hints — taste calls, not bugs. Don't block on these.
-          const hints: string[] = [];
-          if (m.verticalFill > 0 && m.verticalFill < MIN_VERTICAL_FILL) {
-            hints.push(
-              `Content only fills ${Math.round(m.verticalFill * 100)}% of the slide height — the slide looks empty. Add more content or grow the hero element to use the canvas.`,
-            );
-          }
-          if (m.titleLines > TITLE_LINE_CAP || m.titleChars > TITLE_CHAR_CAP) {
-            hints.push(
-              `Title is ${m.titleChars} chars on ${m.titleLines} line(s) — shorten to ≤ ${TITLE_CHAR_CAP} chars / ≤ ${TITLE_LINE_CAP} lines, or move qualifiers into the subtitle.`,
-            );
-          }
-          if (m.headerHeight > 0) {
-            const headerFraction = m.headerHeight / CANVAS_H;
-            if (headerFraction > HEADER_HEIGHT_FRACTION_CAP) {
-              hints.push(
-                `Header (title + subtitle) is ${m.headerHeight}px = ${Math.round(headerFraction * 100)}% of slide height — keep ≤ ${Math.round(HEADER_HEIGHT_FRACTION_CAP * 100)}% (${Math.round(HEADER_HEIGHT_FRACTION_CAP * CANVAS_H)}px). Drop the title font size to 56–72px (display-title sizes 96–140px are for cover/section slides only) or shorten the title.`,
-              );
-            }
-          }
+        const current = fs.get(path);
+        if (current === undefined) return textResult(`Error: ${path} not found`);
+        if (!find) return textResult("Error: `find` must be a non-empty string.");
 
-          const hasErrors = errors.length > 0 || m.textOverlaps.length > 0;
-          if (hasErrors) {
-            const attempts = (errorAttempts.get(path) ?? 0) + 1;
-            errorAttempts.set(path, attempts);
-
-            // One structured log per error write so a developer watching the
-            // console can see exactly what the model was told and how the
-            // loop is progressing. Total attempts shown is MAX_ERROR_RETRIES + 1
-            // (the initial write plus the retries).
-            const totalBudget = MAX_ERROR_RETRIES + 1;
-            const issueLines: string[] = [];
-            for (const e of errors) issueLines.push(`    overflow ${e}`);
-            for (const o of m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS)) {
-              issueLines.push(`    overlap ${o.a} ↔ ${o.b} ${o.width}×${o.height}px`);
-            }
-            const moreOverlaps = m.textOverlaps.length - Math.min(MAX_REPORTED_OVERLAPS, m.textOverlaps.length);
-            if (moreOverlaps > 0) issueLines.push(`    overlap …and ${moreOverlaps} more`);
-            console.debug(
-              `[HTML Slides] ${path} attempt ${attempts}/${totalBudget} — ` +
-                `${errors.length} overflow, ${m.textOverlaps.length} overlaps ` +
-                `(${content.length} bytes)\n` +
-                issueLines.join("\n"),
-            );
-
-            // Give up after MAX_ERROR_RETRIES so we don't loop forever on a
-            // slide the model can't fix. Report the issues but tell the
-            // model to move on.
-            if (attempts > MAX_ERROR_RETRIES) {
-              console.warn(
-                `[HTML Slides] ${path} still has issues after ${attempts} attempts — accepting and moving on.`,
-              );
-              return textResult(
-                `Wrote ${path} (${content.length} bytes). Layout still has issues but accepting it after ${attempts} attempts — DO NOT rewrite this slide again, continue with the remaining slides.`,
-              );
-            }
-
-            const parts = [`Wrote ${path} (${content.length} bytes)`];
-            if (errors.length > 0) {
-              parts.push(
-                `\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
-                  errors.map((e) => `  - ${e}`).join("\n") +
-                  `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
-              );
-            }
-            if (m.textOverlaps.length > 0) {
-              const shown = m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS);
-              const more = m.textOverlaps.length - shown.length;
-              parts.push(
-                `\n⚠️ TEXT OVERLAP: ${m.textOverlaps.length} pair(s) of text elements physically overlap each other — text is unreadable where they collide. Fix layout (spacing, grid, or z-order) so they don't intersect:\n` +
-                  shown.map((o) => `  - ${o.a} overlaps ${o.b} by ${o.width}×${o.height}px`).join("\n") +
-                  (more > 0 ? `\n  - …and ${more} more` : ""),
-              );
-            }
-            if (hints.length > 0) {
-              parts.push(
-                `\nHints (not blocking, address only if they make the slide better):\n` +
-                  hints.map((h) => `  - ${h}`).join("\n"),
-              );
-            }
-            return textResult(parts.join(""));
-          }
-
-          // Clean write — clear the retry counter so a future edit to the
-          // same slide gets a fresh budget. Surface convergence in the log
-          // so a developer can see the loop actually fixed something.
-          const priorAttempts = errorAttempts.get(path) ?? 0;
-          errorAttempts.delete(path);
-          const fillPct = Math.round(m.verticalFill * 100);
-          if (priorAttempts > 0) {
-            console.debug(
-              `[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes) — ` +
-                `resolved after ${priorAttempts} ${priorAttempts === 1 ? "retry" : "retries"}`,
-            );
-          } else {
-            console.debug(`[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes)`);
-          }
-
-          if (hints.length > 0) {
-            return textResult(
-              `Wrote ${path} (${content.length} bytes)\n\nHints (not blocking, address only if they make the slide better):\n` +
-                hints.map((h) => `  - ${h}`).join("\n"),
-            );
-          }
+        const first = current.indexOf(find);
+        if (first < 0) {
+          return textResult(
+            `Error: \`find\` text not found in ${path}. Call read_file(${path}) and retry with the exact current text.`,
+          );
+        }
+        if (!replaceAll && current.indexOf(find, first + 1) >= 0) {
+          return textResult(
+            `Error: \`find\` matches multiple places in ${path}. Provide a longer, unique snippet or set replace_all: true.`,
+          );
         }
 
-        return textResult(`OK: wrote ${path} (${content.length} bytes)`);
+        const next = replaceAll
+          ? current.split(find).join(replace)
+          : current.slice(0, first) + replace + current.slice(first + find.length);
+        fs.set(path, next);
+        onWrite();
+
+        if (!isSlidePath(path)) {
+          return textResult(`OK: edited ${path} (${next.length} bytes)`);
+        }
+
+        return slideFeedback(path, next, "edited");
       },
     },
     {
@@ -547,7 +758,6 @@ export function createHtmlSlideTools(
         const filename = sanitizeFilename(requestedFilename || sourcePath);
         const path = `images/${filename}`;
         fs.set(path, source.content);
-        console.log(`[HTML Slides] Imported ${sourcePath} → ${path}`);
         onWrite();
         return textResult(
           `OK: imported ${sourcePath} as ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,
@@ -569,6 +779,11 @@ export function createHtmlSlideTools(
             type: "string",
             description: "Filename for the image, e.g. 'hero.png' or 'chart-bg.png'",
           },
+          aspect_ratio: {
+            type: "string",
+            description:
+              "Aspect ratio for the image, snapped to the nearest the model supports: '1:1' (icon/square), '3:2' (wide/hero), '2:3' (portrait). Defaults to '3:2'.",
+          },
         },
         required: ["prompt", "filename"],
       },
@@ -576,12 +791,13 @@ export function createHtmlSlideTools(
         const prompt = args.prompt as string;
         const filename = args.filename as string;
         const path = `images/${filename}`;
+        const aspect = typeof args.aspect_ratio === "string" && args.aspect_ratio.trim() ? args.aspect_ratio : "3:2";
 
         try {
-          const blob = await client.generateImage(rendererModel, prompt);
+          const options = notebookImageOptions(rendererModel, { aspect, quality: "medium" });
+          const blob = await client.generateImage(rendererModel, prompt, undefined, options);
           const dataUrl = await blobToDataUrl(blob);
           fs.set(path, dataUrl);
-          console.log(`[HTML Slides] Generated image ${path}`);
           onWrite();
           return textResult(
             `OK: generated and stored ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,
@@ -594,4 +810,65 @@ export function createHtmlSlideTools(
       },
     },
   ];
+}
+
+// ── Conversation pruning ──────────────────────────────────────────────
+
+const ELIDED_NOTE = "…elided to save context — call read_file(path) for the current content…";
+
+/**
+ * `prepareMessages` hook for slide-generation runs: every write_file /
+ * edit_file tool call carries full file content in its arguments and is
+ * re-sent to the API on every subsequent turn, so a long deck loop grows
+ * quadratically. Elide the bulky string arguments of all but the most
+ * recent `keepRecent` such calls — the model can always read_file the
+ * current state, and the validator feedback (kept verbatim in the tool
+ * results) is what actually drives retries.
+ */
+export function pruneSlideWriteHistory(messages: Message[], keepRecent = 2): Message[] {
+  // Protect the most recent K write/edit calls (the active retry window).
+  const protectedIds = new Set<string>();
+  outer: for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i].content;
+    for (let j = content.length - 1; j >= 0; j--) {
+      const part = content[j];
+      if (part.type === "tool_call" && (part.name === "write_file" || part.name === "edit_file")) {
+        protectedIds.add(part.id);
+        if (protectedIds.size >= keepRecent) break outer;
+      }
+    }
+  }
+
+  return messages.map((message) => {
+    let changed = false;
+    const content = message.content.map((part) => {
+      if (part.type !== "tool_call") return part;
+      if (part.name !== "write_file" && part.name !== "edit_file") return part;
+      if (protectedIds.has(part.id)) return part;
+      const pruned = elideBulkyArguments(part.arguments);
+      if (pruned === part.arguments) return part;
+      changed = true;
+      return { ...part, arguments: pruned };
+    });
+    return changed ? { ...message, content } : message;
+  });
+}
+
+/** Replace long string fields in a tool-call arguments JSON with a stub. */
+function elideBulkyArguments(raw: string): string {
+  try {
+    const args = JSON.parse(raw) as Record<string, unknown>;
+    let changed = false;
+    for (const key of ["content", "find", "replace"]) {
+      const value = args[key];
+      if (typeof value === "string" && value.length > 256) {
+        args[key] = ELIDED_NOTE;
+        changed = true;
+      }
+    }
+    return changed ? JSON.stringify(args) : raw;
+  } catch {
+    // Unparseable arguments (model mis-escaped) — leave untouched.
+    return raw;
+  }
 }

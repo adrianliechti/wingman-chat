@@ -2,294 +2,209 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 interface UseChatScrollOptions {
   resetKey?: string | null;
-  messages?: Array<{ role: string }>;
+  messages?: Array<{ role: string; content?: Array<{ type: string }> }>;
   isResponding?: boolean;
 }
 
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"]);
+const TOP_CLEARANCE = 72; // matches pt-18
+
+/**
+ * Sending pins the latest user message just below the top nav and holds it there
+ * while the answer streams in below; released as soon as the user scrolls.
+ */
 export function useChatScroll({ resetKey, messages = [], isResponding = false }: UseChatScrollOptions) {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const programmaticScrollRef = useRef(false);
-  const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const spacerHeightRef = useRef(0);
   const spacerRef = useRef<HTMLDivElement | null>(null);
-  const checkIsAtBottomRef = useRef<() => void>(() => {});
-  const prevMessagesLengthRef = useRef(0);
-  // Intentionally not initialized to resetKey — ensures the reset runs on
-  // first mount too, so direct URL loads scroll to the bottom correctly.
+  const spacerHeightRef = useRef(0);
+  const pinnedRef = useRef(false);
+  const programmaticScrollRef = useRef(false);
+  const animationRef = useRef<number | null>(null);
+  const lastSeenMsgRef = useRef<unknown>(undefined);
+  const pinResetKeyRef = useRef<string | null | undefined>(undefined);
   const lastResetKeyRef = useRef<string | null | undefined>(undefined);
-  // Set when resetKey changes but scrollElement was null — resolved once element mounts.
   const pendingScrollToBottomRef = useRef(false);
-  // Target scroll position set when a user message is sent — used to hold
-  // position during streaming so behaviour matches non-streaming.
-  const scrollTargetRef = useRef<number | null>(null);
-  // Whether the user intentionally scrolled during the current response.
-  const userScrolledDuringStreamRef = useRef(false);
-  const isRespondingRef = useRef(isResponding);
-  useEffect(() => {
-    isRespondingRef.current = isResponding;
-  }, [isResponding]);
 
-  const setProgrammaticScroll = useCallback((durationMs: number) => {
-    programmaticScrollRef.current = true;
-    if (programmaticScrollTimerRef.current !== null) {
-      clearTimeout(programmaticScrollTimerRef.current);
-    }
-    programmaticScrollTimerRef.current = setTimeout(() => {
-      programmaticScrollRef.current = false;
-      programmaticScrollTimerRef.current = null;
-      // Re-check position now that the lock has lifted — no scroll event fires
-      // automatically after a programmatic scroll ends, so isAtBottom would
-      // otherwise stay stale and the "Latest" button would never appear.
-      checkIsAtBottomRef.current();
-    }, durationMs);
+  const setSpacerHeight = useCallback((height: number) => {
+    const h = Math.max(0, Math.round(height));
+    spacerHeightRef.current = h;
+    if (spacerRef.current) spacerRef.current.style.height = `${h}px`;
   }, []);
 
-  const restoreSpacer = useCallback(
-    (element?: HTMLDivElement | null) => {
-      const container = element ?? scrollElement;
-      if (!container || !spacerRef.current) return;
-      const height = container.clientHeight;
-      spacerHeightRef.current = height;
-      spacerRef.current.style.height = `${height}px`;
+  // scrollTop that puts the last prompt below the nav. Tool results are also
+  // role "user", but carry data-role="tool", so they don't match here.
+  const pinTarget = useCallback(() => {
+    if (!scrollElement) return null;
+    const prompts = scrollElement.querySelectorAll<HTMLElement>('[data-role="user"]');
+    const el = prompts[prompts.length - 1];
+    if (!el) return null;
+    const top = el.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top + scrollElement.scrollTop;
+    return Math.max(0, top - TOP_CLEARANCE);
+  }, [scrollElement]);
+
+  const checkIsAtBottom = useCallback(() => {
+    if (!scrollElement) return;
+    const { scrollTop, clientHeight, scrollHeight } = scrollElement;
+    const visibleSpacer = scrollTop + clientHeight - (scrollHeight - spacerHeightRef.current);
+    setIsAtBottom(visibleSpacer > 0 || scrollHeight - scrollTop - clientHeight <= 2);
+  }, [scrollElement]);
+
+  const maintainPin = useCallback(() => {
+    if (!scrollElement || !pinnedRef.current || programmaticScrollRef.current) return;
+    const target = pinTarget();
+    if (target != null && Math.abs(scrollElement.scrollTop - target) > 1) scrollElement.scrollTop = target;
+  }, [scrollElement, pinTarget]);
+
+  // Manual rAF: Chromium cancels native smooth scroll when scrollHeight changes
+  // mid-animation, which happens constantly while streaming.
+  const animateScrollTo = useCallback(
+    (target: number) => {
+      if (!scrollElement) return;
+      if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+      programmaticScrollRef.current = true;
+      const start = scrollElement.scrollTop;
+      const distance = target - start;
+      const startTime = performance.now();
+      const step = (now: number) => {
+        if (!scrollElement) return;
+        const p = Math.min((now - startTime) / 450, 1);
+        const eased = p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2;
+        scrollElement.scrollTop = start + distance * eased;
+        if (p < 1) {
+          animationRef.current = requestAnimationFrame(step);
+        } else {
+          animationRef.current = null;
+          programmaticScrollRef.current = false;
+          checkIsAtBottom();
+        }
+      };
+      animationRef.current = requestAnimationFrame(step);
     },
-    [scrollElement],
+    [scrollElement, checkIsAtBottom],
   );
 
-  // ─── Scroll newest user message to near the top ───────────────────────────
-
-  const scrollToNewestUserMsg = useCallback(() => {
-    if (!scrollElement) return;
-
-    restoreSpacer();
-
-    const userMessages = scrollElement.querySelectorAll<HTMLElement>('[data-role="user"]');
-    if (userMessages.length === 0) return;
-    const lastUserMsg = userMessages[userMessages.length - 1];
-
-    const containerRect = scrollElement.getBoundingClientRect();
-    const msgTop = lastUserMsg.getBoundingClientRect().top - containerRect.top + scrollElement.scrollTop;
-    // Clear the fixed nav bar (same as pt-18 = 72px)
-    const target = Math.max(0, msgTop - 72);
-
-    // Cache so the streaming lock can hold this position
-    scrollTargetRef.current = target;
-    userScrolledDuringStreamRef.current = false;
-
-    // Use a manual rAF animation instead of scrollTo({ behavior: "smooth" }).
-    // Chromium-based browsers (Edge) silently cancel native smooth scrolls when
-    // scrollHeight changes significantly in the same or adjacent rendering frame
-    // (which always happens here because of the spacer restore above). A manual
-    // loop writes scrollTop directly every frame, so it is immune to that bug
-    // while still producing the same visual easing effect.
-    const DURATION = 500; // ms
-    const startTop = scrollElement.scrollTop;
-    const distance = target - startTop;
-    const startTime = performance.now();
-
-    setProgrammaticScroll(DURATION + 100);
-
-    const step = (now: number) => {
-      // Bail out if the programmatic lock was already cleared (e.g. a newer
-      // scroll was initiated) so we don't fight with it.
-      if (!programmaticScrollRef.current) return;
-
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / DURATION, 1);
-      // Ease-in-out cubic
-      const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - (-2 * progress + 2) ** 3 / 2;
-
-      scrollElement.scrollTop = startTop + distance * eased;
-
-      if (progress < 1) {
-        requestAnimationFrame(step);
-      }
-    };
-
-    requestAnimationFrame(step);
-  }, [scrollElement, restoreSpacer, setProgrammaticScroll]);
-
-  // ─── Scroll to bottom (for "Latest" button) ───────────────────────────────
+  const pinToTop = useCallback(
+    (smooth: boolean) => {
+      if (!scrollElement) return;
+      pinnedRef.current = true;
+      setSpacerHeight(scrollElement.clientHeight);
+      const target = pinTarget();
+      if (target == null) return;
+      if (smooth) animateScrollTo(target);
+      else scrollElement.scrollTop = target;
+    },
+    [scrollElement, setSpacerHeight, pinTarget, animateScrollTo],
+  );
 
   const goToLatest = useCallback(() => {
     if (!scrollElement) return;
-    if (isRespondingRef.current && spacerRef.current) {
-      // During streaming: leave a partial spacer (~40 % of the viewport) so
-      // the user can see new tokens appear below without immediately hitting
-      // the bottom and losing context of what just arrived.
-      const partialSpacer = Math.round(scrollElement.clientHeight * 0.4);
-      spacerRef.current.style.height = `${partialSpacer}px`;
-      spacerHeightRef.current = partialSpacer;
-    } else if (spacerRef.current) {
-      spacerRef.current.style.height = "0px";
-      spacerHeightRef.current = 0;
-    }
-    scrollTargetRef.current = null;
-    setProgrammaticScroll(600);
-    scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: "smooth" });
-  }, [scrollElement, setProgrammaticScroll]);
+    pinnedRef.current = false;
+    setSpacerHeight(isResponding ? scrollElement.clientHeight * 0.4 : 0);
+    animateScrollTo(scrollElement.scrollHeight - scrollElement.clientHeight);
+  }, [scrollElement, isResponding, setSpacerHeight, animateScrollTo]);
 
-  // ─── Ref callbacks ────────────────────────────────────────────────────────
-
-  const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
-    setScrollElement(element);
-    if (element) {
-      if (spacerRef.current) {
-        spacerRef.current.style.height = `${element.clientHeight}px`;
-        spacerHeightRef.current = element.clientHeight;
-      }
-    }
+  const handleScrollContainerRef = useCallback((el: HTMLDivElement | null) => setScrollElement(el), []);
+  const handleSpacerRef = useCallback((el: HTMLDivElement | null) => {
+    spacerRef.current = el;
   }, []);
 
-  const handleSpacerRef = useCallback((element: HTMLDivElement | null) => {
-    spacerRef.current = element;
-  }, []);
-
-  // ─── Keep checkIsAtBottom ref in sync with scrollElement ─────────────────
-
-  useEffect(() => {
-    checkIsAtBottomRef.current = () => {
-      if (!scrollElement) return;
-      const { scrollTop, clientHeight, scrollHeight } = scrollElement;
-      const spacerHeight = spacerHeightRef.current;
-      const visibleSpacer = Math.max(0, scrollTop + clientHeight - (scrollHeight - spacerHeight));
-      const atRealBottom = scrollHeight - scrollTop - clientHeight <= 2;
-      setIsAtBottom(visibleSpacer > 0 || atRealBottom);
-    };
-  }, [scrollElement]);
-
-  // ─── Track scroll position for "Latest" button ───────────────────────────
-
+  // Reclaim the spacer only while unpinned: shrinking it while pinned tightens
+  // maxScroll until a tool collapse clamps scrollTop and nudges the view up.
   useEffect(() => {
     if (!scrollElement) return;
-
     const onScroll = () => {
       if (programmaticScrollRef.current) return;
-
-      // Track whether the user manually scrolled during a streaming response
-      if (isResponding) {
-        userScrolledDuringStreamRef.current = true;
+      if (!pinnedRef.current) {
+        const { scrollTop, clientHeight, scrollHeight } = scrollElement;
+        const spacerHeight = spacerHeightRef.current;
+        const visible = Math.max(0, Math.min(spacerHeight, scrollTop + clientHeight - (scrollHeight - spacerHeight)));
+        if (visible !== spacerHeight) setSpacerHeight(visible);
       }
-
-      const { scrollTop, clientHeight, scrollHeight } = scrollElement;
-      const spacerHeight = spacerHeightRef.current;
-
-      // Collapse the portion of the spacer that's scrolled past
-      const visibleSpacer = Math.max(0, scrollTop + clientHeight - (scrollHeight - spacerHeight));
-      if (spacerRef.current) {
-        spacerRef.current.style.height = `${visibleSpacer}px`;
-        spacerHeightRef.current = visibleSpacer;
-      }
-
-      const atRealBottom = scrollHeight - scrollTop - clientHeight <= 2;
-      setIsAtBottom(visibleSpacer > 0 || atRealBottom);
+      checkIsAtBottom();
     };
-
     scrollElement.addEventListener("scroll", onScroll, { passive: true });
     return () => scrollElement.removeEventListener("scroll", onScroll);
-  }, [scrollElement, isResponding]);
+  }, [scrollElement, setSpacerHeight, checkIsAtBottom]);
 
-  // ─── Initialise spacer when scroll element first mounts ──────────────────
-
+  // Release the pin on a real gesture — not scroll events, which our own writes fire.
   useEffect(() => {
     if (!scrollElement) return;
-    restoreSpacer();
-  }, [scrollElement, restoreSpacer]);
-
-  // ─── Reset on chat switch ─────────────────────────────────────────────────
-
-  useLayoutEffect(() => {
-    if (lastResetKeyRef.current === resetKey) return;
-    lastResetKeyRef.current = resetKey;
-
-    setIsAtBottom(true);
-    scrollTargetRef.current = null;
-    userScrolledDuringStreamRef.current = false;
-    if (scrollElement) {
-      // Clear the spacer so we land on the actual last message, not inside it.
-      if (spacerRef.current) {
-        spacerRef.current.style.height = "0px";
-        spacerHeightRef.current = 0;
-      }
-      scrollElement.scrollTop = scrollElement.scrollHeight;
-    } else {
-      // Container not mounted yet (e.g. switching from empty chat) — defer.
-      pendingScrollToBottomRef.current = true;
-    }
-  }, [resetKey, scrollElement]);
-
-  // ─── Deferred scroll-to-bottom after container mounts on chat switch ─────
-
-  useLayoutEffect(() => {
-    if (!scrollElement || !pendingScrollToBottomRef.current) return;
-    pendingScrollToBottomRef.current = false;
-    if (spacerRef.current) {
-      spacerRef.current.style.height = "0px";
-      spacerHeightRef.current = 0;
-    }
-    scrollElement.scrollTop = scrollElement.scrollHeight;
+    const unpin = () => {
+      pinnedRef.current = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) pinnedRef.current = false;
+    };
+    scrollElement.addEventListener("wheel", unpin, { passive: true });
+    scrollElement.addEventListener("touchmove", unpin, { passive: true });
+    scrollElement.addEventListener("keydown", onKey);
+    return () => {
+      scrollElement.removeEventListener("wheel", unpin);
+      scrollElement.removeEventListener("touchmove", unpin);
+      scrollElement.removeEventListener("keydown", onKey);
+    };
   }, [scrollElement]);
 
-  // ─── Scroll to user message on send ──────────────────────────────────────
-  // Uses useLayoutEffect so this runs in the same synchronous pass as the
-  // reset-on-chat-switch above — the correct scroll position is set before
-  // the first paint, closing the gap where the message was briefly hidden.
+  // The pin holds scrollTop steady, so no scroll events fire as content grows.
+  useEffect(() => {
+    if (messages.length === 0 || programmaticScrollRef.current) return;
+    checkIsAtBottom();
+  }, [messages, checkIsAtBottom]);
 
+  // Reset to the bottom on chat switch, deferring the scroll until the container
+  // is mounted.
   useLayoutEffect(() => {
-    const prevLength = prevMessagesLengthRef.current;
-    const currLength = messages.length;
-    prevMessagesLengthRef.current = currLength;
-
-    if (currLength <= prevLength) return;
-
-    const lastMsg = messages[currLength - 1];
-    if (lastMsg?.role === "user") {
-      scrollToNewestUserMsg();
+    if (lastResetKeyRef.current !== resetKey) {
+      lastResetKeyRef.current = resetKey;
+      pinnedRef.current = false;
+      setIsAtBottom(true);
+      pendingScrollToBottomRef.current = true;
     }
-  }, [messages, scrollToNewestUserMsg]);
+    if (!scrollElement || !pendingScrollToBottomRef.current) return;
+    pendingScrollToBottomRef.current = false;
+    setSpacerHeight(0);
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+  }, [resetKey, scrollElement, setSpacerHeight]);
 
-  // ─── Re-check isAtBottom on every message update ─────────────────────────
-  // The hold effect below keeps scrollTop fixed, so no scroll events fire
-  // when content grows during streaming. Without this, isAtBottom stays stale
-  // (true) and the "Latest" button never appears as the response streams in.
+  // Pin the newest message on send/edit, detected by reference (edits truncate,
+  // so a length check misses them); skipped on chat switch. Only genuine prompts
+  // anchor — tool results are role "user" too, but carry no text content.
+  useLayoutEffect(() => {
+    const last = messages[messages.length - 1];
+    const prevLast = lastSeenMsgRef.current;
+    const switched = pinResetKeyRef.current !== resetKey;
+    lastSeenMsgRef.current = last;
+    pinResetKeyRef.current = resetKey;
+    if (switched || !last || last === prevLast) return;
+    if (last.role === "user" && last.content?.some((p) => p.type !== "tool_result")) pinToTop(true);
+  }, [messages, resetKey, pinToTop]);
+
+  // Hold the pin: synchronously per render (steady as tool calls run) and on
+  // non-render reflows (images, fonts) via ResizeObserver.
+  useLayoutEffect(() => {
+    if (messages.length > 0) maintainPin();
+  }, [messages, maintainPin]);
 
   useEffect(() => {
-    if (messages.length === 0) return;
-    if (programmaticScrollRef.current) return;
-    checkIsAtBottomRef.current();
-  }, [messages]);
-
-  // ─── Hold scroll position during streaming ───────────────────────────────
-  // Mirrors "not streaming" behaviour: scroll stays exactly where it was
-  // when the user message was sent, regardless of content growing below.
-
-  useLayoutEffect(() => {
-    if (!isResponding || messages.length === 0) return;
-    if (programmaticScrollRef.current) return;
-    if (userScrolledDuringStreamRef.current) return;
-    if (scrollTargetRef.current === null || !scrollElement) return;
-
-    const target = scrollTargetRef.current;
-    if (Math.abs(scrollElement.scrollTop - target) > 2) {
-      scrollElement.scrollTop = target;
-    }
-  }, [messages, isResponding, scrollElement]);
-
-  // ─── Cleanup ──────────────────────────────────────────────────────────────
-
-  useEffect(() => {
+    const content = scrollElement?.firstElementChild;
+    if (!content) return;
+    const observer = new ResizeObserver(maintainPin);
+    observer.observe(content);
+    window.addEventListener("resize", maintainPin);
     return () => {
-      if (programmaticScrollTimerRef.current !== null) {
-        clearTimeout(programmaticScrollTimerRef.current);
-      }
+      observer.disconnect();
+      window.removeEventListener("resize", maintainPin);
     };
-  }, []);
+  }, [scrollElement, maintainPin]);
 
-  return {
-    handleScrollContainerRef,
-    handleSpacerRef,
-    isAtBottom,
-    goToLatest,
-  };
+  useEffect(
+    () => () => {
+      if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    },
+    [],
+  );
+
+  return { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest };
 }

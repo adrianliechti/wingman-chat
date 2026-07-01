@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
-import { downloadFromUrl } from "@/shared/lib/utils";
+import { downloadFromUrl, formatBytes } from "@/shared/lib/utils";
 import type { TranslateContextType } from "./TranslateContext";
 import { styleOptions, supportedFiles, supportedLanguages, TranslateContext, toneOptions } from "./TranslateContext";
 
@@ -46,6 +46,13 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
 
       // Handle file translation if a file is selected
       if (selectedFile) {
+        const maxFileSize = config.translator?.maxFileSize;
+        if (maxFileSize != null && selectedFile.size > maxFileSize) {
+          setError(
+            `"${selectedFile.name}" is ${formatBytes(selectedFile.size)}, over the ${formatBytes(maxFileSize)} limit.`,
+          );
+          return;
+        }
         setIsLoading(true);
         try {
           const result = await client.translate(langToUse, selectedFile);
@@ -97,6 +104,14 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
         return;
       }
 
+      const maxTextLength = config.translator?.maxTextLength;
+      if (maxTextLength != null && textToUse.length > maxTextLength) {
+        setError(
+          `Text is ${textToUse.length.toLocaleString()} characters, over the ${maxTextLength.toLocaleString()} limit.`,
+        );
+        return;
+      }
+
       setIsLoading(true);
       setTranslatedText("");
 
@@ -126,7 +141,17 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
         setIsLoading(false);
       }
     },
-    [client, selectedFile, tone, style, config.translator?.model, targetLang, sourceText],
+    [
+      client,
+      selectedFile,
+      tone,
+      style,
+      config.translator?.model,
+      config.translator?.maxFileSize,
+      config.translator?.maxTextLength,
+      targetLang,
+      sourceText,
+    ],
   );
 
   const handleReset = useCallback(() => {
@@ -166,7 +191,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (sourceText.trim() && !selectedFile && sourceText !== lastTranslatedText) {
-        performTranslate(targetLang, sourceText, tone, style);
+        void performTranslate(targetLang, sourceText, tone, style);
       }
     }, 1000);
 
@@ -188,7 +213,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   useEffect(() => {
     if (shouldRetranslate) {
       setShouldRetranslate(false);
-      performTranslate(targetLang, sourceText, tone, style);
+      void performTranslate(targetLang, sourceText, tone, style);
     }
   }, [shouldRetranslate, performTranslate, targetLang, sourceText, tone, style]);
 
@@ -263,5 +288,5 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     clearFile,
   };
 
-  return <TranslateContext.Provider value={contextValue}>{children}</TranslateContext.Provider>;
+  return <TranslateContext value={contextValue}>{children}</TranslateContext>;
 }

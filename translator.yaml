@@ -1,14 +1,14 @@
 files:
-- .txt
-- .md
-- .pdf
-- .docx
-- .pptx
-- .xlsx
+  - .txt
+  - .md
+  - .pdf
+  - .docx
+  - .pptx
+  - .xlsx
 
 languages:
-- en
-- de
-- fr
-- it
-- es
+  - en
+  - de
+  - fr
+  - it
+  - es

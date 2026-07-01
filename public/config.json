@@ -1,68 +1,57 @@
 {
-    "vision": {
-        "enabled": true
-    },
+  "navigation": true,
 
-    "stt": {
-        "enabled": true
-    },
+  "vision": {},
 
-    "tts": {
-        "enabled": true
-    },
+  "stt": {},
 
-    "voice": {
-        "enabled": true
-    },
+  "tts": {},
 
-    "artifacts": {
-        "enabled": true
-    },
+  "voice": {},
 
-    "repository": {
-        "enabled": true
-    },
+  "artifacts": {},
 
-    "renderer": {
-        "enabled": true
-    },
+  "repository": {},
 
-    "internet": {
-        "enabled": true,
-        "elicitation": true,
-        "searcher": "web",
-        "scraper": "web",
-        "researcher": "web"
-    },
+  "renderer": {},
 
-    "notebook": {
-        "enabled": true
-    },
+  "extractor": {
+    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+  },
 
-    "models1": [
-        {
-            "id": "gpt-5.1",
+  "internet": {
+    "elicitation": true,
+    "searcher": "web",
+    "scraper": "web",
+    "researcher": "web"
+  },
 
-            "name": "GPT-5.1",
-            "description": "Default Model"
-        }
-    ],
+  "notebook": {},
 
-    "translator": {
-        "enabled": true,
+  "_telemetry": {},
 
-        "files": [
-            ".pdf"
-        ],
+  "_models": [
+    {
+      "id": "gpt-5.1",
 
-        "languages": [
-            "en",
-            "es",
-            "fr",
-            "de",
-            "zh",
-            "ja",
-            "ru"
-        ]
+      "name": "GPT-5.1",
+      "description": "Default Model",
+
+      "instructions": "You are a helpful assistant."
     }
+  ],
+
+  "tools": [
+    {
+      "id": "web",
+      "name": "Web",
+      "description": "Search and browse the web"
+    }
+  ],
+
+  "translator": {
+    "files": [".pdf"],
+
+    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
+  }
 }

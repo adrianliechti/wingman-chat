@@ -1,9 +1,11 @@
 import { getConfig } from "@/shared/config";
-import { docxToMarkdown } from "./docx";
-import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
-import { pdfToMarkdown } from "./pdf";
-import { pptxToMarkdown } from "./pptx";
-import { csvToMarkdownTable, xlsxToCsv } from "./xlsx";
+import { fileMatchesTypeList, inferContentTypeFromPath, isTextContentType } from "./fileTypes";
+import { formatBytes } from "./utils";
+
+// The DOCX/XLSX/PPTX/PDF converters each drag in heavy dependencies (jszip,
+// pdfjs) that aren't needed until a user actually attaches such a file, so they
+// are imported on demand inside the dispatch below — keeping them out of the
+// initial bundle.
 
 // MIME constants
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -12,50 +14,114 @@ const MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.
 
 /** All file types the converter supports — used for file-picker accept filters. */
 export const SUPPORTED_TYPES = [
-  // Text / code
-  ".csv",
-  "text/csv",
-  ".md",
-  "text/markdown",
+  // Any text MIME the browser reports — covers the bulk of text/data/code files
+  // directly. Extensions below catch files the browser mislabels as binary.
+  "text/*",
+
+  // Text / data extensions
   ".txt",
-  "text/plain",
+  ".text",
+  ".log",
+  ".md",
+  ".markdown",
+  ".rst",
+  ".csv",
+  ".tsv",
   ".json",
-  "application/json",
-  ".sql",
-  "application/sql",
-  ".toml",
-  "application/toml",
+  ".jsonc",
+  ".json5",
+  ".xml",
   ".yaml",
   ".yml",
-  "application/x-yaml",
-  "text/yaml",
-  ".xml",
-  "application/xml",
-  "text/xml",
+  ".toml",
+  ".ini",
+  ".conf",
+  ".cfg",
+  ".env",
+  ".properties",
+  ".sql",
   ".css",
-  "text/css",
+  ".scss",
+  ".sass",
+  ".less",
+  ".styl",
   ".html",
-  "text/html",
+  ".htm",
+  ".tex",
+
+  // Code extensions
   ".c",
+  ".h",
+  ".cc",
   ".cpp",
+  ".cxx",
+  ".hpp",
+  ".hh",
+  ".hxx",
   ".cs",
-  ".dart",
-  ".go",
+  ".m",
+  ".mm",
   ".java",
-  ".js",
-  ".jsx",
   ".kt",
-  ".lua",
-  ".php",
-  ".py",
-  ".r",
-  ".rb",
-  ".rs",
+  ".kts",
   ".scala",
-  ".sh",
+  ".sc",
+  ".go",
+  ".rs",
   ".swift",
+  ".dart",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".jsx",
   ".ts",
   ".tsx",
+  ".vue",
+  ".svelte",
+  ".py",
+  ".rb",
+  ".php",
+  ".pl",
+  ".pm",
+  ".lua",
+  ".r",
+  ".jl",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".fish",
+  ".ps1",
+  ".bat",
+  ".groovy",
+  ".gradle",
+  ".clj",
+  ".cljs",
+  ".ex",
+  ".exs",
+  ".erl",
+  ".hs",
+  ".ml",
+  ".fs",
+  ".vb",
+  ".lisp",
+  ".scm",
+  ".rkt",
+  ".nim",
+  ".zig",
+  ".v",
+  ".sv",
+  ".vhd",
+  ".vhdl",
+  ".asm",
+  ".s",
+  ".f",
+  ".f90",
+  ".pas",
+  ".d",
+  ".proto",
+  ".graphql",
+  ".gql",
+  ".tf",
 
   // Office documents & PDF
   ".docx",
@@ -96,20 +162,11 @@ function converterKind(file: File, textTypes?: string[], extraTypes?: string[]):
 
   if (isTextContentType(type || inferContentTypeFromPath(name))) return "text";
 
-  if (textTypes?.some((t) => (t.startsWith(".") ? name.endsWith(t) : type === t))) return "text";
+  if (textTypes && fileMatchesTypeList(name, type, textTypes)) return "text";
 
-  if (extraTypes?.some((t) => (t.startsWith(".") ? name.endsWith(t) : type === t))) return "backend";
+  if (extraTypes && fileMatchesTypeList(name, type, extraTypes)) return "backend";
 
   return null;
-}
-
-/** Whether this module can convert the given file (includes extra types from config). */
-export function canConvert(file: File): boolean {
-  // Images are handled by the caller (stored verbatim as binary sources),
-  // but we advertise them as accepted so the picker lets them through.
-  if (file.type.startsWith("image/")) return true;
-  const config = getConfig();
-  return converterKind(file, config.text?.files, config.extractor?.files) !== null;
 }
 
 /** All accepted file types (SUPPORTED_TYPES + text files + extractor files from config). */
@@ -131,8 +188,14 @@ export async function convertFileToText(file: File): Promise<string> {
   const config = getConfig();
   const kind = converterKind(file, config.text?.files, config.extractor?.files);
 
+  // Optional extractor size cap. For builtin types the backend is only a quality
+  // boost over the client-side converters, so an oversized file simply skips it;
+  // for backend-only types it's the sole path → reject with a clear message.
+  const extractLimit = config.extractor?.maxFileSize;
+  const overExtractLimit = extractLimit != null && file.size > extractLimit;
+
   // Try API extraction first for non-text builtin types
-  if (config.extractor && kind === "builtin") {
+  if (config.extractor && kind === "builtin" && !overExtractLimit) {
     try {
       const text = await config.client.extractText(file);
       if (text?.trim()) return text;
@@ -143,6 +206,11 @@ export async function convertFileToText(file: File): Promise<string> {
 
   // Backend-only types → extractText is the only path
   if (kind === "backend") {
+    if (overExtractLimit) {
+      throw new Error(
+        `${file.name} is ${formatBytes(file.size)}, over the ${formatBytes(extractLimit as number)} extract limit`,
+      );
+    }
     return config.client.extractText(file);
   }
 
@@ -150,6 +218,7 @@ export async function convertFileToText(file: File): Promise<string> {
   const name = file.name.toLowerCase();
 
   if (name.endsWith(".xlsx") || file.type === MIME_XLSX) {
+    const { csvToMarkdownTable, xlsxToCsv } = await import("./xlsx");
     const results = await xlsxToCsv(file);
     if (results.length === 0) return "";
     if (results.length === 1) return csvToMarkdownTable(results[0].csv);
@@ -157,14 +226,17 @@ export async function convertFileToText(file: File): Promise<string> {
   }
 
   if (name.endsWith(".docx") || file.type === MIME_DOCX) {
+    const { docxToMarkdown } = await import("./docx");
     return docxToMarkdown(file);
   }
 
   if (name.endsWith(".pptx") || file.type === MIME_PPTX) {
+    const { pptxToMarkdown } = await import("./pptx");
     return pptxToMarkdown(file);
   }
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
+    const { pdfToMarkdown } = await import("./pdf");
     return pdfToMarkdown(file);
   }
 

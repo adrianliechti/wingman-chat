@@ -11,12 +11,11 @@ interface BackgroundPackConfig {
 
 interface SupportConfig {
   url?: string;
-  email?: string;
 }
 
 interface ToolConfig {
   id: string;
-  url: string;
+  url?: string;
   name: string;
   description: string;
   icon?: string;
@@ -26,10 +25,17 @@ interface ModelConfig {
   id: string;
   name: string;
   description?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high";
+  instructions?: string;
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
+  // Renderer (image) model capabilities; config overrides the per-family heuristic.
+  supportedQualities?: ("low" | "medium" | "high")[];
+  supportedAspectRatios?: string[];
+  supportedResolutions?: ("512" | "1K" | "2K" | "4K")[];
+  supportedBackgrounds?: ("opaque" | "transparent")[];
   tools?: {
     enabled: string[];
     disabled: string[];
@@ -41,17 +47,52 @@ interface TTSConfig {
   voices?: Record<string, string>;
 }
 
+/**
+ * Container/codec the audio is re-encoded to before upload when transcribing a
+ * video. Defaults to `opus` (Opus in Ogg) — the smallest broadly-accepted form.
+ * `opus`/`webm` need a WebCodecs Opus encoder and `mp4` an AAC encoder — all fall
+ * back to `wav` (pure-JS, universal but ~8x larger) when the browser can't encode
+ * them. Container choice rarely matters; model input-length caps (e.g. OpenAI
+ * gpt-4o-transcribe ~23 min) are a separate, model-specific limit.
+ */
+export type STTFormat = "opus" | "webm" | "wav" | "mp4";
+
 interface STTConfig {
   model?: string;
+  format?: STTFormat;
 }
+
+interface NotebookStyleBase {
+  name: string;
+  /**
+   * Either inline prompt text, or a URL (absolute `https://…` or
+   * page-relative `/notebooks/…`) fetched on demand and cached.
+   * Use a URL for long templates so they don't bloat `config.json`.
+   */
+  prompt: string;
+}
+
+interface NotebookSlide extends NotebookStyleBase {}
+interface NotebookPodcast extends NotebookStyleBase {
+  voices?: string[];
+}
+interface NotebookReport extends NotebookStyleBase {}
+interface NotebookInfographic extends NotebookStyleBase {}
+interface NotebookProcess extends NotebookStyleBase {}
+interface NotebookArchitecture extends NotebookStyleBase {}
 
 interface NotebookConfig {
   model?: string;
   renderer?: string;
+  slides?: NotebookSlide[];
+  podcasts?: NotebookPodcast[];
+  reports?: NotebookReport[];
+  infographics?: NotebookInfographic[];
+  processes?: NotebookProcess[];
+  architectures?: NotebookArchitecture[];
 }
 
 interface VoiceConfig {
-  enabled?: boolean;
   model?: string;
   transcriber?: string;
 }
@@ -61,7 +102,10 @@ interface TextConfig {
 }
 
 interface VisionConfig {
+  model?: string;
   files: string[];
+  /** Max input image size in bytes; oversized images are skipped. Optional. */
+  maxFileSize?: number;
 }
 
 interface RendererConfig {
@@ -80,6 +124,13 @@ interface InternetConfig {
 interface ExtractorConfig {
   model?: string;
   files: string[];
+  /** Max file size in bytes sent to the extract endpoint; checked before upload. Optional. */
+  maxFileSize?: number;
+}
+
+interface ArtifactsConfig {
+  /** Max size in bytes for a file uploaded into the artifacts workspace. Optional. */
+  maxFileSize?: number;
 }
 
 interface RepositoryConfig {
@@ -91,23 +142,54 @@ interface TranslatorConfig {
   model?: string;
   files: string[];
   languages: string[];
+  /** Max file size in bytes; unlimited if unset. */
+  maxFileSize?: number;
+  /** Max input text length; unlimited if unset. */
+  maxTextLength?: number;
 }
 
 export interface CategoryConfig {
   name: string;
   description: string;
   consent?: boolean | string;
+  /** Minimum classifier confidence (0..1) for this category to count as a match. Falls back to chat.classification.threshold. */
+  threshold?: number;
+}
+
+export type RiskSeverity = "low" | "medium" | "high";
+
+export interface RiskConfig {
+  name: string;
+  description: string;
+  /** Visual emphasis on the warning banner. Defaults to "medium". */
+  severity?: RiskSeverity;
+  /** Body text shown in the warning. Falls back to a generic message using the risk name. */
+  message?: string;
+  /** Minimum classifier confidence (0..1) for this risk to fire. Falls back to chat.classification.threshold. */
+  threshold?: number;
+}
+
+export interface ClassificationConfig {
+  /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
+  model?: string;
+  /** Default threshold (0..1) applied when a category or risk does not set its own. */
+  threshold?: number;
 }
 
 export function categorySlug(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
+export const riskSlug = categorySlug;
+
 interface ChatConfig {
+  instructions?: string;
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
+  classification?: ClassificationConfig;
   categories?: CategoryConfig[];
+  risks?: RiskConfig[];
 }
 
 export interface DriveConfig {
@@ -120,49 +202,11 @@ interface BridgeConfig {
   url?: string;
 }
 
-interface CanvasSlideConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasPodcastConfig {
-  name: string;
-  prompt: string;
-  voices?: string[];
-}
-
-interface CanvasReportConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasInfographicConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasProcessConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasArchitectureConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasConfig {
-  slides?: CanvasSlideConfig[];
-  podcasts?: CanvasPodcastConfig[];
-  reports?: CanvasReportConfig[];
-  infographics?: CanvasInfographicConfig[];
-  processes?: CanvasProcessConfig[];
-  architectures?: CanvasArchitectureConfig[];
-}
-
 interface ConfigSchema {
   title: string;
   disclaimer: string;
+  /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
+  navigation?: boolean;
   bridge?: BridgeConfig;
   support?: SupportConfig;
 
@@ -172,8 +216,6 @@ interface ConfigSchema {
   drives?: DriveConfig[];
 
   backgrounds?: BackgroundPackConfig;
-
-  canvas?: CanvasConfig;
 
   tts?: TTSConfig;
   stt?: STTConfig;
@@ -192,7 +234,7 @@ interface ConfigSchema {
 
   memory?: object;
 
-  artifacts?: object;
+  artifacts?: ArtifactsConfig;
   repository?: RepositoryConfig;
   translator?: TranslatorConfig;
 
@@ -216,6 +258,8 @@ const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 interface Config {
   title: string;
   disclaimer: string;
+  /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
+  navigation: boolean;
   bridge: BridgeConfig | null;
   support: SupportConfig | null;
 
@@ -243,7 +287,7 @@ interface Config {
 
   memory: object | null;
 
-  artifacts: object | null;
+  artifacts: ArtifactsConfig | null;
   repository: RepositoryConfig | null;
   translator: TranslatorConfig | null;
 
@@ -254,8 +298,6 @@ interface Config {
   telemetry: boolean;
 
   backgrounds: BackgroundPackConfig;
-
-  canvas: CanvasConfig;
 }
 
 let config: Config;
@@ -273,11 +315,15 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
+      navigation: cfg.navigation !== false,
       bridge: cfg.bridge ?? null,
       support: cfg.support ?? null,
 
       client: new Client(),
 
+      // Relative MCPs (no explicit url) are proxied through `/api/v1/mcp/{id}`
+      // and gated by backend RBAC. They are resolved to their proxy url here;
+      // availability filtering against `/v1/mcp` happens at runtime in ToolsProvider.
       mcps:
         cfg.tools?.map((mcp) => ({
           ...mcp,
@@ -293,15 +339,24 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       notebook: cfg.notebook ?? null,
 
-      voice:
-        cfg.voice && cfg.voice.enabled !== false
-          ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber }
-          : null,
-      vision: cfg.vision ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES } : null,
+      voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
+      vision: cfg.vision
+        ? {
+            model: cfg.vision.model,
+            files: cfg.vision.files ?? DEFAULT_VISION_FILES,
+            maxFileSize: cfg.vision.maxFileSize,
+          }
+        : null,
 
       text: cfg.text ? { files: cfg.text.files } : null,
 
-      extractor: cfg.extractor ? { model: cfg.extractor.model, files: cfg.extractor.files ?? [] } : null,
+      extractor: cfg.extractor
+        ? {
+            model: cfg.extractor.model,
+            files: cfg.extractor.files ?? [],
+            maxFileSize: cfg.extractor.maxFileSize,
+          }
+        : null,
 
       internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
@@ -314,6 +369,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
             model: cfg.translator.model,
             files: cfg.translator.files ?? [],
             languages: cfg.translator.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
+            maxFileSize: cfg.translator.maxFileSize,
+            maxTextLength: cfg.translator.maxTextLength,
           }
         : null,
 
@@ -324,13 +381,12 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       telemetry: cfg.telemetry != null,
 
       backgrounds: cfg.backgrounds ?? {},
-
-      canvas: cfg.canvas ?? {},
     };
 
     return config;
   } catch (error) {
     console.error("unable to load config", error);
+    return undefined;
   }
 };
 

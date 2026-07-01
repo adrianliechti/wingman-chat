@@ -5,12 +5,12 @@ export function useChatNavigate() {
   const navigate = useNavigate();
 
   const newChat = useCallback(() => {
-    navigate({ to: "/chat" });
+    void navigate({ to: "/chat" });
   }, [navigate]);
 
   const openChat = useCallback(
     (chatId: string) => {
-      navigate({ to: "/chat/$chatId", params: { chatId } });
+      void navigate({ to: "/chat/$chatId", params: { chatId } });
     },
     [navigate],
   );

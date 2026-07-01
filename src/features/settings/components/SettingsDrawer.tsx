@@ -1,14 +1,13 @@
-import { Listbox, Transition } from "@headlessui/react";
+import { Transition } from "@headlessui/react";
 import {
   Bot,
-  Check,
   ChevronRight,
-  ChevronsUpDown,
   Coffee,
   Download,
   HardDrive,
   MessageSquare,
   Mic,
+  Notebook,
   Settings,
   ShieldCheck,
   Trash2,
@@ -20,12 +19,10 @@ import {
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { exportNotebooksAsZip, triggerNotebookImport } from "@/features/notebook/lib/notebookImportExport";
+import { deleteNotebook, listNotebooks } from "@/features/notebook/lib/opfs-notebook";
 import { useSettings } from "@/features/settings/hooks/useSettings";
-import {
-  exportAgentsAsZip,
-  importAgentsFromLegacyJson,
-  importAgentsFromZip,
-} from "@/features/settings/lib/agentImportExport";
+import { exportAgentsAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import {
   exportChatsAsZip,
   importChatsFromLegacyJson,
@@ -37,12 +34,15 @@ import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { cn } from "@/shared/lib/cn";
+import { confirm } from "@/shared/lib/confirm";
+import { notify } from "@/shared/lib/notify";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { SelectMenu } from "@/shared/ui/SelectMenu";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 import { SyncSection } from "./SyncSection";
@@ -69,57 +69,6 @@ const emojiOptions: { value: EmojiMode; label: string }[] = [
   { value: "monochrome", label: "Minimal" },
   { value: "native", label: "Native" },
 ];
-
-// A generic, reusable Select component using Headless UI Listbox
-function Select<T extends string | null>({
-  label,
-  value,
-  onChange,
-  options,
-  description,
-}: {
-  label?: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: { value: T; label: string }[];
-  description?: string;
-}) {
-  return (
-    <div>
-      {label && <p className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{label}</p>}
-      <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full rounded-lg bg-white/50 dark:bg-neutral-800/50 py-2.5 pl-3 pr-10 text-left border border-neutral-300/50 dark:border-neutral-700/50 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-sm transition-colors">
-          <span className="block truncate text-sm">
-            {options.find((o) => o.value === value)?.label ?? "System Default"}
-          </span>
-          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-            <ChevronsUpDown className="h-4 w-4 text-neutral-400" aria-hidden="true" />
-          </span>
-        </Listbox.Button>
-        <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <Listbox.Options
-            anchor="bottom"
-            className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl sm:text-sm z-100 transition duration-100 ease-in data-leave:data-closed:opacity-0"
-          >
-            {options.map((option) => (
-              <Listbox.Option
-                key={String(option.value)}
-                className="group relative cursor-pointer select-none py-2 pl-10 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 data-focus:bg-neutral-200 dark:data-focus:bg-neutral-700/80"
-                value={option.value}
-              >
-                <span className="block truncate font-normal group-data-selected:font-semibold">{option.label}</span>
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-blue-600 dark:text-blue-400 group-data-selected:visible invisible">
-                  <Check className="h-5 w-5" aria-hidden="true" />
-                </span>
-              </Listbox.Option>
-            ))}
-          </Listbox.Options>
-        </Transition>
-      </Listbox>
-      {description && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{description}</p>}
-    </div>
-  );
-}
 
 // Compact segmented control for small option sets
 function SegmentedControl<T extends string>({
@@ -246,6 +195,16 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     error: null,
   });
 
+  const [notebooks, setNotebooks] = useState<{ id: string }[]>([]);
+
+  const loadNotebooks = useCallback(async () => {
+    try {
+      setNotebooks(await listNotebooks());
+    } catch (error) {
+      console.error("Failed to load notebooks:", error);
+    }
+  }, []);
+
   // Load storage info when drawer opens
   const loadStorageInfo = useCallback(async () => {
     try {
@@ -269,14 +228,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   useEffect(() => {
     if (isOpen) {
       void loadStorageInfo();
+      void loadNotebooks();
     }
-  }, [isOpen, loadStorageInfo]);
+  }, [isOpen, loadStorageInfo, loadNotebooks]);
 
-  const deleteChats = () => {
+  const deleteChats = async () => {
     if (
-      window.confirm(
-        `Are you sure you want to delete all ${chats.length} chat${chats.length === 1 ? "" : "s"}? This action cannot be undone.`,
-      )
+      await confirm({
+        title: "Delete all chats?",
+        message: `This permanently removes all ${chats.length} chat${chats.length === 1 ? "" : "s"} and can't be undone.`,
+        danger: true,
+      })
     ) {
       chats.forEach((chat) => {
         deleteChat(chat.id);
@@ -289,30 +251,42 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
   const deleteAllData = async () => {
     if (
-      !window.confirm(
-        "Are you sure you want to delete ALL data? This includes chats, agents, images, skills, and settings. This action cannot be undone.",
-      )
+      !(await confirm({
+        title: "Delete all data?",
+        message: "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
+        danger: true,
+      }))
     ) {
       return;
     }
 
-    if (!window.confirm("This is your FINAL warning. All your data will be permanently deleted. Continue?")) {
+    if (
+      !(await confirm({
+        title: "Are you absolutely sure?",
+        message: "This is your final warning. All data will be permanently deleted and cannot be recovered.",
+        danger: true,
+        confirmLabel: "Delete everything",
+      }))
+    ) {
       return;
     }
 
     try {
       await clearAll();
-      alert("All data deleted. The page will now reload.");
-      window.location.reload();
+      notify.success("Data deleted", "Everything was removed. Reloading…");
+      setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
       console.error("Delete all failed:", error);
-      alert("Failed to delete all data. Please try again.");
+      notify.error("Couldn't delete data", "Something went wrong. Please try again.");
     }
   };
 
   const rebuildIndexes = async () => {
     if (
-      !window.confirm("Rebuild OPFS indexes now? This will rescan chats, agents, images, skills, and repositories.")
+      !(await confirm({
+        title: "Rebuild indexes?",
+        message: "This rescans chats, agents, images, skills, and repositories. It may take a moment.",
+      }))
     ) {
       return;
     }
@@ -320,24 +294,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     try {
       setIsRebuildingIndexes(true);
       const result = await rebuildAllIndexes();
-      alert(
-        `Indexes rebuilt successfully.\n\n` +
-          `Chats: ${result.chats}\n` +
-          `Agents: ${result.agents}\n` +
-          `Images: ${result.images}\n` +
-          `Skills: ${result.skills}\n` +
-          `Repositories: ${result.repositories}\n\n` +
-          `Cleaned empty folders:\n` +
-          `- Chats: ${result.cleanedChatsFolders}\n` +
-          `- Agents: ${result.cleanedAgentsFolders}\n` +
-          `- Images: ${result.cleanedImagesFolders}\n` +
-          `- Skills: ${result.cleanedSkillsFolders}\n` +
-          `- Repositories: ${result.cleanedRepositoryFolders}`,
+      notify.success(
+        "Indexes rebuilt",
+        `${result.chats} chats, ${result.agents} agents, ${result.images} images, ${result.skills} skills, ${result.repositories} repositories.`,
       );
       await loadStorageInfo();
     } catch (error) {
       console.error("Rebuild indexes failed:", error);
-      alert("Failed to rebuild indexes. Check console for details.");
+      notify.error("Couldn't rebuild indexes", "Check the console for details.");
     } finally {
       setIsRebuildingIndexes(false);
     }
@@ -356,14 +320,20 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const isZip = file.name.endsWith(".zip");
 
       if (isZip) {
-        if (!window.confirm("Import chats from ZIP? This will merge with your existing chats.")) return;
+        if (
+          !(await confirm({
+            title: "Import chats?",
+            message: "Chats from the ZIP will be merged with your existing chats.",
+          }))
+        )
+          return;
         try {
           await importChatsFromZip(file);
-          alert("Chats imported successfully! Please refresh the page to see the changes.");
-          window.location.reload();
+          notify.success("Chats imported", "Reloading to show them…");
+          setTimeout(() => window.location.reload(), 1200);
         } catch (error) {
           console.error("Failed to import chats:", error);
-          alert("Failed to import chats. Please check the file and try again.");
+          notify.error("Couldn't import chats", "Check the file and try again.");
         }
       } else {
         try {
@@ -371,24 +341,26 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
           const parsed = JSON.parse(jsonData);
           const count = parsed.chats?.length ?? 0;
           if (!count) {
-            alert("Invalid import file: Expected chats array not found.");
+            notify.error("Invalid import file", "No chats were found in this file.");
             return;
           }
           if (
-            !window.confirm(
-              `Import ${count} chat${count === 1 ? "" : "s"} from legacy format? This will add to your existing chats.`,
-            )
+            !(await confirm({
+              title: "Import chats?",
+              message: `${count} chat${count === 1 ? "" : "s"} from the legacy file will be added to your existing chats.`,
+            }))
           )
             return;
 
           const result = await importChatsFromLegacyJson(jsonData);
-          alert(
-            `Successfully imported ${result.imported} chat${result.imported === 1 ? "" : "s"}. Please refresh the page to see the changes.`,
+          notify.success(
+            "Chats imported",
+            `${result.imported} chat${result.imported === 1 ? "" : "s"} added. Reloading…`,
           );
-          window.location.reload();
+          setTimeout(() => window.location.reload(), 1200);
         } catch (error) {
           console.error("Failed to import chats:", error);
-          alert("Failed to import chats. Please check the file format and try again.");
+          notify.error("Couldn't import chats", "Check the file format and try again.");
         }
       }
     };
@@ -401,7 +373,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       await exportChatsAsZip();
     } catch (error) {
       console.error("Failed to export chats:", error);
-      alert("Failed to export chats. Please try again.");
+      notify.error("Couldn't export chats", "Something went wrong. Please try again.");
     }
   };
 
@@ -410,68 +382,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       await exportAgentsAsZip();
     } catch (error) {
       console.error("Failed to export agents:", error);
-      alert("Failed to export agents. Please try again.");
+      notify.error("Couldn't export agents", "Something went wrong. Please try again.");
     }
-  };
-
-  const importAgents = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".zip,.json";
-    input.multiple = false;
-
-    input.onchange = async (event) => {
-      const file = (event.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const isZip = file.name.endsWith(".zip");
-
-      if (isZip) {
-        if (!window.confirm("Import agents from ZIP? This will merge with your existing agents and skills.")) return;
-        try {
-          await importAgentsFromZip(file);
-          alert("Agents imported successfully! Please refresh the page to see the changes.");
-          window.location.reload();
-        } catch (error) {
-          console.error("Failed to import agents:", error);
-          alert("Failed to import agents. Please check the file and try again.");
-        }
-      } else {
-        try {
-          const jsonData = await file.text();
-          const parsed = JSON.parse(jsonData);
-          const count = parsed.repositories?.length ?? 0;
-          if (!count) {
-            alert("Invalid import file: Expected repositories array not found.");
-            return;
-          }
-          if (
-            !window.confirm(
-              `Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents? This will add to your existing agents.`,
-            )
-          )
-            return;
-
-          const result = await importAgentsFromLegacyJson(jsonData);
-          alert(
-            `Successfully imported ${result.imported} repositor${result.imported === 1 ? "y" : "ies"} as agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
-          );
-          window.location.reload();
-        } catch (error) {
-          console.error("Failed to import agents:", error);
-          alert("Failed to import. Please check the file format and try again.");
-        }
-      }
-    };
-
-    input.click();
   };
 
   const deleteAgents = async () => {
     if (
-      !window.confirm(
-        `Are you sure you want to delete all ${agents.length} agent${agents.length === 1 ? "" : "s"}? This action cannot be undone.`,
-      )
+      !(await confirm({
+        title: "Delete all agents?",
+        message: `This permanently removes all ${agents.length} agent${agents.length === 1 ? "" : "s"} and can't be undone.`,
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -481,11 +402,43 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
         await deleteDirectory(`agents/${agent.id}`);
         await removeIndexEntry("agents", agent.id);
       }
-      alert("All agents deleted. The page will now reload.");
-      window.location.reload();
+      notify.success("Agents deleted", "Reloading to apply changes…");
+      setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
       console.error("Failed to delete agents:", error);
-      alert("Failed to delete agents. Please try again.");
+      notify.error("Couldn't delete agents", "Something went wrong. Please try again.");
+    }
+  };
+
+  const exportNotebooks = async () => {
+    try {
+      await exportNotebooksAsZip();
+    } catch (error) {
+      console.error("Failed to export notebooks:", error);
+      notify.error("Couldn't export notebooks", "Something went wrong. Please try again.");
+    }
+  };
+
+  const deleteNotebooks = async () => {
+    if (
+      !(await confirm({
+        title: "Delete all notebooks?",
+        message: `This permanently removes all ${notebooks.length} notebook${notebooks.length === 1 ? "" : "s"} and can't be undone.`,
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+
+    try {
+      for (const notebook of notebooks) {
+        await deleteNotebook(notebook.id);
+      }
+      notify.success("Notebooks deleted", "Reloading to apply changes…");
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      console.error("Failed to delete notebooks:", error);
+      notify.error("Couldn't delete notebooks", "Something went wrong. Please try again.");
     }
   };
 
@@ -568,7 +521,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     options={layoutOptions}
                   />
                   {backgroundPacks.length > 0 && (
-                    <Select
+                    <SelectMenu
                       label="Background"
                       value={backgroundSetting}
                       onChange={setBackground}
@@ -601,7 +554,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   ) : (
                     <>
                       {inputDevices.length > 0 && (
-                        <Select
+                        <SelectMenu
                           label="Microphone"
                           value={inputDeviceId ?? null}
                           onChange={(value) => setInputDevice(value ?? undefined)}
@@ -615,7 +568,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         />
                       )}
                       {outputDevices.length > 0 && (
-                        <Select
+                        <SelectMenu
                           label="Speaker"
                           value={outputDeviceId ?? null}
                           onChange={(value) => setOutputDevice(value ?? undefined)}
@@ -698,7 +651,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   isOpen={openSection === "chats"}
                   onClick={() => toggleSection("chats")}
                 >
-                  <Select
+                  <SelectMenu
                     label="Personality"
                     value={(profile.persona || "default") as PersonaKey}
                     onChange={(value) => updateProfile({ persona: value })}
@@ -728,7 +681,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         onClick={importChats}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
                       >
-                        <Download size={14} />
+                        <Upload size={14} />
                         Import
                       </button>
                       <button
@@ -737,7 +690,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         disabled={chats.length === 0}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
                       >
-                        <Upload size={14} />
+                        <Download size={14} />
                         Export
                       </button>
                       <button
@@ -790,10 +743,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={importAgents}
+                        onClick={triggerAgentImport}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
                       >
-                        <Download size={14} />
+                        <Upload size={14} />
                         Import
                       </button>
                       <button
@@ -802,7 +755,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         disabled={agents.length === 0}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
                       >
-                        <Upload size={14} />
+                        <Download size={14} />
                         Export
                       </button>
                       <button
@@ -818,6 +771,63 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
                     <p className="text-xs text-neutral-400 dark:text-neutral-500">
                       Includes instructions, files, skills, and MCP server configurations
+                    </p>
+                  </div>
+                </SectionPanel>
+
+                {/* Notebooks Section */}
+                <SectionPanel
+                  title="Notebooks"
+                  icon={<Notebook size={20} />}
+                  isOpen={openSection === "notebooks"}
+                  onClick={() => toggleSection("notebooks")}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
+                      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                        {notebooks.length} notebook{notebooks.length === 1 ? "" : "s"} •{" "}
+                        {storageInfo.isLoading
+                          ? "..."
+                          : formatBytes(
+                              storageInfo.entries
+                                .filter((e) => e.path.startsWith("notebooks/"))
+                                .reduce((sum, e) => sum + e.size, 0),
+                            )}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={triggerNotebookImport}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                      >
+                        <Upload size={14} />
+                        Import
+                      </button>
+                      <button
+                        type="button"
+                        onClick={exportNotebooks}
+                        disabled={notebooks.length === 0}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                      >
+                        <Download size={14} />
+                        Export
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteNotebooks}
+                        disabled={notebooks.length === 0}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                      >
+                        <Trash2 size={14} />
+                        Delete All
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                      Includes sources, chat, and generated studio outputs
                     </p>
                   </div>
                 </SectionPanel>
@@ -935,7 +945,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               );
                             } catch (error) {
                               console.error("Export failed:", error);
-                              alert("Failed to export data. Please try again.");
+                              notify.error("Couldn't export data", "Something went wrong. Please try again.");
                             } finally {
                               setIsExporting(false);
                             }

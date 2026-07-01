@@ -1,21 +1,26 @@
-import { convertFileToText, readFileAsText } from "@/shared/lib/convert";
-import { isTextContentType } from "@/shared/lib/fileTypes";
-import { readAsDataURL } from "@/shared/lib/utils";
-import { xlsxToCsv } from "@/shared/lib/xlsx";
+import { getConfig } from "@/shared/config";
+import { readFileAsText } from "@/shared/lib/convert";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/shared/lib/mediaTypes";
+import { fileExtension, formatBytes, readAsDataURL } from "@/shared/lib/utils";
 
 // Artifact kind type
 export type ArtifactKind =
   | "text"
   | "code"
   | "svg"
+  | "mermaid"
   | "html"
   | "csv"
   | "markdown"
   | "image"
+  | "audio"
+  | "video"
   | "pdf"
   | "docx"
   | "xlsx"
   | "pptx"
+  | "email"
   | "binary";
 
 // Result type for processed files
@@ -25,86 +30,47 @@ export interface ProcessedFile {
   contentType: string;
 }
 
-// Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
+// Binary uploads preserved verbatim as data URLs. Office docs render via
+// their high-fidelity editors (PptxEditor/DocxEditor/XlsxEditor), PDFs via
+// PdfEditor, and email files (.msg/.eml) are extracted on demand (preview
+// via OfficeMarkdownEditor or AI via Python `extract-msg` / `email`).
+// Converting at upload time would lose the original formatting / attachments.
+const BINARY_PRESERVED_MIME_BY_EXT: Record<string, string> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  pdf: "application/pdf",
+  msg: "application/vnd.ms-outlook",
+  eml: "message/rfc822",
+};
+
+// Process an uploaded file, preserving office docs / PDFs / email files as
+// binary so previewers and Python tools can use the originals.
 export async function processUploadedFile(file: File): Promise<ProcessedFile[]> {
-  const fileName = file.name.toLowerCase();
-
-  // XLSX needs special handling: artifacts wants separate files per sheet
-  const isXlsx =
-    fileName.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
-  if (isXlsx) {
-    try {
-      const results = await xlsxToCsv(file);
-      const baseName = file.name.replace(/\.xlsx$/i, "");
-
-      return results.map((result) => {
-        const csvPath = results.length === 1 ? `/${baseName}.csv` : `/${baseName}_${result.sheetName}.csv`;
-
-        return {
-          path: csvPath,
-          content: result.csv,
-          contentType: "text/csv",
-        };
-      });
-    } catch (error) {
-      console.error(`Error converting XLSX file ${file.name}:`, error);
-    }
+  const maxFileSize = getConfig().artifacts?.maxFileSize;
+  if (maxFileSize != null && file.size > maxFileSize) {
+    throw new Error(`${file.name} is ${formatBytes(file.size)}, over the ${formatBytes(maxFileSize)} limit`);
   }
 
-  // Try shared converter for docx, pptx, pdf, email, text
-  try {
-    const content = await convertFileToText(file);
-    const ext = fileName.split(".").pop() || "";
-    const convertedExts: Record<string, { newExt: string; contentType: string }> = {
-      docx: { newExt: "md", contentType: "text/markdown" },
-      pptx: { newExt: "md", contentType: "text/markdown" },
-      pdf: { newExt: "md", contentType: "text/markdown" },
-      msg: { newExt: "md", contentType: "text/markdown" },
-      eml: { newExt: "md", contentType: "text/markdown" },
-    };
+  const ext = fileExtension(file.name);
 
-    if (convertedExts[ext]) {
-      const { newExt, contentType } = convertedExts[ext];
-      const baseName = file.name.replace(/\.[^.]+$/, "");
-      return [{ path: `/${baseName}.${newExt}`, content, contentType }];
-    }
-
-    return [{ path: `/${file.name}`, content, contentType: file.type || "text/plain" }];
-  } catch (error) {
-    console.error(`Error converting file ${file.name}:`, error);
+  if (BINARY_PRESERVED_MIME_BY_EXT[ext]) {
+    const contentType = file.type || BINARY_PRESERVED_MIME_BY_EXT[ext];
+    const content = await readAsDataURL(file);
+    return [{ path: `/${file.name}`, content, contentType }];
   }
 
-  // Final fallback: binary as data URL
-  const contentType = file.type || "text/plain";
+  // Everything else is stored verbatim — text/code as text, other binaries as
+  // data URLs. No conversion: the artifact holds the original file.
+  const contentType = file.type || inferContentTypeFromPath(file.name) || "text/plain";
   const content = isTextContentType(contentType) ? await readFileAsText(file) : await readAsDataURL(file);
 
-  return [
-    {
-      path: `/${file.name}`,
-      content,
-      contentType,
-    },
-  ];
+  return [{ path: `/${file.name}`, content, contentType }];
 }
 
-// Helper function to get the language/extension from a file path
-export function artifactLanguage(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const basename = path.split("/").pop()?.toLowerCase() || "";
-
-  // Handle Dockerfile files
-  if (basename === "dockerfile" || basename.startsWith("dockerfile.")) {
-    return "dockerfile";
-  }
-
-  // Handle Makefile files
-  if (basename === "makefile" || basename.startsWith("makefile.")) {
-    return "makefile";
-  }
-
-  return ext;
-}
+// `artifactLanguage` now lives in shared (so non-feature code can use it too);
+// re-exported here for existing importers.
+export { artifactLanguage } from "@/shared/lib/fileTypes";
 
 // Helper function to determine the kind of artifact based on file extension and content type.
 export function artifactKind(path: string, contentType?: string): ArtifactKind {
@@ -148,6 +114,11 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "svg";
   }
 
+  // Mermaid diagrams — rendered natively (offline) in the drawer
+  if (ext === "mmd" || ext === "mermaid" || normalizedContentType === "text/vnd.mermaid") {
+    return "mermaid";
+  }
+
   // CSV files
   if (ext === "csv" || ext === "tsv") {
     return "csv";
@@ -158,9 +129,7 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "markdown";
   }
 
-  const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif", "tif", "tiff"];
-
-  if (normalizedContentType?.startsWith("image/") || imageExtensions.includes(ext)) {
+  if (normalizedContentType?.startsWith("image/") || IMAGE_EXTENSIONS.has(ext)) {
     return "image";
   }
 
@@ -169,7 +138,8 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "pdf";
   }
 
-  // Word documents (.docx) — rendered via docx-preview
+  // Office documents (high-fidelity editors; OfficeMarkdownEditor is the
+  // extraction fallback) and email (extracted text)
   if (
     ext === "docx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -177,17 +147,24 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "docx";
   }
 
-  // Excel workbooks (.xlsx) — rendered per-sheet as CSV tables
   if (ext === "xlsx" || normalizedContentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     return "xlsx";
   }
 
-  // PowerPoint decks (.pptx) — extracted to markdown via convertFileToText
   if (
     ext === "pptx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
   ) {
     return "pptx";
+  }
+
+  if (
+    ext === "msg" ||
+    ext === "eml" ||
+    normalizedContentType === "application/vnd.ms-outlook" ||
+    normalizedContentType === "message/rfc822"
+  ) {
+    return "email";
   }
 
   // Code files
@@ -295,8 +272,18 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "code";
   }
 
+  // Audio/video for the media player. Checked after code extensions because
+  // browsers report odd MIME types for some code files (.ts → video/mp2t).
+  if (normalizedContentType?.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext)) {
+    return "audio";
+  }
+
+  if (normalizedContentType?.startsWith("video/") || VIDEO_EXTENSIONS.has(ext)) {
+    return "video";
+  }
+
+  // Extensions caught earlier (pdf, docx, xlsx, pptx, audio/video) are omitted.
   const binaryExtensions = [
-    "pdf",
     "zip",
     "gz",
     "tgz",
@@ -305,28 +292,13 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     "7z",
     "rar",
     "doc",
-    "docx",
     "ppt",
-    "pptx",
     "xls",
-    "xlsx",
     "woff",
     "woff2",
     "ttf",
     "otf",
     "eot",
-    "mp3",
-    "wav",
-    "ogg",
-    "m4a",
-    "aac",
-    "flac",
-    "mp4",
-    "webm",
-    "mov",
-    "avi",
-    "mkv",
-    "wmv",
     "bin",
     "wasm",
     "pyc",

@@ -3,6 +3,7 @@ import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { mergePcm16Chunks, pcm16ToWav } from "@/features/voice/lib/audio";
 import { getConfig } from "@/shared/config";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
+import { formatTimestamp } from "../lib/format";
 
 interface FieldRecorderOptions {
   chunkDurationSec?: number;
@@ -23,12 +24,6 @@ export interface UseFieldRecorderReturn {
 }
 
 const SAMPLE_RATE = 24000;
-
-function formatTimestamp(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 
 export function useFieldRecorder(options: FieldRecorderOptions = {}): UseFieldRecorderReturn {
   const chunkDurationSec = options.chunkDurationSec ?? 120;
@@ -180,7 +175,7 @@ export function useFieldRecorder(options: FieldRecorderOptions = {}): UseFieldRe
 
     // Wait for all in-flight transcriptions
     if (inflightRef.current.size > 0) {
-      await Promise.all([...inflightRef.current]);
+      await Promise.all(inflightRef.current);
     }
 
     // Assemble combined transcript

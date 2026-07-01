@@ -101,8 +101,11 @@ export type PendingElicitation = {
   completed?: boolean;
 };
 
+export type RiskSeverity = "low" | "medium" | "high";
+
 export type Consent = {
   message: string;
+  severity?: RiskSeverity;
 };
 
 export type ConsentResult = {
@@ -110,8 +113,9 @@ export type ConsentResult = {
 };
 
 export type PendingConsent = {
-  categoryId: string;
-  categoryName: string;
+  kind: "category" | "risk";
+  id: string;
+  name: string;
   consent: Consent;
   resolve: (result: ConsentResult) => void;
 };

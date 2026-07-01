@@ -9,6 +9,8 @@ import { ToolsProvider } from "./features/tools/context/ToolsProvider";
 import { TranslateProvider } from "./features/translate/context/TranslateProvider";
 import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { router } from "./router";
+import { AppToaster } from "./shell/components/AppToaster";
+import { ConfirmHost } from "./shell/components/ConfirmHost";
 import { AppProvider } from "./shell/context/AppProvider";
 import { AudioDeviceProvider } from "./shell/context/AudioDeviceProvider";
 import { BackgroundProvider } from "./shell/context/BackgroundProvider";
@@ -42,7 +44,11 @@ const providers = [
 function App() {
   return providers.reduceRight(
     (acc, { key, Provider }) => <Provider key={key}>{acc}</Provider>,
-    <RouterProvider router={router} />,
+    <>
+      <RouterProvider router={router} />
+      <AppToaster />
+      <ConfirmHost />
+    </>,
   );
 }
 

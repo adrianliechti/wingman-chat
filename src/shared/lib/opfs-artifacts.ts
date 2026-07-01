@@ -5,6 +5,7 @@
 import { contentToBlob } from "./fileContent";
 import { isBinaryContentType } from "./fileTypes";
 import {
+  blobToDataUrl,
   deleteDirectory,
   deleteFile,
   inferContentType,
@@ -16,7 +17,6 @@ import {
   writeText,
 } from "./opfs-core";
 import { normalizeArtifactPath } from "./sandbox";
-import { readAsDataURL } from "./utils";
 
 export interface ArtifactEntry {
   path: string;
@@ -83,7 +83,7 @@ export async function readArtifact(
   const contentType = inferContentType(path) || blob.type;
 
   if (isBinaryContentType(contentType)) {
-    return { content: await readAsDataURL(blob), contentType };
+    return { content: await blobToDataUrl(blob, contentType), contentType };
   }
 
   return { content: await blob.text(), contentType };

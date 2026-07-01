@@ -1,10 +1,25 @@
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 // Use the bundled worker via URL import so Vite includes it in the build.
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { PDFPageProxy, TextContent } from "pdfjs-dist/types/src/display/api";
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import type { PDFPageProxy, TextContent, TextItem } from "pdfjs-dist/types/src/display/api";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
+
+// pdf.js fetches WebAssembly image decoders (openjpeg.wasm for JPEG2000, jbig2.wasm
+// for JBIG2), ICC color profiles, predefined CMaps, and standard fonts at runtime by
+// exact filename. Scanned PDFs in particular rely on the wasm decoders, so without
+// these URLs their pages render blank or garbled. The folders are served verbatim
+// from /pdfjs/* by the pdfjsAssetsPlugin in vite.config.ts.
+const pdfAssetBase = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pdfjs/`;
+
+/** Shared pdf.js asset URLs to pass into getDocument(). */
+export const pdfAssetOptions = {
+  wasmUrl: `${pdfAssetBase}wasm/`,
+  iccUrl: `${pdfAssetBase}iccs/`,
+  cMapUrl: `${pdfAssetBase}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${pdfAssetBase}standard_fonts/`,
+} as const;
 
 /**
  * Converts a PDF file to Markdown using pdf.js text extraction.
@@ -17,7 +32,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
  */
 export async function pdfToMarkdown(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
-  const pdf = await getDocument({ data: buffer, useSystemFonts: true }).promise;
+  const pdf = await getDocument({ data: buffer, useSystemFonts: true, ...pdfAssetOptions }).promise;
 
   const pages: string[] = [];
 
@@ -188,6 +203,80 @@ const BULLET_RE = /^(\s*[-•*●◦▪]\s|(?:\d+[.)]\s))/;
 
 function isBulletLine(line: string): boolean {
   return BULLET_RE.test(line);
+}
+
+// ============================================================================
+// Rasterization (PDF pages → PNG)
+// ============================================================================
+
+export interface RasterizedPage {
+  /** 1-based page number. */
+  page: number;
+  /** PNG-encoded page image. */
+  data: Uint8Array;
+}
+
+export interface RasterizeOptions {
+  /** 1-based page numbers to render; omitted or empty renders every page. */
+  pages?: number[];
+  /** Viewport scale; 1 ≈ 72 DPI. Defaults to 2 (≈144 DPI), clamped to 8. */
+  scale?: number;
+}
+
+/**
+ * Rasterizes PDF pages to PNG bytes with pdf.js. The sandbox runtimes have no
+ * in-process PDF rasterizer (pypdfium2/PyMuPDF/poppler are all absent), so the
+ * Python `rasterize_pdf` and JS `rasterizePdf` helpers reach this over the
+ * worker→main bridge. Must run on the main thread — it renders to a DOM canvas.
+ */
+export async function rasterizePdf(bytes: Uint8Array, options?: RasterizeOptions): Promise<RasterizedPage[]> {
+  // Clamp the upper bound: this renders on the main thread, and an oversized
+  // canvas silently yields a blank image (or throws) past browser limits.
+  const scale = Math.min(options?.scale && options.scale > 0 ? options.scale : 2, 8);
+  const loadingTask = getDocument({ data: bytes, useSystemFonts: true, ...pdfAssetOptions });
+  const pdf = await loadingTask.promise;
+  try {
+    const requested =
+      options?.pages && options.pages.length > 0
+        ? options.pages.filter((n) => Number.isInteger(n) && n >= 1 && n <= pdf.numPages)
+        : Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+    // De-dup while preserving the caller's order.
+    const wanted = [...new Set(requested)];
+    if (wanted.length === 0) {
+      throw new Error(
+        `rasterize_pdf: no valid pages in ${JSON.stringify(options?.pages)} (document has ${pdf.numPages} page(s))`,
+      );
+    }
+
+    const pages: RasterizedPage[] = [];
+    for (const n of wanted) {
+      const page = await pdf.getPage(n);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("rasterize_pdf: 2D canvas context unavailable");
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      pages.push({ page: n, data: await canvasToPng(canvas) });
+      page.cleanup();
+    }
+    return pages;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("rasterize_pdf: canvas.toBlob produced no image"));
+        return;
+      }
+      blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
+    }, "image/png");
+  });
 }
 
 function computeMedianFontSize(items: TextItem[]): number {

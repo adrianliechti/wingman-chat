@@ -2,12 +2,6 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 
-let shikiPromise: Promise<typeof import("shiki")> | null = null;
-function getShiki() {
-  if (!shikiPromise) shikiPromise = import("shiki");
-  return shikiPromise;
-}
-
 interface CodeEditorProps {
   content: string;
   language?: string;
@@ -29,7 +23,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
       try {
         const langId = language.toLowerCase();
 
-        const { codeToHtml } = await getShiki();
+        const { codeToHtml } = await import("shiki");
 
         const highlighted = await codeToHtml(content, {
           lang: langId || "text",
@@ -48,7 +42,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
       }
     };
 
-    highlight();
+    void highlight();
   }, [content, language, isDark]);
 
   return (

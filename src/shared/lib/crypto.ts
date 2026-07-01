@@ -88,7 +88,7 @@ export interface KdfParams {
 
 async function deriveKEK(pin: string, kdf: KdfParams): Promise<CryptoKey> {
   if (kdf.name !== "pbkdf2-sha256") {
-    throw new Error(`unsupported kdf: ${kdf.name}`);
+    throw new Error(`unsupported kdf: ${String(kdf.name)}`);
   }
 
   const baseKey = await crypto.subtle.importKey("raw", encodeUtf8(pin), "PBKDF2", false, ["deriveKey"]);

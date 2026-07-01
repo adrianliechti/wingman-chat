@@ -17,7 +17,7 @@
 
 import JSZip from "jszip";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { addPptxBoilerplate, CANVAS_H, CANVAS_W, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
+import { addPptxBoilerplate, CANVAS_H, CANVAS_W, imgToDataUrl, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
 
 /** Export rasterization scale — 2× gives ~3840×2160 output, crisp on 4K */
 const RASTER_SCALE = 2;
@@ -432,28 +432,6 @@ function unwindMutations(mutations: Mutation[]): void {
   }
 }
 
-/**
- * Pull a data URL out of an `<img>`. Direct `data:` src wins; otherwise we
- * canvas-copy so the export doesn't depend on whether the foreignObject is
- * allowed to load nested data URLs (Chrome blocks; Safari taints). Cross-
- * origin sources throw on `toDataURL` and are silently skipped.
- */
-function extractDataUrlFromImg(img: HTMLImageElement, hostDoc: Document): string | null {
-  if (img.src.startsWith("data:")) return img.src;
-  if (!img.complete || img.naturalWidth <= 0) return null;
-  try {
-    const c = hostDoc.createElement("canvas");
-    c.width = img.naturalWidth;
-    c.height = img.naturalHeight;
-    const cx = c.getContext("2d");
-    if (!cx) return null;
-    cx.drawImage(img, 0, 0);
-    return c.toDataURL("image/png");
-  } catch {
-    return null;
-  }
-}
-
 /** Pull a `data:` URL out of a single CSS background layer string. */
 function extractDataUrlFromCssLayer(layer: string): string | null {
   const m = layer.match(/url\(["']?(data:[^"')]+)["']?\)/);
@@ -553,7 +531,7 @@ function collectPaintEvents(doc: Document, win: Window, mutations: Mutation[]): 
     // <img> element — extract data URL and hide. Use tagName, not instanceof.
     if (el.tagName === "IMG" && rect.width >= 1 && rect.height >= 1) {
       const img = el as HTMLImageElement;
-      const dataUrl = extractDataUrlFromImg(img, document);
+      const dataUrl = imgToDataUrl(img, document);
       if (dataUrl) {
         const cs = win.getComputedStyle(img);
         events.push({
@@ -702,6 +680,15 @@ async function rasterizeSlideDoc(
     // overlay). A stylesheet keeps layout identical.
     if (options.hideText) {
       hideTextStyle = doc.createElement("style");
+      // Content SVGs are hidden wholesale: the hybrid export re-emits every
+      // SVG as an editable overlay image (pptx-static-parser), so leaving
+      // them in the background would double-paint their shapes — and SVG
+      // <text> paints via `fill`, which the color rules below don't reach.
+      //
+      // The selector MUST be scoped under `body`: this document gets
+      // serialized into an <svg><foreignObject> wrapper for rasterization,
+      // and a bare `svg` selector would match the wrapper root itself,
+      // blanking the entire layer.
       hideTextStyle.textContent = `
         * {
           color: transparent !important;
@@ -709,6 +696,9 @@ async function rasterizeSlideDoc(
           -webkit-text-fill-color: transparent !important;
           text-decoration-color: transparent !important;
           caret-color: transparent !important;
+        }
+        body svg {
+          visibility: hidden !important;
         }
       `;
       doc.head.appendChild(hideTextStyle);
@@ -791,7 +781,7 @@ export async function renderSlideToJpegDataUrl(html: string, options: { hideText
 // ── PDF export ───────────────────────────────────────────────────────────────
 
 export async function downloadHtmlSlidesAsPdf(htmlSlides: string[], slug: string) {
-  const { jsPDF } = await import("jspdf");
+  const jsPDF = (await import("jspdf")).jsPDF;
 
   const w = CANVAS_W * RASTER_SCALE;
   const h = CANVAS_H * RASTER_SCALE;
@@ -817,6 +807,8 @@ export async function downloadHtmlSlidesAsPng(htmlSlides: string[], slug: string
   for (let i = 0; i < htmlSlides.length; i++) {
     const dataUrl = await renderSlideToPngDataUrl(htmlSlides[i]);
     const base64 = dataUrl.split(",")[1];
+    // Fail loudly rather than letting JSZip write a corrupt archive.
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to PNG`);
     zip.file(`slide-${i + 1}.png`, base64, { base64: true });
   }
 
@@ -841,6 +833,7 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
 
   for (let i = 0; i < slideCount; i++) {
     const base64 = images[i].split(",")[1];
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to JPEG`);
     zip.file(`ppt/media/image${i + 1}.jpeg`, base64, { base64: true });
 
     zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage());

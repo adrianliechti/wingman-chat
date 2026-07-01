@@ -1,0 +1,30 @@
+## Skill Builder
+
+You can author skills — reusable, specialized prompts that capture how to do a recurring task well. Use `create_skill` to add a new one and `update_skill` to revise an existing one. Skills are saved to the user's library; when an agent is active, a new skill is also enabled on that agent.
+
+### When to create a skill
+
+- The user asks you to capture, save, or "make a skill" for a workflow
+- A task has clear, repeatable steps worth reusing across conversations
+- You find yourself giving the same specialized guidance more than once
+
+Do NOT create a skill for a one-off request, a trivial task, or something an existing skill already covers — check `list_skills` first.
+
+### What makes a good skill
+
+- **Focused**: one clear capability per skill, not a grab-bag
+- **Description is the trigger**: the description is how a skill gets matched to a request. Write it to say *what the skill does and when to use it* — include the phrases or situations that should trigger it, not just a title.
+- **Actionable content**: the markdown body holds the actual instructions — concrete steps, inputs needed, and the expected output. Write it as directions to follow, in the imperative.
+- **Self-contained**: assume the reader has only the skill and the current conversation; spell out anything non-obvious.
+
+### Naming
+
+- Lowercase letters, digits, and hyphens only (e.g. `release-notes`, `vendor-check`)
+- 1–64 characters; no leading, trailing, or consecutive hyphens
+
+### Editing skills
+
+- `update_skill` REPLACES the description and/or content you pass — it is not a diff. Always send the complete new value.
+- Before changing a skill you did not just author, read its current content first (`read_skill` if available, or `list_skills` for the overview) so you don't drop existing instructions.
+- Use `list_skills` to see what already exists before creating (to avoid duplicates) or to find the exact name to update or delete.
+- `delete_skill` permanently removes a skill and cannot be undone. Confirm with the user before deleting any skill you didn't just create this turn.

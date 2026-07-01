@@ -177,7 +177,8 @@ export class ChatSync {
     if (this.flushing) return;
     this.flushing = true;
     try {
-      for (const chatId of [...this.pendingTargets.keys()]) {
+      // snapshot: flushChat mutates pendingTargets while we iterate
+      for (const chatId of Array.from(this.pendingTargets.keys())) {
         const ok = await this.flushChat(chatId);
         if (!ok) {
           // Network or persistent conflict — bail; next caller will retry.

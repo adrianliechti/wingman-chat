@@ -1,8 +1,11 @@
+import { Dialog, Transition } from "@headlessui/react";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useMemo, useRef, useState } from "react";
+import { Maximize2, X } from "lucide-react";
+import { Fragment, memo, useMemo, useRef, useState } from "react";
+import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
 import { CopyButton } from "@/shared/ui/CopyButton";
-import { PreviewButton } from "@/shared/ui/PreviewButton";
+import { RendererFrame } from "./RendererFrame";
 
 interface CsvRendererProps {
   csv: string;
@@ -89,13 +92,13 @@ const parseCSV = (csv: string): string[][] => {
 const ROW_HEIGHT = 35;
 const OVERSCAN = 20;
 
-const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
+const cellBorder = "border-r last:border-r-0 border-neutral-200 dark:border-neutral-600";
+
+// The virtualized table, rendered both inline (in the card) and full screen.
+const CsvTable = ({ parsedData, scrollClassName }: { parsedData: string[][]; scrollClassName: string }) => {
   "use no memo";
 
-  const [showCode, setShowCode] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  const parsedData = useMemo(() => parseCSV(csv), [csv]);
   const rows = useMemo(() => parsedData.slice(1), [parsedData]);
 
   const columns = useMemo<ColumnDef<string[]>[]>(() => {
@@ -125,116 +128,148 @@ const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
     overscan: OVERSCAN,
   });
 
-  const isEmpty = !csv.trim() || parsedData.length === 0;
-
-  // Show loading state until CSV has content
-  if (isEmpty) {
-    return (
-      <div className="relative my-4">
-        <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{name || language}</span>
-          <div className="flex items-center gap-2">
-            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
-            <CopyButton text={csv} className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="bg-white dark:bg-neutral-900 rounded-b-md border-l border-r border-b border-gray-100 dark:border-neutral-800">
-          {showCode ? (
-            <div className="p-4">
-              <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
-                <code>{csv}</code>
-              </pre>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
-              <div className="flex items-center space-x-3">
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-600 dark:border-neutral-600 dark:border-t-neutral-400"></div>
-                <span>Loading CSV...</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative my-4">
-      <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-        <span>{name || language}</span>
-        <div className="flex items-center gap-2">
-          <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
-          <CopyButton text={csv} className="h-4 w-4" />
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-neutral-900 rounded-b-md border-l border-r border-b border-gray-100 dark:border-neutral-800">
-        {showCode ? (
-          <div className="p-4">
-            <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
-              <code>{csv}</code>
-            </pre>
-          </div>
-        ) : (
-          <div ref={scrollContainerRef} className="overflow-auto max-h-96">
-            <table style={{ display: "grid", minWidth: "100%" }}>
-              <thead className="sticky top-0 z-10 bg-white dark:bg-neutral-900" style={{ display: "grid" }}>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id} style={{ display: "flex" }}>
-                    {headerGroup.headers.map((header) => (
-                      <th
-                        key={header.id}
-                        className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wider border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
-                        style={{ width: header.getSize(), flex: "none" }}
-                        title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ""}
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody
+    <div ref={scrollContainerRef} className={scrollClassName}>
+      <table style={{ display: "grid", minWidth: "100%" }}>
+        <thead className="sticky top-0 z-10 bg-neutral-100 dark:bg-neutral-900" style={{ display: "grid" }}>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id} style={{ display: "flex" }}>
+              {headerGroup.headers.map((header) => (
+                <th
+                  key={header.id}
+                  className={`px-3 py-2 text-left text-sm font-semibold truncate ${cellBorder}`}
+                  style={{ width: header.getSize(), flex: "none" }}
+                  title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ""}
+                >
+                  {flexRender(header.column.columnDef.header, header.getContext())}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody
+          style={{
+            display: "grid",
+            height: virtualizer.getTotalSize(),
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = tableRows[virtualRow.index];
+            return (
+              <tr
+                key={row.id}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                className="hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60"
                 style={{
-                  display: "grid",
-                  height: virtualizer.getTotalSize(),
-                  position: "relative",
+                  display: "flex",
+                  position: "absolute",
+                  transform: `translateY(${virtualRow.start}px)`,
+                  width: "100%",
                 }}
               >
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const row = tableRows[virtualRow.index];
-                  return (
-                    <tr
-                      key={row.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      className="hover:bg-gray-50 dark:hover:bg-neutral-800"
-                      style={{
-                        display: "flex",
-                        position: "absolute",
-                        transform: `translateY(${virtualRow.start}px)`,
-                        width: "100%",
-                      }}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td
-                          key={cell.id}
-                          className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
-                          style={{ width: cell.column.getSize(), flex: "none" }}
-                          title={String(cell.getValue())}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    className={`px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 truncate ${cellBorder}`}
+                    style={{ width: cell.column.getSize(), flex: "none" }}
+                    title={String(cell.getValue())}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
+  );
+};
+
+const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const parsedData = useMemo(() => parseCSV(csv), [csv]);
+  const isEmpty = !csv.trim() || parsedData.length === 0;
+
+  return (
+    <>
+      <RendererFrame
+        label={language}
+        name={name}
+        actions={
+          <>
+            <CopyButton text={csv} label="Copy" />
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className={actionButtonClassName}
+              title="Open in full screen"
+              aria-label="Open CSV in full screen"
+            >
+              <Maximize2 size={ACTION_ICON_SIZE} />
+              <span>Full screen</span>
+            </button>
+          </>
+        }
+      >
+        {isEmpty ? (
+          <div className="flex items-center justify-center h-24 text-neutral-500">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-400" />
+              <span>Loading CSV...</span>
+            </div>
+          </div>
+        ) : (
+          <CsvTable parsedData={parsedData} scrollClassName="overflow-auto max-h-96" />
+        )}
+      </RendererFrame>
+
+      <Transition appear show={isFullscreen} as={Fragment}>
+        <Dialog as="div" className="relative z-80" onClose={() => setIsFullscreen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
+          </Transition.Child>
+
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <Dialog.Panel className="fixed inset-0 flex flex-col bg-white dark:bg-neutral-950">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+                <CopyButton text={csv} label="Copy" />
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreen(false)}
+                  className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Close"
+                  aria-label="Close full screen"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0">
+                {!isEmpty && <CsvTable parsedData={parsedData} scrollClassName="overflow-auto h-full" />}
+              </div>
+            </Dialog.Panel>
+          </Transition.Child>
+        </Dialog>
+      </Transition>
+    </>
   );
 };
 

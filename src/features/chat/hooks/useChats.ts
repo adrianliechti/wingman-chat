@@ -145,11 +145,11 @@ export function useChats() {
     // Kick off session bootstrapping in parallel; load() awaits readiness
     // internally via whenReady() if we're in server mode.
     void chatSession.initSession();
-    load();
+    void load();
 
     // Re-load when the session transitions to "ready" after a PIN unlock.
     const unsub = chatSession.subscribeSession((s) => {
-      if (s.status === "ready") load();
+      if (s.status === "ready") void load();
     });
 
     return () => {

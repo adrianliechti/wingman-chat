@@ -2,12 +2,12 @@
 export { AppDrawer } from "./components/AppDrawer";
 export { BackgroundImage } from "./components/BackgroundImage";
 export type { AppContextType } from "./context/AppContext";
-export type { AudioDeviceContextType, AudioDeviceSettings } from "./context/AudioDeviceContext";
 // Context
 export { AppContext } from "./context/AppContext";
+export { AppProvider } from "./context/AppProvider";
+export type { AudioDeviceContextType, AudioDeviceSettings } from "./context/AudioDeviceContext";
 export { AudioDeviceContext } from "./context/AudioDeviceContext";
 export { AudioDeviceProvider } from "./context/AudioDeviceProvider";
-export { AppProvider } from "./context/AppProvider";
 export type {
   BackgroundContextValue,
   BackgroundItem,

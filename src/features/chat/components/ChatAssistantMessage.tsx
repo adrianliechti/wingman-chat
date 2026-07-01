@@ -1,9 +1,11 @@
 import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { SkillChip } from "@/features/skills/components/SkillChip";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
-import { getToolDisplayName } from "@/shared/lib/utils";
 import type { Content, Message } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
@@ -11,7 +13,8 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { getToolCallPreview } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./chatMessageUtils";
+import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
 // Error message component
 function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
@@ -43,6 +46,60 @@ function ErrorMessage({ title, message, onRetry }: { title: string; message: str
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// A rotating, playful verb for the "model is working" indicator. Picked once per
+// mount so it stays put while a turn streams, but varies between turns.
+// Inspired by Claude Code's spinner verbs.
+const THINKING_WORDS = [
+  "Thinking",
+  "Pondering",
+  "Mulling",
+  "Noodling",
+  "Reasoning",
+  "Cogitating",
+  "Ruminating",
+  "Percolating",
+  "Contemplating",
+  "Considering",
+  "Deliberating",
+  "Deciphering",
+  "Brewing",
+  "Churning",
+  "Conjuring",
+  "Concocting",
+  "Distilling",
+  "Envisioning",
+  "Hatching",
+  "Ideating",
+  "Imagining",
+  "Incubating",
+  "Inferring",
+  "Marinating",
+  "Musing",
+  "Orchestrating",
+  "Puzzling",
+  "Scheming",
+  "Simmering",
+  "Sketching",
+  "Stewing",
+  "Synthesizing",
+  "Tinkering",
+  "Untangling",
+  "Wrangling",
+];
+
+/** Spinner + label "working" indicator — identical box to a running tool row. */
+function ThinkingIndicator() {
+  const [word] = useState(() => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
+  return (
+    <div className="rounded-lg overflow-hidden max-w-full">
+      <div className="flex items-center gap-2 min-w-0">
+        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{word}…</span>
       </div>
     </div>
   );
@@ -115,12 +172,63 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
   }
 }
 
+/** Compact row shown while a tool call is still running (spinner + label + status/preview). */
+function RunningToolRow({
+  header,
+  status,
+  className,
+}: {
+  header: ResolvedToolHeader;
+  status?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-lg overflow-hidden max-w-full", className)}>
+      <div className="flex items-center gap-2 min-w-0">
+        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+        <span
+          className={cn(
+            "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
+            header.mono ? "font-mono truncate" : "font-medium",
+          )}
+        >
+          {header.label}
+        </span>
+        {status ? (
+          <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
+        ) : header.preview ? (
+          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{header.preview}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
+  index,
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { messages, pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { providers } = useToolsContext();
+
+  // JS-driven hover (not CSS :hover) for the action bar — Safari leaves :hover
+  // sticky after trackpad taps, so the buttons wouldn't reliably hide.
+  const [hovered, setHovered] = useState(false);
+
+  // Files written during this turn (create_file + python/javascript), surfaced as
+  // clickable chips on the turn's completion message rather than auto-opening
+  // the artifacts drawer.
+  const turnArtifactPaths = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnArtifactPaths(messages, index) : []),
+    [messages, index],
+  );
+
+  const turnSkillNames = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnSkillNames(messages, index) : []),
+    [messages, index],
+  );
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -152,25 +260,25 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // Handle loading states (no text content yet)
   if (!hasTextContent) {
     const reasoningParts = message.content.filter((p) => p.type === "reasoning");
-    const hasReasoning = reasoningParts.length > 0 && reasoningParts.some((p) => p.text || p.summary);
+    const hasReasoning = reasoningParts.some((p) => p.text || p.summary);
+
+    // isReasoningActive is already false for non-last messages, so a single
+    // helper covers the old / loading / streaming branches below.
+    const renderReasoning = () =>
+      reasoningParts.map((part, i) =>
+        part.type === "reasoning" ? (
+          <ReasoningDisplay
+            key={getMessagePartKey(part, i, "reasoning")}
+            reasoning={part.text || part.summary || ""}
+            isStreaming={isReasoningActive}
+          />
+        ) : null,
+      );
 
     // For old messages (not last), only show if there's reasoning to display
     if (!isLast) {
       if (!hasReasoning) return null;
-      return (
-        <div className="pb-2">
-          {reasoningParts.map(
-            (part, index) =>
-              part.type === "reasoning" && (
-                <ReasoningDisplay
-                  key={getMessagePartKey(part, index, "old-reasoning")}
-                  reasoning={part.text || part.summary || ""}
-                  isStreaming={false}
-                />
-              ),
-          )}
-        </div>
-      );
+      return <div className="pb-2">{renderReasoning()}</div>;
     }
 
     // Check if there's a pending elicitation for any of the tool calls
@@ -182,39 +290,26 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       );
 
     // Show loading indicators for the last message when actively responding,
-    // has pending elicitation, or has reasoning content to display
-    if (!isLast || (!isResponding && !hasPendingElicitation && !hasReasoning)) {
+    // has a pending elicitation, or has reasoning content to display.
+    if (!isResponding && !hasPendingElicitation && !hasReasoning) {
       return null;
     }
 
-    // Show tool call indicators if there are tool calls
-    if (hasToolCalls) {
-      return (
-        <div className="pb-2">
-          {/* Show reasoning above tool calls */}
-          {hasReasoning &&
-            reasoningParts.map(
-              (part, index) =>
-                part.type === "reasoning" && (
-                  <ReasoningDisplay
-                    key={getMessagePartKey(part, index, "loading-reasoning")}
-                    reasoning={part.text || part.summary || ""}
-                    isStreaming={isReasoningActive}
-                  />
-                ),
-            )}
-          <div className="mt-0 space-y-0">
-            {toolCallParts.map((part, index) => {
+    // Last message that's still working: reasoning, running tool rows, or the
+    // thinking placeholder. One pb-2 wrapper (no top padding) so every state
+    // sits at the same position as a committed tool row.
+    return (
+      <div className="pb-2">
+        {hasReasoning && renderReasoning()}
+        {hasToolCalls
+          ? toolCallParts.map((part, i) => {
               if (part.type !== "tool_call") return null;
-              const toolCall = part;
-              const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
-              const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+              const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
 
-              // Show elicitation prompt if this tool call has a pending elicitation
               if (isPendingElicitation) {
                 return (
                   <ChatMessageElicitation
-                    key={getMessagePartKey(toolCall, index, "loading-tool-call")}
+                    key={getMessagePartKey(part, i, "loading-tool-call")}
                     toolName={pendingElicitation.toolName}
                     elicitation={pendingElicitation.elicitation}
                     waiting={pendingElicitation.waiting}
@@ -224,74 +319,28 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 );
               }
 
-              const meta = toolMeta[toolCall.id];
+              const meta = toolMeta[part.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
+              const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
+                running: true,
+              });
               return (
-                <div
-                  key={getMessagePartKey(toolCall, index, "loading-tool-call")}
-                  className="rounded-lg overflow-hidden max-w-full"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                    <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
-                      {getToolDisplayName(toolCall.name)}
-                    </span>
-                    {status ? (
-                      <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
-                    ) : preview ? (
-                      <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                        {preview}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
+                <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
               );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    // Show loading animation or reasoning for regular assistant responses
-    return (
-      <div className="pb-4">
-        {hasReasoning ? (
-          reasoningParts.map(
-            (part, index) =>
-              part.type === "reasoning" && (
-                <ReasoningDisplay
-                  key={getMessagePartKey(part, index, "streaming-reasoning")}
-                  reasoning={part.text || part.summary || ""}
-                  isStreaming={isReasoningActive}
-                />
-              ),
-          )
-        ) : (
-          <div className="space-y-2">
-            <div className="flex space-x-1">
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "0ms" }}
-              ></div>
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "150ms" }}
-              ></div>
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "300ms" }}
-              ></div>
-            </div>
-          </div>
-        )}
+            })
+          : !hasReasoning && <ThinkingIndicator />}
       </div>
     );
   }
 
   // Render assistant message with content
   return (
-    <div className={cn("flex justify-start pb-2 text-neutral-900 dark:text-neutral-200 group")}>
-      <div className="flex-1 py-3 wrap-break-words overflow-x-auto">
+    <div
+      className="flex justify-start pb-2 text-neutral-900 dark:text-neutral-200"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="flex-1 py-3 [overflow-wrap:anywhere] min-w-0 overflow-hidden">
         {/* Render content parts in order */}
         {message.content.map((part, index) => {
           const partKey = getMessagePartKey(part, index, "content");
@@ -334,19 +383,18 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
-            const preview = getToolCallPreview(part.name, part.arguments);
+            const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
+              running: true,
+            });
+            // Only the first tool call in a run gets top spacing (to match the
+            // committed result's gap); consecutive concurrent calls stay tight.
+            const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
             return (
-              <div key={partKey} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                  <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
-                    {getToolDisplayName(part.name)}
-                  </span>
-                  {preview && (
-                    <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{preview}</span>
-                  )}
-                </div>
-              </div>
+              <RunningToolRow
+                key={partKey}
+                header={header}
+                className={cn("mb-0", isFirstToolCall ? "mt-2" : "mt-0.5")}
+              />
             );
           }
           return null;
@@ -358,7 +406,30 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           </div>
         )}
 
-        <div className="flex justify-between items-center mt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
+        {turnArtifactPaths.length > 0 && (
+          <div className="mt-3 mb-2 flex flex-wrap gap-2">
+            {turnArtifactPaths.map((path) => (
+              <ArtifactChip key={path} path={path} />
+            ))}
+          </div>
+        )}
+
+        {turnSkillNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {turnSkillNames.map((name) => (
+              <SkillChip key={name} name={name} />
+            ))}
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "flex justify-between items-center mt-1 transition-opacity duration-200",
+            // The completed last message keeps its actions always visible; while it's
+            // still streaming, hover-gate them (avoids flicker as content reflows).
+            isLast && !isResponding ? "opacity-100" : hovered ? "opacity-100" : "opacity-100 md:opacity-0",
+          )}
+        >
           <div className="flex items-center gap-2">
             <CopyButton markdown={textContent} className="h-4 w-4" />
             <ConvertButton markdown={textContent} className="h-4 w-4" />

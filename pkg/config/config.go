@@ -16,8 +16,8 @@ func Load() *Config {
 		Disclaimer: os.Getenv("DISCLAIMER"),
 	}
 
-	if u, e := os.Getenv("SUPPORT_URL"), os.Getenv("SUPPORT_EMAIL"); u != "" || e != "" {
-		cfg.Support = &Support{URL: u, Email: e}
+	if u := os.Getenv("SUPPORT_URL"); u != "" {
+		cfg.Support = &Support{URL: u}
 	}
 
 	if bridgeURL := os.Getenv("BRIDGE_URL"); bridgeURL != "" {
@@ -36,6 +36,8 @@ func loadConfigFiles(cfg *Config) {
 	loadYAML("drives.yaml", &cfg.Drives)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
 
+	loadYAMLPtr("chat.yaml", &cfg.Chat)
+	loadYAMLPtr("notebook.yaml", &cfg.Notebook)
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
 	loadYAMLPtr("text.yaml", &cfg.Text)
@@ -103,6 +105,11 @@ func applyEnvOverrides(cfg *Config) {
 	if days := envPositiveInt("CHAT_RETENTION_DAYS", nil); days != nil {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.RetentionDays = days
+	}
+
+	if v := os.Getenv("CHAT_INSTRUCTIONS"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Instructions = v
 	}
 
 	if v := os.Getenv("CHAT_SUMMARIZER"); v != "" {

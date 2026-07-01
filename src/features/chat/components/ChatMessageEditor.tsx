@@ -1,5 +1,4 @@
 import { Send, X } from "lucide-react";
-import type { RefObject } from "react";
 import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 
@@ -7,7 +6,6 @@ type ChatMessageEditorProps = {
   editContent: string;
   onEditContentChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
   editAdditionalTextContent: TextContent[];
   onRemoveAdditionalText: (index: number) => void;
   editMediaContent: (ImageContent | AudioContent | FileContent)[];
@@ -20,7 +18,6 @@ export function ChatMessageEditor({
   editContent,
   onEditContentChange,
   onKeyDown,
-  textareaRef,
   editAdditionalTextContent,
   onRemoveAdditionalText,
   editMediaContent,
@@ -33,11 +30,11 @@ export function ChatMessageEditor({
       <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto self-stretch">
         <div className="flex flex-col gap-2">
           <textarea
-            ref={textareaRef}
+            autoFocus
             value={editContent}
             onChange={(e) => onEditContentChange(e.target.value)}
             onKeyDown={onKeyDown}
-            className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
+            className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200 field-sizing-content"
             rows={1}
           />
           {/* Show additional text attachments (file attachments) with ability to remove */}

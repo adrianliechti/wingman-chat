@@ -28,7 +28,8 @@ import {
   McpError,
   ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { traceMCP } from "@/shared/lib/otel";
+import { trace } from "@opentelemetry/api";
+import { textToDataUrl } from "@/shared/lib/fileContent";
 import {
   type AudioContent,
   type FileContent,
@@ -44,11 +45,15 @@ import {
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
 
-export type { McpUiDisplayMode };
+export type DisplayMode = McpUiDisplayMode;
 
 export type DisplayModeOptions = {
-  displayMode?: McpUiDisplayMode;
-  onDisplayModeRequested?: (mode: McpUiDisplayMode) => void;
+  displayMode?: DisplayMode;
+  onDisplayModeRequested?: (mode: DisplayMode) => void;
+  /** Report the app's content height to the host. When set, the host owns the
+   *  iframe height (needed for the persistent moved-iframe model); otherwise the
+   *  bridge sets it directly. */
+  onSizeChange?: (height: number) => void;
 };
 
 const HOST_INFO = {
@@ -63,6 +68,13 @@ type UiResourceEntry = {
   content: MCPResourceContents;
   meta?: McpUiResourceMeta;
 };
+
+/** Find the `ui://` resource block in a readResource response and build its entry. */
+function toUiResourceEntry(uri: string, contents: MCPResourceContents[]): UiResourceEntry | null {
+  const content = contents.find((entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"));
+  if (!content) return null;
+  return { uri, content, meta: content._meta?.ui as McpUiResourceMeta | undefined };
+}
 
 type McpServerCapabilities = NonNullable<ReturnType<Client["getServerCapabilities"]>>;
 
@@ -87,6 +99,8 @@ export class MCPClient implements ToolProvider {
   private readonly _configIcon?: ToolIcon;
   private client: Client | null = null;
   private activeBridge: AppBridge | null = null;
+  /** Push a host-initiated display-mode change to the active app (setHostContext). */
+  private applyActiveDisplayMode: ((mode: DisplayMode) => void) | null = null;
   private authProvider: BrowserOAuthClientProvider;
   private activeToolContext: ToolContext | null = null;
 
@@ -116,13 +130,19 @@ export class MCPClient implements ToolProvider {
     icon?: ToolIcon,
   ) {
     this.id = id;
-    this.url = url.endsWith("/") ? url : `${url}/`;
+    this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
     this._configIcon = icon;
-    this.icon = icon ?? new URL("icon", this.url).href;
+    this.icon = icon ?? this.iconUrl();
     this.authProvider = new BrowserOAuthClientProvider(id);
+  }
+
+  /** Resolve the server's default icon, ensuring a trailing slash so the path isn't dropped. */
+  private iconUrl(): string {
+    const base = this.url.endsWith("/") ? this.url : `${this.url}/`;
+    return new URL("icon", base).href;
   }
 
   async connect(): Promise<void> {
@@ -191,15 +211,14 @@ export class MCPClient implements ToolProvider {
       };
     });
 
-    // Setup error and close handlers
+    // Log only — the transport auto-reconnects (reconnectionOptions) and the ping
+    // loop calls handleDisconnect() on a genuine failure.
     client.onclose = () => {
       console.warn("MCP client connection closed");
-      //this.handleDisconnect();
     };
 
     client.onerror = (error) => {
       console.error("MCP client connection error:", error);
-      //this.handleDisconnect();
     };
 
     try {
@@ -238,7 +257,7 @@ export class MCPClient implements ToolProvider {
     // Pick up the server-published icon when no config/agent icon was provided.
     if (!this._configIcon) {
       const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? new URL("icon", this.url).href;
+      this.icon = pickIcon(serverIcons) ?? this.iconUrl();
     }
 
     // Load and store tools and instructions after connection
@@ -334,6 +353,7 @@ export class MCPClient implements ToolProvider {
             pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined);
           return {
             name: tool.name,
+            title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
             icon,
 
             description: tool.description || "",
@@ -349,45 +369,40 @@ export class MCPClient implements ToolProvider {
               this.activeToolContext = context ?? null;
 
               try {
-                return await traceMCP(
-                  "tools/call",
-                  tool.name,
-                  { toolName: tool.name, serverAddress: this.url },
-                  async () => {
-                    const result = await activeClient.callTool({
-                      name: tool.name,
-                      arguments: args,
-                    });
+                annotateMcpSpan(this.url, context);
 
-                    // Handle both current and compatibility result formats
-                    // Compatibility format has toolResult field, current has content field
-                    const normalizedResult: CallToolResult =
-                      "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+                const result = await activeClient.callTool({
+                  name: tool.name,
+                  arguments: args,
+                });
 
-                    const resource = this.uiResources.get(tool.name);
+                // Handle both current and compatibility result formats
+                // Compatibility format has toolResult field, current has content field
+                const normalizedResult: CallToolResult =
+                  "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
 
-                    if (resource && context?.setMeta) {
-                      // Don't render the UI here — InlineMcpApp handles rendering via
-                      // restoreToolUI with the correct display mode and target iframe.
-                      // We only persist the metadata so InlineMcpApp knows what to render.
-                      const toolUiMeta = tool._meta?.ui as
-                        | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
-                        | undefined;
-                      context.setMeta?.({
-                        toolProvider: this.id,
-                        toolResource: resource.uri,
-                        ...(toolUiMeta?.defaultDisplayMode
-                          ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode }
-                          : {}),
-                        ...(toolUiMeta?.availableDisplayModes
-                          ? { appDisplayModes: toolUiMeta.availableDisplayModes }
-                          : {}),
-                      });
-                    }
+                const resource = this.uiResources.get(tool.name);
 
-                    return processContent(normalizedResult.content as MCPContentBlock[]);
-                  },
-                );
+                if (resource && context?.setMeta) {
+                  // Don't render the UI here — McpApp handles rendering via
+                  // restoreToolUI with the correct display mode and target iframe.
+                  // We only persist the metadata so McpApp knows what to render.
+                  const toolUiMeta = tool._meta?.ui as
+                    | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
+                    | undefined;
+                  context.setMeta?.({
+                    toolProvider: this.id,
+                    toolResource: resource.uri,
+                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
+                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
+                  });
+
+                  if (normalizedResult.structuredContent) {
+                    context.setContent?.(normalizedResult.structuredContent);
+                  }
+                }
+
+                return await processContent(normalizedResult.content as MCPContentBlock[], activeClient);
               } finally {
                 this.activeToolContext = null;
               }
@@ -413,7 +428,7 @@ export class MCPClient implements ToolProvider {
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
-    const render = context.render;
+    const render = context.render?.bind(context);
     const client = this.client;
 
     if (!render) {
@@ -437,6 +452,24 @@ export class MCPClient implements ToolProvider {
       throw new Error(`MCP iframe content window unavailable for ${toolName}`);
     }
 
+    // Tear down any bridge still active for this provider before creating a new
+    // one. Two live bridges would both answer the app's requests, so the guest
+    // sees duplicate JSON-RPC responses ("unknown message ID") and fails.
+    if (this.activeBridge) {
+      const stale = this.activeBridge;
+      this.activeBridge = null;
+      try {
+        await stale.teardownResource({});
+      } catch {
+        // ignore — the stale session may still be booting
+      }
+      try {
+        await stale.close();
+      } catch (error) {
+        console.error("Error closing stale MCP app bridge:", error);
+      }
+    }
+
     const bridge = new AppBridge(
       client,
       HOST_INFO,
@@ -445,10 +478,14 @@ export class MCPClient implements ToolProvider {
     );
 
     this.activeBridge = bridge;
+    // Host-initiated mode changes (our expand button) update the live bridge in
+    // place — no teardown/recreate. Reads the iframe's current rect for dimensions.
+    this.applyActiveDisplayMode = (mode) => bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
 
     renderTarget.registerCleanup(async () => {
       if (this.activeBridge === bridge) {
         this.activeBridge = null;
+        this.applyActiveDisplayMode = null;
       }
 
       try {
@@ -514,10 +551,15 @@ export class MCPClient implements ToolProvider {
       // Only height uses flexible (maxHeight) or unbounded mode, so we apply it here.
 
       if (typeof height === "number" && height > 0) {
-        // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
-        const cappedHeight =
-          displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
-        iframe.style.height = `${cappedHeight}px`;
+        if (displayModeOptions?.onSizeChange) {
+          // Host owns the iframe height (moved-iframe model).
+          displayModeOptions.onSizeChange(height);
+        } else {
+          // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
+          const cappedHeight =
+            displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
+          iframe.style.height = `${cappedHeight}px`;
+        }
       }
     };
 
@@ -531,27 +573,24 @@ export class MCPClient implements ToolProvider {
     };
 
     bridge.onrequestdisplaymode = async ({ mode }) => {
-      const currentMode = displayModeOptions?.displayMode ?? "inline";
-      if (mode === "fullscreen" && currentMode !== "fullscreen") {
-        displayModeOptions?.onDisplayModeRequested?.(mode);
-        // Notify the view of the display mode change and updated container dimensions
-        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
-        return { mode };
-      }
-      if (mode === "inline" && currentMode !== "inline") {
-        displayModeOptions?.onDisplayModeRequested?.(mode);
-        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
-        return { mode };
-      }
-      return { mode: currentMode };
+      // The owning component (McpApp) holds the authoritative display-mode state,
+      // dedupes redundant changes, and pushes the host-context update only once the
+      // iframe is positioned over the drawer (so fullscreen reads the real size, not
+      // the stale inline rect). We must NOT read displayModeOptions.displayMode here —
+      // it's the static snapshot from restore time ("inline") and would wrongly drop
+      // an app's request to return inline. Just forward; McpApp drives the rest.
+      displayModeOptions?.onDisplayModeRequested?.(mode);
+      return { mode };
     };
 
     bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
+      // Best-effort. In the moved-iframe (historical render) path the host context
+      // doesn't wire setContext, and we don't advertise the capability — so an app
+      // that calls this anyway gets a silent no-op rather than an unhandled rejection.
+      if (!context.setContext) {
+        return {};
+      }
       try {
-        if (!context.setContext) {
-          throw new Error("setContext is not supported by the host context");
-        }
-
         await context.setContext(serializeModelContext(content, structuredContent));
         return {};
       } catch (error) {
@@ -610,6 +649,11 @@ export class MCPClient implements ToolProvider {
     await bridge.connect(transport);
   }
 
+  /** Push a host-initiated display-mode change to the active app (no recreate). */
+  applyAppDisplayMode(mode: DisplayMode): void {
+    this.applyActiveDisplayMode?.(mode);
+  }
+
   /**
    * Restore an MCP App UI from persisted chat data.
    * Re-fetches the UI resource if not cached, renders the iframe, and replays stored tool input + result.
@@ -619,6 +663,7 @@ export class MCPClient implements ToolProvider {
     uiResourceUri: string,
     args: Record<string, unknown>,
     storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
+    content: Record<string, unknown> | undefined,
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
@@ -641,26 +686,19 @@ export class MCPClient implements ToolProvider {
         }
         return { type: "text" as const, text: JSON.stringify(c) };
       }),
+      ...(content ? { structuredContent: content } : {}),
     };
 
     // Try to use cached resource, otherwise re-fetch
     let resource = this.uiResources.get(toolName);
     if (!resource) {
       try {
-        const readResult = await this.client.readResource({
-          uri: uiResourceUri,
-        });
-        const content = readResult.contents.find(
-          (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"),
-        );
-        if (!content) {
+        const readResult = await this.client.readResource({ uri: uiResourceUri });
+        const entry = toUiResourceEntry(uiResourceUri, readResult.contents);
+        if (!entry) {
           throw new Error(`Invalid UI resource for ${toolName}`);
         }
-        resource = {
-          uri: uiResourceUri,
-          content,
-          meta: content._meta?.ui as McpUiResourceMeta | undefined,
-        };
+        resource = entry;
         this.uiResources.set(toolName, resource);
       } catch (error) {
         console.error(`Failed to fetch UI resource for ${toolName}:`, error);
@@ -703,19 +741,10 @@ export class MCPClient implements ToolProvider {
       Array.from(uriToTools.entries()).map(async ([uri, toolNames]) => {
         try {
           const result = await client.readResource({ uri });
-          const content = result.contents.find(
-            (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"),
-          );
-
-          if (!content) {
+          const entry = toUiResourceEntry(uri, result.contents);
+          if (!entry) {
             return;
           }
-
-          const entry: UiResourceEntry = {
-            uri,
-            content,
-            meta: content._meta?.ui as McpUiResourceMeta | undefined,
-          };
 
           for (const toolName of toolNames) {
             this.uiResources.set(toolName, entry);
@@ -758,44 +787,98 @@ export class MCPClient implements ToolProvider {
   isConnected(): boolean {
     return this.client !== null;
   }
-
-  /** Whether this client currently has a live app bridge (e.g. from an in-flight tool call). */
-  hasActiveBridge(): boolean {
-    return this.activeBridge !== null;
-  }
 }
 
 type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
 
-function processContent(input: MCPContentBlock[]): ToolResultContent[] {
-  if (!input?.length) {
-    return [{ type: "text" as const, text: "no content" }];
+/** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
+function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
+  const segment = uri?.split(/[?#]/)[0].split("/").filter(Boolean).pop();
+  if (!segment) return fallback;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * Convert MCP resource contents (embedded, or fetched via resources/read) into a
+ * displayable block. Images/audio are surfaced as such (inline preview); everything
+ * else becomes a file (type-specific preview + download button).
+ */
+function resourceToContent(res: MCPResourceContents, fallbackName?: string): ToolResultContent | null {
+  const mimeType = (res.mimeType as string | undefined) || "application/octet-stream";
+  const name = fallbackName ?? filenameFromUri(res.uri as string | undefined);
+
+  let data: string;
+  if ("blob" in res && typeof res.blob === "string") {
+    data = `data:${mimeType};base64,${res.blob}`; // resource blobs are already base64
+  } else if ("text" in res && typeof res.text === "string") {
+    data = textToDataUrl(res.text, mimeType);
+  } else {
+    return null;
   }
 
-  const result = input
-    .map((block): ToolResultContent | null => {
-      if (block.type === "text") {
-        return { type: "text" as const, text: block.text || "" };
-      }
+  if (mimeType.startsWith("image/")) return { type: "image", name, data };
+  if (mimeType.startsWith("audio/")) return { type: "audio", name, data };
+  return { type: "file", name, data };
+}
 
-      if (block.type === "image") {
-        const mimeType = block.mimeType || "image/png";
-        const data = `data:${mimeType};base64,${block.data || ""}`;
-        return { type: "image" as const, data };
-      }
+/**
+ * Fetch a resource_link's bytes via resources/read and map them. Resources can be
+ * session-scoped and discarded after the run, so we fetch eagerly here (while alive)
+ * rather than lazily on click. Falls back to a text marker if the fetch fails.
+ */
+async function resolveResourceLink(
+  block: Extract<MCPContentBlock, { type: "resource_link" }>,
+  client?: Client | null,
+): Promise<ToolResultContent[]> {
+  const label = block.name || block.uri;
+  if (!client) {
+    return [{ type: "text", text: `[Resource: ${label}]` }];
+  }
+  try {
+    const read = await client.readResource({ uri: block.uri });
+    const mapped = ((read.contents ?? []) as MCPResourceContents[])
+      .map((c) => resourceToContent(c, block.name))
+      .filter((c): c is ToolResultContent => c !== null);
+    return mapped.length ? mapped : [{ type: "text", text: `[Resource: ${label}]` }];
+  } catch (error) {
+    console.error("Failed to read MCP resource link", block.uri, error);
+    return [{ type: "text", text: `Could not load resource: ${label}` }];
+  }
+}
 
-      return null;
-    })
-    .filter((c): c is ToolResultContent => c !== null);
+/** Map a single MCP content block to zero or more displayable blocks. */
+async function processBlock(block: MCPContentBlock, client?: Client | null): Promise<ToolResultContent[]> {
+  switch (block.type) {
+    case "text":
+      return [{ type: "text", text: block.text || "" }];
+    case "image":
+      return [{ type: "image", data: `data:${block.mimeType || "image/png"};base64,${block.data || ""}` }];
+    case "audio":
+      return [{ type: "audio", data: `data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}` }];
+    case "resource": {
+      const mapped = resourceToContent(block.resource);
+      return mapped ? [mapped] : [];
+    }
+    case "resource_link":
+      return resolveResourceLink(block, client);
+    default:
+      return [];
+  }
+}
 
-  return result.length
-    ? result
-    : [
-        {
-          type: "text" as const,
-          text: JSON.stringify(input.length === 1 ? input[0] : input),
-        },
-      ];
+async function processContent(input: MCPContentBlock[], client?: Client | null): Promise<ToolResultContent[]> {
+  if (!input?.length) {
+    return [{ type: "text", text: "no content" }];
+  }
+
+  // Resource links resolve in parallel; original order is preserved.
+  const result = (await Promise.all(input.map((block) => processBlock(block, client)))).flat();
+
+  return result.length ? result : [{ type: "text", text: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }
 
 function getHtmlContent(resource: MCPResourceContents): string {
@@ -826,15 +909,11 @@ function buildHostCapabilities(
   };
 
   if (serverCapabilities?.tools) {
-    capabilities.serverTools = {
-      ...(serverCapabilities.tools.listChanged ? { listChanged: true } : {}),
-    };
+    capabilities.serverTools = serverCapabilities.tools.listChanged ? { listChanged: true } : {};
   }
 
   if (serverCapabilities?.resources) {
-    capabilities.serverResources = {
-      ...(serverCapabilities.resources.listChanged ? { listChanged: true } : {}),
-    };
+    capabilities.serverResources = serverCapabilities.resources.listChanged ? { listChanged: true } : {};
   }
 
   if (supportsMessages) {
@@ -854,7 +933,7 @@ function buildHostCapabilities(
 /** Max height (px) for inline apps to prevent them from dominating the chat scroll. */
 const INLINE_MAX_HEIGHT = 600;
 
-function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: McpUiDisplayMode): McpUiHostContext {
+function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: DisplayMode): McpUiHostContext {
   const isDark = document.documentElement.classList.contains("dark");
   const currentMode = displayMode ?? "inline";
 
@@ -900,6 +979,23 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
       hover: window.matchMedia("(hover: hover)").matches,
     },
   };
+}
+
+function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
+  const span = toolContext?.agentContext ? trace.getSpan(toolContext.agentContext) : trace.getActiveSpan();
+  if (!span) return;
+
+  span.setAttribute("mcp.method.name", "tools/call");
+  span.setAttribute("url.full", serverUrl);
+
+  try {
+    const url = new URL(serverUrl);
+    if (url.hostname) span.setAttribute("server.address", url.hostname);
+    if (url.port) span.setAttribute("server.port", Number(url.port));
+    if (url.protocol) span.setAttribute("network.protocol.name", url.protocol.replace(":", ""));
+  } catch {
+    // Malformed URL — skip the standard server.* attributes.
+  }
 }
 
 function isSafeExternalUrl(value: string): boolean {

@@ -4,8 +4,20 @@ import { migrateChat } from "./v1Migration";
 /**
  * Import chats from a ZIP file into the OPFS chats folder.
  * Merges with existing chats.
+ *
+ * Rejects archives that don't look like a chats export (e.g. an agents or
+ * notebook ZIP) — merging those would pollute chats/ with folders the index
+ * rebuild then surfaces as phantom chats.
  */
 export async function importChatsFromZip(file: File): Promise<void> {
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(file);
+  const paths = Object.keys(zip.files).filter((p) => !opfs.isJunkZipEntry(p));
+  const looksLikeChats = paths.some((p) => /(^|\/)chat\.json$/.test(p) || p === "index.json");
+  if (!looksLikeChats) {
+    throw new Error("Unrecognized archive: expected a chats export.");
+  }
+
   await opfs.importFolderFromZip("chats", file);
 }
 

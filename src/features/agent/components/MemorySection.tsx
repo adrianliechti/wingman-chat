@@ -4,9 +4,11 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { cn } from "@/shared/lib/cn";
+import { confirm } from "@/shared/lib/confirm";
 import * as opfs from "@/shared/lib/opfs";
 import { Markdown } from "@/shared/ui/Markdown";
 import { Section } from "./Section";
+import { SectionEmptyState } from "./SectionEmptyState";
 
 interface MemorySectionProps {
   agent: Agent;
@@ -51,9 +53,15 @@ export function MemorySection({ agent }: MemorySectionProps) {
     updateAgent(agent.id, { memory: !agent.memory });
   };
 
-  const openDialog = () => {
-    setIsEditing(false);
+  const openDialog = (editMode = false) => {
     setIsDialogOpen(true);
+    if (editMode || !content?.trim()) {
+      setEditValue(content || "");
+      setIsEditing(true);
+    } else {
+      setIsEditing(false);
+      setEditValue("");
+    }
   };
 
   const startEditing = () => {
@@ -78,7 +86,14 @@ export function MemorySection({ agent }: MemorySectionProps) {
   };
 
   const clearMemory = async () => {
-    if (!window.confirm("Clear all memory for this agent? This cannot be undone.")) return;
+    if (
+      !(await confirm({
+        title: "Clear agent memory?",
+        message: "All stored memory for this agent will be permanently erased and can't be recovered.",
+        danger: true,
+      }))
+    )
+      return;
     await opfs.deleteFile(memoryPath);
     setContent("");
     setEditValue("");
@@ -98,7 +113,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
       else closeDialog();
     } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      save();
+      void save();
     }
   };
 
@@ -241,57 +256,52 @@ export function MemorySection({ agent }: MemorySectionProps) {
         isOpen={true}
         collapsible={false}
         headerAction={
-          <button
-            type="button"
-            onClick={toggleMemory}
-            className={cn(
-              "shrink-0",
-              agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
+          <div className="flex items-center gap-2">
+            {agent.memory && content?.trim() && (
+              <button
+                type="button"
+                onClick={() => openDialog(true)}
+                className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+              >
+                <Edit size={12} /> Edit
+              </button>
             )}
-            title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
-          >
-            {agent.memory ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-          </button>
+            <button
+              type="button"
+              onClick={toggleMemory}
+              className={cn(
+                "shrink-0",
+                agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
+              )}
+              title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
+            >
+              {agent.memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+            </button>
+          </div>
         }
       >
         {agent.memory ? (
-          <div className="space-y-2">
-            {content?.trim() && (
-              <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/40 dark:bg-neutral-900/30 backdrop-blur-sm p-2 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={openDialog}
-                  className="absolute top-1.5 right-1.5 z-10 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                  title="Edit memory"
-                  aria-label="Edit memory"
-                >
-                  <Edit size={11} />
-                </button>
-                <div className="max-h-24 overflow-hidden">
-                  <div className="origin-top-left scale-[0.8] w-[125%] pr-6">
-                    <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-neutral-700 dark:text-neutral-300 [&>*:first-child]:mt-0">
-                      <Markdown>{content}</Markdown>
-                    </div>
-                  </div>
+          content?.trim() ? (
+            <button
+              type="button"
+              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer w-full text-left"
+              onClick={() => openDialog(false)}
+            >
+              <div className="relative px-3.5 pt-3 pb-3">
+                <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
+                  <Markdown compact>{content}</Markdown>
                 </div>
+                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
               </div>
-            )}
-
-            {!content?.trim() && (
-              <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/30 dark:bg-neutral-900/20 backdrop-blur-sm p-2 min-h-10">
-                <button
-                  type="button"
-                  onClick={openDialog}
-                  className="absolute top-1.5 right-1.5 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                  title="Edit memory"
-                  aria-label="Edit memory"
-                >
-                  <Edit size={11} />
-                </button>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">No memories yet.</p>
-              </div>
-            )}
-          </div>
+            </button>
+          ) : (
+            <SectionEmptyState
+              icon={<Edit size={12} />}
+              label="No memories yet"
+              description="The agent will write here as you chat"
+              onClick={openDialog}
+            />
+          )
         ) : (
           <p className="text-xs text-neutral-400 dark:text-neutral-500">
             Enable to let this agent remember context across conversations.

@@ -1,0 +1,8 @@
+### Vision helper (`vision`)
+
+Both the Python and JavaScript interpreters expose a `vision` helper that sends an image to a vision-capable language model and returns its text response. Use it to describe photos, read charts and diagrams, or answer questions about screenshots.
+
+- Python: `text = await vision("/home/user/photo.png")` — async, returns `str`; an optional second argument is a custom prompt: `await vision("/home/user/chart.png", "List the data points as CSV")`
+- JavaScript: `const text = await vision("/photo.png")` — async, returns a string; an optional second argument is a custom prompt: `await vision("/chart.png", "List the data points as CSV")`
+
+Without a prompt it transcribes any text in the image, or describes the image if there is none. For scanned documents and precise text extraction prefer `ocr`; use `vision` for understanding image content or targeted questions about it. One call per image — it is a network round trip.

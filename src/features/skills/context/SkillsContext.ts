@@ -9,6 +9,11 @@ export interface SkillsContextType {
   updateSkill: (id: string, updates: Partial<Omit<Skill, "id">>) => void;
   removeSkill: (id: string) => void;
   getSkill: (name: string) => Skill | undefined;
+  showSkillCatalog: boolean;
+  skillCatalogTarget: string | null;
+  skillCatalogReadOnly: boolean;
+  openSkillCatalog: (name?: string, readOnly?: boolean) => void;
+  closeSkillCatalog: () => void;
 }
 
 export const SkillsContext = createContext<SkillsContextType | undefined>(undefined);

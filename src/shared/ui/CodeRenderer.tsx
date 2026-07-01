@@ -2,12 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
-
-let shikiPromise: Promise<typeof import("shiki")> | null = null;
-function getShiki() {
-  if (!shikiPromise) shikiPromise = import("shiki");
-  return shikiPromise;
-}
+import { RendererFrame } from "./renderers/RendererFrame";
 
 const HIGHLIGHT_DEBOUNCE_MS = 120;
 const MAX_HIGHLIGHT_CACHE_SIZE = 200;
@@ -47,7 +42,7 @@ function setCacheEntry(cache: Map<string, string>, key: string, value: string, m
 
 const highlightedCodeStyle: React.CSSProperties = {
   margin: 0,
-  padding: "1rem",
+  padding: "0.75rem",
   fontSize: "0.875rem",
   lineHeight: "1.25rem",
   fontFamily: "Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace",
@@ -60,127 +55,126 @@ interface CodeRendererProps {
   name?: string;
   blockId?: string;
   isStreaming?: boolean;
+  /** Strip the header bar and borders for inline contexts (e.g. tool details). */
+  subtle?: boolean;
 }
 
-const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false }: CodeRendererProps) => {
-  const { isDark } = useTheme();
-  const normalizedLanguage = language.toLowerCase();
-  const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
-  const blockCacheKey = blockId ? `${isDark ? "dark" : "light"}:${blockId}` : null;
-  const [html, setHtml] = useState<string>(() => {
-    return highlightCache.get(cacheKey) ?? (blockCacheKey ? (blockHighlightCache.get(blockCacheKey) ?? "") : "");
-  });
+const CodeRenderer = memo(
+  ({ code, language, name, blockId, isStreaming = false, subtle = false }: CodeRendererProps) => {
+    const { isDark } = useTheme();
+    const normalizedLanguage = language.toLowerCase();
+    const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
+    const blockCacheKey = blockId ? `${isDark ? "dark" : "light"}:${blockId}` : null;
+    const [html, setHtml] = useState<string>(() => {
+      return highlightCache.get(cacheKey) ?? (blockCacheKey ? (blockHighlightCache.get(blockCacheKey) ?? "") : "");
+    });
 
-  useEffect(() => {
-    if (!blockCacheKey) {
-      return;
-    }
-
-    return () => {
-      blockHighlightCache.delete(blockCacheKey);
-    };
-  }, [blockCacheKey]);
-
-  useEffect(() => {
-    if (!code) {
-      setHtml("");
-      return;
-    }
-
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const cached = getCacheEntry(highlightCache, cacheKey);
-
-    if (cached) {
-      setHtml(cached);
-      if (blockCacheKey) {
-        setCacheEntry(blockHighlightCache, blockCacheKey, cached, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
+    useEffect(() => {
+      if (!blockCacheKey) {
+        return;
       }
-      return;
-    }
 
-    if (blockCacheKey) {
-      const previousBlockHtml = getCacheEntry(blockHighlightCache, blockCacheKey);
-      if (previousBlockHtml) {
-        setHtml(previousBlockHtml);
+      return () => {
+        blockHighlightCache.delete(blockCacheKey);
+      };
+    }, [blockCacheKey]);
+
+    useEffect(() => {
+      if (!code) {
+        setHtml("");
+        return;
       }
-    }
 
-    const highlight = async () => {
-      try {
-        const { codeToHtml } = await getShiki();
-        const highlighted = await codeToHtml(code, {
-          lang: normalizedLanguage,
-          theme: isDark ? "one-dark-pro" : "one-light",
-          colorReplacements: {
-            "#fafafa": "transparent",
-            "#282c34": "transparent",
-          },
-        });
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cached = getCacheEntry(highlightCache, cacheKey);
 
-        setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
+      if (cached) {
+        setHtml(cached);
         if (blockCacheKey) {
-          setCacheEntry(blockHighlightCache, blockCacheKey, highlighted, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
+          setCacheEntry(blockHighlightCache, blockCacheKey, cached, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
         }
+        return;
+      }
 
-        if (!cancelled) {
-          setHtml(highlighted);
-        }
-      } catch (error) {
-        console.error("Failed to highlight code:", error);
-        if (!cancelled) {
-          setHtml("");
+      if (blockCacheKey) {
+        const previousBlockHtml = getCacheEntry(blockHighlightCache, blockCacheKey);
+        if (previousBlockHtml) {
+          setHtml(previousBlockHtml);
         }
       }
-    };
 
-    timer = setTimeout(highlight, isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0);
+      const highlight = async () => {
+        try {
+          const { codeToHtml } = await import("shiki");
+          const highlighted = await codeToHtml(code, {
+            lang: normalizedLanguage,
+            theme: isDark ? "one-dark-pro" : "one-light",
+            colorReplacements: {
+              "#fafafa": "transparent",
+              "#282c34": "transparent",
+            },
+          });
 
-    return () => {
-      cancelled = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, [blockCacheKey, cacheKey, code, isDark, isStreaming, normalizedLanguage]);
+          setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
+          if (blockCacheKey) {
+            setCacheEntry(blockHighlightCache, blockCacheKey, highlighted, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
+          }
 
-  const effectiveHtml = code ? html : "";
-  const renderedHtml = useMemo(
-    () => sanitizeHtmlToReact(effectiveHtml, { keyPrefix: blockCacheKey ?? cacheKey }),
-    [blockCacheKey, cacheKey, effectiveHtml],
-  );
+          if (!cancelled) {
+            setHtml(highlighted);
+          }
+        } catch (error) {
+          console.error("Failed to highlight code:", error);
+          if (!cancelled) {
+            setHtml("");
+          }
+        }
+      };
 
-  const renderCodeBlock = (content: React.ReactNode) => (
-    <div className="relative my-4">
-      <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-        <span>
-          {language}
-          {name && <span className="ml-2 text-gray-500 dark:text-neutral-400">• {name}</span>}
-        </span>
-        <div className="flex items-center space-x-2">
-          <CopyButton text={code} className="h-4 w-4" />
-        </div>
-      </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-b-md overflow-hidden border-l border-r border-b border-gray-100 dark:border-neutral-800">
-        {content}
-      </div>
-    </div>
-  );
+      timer = setTimeout(highlight, isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0);
 
-  if (!effectiveHtml) {
-    return renderCodeBlock(
-      <pre className="p-4 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
-        <code>{code}</code>
-      </pre>,
+      return () => {
+        cancelled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+      };
+    }, [blockCacheKey, cacheKey, code, isDark, isStreaming, normalizedLanguage]);
+
+    const effectiveHtml = code ? html : "";
+    const renderedHtml = useMemo(
+      () => sanitizeHtmlToReact(effectiveHtml, { keyPrefix: blockCacheKey ?? cacheKey }),
+      [blockCacheKey, cacheKey, effectiveHtml],
     );
-  }
 
-  return renderCodeBlock(
-    <div className="overflow-x-auto" style={highlightedCodeStyle}>
-      {renderedHtml}
-    </div>,
-  );
-});
+    // Tool details (subtle) show just the name (Result/Error); everywhere else
+    // keeps the language hint as the tag, with an optional name (e.g. a filename).
+    const renderCodeBlock = (content: React.ReactNode) => (
+      <RendererFrame
+        label={subtle ? (name ?? "") : language}
+        name={subtle ? undefined : name}
+        actions={<CopyButton text={code} label="Copy" />}
+      >
+        {content}
+      </RendererFrame>
+    );
+
+    if (!effectiveHtml) {
+      return renderCodeBlock(
+        <pre className="p-3 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
+          <code>{code}</code>
+        </pre>,
+      );
+    }
+
+    return renderCodeBlock(
+      <div className="overflow-x-auto" style={highlightedCodeStyle}>
+        {renderedHtml}
+      </div>,
+    );
+  },
+);
 
 CodeRenderer.displayName = "CodeRenderer";
 

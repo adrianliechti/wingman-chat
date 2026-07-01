@@ -1,5 +1,6 @@
 import { Check as CheckIcon, Download as DownloadIcon } from "lucide-react";
 import { useState } from "react";
+import { notify } from "@/shared/lib/notify";
 import { downloadBlob } from "@/shared/lib/utils";
 
 type DownloadButtonProps = {
@@ -21,6 +22,7 @@ export const DownloadButton = ({ url, filename, className }: DownloadButtonProps
       setTimeout(() => setDownloaded(false), 2000);
     } catch (error) {
       console.error("failed to download", error);
+      notify.error("Download failed", "The file couldn't be downloaded. Please try again.");
     }
   };
 
