@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEntriesInPlace, decodeLines, diffChat, encodeLines, replayLog } from "./chatLog";
+import { applyEntriesInPlace, chunkEntries, decodeLines, diffChat, encodeLines, replayLog } from "./chatLog";
 import type { StoredChat, StoredMessage } from "./opfs-chat";
 
 function msg(text: string, role: StoredMessage["role"] = "user"): StoredMessage {
@@ -81,6 +81,27 @@ describe("diff + replay round-trips", () => {
   it("identical chats produce an empty diff", () => {
     const a = chat({ title: "t", messages: [msg("a")] });
     expect(diffChat(a, chat({ title: "t", messages: [msg("a")] }))).toEqual([]);
+  });
+});
+
+describe("chunkEntries", () => {
+  it("keeps small batches in one chunk", () => {
+    const entries = diffChat(null, chat({ messages: [msg("a"), msg("b")] }));
+    expect(chunkEntries(entries)).toEqual([entries]);
+  });
+
+  it("splits when the plaintext budget is exceeded and preserves order", () => {
+    const big = "x".repeat(3 * 1024 * 1024);
+    const entries = diffChat(null, chat({ messages: [msg(big), msg(big), msg("tail")] }));
+    const chunks = chunkEntries(entries);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.flat()).toEqual(entries);
+    // every chunk carries at least one entry, even oversized ones
+    for (const c of chunks) expect(c.length).toBeGreaterThan(0);
+  });
+
+  it("returns nothing for an empty batch", () => {
+    expect(chunkEntries([])).toEqual([]);
   });
 });
 

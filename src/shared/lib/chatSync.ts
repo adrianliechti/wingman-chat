@@ -17,7 +17,15 @@
  */
 
 import type { Chat } from "@/shared/types/chat";
-import { applyEntriesInPlace, decodeLines, diffChat, encodeLines, type LogEntry, replayLog } from "./chatLog";
+import {
+  applyEntriesInPlace,
+  chunkEntries,
+  decodeLines,
+  diffChat,
+  encodeLines,
+  type LogEntry,
+  replayLog,
+} from "./chatLog";
 import * as api from "./storeClient";
 import { type DEK, decryptBlob, decryptEvent, encryptBlob, encryptEvent, hashFrame, ZERO_HASH } from "./crypto";
 import { collectChatBlobIds, extractChatBlobs, getChatBlob, rehydrateChatBlobs, type StoredChat } from "./opfs-chat";
@@ -373,26 +381,38 @@ export class ChatSync {
 
   /** Encrypt + post one batch of entries. Handles 409 by pulling and
    *  re-diffing once. Throws PostConflictAfterRetry if the second
-   *  attempt still conflicts (caller leaves the target in place). */
-  private async postEntries(chatId: string, entries: LogEntry[]): Promise<void> {
+   *  attempt still conflicts (caller leaves the target in place).
+   *  Returns the posted seq range, or null when the retry re-diff came
+   *  up empty. */
+  private async postEntries(chatId: string, entries: LogEntry[]): Promise<{ firstSeq: number; newSeq: number } | null> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const expectedSeq = this.state.heads[chatId] ?? 0;
-      const prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
+      let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
 
-      const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: entries };
-      const frame = await encryptEvent(this.dek, payload, this.userId, chatId, expectedSeq + 1);
+      // One frame per chunk, hash-chained in order. A first-sync snapshot
+      // of a long chat easily exceeds the server's per-frame cap as a
+      // single frame.
+      const events: { id: string; frame: string }[] = [];
+      let seq = expectedSeq;
+      for (const chunk of chunkEntries(entries)) {
+        seq += 1;
+        const payload = { id: crypto.randomUUID(), ts: new Date().toISOString(), prevHash, body: chunk };
+        const frame = await encryptEvent(this.dek, payload, this.userId, chatId, seq);
+        events.push({ id: payload.id, frame });
+        prevHash = await hashFrame(frame);
+      }
 
-      const res = await api.appendEvents(chatId, expectedSeq, [{ id: payload.id, frame }]);
+      const res = await api.appendEvents(chatId, expectedSeq, events);
 
       if (res === null) {
         // 409 — pull, then retry once with a freshly re-diff'd payload
         // computed against the new baseline.
         await this.applyRemoteEvents(chatId, expectedSeq);
         const newTarget = this.pendingTargets.get(chatId);
-        if (!newTarget) return; // somehow no longer pending
+        if (!newTarget) return null; // somehow no longer pending
         const newBaseline = this.lastSynced.get(chatId) ?? null;
         entries = diffChat(newBaseline, newTarget);
-        if (entries.length === 0) return;
+        if (entries.length === 0) return null;
         continue;
       }
 
@@ -403,10 +423,10 @@ export class ChatSync {
       else this.lastSynced.delete(chatId);
 
       this.state.heads[chatId] = res.newSeq;
-      this.state.lastFrameHash[chatId] = await hashFrame(frame);
+      this.state.lastFrameHash[chatId] = prevHash;
       this.bumpEntryCount(chatId, entries[0]?.type === "init" ? -Infinity : entries.length);
       await saveState(this.state);
-      return;
+      return { firstSeq: expectedSeq + 1, newSeq: res.newSeq };
     }
     throw new PostConflictAfterRetry();
   }
@@ -437,14 +457,18 @@ export class ChatSync {
     const entries = diffChat(null, target); // forces init + meta + messages
     if (entries.length === 0) return;
 
+    let posted: { firstSeq: number; newSeq: number } | null;
     try {
-      await this.postEntries(chatId, entries);
+      posted = await this.postEntries(chatId, entries);
     } catch (err) {
       console.warn(`chatSync.maybeCompact(${chatId}): post failed`, err);
       return;
     }
+    if (!posted) return;
 
-    const compactBefore = this.state.heads[chatId] ?? 0;
+    // Keep the whole snapshot: it may span several frames, and the first
+    // one carries the init entry fresh readers replay from.
+    const compactBefore = posted.firstSeq;
     if (compactBefore < 2) return; // nothing to drop
 
     try {

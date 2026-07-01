@@ -114,5 +114,7 @@ var (
 )
 
 // MaxFrameBytes caps a single base64-encoded frame envelope. Blobs go
-// through PutBlob, not event frames.
-const MaxFrameBytes = 1 << 20 // 1 MiB
+// through PutBlob, not event frames — but a first-sync snapshot of a
+// long chat (or one message with large tool results) can be sizable,
+// so the cap must fit real chats. Clients chunk deltas well below this.
+const MaxFrameBytes = 8 << 20 // 8 MiB

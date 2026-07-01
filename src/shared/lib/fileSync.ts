@@ -36,7 +36,10 @@ import {
 const EXCLUDE_PREFIXES = ["chats/", "_sync/"];
 const STATE_FILE = "_sync/files.json";
 const FLUSH_DEBOUNCE_MS = 2_000;
-const MAX_FILE_BYTES = 64 * 1024 * 1024;
+/** Files above this are kept local-only (encryption buffers the whole
+ *  file in memory, so the cap guards the tab, not the server). Sized to
+ *  fit large office documents and notebook media. */
+const MAX_FILE_BYTES = 256 * 1024 * 1024;
 
 export interface FileSyncActivity {
   syncing: boolean;

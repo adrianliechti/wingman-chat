@@ -47,6 +47,31 @@ export function decodeLines(text: string): LogEntry[] {
   return out;
 }
 
+/** Per-frame plaintext budget. Base64 + GCM overhead keeps the resulting
+ *  frame comfortably under the server's 8 MiB MaxFrameBytes. */
+const MAX_FRAME_PLAINTEXT = 4 * 1024 * 1024;
+
+/** Split entries into runs that each fit one encrypted frame. A single
+ *  oversized entry (one message with huge tool results) still gets its
+ *  own frame. */
+export function chunkEntries(entries: LogEntry[]): LogEntry[][] {
+  const out: LogEntry[][] = [];
+  let cur: LogEntry[] = [];
+  let size = 0;
+  for (const e of entries) {
+    const n = JSON.stringify(e).length + 1;
+    if (cur.length > 0 && size + n > MAX_FRAME_PLAINTEXT) {
+      out.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(e);
+    size += n;
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
+}
+
 // Replay -----------------------------------------------------------------
 
 export interface ReplayResult {

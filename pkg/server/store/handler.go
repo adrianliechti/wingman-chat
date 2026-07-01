@@ -257,6 +257,10 @@ func (h *Handler) handleAppendEvents(w http.ResponseWriter, r *http.Request) {
 		frames = append(frames, []byte(req.Frame))
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			http.Error(w, "frame too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
