@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
+import { readLocalMirror } from "@/shared/lib/chatSync";
 import * as storeSession from "@/shared/lib/storeSession";
 import type { StoredChat } from "@/shared/lib/opfs";
 import * as opfs from "@/shared/lib/opfs";
@@ -142,17 +143,33 @@ export function useChats() {
       }
     }
 
-    // Kick off session bootstrapping in parallel; load() awaits readiness
-    // internally via whenReady() if we're in server mode.
-    void storeSession.initSession();
-    void load();
+    // The local mirror is plaintext — only the server copies are PIN
+    // protected — so a locked (or errored) session can still show it.
+    async function loadMirror() {
+      try {
+        const mirror = await readLocalMirror();
+        mirror.sort((a, b) => (b.updated?.getTime() || 0) - (a.updated?.getTime() || 0));
+        if (!cancelled) setChats(mirror);
+      } catch (error) {
+        console.error("Error loading local mirror:", error);
+      } finally {
+        if (!cancelled) setIsLoaded(true);
+      }
+    }
 
-    // Re-load when the session transitions to "ready" after a PIN unlock,
-    // and adopt the fresh list whenever a pull applies remote changes
-    // (manual sync, focus re-pull, 409 recovery). Unlock replaces the
-    // ChatSync instance, so re-subscribe on every "ready".
+    void storeSession.initSession();
+    if (!isServerMode()) void load();
+
+    // Server mode is session-driven: mirror while locked, pull when ready
+    // (also fires after a PIN unlock), and adopt the fresh list whenever a
+    // pull applies remote changes (auto sync, manual sync, 409 recovery).
+    // Unlock replaces the ChatSync instance, so re-subscribe on every "ready".
     let unsubRemote: (() => void) | undefined;
     const unsub = storeSession.subscribeSession((s) => {
+      if (s.status === "locked" || s.status === "error") {
+        void loadMirror();
+        return;
+      }
       if (s.status !== "ready") return;
       void load();
       unsubRemote?.();

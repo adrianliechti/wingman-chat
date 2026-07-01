@@ -71,6 +71,23 @@ const logPath = (chatId: string) => `chats/${chatId}/log.jsonl`;
 const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
 const legacyChatJsonPath = (chatId: string) => `chats/${chatId}/chat.json`;
 
+/** Read the local mirror without a DEK — logs and pending targets are
+ *  plaintext locally; the PIN only protects the server copies. Lets the
+ *  UI show chats while the session is still locked. */
+export async function readLocalMirror(): Promise<Chat[]> {
+  const out: Chat[] = [];
+  for (const id of await listDirectories("chats")) {
+    let stored = await readJson<StoredChat>(targetPath(id));
+    if (!stored) {
+      const text = await readText(logPath(id));
+      if (text) stored = replayLog(id, decodeLines(text)).chat ?? undefined;
+    }
+    if (!stored) stored = await readJson<StoredChat>(legacyChatJsonPath(id));
+    if (stored) out.push(await rehydrateChatBlobs(stored));
+  }
+  return out;
+}
+
 // ChatSync ---------------------------------------------------------------
 
 export interface ChatSyncOptions {
@@ -138,17 +155,26 @@ export class ChatSync {
     for (const l of this.activityListeners) l(this.activity);
   }
 
+  private pullInFlight: Promise<Chat[]> | null = null;
+
   /** Pull remote changes for every chat into the local mirror; return
    *  the materialized chat list (lastSynced wins over pending targets
-   *  only for chats with no pending edits). */
+   *  only for chats with no pending edits). Concurrent calls share one
+   *  in-flight pull — interleaved pulls would double-apply events. */
   async pull(): Promise<Chat[]> {
-    this.setActivity({ syncing: true });
-    try {
-      return await this.pullInner();
-    } catch (err) {
-      this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
-      throw err;
-    }
+    if (this.pullInFlight) return this.pullInFlight;
+    this.pullInFlight = (async () => {
+      this.setActivity({ syncing: true });
+      try {
+        return await this.pullInner();
+      } catch (err) {
+        this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
+        throw err;
+      } finally {
+        this.pullInFlight = null;
+      }
+    })();
+    return this.pullInFlight;
   }
 
   private async pullInner(): Promise<Chat[]> {
