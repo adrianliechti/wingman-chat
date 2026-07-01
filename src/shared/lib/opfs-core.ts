@@ -60,6 +60,32 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  */
 
 // ============================================================================
+// Mutation notifications
+// ============================================================================
+
+export type OpfsMutationKind = "write" | "delete" | "delete-dir";
+export type OpfsMutationListener = (path: string, kind: OpfsMutationKind) => void;
+
+const mutationListeners = new Set<OpfsMutationListener>();
+
+/** Watch every OPFS mutation that goes through this module. Paths are
+ *  normalized (no leading/duplicate slashes); "delete-dir" paths name a
+ *  directory whose entire subtree was removed. */
+export function onOpfsMutation(fn: OpfsMutationListener): () => void {
+  mutationListeners.add(fn);
+  return () => mutationListeners.delete(fn);
+}
+
+function normalizeOpfsPath(path: string): string {
+  return path.split("/").filter(Boolean).join("/");
+}
+
+function notifyMutation(path: string, kind: OpfsMutationKind): void {
+  const normalized = normalizeOpfsPath(path);
+  for (const fn of mutationListeners) fn(normalized, kind);
+}
+
+// ============================================================================
 // Core OPFS Operations
 // ============================================================================
 
@@ -131,6 +157,8 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
   } finally {
     await writable.close();
   }
+
+  notifyMutation(path, "write");
 }
 
 /**
@@ -156,6 +184,8 @@ export async function appendBlob(path: string, blob: Blob): Promise<void> {
   } finally {
     await writable.close();
   }
+
+  notifyMutation(path, "write");
 }
 
 /**
@@ -242,6 +272,7 @@ export async function deleteFile(path: string): Promise<void> {
     const { dir, name } = parsePath(path);
     const directory = await getDirectory(dir);
     await directory.removeEntry(name);
+    notifyMutation(path, "delete");
   } catch (error) {
     // NotFoundError is fine - file already doesn't exist
     if (error instanceof DOMException && error.name === "NotFoundError") {
@@ -332,6 +363,7 @@ export async function deleteDirectory(path: string): Promise<void> {
 
     const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
     await parent.removeEntry(dirName, { recursive: true });
+    notifyMutation(path, "delete-dir");
   } catch (error) {
     if (error instanceof DOMException && error.name === "NotFoundError") {
       return;
@@ -348,6 +380,7 @@ export async function clearAll(): Promise<void> {
 
   for await (const [name] of root.entries()) {
     await root.removeEntry(name, { recursive: true });
+    notifyMutation(name, "delete-dir");
   }
 }
 

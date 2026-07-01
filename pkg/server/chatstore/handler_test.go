@@ -310,6 +310,65 @@ func TestUserIsolation(t *testing.T) {
 	}
 }
 
+func TestFileLifecycle(t *testing.T) {
+	srv := newTestServer(t)
+	fileID := strings.Repeat("a", 64)
+
+	res := do(t, srv, "alice", "GET", "/v1/files", "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if body := strings.TrimSpace(readBody(t, res)); body != "[]" {
+		t.Fatalf("empty store should list []: %s", body)
+	}
+
+	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v1", map[string]string{"If-None-Match": "*"})
+	wantStatus(t, res, http.StatusNoContent)
+	etag := strings.Trim(res.Header.Get("ETag"), `"`)
+	if etag == "" {
+		t.Fatal("PUT must return an ETag")
+	}
+
+	// create-only again → 412
+	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-None-Match": "*"})
+	wantStatus(t, res, http.StatusPreconditionFailed)
+	// stale etag → 412
+	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"bogus"`})
+	wantStatus(t, res, http.StatusPreconditionFailed)
+	// current etag → accepted
+	res = do(t, srv, "alice", "PUT", "/v1/files/"+fileID, "cipher-v2", map[string]string{"If-Match": `"` + etag + `"`})
+	wantStatus(t, res, http.StatusNoContent)
+	etag2 := strings.Trim(res.Header.Get("ETag"), `"`)
+
+	res = do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if got := strings.Trim(res.Header.Get("ETag"), `"`); got != etag2 {
+		t.Fatalf("GET etag %s, want %s", got, etag2)
+	}
+	if body := readBody(t, res); body != "cipher-v2" {
+		t.Fatalf("unexpected body: %q", body)
+	}
+
+	res = do(t, srv, "alice", "GET", "/v1/files", "", nil)
+	var list []chatstore.FileMeta
+	if err := json.NewDecoder(res.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != fileID || list[0].ETag != etag2 || list[0].Size != int64(len("cipher-v2")) {
+		t.Fatalf("unexpected listing: %+v", list)
+	}
+
+	// isolation
+	res = do(t, srv, "bob", "GET", "/v1/files/"+fileID, "", nil)
+	wantStatus(t, res, http.StatusNotFound)
+
+	res = do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", nil)
+	wantStatus(t, res, http.StatusNoContent)
+	res = do(t, srv, "alice", "GET", "/v1/files/"+fileID, "", nil)
+	wantStatus(t, res, http.StatusNotFound)
+	// idempotent
+	res = do(t, srv, "alice", "DELETE", "/v1/files/"+fileID, "", nil)
+	wantStatus(t, res, http.StatusNoContent)
+}
+
 func TestFrameTooLarge(t *testing.T) {
 	srv := newTestServer(t)
 	chatID := "99999999-9999-9999-9999-999999999999"

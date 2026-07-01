@@ -194,3 +194,58 @@ export async function deleteBlob(blobId: string): Promise<void> {
     throw new ServerError(res.status, body || res.statusText);
   }
 }
+
+export interface ServerFileMeta {
+  id: string;
+  etag: string;
+  updated: string; // RFC 3339
+  size: number;
+}
+
+export async function listFiles(): Promise<ServerFileMeta[]> {
+  const res = await fetchOrThrow(`${PREFIX}/files`);
+  return res.json();
+}
+
+export async function getFile(fileId: string): Promise<{ data: Uint8Array; etag: string } | null> {
+  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new ServerError(res.status, body || res.statusText);
+  }
+  const etag = unquote(res.headers.get("ETag") ?? "");
+  return { data: new Uint8Array(await res.arrayBuffer()), etag };
+}
+
+export interface PutFileOptions {
+  ifMatch?: string;
+  ifNoneMatch?: "*";
+}
+
+/** Returns the new ETag, or throws ServerError(412) on CAS mismatch. */
+export async function putFile(fileId: string, data: Uint8Array, opts: PutFileOptions = {}): Promise<string> {
+  const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
+  if (opts.ifMatch) headers["If-Match"] = `"${opts.ifMatch}"`;
+  if (opts.ifNoneMatch) headers["If-None-Match"] = opts.ifNoneMatch;
+
+  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, {
+    method: "PUT",
+    headers,
+    body: new Blob([new Uint8Array(data)]),
+  });
+  if (res.status === 412) throw new ServerError(412, "file conflict");
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new ServerError(res.status, body || res.statusText);
+  }
+  return unquote(res.headers.get("ETag") ?? "");
+}
+
+export async function deleteFile(fileId: string): Promise<void> {
+  const res = await fetch(`${PREFIX}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => "");
+    throw new ServerError(res.status, body || res.statusText);
+  }
+}

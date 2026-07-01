@@ -40,6 +40,11 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("HEAD "+prefix+"/v1/blobs/{id}", h.handleHeadBlob)
 	mux.HandleFunc("PUT "+prefix+"/v1/blobs/{id}", h.handlePutBlob)
 	mux.HandleFunc("DELETE "+prefix+"/v1/blobs/{id}", h.handleDeleteBlob)
+
+	mux.HandleFunc("GET "+prefix+"/v1/files", h.handleListFiles)
+	mux.HandleFunc("GET "+prefix+"/v1/files/{id}", h.handleGetFile)
+	mux.HandleFunc("PUT "+prefix+"/v1/files/{id}", h.handlePutFile)
+	mux.HandleFunc("DELETE "+prefix+"/v1/files/{id}", h.handleDeleteFile)
 }
 
 // auth -------------------------------------------------------------------
@@ -390,6 +395,109 @@ func (h *Handler) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.PutBlob(r.Context(), userID, blobID, r.Body); err != nil {
 		if errors.Is(err, chatstore.ErrInvalidID) {
 			http.Error(w, "invalid blob id", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	files, err := h.store.ListFiles(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if files == nil {
+		files = []chatstore.FileMeta{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(files)
+}
+
+func (h *Handler) handleGetFile(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	fileID := r.PathValue("id")
+
+	reader, etag, err := h.store.GetFile(r.Context(), userID, fileID)
+	if errors.Is(err, chatstore.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, chatstore.ErrInvalidID) {
+		http.Error(w, "invalid file id", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("ETag", `"`+etag+`"`)
+	io.Copy(w, reader)
+}
+
+func (h *Handler) handlePutFile(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	fileID := r.PathValue("id")
+
+	ifMatch := strings.Trim(r.Header.Get("If-Match"), `"`)
+	ifNone := strings.TrimSpace(r.Header.Get("If-None-Match"))
+
+	var cas string
+	switch {
+	case ifNone == "*":
+		cas = "*"
+	case ifMatch != "":
+		cas = ifMatch
+	}
+
+	etag, err := h.store.PutFile(r.Context(), userID, fileID, r.Body, cas)
+	if errors.Is(err, chatstore.ErrFileConflict) {
+		http.Error(w, "file conflict", http.StatusPreconditionFailed)
+		return
+	}
+	if errors.Is(err, chatstore.ErrInvalidID) {
+		http.Error(w, "invalid file id", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("ETag", `"`+etag+`"`)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	userID, _, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	fileID := r.PathValue("id")
+
+	if err := h.store.DeleteFile(r.Context(), userID, fileID); err != nil {
+		if errors.Is(err, chatstore.ErrInvalidID) {
+			http.Error(w, "invalid file id", http.StatusBadRequest)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)

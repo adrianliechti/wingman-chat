@@ -15,6 +15,16 @@ type ChatMeta struct {
 	Updated time.Time `json:"updated"`
 }
 
+// FileMeta describes one entry of a user's synced file tree. The file id
+// is derived client-side (hash of the OPFS path); the real path travels
+// only inside the encrypted body, so the server never learns it.
+type FileMeta struct {
+	ID      string    `json:"id"`
+	ETag    string    `json:"etag"`
+	Updated time.Time `json:"updated"`
+	Size    int64     `json:"size"`
+}
+
 // AppendResult is returned by AppendEvents.
 //
 // NewSeq is the seq assigned to the last accepted frame; if all input
@@ -77,12 +87,28 @@ type Provider interface {
 
 	// DeleteBlob removes a blob. Missing blobs return nil (idempotent).
 	DeleteBlob(ctx context.Context, userID, blobID string) error
+
+	// ListFiles returns the metadata of every synced file the user owns.
+	ListFiles(ctx context.Context, userID string) ([]FileMeta, error)
+
+	// GetFile streams the raw (still-encrypted) bytes plus the current etag.
+	GetFile(ctx context.Context, userID, fileID string) (io.ReadCloser, string, error)
+
+	// PutFile writes a file atomically.
+	//   ifMatch == ""     → unconditional replace
+	//   ifMatch == "*"    → create only (ErrFileConflict if it exists)
+	//   ifMatch == "<x>"  → CAS, must match current etag
+	PutFile(ctx context.Context, userID, fileID string, r io.Reader, ifMatch string) (etag string, err error)
+
+	// DeleteFile removes a file. Missing files return nil (idempotent).
+	DeleteFile(ctx context.Context, userID, fileID string) error
 }
 
 var (
 	ErrNotFound         = errors.New("chatstore: not found")
 	ErrSeqConflict      = errors.New("chatstore: seq conflict")
 	ErrKeystoreConflict = errors.New("chatstore: keystore etag conflict")
+	ErrFileConflict     = errors.New("chatstore: file etag conflict")
 	ErrInvalidID        = errors.New("chatstore: invalid id")
 	ErrFrameTooLarge    = errors.New("chatstore: frame too large")
 )

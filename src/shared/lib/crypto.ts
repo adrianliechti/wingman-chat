@@ -174,7 +174,7 @@ export async function unwrapDEKWithPin(w: WrappedDek, pin: string, userId: strin
 // corruption. Legacy frames have no header; a v1 nonce can start with 0x02
 // by chance, so decryption tries the v2 parse first and falls back.
 
-async function aesGcmEncrypt(dek: DEK, plaintext: Uint8Array, aad: string): Promise<string> {
+async function aesGcmEncryptBytes(dek: DEK, plaintext: Uint8Array, aad: string): Promise<Bytes> {
   const key = await importDekForAesGcm(dek);
   const nonce = randomBytes(NONCE_BYTES);
   const ct = new Uint8Array(
@@ -184,12 +184,16 @@ async function aesGcmEncrypt(dek: DEK, plaintext: Uint8Array, aad: string): Prom
       bufFrom(plaintext),
     ),
   );
-  const out = new Uint8Array(new ArrayBuffer(2 + nonce.length + ct.length));
+  const out = new Uint8Array(new ArrayBuffer(2 + nonce.length + ct.length)) as Bytes;
   out[0] = FRAME_V2;
   out[1] = dek.kid;
   out.set(nonce, 2);
   out.set(ct, 2 + nonce.length);
-  return toBase64(out);
+  return out;
+}
+
+async function aesGcmEncrypt(dek: DEK, plaintext: Uint8Array, aad: string): Promise<string> {
+  return toBase64(await aesGcmEncryptBytes(dek, plaintext, aad));
 }
 
 async function aesGcmDecryptAt(dek: DEK, bytes: Bytes, offset: number, aad: string): Promise<Bytes> {
@@ -203,7 +207,10 @@ async function aesGcmDecryptAt(dek: DEK, bytes: Bytes, offset: number, aad: stri
 }
 
 async function aesGcmDecrypt(dek: DEK, frame: string, aad: string): Promise<Bytes> {
-  const bytes = fromBase64(frame);
+  return aesGcmDecryptBytes(dek, fromBase64(frame), aad);
+}
+
+async function aesGcmDecryptBytes(dek: DEK, bytes: Bytes, aad: string): Promise<Bytes> {
   if (bytes.length < NONCE_BYTES + GCM_TAG_BYTES) {
     throw new Error("frame too short");
   }
@@ -260,12 +267,50 @@ export async function decryptEvent<T = unknown>(
 }
 
 export async function encryptBlob(dek: DEK, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
-  const frameB64 = await aesGcmEncrypt(dek, data, blobAad(userId, blobId));
-  return fromBase64(frameB64);
+  return aesGcmEncryptBytes(dek, data, blobAad(userId, blobId));
 }
 
 export async function decryptBlob(dek: DEK, data: Uint8Array, userId: string, blobId: string): Promise<Bytes> {
-  return aesGcmDecrypt(dek, toBase64(data), blobAad(userId, blobId));
+  return aesGcmDecryptBytes(dek, bufFrom(data), blobAad(userId, blobId));
+}
+
+// File envelope ------------------------------------------------------------
+//
+// Synced OPFS files travel as one encrypted message whose plaintext is
+//   utf8(JSON(header)) || 0x0A || raw file bytes
+// The header carries the real path + mtime, so the server only ever sees
+// an opaque id and ciphertext.
+
+function fileAad(userId: string, fileId: string): string {
+  return `file:${userId}:${fileId}`;
+}
+
+export async function encryptFile(
+  dek: DEK,
+  header: unknown,
+  bytes: Uint8Array,
+  userId: string,
+  fileId: string,
+): Promise<Bytes> {
+  const headerBytes = encodeUtf8(JSON.stringify(header));
+  const plaintext = new Uint8Array(new ArrayBuffer(headerBytes.length + 1 + bytes.length));
+  plaintext.set(headerBytes, 0);
+  plaintext[headerBytes.length] = 0x0a;
+  plaintext.set(bytes, headerBytes.length + 1);
+  return aesGcmEncryptBytes(dek, plaintext, fileAad(userId, fileId));
+}
+
+export async function decryptFile<T>(
+  dek: DEK,
+  data: Uint8Array,
+  userId: string,
+  fileId: string,
+): Promise<{ header: T; bytes: Bytes }> {
+  const pt = await aesGcmDecryptBytes(dek, bufFrom(data), fileAad(userId, fileId));
+  const nl = pt.indexOf(0x0a);
+  if (nl < 0) throw new Error("file envelope: missing header");
+  const header = JSON.parse(decoder.decode(pt.slice(0, nl))) as T;
+  return { header, bytes: bufFrom(pt.slice(nl + 1)) };
 }
 
 // Hash chain --------------------------------------------------------------

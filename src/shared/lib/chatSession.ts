@@ -16,6 +16,7 @@ import { getConfig } from "@/shared/config";
 import { ChatSync } from "./chatSync";
 import * as api from "./chatstoreClient";
 import type { DEK } from "./crypto";
+import { FileSync } from "./fileSync";
 import * as keystore from "./keystore";
 
 export type SessionStatus = "disabled" | "initializing" | "locked" | "ready" | "error";
@@ -25,6 +26,7 @@ interface ReadySession {
   userId: string;
   dek: DEK;
   sync: ChatSync;
+  files: FileSync;
   keystore: keystore.KeystoreState;
 }
 
@@ -69,6 +71,13 @@ export function isEnabled(): boolean {
   return getConfig().chatstore === true;
 }
 
+async function readySession(userId: string, dek: DEK, ks: keystore.KeystoreState): Promise<ReadySession> {
+  const sync = await ChatSync.create({ userId, dek });
+  const files = await FileSync.create({ userId, dek });
+  files.start();
+  return { status: "ready", userId, dek, sync, files, keystore: ks };
+}
+
 export async function initSession(): Promise<Session> {
   if (!isEnabled()) {
     setSession({ status: "disabled" });
@@ -84,12 +93,10 @@ export async function initSession(): Promise<Session> {
 
       if (!state) {
         const created = await keystore.bootstrapKeystore();
-        const sync = await ChatSync.create({ userId: me.id, dek: created.dek });
-        setSession({ status: "ready", userId: me.id, dek: created.dek, sync, keystore: created.state });
+        setSession(await readySession(me.id, created.dek, created.state));
       } else if (!state.keystore.pinProtected) {
         const dek = await keystore.unlockWithPin(state, "", me.id);
-        const sync = await ChatSync.create({ userId: me.id, dek });
-        setSession({ status: "ready", userId: me.id, dek, sync, keystore: state });
+        setSession(await readySession(me.id, dek, state));
       } else {
         setSession({ status: "locked", userId: me.id, keystore: state });
       }
@@ -109,8 +116,7 @@ export async function unlock(pin: string): Promise<void> {
     throw new Error(`session is not locked (status=${session.status})`);
   }
   const dek = await keystore.unlockWithPin(session.keystore, pin, session.userId);
-  const sync = await ChatSync.create({ userId: session.userId, dek });
-  setSession({ status: "ready", userId: session.userId, dek, sync, keystore: session.keystore });
+  setSession(await readySession(session.userId, dek, session.keystore));
 }
 
 /** Set or replace the PIN. Requires a ready session. */
@@ -139,6 +145,7 @@ export async function syncNow(): Promise<void> {
   const s = await whenReady();
   await s.sync.pull();
   await s.sync.flushPending();
+  await s.files.fullSync();
 }
 
 /** Resolve when the session is ready, or reject if disabled/error. */

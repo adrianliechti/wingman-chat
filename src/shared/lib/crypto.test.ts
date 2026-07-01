@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   decryptBlob,
   decryptEvent,
+  decryptFile,
   encryptBlob,
   encryptEvent,
+  encryptFile,
   fromBase64,
   generateDEK,
   hashFrame,
@@ -92,6 +94,23 @@ describe("blob encryption", () => {
     const dek = await generateDEK();
     const cipher = await encryptBlob(dek, new Uint8Array([1]), "user1", "blob1");
     await expect(decryptBlob(dek, cipher, "user1", "blob2")).rejects.toThrow();
+  });
+});
+
+describe("file envelope", () => {
+  it("round-trips header and bytes", async () => {
+    const dek = await generateDEK();
+    const bytes = new Uint8Array([10, 0, 10, 255, 10]); // embedded newlines must not confuse the header split
+    const cipher = await encryptFile(dek, { path: "agents/a/AGENTS.md", mtime: 123 }, bytes, "user1", "f1");
+    const out = await decryptFile<{ path: string; mtime: number }>(dek, cipher, "user1", "f1");
+    expect(out.header).toEqual({ path: "agents/a/AGENTS.md", mtime: 123 });
+    expect(out.bytes).toEqual(bytes);
+  });
+
+  it("rejects a file bound to a different id", async () => {
+    const dek = await generateDEK();
+    const cipher = await encryptFile(dek, { path: "p" }, new Uint8Array([1]), "user1", "f1");
+    await expect(decryptFile(dek, cipher, "user1", "f2")).rejects.toThrow();
   });
 });
 

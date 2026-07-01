@@ -2,6 +2,7 @@ import { Lock, LockOpen, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as chatSession from "@/shared/lib/chatSession";
 import type { SyncActivity } from "@/shared/lib/chatSync";
+import type { FileSyncActivity } from "@/shared/lib/fileSync";
 import { notify } from "@/shared/lib/notify";
 
 type Status = "disabled" | "initializing" | "locked" | "ready" | "error";
@@ -27,7 +28,8 @@ function statusLabel(s: Status): string {
 export function SyncSection() {
   const [status, setStatus] = useState<Status>("initializing");
   const [pinProtected, setPinProtected] = useState(false);
-  const [activity, setActivity] = useState<SyncActivity | null>(null);
+  const [chatActivity, setChatActivity] = useState<SyncActivity | null>(null);
+  const [fileActivity, setFileActivity] = useState<FileSyncActivity | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
 
   // PIN form state
@@ -40,21 +42,25 @@ export function SyncSection() {
 
   useEffect(() => {
     void chatSession.initSession();
-    // Unlock replaces the ChatSync instance, so re-subscribe on every "ready".
-    let unsubActivity: (() => void) | undefined;
+    // Unlock replaces the sync instances, so re-subscribe on every "ready".
+    let unsubChat: (() => void) | undefined;
+    let unsubFiles: (() => void) | undefined;
     const unsub = chatSession.subscribeSession((s) => {
       setStatus(s.status);
       if (s.status === "ready" || s.status === "locked") {
         setPinProtected(s.keystore.keystore.pinProtected === true);
       }
       if (s.status === "ready") {
-        unsubActivity?.();
-        unsubActivity = s.sync.subscribeActivity(setActivity);
+        unsubChat?.();
+        unsubFiles?.();
+        unsubChat = s.sync.subscribeActivity(setChatActivity);
+        unsubFiles = s.files.subscribeActivity(setFileActivity);
       }
     });
     return () => {
       unsub();
-      unsubActivity?.();
+      unsubChat?.();
+      unsubFiles?.();
     };
   }, []);
 
@@ -145,7 +151,7 @@ export function SyncSection() {
   if (status === "disabled") {
     return (
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        Server-side sync is not enabled on this deployment. Chats are stored only in this browser.
+        Server-side sync is not enabled on this deployment. Your data is stored only in this browser.
       </p>
     );
   }
@@ -159,36 +165,15 @@ export function SyncSection() {
         <span className="text-neutral-700 dark:text-neutral-300">{statusLabel(status)}</span>
       </div>
 
-      {status === "ready" && activity && (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">
-            {activity.syncing || syncBusy
-              ? "Syncing…"
-              : activity.lastSyncAt
-                ? `Last synced ${new Date(activity.lastSyncAt).toLocaleTimeString()}`
-                : "Not synced yet"}
-            {activity.pendingCount > 0 && ` · ${activity.pendingCount} pending`}
-          </span>
-          <button
-            type="button"
-            onClick={() => void onSyncNow()}
-            disabled={syncBusy}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={syncBusy ? "animate-spin" : undefined} />
-            Sync now
-          </button>
-        </div>
-      )}
-
-      {status === "ready" && activity?.lastError && (
-        <p className="text-xs text-red-600 dark:text-red-400">Sync error: {activity.lastError}</p>
+      {status === "ready" && (chatActivity || fileActivity) && (
+        <SyncStatusRow chat={chatActivity} files={fileActivity} busy={syncBusy} onSync={() => void onSyncNow()} />
       )}
 
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        All chats are encrypted on your device before being sent to the server. Setting a PIN replaces the plaintext key
-        on the server with a PIN-wrapped one — without your PIN, no one (including the server) can read your chats.{" "}
-        <strong>Forgetting your PIN means losing access to your chats.</strong>
+        Chats, agents, skills, notebooks, and settings are encrypted on your device before being sent to the server.
+        Setting a PIN replaces the plaintext key on the server with a PIN-wrapped one — without your PIN, no one
+        (including the server) can read your data.{" "}
+        <strong>Forgetting your PIN means losing access to your data.</strong>
       </p>
 
       {status === "locked" && (
@@ -293,6 +278,48 @@ export function SyncSection() {
         />
       )}
     </div>
+  );
+}
+
+interface SyncStatusRowProps {
+  chat: SyncActivity | null;
+  files: FileSyncActivity | null;
+  busy: boolean;
+  onSync: () => void;
+}
+
+function SyncStatusRow({ chat, files, busy, onSync }: SyncStatusRowProps) {
+  const syncing = busy || chat?.syncing || files?.syncing;
+  const pending = (chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0);
+  const lastError = files?.lastError ?? chat?.lastError ?? null;
+  const lastSyncAt = [chat?.lastSyncAt, files?.lastSyncAt]
+    .filter((t): t is string => t !== null && t !== undefined)
+    .sort()
+    .pop();
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+          {syncing
+            ? "Syncing…"
+            : lastSyncAt
+              ? `Last synced ${new Date(lastSyncAt).toLocaleTimeString()}`
+              : "Not synced yet"}
+          {pending > 0 && ` · ${pending} pending`}
+        </span>
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={busy ? "animate-spin" : undefined} />
+          Sync now
+        </button>
+      </div>
+      {lastError && <p className="text-xs text-red-600 dark:text-red-400">Sync error: {lastError}</p>}
+    </>
   );
 }
 
