@@ -4,12 +4,14 @@
  * The keystore is a small JSON blob stored on the server that holds the
  * user's DEK in one of two shapes:
  *
- *   { version: 1, pinProtected: false, dek: "<base64 raw key>" }
- *   { version: 1, pinProtected: true,  wrappedDek, nonce, kdf }
+ *   { version: 2, kid: 1, pinProtected: false, dek: "<base64 raw key>" }
+ *   { version: 2, kid: 1, pinProtected: true,  wrappedDek, nonce, kdf }
  *
- * The server treats this body as opaque. CAS via If-Match prevents
- * concurrent stomp; the server keeps `keystore.prev.json` as a one-
- * version backup against immediate user regret.
+ * `kid` names the key inside every frame envelope; version-1 keystores
+ * predate it and imply kid 1. The server treats this body as opaque.
+ * CAS via If-Match prevents concurrent stomp; the server keeps
+ * `keystore.prev.json` as a one-version backup against immediate user
+ * regret.
  */
 
 import * as api from "./chatstoreClient";
@@ -24,13 +26,16 @@ import {
 } from "./crypto";
 
 export interface PlainKeystore {
-  version: 1;
+  version: 1 | 2;
+  /** Key id stamped into frame envelopes; absent in version-1 keystores (implies 1). */
+  kid?: number;
   pinProtected: false;
   dek: string; // base64 32 bytes
 }
 
 export interface ProtectedKeystore {
-  version: 1;
+  version: 1 | 2;
+  kid?: number;
   pinProtected: true;
   wrappedDek: string;
   nonce: string;
@@ -48,14 +53,18 @@ export function isPinProtected(k: Keystore): k is ProtectedKeystore {
   return k.pinProtected === true;
 }
 
+function keystoreKid(k: Keystore): number {
+  return k.kid ?? 1;
+}
+
 function dekFromPlain(k: PlainKeystore): DEK {
   const raw = fromBase64(k.dek);
   if (raw.length !== 32) throw new Error("invalid DEK length");
-  return { raw };
+  return { raw, kid: keystoreKid(k) };
 }
 
 function plainFromDek(dek: DEK): PlainKeystore {
-  return { version: 1, pinProtected: false, dek: toBase64(dek.raw) };
+  return { version: 2, kid: dek.kid, pinProtected: false, dek: toBase64(dek.raw) };
 }
 
 /**
@@ -105,7 +114,7 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
   if (!isPinProtected(state.keystore)) {
     return dekFromPlain(state.keystore);
   }
-  return unwrapDEKWithPin(state.keystore, pin, userId);
+  return unwrapDEKWithPin(state.keystore, pin, userId, keystoreKid(state.keystore));
 }
 
 /**
@@ -114,7 +123,7 @@ export async function unlockWithPin(state: KeystoreState, pin: string, userId: s
  */
 export async function setPin(state: KeystoreState, dek: DEK, pin: string, userId: string): Promise<KeystoreState> {
   const wrapped = await wrapDEKWithPin(dek, pin, userId);
-  const ks: ProtectedKeystore = { version: 1, pinProtected: true, ...wrapped };
+  const ks: ProtectedKeystore = { version: 2, kid: dek.kid, pinProtected: true, ...wrapped };
   const body = JSON.stringify(ks);
   const etag = await api.putKeystore(body, { ifMatch: state.etag });
   return { keystore: ks, etag };

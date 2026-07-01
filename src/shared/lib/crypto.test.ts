@@ -44,6 +44,40 @@ describe("event encryption", () => {
     const frame = await encryptEvent(await generateDEK(), { x: 1 }, "user1", "chat1", 1);
     await expect(decryptEvent(await generateDEK(), frame, "user1", "chat1", 1)).rejects.toThrow();
   });
+
+  it("stamps the versioned envelope with the key id", async () => {
+    const dek = await generateDEK(7);
+    const bytes = fromBase64(await encryptEvent(dek, { x: 1 }, "user1", "chat1", 1));
+    expect(bytes[0]).toBe(0x02);
+    expect(bytes[1]).toBe(7);
+  });
+
+  it("reports an unknown key id instead of a bare decrypt failure", async () => {
+    const frame = await encryptEvent(await generateDEK(2), { x: 1 }, "user1", "chat1", 1);
+    await expect(decryptEvent(await generateDEK(1), frame, "user1", "chat1", 1)).rejects.toThrow(/key id 2/);
+  });
+
+  it("decrypts legacy headerless frames", async () => {
+    const dek = await generateDEK();
+    const payload = JSON.stringify({ legacy: true });
+
+    // Reconstruct the v1 wire format by hand: nonce(12) || ct || tag.
+    const key = await crypto.subtle.importKey("raw", dek.raw, { name: "AES-GCM" }, false, ["encrypt"]);
+    const nonce = crypto.getRandomValues(new Uint8Array(12));
+    const aad = new TextEncoder().encode("event:user1:chat1:3");
+    const ct = new Uint8Array(
+      await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: nonce, additionalData: aad },
+        key,
+        new TextEncoder().encode(payload),
+      ),
+    );
+    const frame = new Uint8Array(nonce.length + ct.length);
+    frame.set(nonce, 0);
+    frame.set(ct, nonce.length);
+
+    expect(await decryptEvent(dek, toBase64(frame), "user1", "chat1", 3)).toEqual({ legacy: true });
+  });
 });
 
 describe("blob encryption", () => {
