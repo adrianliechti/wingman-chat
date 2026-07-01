@@ -156,6 +156,13 @@ export class ChatSync {
 
   /** Delete a chat: emit a tombstone, drop local state, DELETE on server. */
   async deleteChat(chatId: string): Promise<void> {
+    // Blob ids are unique per attachment (never shared across chats), so
+    // the server copies can go with the chat. Collect before dropping state.
+    const blobIds = new Set<string>();
+    for (const stored of [this.pendingTargets.get(chatId), this.lastSynced.get(chatId)]) {
+      if (stored) for (const id of collectChatBlobIds(stored)) blobIds.add(id);
+    }
+
     this.pendingTargets.delete(chatId);
     await deleteFile(targetPath(chatId));
 
@@ -165,6 +172,15 @@ export class ChatSync {
       console.warn(`chatSync.deleteChat: tombstone post failed for ${chatId}`, err);
     }
     await api.deleteChat(chatId);
+
+    for (const blobId of blobIds) {
+      try {
+        await api.deleteBlob(blobId);
+      } catch (err) {
+        console.warn(`chatSync.deleteChat: blob delete failed for ${blobId}`, err);
+      }
+    }
+
     await deleteDirectory(`chats/${chatId}`);
     this.lastSynced.delete(chatId);
     delete this.state.heads[chatId];
@@ -365,13 +381,9 @@ export class ChatSync {
     let baseline = this.lastSynced.get(chatId) ?? null;
 
     const appendedText: string[] = [];
+    let logWasReset = false;
 
     for (const e of events) {
-      if (e.seq !== head + 1) {
-        console.warn(`chatSync: gap in ${chatId} log at seq ${e.seq} (expected ${head + 1})`);
-        return;
-      }
-
       type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
       let payload: RemotePayload;
       try {
@@ -384,6 +396,14 @@ export class ChatSync {
       const entries = payload.body;
       const isReset = entries[0]?.type === "init";
 
+      // A gap is expected right after another device compacted the chat
+      // (the server dropped the log prefix) — but only an init snapshot
+      // may bridge it, since it replays from scratch.
+      if (e.seq !== head + 1 && !isReset) {
+        console.warn(`chatSync: gap in ${chatId} log at seq ${e.seq} (expected ${head + 1})`);
+        break;
+      }
+
       if (!isReset && payload.prevHash !== lastHash) {
         console.error(`chatSync: hash chain mismatch for ${chatId}@${e.seq} — possible tampering`);
         return;
@@ -392,6 +412,8 @@ export class ChatSync {
       if (isReset) {
         // Compaction snapshot — discard prior state and replay fresh.
         baseline = null;
+        appendedText.length = 0;
+        logWasReset = true;
       }
       baseline = applyEntriesInPlace(baseline, entries, chatId);
       appendedText.push(encodeLines(entries));
@@ -402,7 +424,9 @@ export class ChatSync {
     }
 
     if (appendedText.length > 0) {
-      await appendBlob(logPath(chatId), new Blob([enc.encode(appendedText.join(""))]));
+      const text = new Blob([enc.encode(appendedText.join(""))]);
+      if (logWasReset) await writeBlob(logPath(chatId), text);
+      else await appendBlob(logPath(chatId), text);
 
       // Download any newly referenced blobs that we don't have locally.
       if (baseline) {
