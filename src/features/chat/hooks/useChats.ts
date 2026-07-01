@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
-import { readLocalMirror } from "@/shared/lib/chatSync";
+import { readLocalMirror, stashPendingTarget } from "@/shared/lib/chatSync";
 import * as storeSession from "@/shared/lib/storeSession";
 import type { StoredChat } from "@/shared/lib/opfs";
 import * as opfs from "@/shared/lib/opfs";
@@ -77,8 +77,19 @@ function getExpiredChatIds(entries: opfs.IndexEntry[], retentionDays: number): s
 // Server-synced path -----------------------------------------------------
 
 async function storeChatRemote(chat: Chat): Promise<void> {
-  const session = await storeSession.whenReady();
-  await session.sync.saveChat(chat);
+  // Never let a save wait on (or die with) the session: while it is
+  // locked or errored, persist the edit locally as a pending target —
+  // the next ready session hydrates and flushes it.
+  const current = storeSession.getSession();
+  if (current.status === "locked" || current.status === "error") {
+    return stashPendingTarget(chat);
+  }
+  try {
+    const session = await storeSession.whenReady();
+    await session.sync.saveChat(chat);
+  } catch {
+    await stashPendingTarget(chat);
+  }
 }
 
 async function removeChatRemote(id: string): Promise<void> {

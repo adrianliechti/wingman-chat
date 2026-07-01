@@ -54,7 +54,12 @@ type userIdentity struct {
 	Email string `json:"email,omitempty"`
 }
 
-func userFromRequest(r *http.Request) (userIdentity, bool) {
+// userFromRequest returns the normalized identity string (the storage
+// key) plus the public identity. Both MUST derive from the same value:
+// the client bakes the /me id into its crypto AAD, so a storage key that
+// disagrees with it mixes users' data or splits one user across
+// directories.
+func userFromRequest(r *http.Request) (string, userIdentity, bool) {
 	user := strings.TrimSpace(r.Header.Get("X-Forwarded-User"))
 	email := strings.TrimSpace(r.Header.Get("X-Forwarded-Email"))
 
@@ -64,28 +69,23 @@ func userFromRequest(r *http.Request) (userIdentity, bool) {
 	}
 
 	if id == "" {
-		return userIdentity{}, false
+		return "", userIdentity{}, false
 	}
 
 	sum := sha256.Sum256([]byte(id))
-	return userIdentity{
+	return id, userIdentity{
 		ID:    hex.EncodeToString(sum[:16]),
 		Email: email,
 	}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (string, userIdentity, bool) {
-	u, ok := userFromRequest(r)
+	id, u, ok := userFromRequest(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", userIdentity{}, false
 	}
-
-	rawID := r.Header.Get("X-Forwarded-User")
-	if rawID == "" {
-		rawID = r.Header.Get("X-Forwarded-Email")
-	}
-	return rawID, u, true
+	return id, u, true
 }
 
 // routes -----------------------------------------------------------------

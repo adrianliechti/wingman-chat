@@ -24,6 +24,7 @@ import {
   diffChat,
   encodeLines,
   type LogEntry,
+  MAX_ENTRY_PLAINTEXT,
   replayLog,
 } from "./chatLog";
 import * as api from "./storeClient";
@@ -52,6 +53,8 @@ interface SyncState {
   lastFrameHash: Record<string, string>;
   /** Number of events on the server since the last compaction for this chat. */
   entriesSinceCompact?: Record<string, number>;
+  /** Deletions journaled until the server confirms them. */
+  pendingDeletes?: { id: string; blobIds: string[] }[];
 }
 
 /** Threshold of entries that triggers an automatic compaction. Keeps fresh
@@ -88,6 +91,14 @@ export async function readLocalMirror(): Promise<Chat[]> {
     if (stored) out.push(await rehydrateChatBlobs(stored));
   }
   return out;
+}
+
+/** Persist a chat as a pending target without a session — used while the
+ *  store session is locked or errored, so edits survive the tab. The next
+ *  ChatSync hydration picks the target up and flushes it. */
+export async function stashPendingTarget(chat: Chat): Promise<void> {
+  const stored = await extractChatBlobs(chat);
+  await writeJson(targetPath(chat.id), stored);
 }
 
 // ChatSync ---------------------------------------------------------------
@@ -187,6 +198,8 @@ export class ChatSync {
     // dominate when there are many chats.
     await Promise.all(
       remote.map(async (meta) => {
+        // A journaled deletion beats the server copy — don't resurrect it.
+        if (this.state.pendingDeletes?.some((d) => d.id === meta.id)) return;
         const localHead = this.state.heads[meta.id] ?? 0;
         if (meta.headSeq > localHead) {
           await this.applyRemoteEvents(meta.id, localHead);
@@ -231,16 +244,19 @@ export class ChatSync {
     return out;
   }
 
-  /** Persist a chat as a delta. Idempotent on retry. */
+  /** Persist a chat as a delta: local mirror first (offline-safe), then
+   *  flush. Idempotent on retry. */
   async saveChat(chat: Chat): Promise<void> {
-    const stored = await this.uploadBlobsAndExtract(chat);
+    const stored = await extractChatBlobs(chat);
     this.pendingTargets.set(chat.id, stored);
     this.setActivity({});
     await writeJson(targetPath(chat.id), stored);
     void this.flushPending();
   }
 
-  /** Delete a chat: emit a tombstone, drop local state, DELETE on server. */
+  /** Delete a chat: drop local state immediately, journal the server-side
+   *  deletion so it retries until confirmed. Other devices learn of the
+   *  deletion from the chat listing. */
   async deleteChat(chatId: string): Promise<void> {
     // Blob ids are unique per attachment (never shared across chats), so
     // the server copies can go with the chat. Collect before dropping state.
@@ -249,53 +265,53 @@ export class ChatSync {
       if (stored) for (const id of collectChatBlobIds(stored)) blobIds.add(id);
     }
 
+    this.state.pendingDeletes = [
+      ...(this.state.pendingDeletes ?? []).filter((d) => d.id !== chatId),
+      { id: chatId, blobIds: [...blobIds] },
+    ];
     this.pendingTargets.delete(chatId);
-    this.setActivity({});
-    await deleteFile(targetPath(chatId));
-
-    try {
-      await this.postEntries(chatId, [{ type: "tombstone" }]);
-    } catch (err) {
-      console.warn(`chatSync.deleteChat: tombstone post failed for ${chatId}`, err);
-    }
-    await api.deleteChat(chatId);
-
-    for (const blobId of blobIds) {
-      try {
-        await api.deleteBlob(blobId);
-      } catch (err) {
-        console.warn(`chatSync.deleteChat: blob delete failed for ${blobId}`, err);
-      }
-    }
-
-    await deleteDirectory(`chats/${chatId}`);
     this.lastSynced.delete(chatId);
     delete this.state.heads[chatId];
     delete this.state.lastFrameHash[chatId];
     await saveState(this.state);
+    this.setActivity({});
+
+    await deleteDirectory(`chats/${chatId}`);
+    void this.flushPending();
   }
 
-  /** Replay any persisted pending targets through the server. */
+  /** Replay any journaled deletions and pending targets through the server. */
   async flushPending(): Promise<void> {
     if (this.flushing) return;
     this.flushing = true;
     this.setActivity({ syncing: true });
     let failed = false;
     try {
-      // snapshot: flushChat mutates pendingTargets while we iterate
-      for (const chatId of Array.from(this.pendingTargets.keys())) {
-        const ok = await this.flushChat(chatId);
-        if (!ok) {
-          // Network or persistent conflict — bail; next caller will retry.
+      // snapshot: successful deletes rewrite state.pendingDeletes mid-loop
+      for (const del of Array.from(this.state.pendingDeletes ?? [])) {
+        if (await this.pushDelete(del)) {
+          this.state.pendingDeletes = (this.state.pendingDeletes ?? []).filter((d) => d.id !== del.id);
+          await saveState(this.state);
+        } else {
           failed = true;
-          break;
         }
+      }
+
+      // snapshot: flushChat mutates pendingTargets while we iterate.
+      // Keep going past failures — one poisoned chat must not block the rest.
+      for (const chatId of Array.from(this.pendingTargets.keys())) {
+        if (!(await this.flushChat(chatId))) failed = true;
       }
     } finally {
       this.flushing = false;
       this.setActivity(
         failed ? { syncing: false } : { syncing: false, lastSyncAt: new Date().toISOString(), lastError: null },
       );
+    }
+
+    // Work that arrived mid-flush was skipped by the re-entrancy guard.
+    if (!failed && (this.pendingTargets.size > 0 || (this.state.pendingDeletes?.length ?? 0) > 0)) {
+      void this.flushPending();
     }
   }
 
@@ -335,10 +351,32 @@ export class ChatSync {
     }
   }
 
-  private async uploadBlobsAndExtract(chat: Chat): Promise<StoredChat> {
-    const stored = await extractChatBlobs(chat);
-    await this.uploadMissingBlobs(chat.id, stored);
-    return stored;
+  private async pushDelete(del: { id: string; blobIds: string[] }): Promise<boolean> {
+    try {
+      await api.deleteChat(del.id);
+      for (const blobId of del.blobIds) {
+        await api.deleteBlob(blobId);
+      }
+      return true;
+    } catch (err) {
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
+      console.warn(`chatSync: server delete failed for ${del.id}`, err);
+      return false;
+    }
+  }
+
+  /** Serialize sync operations per chat — a pull-apply interleaving with
+   *  a flush post on the same history corrupts the local replay. */
+  private chatOps = new Map<string, Promise<unknown>>();
+
+  private withChat<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chatOps.get(chatId) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    this.chatOps.set(
+      chatId,
+      run.catch(() => {}),
+    );
+    return run;
   }
 
   private async uploadMissingBlobs(chatId: string, stored: StoredChat): Promise<void> {
@@ -354,7 +392,11 @@ export class ChatSync {
 
   /** Compute the delta for one chat and post it. Returns true on
    *  success (or no-op), false on network/persistent conflict. */
-  private async flushChat(chatId: string): Promise<boolean> {
+  private flushChat(chatId: string): Promise<boolean> {
+    return this.withChat(chatId, () => this.flushChatInner(chatId));
+  }
+
+  private async flushChatInner(chatId: string): Promise<boolean> {
     const target = this.pendingTargets.get(chatId);
     if (!target) return true;
 
@@ -362,17 +404,14 @@ export class ChatSync {
     const entries = diffChat(baseline, target);
 
     if (entries.length === 0) {
-      this.pendingTargets.delete(chatId);
-      await deleteFile(targetPath(chatId));
+      await this.clearPendingTarget(chatId, target);
       return true;
     }
 
     try {
-      // First flush of a chat the server has never seen (promoted from
-      // OPFS-only mode): its blobs were stored locally without upload.
-      if (this.state.heads[chatId] === undefined) {
-        await this.uploadMissingBlobs(chatId, target);
-      }
+      // Attachments must exist on the server before the entries that
+      // reference them.
+      await this.uploadMissingBlobs(chatId, target);
       await this.postEntries(chatId, entries);
     } catch (err) {
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
@@ -381,10 +420,17 @@ export class ChatSync {
       return false;
     }
 
-    this.pendingTargets.delete(chatId);
-    await deleteFile(targetPath(chatId));
+    await this.clearPendingTarget(chatId, target);
     void this.maybeCompact(chatId);
     return true;
+  }
+
+  /** Drop the pending target — unless a newer save replaced it while the
+   *  flush was in flight, in which case it must flush again. */
+  private async clearPendingTarget(chatId: string, flushed: StoredChat): Promise<void> {
+    if (this.pendingTargets.get(chatId) !== flushed) return;
+    this.pendingTargets.delete(chatId);
+    await deleteFile(targetPath(chatId));
   }
 
   /** Encrypt + post one batch of entries. Handles 409 by pulling and
@@ -393,6 +439,14 @@ export class ChatSync {
    *  Returns the posted seq range, or null when the retry re-diff came
    *  up empty. */
   private async postEntries(chatId: string, entries: LogEntry[]): Promise<{ firstSeq: number; newSeq: number } | null> {
+    // A single entry that cannot fit one frame can never be posted — fail
+    // fast with a readable error instead of hammering the server with 413s.
+    for (const e of entries) {
+      if (JSON.stringify(e).length > MAX_ENTRY_PLAINTEXT) {
+        throw new Error("a message is too large to sync (limit ~11 MB) — it stays on this device only");
+      }
+    }
+
     for (let attempt = 0; attempt < 2; attempt++) {
       const expectedSeq = this.state.heads[chatId] ?? 0;
       let prevHash = this.state.lastFrameHash[chatId] ?? ZERO_HASH;
@@ -414,8 +468,9 @@ export class ChatSync {
 
       if (res === null) {
         // 409 — pull, then retry once with a freshly re-diff'd payload
-        // computed against the new baseline.
-        await this.applyRemoteEvents(chatId, expectedSeq);
+        // computed against the new baseline. Inner variant: we already
+        // hold this chat's lock.
+        await this.applyRemoteEventsInner(chatId, expectedSeq);
         const newTarget = this.pendingTargets.get(chatId);
         if (!newTarget) return null; // somehow no longer pending
         const newBaseline = this.lastSynced.get(chatId) ?? null;
@@ -453,7 +508,11 @@ export class ChatSync {
 
   /** If the log has grown past the threshold, replace it with a single
    *  init-led snapshot and ask the server to drop the prefix. */
-  private async maybeCompact(chatId: string): Promise<void> {
+  private maybeCompact(chatId: string): Promise<void> {
+    return this.withChat(chatId, () => this.maybeCompactInner(chatId));
+  }
+
+  private async maybeCompactInner(chatId: string): Promise<void> {
     const count = this.state.entriesSinceCompact?.[chatId] ?? 0;
     if (count < COMPACT_THRESHOLD) return;
 
@@ -491,8 +550,18 @@ export class ChatSync {
   }
 
   /** Pull events from the server starting after fromSeq and apply them
-   *  to local state (log file + in-memory baseline + head + hash). */
-  private async applyRemoteEvents(chatId: string, fromSeq: number): Promise<void> {
+   *  to local state (history file + in-memory baseline + head + hash).
+   *  Serialized per chat; postEntries' 409 recovery runs inside its own
+   *  chat lock and uses the inner variant directly. */
+  private applyRemoteEvents(chatId: string, fromSeq: number): Promise<void> {
+    return this.withChat(chatId, () => this.applyRemoteEventsInner(chatId, fromSeq));
+  }
+
+  private async applyRemoteEventsInner(chatId: string, fromSeq: number): Promise<void> {
+    // The caller's fromSeq may predate ops that ran while we waited for
+    // the chat lock — never refetch what's already applied.
+    fromSeq = Math.max(fromSeq, this.state.heads[chatId] ?? 0);
+
     const events = await api.readEvents(chatId, fromSeq);
     if (events.length === 0) return;
 
@@ -504,6 +573,8 @@ export class ChatSync {
     let logWasReset = false;
 
     for (const e of events) {
+      if (e.seq <= head) continue; // already applied
+
       type RemotePayload = { id: string; ts: string; prevHash: string; body: LogEntry[] };
       let payload: RemotePayload;
       try {

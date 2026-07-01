@@ -157,6 +157,14 @@ export async function initSession(): Promise<Session> {
     } catch (err) {
       console.error("storeSession.init failed", err);
       setSession({ status: "error", error: err });
+      // Transient failures (server restart, network blip) must not disable
+      // sync for the tab's lifetime — retry with a fresh init.
+      setTimeout(() => {
+        if (session.status === "error") {
+          initPromise = null;
+          void initSession();
+        }
+      }, 15_000);
     }
     return session;
   })();

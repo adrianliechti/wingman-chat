@@ -255,7 +255,7 @@ func (p *Provider) ListChats(_ context.Context, userID string) ([]store.ChatMeta
 			continue
 		}
 
-		head, _ := readHead(p.chatHeadPath(userID, chatID))
+		head, _, _ := readHead(p.chatHeadPath(userID, chatID))
 
 		out = append(out, store.ChatMeta{
 			ID:      chatID,
@@ -271,20 +271,30 @@ func (p *Provider) ListChats(_ context.Context, userID string) ([]store.ChatMeta
 	return out, nil
 }
 
-func readHead(path string) (int64, error) {
+// The head file is the commit point for appends: 16 bytes big-endian
+// holding the committed seq and the committed log size. Log bytes beyond
+// the committed size are orphans from a batch that failed mid-write —
+// they are invisible to readers (seq > head) and truncated away before
+// the next append. Older 8-byte head files carry no size (-1 = unknown).
+func readHead(path string) (seq int64, size int64, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, err
+		return 0, -1, err
 	}
 	if len(data) < 8 {
-		return 0, nil
+		return 0, -1, nil
 	}
-	return int64(binary.BigEndian.Uint64(data[:8])), nil
+	seq = int64(binary.BigEndian.Uint64(data[:8]))
+	if len(data) < 16 {
+		return seq, -1, nil
+	}
+	return seq, int64(binary.BigEndian.Uint64(data[8:16])), nil
 }
 
-func writeHead(path string, seq int64) error {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], uint64(seq))
+func writeHead(path string, seq, size int64) error {
+	var buf [16]byte
+	binary.BigEndian.PutUint64(buf[:8], uint64(seq))
+	binary.BigEndian.PutUint64(buf[8:], uint64(size))
 	return writeAtomic(path, buf[:])
 }
 
@@ -408,16 +418,9 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 	}
 
 	logPath := p.chatLogPath(userID, chatID)
+	headPath := p.chatHeadPath(userID, chatID)
 
-	if _, err := os.Stat(logPath); err == nil {
-		if err := truncatePartialLine(logPath); err != nil {
-			return store.AppendResult{}, err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return store.AppendResult{}, err
-	}
-
-	head, err := readHead(p.chatHeadPath(userID, chatID))
+	head, committedSize, err := readHead(headPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return store.AppendResult{}, err
 	}
@@ -426,17 +429,48 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 		return store.AppendResult{}, store.ErrSeqConflict
 	}
 
+	// Head files without a committed size can't detect orphan lines, but a
+	// partial trailing line from a crashed write is still recoverable.
+	if committedSize < 0 {
+		if _, err := os.Stat(logPath); err == nil {
+			if err := truncatePartialLine(logPath); err != nil {
+				return store.AppendResult{}, err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return store.AppendResult{}, err
+		}
+	}
+
 	dedupPath := p.chatDedupPath(userID, chatID)
 	dedupSet, dedupHistory, err := loadDedup(dedupPath)
 	if err != nil {
 		return store.AppendResult{}, err
 	}
 
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return store.AppendResult{}, err
 	}
 	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return store.AppendResult{}, err
+	}
+
+	// Drop uncommitted bytes from a batch that failed before its head
+	// write — leaving them would let a retry duplicate their seqs.
+	size := info.Size()
+	if committedSize >= 0 && committedSize < size {
+		if err := f.Truncate(committedSize); err != nil {
+			return store.AppendResult{}, err
+		}
+		size = committedSize
+	}
+
+	if _, err := f.Seek(size, io.SeekStart); err != nil {
+		return store.AppendResult{}, err
+	}
 
 	deduped := make([]string, 0)
 	seq := head
@@ -460,9 +494,11 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 		}
 		line = append(line, '\n')
 
-		if _, err := f.Write(line); err != nil {
+		n, err := f.Write(line)
+		if err != nil {
 			return store.AppendResult{}, err
 		}
+		size += int64(n)
 
 		dedupSet[digest] = struct{}{}
 		dedupHistory = append(dedupHistory, digest[:]...)
@@ -472,10 +508,8 @@ func (p *Provider) AppendEvents(_ context.Context, userID, chatID string, expect
 		return store.AppendResult{}, err
 	}
 
-	if seq != head {
-		if err := writeHead(p.chatHeadPath(userID, chatID), seq); err != nil {
-			return store.AppendResult{}, err
-		}
+	if err := writeHead(headPath, seq, size); err != nil {
+		return store.AppendResult{}, err
 	}
 
 	if err := saveDedup(dedupPath, dedupHistory); err != nil {
@@ -497,6 +531,14 @@ func (p *Provider) ReadEvents(_ context.Context, userID, chatID string, fromSeq 
 		return io.NopCloser(bytesEmpty{}), nil
 	}
 	if err != nil {
+		return nil, err
+	}
+
+	// Never stream past the committed head — bytes beyond it belong to a
+	// batch that failed before its commit and will be truncated away.
+	head, _, err := readHead(p.chatHeadPath(userID, chatID))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		f.Close()
 		return nil, err
 	}
 
@@ -522,7 +564,7 @@ func (p *Provider) ReadEvents(_ context.Context, userID, chatID string, fromSeq 
 				continue
 			}
 
-			if fl.Seq <= fromSeq {
+			if fl.Seq <= fromSeq || fl.Seq > head {
 				continue
 			}
 
@@ -565,6 +607,11 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 	}
 	defer src.Close()
 
+	head, _, err := readHead(p.chatHeadPath(userID, chatID))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
 	tmp, err := os.CreateTemp(filepath.Dir(logPath), filepath.Base(logPath)+".*.tmp")
 	if err != nil {
 		return err
@@ -573,7 +620,7 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 64*1024), store.MaxFrameBytes+4*1024)
-	kept := 0
+	var size int64
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -583,15 +630,16 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 		if err := json.Unmarshal(line, &fl); err != nil {
 			continue
 		}
-		if fl.Seq < beforeSeq {
+		if fl.Seq < beforeSeq || fl.Seq > head {
 			continue
 		}
-		if _, err := tmp.Write(append(line, '\n')); err != nil {
+		n, err := tmp.Write(append(line, '\n'))
+		if err != nil {
 			tmp.Close()
 			os.Remove(tmpPath)
 			return err
 		}
-		kept++
+		size += int64(n)
 	}
 	if err := scanner.Err(); err != nil {
 		tmp.Close()
@@ -612,7 +660,7 @@ func (p *Provider) CompactChat(_ context.Context, userID, chatID string, beforeS
 		os.Remove(tmpPath)
 		return err
 	}
-	return nil
+	return writeHead(p.chatHeadPath(userID, chatID), head, size)
 }
 
 func (p *Provider) BlobExists(_ context.Context, userID, blobID string) (bool, error) {

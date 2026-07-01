@@ -117,6 +117,32 @@ func TestMe(t *testing.T) {
 	}
 }
 
+func TestIdentityNormalization(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Padded and trimmed header values must land in the same store.
+	res := do(t, srv, "  alice  ", "PUT", "/v1/keystore", `{"v":1}`, map[string]string{"If-None-Match": "*"})
+	wantStatus(t, res, http.StatusNoContent)
+	res = do(t, srv, "alice", "GET", "/v1/keystore", "", nil)
+	wantStatus(t, res, http.StatusOK)
+
+	// A whitespace-only user header falls back to the email for storage,
+	// never to the raw whitespace string.
+	res = do(t, srv, "   ", "PUT", "/v1/keystore", `{"v":2}`, map[string]string{
+		"If-None-Match":     "*",
+		"X-Forwarded-Email": "bob@example.com",
+	})
+	wantStatus(t, res, http.StatusNoContent)
+	res = do(t, srv, "bob@example.com", "GET", "/v1/keystore", "", nil)
+	wantStatus(t, res, http.StatusOK)
+	if body := readBody(t, res); body != `{"v":2}` {
+		t.Fatalf("email-fallback keystore mismatch: %s", body)
+	}
+	// A different email with the same whitespace user must NOT see it.
+	res = do(t, srv, "   ", "GET", "/v1/keystore", "", map[string]string{"X-Forwarded-Email": "carol@example.com"})
+	wantStatus(t, res, http.StatusNotFound)
+}
+
 func TestKeystoreLifecycle(t *testing.T) {
 	srv := newTestServer(t)
 

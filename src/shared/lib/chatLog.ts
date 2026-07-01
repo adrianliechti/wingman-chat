@@ -48,8 +48,12 @@ export function decodeLines(text: string): LogEntry[] {
 }
 
 /** Per-frame plaintext budget. Base64 + GCM overhead keeps the resulting
- *  frame comfortably under the server's 8 MiB MaxFrameBytes. */
+ *  frame comfortably under the server's 16 MiB MaxFrameBytes. */
 const MAX_FRAME_PLAINTEXT = 4 * 1024 * 1024;
+
+/** Hard ceiling for a single entry: chunking cannot split one entry, and
+ *  past this the encrypted frame would exceed the server's cap anyway. */
+export const MAX_ENTRY_PLAINTEXT = 11 * 1024 * 1024;
 
 /** Split entries into runs that each fit one encrypted frame. A single
  *  oversized entry (one message with huge tool results) still gets its
@@ -99,9 +103,9 @@ export function replayLog(chatId: string, entries: LogEntry[]): ReplayResult {
     }
     switch (e.type) {
       case "init":
-        chat.id = e.id;
-        chat.created = e.created;
-        chat.model = e.model;
+        // init starts a chat from scratch — compaction snapshots rely on
+        // this to reset whatever state was replayed before them.
+        chat = { id: e.id, created: e.created, updated: null, model: e.model, messages: [] };
         break;
       case "meta":
         if (e.title !== undefined) chat.title = e.title ?? undefined;

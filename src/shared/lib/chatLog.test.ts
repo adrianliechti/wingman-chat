@@ -129,4 +129,12 @@ describe("replay edge cases", () => {
     // A compaction snapshot replayed on its own reproduces the full chat.
     expect(replayLog("c1", snapshot).chat).toEqual(chat({ title: "t", messages: [msg("a"), msg("b")] }));
   });
+
+  it("an init snapshot applied over existing state replaces it, not duplicates it", () => {
+    const baseline = chat({ title: "old", messages: [msg("a"), msg("b")] });
+    const snapshot = diffChat(null, chat({ title: "new", messages: [msg("a"), msg("b")] }));
+    expect(applyEntriesInPlace(baseline, snapshot, "c1")).toEqual(
+      chat({ title: "new", messages: [msg("a"), msg("b")] }),
+    );
+  });
 });

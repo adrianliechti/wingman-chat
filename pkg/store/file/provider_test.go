@@ -400,3 +400,51 @@ func TestFrameSizeLimit(t *testing.T) {
 		t.Fatalf("expected ErrFrameTooLarge, got %v", err)
 	}
 }
+
+func TestOrphanLineRecovery(t *testing.T) {
+	p := newTestProvider(t)
+	ctx := context.Background()
+	const chat = "aaaaaaaa-1111-1111-1111-111111111111"
+
+	if _, err := p.AppendEvents(ctx, "alice", chat, 0, []string{"e1"}, [][]byte{[]byte("REAL1")}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Simulate a batch that failed after writing a full line but before
+	// its head commit: the line exists but the head still says seq 1.
+	f, err := os.OpenFile(p.chatLogPath("alice", chat), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"seq":2,"id":"orphan","frame":"GHOST"}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	// Readers must never see uncommitted lines.
+	r, err := p.ReadEvents(ctx, "alice", chat, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf, _ := io.ReadAll(r)
+	r.Close()
+	if strings.Contains(string(buf), "GHOST") {
+		t.Fatalf("read streamed an uncommitted line: %s", buf)
+	}
+
+	// The next append truncates the orphan and reuses its seq.
+	if _, err := p.AppendEvents(ctx, "alice", chat, 1, []string{"e2"}, [][]byte{[]byte("REAL2")}); err != nil {
+		t.Fatalf("append after orphan: %v", err)
+	}
+
+	r2, err := p.ReadEvents(ctx, "alice", chat, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf, _ = io.ReadAll(r2)
+	r2.Close()
+	out := string(buf)
+	if strings.Contains(out, "GHOST") || !strings.Contains(out, "REAL2") || strings.Count(out, `"seq":2`) != 1 {
+		t.Fatalf("orphan not replaced cleanly: %s", out)
+	}
+}
