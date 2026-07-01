@@ -1,7 +1,7 @@
 /**
  * Chat-as-log representation.
  *
- * A chat is stored — both locally (`chats/{id}/log.jsonl`) and on the
+ * A chat is stored — both locally (`chats/{id}/history.jsonl`) and on the
  * wire (each encrypted event's plaintext) — as a sequence of LogEntry
  * lines in JSON-Lines format. Replay folds the lines into a StoredChat;
  * diff produces the minimal entry sequence to turn one StoredChat into

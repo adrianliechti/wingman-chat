@@ -2,7 +2,7 @@
  * Server-synced chat storage with offline-capable OPFS mirror.
  *
  * Wire format: each chat is an append-only log. Both on the server
- * (`{chatId}.jsonl`) and locally in OPFS (`chats/{id}/log.jsonl`), the
+ * (`{chatId}.jsonl`) and locally in OPFS (`chats/{id}/history.jsonl`), the
  * physical file is one event per line. The *plaintext* of each encrypted
  * frame is itself JSON-Lines — one or more LogEntry records describing
  * the delta (init / meta / message / replace / truncate / tombstone).
@@ -67,7 +67,7 @@ async function saveState(state: SyncState): Promise<void> {
 }
 
 // Per-chat paths in OPFS
-const logPath = (chatId: string) => `chats/${chatId}/log.jsonl`;
+const historyPath = (chatId: string) => `chats/${chatId}/history.jsonl`;
 const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
 /** OPFS-only mode stores chats here; promoted to pending targets when
  *  the server store is enabled on a deployment that has local data. */
@@ -81,7 +81,7 @@ export async function readLocalMirror(): Promise<Chat[]> {
   for (const id of await listDirectories("chats")) {
     let stored = await readJson<StoredChat>(targetPath(id));
     if (!stored) {
-      const text = await readText(logPath(id));
+      const text = await readText(historyPath(id));
       if (text) stored = replayLog(id, decodeLines(text)).chat ?? undefined;
     }
     if (!stored) stored = await readJson<StoredChat>(opfsOnlyChatPath(id));
@@ -107,7 +107,7 @@ export interface SyncActivity {
 
 export class ChatSync {
   private state: SyncState;
-  /** Server-confirmed state per chat (in memory; persisted as log.jsonl). */
+  /** Server-confirmed state per chat (in memory; persisted as history.jsonl). */
   private lastSynced = new Map<string, StoredChat>();
   /** Pending target per chat (in memory; persisted as target.json). */
   private pendingTargets = new Map<string, StoredChat>();
@@ -306,7 +306,7 @@ export class ChatSync {
     for (const id of ids) {
       // Promote chats written by OPFS-only mode (chat.json) to pending
       // targets: they exist only locally, so the next flush uploads them.
-      if (!(await fileExists(logPath(id)))) {
+      if (!(await fileExists(historyPath(id)))) {
         const local = await readJson<StoredChat>(opfsOnlyChatPath(id));
         if (local) {
           this.pendingTargets.set(id, local);
@@ -316,12 +316,17 @@ export class ChatSync {
         }
       }
 
-      // Replay log → lastSynced.
-      const text = await readText(logPath(id));
+      // Replay history → lastSynced.
+      const text = await readText(historyPath(id));
       if (text) {
         const entries = decodeLines(text);
         const { chat } = replayLog(id, entries);
         if (chat) this.lastSynced.set(id, chat);
+      } else if (this.state.heads[id] !== undefined) {
+        // The head claims we're synced but the local history is gone
+        // (cleared cache, lost file) — forget it so pull refetches from 0.
+        delete this.state.heads[id];
+        delete this.state.lastFrameHash[id];
       }
 
       // Restore any pending target.
@@ -420,7 +425,7 @@ export class ChatSync {
       }
 
       // Accepted — apply the entries to local state.
-      await appendBlob(logPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
+      await appendBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
       const merged = applyEntriesInPlace(this.lastSynced.get(chatId) ?? null, entries, chatId);
       if (merged) this.lastSynced.set(chatId, merged);
       else this.lastSynced.delete(chatId);
@@ -482,7 +487,7 @@ export class ChatSync {
     }
 
     // Replace the local log with just the surviving snapshot entry.
-    await writeBlob(logPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
+    await writeBlob(historyPath(chatId), new Blob([enc.encode(encodeLines(entries))]));
   }
 
   /** Pull events from the server starting after fromSeq and apply them
@@ -540,8 +545,8 @@ export class ChatSync {
 
     if (appendedText.length > 0) {
       const text = new Blob([enc.encode(appendedText.join(""))]);
-      if (logWasReset) await writeBlob(logPath(chatId), text);
-      else await appendBlob(logPath(chatId), text);
+      if (logWasReset) await writeBlob(historyPath(chatId), text);
+      else await appendBlob(historyPath(chatId), text);
 
       // Download any newly referenced blobs that we don't have locally.
       if (baseline) {
