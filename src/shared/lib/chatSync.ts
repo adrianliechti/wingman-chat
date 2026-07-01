@@ -33,6 +33,7 @@ import {
   appendBlob,
   deleteDirectory,
   deleteFile,
+  fileExists,
   listDirectories,
   readJson,
   readText,
@@ -68,6 +69,9 @@ async function saveState(state: SyncState): Promise<void> {
 // Per-chat paths in OPFS
 const logPath = (chatId: string) => `chats/${chatId}/log.jsonl`;
 const targetPath = (chatId: string) => `chats/${chatId}/target.json`;
+/** OPFS-only mode stores chats here; promoted to pending targets when
+ *  the server store is enabled on a deployment that has local data. */
+const opfsOnlyChatPath = (chatId: string) => `chats/${chatId}/chat.json`;
 
 /** Read the local mirror without a DEK — logs and pending targets are
  *  plaintext locally; the PIN only protects the server copies. Lets the
@@ -80,6 +84,7 @@ export async function readLocalMirror(): Promise<Chat[]> {
       const text = await readText(logPath(id));
       if (text) stored = replayLog(id, decodeLines(text)).chat ?? undefined;
     }
+    if (!stored) stored = await readJson<StoredChat>(opfsOnlyChatPath(id));
     if (stored) out.push(await rehydrateChatBlobs(stored));
   }
   return out;
@@ -299,6 +304,18 @@ export class ChatSync {
   private async hydrateFromOpfs(): Promise<void> {
     const ids = await listDirectories("chats");
     for (const id of ids) {
+      // Promote chats written by OPFS-only mode (chat.json) to pending
+      // targets: they exist only locally, so the next flush uploads them.
+      if (!(await fileExists(logPath(id)))) {
+        const local = await readJson<StoredChat>(opfsOnlyChatPath(id));
+        if (local) {
+          this.pendingTargets.set(id, local);
+          await writeJson(targetPath(id), local);
+          await deleteFile(opfsOnlyChatPath(id));
+          continue;
+        }
+      }
+
       // Replay log → lastSynced.
       const text = await readText(logPath(id));
       if (text) {
@@ -346,6 +363,11 @@ export class ChatSync {
     }
 
     try {
+      // First flush of a chat the server has never seen (promoted from
+      // OPFS-only mode): its blobs were stored locally without upload.
+      if (this.state.heads[chatId] === undefined) {
+        await this.uploadMissingBlobs(chatId, target);
+      }
       await this.postEntries(chatId, entries);
     } catch (err) {
       this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
