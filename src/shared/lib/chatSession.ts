@@ -134,6 +134,13 @@ export async function removePin(pin: string): Promise<void> {
   setSession({ ...session, keystore: result.state, dek: result.dek });
 }
 
+/** Manual sync: pull remote changes, then push pending local edits. */
+export async function syncNow(): Promise<void> {
+  const s = await whenReady();
+  await s.sync.pull();
+  await s.sync.flushPending();
+}
+
 /** Resolve when the session is ready, or reject if disabled/error. */
 export async function whenReady(): Promise<ReadySession> {
   await initSession();

@@ -147,9 +147,20 @@ export function useChats() {
     void chatSession.initSession();
     void load();
 
-    // Re-load when the session transitions to "ready" after a PIN unlock.
+    // Re-load when the session transitions to "ready" after a PIN unlock,
+    // and adopt the fresh list whenever a pull applies remote changes
+    // (manual sync, focus re-pull, 409 recovery). Unlock replaces the
+    // ChatSync instance, so re-subscribe on every "ready".
+    let unsubRemote: (() => void) | undefined;
     const unsub = chatSession.subscribeSession((s) => {
-      if (s.status === "ready") void load();
+      if (s.status !== "ready") return;
+      void load();
+      unsubRemote?.();
+      unsubRemote = s.sync.subscribeRemoteChanges((remoteChats) => {
+        if (cancelled) return;
+        const sorted = [...remoteChats].sort((a, b) => (b.updated?.getTime() || 0) - (a.updated?.getTime() || 0));
+        setChats(sorted);
+      });
     });
 
     // Multi-device freshness: re-pull when the tab regains visibility.
@@ -167,6 +178,7 @@ export function useChats() {
     return () => {
       cancelled = true;
       unsub();
+      unsubRemote?.();
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

@@ -70,6 +70,14 @@ export interface ChatSyncOptions {
   dek: DEK;
 }
 
+export interface SyncActivity {
+  syncing: boolean;
+  /** Chats with local edits not yet confirmed by the server. */
+  pendingCount: number;
+  lastSyncAt: string | null; // ISO
+  lastError: string | null;
+}
+
 export class ChatSync {
   private state: SyncState;
   /** Server-confirmed state per chat (in memory; persisted as log.jsonl). */
@@ -79,6 +87,10 @@ export class ChatSync {
   private flushing = false;
   private readonly userId: string;
   private readonly dek: DEK;
+
+  private activity: SyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
+  private activityListeners = new Set<(a: SyncActivity) => void>();
+  private remoteChangeListeners = new Set<(chats: Chat[]) => void>();
 
   constructor(userId: string, dek: DEK, initialState?: SyncState) {
     this.userId = userId;
@@ -99,11 +111,41 @@ export class ChatSync {
 
   // public API ----------------------------------------------------------
 
+  /** Watch sync activity (in-flight, pending count, last sync, last error). */
+  subscribeActivity(fn: (a: SyncActivity) => void): () => void {
+    this.activityListeners.add(fn);
+    fn(this.activity);
+    return () => this.activityListeners.delete(fn);
+  }
+
+  /** Notified with the fresh composed chat list whenever a pull() applied
+   *  remote changes (new events or server-side deletions). */
+  subscribeRemoteChanges(fn: (chats: Chat[]) => void): () => void {
+    this.remoteChangeListeners.add(fn);
+    return () => this.remoteChangeListeners.delete(fn);
+  }
+
+  private setActivity(patch: Partial<SyncActivity>): void {
+    this.activity = { ...this.activity, pendingCount: this.pendingTargets.size, ...patch };
+    for (const l of this.activityListeners) l(this.activity);
+  }
+
   /** Pull remote changes for every chat into the local mirror; return
    *  the materialized chat list (lastSynced wins over pending targets
    *  only for chats with no pending edits). */
   async pull(): Promise<Chat[]> {
+    this.setActivity({ syncing: true });
+    try {
+      return await this.pullInner();
+    } catch (err) {
+      this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  }
+
+  private async pullInner(): Promise<Chat[]> {
     const remote = await api.listChats();
+    let changed = false;
 
     // Pull events in parallel — server reads are cheap and serial waits
     // dominate when there are many chats.
@@ -112,6 +154,7 @@ export class ChatSync {
         const localHead = this.state.heads[meta.id] ?? 0;
         if (meta.headSeq > localHead) {
           await this.applyRemoteEvents(meta.id, localHead);
+          changed = true;
         }
       }),
     );
@@ -126,6 +169,7 @@ export class ChatSync {
         this.pendingTargets.delete(id);
         delete this.state.heads[id];
         delete this.state.lastFrameHash[id];
+        changed = true;
       }
     }
 
@@ -142,6 +186,11 @@ export class ChatSync {
     for (const [id, stored] of this.lastSynced) {
       if (seen.has(id)) continue;
       out.push(await rehydrateChatBlobs(stored));
+    }
+
+    this.setActivity({ syncing: false, lastSyncAt: new Date().toISOString(), lastError: null });
+    if (changed) {
+      for (const l of this.remoteChangeListeners) l(out);
     }
     return out;
   }
@@ -177,6 +226,7 @@ export class ChatSync {
   async saveChat(chat: Chat): Promise<void> {
     const stored = await this.uploadBlobsAndExtract(chat);
     this.pendingTargets.set(chat.id, stored);
+    this.setActivity({});
     await writeJson(targetPath(chat.id), stored);
     void this.flushPending();
   }
@@ -191,6 +241,7 @@ export class ChatSync {
     }
 
     this.pendingTargets.delete(chatId);
+    this.setActivity({});
     await deleteFile(targetPath(chatId));
 
     try {
@@ -219,17 +270,23 @@ export class ChatSync {
   async flushPending(): Promise<void> {
     if (this.flushing) return;
     this.flushing = true;
+    this.setActivity({ syncing: true });
+    let failed = false;
     try {
       // snapshot: flushChat mutates pendingTargets while we iterate
       for (const chatId of Array.from(this.pendingTargets.keys())) {
         const ok = await this.flushChat(chatId);
         if (!ok) {
           // Network or persistent conflict — bail; next caller will retry.
+          failed = true;
           break;
         }
       }
     } finally {
       this.flushing = false;
+      this.setActivity(
+        failed ? { syncing: false } : { syncing: false, lastSyncAt: new Date().toISOString(), lastError: null },
+      );
     }
   }
 
@@ -302,6 +359,7 @@ export class ChatSync {
     try {
       await this.postEntries(chatId, entries);
     } catch (err) {
+      this.setActivity({ lastError: err instanceof Error ? err.message : String(err) });
       if (err instanceof PostConflictAfterRetry) return false;
       console.warn(`chatSync.flushChat(${chatId}): post failed`, err);
       return false;

@@ -1,6 +1,8 @@
-import { Lock, LockOpen, ShieldCheck } from "lucide-react";
+import { Lock, LockOpen, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as chatSession from "@/shared/lib/chatSession";
+import type { SyncActivity } from "@/shared/lib/chatSync";
+import { notify } from "@/shared/lib/notify";
 
 type Status = "disabled" | "initializing" | "locked" | "ready" | "error";
 
@@ -25,6 +27,8 @@ function statusLabel(s: Status): string {
 export function SyncSection() {
   const [status, setStatus] = useState<Status>("initializing");
   const [pinProtected, setPinProtected] = useState(false);
+  const [activity, setActivity] = useState<SyncActivity | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
 
   // PIN form state
   const [mode, setMode] = useState<"none" | "unlock" | "set" | "change" | "remove">("none");
@@ -36,13 +40,34 @@ export function SyncSection() {
 
   useEffect(() => {
     void chatSession.initSession();
-    return chatSession.subscribeSession((s) => {
+    // Unlock replaces the ChatSync instance, so re-subscribe on every "ready".
+    let unsubActivity: (() => void) | undefined;
+    const unsub = chatSession.subscribeSession((s) => {
       setStatus(s.status);
       if (s.status === "ready" || s.status === "locked") {
         setPinProtected(s.keystore.keystore.pinProtected === true);
       }
+      if (s.status === "ready") {
+        unsubActivity?.();
+        unsubActivity = s.sync.subscribeActivity(setActivity);
+      }
     });
+    return () => {
+      unsub();
+      unsubActivity?.();
+    };
   }, []);
+
+  async function onSyncNow() {
+    setSyncBusy(true);
+    try {
+      await chatSession.syncNow();
+    } catch (err) {
+      notify.error("Sync failed", err);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
 
   function resetForm() {
     setMode("none");
@@ -133,6 +158,32 @@ export function SyncSection() {
         <Icon size={16} className="text-neutral-500 dark:text-neutral-400" />
         <span className="text-neutral-700 dark:text-neutral-300">{statusLabel(status)}</span>
       </div>
+
+      {status === "ready" && activity && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            {activity.syncing || syncBusy
+              ? "Syncing…"
+              : activity.lastSyncAt
+                ? `Last synced ${new Date(activity.lastSyncAt).toLocaleTimeString()}`
+                : "Not synced yet"}
+            {activity.pendingCount > 0 && ` · ${activity.pendingCount} pending`}
+          </span>
+          <button
+            type="button"
+            onClick={() => void onSyncNow()}
+            disabled={syncBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={syncBusy ? "animate-spin" : undefined} />
+            Sync now
+          </button>
+        </div>
+      )}
+
+      {status === "ready" && activity?.lastError && (
+        <p className="text-xs text-red-600 dark:text-red-400">Sync error: {activity.lastError}</p>
+      )}
 
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         All chats are encrypted on your device before being sent to the server. Setting a PIN replaces the plaintext key
