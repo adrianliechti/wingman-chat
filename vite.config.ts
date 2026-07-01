@@ -216,7 +216,7 @@ function pdfjsAssetsPlugin(): Plugin {
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
-const wingmanUser = process.env.WINGMAN_USER || "developer";
+const wingmanUser = process.env.WINGMAN_USER || "default";
 
 // In production a reverse proxy provides the user identity; the dev proxy
 // impersonates one so the chatstore endpoints work out of the box.
