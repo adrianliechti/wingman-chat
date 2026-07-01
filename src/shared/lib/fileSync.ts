@@ -21,6 +21,7 @@ import {
   deleteDirectory,
   deleteFile,
   getRoot,
+  type IndexEntry,
   listDirectories,
   listFiles,
   onOpfsMutation,
@@ -76,6 +77,38 @@ function isSafePath(path: string): boolean {
   return parts.every((p) => p && p !== "." && p !== "..");
 }
 
+// Collection indexes ------------------------------------------------------
+//
+// `{collection}/index.json` files are shared mutable lists — last-write-
+// wins would silently drop an entry when two devices create items in
+// parallel. They merge by entry id instead (newer `updated` wins), and
+// entries whose backing item no longer exists get pruned after a full
+// reconcile so deletions still converge.
+
+function isCollectionIndex(path: string): boolean {
+  return /^[A-Za-z0-9_-]+\/index\.json$/.test(path);
+}
+
+export function mergeIndexEntries(a: IndexEntry[], b: IndexEntry[]): IndexEntry[] {
+  const time = (e: IndexEntry) => Date.parse(e.updated ?? "") || 0;
+  const byId = new Map<string, IndexEntry>();
+  for (const e of [...a, ...b]) {
+    if (!e || typeof e.id !== "string") continue;
+    const cur = byId.get(e.id);
+    if (!cur || time(e) > time(cur)) byId.set(e.id, e);
+  }
+  return [...byId.values()].sort((x, y) => x.id.localeCompare(y.id));
+}
+
+function parseIndex(bytes: Uint8Array): IndexEntry[] | null {
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return Array.isArray(parsed) ? (parsed as IndexEntry[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Scan the OPFS tree (minus excludes) into path → mtime. */
 async function scanLocalTree(): Promise<Map<string, number>> {
   const out = new Map<string, number>();
@@ -109,6 +142,9 @@ export class FileSync {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushing = false;
   private unsubMutations: (() => void) | null = null;
+  /** Remote applies that failed during the current fullSync — pruning is
+   *  unsafe while any item may simply not have arrived yet. */
+  private applyFailures = 0;
 
   private activity: FileSyncActivity = { syncing: false, pendingCount: 0, lastSyncAt: null, lastError: null };
   private activityListeners = new Set<(a: FileSyncActivity) => void>();
@@ -215,6 +251,7 @@ export class FileSync {
   /** Full reconcile: local tree vs state vs server listing. */
   async fullSync(): Promise<void> {
     this.setActivity({ syncing: true });
+    this.applyFailures = 0;
     try {
       const [local, remote] = await Promise.all([scanLocalTree(), api.listFiles()]);
       const remoteById = new Map(remote.map((m) => [m.id, m]));
@@ -273,9 +310,34 @@ export class FileSync {
 
       await this.saveState();
       await this.flushDirty();
+
+      // Deletions converge here: after everything applied cleanly, index
+      // entries whose backing item no longer exists locally are dropped
+      // (the write marks the index dirty, so the pruned copy propagates).
+      if (this.applyFailures === 0 && this.dirty.size === 0) {
+        await this.pruneIndexes();
+      }
     } catch (err) {
       this.setActivity({ syncing: false, lastError: err instanceof Error ? err.message : String(err) });
       throw err;
+    }
+  }
+
+  private async pruneIndexes(): Promise<void> {
+    for (const dir of await listDirectories("")) {
+      const path = `${dir}/index.json`;
+      if (isExcluded(path) || !isCollectionIndex(path)) continue;
+
+      const entries = await readJson<IndexEntry[]>(path);
+      if (!Array.isArray(entries)) continue;
+
+      const subdirs = new Set(await listDirectories(dir));
+      const files = new Set(await listFiles(dir));
+      const kept = entries.filter((e) => subdirs.has(e.id) || files.has(`${e.id}.json`) || files.has(e.id));
+
+      if (kept.length !== entries.length) {
+        await writeJson(path, kept);
+      }
     }
   }
 
@@ -323,6 +385,26 @@ export class FileSync {
         return;
       }
       const decrypted = await decryptFile<FileHeader>(this.dek, remote.data, this.userId, id);
+
+      // Collection indexes merge instead of LWW — parallel devices adding
+      // entries must not clobber each other's additions.
+      if (isCollectionIndex(path)) {
+        const localEntries = parseIndex(bytes);
+        const remoteEntries = parseIndex(decrypted.bytes);
+        if (localEntries && remoteEntries) {
+          const merged = new TextEncoder().encode(JSON.stringify(mergeIndexEntries(localEntries, remoteEntries)));
+          const mergedCipher = await encryptFile(this.dek, { path, mtime: Date.now() }, merged, this.userId, id);
+          try {
+            const etag = await api.putFile(id, mergedCipher, { ifMatch: remote.etag });
+            await this.writeLocal(path, merged, id, etag);
+          } catch (mergeErr) {
+            if (!(mergeErr instanceof api.ServerError) || mergeErr.status !== 412) throw mergeErr;
+            this.dirty.add(path); // raced again — re-merge on the next flush
+          }
+          return;
+        }
+      }
+
       if (header.mtime > decrypted.header.mtime) {
         const etag = await api.putFile(id, cipher, { ifMatch: remote.etag });
         this.state.entries[path] = { id, etag, mtime: header.mtime };
@@ -340,6 +422,24 @@ export class FileSync {
     try {
       const { header, bytes } = await decryptFile<FileHeader>(this.dek, remote.data, this.userId, id);
 
+      // An existing local collection index always merges — adopting the
+      // remote copy wholesale would drop entries this device added.
+      if (isCollectionIndex(header.path)) {
+        const localBlob = await readBlob(header.path);
+        const localEntries = localBlob ? parseIndex(new Uint8Array(await localBlob.arrayBuffer())) : null;
+        const remoteEntries = parseIndex(bytes);
+        if (localEntries && remoteEntries) {
+          const merged = mergeIndexEntries(localEntries, remoteEntries);
+          if (JSON.stringify(merged) !== JSON.stringify(remoteEntries)) {
+            // Local has extra/newer entries: adopt merged and push it back.
+            const mergedBytes = new TextEncoder().encode(JSON.stringify(merged));
+            await this.writeLocal(header.path, mergedBytes, id, remote.etag);
+            this.dirty.add(header.path);
+            return;
+          }
+        }
+      }
+
       // A local file at this path that we never synced (fresh device with
       // an existing workspace) may be newer than the server copy — LWW.
       if (!this.state.entries[header.path]) {
@@ -352,6 +452,7 @@ export class FileSync {
 
       await this.writeLocal(header.path, bytes, id, remote.etag);
     } catch (err) {
+      this.applyFailures++;
       console.error(`fileSync: failed to decrypt/apply file ${id}`, err);
     }
   }

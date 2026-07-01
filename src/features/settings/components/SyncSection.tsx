@@ -1,16 +1,13 @@
 import { Lock, LockOpen, RefreshCw, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import * as chatSession from "@/shared/lib/chatSession";
-import type { SyncActivity } from "@/shared/lib/chatSync";
-import type { FileSyncActivity } from "@/shared/lib/fileSync";
 import { notify } from "@/shared/lib/notify";
-
-type Status = "disabled" | "initializing" | "locked" | "ready" | "error";
+import { type SessionStatus, useSyncStatus } from "../hooks/useSyncStatus";
 
 const PIN_MIN_LEN = 4;
 const PIN_MAX_LEN = 32;
 
-function statusLabel(s: Status): string {
+function statusLabel(s: SessionStatus): string {
   switch (s) {
     case "disabled":
       return "Server sync disabled";
@@ -26,10 +23,7 @@ function statusLabel(s: Status): string {
 }
 
 export function SyncSection() {
-  const [status, setStatus] = useState<Status>("initializing");
-  const [pinProtected, setPinProtected] = useState(false);
-  const [chatActivity, setChatActivity] = useState<SyncActivity | null>(null);
-  const [fileActivity, setFileActivity] = useState<FileSyncActivity | null>(null);
+  const { session: status, health, pendingCount, lastSyncAt, lastError, pinProtected } = useSyncStatus();
   const [syncBusy, setSyncBusy] = useState(false);
 
   // PIN form state
@@ -39,30 +33,6 @@ export function SyncSection() {
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    void chatSession.initSession();
-    // Unlock replaces the sync instances, so re-subscribe on every "ready".
-    let unsubChat: (() => void) | undefined;
-    let unsubFiles: (() => void) | undefined;
-    const unsub = chatSession.subscribeSession((s) => {
-      setStatus(s.status);
-      if (s.status === "ready" || s.status === "locked") {
-        setPinProtected(s.keystore.keystore.pinProtected === true);
-      }
-      if (s.status === "ready") {
-        unsubChat?.();
-        unsubFiles?.();
-        unsubChat = s.sync.subscribeActivity(setChatActivity);
-        unsubFiles = s.files.subscribeActivity(setFileActivity);
-      }
-    });
-    return () => {
-      unsub();
-      unsubChat?.();
-      unsubFiles?.();
-    };
-  }, []);
 
   async function onSyncNow() {
     setSyncBusy(true);
@@ -165,8 +135,15 @@ export function SyncSection() {
         <span className="text-neutral-700 dark:text-neutral-300">{statusLabel(status)}</span>
       </div>
 
-      {status === "ready" && (chatActivity || fileActivity) && (
-        <SyncStatusRow chat={chatActivity} files={fileActivity} busy={syncBusy} onSync={() => void onSyncNow()} />
+      {status === "ready" && (
+        <SyncStatusRow
+          syncing={syncBusy || health === "syncing"}
+          pendingCount={pendingCount}
+          lastSyncAt={lastSyncAt}
+          lastError={lastError}
+          busy={syncBusy}
+          onSync={() => void onSyncNow()}
+        />
       )}
 
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -282,21 +259,15 @@ export function SyncSection() {
 }
 
 interface SyncStatusRowProps {
-  chat: SyncActivity | null;
-  files: FileSyncActivity | null;
+  syncing: boolean;
+  pendingCount: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
   busy: boolean;
   onSync: () => void;
 }
 
-function SyncStatusRow({ chat, files, busy, onSync }: SyncStatusRowProps) {
-  const syncing = busy || chat?.syncing || files?.syncing;
-  const pending = (chat?.pendingCount ?? 0) + (files?.pendingCount ?? 0);
-  const lastError = files?.lastError ?? chat?.lastError ?? null;
-  const lastSyncAt = [chat?.lastSyncAt, files?.lastSyncAt]
-    .filter((t): t is string => t !== null && t !== undefined)
-    .sort()
-    .pop();
-
+function SyncStatusRow({ syncing, pendingCount, lastSyncAt, lastError, busy, onSync }: SyncStatusRowProps) {
   return (
     <>
       <div className="flex items-center justify-between gap-2">
@@ -306,7 +277,7 @@ function SyncStatusRow({ chat, files, busy, onSync }: SyncStatusRowProps) {
             : lastSyncAt
               ? `Last synced ${new Date(lastSyncAt).toLocaleTimeString()}`
               : "Not synced yet"}
-          {pending > 0 && ` · ${pending} pending`}
+          {pendingCount > 0 && ` · ${pendingCount} pending`}
         </span>
         <button
           type="button"

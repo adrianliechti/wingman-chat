@@ -158,28 +158,16 @@ export function useChats() {
       unsubRemote?.();
       unsubRemote = s.sync.subscribeRemoteChanges((remoteChats) => {
         if (cancelled) return;
+        if (pendingSaves.current.size > 0) return; // mid-edit/stream — the next pull delivers it
         const sorted = [...remoteChats].sort((a, b) => (b.updated?.getTime() || 0) - (a.updated?.getTime() || 0));
         setChats(sorted);
       });
     });
 
-    // Multi-device freshness: re-pull when the tab regains visibility.
-    // pull() favors pending local edits, so this can't clobber unsaved work.
-    let lastLoad = Date.now();
-    const onVisible = () => {
-      if (document.visibilityState !== "visible" || !isServerMode()) return;
-      if (pendingSaves.current.size > 0) return; // mid-edit/stream — don't swap state
-      if (Date.now() - lastLoad < 30_000) return;
-      lastLoad = Date.now();
-      void load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
     return () => {
       cancelled = true;
       unsub();
       unsubRemote?.();
-      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 

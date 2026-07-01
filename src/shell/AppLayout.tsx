@@ -16,6 +16,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { SettingsButton } from "@/features/settings/components/SettingsButton";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
+import { SyncIndicator } from "@/features/settings/components/SyncIndicator";
 import { useToolsContext } from "@/features/tools";
 import { getConfig } from "@/shared/config";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
@@ -395,6 +396,13 @@ export function AppLayout() {
                   <GraduationCap size={24} />
                 </a>
               )}
+              <SyncIndicator
+                onClick={() => {
+                  setSettingsInitialSection("sync");
+                  setSettingsAdvanced(false);
+                  setSettingsOpen(true);
+                }}
+              />
               <div className="hidden md:block">
                 <SettingsButton
                   onClick={(e) => {

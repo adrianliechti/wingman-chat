@@ -75,7 +75,62 @@ async function readySession(userId: string, dek: DEK, ks: keystore.KeystoreState
   const sync = await ChatSync.create({ userId, dek });
   const files = await FileSync.create({ userId, dek });
   files.start();
-  return { status: "ready", userId, dek, sync, files, keystore: ks };
+  const s: ReadySession = { status: "ready", userId, dek, sync, files, keystore: ks };
+  startAutoSync(s);
+  return s;
+}
+
+// Auto sync ----------------------------------------------------------------
+//
+// The app is online-first: the session owns the polling cadence so parallel
+// devices converge without user action. Chats pull every minute while the
+// tab is visible (cheap no-op when nothing changed) and immediately on tab
+// focus; the file tree reconciles every five minutes.
+
+const CHAT_PULL_MS = 60_000;
+const FILE_SYNC_MS = 300_000;
+
+let autoSyncCleanup: (() => void) | null = null;
+
+function startAutoSync(s: ReadySession): void {
+  autoSyncCleanup?.();
+
+  let lastChatPull = Date.now();
+  let lastFileSync = Date.now();
+
+  const tick = async (force = false) => {
+    if (document.visibilityState !== "visible") return;
+    const now = Date.now();
+
+    if (force || now - lastChatPull >= CHAT_PULL_MS - 1_000) {
+      lastChatPull = now;
+      try {
+        await s.sync.pull();
+      } catch (err) {
+        console.warn("autosync: chat pull failed", err);
+      }
+    }
+
+    if (now - lastFileSync >= FILE_SYNC_MS - 1_000) {
+      lastFileSync = now;
+      try {
+        await s.files.fullSync();
+      } catch (err) {
+        console.warn("autosync: file sync failed", err);
+      }
+    }
+  };
+
+  const timer = setInterval(() => void tick(), CHAT_PULL_MS);
+  const onVisible = () => {
+    if (document.visibilityState === "visible") void tick(true);
+  };
+  document.addEventListener("visibilitychange", onVisible);
+
+  autoSyncCleanup = () => {
+    clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisible);
+  };
 }
 
 export async function initSession(): Promise<Session> {
