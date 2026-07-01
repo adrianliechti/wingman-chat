@@ -15,12 +15,11 @@ tasks:
       - go run .
 
   ui:
-    env:
-      # task serve is the dev backend — override any WINGMAN_URL from the shell,
-      # which would bypass the local server (and its store routes) entirely.
-      WINGMAN_URL: http://localhost:8080
     cmds:
-      - npm run dev
+      # task serve is the dev backend — inline so it beats a WINGMAN_URL exported
+      # in the shell (Taskfile `env:` does not override OS environment variables),
+      # which would bypass the local server (and its store routes) entirely.
+      - WINGMAN_URL=http://localhost:8080 npm run dev
 
   run:
     cmds:
