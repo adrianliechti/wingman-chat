@@ -270,6 +270,17 @@ export function useInternetProvider(): ToolProvider | null {
           }
         }
 
+        const guard = await client.guard(internet?.guard ?? "", instructions);
+        if (guard.flagged) {
+          const categories = guard.categories.map((c) => c.name).join(", ");
+          return [
+            {
+              type: "text" as const,
+              text: `Request blocked by content guard${categories ? ` (flagged: ${categories})` : ""}.`,
+            },
+          ];
+        }
+
         const innerTools = buildWebTools(client, internet, context);
 
         try {

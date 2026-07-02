@@ -118,6 +118,7 @@ interface InternetConfig {
   scraper?: string;
   searcher?: string;
   researcher?: string;
+  guard?: string;
   elicitation?: boolean;
 }
 
