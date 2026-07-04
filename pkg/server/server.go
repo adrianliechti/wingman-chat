@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -12,6 +13,9 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/library"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
+	storesrv "github.com/adrianliechti/wingman-chat/pkg/server/store"
+	"github.com/adrianliechti/wingman-chat/pkg/store"
+	storefile "github.com/adrianliechti/wingman-chat/pkg/store/file"
 )
 
 func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.FS, skillsDir, notebookDir string) http.Handler {
@@ -25,6 +29,24 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 
 	if len(cfg.Drives) > 0 {
 		drive.New(cfg.Drives).Attach(mux, prefix)
+	}
+
+	if cfg.Store != nil {
+		var provider store.Provider
+		var err error
+
+		switch cfg.Store.Type {
+		case "file", "":
+			provider, err = storefile.New(cfg.Store.Path)
+		default:
+			err = fmt.Errorf("unknown store type: %s", cfg.Store.Type)
+		}
+
+		if err != nil {
+			panic(fmt.Errorf("store: %w", err))
+		}
+
+		storesrv.New(provider).Attach(mux, prefix)
 	}
 
 	if dirExists(skillsDir) {

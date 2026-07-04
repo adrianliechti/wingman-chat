@@ -31,6 +31,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Store *Store `json:"store,omitempty" yaml:"store,omitempty"`
+
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -155,6 +157,16 @@ type Risk struct {
 	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
 	Message     string  `json:"message,omitempty" yaml:"message,omitempty"`
 	Threshold   float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+}
+
+// Store configures the server-side user data store (chats, files,
+// keystore — all encrypted client-side). Its presence in the
+// JSON-serialized config is the frontend's signal to switch from
+// OPFS-only mode to server-synced mode. Sensitive fields (Path) stay
+// server-private via the json:"-" tag.
+type Store struct {
+	Type string `json:"-" yaml:"type,omitempty"`
+	Path string `json:"-" yaml:"path,omitempty"`
 }
 
 type Translator struct {

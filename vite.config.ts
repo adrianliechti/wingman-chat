@@ -186,11 +186,13 @@ function pdfjsAssetsPlugin(): Plugin {
   };
 
   let outDir = "dist";
+  let isBuild = false;
 
   return {
     name: "pdfjs-assets",
     configResolved(config) {
       outDir = config.build.outDir;
+      isBuild = config.command === "build";
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
@@ -203,6 +205,7 @@ function pdfjsAssetsPlugin(): Plugin {
       });
     },
     closeBundle() {
+      if (!isBuild) return;
       for (const dir of dirs) {
         const from = path.join(pkgRoot, dir);
         if (fs.existsSync(from)) copyDir(from, path.resolve(outDir, "pdfjs", dir));
@@ -213,7 +216,14 @@ function pdfjsAssetsPlugin(): Plugin {
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
-const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
+const wingmanUser = process.env.WINGMAN_USER || "default";
+
+// In production a reverse proxy provides the user identity; the dev proxy
+// impersonates one so the chatstore endpoints work out of the box.
+const wingmanHeaders: Record<string, string> = {
+  Authorization: `Bearer ${wingmanToken}`,
+  "X-Forwarded-User": wingmanUser,
+};
 
 // https://vite.dev/config/
 export default defineConfig({

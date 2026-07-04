@@ -9,6 +9,7 @@ import {
   Mic,
   Notebook,
   Settings,
+  ShieldCheck,
   Trash2,
   Upload,
   User,
@@ -44,6 +45,7 @@ import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { SelectMenu } from "@/shared/ui/SelectMenu";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
+import { SyncSection } from "./SyncSection";
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -704,6 +706,16 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
                     <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
                   </div>
+                </SectionPanel>
+
+                {/* Sync & Encryption Section */}
+                <SectionPanel
+                  title="Sync & Encryption"
+                  icon={<ShieldCheck size={20} />}
+                  isOpen={openSection === "sync"}
+                  onClick={() => toggleSection("sync")}
+                >
+                  <SyncSection />
                 </SectionPanel>
 
                 {/* Agents Section */}
