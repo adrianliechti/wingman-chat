@@ -243,7 +243,17 @@ export type Message = {
   /** Ordered content parts (text, reasoning, tool_call, tool_result, images, files) */
   content: Content[];
 
+  usage?: MessageUsage;
+
   error?: MessageError | null;
+};
+
+export type MessageUsage = {
+  model?: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
 };
 
 export type MessageError = {

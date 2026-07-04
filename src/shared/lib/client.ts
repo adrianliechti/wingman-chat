@@ -423,16 +423,16 @@ export class Client {
 
         try {
           const finalResponse = await runner.finalResponse();
+          assistant.usage = {
+            model: finalResponse.model,
+            inputTokens: finalResponse.usage?.input_tokens,
+            cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
+            outputTokens: finalResponse.usage?.output_tokens,
+            reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+          };
           return {
             result: assistant,
-            response: {
-              id: finalResponse.id,
-              model: finalResponse.model,
-              inputTokens: finalResponse.usage?.input_tokens,
-              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: finalResponse.usage?.output_tokens,
-              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-            },
+            response: { id: finalResponse.id, ...assistant.usage },
           };
         } catch (error) {
           // On abort (our signal or runner.abort()), return partial content

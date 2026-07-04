@@ -222,15 +222,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const acknowledgedRisksRef = useRef<Map<string, Set<string>>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
+  const streamFlushTimerRef = useRef<number | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Chat that owns the single in-flight turn, so navigating away can cancel it.
   const runningChatIdRef = useRef<string | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
-  // Keep ref in sync with state so stopStreaming can read current value synchronously
+  // The ref always holds the latest content (so stopStreaming can commit the
+  // full partial message synchronously), but the state — and with it the whole
+  // message tree — re-renders at most ~8x/s instead of once per streamed token.
+  // Clearing (null) applies immediately and cancels any pending flush so stale
+  // streaming content can't reappear after the turn was committed.
   const updateStreamingMessage = useCallback((msg: { chatId: string; message: Message } | null) => {
     streamingMessageRef.current = msg;
-    setStreamingMessage(msg);
+    if (msg === null) {
+      window.clearTimeout(streamFlushTimerRef.current);
+      streamFlushTimerRef.current = undefined;
+      setStreamingMessage(null);
+      return;
+    }
+    if (streamFlushTimerRef.current !== undefined) return;
+    streamFlushTimerRef.current = window.setTimeout(() => {
+      streamFlushTimerRef.current = undefined;
+      setStreamingMessage(streamingMessageRef.current);
+    }, 120);
   }, []);
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
