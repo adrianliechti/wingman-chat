@@ -38,12 +38,16 @@ export function resolveToolHeader(
   rawArgs: string | undefined,
   state: ToolDisplayState,
 ): ResolvedToolHeader {
-  const h = tool?.display?.header?.(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)), state);
+  // Parsed once with the tool's schema hints and reused for both the header and
+  // the preview fallback below — without hints, a still-streaming payload field
+  // (e.g. `content` on create_file) makes recovery flaky and the preview flicker.
+  const args = tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters));
+  const h = tool?.display?.header?.(args, state);
   return {
     Icon: h?.icon,
     label: h?.label ?? tool?.title ?? getToolDisplayName(name),
     mono: h?.mono ?? false,
-    preview: h?.suppressPreview ? null : (h?.preview ?? (rawArgs ? getToolCallPreview(name, rawArgs) : null)),
+    preview: h?.suppressPreview ? null : (h?.preview ?? getToolCallPreview(args)),
   };
 }
 

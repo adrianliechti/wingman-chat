@@ -118,6 +118,7 @@ interface InternetConfig {
   scraper?: string;
   searcher?: string;
   researcher?: string;
+  guard?: string;
   elicitation?: boolean;
 }
 
@@ -182,11 +183,16 @@ export function categorySlug(name: string): string {
 
 export const riskSlug = categorySlug;
 
+export interface CompactionConfig {
+  threshold?: number;
+}
+
 interface ChatConfig {
   instructions?: string;
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
+  compaction?: CompactionConfig;
   classification?: ClassificationConfig;
   categories?: CategoryConfig[];
   risks?: RiskConfig[];

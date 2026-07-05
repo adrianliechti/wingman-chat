@@ -159,6 +159,7 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `NOTEBOOK_ENABLED`, `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
+- `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`,

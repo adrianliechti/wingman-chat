@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { formatBytes, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
@@ -9,6 +9,30 @@ interface UseFileAttachmentsOptions {
   artifactsAvailable: boolean;
   visionMaxFileSize?: number;
   artifactsMaxFileSize?: number;
+}
+
+// Browsers give pasted clipboard images a generic name (e.g. "image.png") with
+// no way to distinguish them. Since attachment names become workspace file
+// paths (`/${file.name}`), unresolved duplicates silently overwrite each other.
+function dedupeFileName(name: string, used: Set<string>): string {
+  if (!used.has(name)) {
+    used.add(name);
+    return name;
+  }
+
+  const dotIndex = name.lastIndexOf(".");
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const ext = dotIndex > 0 ? name.slice(dotIndex) : "";
+
+  let counter = 2;
+  let candidate = `${base} (${counter})${ext}`;
+  while (used.has(candidate)) {
+    counter += 1;
+    candidate = `${base} (${counter})${ext}`;
+  }
+
+  used.add(candidate);
+  return candidate;
 }
 
 /** Accept-attribute for the chat file picker, kept in sync with `handleFiles`' intake rule. */
@@ -40,10 +64,14 @@ export function useFileAttachments({
   // Original image files aligned 1:1 with `attachments`, persisted at send.
   const [pendingImages, setPendingImages] = useState<(File | null)[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  // Filenames already claimed by pending artifacts/images, across calls to `handleFiles`.
+  const usedFileNamesRef = useRef<Set<string>>(new Set());
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      // Normalize MIME types up front (browsers sometimes omit/guess them).
+      // Normalize MIME types up front (browsers sometimes omit/guess them),
+      // and dedupe names so same-named files (e.g. pasted clipboard images)
+      // don't collide once they're written to the workspace by name.
       const images: { file: File; keepOriginal: boolean }[] = [];
       const artifacts: File[] = [];
       for (const file of files) {
@@ -51,7 +79,11 @@ export function useFileAttachments({
           file.type && file.type !== "application/octet-stream"
             ? file.type
             : (inferContentTypeFromPath(file.name) ?? file.type);
-        const effectiveFile = effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
+        const uniqueName = dedupeFileName(file.name, usedFileNamesRef.current);
+        const effectiveFile =
+          effectiveType !== file.type || uniqueName !== file.name
+            ? new File([file], uniqueName, { type: effectiveType })
+            : file;
 
         const isVisionImage = visionFiles.includes(effectiveType);
         const overArtifactLimit = artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize;
@@ -115,6 +147,7 @@ export function useFileAttachments({
     setAttachments([]);
     setPendingFiles([]);
     setPendingImages([]);
+    usedFileNamesRef.current = new Set();
   }, []);
 
   const removeAttachment = useCallback((index: number) => {

@@ -86,6 +86,36 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   return undefined;
 }
 
+/**
+ * Best-guess token budget for the active chat window before proactive
+ * compaction kicks in, the fallback when a model's config omits
+ * `compactThreshold` (an explicit config value — including 0 to disable —
+ * always wins). 272k mirrors the GPT-5 input cap (400k window minus 128k
+ * reserved for output); past ~200–272k input every hosted family is into its
+ * premium or failure territory, so unknown ids default there too. Models with
+ * small windows (local llama etc.) should set an explicit value in config —
+ * the heuristic only knows the major hosted families.
+ */
+export function compactThreshold(id: string): number {
+  const lowerId = id.toLowerCase();
+
+  // 128k-window OpenAI models: gpt-4o / gpt-4-turbo / o1.
+  if (/gpt-?4o|gpt-?4-turbo|\bo1\b/.test(lowerId)) return 100_000;
+  // o3 / o4: 200k window shared with the reply — leave room to answer.
+  if (/\bo[34]\b/.test(lowerId)) return 176_000;
+  // Anthropic: Haiku and pre-4.6 Claude keep a 200k window shared with the
+  // reply. Current models (Opus/Sonnet 4.6+, Fable 5, Sonnet 5) have a 1M
+  // window at standard pricing — the former >200k long-context premium is
+  // gone — so they take the generic default below.
+  if (/haiku|claude-?[123]\b|claude-?3[.-]/.test(lowerId)) return 176_000;
+  if (/(opus|sonnet)-?4[.-][0-5]\b/.test(lowerId)) return 176_000;
+  // Google: Gemini long-context pricing doubles above 200k prompt tokens.
+  if (lowerId.includes("gemini")) return 200_000;
+
+  // GPT-5 family (272k input cap) and unknown ids.
+  return 272_000;
+}
+
 export interface RendererCapabilities {
   qualities?: ImageQuality[];
   aspectRatios?: string[];
@@ -258,4 +288,8 @@ export function modelName(id: string): string {
       return word.charAt(0).toUpperCase() + word.slice(1);
     })
     .join(" ");
+}
+
+export function shortModelName(id: string): string {
+  return modelName(id.replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, ""));
 }

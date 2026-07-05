@@ -6,6 +6,7 @@ import { SkillChip } from "@/features/skills/components/SkillChip";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
+import { shortModelName } from "@/shared/lib/models";
 import type { Content, Message } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
@@ -150,6 +151,24 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
       )}
     </div>
   );
+}
+
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 10_000) return `${Math.round(count / 1000)}k`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+  return String(count);
+}
+
+/** Model + token usage of the completion that produced this turn (auto-router aware). */
+function UsageInfo({ usage }: { usage: NonNullable<Message["usage"]> }) {
+  const parts: string[] = [];
+  if (usage.model) parts.push(shortModelName(usage.model));
+  if (usage.inputTokens != null) parts.push(`${formatTokens(usage.inputTokens)} in`);
+  if (usage.outputTokens != null) parts.push(`${formatTokens(usage.outputTokens)} out`);
+  if (parts.length === 0) return null;
+
+  return <span className="text-xs text-neutral-400 dark:text-neutral-500 truncate">{parts.join(" · ")}</span>;
 }
 
 type ChatAssistantMessageProps = {
@@ -424,17 +443,18 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
         <div
           className={cn(
-            "flex justify-between items-center mt-1 transition-opacity duration-200",
+            "flex items-center gap-3 mt-1 transition-opacity duration-200",
             // The completed last message keeps its actions always visible; while it's
             // still streaming, hover-gate them (avoids flicker as content reflows).
             isLast && !isResponding ? "opacity-100" : hovered ? "opacity-100" : "opacity-100 md:opacity-0",
           )}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <CopyButton markdown={textContent} className="h-4 w-4" />
             <ConvertButton markdown={textContent} className="h-4 w-4" />
             {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
           </div>
+          {isLast && !isResponding && message.usage && <UsageInfo usage={message.usage} />}
         </div>
       </div>
     </div>

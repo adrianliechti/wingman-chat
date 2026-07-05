@@ -122,6 +122,17 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Optimizer = v
 	}
 
+	if envBool("CHAT_COMPACTION_ENABLED") {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
+	}
+
+	if v := envPositiveInt("CHAT_COMPACTION_THRESHOLD", nil); v != nil {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)
+		cfg.Chat.Compaction.Threshold = *v
+	}
+
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
 }
 

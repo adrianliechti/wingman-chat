@@ -11,7 +11,9 @@ import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug
 import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { getErrorInfo } from "@/shared/lib/errors";
+import { compactThreshold } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
+import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import type {
   Content,
   Message,
@@ -144,34 +146,106 @@ function estimateTokens(messages: Message[]): number {
 }
 
 /**
+ * Wire-style view of messages for the summarizer/classifier: reasoning is
+ * dropped (never replayed to the API either) and binary payloads become short
+ * placeholders — JSON.stringifying megabytes of base64 into a helper-model
+ * prompt would dwarf the history it's supposed to condense.
+ */
+function sanitizeForSummary(messages: Message[]): Message[] {
+  const placeholder = (part: { type: string; name?: string }): TextContent => ({
+    type: "text",
+    text: `[${part.type}${part.name ? `: ${part.name}` : ""}]`,
+  });
+
+  return messages.map((m) => ({
+    role: m.role,
+    content: m.content.flatMap((part): Content[] => {
+      switch (part.type) {
+        case "reasoning":
+          return [];
+        case "image":
+        case "audio":
+        case "file":
+          return [placeholder(part)];
+        case "tool_result":
+          // meta/content are UI-only; binary results become placeholders.
+          return [
+            {
+              type: "tool_result",
+              id: part.id,
+              name: part.name,
+              arguments: part.arguments,
+              result: part.result.map((r) => (r.type === "text" ? r : placeholder(r))),
+            },
+          ];
+        default:
+          return [part];
+      }
+    }),
+  }));
+}
+
+function estimateWindowTokens(window: Message[]): number {
+  const trimmed = trimBulkyToolHistory(window);
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    const message = trimmed[i];
+    const usage = message.usage;
+    if (message.role === Role.Assistant && usage?.inputTokens) {
+      const anchor = usage.inputTokens + (usage.outputTokens ?? 0) - (usage.reasoningTokens ?? 0);
+      return anchor + estimateTokens(trimmed.slice(i + 1));
+    }
+  }
+  return estimateTokens(trimmed);
+}
+
+/**
  * Insert a summary marker before the current turn when the active context —
- * everything since the last summary marker, i.e. what's actually sent to the
- * model — exceeds `threshold` estimated tokens. Original user/assistant messages
- * stay in storage (the UI still shows them); only the API request gets pruned at
- * the marker by `pruneAtSummary`. Any prior summary marker is dropped so they
- * don't stack — its content is preserved by feeding it to the new summary.
+ * everything since the last summary marker, gauged as the wire sees it (after
+ * bulky-tool trimming) — exceeds `threshold` estimated tokens. Original
+ * user/assistant messages stay in storage (the UI still shows them); only the
+ * API request gets pruned at the marker by `pruneAtSummary`. The summarizer
+ * reads just the active window: the previous marker is that window's first
+ * message, so summaries chain instead of re-reading the whole stored history
+ * on every compaction. Any prior marker is dropped from storage so they don't
+ * stack.
  */
 async function compactIfNeeded(
   conversation: Message[],
   threshold: number,
   client: Client,
   summarizerModel: string,
+  fallbackModel: string,
 ): Promise<Message[]> {
   if (!threshold || conversation.length < 2) return conversation;
   // Gauge only the active window (since the last summary) — measuring full
   // storage (kept intact for the UI) would never drop back under the threshold,
   // so we'd re-summarize on every turn.
-  if (estimateTokens(messagesSinceSummary(conversation)) < threshold) return conversation;
+  const window = messagesSinceSummary(conversation);
+  if (estimateWindowTokens(window) < threshold) return conversation;
 
-  // Last message is the user's just-sent turn — don't summarize it.
+  // Last message is the user's just-sent turn — don't summarize it. Trim with
+  // recentTurns: 1 so only the current turn keeps full payloads: the summarizer
+  // doesn't need multi-KB tool dumps to condense what happened.
   const currentTurn = conversation[conversation.length - 1];
-  const toSummarize = conversation.slice(0, -1);
+  const toSummarize = trimBulkyToolHistory(window, { recentTurns: 1 }).slice(0, -1);
+  if (toSummarize.length === 0) return conversation;
 
   console.log(
     `[Summary] Compacting ${toSummarize.length} messages (~${estimateTokens(toSummarize)} est. tokens, threshold ${threshold})`,
   );
 
-  const summary = await client.summarizeHistory(summarizerModel, toSummarize);
+  const payload = sanitizeForSummary(toSummarize);
+  let summary: string;
+  try {
+    summary = await client.summarizeHistory(summarizerModel, payload);
+  } catch (error) {
+    // A configured summarizer can be a small-window model that chokes on a
+    // large window. The chat model just handled this same content, so retry
+    // there rather than leaving the conversation permanently uncompactable.
+    if (summarizerModel === fallbackModel) throw error;
+    console.warn(`[Summary] summarizer ${summarizerModel} failed, retrying with ${fallbackModel}`, error);
+    summary = await client.summarizeHistory(fallbackModel, payload);
+  }
   if (!summary) return conversation;
 
   const summaryMsg: Message = {
@@ -180,7 +254,7 @@ async function compactIfNeeded(
   };
   // Keep all original messages in storage; strip prior summary markers so
   // multiple don't accumulate. pruneAtSummary slices at the latest one.
-  const preserved = toSummarize.filter((m) => !m.content.some((p) => p.type === "summary"));
+  const preserved = conversation.slice(0, -1).filter((m) => !m.content.some((p) => p.type === "summary"));
   return [...preserved, summaryMsg, currentTurn];
 }
 
@@ -222,15 +296,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const acknowledgedRisksRef = useRef<Map<string, Set<string>>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
+  const streamFlushTimerRef = useRef<number | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Chat that owns the single in-flight turn, so navigating away can cancel it.
   const runningChatIdRef = useRef<string | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
-  // Keep ref in sync with state so stopStreaming can read current value synchronously
+  // The ref always holds the latest content (so stopStreaming can commit the
+  // full partial message synchronously), but the state — and with it the whole
+  // message tree — re-renders at most ~8x/s instead of once per streamed token.
+  // Clearing (null) applies immediately and cancels any pending flush so stale
+  // streaming content can't reappear after the turn was committed.
   const updateStreamingMessage = useCallback((msg: { chatId: string; message: Message } | null) => {
     streamingMessageRef.current = msg;
-    setStreamingMessage(msg);
+    if (msg === null) {
+      window.clearTimeout(streamFlushTimerRef.current);
+      streamFlushTimerRef.current = undefined;
+      setStreamingMessage(null);
+      return;
+    }
+    if (streamFlushTimerRef.current !== undefined) return;
+    streamFlushTimerRef.current = window.setTimeout(() => {
+      streamFlushTimerRef.current = undefined;
+      setStreamingMessage(streamingMessageRef.current);
+    }, 120);
   }, []);
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
@@ -459,7 +548,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
         client
           .classifyChat(
             summarizerModel,
-            conversation,
+            // Wire-style view: the classifier reads the last few messages as
+            // JSON — inline base64 images/files would be re-uploaded every turn.
+            sanitizeForSummary(conversation),
             categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
             riskConfigs.map((r) => ({ id: riskSlug(r.name), description: r.description })),
           )
@@ -569,14 +660,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Proactive compaction: condense older messages into a summary marker
         // before the LLM call when the estimated token count exceeds the
-        // model's threshold. The summary then survives provider/model swaps
-        // because it's plain text, unlike the prior server-side compaction blob.
-        if (currentModel.compactThreshold) {
+        // threshold. `chat.compaction` in config is the master switch — absent
+        // means no compaction at all. When enabled, the budget is the model's
+        // `compactThreshold` (0 opts a model out) — else the family heuristic
+        // (272k GPT-5-class input cap; see models.ts) — capped by
+        // chat.compaction.threshold, a deployment-wide ceiling: models compact
+        // earlier, never later. The summary survives provider/model swaps
+        // because it's plain text, unlike the prior server-side compaction
+        // blob. Compaction is an optimization: if the summarizer fails,
+        // proceed uncompacted rather than failing the turn.
+        const compaction = config.chat?.compaction;
+        let threshold = 0;
+        if (compaction) {
+          threshold = currentModel.compactThreshold ?? compactThreshold(currentModel.id);
+          if (compaction.threshold && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
+        }
+        if (threshold > 0) {
           const summarizerModel = config.chat?.summarizer || currentModel.id;
-          const compacted = await compactIfNeeded(conversation, currentModel.compactThreshold, client, summarizerModel);
-          if (compacted !== conversation) {
-            conversation = compacted;
-            updateChat(id, () => ({ messages: conversation }));
+          try {
+            const compacted = await compactIfNeeded(conversation, threshold, client, summarizerModel, currentModel.id);
+            if (compacted !== conversation) {
+              conversation = compacted;
+              updateChat(id, () => ({ messages: conversation }));
+            }
+          } catch (error) {
+            console.error("[Summary] compaction failed, continuing uncompacted", error);
           }
         }
 
@@ -588,7 +696,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             verbosity: model?.verbosity,
             signal: abortController.signal,
           },
-          prepareMessages: (msgs) => injectContext(stripHistoryImages(pruneAtSummary(msgs)), now),
+          prepareMessages: (msgs) =>
+            injectContext(stripHistoryImages(trimBulkyToolHistory(pruneAtSummary(msgs))), now),
           onTurnStart: () => {
             updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
           },
@@ -687,6 +796,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       client,
       model,
       config.chat?.summarizer,
+      config.chat?.compaction,
       config.chat?.classification,
       config.chat?.categories,
       config.chat?.risks,

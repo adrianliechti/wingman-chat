@@ -219,9 +219,7 @@ export function groupRenderUnits(messages: Message[], isResponding: boolean): Re
   return units;
 }
 
-// Helper function to extract and format common parameters for tool calls
-export function getToolCallPreview(_toolName: string, arguments_: string): string | null {
-  const args = tryParseToolArguments(arguments_);
+export function getToolCallPreview(args: Record<string, unknown> | null): string | null {
   if (!args) return null;
 
   // Common parameter names to look for (in order of preference)

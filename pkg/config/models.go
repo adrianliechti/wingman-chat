@@ -132,9 +132,14 @@ type Chat struct {
 	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
 	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`
 
+	Compaction     *Compaction     `json:"compaction,omitempty" yaml:"compaction,omitempty"`
 	Classification *Classification `json:"classification,omitempty" yaml:"classification,omitempty"`
 	Categories     []Category      `json:"categories,omitempty" yaml:"categories,omitempty"`
 	Risks          []Risk          `json:"risks,omitempty" yaml:"risks,omitempty"`
+}
+
+type Compaction struct {
+	Threshold int `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 
 type Classification struct {

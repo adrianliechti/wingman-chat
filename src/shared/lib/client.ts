@@ -87,6 +87,11 @@ export interface ImageRenderOptions {
   format?: "png" | "jpeg" | "webp";
 }
 
+export interface GuardResult {
+  flagged: boolean;
+  categories: Array<{ name: string; score: number }>;
+}
+
 /**
  * Best-effort human-readable detail from a failed response body, so tool errors
  * surface the backend's reason instead of a bare status code. Handles both
@@ -418,16 +423,16 @@ export class Client {
 
         try {
           const finalResponse = await runner.finalResponse();
+          assistant.usage = {
+            model: finalResponse.model,
+            inputTokens: finalResponse.usage?.input_tokens,
+            cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
+            outputTokens: finalResponse.usage?.output_tokens,
+            reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+          };
           return {
             result: assistant,
-            response: {
-              id: finalResponse.id,
-              model: finalResponse.model,
-              inputTokens: finalResponse.usage?.input_tokens,
-              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: finalResponse.usage?.output_tokens,
-              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-            },
+            response: { id: finalResponse.id, ...assistant.usage },
           };
         } catch (error) {
           // On abort (our signal or runner.abort()), return partial content
@@ -750,6 +755,17 @@ export class Client {
     });
   }
 
+  async guard(model: string, text: string): Promise<GuardResult> {
+    const resp = await this.postRaw("/api/v1/guard", JSON.stringify({ ...(model && { model }), text }), {
+      "Content-Type": "application/json",
+    });
+    const result = await resp.json();
+    return {
+      flagged: result?.flagged === true,
+      categories: Array.isArray(result?.categories) ? result.categories : [],
+    };
+  }
+
   async research(model: string, instructions: string): Promise<string> {
     const result = await (await this.post("/api/v1/research", { ...(model && { model }), instructions })).json();
     return result.content || "";
@@ -850,7 +866,7 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(path: string, data: FormData, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
+  private async postRaw(path: string, data: BodyInit, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
