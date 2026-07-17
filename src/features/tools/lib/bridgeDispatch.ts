@@ -4,6 +4,7 @@
  * switch.
  */
 
+import { rasterizeSvg } from "@/shared/lib/svg";
 import type { WorkerToMainMessage } from "./interpreterProtocol";
 import { runLlm } from "./llmCommand";
 import { runOcr } from "./ocrCommand";
@@ -36,6 +37,8 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage): Promise<unknown
       return import("@/shared/lib/pdf").then(({ rasterizePdf }) =>
         rasterizePdf(message.data, { pages: message.pages, scale: message.scale }),
       );
+    case "svg-rasterize-request":
+      return rasterizeSvg(message.svg, { width: message.width, height: message.height });
     default:
       return Promise.reject(new Error(`Unsupported bridge request: ${(message as { type: string }).type}`));
   }

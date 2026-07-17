@@ -291,19 +291,16 @@ function buildBridges(vfs: Vfs) {
   };
 }
 
-/** Rasterize an SVG string to PNG bytes via OffscreenCanvas — echarts produces
- * vector output but some targets want raster. */
-async function svgToPng(svg: string, options?: { width?: number; height?: number }): Promise<Uint8Array> {
-  const bitmap = await createImageBitmap(new Blob([svg], { type: "image/svg+xml" }));
-  const width = options?.width ?? bitmap.width;
-  const height = options?.height ?? bitmap.height;
-  const canvas = new OffscreenCanvas(width, height);
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("svgToPng: 2D canvas context unavailable");
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  const blob = await canvas.convertToBlob({ type: "image/png" });
-  return new Uint8Array(await blob.arrayBuffer());
+/** Rasterize an SVG string to PNG bytes on the main thread — workers cannot
+ * decode SVG (WebKit and Firefox reject SVG blobs in createImageBitmap). */
+function svgToPng(svg: string, options?: { width?: number; height?: number }): Promise<Uint8Array> {
+  return callMain<Uint8Array>((port) => ({
+    type: "svg-rasterize-request",
+    svg,
+    width: options?.width,
+    height: options?.height,
+    port,
+  }));
 }
 
 function formatValue(value: unknown): string {

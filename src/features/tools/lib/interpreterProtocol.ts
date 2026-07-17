@@ -62,6 +62,7 @@ export type WorkerToMainMessage =
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
   | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort }
-  | { type: "pdf-rasterize-request"; data: Uint8Array; pages?: number[]; scale?: number; port: MessagePort };
+  | { type: "pdf-rasterize-request"; data: Uint8Array; pages?: number[]; scale?: number; port: MessagePort }
+  | { type: "svg-rasterize-request"; svg: string; width?: number; height?: number; port: MessagePort };
 
 export type RpcReply = { ok: true; value: unknown } | { ok: false; error: string };
