@@ -1,6 +1,6 @@
 import type { ImageBackground, ImageQuality, ImageResolution, Model, ModelType } from "@/shared/types/chat";
 
-type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * Model id a fresh selection should default to: the saved app default when it's
@@ -17,8 +17,7 @@ export function defaultModelId(models: Model[], savedId?: string | null): string
  * model's config omits `supportedEfforts`. Levels are derived from the models.dev
  * catalog (https://models.dev) and kept forgiving: `undefined` (no picker) is the
  * safe default for unknown ids, and config always wins, so an explicit
- * `supportedEfforts: []` still hides the picker. The catalog's separate "max" tier
- * is folded into our top `xhigh` (which the picker labels "Max").
+ * `supportedEfforts: []` still hides the picker.
  */
 export function supportedEfforts(id: string): Effort[] | undefined {
   const lowerId = id.toLowerCase();
@@ -40,16 +39,18 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   if (/gpt-?[6-9]/.test(lowerId)) return ["none", "low", "medium", "high", "xhigh"]; // GPT-6+ (guess)
 
   // ── Anthropic ──
-  // Opus 4.6+, Sonnet 4.6+ and Fable add a top "Max" tier (folded into xhigh);
-  // Opus 4.5 and older Claude stop at high.
+  // Effort exists from Opus 4.5 on. `max` arrived with the 4.6 generation, but
+  // `xhigh` only with Opus 4.7 / Sonnet 5 — Opus 4.6 and Sonnet 4.6 have max
+  // without xhigh. Opus 4.5 and older Claude stop at high.
   if (
-    /opus-?4[.-][6-9]\b/.test(lowerId) ||
-    /sonnet-?4[.-][6-9]\b/.test(lowerId) ||
+    /opus-?4[.-][7-9]\b/.test(lowerId) ||
     /(opus|sonnet)-?[5-9]\b/.test(lowerId) ||
-    lowerId.includes("fable")
+    lowerId.includes("fable") ||
+    lowerId.includes("mythos")
   ) {
-    return ["low", "medium", "high", "xhigh"];
+    return ["low", "medium", "high", "xhigh", "max"];
   }
+  if (/(opus|sonnet)-?4[.-]6\b/.test(lowerId)) return ["low", "medium", "high", "max"];
   if (lowerId.includes("claude")) return ["low", "medium", "high"];
 
   // ── Google ──
@@ -82,6 +83,34 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   // ── Alibaba Qwen ──
   // Effort exposure is host-dependent; low/medium/high is the portable baseline.
   if (lowerId.includes("qwen")) return ["low", "medium", "high"];
+
+  return undefined;
+}
+
+/**
+ * The level a model reasons at when no effort is sent, so the picker can badge
+ * it "Default" the way the provider consoles do. Only claimed where the vendor
+ * documents it — a wrong badge is worse than none, and config's `effort` covers
+ * everything else (including aliased ids this can't read):
+ *
+ * - Anthropic documents `high` for every effort-capable Claude model, and that
+ *   passing `high` is identical to omitting the parameter.
+ * - OpenAI documents defaults as model-dependent, and names `medium` for both
+ *   gpt-5.5 and gpt-5.6 (the latter in the reasoning-mode section: omitting
+ *   `reasoning.effort` is `medium` in standard and pro alike). Earlier GPT-5
+ *   point releases and the o-series have no stated default, so they stay unset.
+ */
+export function defaultEffort(id: string): Effort | undefined {
+  const lowerId = id.toLowerCase();
+
+  if (lowerId.includes("claude") || lowerId.includes("fable") || lowerId.includes("mythos")) {
+    return supportedEfforts(id)?.includes("high") ? "high" : undefined;
+  }
+
+  // The mini/nano/chat variants are separate models with no stated default.
+  if (/gpt-?5[.-][56]\b/.test(lowerId) && !/mini|nano|chat/.test(lowerId)) {
+    return "medium";
+  }
 
   return undefined;
 }

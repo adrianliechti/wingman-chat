@@ -28,9 +28,14 @@ export type Model = {
    * model it doubles as the per-chat override (the config default is recovered
    * from the fresh model list by id). Unset means the backend/model default.
    */
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Reasoning-effort levels offered in the picker; empty/unset hides the effort selector. */
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
+  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")[];
+  /**
+   * The level the picker badges as "Default" — what a fresh chat gets. Config's
+   * `effort` when set, else the provider's own default. Never a per-chat override.
+   */
+  defaultEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;

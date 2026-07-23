@@ -34,22 +34,28 @@ const PANEL_CLASS =
 
 type Effort = NonNullable<Model["effort"]>;
 
-const EFFORT_META: Record<Effort, { label: string; description: string }> = {
-  none: { label: "None", description: "No reasoning — fastest" },
-  minimal: { label: "Minimal", description: "Very light reasoning" },
-  low: { label: "Low", description: "Brief reasoning" },
-  medium: { label: "Medium", description: "Balanced — recommended" },
-  high: { label: "High", description: "Deeper reasoning" },
-  xhigh: { label: "Max", description: "Deepest reasoning — slowest" },
+// One name per API level — `xhigh` and `max` are distinct tiers, so they must
+// not share a label. Names follow the vendor consoles (…/Extra/Max).
+const EFFORT_LABEL: Record<Effort, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra",
+  max: "Max",
 };
 
+const EFFORT_HINT = "Higher effort means more thorough responses, but takes longer and costs more.";
+
 interface EffortConfig {
-  /** Levels the model offers, ordered as shown. */
+  /** Levels the model offers, ordered low to high as shown. */
   options: Effort[];
-  /** Current selection, or null for the model/backend default. */
+  /** Current selection, or null when nothing has been chosen for this chat. */
   value: Effort | null;
-  /** Pass null to clear back to the default. */
-  onChange: (effort: Effort | null) => void;
+  /** Level to badge "Default" — what an unset chat reasons at. */
+  defaultValue?: Effort;
+  onChange: (effort: Effort) => void;
 }
 
 export interface SubmenuOption {
@@ -58,6 +64,8 @@ export interface SubmenuOption {
   label: string;
   /** Optional secondary line. */
   description?: string;
+  /** Small pill after the label, e.g. "Default". */
+  badge?: string;
 }
 
 /** A flyout submenu of single-select options, shown below the model list. */
@@ -65,12 +73,17 @@ export interface SubmenuConfig {
   icon?: React.ReactNode;
   /** Trigger row label, e.g. "Aspect". */
   label: string;
+  /** Explanatory line above the options. */
+  hint?: string;
   options: SubmenuOption[];
   /** Current selection, or null for the default. */
   value: string | null;
   /** Pass null to clear back to the default. */
   onChange: (value: string | null) => void;
-  /** Reset-row text (defaults to "Default"). */
+  /**
+   * Reset row that clears the selection. Omit for menus where every level is
+   * explicit and one of them is badged as the default instead.
+   */
   defaultLabel?: string;
   defaultDescription?: string;
 }
@@ -101,12 +114,14 @@ interface ModelDropdownProps {
 function OptionRow({
   name,
   description,
+  badge,
   selected,
   icon,
   onSelect,
 }: {
   name: string;
   description?: string;
+  badge?: string;
   selected: boolean;
   icon?: React.ReactNode;
   onSelect: () => void;
@@ -123,7 +138,14 @@ function OptionRow({
     >
       {icon && <span className="shrink-0 mt-0.5 flex justify-center text-neutral-400">{icon}</span>}
       <span className="flex flex-col items-start flex-1 min-w-0">
-        <span className={cn("text-sm leading-tight", selected ? "font-semibold" : "font-normal")}>{name}</span>
+        <span className="flex items-center gap-1.5">
+          <span className={cn("text-sm leading-tight", selected ? "font-semibold" : "font-normal")}>{name}</span>
+          {badge && (
+            <span className="shrink-0 rounded px-1 py-px text-[10px] font-medium leading-none text-neutral-600 bg-neutral-200/70 dark:text-neutral-300 dark:bg-white/10">
+              {badge}
+            </span>
+          )}
+        </span>
         {description && (
           <span className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 leading-snug opacity-90">
             {description}
@@ -150,10 +172,11 @@ const TreeCloseContext = createContext<() => void>(() => {});
 function OptionSubmenu({
   icon,
   label,
+  hint,
   options,
   value,
   onChange,
-  defaultLabel = "Default",
+  defaultLabel,
   defaultDescription,
 }: SubmenuConfig) {
   const closeAll = useContext(TreeCloseContext);
@@ -217,22 +240,30 @@ function OptionSubmenu({
       {isOpen && (
         <FloatingPortal>
           <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
-            <div className={cn(PANEL_CLASS, "w-auto min-w-44")}>
-              <OptionRow
-                name={defaultLabel}
-                description={defaultDescription}
-                selected={value === null}
-                onSelect={() => {
-                  onChange(null);
-                  closeAll();
-                }}
-              />
-              <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+            <div className={cn(PANEL_CLASS, "w-auto min-w-44 max-w-64")}>
+              {hint && (
+                <p className="px-3 pt-1.5 pb-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{hint}</p>
+              )}
+              {defaultLabel && (
+                <>
+                  <OptionRow
+                    name={defaultLabel}
+                    description={defaultDescription}
+                    selected={value === null}
+                    onSelect={() => {
+                      onChange(null);
+                      closeAll();
+                    }}
+                  />
+                  <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                </>
+              )}
               {options.map((opt) => (
                 <OptionRow
                   key={opt.value}
                   name={opt.label}
                   description={opt.description}
+                  badge={opt.badge}
                   selected={opt.value === value}
                   onSelect={() => {
                     onChange(opt.value);
@@ -326,21 +357,25 @@ function ModelDropdownRoot({
 
   // Effort is just a submenu with model-specific labels; flatten it in with any
   // caller-provided submenus so they render uniformly below the model list.
+  // Every level is explicit here — an unset chat shows the default level checked
+  // and badged, rather than offering a separate "let the model decide" row that
+  // would send no effort at all.
   const allSubmenus: SubmenuConfig[] = [
     ...(effort && effort.options.length > 0
       ? [
           {
             icon: <Gauge size={14} />,
             label: "Effort",
+            hint: EFFORT_HINT,
             options: effort.options.map((o) => ({
               value: o,
-              label: EFFORT_META[o].label,
-              description: EFFORT_META[o].description,
+              label: EFFORT_LABEL[o],
+              badge: o === effort.defaultValue ? "Default" : undefined,
             })),
-            value: effort.value,
-            onChange: (v: string | null) => effort.onChange(v as Effort | null),
-            defaultLabel: "Default",
-            defaultDescription: "Let the model decide",
+            value: effort.value ?? effort.defaultValue ?? null,
+            onChange: (v: string | null) => {
+              if (v) effort.onChange(v as Effort);
+            },
           },
         ]
       : []),

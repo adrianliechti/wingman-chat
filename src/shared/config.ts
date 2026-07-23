@@ -26,8 +26,8 @@ interface ModelConfig {
   name: string;
   description?: string;
   instructions?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")[];
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;

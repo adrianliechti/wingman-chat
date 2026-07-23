@@ -669,7 +669,12 @@ export function ChatInput() {
                   }}
                   effort={
                     model?.supportedEfforts?.length
-                      ? { options: model.supportedEfforts, value: effort ?? null, onChange: setEffort }
+                      ? {
+                          options: model.supportedEfforts,
+                          value: effort ?? null,
+                          defaultValue: model.defaultEffort,
+                          onChange: setEffort,
+                        }
                       : undefined
                   }
                   dropdownClassName="w-auto min-w-48 whitespace-nowrap"

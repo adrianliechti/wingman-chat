@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
-import { supportedEfforts } from "@/shared/lib/models";
+import { defaultEffort, supportedEfforts } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
 
 type Effort = NonNullable<Model["effort"]>;
-const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh"]);
+const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 // Fill in heuristic reasoning-effort levels when config didn't specify them.
 // An explicit `supportedEfforts` (including `[]` to hide the picker) is kept.
+// `defaultEffort` is captured here, before any per-chat override lands on
+// `effort`, so the picker can still badge the deployment's baseline level.
 function withEffortFallback(model: Model): Model {
-  if (model.supportedEfforts !== undefined) return model;
-  const efforts = supportedEfforts(model.id);
-  return efforts ? { ...model, supportedEfforts: efforts } : model;
+  const supported = model.supportedEfforts ?? supportedEfforts(model.id);
+  const baseline = model.effort ?? defaultEffort(model.id);
+  if (!supported && !baseline) return model;
+  return {
+    ...model,
+    ...(supported && { supportedEfforts: supported }),
+    ...(baseline && { defaultEffort: baseline }),
+  };
 }
 
 // The default model is persisted as "id" or "id@effort". Parse from the right and
