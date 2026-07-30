@@ -536,9 +536,11 @@ export function ChatInput() {
                       .map((item) => item.getAsFile())
                       .filter(Boolean) as File[];
 
-                    // A pasted file may also expose a text/plain representation (e.g.
-                    // an OS file copy yields the filename) — don't pollute the textarea.
-                    if (fileItems.length > 0) {
+                    // Apps like PowerPoint/Excel put a rendered image of the selection
+                    // on the clipboard alongside the actual text. When real text is
+                    // present, prefer it and ignore the image thumbnail; only route to
+                    // handleFiles when there's no usable text (a genuine file/image paste).
+                    if (fileItems.length > 0 && !text.trim()) {
                       await handleFiles(fileItems);
                       return;
                     }
@@ -570,7 +572,10 @@ export function ChatInput() {
                         ? ({
                             "--text-length": placeholderText.length,
                             "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                          } as React.CSSProperties & {
+                            "--text-length": number;
+                            "--animation-duration": string;
+                          })
                         : {}
                     }
                   >

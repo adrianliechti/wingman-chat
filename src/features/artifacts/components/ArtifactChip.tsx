@@ -8,13 +8,7 @@ import { useArtifacts } from "../hooks/useArtifacts";
  * opens it in the artifacts panel. Greys out (non-clickable) when the file no
  * longer exists.
  */
-export const ArtifactChip = memo(function ArtifactChip({
-  path,
-  className,
-}: {
-  path: string;
-  className?: string;
-}) {
+export const ArtifactChip = memo(function ArtifactChip({ path, className }: { path: string; className?: string }) {
   const { fs, openFile, setShowArtifactsDrawer } = useArtifacts();
 
   // Optimistically assume the file exists to avoid a greyed-out flash; flip to

@@ -39,7 +39,11 @@ export async function rasterizeSvg(svg: string, options?: SvgRasterizeOptions): 
 
 function viewBoxSize(svg: string): { width: number; height: number } | undefined {
   const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
-  const viewBox = root.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  const viewBox = root
+    .getAttribute("viewBox")
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number);
   if (viewBox?.length !== 4 || !viewBox[2] || !viewBox[3]) return undefined;
   return { width: viewBox[2], height: viewBox[3] };
 }

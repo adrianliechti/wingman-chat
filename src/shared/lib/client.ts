@@ -51,7 +51,8 @@ function expandToSentences(text: string, start: number, end: number): string {
   for (let i = 0; i < boundaries.length - 1; i++) {
     if (boundaries[i] < end && boundaries[i + 1] > start) {
       sentenceStart = sentenceStart === -1 ? boundaries[i] : Math.min(sentenceStart, boundaries[i]);
-      sentenceEnd = sentenceEnd === -1 ? boundaries[i + 1] : Math.max(sentenceEnd, boundaries[i + 1]);
+      sentenceEnd =
+        sentenceEnd === -1 ? boundaries[i + 1] : Math.max(sentenceEnd, boundaries[i + 1]);
     }
   }
   if (sentenceStart === -1) return text.substring(start, end).trim();
@@ -353,7 +354,7 @@ export class Client {
               ...(options?.effort
                 ? {
                     reasoning: {
-                      effort: options.effort,
+                      effort: options.effort as OpenAI.Reasoning["effort"],
                       summary: options.summary ?? "auto",
                     },
                   }
@@ -494,7 +495,8 @@ export class Client {
     const categoryIds = categories.map((c) => c.id);
     const riskIds = risks.map((r) => r.id);
 
-    const categoryIdSchema = categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
+    const categoryIdSchema =
+      categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
     const riskIdSchema = riskIds.length > 0 ? z.enum(riskIds as [string, ...string[]]) : z.string();
 
     const confidenceSchema = z
@@ -507,7 +509,11 @@ export class Client {
 
     const schema = z
       .object({
-        title: z.string().describe("Short, descriptive title for the conversation. Less than 10 words, no quotes."),
+        title: z
+          .string()
+          .describe(
+            "Short, descriptive title for the conversation. Less than 10 words, no quotes.",
+          ),
         categories: z
           .array(
             z
@@ -527,7 +533,9 @@ export class Client {
               })
               .strict(),
           )
-          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
+          .describe(
+            "Risks that the latest user message actually triggers (not merely mentions). May be empty.",
+          ),
       })
       .strict();
 
@@ -597,7 +605,12 @@ export class Client {
       contextToReplace: text.substring(selectionStart, selectionEnd),
       keyChanges: [] as string[],
     };
-    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length)
+    if (
+      !text.trim() ||
+      selectionStart < 0 ||
+      selectionEnd <= selectionStart ||
+      selectionStart >= text.length
+    )
       return empty;
 
     const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
@@ -629,13 +642,17 @@ export class Client {
   }
 
   async scrape(model: string, url: string): Promise<string> {
-    return (await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })).text();
+    return (
+      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })
+    ).text();
   }
 
   async segmentText(text: string): Promise<string[]> {
     const result = await (await this.post("/api/v1/segment", { text })).json();
     if (!Array.isArray(result)) return [];
-    return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
+    return result.map((item: { text?: string } | string) =>
+      typeof item === "string" ? item : item.text || "",
+    );
   }
 
   async embedText(model: string, text: string): Promise<number[]> {
@@ -695,7 +712,8 @@ export class Client {
 
     const parts = [tone && tones[tone], style && styles[style]].filter(Boolean);
     if (userPrompt?.trim()) parts.push(`Custom instruction: ${userPrompt.trim()}`);
-    const finalInstructions = parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
+    const finalInstructions =
+      parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
     const languageInstruction = lang
       ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
       : "Maintain the original language of the text.";
@@ -739,7 +757,9 @@ export class Client {
 
     // Route to selected output device if supported
     if (sinkId && "setSinkId" in audio) {
-      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
+      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(
+        sinkId,
+      );
     }
 
     return new Promise((resolve, reject) => {
@@ -762,7 +782,9 @@ export class Client {
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
-    const result = await (await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })).json();
+    const result = await (
+      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })
+    ).json();
     return result.text || "";
   }
 
@@ -789,9 +811,13 @@ export class Client {
   }
 
   async guard(model: string, text: string): Promise<GuardResult> {
-    const resp = await this.postRaw("/api/v1/guard", JSON.stringify({ ...(model && { model }), text }), {
-      "Content-Type": "application/json",
-    });
+    const resp = await this.postRaw(
+      "/api/v1/guard",
+      JSON.stringify({ ...(model && { model }), text }),
+      {
+        "Content-Type": "application/json",
+      },
+    );
     const result = await resp.json();
     return {
       flagged: result?.flagged === true,
@@ -800,11 +826,18 @@ export class Client {
   }
 
   async research(model: string, instructions: string): Promise<string> {
-    const result = await (await this.post("/api/v1/research", { ...(model && { model }), instructions })).json();
+    const result = await (
+      await this.post("/api/v1/research", { ...(model && { model }), instructions })
+    ).json();
     return result.content || "";
   }
 
-  async generateImage(model: string, prompt: string, images?: Blob[], options?: ImageRenderOptions): Promise<Blob> {
+  async generateImage(
+    model: string,
+    prompt: string,
+    images?: Blob[],
+    options?: ImageRenderOptions,
+  ): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
@@ -899,7 +932,12 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(path: string, data: BodyInit, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
+  private async postRaw(
+    path: string,
+    data: BodyInit,
+    headers?: HeadersInit,
+    timeoutMs = 90_000,
+  ): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
