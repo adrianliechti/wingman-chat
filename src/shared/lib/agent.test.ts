@@ -55,6 +55,30 @@ describe("agent run controller", () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
+  it("treats a tool AbortError as terminal cancellation without persisting an error result", async () => {
+    const controller = new AbortController();
+    const complete = vi.fn(async () => ({
+      role: "assistant" as const,
+      content: [{ type: "tool_call" as const, id: "cancel-call", name: "cancel", arguments: "{}" }],
+    }));
+    const tool: Tool = {
+      name: "cancel",
+      parameters: { type: "object", properties: {} },
+      function: async (_args, context) => {
+        controller.abort();
+        context?.signal?.throwIfAborted();
+        return [{ type: "text", text: "unreachable" }];
+      },
+    };
+
+    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool], {
+      options: { signal: controller.signal },
+    });
+
+    expect(result.status).toBe("aborted");
+    expect(result.messages.some((message) => message.content.some((part) => part.type === "tool_result"))).toBe(false);
+  });
+
   it("emits one streaming phase event and appends stop-policy content immutably", async () => {
     const events: string[] = [];
     const complete = vi.fn(async (...args: Parameters<Client["complete"]>) => {

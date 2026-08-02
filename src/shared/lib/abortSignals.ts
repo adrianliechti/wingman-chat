@@ -18,14 +18,18 @@ export function combineAbortSignals(...values: Array<AbortSignal | undefined>): 
   }
 
   const controller = new AbortController();
-  const listeners = signals.map((signal) => {
+  const listeners: Array<{ signal: AbortSignal; abort: () => void }> = [];
+  for (const signal of signals) {
     const abort = () => {
       if (!controller.signal.aborted) controller.abort(signal.reason);
     };
-    if (signal.aborted) abort();
-    else signal.addEventListener("abort", abort, { once: true });
-    return { signal, abort };
-  });
+    if (signal.aborted) {
+      abort();
+      break;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    listeners.push({ signal, abort });
+  }
 
   return {
     signal: controller.signal,

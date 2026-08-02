@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { countSchemaUnions } from "./toolSchemas";
 import { createFileTools, type FileData, type WritableFileSource } from "./file-tools";
 
 function memorySource(initial: Record<string, string> = {}): {
@@ -33,22 +34,24 @@ function memorySource(initial: Record<string, string> = {}): {
 }
 
 describe("artifact file tools", () => {
-  it("advertises strict, closed schemas for every file tool", () => {
+  it("reserves strict compilation for compact mutations and keeps every schema closed", () => {
     const { source } = memorySource();
     const tools = createFileTools(source);
     const create = tools.find((tool) => tool.name === "create_file");
     const edit = tools.find((tool) => tool.name === "edit_file");
+    const strictTools = new Set(["create_file", "delete_file", "move_file"]);
 
     for (const tool of tools) {
-      expect(tool.strict, tool.name).toBe(true);
+      expect(tool.strict, tool.name).toBe(strictTools.has(tool.name));
       expect(tool.parameters.additionalProperties, tool.name).toBe(false);
+      expect(countSchemaUnions(tool.parameters), `${tool.name} must not consume the provider union budget`).toBe(0);
     }
 
     expect(create).toBeDefined();
     expect(edit).toBeDefined();
     expect(create?.strict).toBe(true);
     expect(create?.parameters.additionalProperties).toBe(false);
-    expect(edit?.strict).toBe(true);
+    expect(edit?.strict).toBe(false);
     expect(edit?.parameters.additionalProperties).toBe(false);
 
     const edits = (edit?.parameters.properties as Record<string, Record<string, unknown>> | undefined)?.edits;

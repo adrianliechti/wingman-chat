@@ -15,7 +15,6 @@ export type ArtifactFiles = Record<string, ArtifactFile>;
 
 export interface CodeExecutionRequest {
   code: string;
-  packages?: string[];
   files?: ArtifactFiles;
 }
 

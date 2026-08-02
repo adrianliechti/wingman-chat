@@ -1,6 +1,10 @@
 import { Braces, Shapes, SquareCode } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import { ARTIFACT_VALIDATORS, validateArtifactFile } from "@/features/artifacts/lib/artifactValidators";
+import {
+  JAVASCRIPT_EXECUTION_PARAMETERS,
+  PYTHON_EXECUTION_PARAMETERS,
+} from "@/features/artifacts/lib/executionToolSchemas";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
@@ -315,35 +319,10 @@ export function useArtifactsProvider(): ToolProvider | null {
         },
         description:
           "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. To run a skill's bundled scripts, pass its name(s) in `skills`: its resources mount read-only under /home/user/skills/<name>/ for that run (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
-        strict: true,
-        parameters: {
-          type: "object",
-          properties: {
-            code: {
-              type: ["string", "null"],
-              description: "Inline Python code to execute. This is the standard way to run code.",
-            },
-            path: {
-              type: ["string", "null"],
-              description:
-                "Optional: path to an existing Python script in the artifacts filesystem to execute (e.g., `/analysis.py`). Ignored when `code` is also provided.",
-            },
-            packages: {
-              type: ["array", "null"],
-              items: { type: "string" },
-              description:
-                "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import.",
-            },
-            skills: {
-              type: ["array", "null"],
-              items: { type: "string" },
-              description:
-                "Optional skill names whose bundled resources to mount under /home/user/skills/<name>/ for this run (use the resource paths from read_skill). Mounted read-only; not saved as artifacts.",
-            },
-          },
-          required: ["code", "path", "packages", "skills"],
-          additionalProperties: false,
-        },
+        // Keep this schema-guided rather than provider-compiled: the combined
+        // artifact toolbox otherwise exceeds Anthropic's strict-schema budget.
+        strict: false,
+        parameters: PYTHON_EXECUTION_PARAMETERS,
         // The whole snapshot → execute → sync-back section runs under the
         // sandbox lock: parallel tool calls would otherwise commit stale
         // full snapshots over each other's outputs (deleteMissing!).
@@ -352,9 +331,6 @@ export function useArtifactsProvider(): ToolProvider | null {
             const fs = fsRef.current;
             const { code } = args;
             const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-            // Imports are auto-detected, so `packages` is just a hint; coerce
-            // defensively since models occasionally send a bare string.
-            const packages = asStringArray(args.packages);
 
             try {
               // Load artifact files into Pyodide's VFS, then mount any requested
@@ -400,7 +376,6 @@ export function useArtifactsProvider(): ToolProvider | null {
               const result = await executeCode(
                 {
                   code: script,
-                  packages: packages.length ? packages : undefined,
                   files: artifactFiles,
                 },
                 { signal: context?.signal },
@@ -465,23 +440,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           "`return` a value or `console.log(...)` to produce output. Pass the full script in `code`, or `path` to run an " +
           "existing .js artifact. For heavy data/number crunching or document libraries, Python (`execute_python_code`) " +
           "is usually the stronger fit — they share the filesystem, so you can do that step there and read the result back here.",
-        strict: true,
-        parameters: {
-          type: "object",
-          properties: {
-            code: {
-              type: ["string", "null"],
-              description: "Inline JavaScript to execute. This is the standard way to run code.",
-            },
-            path: {
-              type: ["string", "null"],
-              description:
-                "Optional: path to an existing JavaScript artifact to execute (e.g., `/transform.js`). Ignored when `code` is also provided.",
-            },
-          },
-          required: ["code", "path"],
-          additionalProperties: false,
-        },
+        strict: false,
+        parameters: JAVASCRIPT_EXECUTION_PARAMETERS,
         // Same snapshot → execute → sync-back section under the sandbox lock as
         // the Python tool: parallel tool calls would otherwise commit
         // stale full snapshots over each other's outputs.

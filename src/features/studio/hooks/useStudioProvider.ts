@@ -5,6 +5,7 @@ import { ArtifactJobSchema } from "@/shared/types/artifact";
 import { upsertArtifactJob } from "@/features/artifacts/lib/artifact-job-store";
 import { useImageTool } from "@/features/studio/hooks/useImageTool";
 import { useQuestionsTool } from "@/features/studio/hooks/useQuestionsTool";
+import { ARTIFACT_DECLARATION_PARAMETERS } from "@/features/studio/lib/artifactDeclarationSchema";
 import studioInstructionsText from "@/features/studio/prompts/studio.txt?raw";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 
@@ -38,25 +39,10 @@ export function useStudioProvider(): ToolProvider {
       title: "Declare artifact",
       description:
         "Declare the primary deliverable after gathering content and loading the relevant skill, before writing files. The runtime uses this for lineage and verification.",
-      strict: true,
-      parameters: {
-        type: "object",
-        properties: {
-          kind: {
-            type: "string",
-            enum: ["html", "slides", "docx", "xlsx", "pdf", "image", "audio", "data", "other"],
-          },
-          primaryPath: { type: "string", description: "Planned primary artifact path." },
-          expectedUnits: { type: ["number", "null"], description: "Expected slides, pages, or segments." },
-          width: { type: ["number", "null"], description: "Expected pixel width." },
-          height: { type: ["number", "null"], description: "Expected pixel height." },
-          sourceRefs: { type: "array", items: { type: "string" }, description: "Source paths or URLs used." },
-          revisionOf: { type: ["string", "null"], description: "Prior job id for a substantial redesign." },
-          variantOf: { type: ["string", "null"], description: "Prior job id when variants were requested." },
-        },
-        required: ["kind", "primaryPath", "expectedUnits", "width", "height", "sourceRefs", "revisionOf", "variantOf"],
-        additionalProperties: false,
-      },
+      // This joins the already broad artifact toolbox; runtime validation below
+      // keeps it portable without adding another provider-compiled schema.
+      strict: false,
+      parameters: ARTIFACT_DECLARATION_PARAMETERS,
       function: async (args, context) => {
         const activeFs = fsRef.current;
         if (!activeFs) {
@@ -64,9 +50,9 @@ export function useStudioProvider(): ToolProvider {
         }
         const now = new Date().toISOString();
         const expected = {
-          ...(typeof args.expectedUnits === "number" ? { units: args.expectedUnits } : {}),
-          ...(typeof args.width === "number" ? { width: args.width } : {}),
-          ...(typeof args.height === "number" ? { height: args.height } : {}),
+          ...(typeof args.expectedUnits === "number" && args.expectedUnits > 0 ? { units: args.expectedUnits } : {}),
+          ...(typeof args.width === "number" && args.width > 0 ? { width: args.width } : {}),
+          ...(typeof args.height === "number" && args.height > 0 ? { height: args.height } : {}),
         };
         const job = ArtifactJobSchema.parse({
           id: crypto.randomUUID(),
@@ -76,8 +62,8 @@ export function useStudioProvider(): ToolProvider {
           primaryPath: args.primaryPath,
           expected: Object.keys(expected).length ? expected : undefined,
           phase: "planning",
-          revisionOf: typeof args.revisionOf === "string" ? args.revisionOf : undefined,
-          variantOf: typeof args.variantOf === "string" ? args.variantOf : undefined,
+          revisionOf: typeof args.revisionOf === "string" && args.revisionOf ? args.revisionOf : undefined,
+          variantOf: typeof args.variantOf === "string" && args.variantOf ? args.variantOf : undefined,
           sourceRefs: Array.isArray(args.sourceRefs)
             ? args.sourceRefs.filter((value): value is string => typeof value === "string")
             : [],

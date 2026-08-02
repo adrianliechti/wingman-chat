@@ -30,6 +30,7 @@ import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from ".
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
 import { dropOrphanFunctionCalls } from "./recovery";
+import { planStrictToolSchemas } from "./toolSchemas";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 /**
@@ -885,13 +886,14 @@ export class Client {
       return undefined;
     }
 
-    return tools.map((tool) => ({
+    const strictPlan = planStrictToolSchemas(tools);
+    return tools.map((tool, index) => ({
       type: "function",
 
       name: tool.name,
       description: tool.description,
 
-      strict: tool.strict ?? false,
+      strict: strictPlan.strict[index],
       parameters: tool.parameters,
     }));
   }

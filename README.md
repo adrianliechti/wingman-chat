@@ -119,6 +119,25 @@ export WINGMAN_TOKEN=...                      # or OPENAI_API_KEY
 npm run dev
 ```
 
+### Gateway end-to-end tests
+
+The opt-in E2E suite starts the application development proxy and runs the real `Client` and agent loop against a
+live Wingman gateway. It covers model discovery, Responses streaming, tool-call correlation, cancellation, the terminal
+error contract, and a Sonnet 4.6 artifact create/validate/reference flow. These tests make real model requests and are
+intentionally separate from unit checks.
+
+```bash
+npm run test:e2e
+
+# Optional overrides
+WINGMAN_E2E_GATEWAY=http://localhost:8080 \
+WINGMAN_E2E_MODEL=auto \
+WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_TIMEOUT_MS=90000 \
+WINGMAN_TOKEN=... \
+npm run test:e2e
+```
+
 To run the Go server against the built frontend:
 
 ```bash

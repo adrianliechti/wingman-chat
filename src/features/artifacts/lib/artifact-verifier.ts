@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { getDocument } from "pdfjs-dist";
 import type { FileSystemManager } from "./fs";
 import { contentToBlob, dataUrlToBytes } from "@/shared/lib/fileContent";
+import { inferContentTypeFromPath, isBinaryContentType } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { pdfAssetOptions } from "@/shared/lib/pdf";
 import { validateArtifactFile } from "./artifactValidators";
@@ -217,7 +218,10 @@ export async function verifyArtifactJob(fs: FileSystemManager, job: ArtifactJob)
       const dependencies = await verifyHtml(primary.path, primary.content, existingPaths, checks);
       for (const path of dependencies) manifestPaths.add(path);
     }
-    units = await verifyBinaryPackage(job, primary.path, primary.content, checks);
+    const primaryContentType = primary.contentType ?? inferContentTypeFromPath(primary.path);
+    if (isBinaryContentType(primaryContentType)) {
+      units = await verifyBinaryPackage(job, primary.path, primary.content, checks);
+    }
 
     if (/\.(png|jpe?g|webp|gif)$/i.test(primary.path)) {
       try {

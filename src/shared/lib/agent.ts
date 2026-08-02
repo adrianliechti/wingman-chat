@@ -10,7 +10,7 @@ import {
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
 import { combineAbortSignals } from "./abortSignals";
-import { getErrorInfo, isContextOverflowError } from "./errors";
+import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
 import {
@@ -142,7 +142,7 @@ export async function run(
       hooks.parentContext,
     );
   } catch (error) {
-    if (controller.invocation.signal?.aborted) {
+    if (controller.invocation.signal?.aborted || isAbortError(error)) {
       return controller.finish("aborted", "abort", messages);
     }
     const detail = getErrorInfo(error);
@@ -294,7 +294,7 @@ async function runLoop(
 
     return controller.finish("max_turns", "max_turns", conversation);
   } catch (error) {
-    if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+    if (signal?.aborted || isAbortError(error)) return controller.finish("aborted", "abort", conversation);
     if (error instanceof AgentBudgetExceededError) {
       return controller.finish("max_turns", "max_turns", conversation);
     }
@@ -398,6 +398,7 @@ async function dispatchToolCall(
       ...(resultError ? { error: resultError } : {}),
     };
   } catch (error) {
+    if (controller.invocation.signal?.aborted || isAbortError(error)) throw error;
     console.error("Tool failed", error);
     const detail = error instanceof Error ? error.message : "Tool execution failed.";
     return toolErrorMessage(toolCall, `Error: ${detail}`, {

@@ -39,30 +39,6 @@ const ctx = self as unknown as {
   addEventListener(type: "message", listener: (event: MessageEvent<ExecuteMessage>) => void): void;
 };
 
-// Maps import names to lock/package names, only for the explicit `packages` arg
-// (code imports auto-resolve via Pyodide's lock index). The model is told to pass
-// pip names but sometimes passes an import name; these map the common slips back.
-const PACKAGE_ALIASES: Record<string, string> = {
-  docx: "python-docx",
-  pptx: "python-pptx",
-  pdfminer: "pdfminer-six",
-  msoffcrypto: "msoffcrypto-tool",
-  pil: "pillow",
-  cv2: "opencv-python",
-  sklearn: "scikit-learn",
-  skimage: "scikit-image",
-  bs4: "beautifulsoup4",
-  yaml: "pyyaml",
-};
-
-function normalizePackageName(name: string): string {
-  // Strip a "." (e.g. "docx.shared"), then PEP 503-normalize (`scikit_learn` →
-  // `scikit-learn`); aliases run on the un-normalized root for `PIL`/`bs4` renames.
-  const root = name.trim().toLowerCase().split(".")[0];
-  if (!root) return root;
-  return PACKAGE_ALIASES[root] ?? root.replace(/[_.]+/g, "-");
-}
-
 // zoneinfo/pandas read the IANA tz db from `tzdata` but never import it by name,
 // so find_imports misses it; detect timezone usage and load tzdata explicitly.
 // (pytz ships its own data and is skipped.)
@@ -196,35 +172,14 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
  * so Pyodide's own lock-driven loader resolves them all by import name — no
  * micropip or dep bookkeeping. (sqlite3/ssl/lzma ship in the base interpreter.)
  */
-async function ensurePackagesLoaded(
-  pyodide: PyodideInterface,
-  code: string,
-  explicitPackages: string[],
-): Promise<void> {
+async function ensurePackagesLoaded(pyodide: PyodideInterface, code: string): Promise<void> {
   const warn = (msg: string) => console.warn(`package load: ${msg}`);
 
   // All imports resolve from the lock index by name; transitive deps via `depends`.
   await pyodide.loadPackagesFromImports(code, { errorCallback: warn });
 
-  // Extras the import scan can't see: tzdata (data-only) and packages the model
-  // lists explicitly (mainly lazily-imported deps like a pandas Excel engine).
-  const extra = new Set<string>();
-  if (needsTzdata(code)) extra.add("tzdata");
-  for (const raw of explicitPackages) {
-    const pkg = normalizePackageName(raw);
-    if (pkg) extra.add(pkg);
-  }
-
-  // Load each independently: `loadPackage` *throws* on an unknown name (model-guessed
-  // or a stdlib module) even with an errorCallback, and that must not abort the run.
-  // A genuinely missing module still raises ModuleNotFoundError at import.
-  for (const pkg of extra) {
-    try {
-      await pyodide.loadPackage(pkg, { errorCallback: warn });
-    } catch (err) {
-      console.warn(`package load: skipped ${pkg} (${String(err)})`);
-    }
-  }
+  // tzdata is data-only and therefore invisible to the import scan.
+  if (needsTzdata(code)) await pyodide.loadPackage("tzdata", { errorCallback: warn });
 }
 
 async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
@@ -299,7 +254,7 @@ function loadPyodide(): Promise<PyodideInterface> {
 }
 
 async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
-  const { packages = [], files = {} } = request;
+  const { files = {} } = request;
 
   try {
     const pyodide = await loadPyodide();
@@ -315,7 +270,7 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     }
 
     syncFilesToPyodide(pyodide, files);
-    await ensurePackagesLoaded(pyodide, code, packages);
+    await ensurePackagesLoaded(pyodide, code);
 
     onStarted?.();
 

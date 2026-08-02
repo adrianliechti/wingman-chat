@@ -52,7 +52,7 @@ export function initTelemetry() {
   const logExporter = new OTLPLogExporter({ url: "/telemetry/v1/logs" });
   const loggerProvider = new LoggerProvider({
     resource,
-    processors: [new BatchLogRecordProcessor(logExporter)],
+    processors: [new BatchLogRecordProcessor({ exporter: logExporter })],
   });
 
   // Instrumentations

@@ -5,7 +5,7 @@
  * Boots a real Pyodide runtime in Node pointed at the bundle (indexURL), then
  * loads packages purely from the (injected) pyodide-lock.json — no network, no
  * micropip. The `loadFor` helper mirrors the worker's loading strategy
- * (loadPackagesFromImports + tzdata detection + explicit extras), so this also
+ * (loadPackagesFromImports + tzdata detection), so this also
  * exercises that strategy, not just the lock. Proves that:
  *   - base-interpreter stdlib (sqlite3, ssl, lzma) imports with nothing to load
  *   - tzdata is pulled in for zoneinfo/pandas tz use (never imported by name)
@@ -28,8 +28,8 @@ const light = process.argv.includes("--light");
 // Keep in sync with TZDATA_USAGE in interpreter.worker.ts.
 const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
 
-// [name, code, { extras?, heavy? }]
-/** @type {Array<[string, string, ({ extras?: string[]; heavy?: boolean })?]>} */
+// [name, code, { heavy? }]
+/** @type {Array<[string, string, ({ heavy?: boolean })?]>} */
 const CASES = [
   // --- Base-interpreter stdlib (built in since Pyodide 314, no loading) ---
   [
@@ -107,27 +107,16 @@ const CASES = [
   // --- Misc helpers ---
   ["regex (unicode props)", "import regex\nbool(regex.fullmatch(r'\\p{Greek}+','αβγ'))"],
   ["requests import (no network)", "import requests\nhasattr(requests,'get')"],
-
-  // --- Explicit `packages` arg path (tolerant): junk name must not abort ---
-  ["explicit junk pkg tolerated", "1+1", { extras: ["json", "definitely-not-a-real-pkg"] }],
 ];
 
 const py = await loadPyodide({ indexURL });
 const warn = (m) => console.warn(`  [warn] ${m}`);
 
-// Mirrors interpreter.worker.ts: imports auto-load; tzdata + explicit extras are
-// loaded tolerantly on top.
-async function loadFor(code, extras = []) {
+// Mirrors interpreter.worker.ts: imports auto-load; tzdata is data-only and
+// therefore needs the small usage detector below.
+async function loadFor(code) {
   await py.loadPackagesFromImports(code, { errorCallback: warn });
-  const pkgs = new Set(extras);
-  if (TZDATA_USAGE.test(code)) pkgs.add("tzdata");
-  for (const pkg of pkgs) {
-    try {
-      await py.loadPackage(pkg, { errorCallback: warn });
-    } catch (err) {
-      console.warn(`  skipped ${pkg}: ${String(err)}`);
-    }
-  }
+  if (TZDATA_USAGE.test(code)) await py.loadPackage("tzdata", { errorCallback: warn });
 }
 
 let passed = 0;
@@ -139,7 +128,7 @@ for (const [name, code, opts = {}] of CASES) {
     continue;
   }
   try {
-    await loadFor(code, opts.extras);
+    await loadFor(code);
     const result = await py.runPythonAsync(code);
     console.log(`PASS  ${name} -> ${String(result).trim()}`);
     passed++;
