@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { countSchemaUnions } from "./toolSchemas";
 import { createFileTools, type FileData, type WritableFileSource } from "./file-tools";
 
 function memorySource(initial: Record<string, string> = {}): {
@@ -33,29 +34,38 @@ function memorySource(initial: Record<string, string> = {}): {
 }
 
 describe("artifact file tools", () => {
-  it("advertises strict, closed schemas for every file tool", () => {
+  it("keeps schemas union-free, closed, and schema-guided for provider portability", () => {
     const { source } = memorySource();
     const tools = createFileTools(source);
     const create = tools.find((tool) => tool.name === "create_file");
     const edit = tools.find((tool) => tool.name === "edit_file");
+    const requiredByTool: Record<string, string[]> = {
+      list_files: [],
+      read_file: ["path"],
+      create_file: ["path", "content"],
+      edit_file: ["path", "edits"],
+      delete_file: ["path"],
+      move_file: ["from", "to"],
+      grep: ["pattern"],
+      glob: ["pattern"],
+    };
 
     for (const tool of tools) {
-      expect(tool.strict, tool.name).toBe(true);
+      expect(tool.strict, tool.name).toBe(false);
       expect(tool.parameters.additionalProperties, tool.name).toBe(false);
+      expect(countSchemaUnions(tool.parameters), `${tool.name} must not consume the provider union budget`).toBe(0);
+      expect(tool.parameters.required, tool.name).toEqual(requiredByTool[tool.name]);
+      expect(tool.parameters.properties, tool.name).not.toHaveProperty("baseRevision");
     }
 
     expect(create).toBeDefined();
     expect(edit).toBeDefined();
-    expect(create?.strict).toBe(true);
-    expect(create?.parameters.additionalProperties).toBe(false);
-    expect(edit?.strict).toBe(true);
-    expect(edit?.parameters.additionalProperties).toBe(false);
 
     const edits = (edit?.parameters.properties as Record<string, Record<string, unknown>> | undefined)?.edits;
     expect(edits).toBeDefined();
     const item = edits?.items as Record<string, unknown>;
     expect(item.additionalProperties).toBe(false);
-    expect(item.required).toEqual(["find", "replace", "replace_all"]);
+    expect(item.required).toEqual(["find", "replace"]);
   });
 
   it("writes normal string content unchanged", async () => {

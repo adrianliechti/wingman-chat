@@ -6,6 +6,7 @@ import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite-plus";
+import { configDefaults } from "vitest/config";
 
 const src = path.resolve(import.meta.dirname, "src");
 
@@ -186,11 +187,13 @@ function pdfjsAssetsPlugin(): Plugin {
   };
 
   let outDir = "dist";
+  let shouldCopy = false;
 
   return {
     name: "pdfjs-assets",
     configResolved(config) {
       outDir = config.build.outDir;
+      shouldCopy = config.command === "build";
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
@@ -203,6 +206,7 @@ function pdfjsAssetsPlugin(): Plugin {
       });
     },
     closeBundle() {
+      if (!shouldCopy) return;
       for (const dir of dirs) {
         const from = path.join(pkgRoot, dir);
         if (fs.existsSync(from)) copyDir(from, path.resolve(outDir, "pdfjs", dir));
@@ -219,6 +223,7 @@ const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 export default defineConfig({
   fmt: { printWidth: 120 },
   lint: { options: { typeAware: true, typeCheck: true } },
+  test: { exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/browser/**"] },
   resolve: {
     alias: {
       "@": src,
@@ -234,6 +239,11 @@ export default defineConfig({
     format: "es",
   },
   server: {
+    watch: {
+      // Browser-test traces are written while the dev server is running; they
+      // are outputs, not source changes, and must not reload the test page.
+      ignored: ["**/test-results/**", "**/playwright-report/**"],
+    },
     proxy: {
       "/telemetry/v1": {
         target: "http://localhost:4318",

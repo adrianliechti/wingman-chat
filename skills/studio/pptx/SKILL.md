@@ -78,6 +78,12 @@ Check slide count, bounds, obvious overlaps, title fit, source labels, placehold
 size. Inspect shape coordinates programmatically where useful. This is functional verification;
 deeper visual critique is optional when the user asks for polish.
 
+Then read back only the slide titles in order. They must tell a coherent story without body copy and
+use one grammatical style throughout (for example, all declarative insight statements). Replace topic
+labels and canned punchlines—especially “It’s not X. It’s Y.”—with specific claims. An intentionally
+open bottom third can be strong composition; do not flag whitespace as a defect by itself. When
+translating design measurements, use `px = pt × 1.333`, and verify the result at projected size.
+
 ## Deliver
 
 Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, open the saved file and

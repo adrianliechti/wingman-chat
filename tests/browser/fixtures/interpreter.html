@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interpreter browser E2E</title>
+  </head>
+  <body>
+    <script type="module">
+      import { FileSystemManager } from "/src/features/artifacts/lib/fs.ts";
+      import { executeCode } from "/src/features/tools/lib/interpreter.ts";
+      import { executeJavaScript } from "/src/features/tools/lib/javascript.ts";
+
+      window.interpreterE2E = {
+        executePython: executeCode,
+        executeJavaScript,
+        async runArtifactFlow(chatId) {
+          const fs = new FileSystemManager(chatId);
+          await fs.createFile("/input.txt", "hello from opfs", "text/plain");
+          const files = await fs.getOverlaySnapshot();
+          const execution = await executeCode({
+            code: `from pathlib import Path\ntext = Path("input.txt").read_text()\nPath("output.txt").write_text(text.upper())\nprint(text)`,
+            files,
+          });
+          if (!execution.success || !execution.files) return { execution };
+          const commit = await fs.applyOverlaySnapshot(execution.files, { deleteMissing: true });
+          return {
+            execution,
+            commit,
+            output: await fs.getFile("/output.txt"),
+          };
+        },
+      };
+    </script>
+  </body>
+</html>

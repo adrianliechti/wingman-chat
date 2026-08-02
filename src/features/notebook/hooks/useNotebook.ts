@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod/v3";
 import { getConfig } from "@/shared/config";
-import { run } from "@/shared/lib/agent";
+import { runMessages as run } from "@/shared/lib/agent";
 import { convertFileToText } from "@/shared/lib/convert";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";

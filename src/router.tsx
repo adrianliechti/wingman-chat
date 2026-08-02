@@ -11,8 +11,7 @@ import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";
 
 // ChatPage is the default landing route, so it stays in the initial bundle.
-// The other pages are loaded on demand — this keeps notebook code, ReactFlow
-// (@xyflow), and translate/canvas out of the initial download.
+// The other active pages are loaded on demand.
 const CanvasPage = lazyRouteComponent(() => import("./features/canvas/pages/CanvasPage"), "CanvasPage");
 const NotebookPage = lazyRouteComponent(() => import("./features/notebook/pages/NotebookPage"), "NotebookPage");
 const TranslatePage = lazyRouteComponent(() => import("./features/translate/pages/TranslatePage"), "TranslatePage");
@@ -104,7 +103,6 @@ const notebookRoute = createRoute({
   component: NotebookPage,
 });
 
-// Child route — provides the :notebookId param without remounting the parent.
 const notebookIdRoute = createRoute({
   getParentRoute: () => notebookRoute,
   path: "$notebookId",

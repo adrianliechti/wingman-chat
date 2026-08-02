@@ -148,7 +148,9 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
 
         outer?.updateMeta?.({ status: `Searching ${summarizeQueries(queries)}`, queries });
 
-        const settled = await Promise.allSettled(queries.map((query) => client.search(searcher, query, { domains })));
+        const settled = await Promise.allSettled(
+          queries.map((query) => client.search(searcher, query, { domains }, { signal: outer?.signal })),
+        );
 
         const blocks = settled.map((entry, i) => {
           const query = queries[i];
@@ -202,7 +204,9 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
 
         outer?.updateMeta?.({ status: `Fetching ${summarizeUrls(urls)}`, urls });
 
-        const settled = await Promise.allSettled(urls.map((url) => client.scrape(scraper, url)));
+        const settled = await Promise.allSettled(
+          urls.map((url) => client.scrape(scraper, url, { signal: outer?.signal })),
+        );
 
         const sections = settled.map((entry, i) => {
           const url = urls[i];
@@ -272,7 +276,7 @@ export function useInternetProvider(): ToolProvider | null {
 
         let guard;
         try {
-          guard = await client.guard(internet?.guard ?? "", instructions);
+          guard = await client.guard(internet?.guard ?? "", instructions, { signal: context?.signal });
         } catch {
           return [
             {
@@ -296,7 +300,7 @@ export function useInternetProvider(): ToolProvider | null {
 
         try {
           context?.updateMeta?.({ status: "Planning research…" });
-          const conversation = await agentRun(
+          const runResult = await agentRun(
             client,
             model,
             internetInstructionsText,
@@ -304,16 +308,31 @@ export function useInternetProvider(): ToolProvider | null {
             innerTools,
             {
               agentName: "research",
+              invocationContext: context?.invocationContext?.fork("research"),
               options: { signal: context?.signal },
+              createToolContext: () => ({ model }),
               // Nest the inner research agent under the outer execute_tool span
               // explicitly — the elicitation `await` above has already dropped
               // the active context.
               parentContext: context?.agentContext,
             },
           );
+          if (runResult.status === "aborted") {
+            return [{ type: "text" as const, text: "Research interrupted before finishing." }];
+          }
+          if (runResult.status === "failed") {
+            return [
+              {
+                type: "text" as const,
+                text: `Search agent error: ${runResult.error?.message ?? "Unknown error"}`,
+              },
+            ];
+          }
+          const conversation = runResult.messages;
           const last = conversation[conversation.length - 1];
           const text = last ? getTextFromContent(last.content).trim() : "";
-          return [{ type: "text" as const, text: text || "No answer produced." }];
+          const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
+          return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
         } catch (error) {
           return [
             {

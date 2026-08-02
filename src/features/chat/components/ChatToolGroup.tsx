@@ -1,7 +1,8 @@
 import { ChevronRight, ToolCase } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { cn } from "@/shared/lib/cn";
 import type { Message } from "@/shared/types/chat";
+import { summarizeToolGroup } from "./chatMessageUtils";
 import { ChatToolMessage } from "./ChatToolMessage";
 
 type ChatToolGroupProps = {
@@ -21,6 +22,7 @@ type ChatToolGroupProps = {
  */
 export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: ChatToolGroupProps) {
   const [expanded, setExpanded] = useState(false);
+  const summary = useMemo(() => summarizeToolGroup(messages, indices), [messages, indices]);
 
   return (
     <div className="pb-2 max-w-full">
@@ -35,7 +37,7 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
           <div className="flex items-center gap-2 min-w-0">
             <ToolCase className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
             <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
-              Used {indices.length} tools
+              {summary}
             </span>
           </div>
         </div>

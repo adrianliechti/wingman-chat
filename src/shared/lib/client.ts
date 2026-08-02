@@ -25,10 +25,13 @@ import type {
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
+import { combineAbortSignals } from "./abortSignals";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
 import { dropOrphanFunctionCalls } from "./recovery";
+import { planStrictToolSchemas } from "./toolSchemas";
+import { compileToolRegistry } from "./toolRegistry";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 /**
@@ -52,8 +55,7 @@ function expandToSentences(text: string, start: number, end: number): string {
   for (let i = 0; i < boundaries.length - 1; i++) {
     if (boundaries[i] < end && boundaries[i + 1] > start) {
       sentenceStart = sentenceStart === -1 ? boundaries[i] : Math.min(sentenceStart, boundaries[i]);
-      sentenceEnd =
-        sentenceEnd === -1 ? boundaries[i + 1] : Math.max(sentenceEnd, boundaries[i + 1]);
+      sentenceEnd = sentenceEnd === -1 ? boundaries[i + 1] : Math.max(sentenceEnd, boundaries[i + 1]);
     }
   }
   if (sentenceStart === -1) return text.substring(start, end).trim();
@@ -95,14 +97,19 @@ export interface ImageRenderOptions {
   format?: "png" | "jpeg" | "webp";
 }
 
+/** Trace and cancellation context shared by every cancellable client request. */
+export interface ClientRequestOptions {
+  signal?: AbortSignal;
+  parentContext?: AgentContext;
+}
+
 export interface GuardResult {
   flagged: boolean;
   categories: Array<{ name: string; score: number }>;
 }
 
-export interface ParseOptions {
+export interface ParseOptions extends ClientRequestOptions {
   effort?: ReasoningEffort;
-  parentContext?: AgentContext;
 }
 
 /**
@@ -217,6 +224,13 @@ export class Client {
               for (const part of m.content) {
                 if (part.type === "text") {
                   content.push({ type: "input_text", text: part.text });
+                } else if (part.type === "runtime_feedback") {
+                  content.push({ type: "input_text", text: part.text });
+                } else if (part.type === "artifact_ref") {
+                  content.push({
+                    type: "input_text",
+                    text: `[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`,
+                  });
                 } else if (part.type === "image") {
                   const imgPart = part as ImageContent;
                   // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
@@ -287,6 +301,11 @@ export class Client {
                   continue;
                 }
 
+                if (part.type === "artifact_ref") {
+                  bufferedText += `\n[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`;
+                  continue;
+                }
+
                 if (part.type === "tool_call") {
                   flushAssistantText();
                   items.push({
@@ -341,7 +360,7 @@ export class Client {
         // instead of duplicating deltas. Re-sending is replay-safe: the caller
         // commits the assistant message (and runs its tools) only after this
         // resolves, so a failed attempt left nothing committed.
-        const attemptStream = () => {
+        const attemptStream = async () => {
           // Clearing only matters on a retry: drop the failed attempt's partial
           // render so the UI overwrites it instead of appending duplicate deltas.
           const hadPartial = contentParts.length > 0;
@@ -432,20 +451,20 @@ export class Client {
 
           // Wire abort. Handle the already-aborted case explicitly —
           // addEventListener on a signal that has already fired never invokes.
-          if (options?.signal) {
-            if (options.signal.aborted) {
-              runner.abort();
-            } else {
-              options.signal.addEventListener("abort", () => runner.abort(), { once: true });
-            }
-          }
+          const abortRunner = () => runner.abort();
+          if (options?.signal?.aborted) abortRunner();
+          else options?.signal?.addEventListener("abort", abortRunner, { once: true });
 
           // Attach an error listener so mid-stream errors don't surface as
           // unhandled EventEmitter errors. The same error rejects
           // `finalResponse()`, where we actually handle it.
           runner.on("error", () => {});
 
-          return runner.finalResponse();
+          try {
+            return await runner.finalResponse();
+          } finally {
+            options?.signal?.removeEventListener("abort", abortRunner);
+          }
         };
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
@@ -502,8 +521,7 @@ export class Client {
     const categoryIds = categories.map((c) => c.id);
     const riskIds = risks.map((r) => r.id);
 
-    const categoryIdSchema =
-      categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
+    const categoryIdSchema = categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
     const riskIdSchema = riskIds.length > 0 ? z.enum(riskIds as [string, ...string[]]) : z.string();
 
     const confidenceSchema = z
@@ -516,11 +534,7 @@ export class Client {
 
     const schema = z
       .object({
-        title: z
-          .string()
-          .describe(
-            "Short, descriptive title for the conversation. Less than 10 words, no quotes.",
-          ),
+        title: z.string().describe("Short, descriptive title for the conversation. Less than 10 words, no quotes."),
         categories: z
           .array(
             z
@@ -540,9 +554,7 @@ export class Client {
               })
               .strict(),
           )
-          .describe(
-            "Risks that the latest user message actually triggers (not merely mentions). May be empty.",
-          ),
+          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
       })
       .strict();
 
@@ -566,7 +578,7 @@ export class Client {
    * Used to condense older messages when the context window fills up.
    * Returns plain text — caller wraps it into a SummaryContent part.
    */
-  async summarizeHistory(model: string, input: Message[]): Promise<string> {
+  async summarizeHistory(model: string, input: Message[], requestOptions: ClientRequestOptions = {}): Promise<string> {
     const history = input.map((m) => ({ role: m.role, content: m.content }));
     const result = await this.parse(
       model,
@@ -574,6 +586,7 @@ export class Client {
       JSON.stringify({ history }),
       z.object({ summary: z.string() }).strict(),
       "summarize_history",
+      requestOptions,
     );
     return result?.summary ?? "";
   }
@@ -613,12 +626,7 @@ export class Client {
       contextToReplace: text.substring(selectionStart, selectionEnd),
       keyChanges: [] as string[],
     };
-    if (
-      !text.trim() ||
-      selectionStart < 0 ||
-      selectionEnd <= selectionStart ||
-      selectionStart >= text.length
-    )
+    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length)
       return empty;
 
     const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
@@ -645,22 +653,20 @@ export class Client {
     };
   }
 
-  async extractText(blob: Blob): Promise<string> {
-    return (await this.post("/api/v1/extract", { file: blob, format: "text" })).text();
+  async extractText(blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    return (await this.post("/api/v1/extract", { file: blob, format: "text" }, requestOptions)).text();
   }
 
-  async scrape(model: string, url: string): Promise<string> {
+  async scrape(model: string, url: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
     return (
-      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })
+      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" }, requestOptions)
     ).text();
   }
 
   async segmentText(text: string): Promise<string[]> {
     const result = await (await this.post("/api/v1/segment", { text })).json();
     if (!Array.isArray(result)) return [];
-    return result.map((item: { text?: string } | string) =>
-      typeof item === "string" ? item : item.text || "",
-    );
+    return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
   }
 
   async embedText(model: string, text: string): Promise<number[]> {
@@ -673,7 +679,11 @@ export class Client {
     return embedding.data[0].embedding;
   }
 
-  async translate(lang: string, input: string | Blob): Promise<string | Blob> {
+  async translate(
+    lang: string,
+    input: string | Blob,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<string | Blob> {
     const data = new FormData();
     data.append("lang", lang);
     const headers: Record<string, string> = {};
@@ -685,7 +695,7 @@ export class Client {
       data.append("text", input);
     }
 
-    const resp = await this.postRaw("/api/v1/translate", data, headers);
+    const resp = await this.postRaw("/api/v1/translate", data, headers, 90_000, requestOptions);
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
 
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
@@ -720,8 +730,7 @@ export class Client {
 
     const parts = [tone && tones[tone], style && styles[style]].filter(Boolean);
     if (userPrompt?.trim()) parts.push(`Custom instruction: ${userPrompt.trim()}`);
-    const finalInstructions =
-      parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
+    const finalInstructions = parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
     const languageInstruction = lang
       ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
       : "Maintain the original language of the text.";
@@ -738,20 +747,28 @@ export class Client {
     return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
   }
 
-  async generateAudio(model: string, input: string, voice?: string): Promise<Blob> {
+  async generateAudio(
+    model: string,
+    input: string,
+    voice?: string,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Blob> {
     if (!input.trim()) {
       throw new Error("Input text cannot be empty");
     }
 
-    const response = await this.oai.audio.speech.create({
-      model: model,
-      input: input,
+    const response = await this.oai.audio.speech.create(
+      {
+        model: model,
+        input: input,
 
-      instructions: "Speak in a clear and natural tone.",
+        instructions: "Speak in a clear and natural tone.",
 
-      voice: voice ?? "",
-      response_format: "wav",
-    });
+        voice: voice ?? "",
+        response_format: "wav",
+      },
+      requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+    );
 
     const audioBuffer = await response.arrayBuffer();
     return new Blob([audioBuffer], { type: "audio/wav" });
@@ -765,9 +782,7 @@ export class Client {
 
     // Route to selected output device if supported
     if (sinkId && "setSinkId" in audio) {
-      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(
-        sinkId,
-      );
+      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
     }
 
     return new Promise((resolve, reject) => {
@@ -785,13 +800,13 @@ export class Client {
     });
   }
 
-  async transcribe(model: string, blob: Blob): Promise<string> {
+  async transcribe(model: string, blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
     // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
     const result = await (
-      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })
+      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) }, requestOptions)
     ).json();
     return result.text || "";
   }
@@ -800,6 +815,7 @@ export class Client {
     model: string,
     query: string,
     options?: { domains?: string[]; limit?: number },
+    requestOptions: ClientRequestOptions = {},
   ): Promise<SearchResult[]> {
     const data = new FormData();
     if (model) data.append("model", model);
@@ -807,7 +823,7 @@ export class Client {
     data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
 
-    const resp = await this.postRaw("/api/v1/search", data);
+    const resp = await this.postRaw("/api/v1/search", data, undefined, 90_000, requestOptions);
     const results = await resp.json();
     if (!Array.isArray(results)) return [];
 
@@ -818,13 +834,15 @@ export class Client {
     });
   }
 
-  async guard(model: string, text: string): Promise<GuardResult> {
+  async guard(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<GuardResult> {
     const resp = await this.postRaw(
       "/api/v1/guard",
       JSON.stringify({ ...(model && { model }), text }),
       {
         "Content-Type": "application/json",
       },
+      90_000,
+      requestOptions,
     );
     const result = await resp.json();
     return {
@@ -833,9 +851,9 @@ export class Client {
     };
   }
 
-  async research(model: string, instructions: string): Promise<string> {
+  async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
     const result = await (
-      await this.post("/api/v1/research", { ...(model && { model }), instructions })
+      await this.post("/api/v1/research", { ...(model && { model }), instructions }, requestOptions)
     ).json();
     return result.content || "";
   }
@@ -845,6 +863,7 @@ export class Client {
     prompt: string,
     images?: Blob[],
     options?: ImageRenderOptions,
+    requestOptions: ClientRequestOptions = {},
   ): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
@@ -860,7 +879,7 @@ export class Client {
     const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
-    return (await this.postRaw("/api/v1/render", data, headers, 300_000)).blob();
+    return (await this.postRaw("/api/v1/render", data, headers, 300_000, requestOptions)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -868,13 +887,15 @@ export class Client {
       return undefined;
     }
 
-    return tools.map((tool) => ({
+    const registry = compileToolRegistry(tools);
+    const strictPlan = planStrictToolSchemas(registry.tools);
+    return registry.tools.map((tool, index) => ({
       type: "function",
 
       name: tool.name,
       description: tool.description,
 
-      strict: tool.strict ?? false,
+      strict: strictPlan.strict[index],
       parameters: tool.parameters,
     }));
   }
@@ -916,15 +937,18 @@ export class Client {
       model,
       async () => {
         try {
-          const response = await this.oai.responses.parse({
-            model,
-            store: false,
-            instructions,
-            input,
-            truncation: "auto",
-            text: { format: zodTextFormat(schema, name) },
-            ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
-          });
+          const response = await this.oai.responses.parse(
+            {
+              model,
+              store: false,
+              instructions,
+              input,
+              truncation: "auto",
+              text: { format: zodTextFormat(schema, name) },
+              ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
+            },
+            options.signal ? { signal: options.signal } : undefined,
+          );
           return {
             result: response.output_parsed ?? null,
             response: {
@@ -946,10 +970,14 @@ export class Client {
     );
   }
 
-  private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {
+  private async post(
+    path: string,
+    fields: Record<string, string | Blob>,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Response> {
     const data = new FormData();
     for (const [k, v] of Object.entries(fields)) data.append(k, v);
-    return this.postRaw(path, data);
+    return this.postRaw(path, data, undefined, 90_000, requestOptions);
   }
 
   private async postRaw(
@@ -957,17 +985,19 @@ export class Client {
     data: BodyInit,
     headers?: HeadersInit,
     timeoutMs = 90_000,
+    requestOptions: ClientRequestOptions = {},
   ): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
     // generation can legitimately run for minutes, so its caller passes a larger
     // budget (see generateImage).
-    const controller = new AbortController();
+    const timeoutController = new AbortController();
+    const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      controller.abort();
+      timeoutController.abort();
     }, timeoutMs);
     let resp: Response;
     try {
@@ -975,7 +1005,7 @@ export class Client {
         method: "POST",
         headers,
         body: data,
-        signal: controller.signal,
+        signal: combinedSignal.signal,
       });
     } catch (error) {
       // Surface a readable timeout instead of the runtime's opaque abort message
@@ -984,6 +1014,7 @@ export class Client {
       throw error;
     } finally {
       clearTimeout(timer);
+      combinedSignal.cleanup();
     }
 
     if (!resp.ok) {

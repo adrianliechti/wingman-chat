@@ -10,6 +10,12 @@ import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileCont
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import {
+  BoundedOutput,
+  CodeExecutionLimitError,
+  resolveCodeExecutionLimits,
+  validateArtifactFiles,
+} from "./executionLimits";
 import type {
   ArtifactFile,
   ArtifactFiles,
@@ -106,7 +112,7 @@ function toBytes(data: unknown): Uint8Array {
 
 // Path-normalized byte access over the VFS, shared by the `vfs` helper and the
 // AI bridges. `writeBytes` returns the normalized key.
-function vfsAccess(vfs: Vfs) {
+function vfsAccess(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
   const requireKey = (path: string): string => {
     const key = normalizePath(path);
     if (!key) throw new Error(`invalid path: ${path}`);
@@ -120,6 +126,22 @@ function vfsAccess(vfs: Vfs) {
   const writeBytes = (path: string, data: unknown, contentType?: string): string => {
     const key = requireKey(path);
     const bytes = toBytes(data);
+    if (!vfs.has(key) && vfs.size + 1 > limits.maxFiles) {
+      throw new CodeExecutionLimitError(`Interpreter filesystem has more than ${limits.maxFiles} files`);
+    }
+    if (bytes.byteLength > limits.maxFileBytes) {
+      throw new CodeExecutionLimitError(
+        `${key} is ${bytes.byteLength} bytes; per-file limit is ${limits.maxFileBytes}`,
+      );
+    }
+    const previousBytes = vfs.get(key)?.bytes.byteLength ?? 0;
+    let totalBytes = bytes.byteLength - previousBytes;
+    for (const entry of vfs.values()) totalBytes += entry.bytes.byteLength;
+    if (totalBytes > limits.maxTotalFileBytes) {
+      throw new CodeExecutionLimitError(
+        `Interpreter filesystem is over the ${limits.maxTotalFileBytes}-byte total limit`,
+      );
+    }
     const ct = contentType ?? inferContentTypeFromPath(key) ?? (typeof data === "string" ? "text/plain" : undefined);
     vfs.set(key, { bytes, contentType: ct, dirty: true });
     return key;
@@ -129,8 +151,8 @@ function vfsAccess(vfs: Vfs) {
 
 // The `vfs` helper handed to user code. Inputs are normalized so "data.csv",
 // "/data.csv", and "/home/user/data.csv" all resolve to the same file.
-function buildVfs(vfs: Vfs) {
-  const { requireKey, readBytes, writeBytes } = vfsAccess(vfs);
+function buildVfs(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
+  const { requireKey, readBytes, writeBytes } = vfsAccess(vfs, limits);
   return {
     list: (): string[] => [...vfs.keys()].sort(),
     exists: (path: string): boolean => vfs.has(requireKey(path)),
@@ -148,14 +170,12 @@ function buildVfs(vfs: Vfs) {
   };
 }
 
-let networkPatched = false;
+const workerGlobal = self as unknown as Record<string, unknown>;
+const nativeFetch =
+  typeof workerGlobal.fetch === "function" ? (workerGlobal.fetch as typeof fetch).bind(self) : undefined;
 
 function patchNetwork(): void {
-  if (networkPatched) return;
-  networkPatched = true;
-
-  const g = self as unknown as Record<string, unknown>;
-  const originalFetch = typeof g.fetch === "function" ? (g.fetch as typeof fetch).bind(self) : undefined;
+  const g = workerGlobal;
 
   const isRemote = (url: string) => /^(https?|wss?|ftp|ftps|ws|file):/i.test(url) || url.startsWith("//");
   const isLocalScheme = (url: string) => /^(blob|data):/i.test(url);
@@ -172,7 +192,7 @@ function patchNetwork(): void {
 
     if (isRemote(url)) throw new TypeError(NETWORK_DISABLED);
     // data:/blob: URLs never hit the network — serve them with the native fetch.
-    if (isLocalScheme(url) && originalFetch) return originalFetch(input as RequestInfo, init as RequestInit);
+    if (isLocalScheme(url) && nativeFetch) return nativeFetch(input as RequestInfo, init as RequestInit);
 
     const key = normalizePath(url);
     const entry = key ? currentVfs?.get(key) : undefined;
@@ -203,16 +223,29 @@ function patchNetwork(): void {
     "RTCPeerConnection",
     "Worker",
     "SharedWorker",
+    "BroadcastChannel",
+    "indexedDB",
+    "caches",
   ]) {
     try {
-      g[name] = blocked;
+      Object.defineProperty(g, name, { configurable: true, value: blocked });
     } catch {
-      // Non-writable global — leave it; the worker still can't reach the page.
+      try {
+        g[name] = blocked;
+      } catch {
+        // Non-writable global — leave it; the worker still can't reach the page.
+      }
     }
   }
   try {
-    const nav = (g.navigator ?? {}) as { sendBeacon?: unknown };
-    if (nav && "sendBeacon" in nav) nav.sendBeacon = blocked;
+    const nav = (g.navigator ?? {}) as Record<string, unknown>;
+    for (const name of ["sendBeacon", "storage", "locks", "serviceWorker", "credentials"]) {
+      try {
+        Object.defineProperty(nav, name, { configurable: true, value: blocked });
+      } catch {
+        // navigator may expose non-configurable properties.
+      }
+    }
   } catch {
     // navigator may expose read-only properties — ignore.
   }
@@ -231,8 +264,8 @@ function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
  * VFS, outputs written back, proxied to the main thread. Built per-run so they
  * bind to that run's VFS.
  */
-function buildBridges(vfs: Vfs) {
-  const { readBytes, writeBytes } = vfsAccess(vfs);
+function buildBridges(vfs: Vfs, limits: ReturnType<typeof resolveCodeExecutionLimits>) {
+  const { readBytes, writeBytes } = vfsAccess(vfs, limits);
   return {
     ocr: (path: string): Promise<string> =>
       callMain<string>((port) => ({ type: "ocr-request", data: readBytes(path), path, port })),
@@ -431,22 +464,31 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   patchNetwork();
   const { code, files = {} } = request;
 
+  // `import()` invokes the browser module loader directly and would bypass the
+  // fetch shim. Libraries supported by this runtime are injected explicitly.
+  if (/\bimport\s*\(/.test(code)) {
+    return { success: false, output: "", error: "Dynamic import is disabled in the JavaScript sandbox" };
+  }
+
+  const limits = resolveCodeExecutionLimits(request.limits);
+  validateArtifactFiles(files, limits, "Interpreter input filesystem");
+
   const vfs = loadVfs(files);
   currentVfs = vfs;
 
-  let output = "";
+  const output = new BoundedOutput(limits.maxOutputBytes);
   currentStdout = (text) => {
-    output += text;
+    output.append(text);
   };
   const sandboxConsole = makeConsole((line) => {
-    output += `${line}\n`;
+    output.append(`${line}\n`);
   });
 
   // AI helpers go on globalThis (not as AsyncFunction params) so user code can
   // declare locals named `render`, `translate`, … without a duplicate-parameter
   // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
-  const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs) };
+  const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs, limits) };
   Object.assign(g, bridges);
 
   try {
@@ -471,21 +513,27 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
 
     onStarted?.();
 
-    const value = await fn(buildVfs(vfs), sandboxConsole, svgToPng, sandboxRequire, ...lazyValues);
+    const value = await fn(buildVfs(vfs, limits), sandboxConsole, svgToPng, sandboxRequire, ...lazyValues);
 
-    const trimmed = output.trim();
-    const resolvedOutput =
-      trimmed || (value !== undefined && value !== null ? formatValue(value) : "") || NO_OUTPUT_MESSAGE;
+    const trimmed = output.value().trim();
+    const returned = new BoundedOutput(limits.maxOutputBytes);
+    if (value !== undefined && value !== null) returned.append(formatValue(value));
+    const resolvedOutput = trimmed || returned.value() || NO_OUTPUT_MESSAGE;
 
-    return { success: true, output: resolvedOutput, files: collectVfs(vfs) };
+    const resultFiles = collectVfs(vfs);
+    validateArtifactFiles(resultFiles, limits);
+    return { success: true, output: resolvedOutput, files: resultFiles };
   } catch (error) {
+    const boundedError = new BoundedOutput(limits.maxOutputBytes);
+    boundedError.append(error instanceof Error ? (error.stack ?? error.message) : String(error));
     return {
       success: false,
-      output: output.trim(),
-      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      output: output.value().trim(),
+      error: boundedError.value(),
     };
   } finally {
-    for (const key of Object.keys(bridges)) delete g[key];
+    // The host disposes this worker after the reply, so no user-observable
+    // state can cross an execution boundary.
     currentVfs = null;
     currentStdout = null;
   }

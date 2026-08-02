@@ -440,6 +440,65 @@ function unwrapKnownWrapper(args: Record<string, unknown>, hints?: ToolArgumentH
   return inner;
 }
 
+const PROVIDER_PARAMETER_BOUNDARY = /<\/?antml_parameter\s*>|<\/?parameter(?:\s+name=(?:"[^"]+"|'[^']+'))?\s*>/i;
+const PROVIDER_PARAMETER_OPEN = /<parameter\s+name=(?:"([^"]+)"|'([^']+)')\s*>/gi;
+
+function parseLeakedParameterValue(raw: string): unknown {
+  const value = raw.trim();
+  if (!value) return "";
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Recover a Bedrock/Anthropic translation failure observed in real Responses
+ * traffic where internal AntML parameter boundaries leak into an otherwise
+ * valid JSON string, for example:
+ *
+ *   path: "</antml_parameter>\n<parameter name=\"skills\">[]"
+ *
+ * Only declared, non-payload string fields are touched. Large `code`/`content`
+ * values remain byte-for-byte unchanged even if they intentionally contain
+ * similar markup. Embedded declared parameters fill missing values but never
+ * replace a clean value that was already parsed.
+ */
+function recoverLeakedProviderParameters(
+  args: Record<string, unknown>,
+  hints?: ToolArgumentHints,
+): Record<string, unknown> {
+  const declared = hints?.declaredKeys;
+  if (!declared?.length) return args;
+
+  let recovered: Record<string, unknown> | undefined;
+  for (const key of declared) {
+    if (key === hints?.payloadKey) continue;
+    const value = args[key];
+    if (typeof value !== "string") continue;
+    const firstBoundary = value.search(PROVIDER_PARAMETER_BOUNDARY);
+    if (firstBoundary < 0) continue;
+
+    recovered ??= { ...args };
+    recovered[key] = value.slice(0, firstBoundary).trimEnd();
+
+    PROVIDER_PARAMETER_OPEN.lastIndex = 0;
+    for (let match = PROVIDER_PARAMETER_OPEN.exec(value); match; match = PROVIDER_PARAMETER_OPEN.exec(value)) {
+      const embeddedKey = match[1] ?? match[2];
+      if (!declared.includes(embeddedKey) || embeddedKey === hints?.payloadKey) continue;
+      const bodyStart = match.index + match[0].length;
+      const nextBoundary = value.slice(bodyStart).search(PROVIDER_PARAMETER_BOUNDARY);
+      const bodyEnd = nextBoundary < 0 ? value.length : bodyStart + nextBoundary;
+      const existing = recovered[embeddedKey];
+      if (existing === undefined || (typeof existing === "string" && PROVIDER_PARAMETER_BOUNDARY.test(existing))) {
+        recovered[embeddedKey] = parseLeakedParameterValue(value.slice(bodyStart, bodyEnd));
+      }
+    }
+  }
+  return recovered ?? args;
+}
+
 /**
  * Coerce a successfully parsed value into an arguments object:
  * - a string is a double-encoded arguments payload — parse it again (bounded);
@@ -542,7 +601,7 @@ function splitConcatenatedObjects(text: string): Record<string, unknown>[] | nul
 export function parseToolArguments(raw: string | undefined | null, hints?: ToolArgumentHints): Record<string, unknown> {
   const text = (raw ?? "").trim();
   if (!text) return {};
-  return parseArgumentsText(text, hints, 2);
+  return recoverLeakedProviderParameters(parseArgumentsText(text, hints, 2), hints);
 }
 
 function parseArgumentsText(

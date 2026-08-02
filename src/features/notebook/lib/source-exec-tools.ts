@@ -94,23 +94,12 @@ export function createSourceExecTools(getSources: () => readonly File[], options
             type: "string",
             description: "Python code to execute. Use standard I/O under `/home/user/` to read and write files.",
           },
-          packages: {
-            type: ["array", "null"],
-            items: { type: "string" },
-            description: "Optional extra Python packages to load (e.g., ['scikit-learn']).",
-          },
         },
-        required: ["code", "packages"],
+        required: ["code"],
         additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const code = typeof args.code === "string" ? args.code : "";
-        // Coerce defensively: models sometimes send `packages` as a bare string.
-        const packages = Array.isArray(args.packages)
-          ? args.packages.filter((p): p is string => typeof p === "string")
-          : typeof args.packages === "string"
-            ? [args.packages]
-            : undefined;
         if (!code.trim()) {
           return [{ type: "text" as const, text: "Error: `code` is required." }];
         }
@@ -121,7 +110,7 @@ export function createSourceExecTools(getSources: () => readonly File[], options
           const before = sourcesToFileMap(getSources());
 
           try {
-            const result = await executeCode({ code, packages, files: before });
+            const result = await executeCode({ code, files: before });
 
             if (!result.success) {
               return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];

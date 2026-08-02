@@ -2,21 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
+import { applyArtifactStopPolicy } from "@/features/artifacts/lib/artifact-stop-policy";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
+import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
+import { mergeQueuedMessages, queuedSend, type QueuedSend } from "@/features/chat/lib/chatQueue";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug } from "@/shared/config";
-import { run as agentRun } from "@/shared/lib/agent";
+import { run as agentRun, type AgentRunEvent } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
-import { getErrorInfo } from "@/shared/lib/errors";
+import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
 import type { Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
-import { Role } from "@/shared/types/chat";
+import { Role, withMessageIdentity } from "@/shared/types/chat";
 import type {
   ConsentResult,
   Elicitation,
@@ -35,7 +38,10 @@ function messagesSinceSummary(messages: Message[]): Message[] {
 }
 
 function isUserMessage(message: Message): boolean {
-  return message.role === Role.User && message.content.some((part) => part.type !== "tool_result");
+  return (
+    message.role === Role.User &&
+    message.content.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback")
+  );
 }
 
 /**
@@ -149,6 +155,10 @@ function estimateTokens(messages: Message[]): number {
     for (const part of msg.content) {
       if (part.type === "text" || part.type === "summary") {
         chars += part.text.length;
+      } else if (part.type === "runtime_feedback") {
+        chars += part.text.length;
+      } else if (part.type === "artifact_ref") {
+        chars += part.path.length + (part.displayName?.length ?? 0) + (part.revision?.length ?? 0) + 24;
       } else if (part.type === "tool_call") {
         chars += part.name.length + part.arguments.length;
       } else if (part.type === "tool_result") {
@@ -254,7 +264,9 @@ async function compactIfNeeded(
   client: Client,
   summarizerModel: string,
   fallbackModel: string,
+  signal?: AbortSignal,
 ): Promise<Message[]> {
+  if (signal?.aborted) return conversation;
   if (!threshold || conversation.length < 2) return conversation;
   // Gauge only the active window (since the last summary) — measuring full
   // storage (kept intact for the UI) would never drop back under the threshold,
@@ -276,14 +288,15 @@ async function compactIfNeeded(
   const payload = sanitizeForSummary(toSummarize);
   let summary: string;
   try {
-    summary = await client.summarizeHistory(summarizerModel, payload);
+    summary = await client.summarizeHistory(summarizerModel, payload, { signal });
   } catch (error) {
+    if (signal?.aborted) return conversation;
     // A configured summarizer can be a small-window model that chokes on a
     // large window. The chat model just handled this same content, so retry
     // there rather than leaving the conversation permanently uncompactable.
     if (summarizerModel === fallbackModel) throw error;
     console.warn(`[Summary] summarizer ${summarizerModel} failed, retrying with ${fallbackModel}`, error);
-    summary = await client.summarizeHistory(fallbackModel, payload);
+    summary = await client.summarizeHistory(fallbackModel, payload, { signal });
   }
   if (!summary) return conversation;
 
@@ -318,6 +331,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { currentAgent } = useAgents();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
+  const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
+  const [queuedSends, setQueuedSends] = useState<QueuedSend[]>([]);
+  const queuedSendsRef = useRef<QueuedSend[]>([]);
+  const replaceQueue = useCallback((update: (items: QueuedSend[]) => QueuedSend[]) => {
+    const next = update(queuedSendsRef.current);
+    queuedSendsRef.current = next;
+    setQueuedSends(next);
+    return next;
+  }, []);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const updateToolMeta = useCallback((toolCallId: string, meta: Record<string, unknown>) => {
@@ -340,6 +362,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Chat that owns the single in-flight turn, so navigating away can cancel it.
   const runningChatIdRef = useRef<string | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
+
+  const holdQueuedSends = useCallback(
+    (targetChatId: string) => {
+      replaceQueue((items) =>
+        items.map((item) =>
+          item.chatId === targetChatId && item.status === "queued" ? { ...item, status: "held" } : item,
+        ),
+      );
+    },
+    [replaceQueue],
+  );
+
+  const takeQueuedSends = useCallback(
+    (targetChatId: string): QueuedSend[] => {
+      const ready = queuedSendsRef.current.filter((item) => item.chatId === targetChatId && item.status === "queued");
+      if (ready.length > 0) {
+        replaceQueue((items) => items.filter((item) => !ready.some((queued) => queued.id === item.id)));
+      }
+      return ready;
+    },
+    [replaceQueue],
+  );
 
   // The ref always holds the latest content (so stopStreaming can commit the
   // full partial message synchronously), but the state — and with it the whole
@@ -559,12 +603,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
 
-      const outgoingMessage = appendTextContent(message, pendingModelContext);
+      const runId = crypto.randomUUID();
+      const outgoingMessage = withMessageIdentity(appendTextContent(message, pendingModelContext), runId);
 
       let conversation = [...history, outgoingMessage];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
+      setRunPhase("thinking");
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
@@ -594,9 +640,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
             sanitizeForClassification(conversation),
             categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
             riskConfigs.map((r) => ({ id: riskSlug(r.name), description: r.description })),
-            { effort: classificationEffort },
+            { effort: classificationEffort, signal: abortController.signal },
           )
           .then(({ title, categories: detectedCategories, risks: detectedRisks }) => {
+            if (abortController.signal.aborted) return;
             if (title) {
               updateChat(id, () => ({ title }));
             }
@@ -663,7 +710,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
               setPendingConsent((prev) => prev ?? next);
             }
           })
-          .catch((err) => console.error("classifyChat failed", err));
+          .catch((err) => {
+            if (!isAbortError(err)) console.error("classifyChat failed", err);
+          });
       }
 
       // Create tool context with current message content and elicitation support
@@ -720,17 +769,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (threshold > 0) {
           const summarizerModel = config.chat?.summarizer || currentModel.id;
           try {
-            const compacted = await compactIfNeeded(conversation, threshold, client, summarizerModel, currentModel.id);
+            updateStreamingMessage({
+              chatId: id,
+              message: withMessageIdentity({ role: Role.Assistant, content: [] }, runId),
+            });
+            setRunPhase("compacting");
+            const compacted = await compactIfNeeded(
+              conversation,
+              threshold,
+              client,
+              summarizerModel,
+              currentModel.id,
+              abortController.signal,
+            );
             if (compacted !== conversation) {
               conversation = compacted;
               updateChat(id, () => ({ messages: conversation }));
             }
           } catch (error) {
-            console.error("[Summary] compaction failed, continuing uncompacted", error);
+            if (!isAbortError(error)) console.error("[Summary] compaction failed, continuing uncompacted", error);
+          } finally {
+            if (!abortController.signal.aborted) setRunPhase("thinking");
           }
         }
 
-        conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+        const runResult = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+          runId,
           agentName: "chat",
           options: {
             effort: currentModel.effort,
@@ -740,12 +804,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
           },
           prepareMessages: (msgs) => injectContext(stripHistoryImages(trimBulkyToolHistory(pruneAtSummary(msgs))), now),
           onContextOverflow: (msgs) =>
-            compactIfNeeded(msgs, 1, client, config.chat?.summarizer || currentModel.id, currentModel.id),
+            (async () => {
+              setRunPhase("compacting");
+              try {
+                return await compactIfNeeded(
+                  msgs,
+                  1,
+                  client,
+                  config.chat?.summarizer || currentModel.id,
+                  currentModel.id,
+                  abortController.signal,
+                );
+              } finally {
+                if (!abortController.signal.aborted) setRunPhase("thinking");
+              }
+            })(),
+          onEvent: (event: AgentRunEvent) => {
+            if (event.type === "model.started") setRunPhase("thinking");
+            else if (event.type === "model.streaming") setRunPhase("responding");
+            else if (event.type === "tool.started" || event.type === "tool.updated") setRunPhase("running_tool");
+            else if (event.type === "tool.completed") setRunPhase("thinking");
+            else if (event.type === "verification.started") setRunPhase("running_tool");
+            else if (event.type === "verification.completed") setRunPhase("thinking");
+          },
           onTurnStart: () => {
-            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+            updateStreamingMessage({
+              chatId: id,
+              message: withMessageIdentity({ role: Role.Assistant, content: [] }, runId),
+            });
           },
           onStream: (contentParts) => {
-            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: contentParts } });
+            updateStreamingMessage({
+              chatId: id,
+              message: withMessageIdentity({ role: Role.Assistant, content: contentParts }, runId),
+            });
           },
           onTurnEnd: (assistant) => {
             conversation = [...conversation, assistant];
@@ -773,6 +865,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }
             updateChat(id, () => ({ messages: conversation }));
           },
+          beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
+            const activeFs = fsRef.current;
+            const studioEnabled = tools.some((tool) => tool.name === "declare_artifact");
+            if (!activeFs || !studioEnabled) return { action: "finish" as const };
+            return applyArtifactStopPolicy({
+              chatId: id,
+              runId: activeRunId,
+              messages: runMessages,
+              fs: activeFs,
+              signal,
+            });
+          },
+          onRuntimeFeedback: (feedback) => {
+            conversation = [...conversation, feedback];
+            updateChat(id, () => ({ messages: conversation }));
+          },
           onToolMeta: (toolCallId, meta) => {
             updateToolMeta(toolCallId, meta);
             // Late update after commit: also patch the persisted tool_result in place.
@@ -789,12 +897,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }));
           },
         });
+        conversation = runResult.messages;
 
-        const aborted = abortController.signal.aborted;
+        const aborted = runResult.status === "aborted" || abortController.signal.aborted;
         abortControllerRef.current = null;
         runningChatIdRef.current = null;
-
-        setIsResponding(false);
 
         // Ensure streaming buffer is cleared after completion
         updateStreamingMessage(null);
@@ -802,12 +909,57 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // If the stream was stopped by the user, don't run follow-up work
         // (title summarization etc.) on the partial conversation.
         if (aborted) {
+          setRunPhase("idle");
+          setIsResponding(false);
           return;
         }
+
+        if (runResult.status === "failed") {
+          const error = new Error(runResult.error?.message ?? "Agent run failed");
+          Object.assign(error, { code: runResult.error?.code ?? "AGENT_RUN_FAILED" });
+          throw error;
+        }
+
+        if (runResult.status === "max_turns") {
+          const ready = takeQueuedSends(id);
+          if (ready.length > 0) {
+            await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
+            return;
+          }
+          conversation = [
+            ...conversation,
+            withMessageIdentity(
+              {
+                role: Role.Assistant,
+                content: [],
+                error: {
+                  code: "MAX_TURNS",
+                  message: "This run reached its turn limit. Continue when you're ready to resume.",
+                },
+              },
+              runId,
+            ),
+          ];
+          updateChat(id, () => ({ messages: conversation }));
+        }
+
+        if (runResult.status === "completed") {
+          // Stop policies may append verification findings or artifact refs
+          // after the model turn was committed by onTurnEnd.
+          updateChat(id, () => ({ messages: conversation }));
+          const ready = takeQueuedSends(id);
+          if (ready.length > 0) {
+            await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
+            return;
+          }
+        }
+
+        setRunPhase("idle");
+        setIsResponding(false);
       } catch (error) {
         console.error(error);
         setIsResponding(false);
-        const aborted = abortControllerRef.current?.signal.aborted ?? false;
+        const aborted = abortController.signal.aborted;
         abortControllerRef.current = null;
         runningChatIdRef.current = null;
         updateStreamingMessage(null);
@@ -816,21 +968,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // surfacing an error. `stopStreaming()` has already committed any
         // partial content it had buffered.
         if (aborted) {
+          setRunPhase("idle");
           return;
         }
+
+        holdQueuedSends(id);
 
         const { code, message } = getErrorInfo(error);
 
         conversation = [
           ...conversation,
-          {
-            role: Role.Assistant,
-            content: [],
-            error: { code, message },
-          },
+          withMessageIdentity(
+            {
+              role: Role.Assistant,
+              content: [],
+              error: { code, message },
+            },
+            runId,
+          ),
         ];
 
         updateChat(id, () => ({ messages: conversation }));
+        setRunPhase("idle");
       }
     },
     [
@@ -849,6 +1008,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateModelContext,
       updateStreamingMessage,
       updateToolMeta,
+      takeQueuedSends,
+      holdQueuedSends,
     ],
   );
 
@@ -861,19 +1022,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // Deferred chat-input attachments: now that the chat (and its fs) exist,
       // write them into the workspace before the turn so the model can read
       // them via the artifacts tools (artifacts was enabled at attach time).
+      let resolvedMessage = message;
       if (artifactFiles?.length) {
-        for (const file of artifactFiles) {
-          try {
-            await chatFs.createFile(file.path, file.content, file.contentType);
-          } catch (error) {
-            console.error(`Failed to write attachment ${file.path} into artifacts:`, error);
-            notify.error("Attachment failed", `"${file.path}" couldn't be added to the workspace.`);
-          }
+        try {
+          const ingestion = await chatFs.ingestFiles(artifactFiles);
+          const revisions = Object.fromEntries(
+            ingestion.mutations.map((mutation) => [mutation.path, mutation.revision]),
+          );
+          resolvedMessage = promoteArtifactReferences(message, ingestion.pathMap, revisions);
+        } catch (error) {
+          console.error("Failed to add attachments transactionally:", error);
+          notify.error("Attachments failed", "No files were added. Resolve the workspace conflict and try again.");
+          throw error;
         }
       }
-      await runMessageInChat(id, message, historyOverride, chatObj.title);
+      const identifiedMessage = withMessageIdentity(resolvedMessage);
+      if (runningChatIdRef.current === id) {
+        replaceQueue((items) => [...items, queuedSend(id, identifiedMessage)]);
+        return;
+      }
+      await runMessageInChat(id, identifiedMessage, historyOverride, chatObj.title);
     },
-    [getOrCreateChat, runMessageInChat],
+    [getOrCreateChat, runMessageInChat, replaceQueue],
   );
 
   const retryMessage = useCallback(async () => {
@@ -897,6 +1067,51 @@ export function ChatProvider({ children }: ChatProviderProps) {
     updateChat(chat.id, () => ({ messages: historyBeforeUser }));
     await runMessageInChat(chat.id, lastUserMessage, historyBeforeUser, chat.title);
   }, [chat, updateChat, runMessageInChat]);
+
+  const continueRun = useCallback(async () => {
+    if (!chat || isResponding) return;
+    const last = chat.messages.at(-1);
+    if (last?.role !== Role.Assistant || last.error?.code !== "MAX_TURNS") return;
+
+    const history = chat.messages.slice(0, -1);
+    updateChat(chat.id, () => ({ messages: history }));
+    await runMessageInChat(
+      chat.id,
+      withMessageIdentity({ role: Role.User, content: [{ type: "text", text: "Continue." }] }),
+      history,
+      chat.title,
+    );
+  }, [chat, isResponding, runMessageInChat, updateChat]);
+
+  const removeQueuedMessage = useCallback(
+    (id: string) => {
+      replaceQueue((items) => items.filter((item) => item.id !== id));
+    },
+    [replaceQueue],
+  );
+
+  const sendHeldMessage = useCallback(
+    async (queueId: string) => {
+      const item = queuedSendsRef.current.find((candidate) => candidate.id === queueId && candidate.status === "held");
+      if (!item) return;
+
+      if (runningChatIdRef.current === item.chatId) {
+        replaceQueue((items) =>
+          items.map((candidate) => (candidate.id === queueId ? { ...candidate, status: "queued" } : candidate)),
+        );
+        return;
+      }
+
+      const targetChat = chats.find((candidate) => candidate.id === item.chatId);
+      if (!targetChat) {
+        removeQueuedMessage(queueId);
+        return;
+      }
+      removeQueuedMessage(queueId);
+      await runMessageInChat(item.chatId, item.message, undefined, targetChat.title);
+    },
+    [chats, removeQueuedMessage, replaceQueue, runMessageInChat],
+  );
 
   const resolveElicitation = useCallback(
     (result: ElicitationResult) => {
@@ -978,6 +1193,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const controller = abortControllerRef.current;
     if (!controller) return;
 
+    // Detach drafts from automatic drain before aborting. The aborted run may
+    // settle synchronously; held items can only be sent by an explicit action.
+    const runningChatId = runningChatIdRef.current;
+    if (runningChatId) holdQueuedSends(runningChatId);
     controller.abort();
     abortControllerRef.current = null;
     runningChatIdRef.current = null;
@@ -992,15 +1211,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     updateStreamingMessage(null);
     setIsResponding(false);
+    setRunPhase("idle");
     setPendingElicitation(null);
     setToolMeta({});
-  }, [updateChat, updateStreamingMessage]);
+  }, [holdQueuedSends, updateChat, updateStreamingMessage]);
 
   // Navigating to another/new chat cancels the in-flight turn (single run).
   useEffect(() => {
     const runningId = runningChatIdRef.current;
     if (runningId && runningId !== chatId) stopStreaming();
   }, [chatId, stopStreaming]);
+
+  const status: ChatContextType["status"] = pendingElicitation ? "waiting" : runPhase;
+  const visibleQueuedSends = queuedSends.filter((item) => item.chatId === chatId);
 
   const value: ChatContextType = {
     // Models
@@ -1027,9 +1250,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
     retryMessage,
+    continueRun,
     setVoiceToolCall,
 
     isResponding,
+    status,
+    queuedSends: visibleQueuedSends,
+    removeQueuedMessage,
+    sendHeldMessage,
     stopStreaming,
     // Elicitation
     pendingElicitation,
@@ -1053,5 +1281,33 @@ function appendTextContent(message: Message, text: string | null): Message {
   return {
     ...message,
     content: [...message.content, { type: "text", text }],
+  };
+}
+
+function promoteArtifactReferences(
+  message: Message,
+  pathMap: Record<string, string>,
+  revisions: Record<string, string | undefined>,
+): Message {
+  return {
+    ...message,
+    content: message.content.flatMap((part): Content[] => {
+      if (part.type === "artifact_ref") {
+        const path = pathMap[part.path] ?? part.path;
+        return [{ ...part, path, revision: revisions[path] ?? part.revision }];
+      }
+      if (part.type !== "text") return [part];
+      const paths = parseArtifactReference(part.text);
+      if (paths.length === 0) return [part];
+      return paths.map((requested) => {
+        const path = pathMap[requested] ?? requested;
+        return {
+          type: "artifact_ref" as const,
+          path,
+          revision: revisions[path],
+          displayName: path.split("/").pop() ?? path,
+        };
+      });
+    }),
   };
 }

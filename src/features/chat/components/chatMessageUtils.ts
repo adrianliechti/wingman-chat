@@ -3,7 +3,14 @@ import type { Message, TextContent, ToolResultContent } from "@/shared/types/cha
 
 // Artifacts-provider tools that produce/write files (unnamespaced — the
 // notebook source tools use a `source_` prefix and a different filesystem).
-const ARTIFACT_WRITE_TOOLS = new Set(["create_file", "execute_python_code", "execute_javascript_code"]);
+const ARTIFACT_WRITE_TOOLS = new Set([
+  "create_file",
+  "edit_file",
+  "move_file",
+  "delete_file",
+  "execute_python_code",
+  "execute_javascript_code",
+]);
 
 // User attachments are uploaded into the artifacts workspace and referenced in
 // the sent message by this prose line so the model knows to read them. The UI
@@ -34,6 +41,18 @@ function parsePathFromJson(raw: string | undefined): string | null {
 
 /** Artifact file paths a single tool result wrote, if any. */
 function toolResultArtifactPaths(result: ToolResultContent): string[] {
+  const delta = result.meta?.artifactDelta;
+  if (delta && typeof delta === "object" && "mutations" in delta && Array.isArray(delta.mutations)) {
+    return delta.mutations.flatMap((mutation) =>
+      mutation &&
+      typeof mutation === "object" &&
+      "path" in mutation &&
+      typeof mutation.path === "string" &&
+      (!("operation" in mutation) || mutation.operation !== "delete")
+        ? [mutation.path]
+        : [],
+    );
+  }
   if (result.name === "create_file") {
     const resultText = result.result?.find((c): c is TextContent => c.type === "text");
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
@@ -67,6 +86,10 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
   const seen = new Set<string>();
   for (let i = start; i <= assistantIndex; i++) {
     for (const part of messages[i]?.content ?? []) {
+      if (part.type === "artifact_ref") {
+        seen.add(part.path);
+        continue;
+      }
       if (part.type !== "tool_result") continue;
       if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
       for (const path of toolResultArtifactPaths(part)) seen.add(path);
@@ -217,6 +240,81 @@ export function groupRenderUnits(messages: Message[], isResponding: boolean): Re
   }
   for (; i < messages.length; i++) units.push({ kind: "message", index: i });
   return units;
+}
+
+type ToolFamily = "read" | "search" | "edit" | "run" | "generic";
+
+const TOOL_FAMILIES: Record<string, ToolFamily> = {
+  read_file: "read",
+  list_files: "read",
+  current_file: "read",
+  current_selection: "read",
+  grep: "search",
+  glob: "search",
+  web_search: "search",
+  search: "search",
+  create_file: "edit",
+  edit_file: "edit",
+  move_file: "edit",
+  delete_file: "edit",
+  execute_python_code: "run",
+  execute_javascript_code: "run",
+};
+
+function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+function deltaPaths(result: ToolResultContent): string[] {
+  const delta = result.meta?.artifactDelta;
+  if (!delta || typeof delta !== "object" || !("mutations" in delta) || !Array.isArray(delta.mutations)) return [];
+  return delta.mutations.flatMap((mutation) => {
+    if (!mutation || typeof mutation !== "object" || !("path" in mutation) || typeof mutation.path !== "string") {
+      return [];
+    }
+    return [mutation.path];
+  });
+}
+
+/** Past-tense semantic summary for a completed group of tool result messages. */
+export function summarizeToolGroup(messages: Message[], indices: number[]): string {
+  const readTargets = new Set<string>();
+  const editTargets = new Set<string>();
+  let searches = 0;
+  let runs = 0;
+  let generic = 0;
+
+  for (const index of indices) {
+    for (const part of messages[index]?.content ?? []) {
+      if (part.type !== "tool_result") continue;
+      const family = TOOL_FAMILIES[part.name] ?? (part.name.startsWith("execute_") ? "run" : "generic");
+      const args = tryParseToolArguments(part.arguments);
+      const argumentPath =
+        typeof args?.path === "string"
+          ? args.path
+          : typeof args?.from === "string"
+            ? args.from
+            : `${part.name}:${part.id}`;
+
+      if (family === "read") readTargets.add(argumentPath);
+      else if (family === "edit") {
+        const paths = deltaPaths(part);
+        if (paths.length > 0) paths.forEach((path) => editTargets.add(path));
+        else editTargets.add(argumentPath);
+      } else if (family === "search") searches++;
+      else if (family === "run") runs++;
+      else generic++;
+    }
+  }
+
+  const segments: string[] = [];
+  if (readTargets.size) segments.push(`Read ${plural(readTargets.size, "file")}`);
+  if (searches) segments.push(`Ran ${plural(searches, "search", "searches")}`);
+  if (editTargets.size) segments.push(`Edited ${plural(editTargets.size, "file")}`);
+  if (runs) segments.push(`Ran ${plural(runs, "command")}`);
+  if (generic && segments.length > 0) segments.push(`used ${plural(generic, "other tool")}`);
+  if (segments.length === 0) return `Used ${plural(generic || indices.length, "tool")}`;
+  return segments.join(", ");
 }
 
 export function getToolCallPreview(args: Record<string, unknown> | null): string | null {

@@ -54,6 +54,9 @@ export function ChatInput() {
     messages,
     isResponding,
     stopStreaming,
+    queuedSends,
+    removeQueuedMessage,
+    sendHeldMessage,
     chat,
   } = useChat();
   const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
@@ -256,10 +259,6 @@ export function ChatInput() {
     async (e: FormEvent) => {
       e.preventDefault();
 
-      if (isResponding) {
-        return;
-      }
-
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
 
@@ -324,7 +323,6 @@ export function ChatInput() {
       }
     },
     [
-      isResponding,
       content,
       attachments,
       pendingFiles,
@@ -452,6 +450,43 @@ export function ChatInput() {
 
   return (
     <>
+      {queuedSends.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
+          {queuedSends.map((item) => {
+            const label = item.message.content.find((part) => part.type === "text")?.text.trim() || "Attachment";
+            return (
+              <div
+                key={item.id}
+                className={cn(
+                  "flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+                  item.status === "held"
+                    ? "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+                    : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
+                )}
+              >
+                <span className="max-w-56 truncate">{item.status === "held" ? `Held: ${label}` : label}</span>
+                {item.status === "held" && (
+                  <button
+                    type="button"
+                    className="font-medium hover:underline"
+                    onClick={() => void sendHeldMessage(item.id)}
+                  >
+                    Send
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label={item.status === "held" ? "Discard held message" : "Remove queued message"}
+                  className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => removeQueuedMessage(item.id)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
@@ -849,15 +884,26 @@ export function ChatInput() {
                   )}
                 </>
               ) : isResponding ? (
-                <button
-                  type="button"
-                  className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  onClick={stopStreaming}
-                  title="Stop generating (Esc)"
-                >
-                  <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
-                  <Square size={16} className="hidden group-hover/stop:block" />
-                </button>
+                <div className="flex items-center">
+                  {content.trim() && (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                      title="Queue message"
+                    >
+                      <Send size={16} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={stopStreaming}
+                    title="Stop generating (Esc)"
+                  >
+                    <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                    <Square size={16} className="hidden group-hover/stop:block" />
+                  </button>
+                </div>
               ) : content.trim() ? (
                 <button
                   className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"

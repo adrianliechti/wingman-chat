@@ -14,24 +14,27 @@ import { runTranscribe } from "./transcribeCommand";
 import { runTranslateFile, runTranslateText } from "./translateCommand";
 import { runVision } from "./visionCommand";
 
-export function dispatchBridgeRpc(message: WorkerToMainMessage): Promise<unknown> {
+export function dispatchBridgeRpc(
+  message: WorkerToMainMessage,
+  options: { signal?: AbortSignal } = {},
+): Promise<unknown> {
   switch (message.type) {
     case "llm-request":
-      return runLlm(message.prompt, message.options);
+      return runLlm(message.prompt, message.options, options);
     case "ocr-request":
-      return runOcr(message.data, message.path);
+      return runOcr(message.data, message.path, options);
     case "vision-request":
-      return runVision(message.data, message.path, message.prompt);
+      return runVision(message.data, message.path, message.prompt, options);
     case "render-request":
-      return runRenderImage(message.prompt, message.inputs, message.options);
+      return runRenderImage(message.prompt, message.inputs, message.options, options);
     case "synthesize-request":
-      return runSynthesize(message.text, message.voice);
+      return runSynthesize(message.text, message.voice, options);
     case "transcribe-request":
-      return runTranscribe(message.data, message.path);
+      return runTranscribe(message.data, message.path, options);
     case "translate-text-request":
-      return runTranslateText(message.lang, message.text);
+      return runTranslateText(message.lang, message.text, options);
     case "translate-file-request":
-      return runTranslateFile(message.lang, message.data, message.path);
+      return runTranslateFile(message.lang, message.data, message.path, options);
     case "pdf-rasterize-request":
       // Loaded on demand — pdf.js (~400 kB) stays out of the initial bundle.
       return import("@/shared/lib/pdf").then(({ rasterizePdf }) =>

@@ -4,7 +4,11 @@ import { getFileName } from "@/shared/lib/utils";
 import { resolveModel } from "./commandUtils";
 import { extractAudioForTranscription } from "./extractAudio";
 
-export async function runTranscribe(bytes: Uint8Array, path: string): Promise<string> {
+export async function runTranscribe(
+  bytes: Uint8Array,
+  path: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
   const config = getConfig();
   if (!config.stt) {
     throw new Error("transcribe: no transcription service configured");
@@ -38,7 +42,7 @@ export async function runTranscribe(bytes: Uint8Array, path: string): Promise<st
     audio = new Blob([bytes as BlobPart], { type });
   }
 
-  const text = await config.client.transcribe(model, audio);
+  const text = await config.client.transcribe(model, audio, requestOptions);
   console.debug(
     `transcribe: ${path} (${type}, ${bytes.length} bytes → ${audio.type}, ${audio.size} bytes) → ${text.length} chars`,
   );

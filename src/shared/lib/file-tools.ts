@@ -7,7 +7,8 @@
  */
 
 import { FilePen, FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
-import type { TextContent, Tool } from "../types/chat";
+import { artifactDelta, type ArtifactMutation } from "../types/artifact";
+import type { TextContent, Tool, ToolContext } from "../types/chat";
 import {
   type ArtifactValidationResult,
   type ArtifactValidator,
@@ -42,9 +43,9 @@ export interface ReadableFileSource {
 
 /** Read-write data source (e.g. artifacts filesystem). */
 export interface WritableFileSource extends ReadableFileSource {
-  write(path: string, content: string, contentType?: string): Promise<void>;
-  remove(path: string): Promise<boolean>;
-  move(from: string, to: string): Promise<boolean>;
+  write(path: string, content: string, contentType?: string): Promise<void | ArtifactMutation[]>;
+  remove(path: string): Promise<boolean | ArtifactMutation[]>;
+  move(from: string, to: string): Promise<boolean | ArtifactMutation[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,23 @@ function validationDetails(result: ArtifactValidationResult):
   };
 }
 
+function publishArtifactDelta(context: ToolContext | undefined, mutations: ArtifactMutation[]): void {
+  if (mutations.length === 0) return;
+  context?.setMeta?.({ artifactDelta: artifactDelta(mutations) });
+}
+
+function resolvedMutations(
+  result: void | boolean | ArtifactMutation[],
+  fallback: ArtifactMutation,
+): ArtifactMutation[] {
+  if (Array.isArray(result)) return result;
+  return result === false ? [] : [fallback];
+}
+
+// Keep the shared file toolbox schema-guided so optional defaults can simply be
+// omitted. Every handler validates its required arguments defensively at runtime.
+const SCHEMA_GUIDED = false;
+
 // ---------------------------------------------------------------------------
 // Tool factories
 // ---------------------------------------------------------------------------
@@ -174,7 +192,7 @@ function validationDetails(result: ArtifactValidationResult):
 function createListTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}list_files`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Files, label: state.error ? "List failed" : "Listed files" }),
     },
@@ -183,11 +201,11 @@ function createListTool(source: ReadableFileSource, opts: Required<FileToolsOpti
       type: "object",
       properties: {
         directory: {
-          type: ["string", "null"],
-          description: "Directory path to filter files, or null to list all files.",
+          type: "string",
+          description: 'Directory path to filter files, or "/" to list all files.',
         },
       },
-      required: ["directory"],
+      required: [],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {
@@ -212,7 +230,7 @@ function createListTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}read_file`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
         icon: FileText,
@@ -228,15 +246,15 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
           description: "The file path to read.",
         },
         startLine: {
-          type: ["integer", "null"],
-          description: "Start line number (1-indexed), or null for 1.",
+          type: "integer",
+          description: "Start line number (1-indexed). Use 1 to start at the beginning.",
         },
         endLine: {
-          type: ["integer", "null"],
-          description: "End line number (1-indexed, inclusive), or null for the default page size.",
+          type: "integer",
+          description: "End line number (1-indexed, inclusive), or 0 for the default page size.",
         },
       },
-      required: ["path", "startLine", "endLine"],
+      required: ["path"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {
@@ -268,7 +286,8 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
       }
 
       const maxEndLine = Math.min(startLine + opts.maxReadLines - 1, totalLines);
-      const requestedEndLine = args.endLine == null ? maxEndLine : Math.floor(args.endLine as number);
+      const rawEndLine = typeof args.endLine === "number" ? args.endLine : 0;
+      const requestedEndLine = rawEndLine <= 0 ? maxEndLine : Math.floor(rawEndLine);
       const endLine = Math.min(Math.max(startLine, requestedEndLine), maxEndLine);
 
       const requestedLines = getLineRange(allLines, startLine, endLine);
@@ -310,7 +329,7 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}create_file`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
         icon: FilePlus2,
@@ -341,7 +360,7 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
       required: ["path", "content"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = coerceFilePath(args);
       if (!path) {
         return error(
@@ -358,7 +377,14 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
       }
 
       try {
-        await source.write(path, content);
+        const existing = await source.read(path);
+        const writeResult = await source.write(path, content);
+        const mutations = resolvedMutations(writeResult, {
+          operation: existing ? "update" : "create",
+          path,
+          size: new TextEncoder().encode(content).byteLength,
+        });
+        publishArtifactDelta(context, mutations);
       } catch (writeError) {
         return error(errorMessage(writeError));
       }
@@ -421,7 +447,7 @@ function normalizeForFuzzyMatch(source: string): NormalizedTextMap {
   const rawStarts: number[] = [];
   const rawEnds: number[] = [];
 
-  for (let offset = 0; offset < source.length; ) {
+  for (let offset = 0; offset < source.length;) {
     const codePoint = source.codePointAt(offset);
     if (codePoint === undefined) break;
     const original = String.fromCodePoint(codePoint);
@@ -446,7 +472,7 @@ function normalizeForFuzzyMatch(source: string): NormalizedTextMap {
 
   // Drop trailing whitespace per line while retaining mappings for the
   // characters that survive. Newlines stay anchored after removed whitespace.
-  for (let lineStart = 0; lineStart <= rawText.length; ) {
+  for (let lineStart = 0; lineStart <= rawText.length;) {
     const newline = rawText.indexOf("\n", lineStart);
     const lineEnd = newline >= 0 ? newline : rawText.length;
     const trimmedEnd = lineStart + rawText.slice(lineStart, lineEnd).trimEnd().length;
@@ -604,7 +630,7 @@ function applyEdits(
 function createEditTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}edit_file`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
         icon: FilePen,
@@ -631,12 +657,12 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
                 description: "Replacement text (empty string deletes the matched text).",
               },
               replace_all: {
-                type: ["boolean", "null"],
+                type: "boolean",
                 description:
-                  "Replace every occurrence of find instead of requiring a unique match. Pass false or null for the default behavior.",
+                  "Replace every occurrence of find instead of requiring a unique match. Pass false for the default behavior.",
               },
             },
-            required: ["find", "replace", "replace_all"],
+            required: ["find", "replace"],
             additionalProperties: false,
           },
         },
@@ -644,7 +670,7 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
       required: ["path", "edits"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = args.path as string;
       if (!path) return error("path is required");
 
@@ -659,7 +685,14 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
       if ("error" in result) return error(`${result.error.replace(/\.$/, "")} (in ${path}).`);
 
       try {
-        await source.write(path, result.next, file.contentType);
+        const writeResult = await source.write(path, result.next, file.contentType);
+        const mutations = resolvedMutations(writeResult, {
+          operation: "update",
+          path,
+          contentType: file.contentType,
+          size: new TextEncoder().encode(result.next).byteLength,
+        });
+        publishArtifactDelta(context, mutations);
       } catch (writeError) {
         return error(errorMessage(writeError));
       }
@@ -684,7 +717,7 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
 function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}delete_file`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
     },
@@ -700,12 +733,14 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
       required: ["path"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = args.path as string;
       if (!path) return error("path is required");
 
-      const success = await source.remove(path);
-      if (!success) return error(`File or folder not found: ${path}`);
+      const removeResult = await source.remove(path);
+      const mutations = resolvedMutations(removeResult, { operation: "delete", path });
+      if (mutations.length === 0) return error(`File or folder not found: ${path}`);
+      publishArtifactDelta(context, mutations);
       return text(JSON.stringify({ success: true, message: `Deleted: ${path}`, path }));
     },
   };
@@ -714,7 +749,7 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
 function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}move_file`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => {
         const from = (typeof args?.from === "string" ? args.from : "").replace(/^\/+/, "");
@@ -742,17 +777,23 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
       required: ["from", "to"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const from = args.from as string;
       const to = args.to as string;
       if (!from || !to) return error("Both from and to are required");
 
       const file = await source.read(from);
-
-      const success = await source.move(from, to);
-      if (!success) {
+      const moveResult = await source.move(from, to);
+      const mutations = resolvedMutations(moveResult, {
+        operation: "move",
+        from,
+        path: to,
+        contentType: file?.contentType,
+      });
+      if (mutations.length === 0) {
         return error(`Failed to move from ${from} to ${to}. Source may not exist or destination already exists.`);
       }
+      publishArtifactDelta(context, mutations);
       const validation =
         file && !isDataUrl(file.content) ? await validateWrite(to, file.content, file.contentType, opts) : undefined;
       return text(
@@ -773,7 +814,7 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
 function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}grep`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
         icon: Search,
@@ -791,19 +832,19 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
           description: "Regex pattern to search for.",
         },
         filePattern: {
-          type: ["string", "null"],
-          description: 'Glob to filter files (e.g., "*.csv"), or null for all files.',
+          type: "string",
+          description: 'Glob to filter files (e.g., "*.csv"), or "" for all files.',
         },
         ignoreCase: {
-          type: ["boolean", "null"],
-          description: "Case-insensitive search, or null for true.",
+          type: "boolean",
+          description: "Whether matching is case-insensitive. Use true by default.",
         },
         contextLines: {
-          type: ["integer", "null"],
-          description: `Context lines (0 or more) before/after match, or null for ${opts.defaultContextLines}.`,
+          type: "integer",
+          description: `Context lines (0 or more) before/after each match. Use ${opts.defaultContextLines} by default.`,
         },
       },
-      required: ["pattern", "filePattern", "ignoreCase", "contextLines"],
+      required: ["pattern"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {
@@ -870,7 +911,7 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createGlobTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}glob`,
-    strict: true,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
         icon: FileSearch,
