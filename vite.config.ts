@@ -223,7 +223,7 @@ const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 export default defineConfig({
   fmt: { printWidth: 120 },
   lint: { options: { typeAware: true, typeCheck: true } },
-  test: { exclude: [...configDefaults.exclude, "tests/e2e/**"] },
+  test: { exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/browser/**"] },
   resolve: {
     alias: {
       "@": src,
@@ -239,6 +239,11 @@ export default defineConfig({
     format: "es",
   },
   server: {
+    watch: {
+      // Browser-test traces are written while the dev server is running; they
+      // are outputs, not source changes, and must not reload the test page.
+      ignored: ["**/test-results/**", "**/playwright-report/**"],
+    },
     proxy: {
       "/telemetry/v1": {
         target: "http://localhost:4318",

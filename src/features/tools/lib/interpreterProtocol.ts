@@ -13,9 +13,17 @@ export interface ArtifactFile {
 
 export type ArtifactFiles = Record<string, ArtifactFile>;
 
+export interface CodeExecutionLimits {
+  maxOutputBytes?: number;
+  maxFiles?: number;
+  maxFileBytes?: number;
+  maxTotalFileBytes?: number;
+}
+
 export interface CodeExecutionRequest {
   code: string;
   files?: ArtifactFiles;
+  limits?: CodeExecutionLimits;
 }
 
 export interface CodeExecutionResult {

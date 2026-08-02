@@ -12,6 +12,7 @@ import type {
   RpcReply,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
+import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
@@ -31,6 +32,8 @@ export interface WorkerHostConfig {
   computeStallMs?: number;
   /** Bootstrap budget before the worker reports user code has started. */
   startupStallMs?: number;
+  /** Reuse the runtime after a successful execution. Defaults to true. */
+  reuseWorker?: boolean;
 }
 
 /** Pure-compute no-progress ceiling before the run is treated as wedged and
@@ -78,8 +81,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
     } finally {
       bridge?.leave();
     }
-    port.postMessage(reply);
-    port.close();
+    // Abort/teardown may close the transferred port while the main-thread RPC
+    // is still settling. A late reply must not become an unhandled rejection.
+    try {
+      port.postMessage(reply);
+    } catch {
+      // The owning run has already ended; there is no receiver left to notify.
+    } finally {
+      port.close();
+    }
   }
 
   function getWorker(): Worker {
@@ -109,6 +119,19 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
     const stallMs = options?.timeoutMs ?? computeStallDefault;
     const signal = options?.signal;
+
+    // Reject malformed or oversized inputs before paying the cost of starting a
+    // runtime. Workers repeat these checks as a defense-in-depth boundary.
+    try {
+      const limits = resolveCodeExecutionLimits(request.limits);
+      validateArtifactFiles(request.files ?? {}, limits, "Interpreter input");
+    } catch (error) {
+      return Promise.resolve({
+        success: false,
+        output: "",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     let target: Worker;
     try {
@@ -177,6 +200,10 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
         port1.close();
+        if (config.reuseWorker === false && worker === target) {
+          worker = null;
+          target.terminate();
+        }
         resolve(result);
       }
 

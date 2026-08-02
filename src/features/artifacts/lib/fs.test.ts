@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const opfs = vi.hoisted(() => ({
+  archiveArtifactRevision: vi.fn(),
   deleteArtifact: vi.fn(),
   deleteArtifactFolder: vi.fn(),
+  listArtifactEntries: vi.fn(),
   listArtifacts: vi.fn(),
   readArtifact: vi.fn(),
   writeArtifact: vi.fn(),
@@ -72,6 +74,65 @@ describe("FileSystemManager.renameFile", () => {
     const moved = await new FileSystemManager("chat").renameFile("/source", "/source/nested");
 
     expect(moved).toBe(false);
+    expect(opfs.readArtifact).not.toHaveBeenCalled();
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
+  });
+});
+
+describe("FileSystemManager.applyOverlayDelta", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("restores the complete live snapshot when a later write fails", async () => {
+    const files = new Map<string, { content: string; contentType?: string }>([
+      ["/existing.txt", { content: "before", contentType: "text/plain" }],
+    ]);
+    opfs.listArtifactEntries.mockImplementation(async () =>
+      [...files].map(([path, file]) => ({
+        path,
+        contentType: file.contentType,
+        size: file.content.length,
+      })),
+    );
+    opfs.readArtifact.mockImplementation(async (_chatId: string, path: string) => files.get(path));
+    opfs.archiveArtifactRevision.mockResolvedValue(undefined);
+    opfs.deleteArtifact.mockImplementation(async (_chatId: string, path: string) => {
+      files.delete(path);
+    });
+    let writeAttempt = 0;
+    opfs.writeArtifact.mockImplementation(
+      async (_chatId: string, path: string, content: string, contentType?: string) => {
+        files.set(path, { content, contentType });
+        writeAttempt++;
+        if (writeAttempt === 2) throw new Error("quota write failure");
+      },
+    );
+
+    await expect(
+      new FileSystemManager("chat").applyOverlayDelta({
+        upserts: {
+          "/existing.txt": { content: "changed", contentType: "text/plain" },
+          "/created.txt": { content: "partial", contentType: "text/plain" },
+        },
+        deletes: [],
+      }),
+    ).rejects.toThrow("quota write failure");
+
+    expect([...files]).toEqual([["/existing.txt", { content: "before", contentType: "text/plain" }]]);
+  });
+
+  it("validates every path before mutating storage", async () => {
+    await expect(
+      new FileSystemManager("chat").applyOverlayDelta({
+        upserts: {
+          "/valid.txt": { content: "valid" },
+          "../escape.txt": { content: "invalid" },
+        },
+        deletes: [],
+      }),
+    ).rejects.toThrow("Artifact path is required");
+
     expect(opfs.readArtifact).not.toHaveBeenCalled();
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
   });

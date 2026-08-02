@@ -114,6 +114,75 @@ function formatSnapshotValidation(report: SnapshotValidation): string {
   return sections.length ? `\n${sections.join("\n")}` : "";
 }
 
+type SandboxExecutor = (
+  request: Parameters<typeof executeCode>[0],
+  options?: Parameters<typeof executeCode>[1],
+) => ReturnType<typeof executeCode>;
+
+/** Shared snapshot → execute → commit pipeline for both interpreter tools. */
+async function runArtifactCode(options: {
+  args: Record<string, unknown>;
+  context?: ToolContext;
+  executor: SandboxExecutor;
+  extension: "py" | "js";
+  fs: FileSystemManager | null;
+  mountSkills?: boolean;
+}) {
+  const { args, context, executor, extension, fs, mountSkills = false } = options;
+  const inlineCode = typeof args.code === "string" ? args.code : "";
+  const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+
+  try {
+    const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
+    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
+    const hasCode = inlineCode.trim().length > 0;
+    const hasPath = Boolean(path);
+
+    if (!hasCode && !hasPath) {
+      return executionFailure(
+        context,
+        "Error executing code: no `code` was received. If inline code failed to parse, escape quotes and " +
+          `backslashes or write it to a \`.${extension}\` artifact and run it with \`path\`.`,
+      );
+    }
+
+    // Prefer inline code: providers sometimes append `path` as if it were a
+    // working-directory hint even though the schema describes a selector.
+    let script = inlineCode;
+    if (!hasCode && path) {
+      if (!fs) return executionFailure(context, "Error executing code: file system not available.");
+      const file = await fs.getFile(path);
+      if (!file) return executionFailure(context, `Error executing code: file not found: ${path}`);
+      script = file.content;
+    }
+
+    const result = await executor({ code: script, files: artifactFiles }, { signal: context?.signal });
+    if (!result.success) {
+      return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
+    }
+
+    let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
+    if (fs && result.files) {
+      for (const key of skillKeys) delete result.files[key];
+      const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+      if (summary.mutations.length > 0) {
+        context?.setMeta?.({
+          artifactFiles: [...summary.createdPaths, ...summary.updatedPaths],
+          artifactDelta: artifactDelta(summary.mutations),
+        });
+      }
+      artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
+    }
+
+    return [{ type: "text" as const, text: result.output + formatSnapshotValidation(artifactValidation) }];
+  } catch (error) {
+    return executionFailure(
+      context,
+      `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
+}
+
 /**
  * Adapt FileSystemManager into a WritableFileSource for the shared file tools.
  */
@@ -320,90 +389,16 @@ export function useArtifactsProvider(): ToolProvider | null {
         // sandbox lock: parallel tool calls would otherwise commit stale
         // full snapshots over each other's outputs (deleteMissing!).
         function: (args: Record<string, unknown>, context?: ToolContext) =>
-          withSandboxLock(async () => {
-            const fs = fsRef.current;
-            const { code } = args;
-            const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-
-            try {
-              // Load artifact files into Pyodide's VFS, then mount the user's
-              // selected skills' bundled resources read-only for this run.
-              const artifactFiles: SandboxFiles = {};
-              if (fs) {
-                const snapshot = await fs.getOverlaySnapshot();
-                for (const [path, file] of Object.entries(snapshot)) {
-                  artifactFiles[path] = { content: file.content, contentType: file.contentType };
-                }
-              }
-              const skillKeys = mergeSkillFiles(artifactFiles, await mountSkillFiles());
-
-              const hasCode = typeof code === "string" && code.trim().length > 0;
-              const hasPath = typeof path === "string" && path.length > 0;
-
-              if (!hasCode && !hasPath) {
-                return executionFailure(
-                  context,
-                  "Error executing code: no `code` was received. If you passed inline code, it likely " +
-                    "failed to parse from unescaped quotes or backslashes — rewrite it preferring single " +
-                    "quotes, or write the script to a `.py` artifact and run it with `path`.",
-                );
-              }
-
-              // Prefer `code` when both are provided — some models tack on `path`
-              // thinking it's a working-directory hint.
-              let script = code as string;
-
-              if (!hasCode && hasPath) {
-                if (!fs) {
-                  return executionFailure(context, "Error executing code: file system not available.");
-                }
-
-                const file = await fs.getFile(path);
-                if (!file) {
-                  return executionFailure(context, `Error executing code: file not found: ${path}`);
-                }
-
-                script = file.content;
-              }
-
-              const result = await executeCode(
-                {
-                  code: script,
-                  files: artifactFiles,
-                },
-                { signal: context?.signal },
-              );
-
-              if (!result.success) {
-                return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
-              }
-
-              // Sync changed files back to artifacts and surface the ones written
-              // so the chat can show them as chips on the assistant's response.
-              let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
-              if (fs && result.files) {
-                // Drop the read-only skill resources we mounted so they don't
-                // persist as artifacts (they were never part of the overlay).
-                for (const key of skillKeys) delete result.files[key];
-                const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
-                const written = [...summary.createdPaths, ...summary.updatedPaths];
-                if (summary.mutations.length > 0) {
-                  context?.setMeta?.({
-                    artifactFiles: written,
-                    artifactDelta: artifactDelta(summary.mutations),
-                  });
-                }
-                artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
-              }
-
-              return [{ type: "text" as const, text: result.output + formatSnapshotValidation(artifactValidation) }];
-            } catch (error) {
-              return executionFailure(
-                context,
-                `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-              );
-            }
-          }),
+          withSandboxLock(() =>
+            runArtifactCode({
+              args,
+              context,
+              executor: executeCode,
+              extension: "py",
+              fs: fsRef.current,
+              mountSkills: true,
+            }),
+          ),
       },
       {
         name: "execute_javascript_code",
@@ -439,81 +434,15 @@ export function useArtifactsProvider(): ToolProvider | null {
         // the Python tool: parallel tool calls would otherwise commit
         // stale full snapshots over each other's outputs.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
-          withSandboxLock(async () => {
-            const fs = fsRef.current;
-            const { code } = args;
-            const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-
-            try {
-              const artifactFiles: SandboxFiles = {};
-              if (fs) {
-                const snapshot = await fs.getOverlaySnapshot();
-                for (const [path, file] of Object.entries(snapshot)) {
-                  artifactFiles[path] = { content: file.content, contentType: file.contentType };
-                }
-              }
-
-              const hasCode = typeof code === "string" && code.trim().length > 0;
-              const hasPath = typeof path === "string" && path.length > 0;
-
-              if (!hasCode && !hasPath) {
-                return executionFailure(
-                  context,
-                  "Error executing code: no `code` was received. If you passed inline code, it likely " +
-                    "failed to parse from unescaped quotes or backslashes — rewrite it preferring single " +
-                    "quotes, or write the script to a `.js` artifact and run it with `path`.",
-                );
-              }
-
-              // Prefer `code` when both are provided — some models tack on `path`
-              // thinking it's a working-directory hint.
-              let script = code as string;
-
-              if (!hasCode && hasPath) {
-                if (!fs) {
-                  return executionFailure(context, "Error executing code: file system not available.");
-                }
-
-                const file = await fs.getFile(path);
-                if (!file) {
-                  return executionFailure(context, `Error executing code: file not found: ${path}`);
-                }
-
-                script = file.content;
-              }
-
-              const result = await executeJavaScript(
-                { code: script, files: artifactFiles },
-                { signal: context?.signal },
-              );
-
-              if (!result.success) {
-                return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
-              }
-
-              // Sync changed files back to artifacts and surface the ones written
-              // so the chat can show them as chips on the assistant's response.
-              let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
-              if (fs && result.files) {
-                const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
-                const written = [...summary.createdPaths, ...summary.updatedPaths];
-                if (summary.mutations.length > 0) {
-                  context?.setMeta?.({
-                    artifactFiles: written,
-                    artifactDelta: artifactDelta(summary.mutations),
-                  });
-                }
-                artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
-              }
-
-              return [{ type: "text" as const, text: result.output + formatSnapshotValidation(artifactValidation) }];
-            } catch (error) {
-              return executionFailure(
-                context,
-                `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-              );
-            }
-          }),
+          withSandboxLock(() =>
+            runArtifactCode({
+              args,
+              context,
+              executor: executeJavaScript,
+              extension: "js",
+              fs: fsRef.current,
+            }),
+          ),
       },
     ];
 

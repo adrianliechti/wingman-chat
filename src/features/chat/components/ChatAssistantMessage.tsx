@@ -16,6 +16,7 @@ import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./chatMessageUtils";
+import { getThinkingWord } from "./thinkingWord";
 import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
 // Error message component
@@ -96,54 +97,15 @@ function ErrorMessage({
   );
 }
 
-// A rotating, playful verb for the "model is working" indicator. Picked once per
-// mount so it stays put while a turn streams, but varies between turns.
-// Inspired by Claude Code's spinner verbs.
-const THINKING_WORDS = [
-  "Thinking",
-  "Pondering",
-  "Mulling",
-  "Noodling",
-  "Reasoning",
-  "Cogitating",
-  "Ruminating",
-  "Percolating",
-  "Contemplating",
-  "Considering",
-  "Deliberating",
-  "Deciphering",
-  "Brewing",
-  "Churning",
-  "Conjuring",
-  "Concocting",
-  "Distilling",
-  "Envisioning",
-  "Hatching",
-  "Ideating",
-  "Imagining",
-  "Incubating",
-  "Inferring",
-  "Marinating",
-  "Musing",
-  "Orchestrating",
-  "Puzzling",
-  "Scheming",
-  "Simmering",
-  "Sketching",
-  "Stewing",
-  "Synthesizing",
-  "Tinkering",
-  "Untangling",
-  "Wrangling",
-];
-
 /** Spinner + label "working" indicator — identical box to a running tool row. */
 function ThinkingIndicator({
   status,
+  runKey,
 }: {
   status: "compacting" | "thinking" | "responding" | "running_tool" | "waiting" | "idle";
+  runKey: string;
 }) {
-  const [word] = useState(() => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
+  const word = getThinkingWord(runKey);
   const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
   return (
     <div className="rounded-lg overflow-hidden max-w-full">
@@ -408,7 +370,9 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
               );
             })
-          : !hasReasoning && <ThinkingIndicator status={status} />}
+          : !hasReasoning && (
+              <ThinkingIndicator status={status} runKey={message.runId ?? message.id ?? String(index)} />
+            )}
       </div>
     );
   }

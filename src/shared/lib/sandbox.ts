@@ -15,7 +15,8 @@ const SANDBOX_PREFIXES = [`${SANDBOX_HOME}/`, "/home/pyodide/"];
 
 /**
  * Normalize an artifact path: strip sandbox mount prefixes, ensure a leading
- * slash, collapse duplicate slashes, strip trailing slash.
+ * slash, collapse duplicate slashes and dot segments, and reject parent/null
+ * segments before the path crosses an OPFS or interpreter boundary.
  */
 export function normalizeArtifactPath(path: string | undefined): string | undefined {
   if (!path) {
@@ -39,6 +40,12 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
   }
 
   normalized = normalized.replace(/\/+/g, "/");
+
+  const segments = normalized.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.some((segment) => segment === ".." || segment.includes("\0"))) {
+    return undefined;
+  }
+  normalized = `/${segments.join("/")}`;
 
   if (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);

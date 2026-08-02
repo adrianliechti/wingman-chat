@@ -13,6 +13,7 @@ import { combineAbortSignals } from "./abortSignals";
 import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
+import { compileToolRegistry, ToolArgumentValidationError, ToolRegistryError, type ToolRegistry } from "./toolRegistry";
 import {
   AgentInvocationContext,
   AgentRunController,
@@ -136,14 +137,21 @@ export async function run(
     onEvent: hooks.onEvent,
   });
   try {
+    const toolRegistry = compileToolRegistry(tools);
     return await traceInvokeAgent(
       hooks.agentName,
-      (invokeCtx) => runLoop(client, model, instructions, messages, tools, hooks, invokeCtx, controller),
+      (invokeCtx) => runLoop(client, model, instructions, messages, toolRegistry, hooks, invokeCtx, controller),
       hooks.parentContext,
     );
   } catch (error) {
     if (controller.invocation.signal?.aborted || isAbortError(error)) {
       return controller.finish("aborted", "abort", messages);
+    }
+    if (error instanceof ToolRegistryError) {
+      return controller.finish("failed", "error", messages, {
+        code: "TOOL_REGISTRY_INVALID",
+        message: error.message,
+      });
     }
     const detail = getErrorInfo(error);
     return controller.finish("failed", "error", messages, detail);
@@ -175,7 +183,7 @@ async function runLoop(
   model: string,
   instructions: string,
   messages: Message[],
-  tools: Tool[],
+  toolRegistry: ToolRegistry,
   hooks: RunHooks,
   invokeCtx: AgentContext,
   controller: AgentRunController,
@@ -199,7 +207,7 @@ async function runLoop(
           model,
           instructions,
           modelMessages,
-          tools,
+          toolRegistry.tools,
           (content) => {
             if (!streamingStarted) {
               streamingStarted = true;
@@ -282,7 +290,7 @@ async function runLoop(
         if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
         controller.emit({ type: "tool.started", turn, callId: toolCall.id, name: toolCall.name });
         const toolResult = withMessageIdentity(
-          await dispatchToolCall(toolCall, tools, hooks, invokeCtx, controller, turn),
+          await dispatchToolCall(toolCall, toolRegistry, hooks, invokeCtx, controller, turn),
           controller.runId,
         );
         conversation = [...conversation, toolResult];
@@ -305,13 +313,13 @@ async function runLoop(
 
 async function dispatchToolCall(
   toolCall: ToolCallContent,
-  tools: Tool[],
+  toolRegistry: ToolRegistry,
   hooks: RunHooks,
   invokeCtx: AgentContext,
   controller: AgentRunController,
   turn: number,
 ): Promise<Message> {
-  const tool = tools.find((t) => t.name === toolCall.name);
+  const tool = toolRegistry.get(toolCall.name);
   if (!tool) {
     return toolErrorMessage(toolCall, `Error: Tool "${toolCall.name}" not found or not executable.`, {
       code: "TOOL_NOT_FOUND",
@@ -329,13 +337,23 @@ async function dispatchToolCall(
     // Pass the tool's schema so a mis-escaped code/command field can be sliced
     // out by structural boundaries instead of guessed at (or truncated) by the
     // generic repair pass.
-    args = parseToolArguments(toolCall.arguments, toolArgumentHints(tool.parameters));
+    args = toolRegistry.parse(tool, parseToolArguments(toolCall.arguments, toolArgumentHints(tool.parameters)));
   } catch (error) {
     if (error instanceof ToolArgumentsParseError) {
       return toolErrorMessage(
         toolCall,
         `Error: The tool arguments could not be parsed (${error.message}). Re-send the call as a single JSON object with the declared parameters. If a string value (e.g. \`code\`) contains " or \\, escape every " as \\", every \\ as \\\\, and newlines as \\n. For long scripts with many quotes, write the code to a .py artifact and run it via \`path\` to avoid JSON escaping entirely.`,
         { code: "TOOL_ARGS_INVALID_JSON", message: "The tool arguments could not be parsed as JSON." },
+      );
+    }
+    if (error instanceof ToolArgumentValidationError) {
+      return toolErrorMessage(
+        toolCall,
+        `Error: ${error.message}. Re-send the call with the declared parameter types.`,
+        {
+          code: "TOOL_ARGS_SCHEMA_INVALID",
+          message: error.message,
+        },
       );
     }
     throw error;

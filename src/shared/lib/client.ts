@@ -31,6 +31,7 @@ import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
 import { dropOrphanFunctionCalls } from "./recovery";
 import { planStrictToolSchemas } from "./toolSchemas";
+import { compileToolRegistry } from "./toolRegistry";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 /**
@@ -886,8 +887,9 @@ export class Client {
       return undefined;
     }
 
-    const strictPlan = planStrictToolSchemas(tools);
-    return tools.map((tool, index) => ({
+    const registry = compileToolRegistry(tools);
+    const strictPlan = planStrictToolSchemas(registry.tools);
+    return registry.tools.map((tool, index) => ({
       type: "function",
 
       name: tool.name,

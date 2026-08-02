@@ -124,4 +124,56 @@ describe("agent run controller", () => {
       true,
     );
   });
+
+  it("rejects duplicate tool names before exposing an ambiguous registry to the model", async () => {
+    const complete = vi.fn();
+    const first: Tool = {
+      name: "duplicate",
+      parameters: { type: "object" },
+      function: vi.fn(),
+    };
+    const second: Tool = { ...first, function: vi.fn() };
+
+    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [
+      first,
+      second,
+    ]);
+
+    expect(result.status).toBe("failed");
+    expect(result.error?.message).toContain("Duplicate tool name: duplicate");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("returns schema-invalid arguments to the model without invoking the tool", async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "bad-args", name: "typed", arguments: '{"count":"many"}' }],
+      })
+      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "corrected" }] });
+    const execute = vi.fn();
+    const tool: Tool = {
+      name: "typed",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["count"],
+        properties: { count: { type: "integer" } },
+      },
+      function: execute,
+    };
+
+    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool]);
+
+    expect(result.status).toBe("completed");
+    expect(execute).not.toHaveBeenCalled();
+    const toolResult = result.messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result" && part.id === "bad-args");
+    expect(toolResult).toMatchObject({ name: "typed" });
+    expect(toolResult && "result" in toolResult ? toolResult.result : []).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("must be integer") })]),
+    );
+  });
 });

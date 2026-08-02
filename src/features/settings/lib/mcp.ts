@@ -371,10 +371,14 @@ export class MCPClient implements ToolProvider {
               try {
                 annotateMcpSpan(this.url, context);
 
-                const result = await activeClient.callTool({
-                  name: tool.name,
-                  arguments: args,
-                });
+                const result = await activeClient.callTool(
+                  {
+                    name: tool.name,
+                    arguments: args,
+                  },
+                  undefined,
+                  { signal: context?.signal },
+                );
 
                 // Handle both current and compatibility result formats
                 // Compatibility format has toolResult field, current has content field

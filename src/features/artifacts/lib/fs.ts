@@ -487,6 +487,32 @@ export class FileSystemManager implements FileSystem {
    * Apply explicit overlay delta (upserts + deletes) to OPFS.
    */
   async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
+    // Normalize the complete plan before touching storage. A malformed late
+    // path must not leave earlier upserts committed.
+    const normalizedDelta: OverlayDelta = {
+      upserts: Object.fromEntries(
+        Object.entries(delta.upserts).map(([path, file]) => [this.normalizePath(path), file]),
+      ),
+      deletes: delta.deletes.map((path) => this.normalizePath(path)),
+    };
+    const before = await this.getOverlaySnapshot();
+
+    try {
+      return await this.applyOverlayDeltaUnsafe(normalizedDelta);
+    } catch (commitError) {
+      try {
+        await this.restoreOverlaySnapshot(before);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [commitError, rollbackError],
+          "Artifact commit failed and its rollback was incomplete",
+        );
+      }
+      throw commitError;
+    }
+  }
+
+  private async applyOverlayDeltaUnsafe(delta: OverlayDelta): Promise<OverlayCommitSummary> {
     const createdPaths: string[] = [];
     const updatedPaths: string[] = [];
     const deletedPaths: string[] = [];
@@ -525,6 +551,25 @@ export class FileSystemManager implements FileSystem {
       deletedPaths,
       mutations,
     };
+  }
+
+  /** Restore only the live workspace. Revision archives are immutable history
+   * and may safely retain revisions written by a failed transaction. */
+  private async restoreOverlaySnapshot(before: Record<string, OverlayFile>): Promise<void> {
+    const current = await this.getOverlaySnapshot();
+    const extraPaths = Object.keys(current).filter((path) => !(path in before));
+
+    for (const path of extraPaths) {
+      await opfs.deleteArtifact(this.chatId, path);
+      this.emit("fileDeleted", path);
+    }
+
+    for (const [path, file] of Object.entries(before)) {
+      const currentFile = current[path];
+      if (currentFile?.content === file.content && currentFile.contentType === file.contentType) continue;
+      await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
+      this.emit(currentFile ? "fileUpdated" : "fileCreated", path);
+    }
   }
 
   /**
