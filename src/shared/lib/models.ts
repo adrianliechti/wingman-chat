@@ -1,6 +1,11 @@
-import type { ImageBackground, ImageQuality, ImageResolution, Model, ModelType } from "@/shared/types/chat";
-
-type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+import type {
+  ImageBackground,
+  ImageQuality,
+  ImageResolution,
+  Model,
+  ModelType,
+  ReasoningEffort,
+} from "@/shared/types/chat";
 
 /**
  * Model id a fresh selection should default to: the saved app default when it's
@@ -19,7 +24,7 @@ export function defaultModelId(models: Model[], savedId?: string | null): string
  * safe default for unknown ids, and config always wins, so an explicit
  * `supportedEfforts: []` still hides the picker.
  */
-export function supportedEfforts(id: string): Effort[] | undefined {
+export function supportedEfforts(id: string): ReasoningEffort[] | undefined {
   const lowerId = id.toLowerCase();
 
   // ── OpenAI ──
@@ -100,7 +105,7 @@ export function supportedEfforts(id: string): Effort[] | undefined {
  *   `reasoning.effort` is `medium` in standard and pro alike). Earlier GPT-5
  *   point releases and the o-series have no stated default, so they stay unset.
  */
-export function defaultEffort(id: string): Effort | undefined {
+export function defaultEffort(id: string): ReasoningEffort | undefined {
   const lowerId = id.toLowerCase();
 
   if (lowerId.includes("claude") || lowerId.includes("fable") || lowerId.includes("mythos")) {
@@ -113,6 +118,15 @@ export function defaultEffort(id: string): Effort | undefined {
   }
 
   return undefined;
+}
+
+/** Lowest-cost reasoning effort known to be supported by a model. */
+export function minimalEffort(id: string): ReasoningEffort | undefined {
+  const supported = supportedEfforts(id);
+  if (!supported) return undefined;
+
+  const ordered: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  return ordered.find((effort) => supported.includes(effort));
 }
 
 /**

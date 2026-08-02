@@ -1,5 +1,5 @@
 import { Client } from "./lib/client";
-import type { MCP, Model } from "./types/chat";
+import type { MCP, Model, ReasoningEffort } from "./types/chat";
 
 interface BackgroundConfig {
   url: string;
@@ -26,8 +26,8 @@ interface ModelConfig {
   name: string;
   description?: string;
   instructions?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")[];
+  effort?: ReasoningEffort;
+  supportedEfforts?: ReasoningEffort[];
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
@@ -173,6 +173,8 @@ export interface RiskConfig {
 export interface ClassificationConfig {
   /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
   model?: string;
+  /** Override classification reasoning effort. Defaults to the model's lowest known supported effort. */
+  effort?: ReasoningEffort;
   /** Default threshold (0..1) applied when a category or risk does not set its own. */
   threshold?: number;
 }
