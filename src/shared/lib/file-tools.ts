@@ -7,7 +7,8 @@
  */
 
 import { FilePen, FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
-import type { TextContent, Tool } from "../types/chat";
+import { artifactDelta, type ArtifactMutation } from "../types/artifact";
+import type { TextContent, Tool, ToolContext } from "../types/chat";
 import {
   type ArtifactValidationResult,
   type ArtifactValidator,
@@ -26,12 +27,14 @@ export interface FileEntry {
   path: string;
   size?: number;
   contentType?: string;
+  revision?: string;
 }
 
 export interface FileData {
   path: string;
   content: string;
   contentType?: string;
+  revision?: string;
 }
 
 /** Read-only data source (e.g. notebook sources). */
@@ -42,9 +45,14 @@ export interface ReadableFileSource {
 
 /** Read-write data source (e.g. artifacts filesystem). */
 export interface WritableFileSource extends ReadableFileSource {
-  write(path: string, content: string, contentType?: string): Promise<void>;
-  remove(path: string): Promise<boolean>;
-  move(from: string, to: string): Promise<boolean>;
+  write(
+    path: string,
+    content: string,
+    contentType?: string,
+    options?: { baseRevision?: string | null },
+  ): Promise<void | ArtifactMutation[]>;
+  remove(path: string, options?: { baseRevision?: string | null }): Promise<boolean | ArtifactMutation[]>;
+  move(from: string, to: string, options?: { baseRevision?: string | null }): Promise<boolean | ArtifactMutation[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +173,19 @@ function validationDetails(result: ArtifactValidationResult):
     errors: result.errors.length ? result.errors.map(formatArtifactValidationIssue) : undefined,
     warnings: result.warnings.length ? result.warnings.map(formatArtifactValidationIssue) : undefined,
   };
+}
+
+function publishArtifactDelta(context: ToolContext | undefined, mutations: ArtifactMutation[]): void {
+  if (mutations.length === 0) return;
+  context?.setMeta?.({ artifactDelta: artifactDelta(mutations) });
+}
+
+function resolvedMutations(
+  result: void | boolean | ArtifactMutation[],
+  fallback: ArtifactMutation,
+): ArtifactMutation[] {
+  if (Array.isArray(result)) return result;
+  return result === false ? [] : [fallback];
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +321,8 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
       if (longLineTruncated) notices.push(`line ${startLine} itself exceeds the character cap`);
       if (hasMore) notices.push(`Use startLine=${nextStart} to continue`);
       const notice = notices.length > 0 ? ` [${notices.join(". ")}]` : "";
-      const header = `# ${path} (lines ${startLine}-${actualEndLine} of ${totalLines})${notice}`;
+      const revision = file.revision ? `, revision ${file.revision}` : "";
+      const header = `# ${path} (lines ${startLine}-${actualEndLine} of ${totalLines}${revision})${notice}`;
 
       return text(`${header}\n${formatLineOutput(returnedLines, startLine)}`);
     },
@@ -337,11 +359,15 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
           type: "string",
           description: "The content of the file to create.",
         },
+        baseRevision: {
+          type: ["string", "null"],
+          description: "Revision returned by read_file when overwriting an existing file, or null for a new file.",
+        },
       },
-      required: ["path", "content"],
+      required: ["path", "content", "baseRevision"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = coerceFilePath(args);
       if (!path) {
         return error(
@@ -358,7 +384,16 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
       }
 
       try {
-        await source.write(path, content);
+        const existing = await source.read(path);
+        const writeResult = await source.write(path, content, undefined, {
+          baseRevision: typeof args.baseRevision === "string" ? args.baseRevision : existing?.revision,
+        });
+        const mutations = resolvedMutations(writeResult, {
+          operation: existing ? "update" : "create",
+          path,
+          size: new TextEncoder().encode(content).byteLength,
+        });
+        publishArtifactDelta(context, mutations);
       } catch (writeError) {
         return error(errorMessage(writeError));
       }
@@ -421,7 +456,7 @@ function normalizeForFuzzyMatch(source: string): NormalizedTextMap {
   const rawStarts: number[] = [];
   const rawEnds: number[] = [];
 
-  for (let offset = 0; offset < source.length; ) {
+  for (let offset = 0; offset < source.length;) {
     const codePoint = source.codePointAt(offset);
     if (codePoint === undefined) break;
     const original = String.fromCodePoint(codePoint);
@@ -446,7 +481,7 @@ function normalizeForFuzzyMatch(source: string): NormalizedTextMap {
 
   // Drop trailing whitespace per line while retaining mappings for the
   // characters that survive. Newlines stay anchored after removed whitespace.
-  for (let lineStart = 0; lineStart <= rawText.length; ) {
+  for (let lineStart = 0; lineStart <= rawText.length;) {
     const newline = rawText.indexOf("\n", lineStart);
     const lineEnd = newline >= 0 ? newline : rawText.length;
     const trimmedEnd = lineStart + rawText.slice(lineStart, lineEnd).trimEnd().length;
@@ -640,11 +675,15 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
             additionalProperties: false,
           },
         },
+        baseRevision: {
+          type: ["string", "null"],
+          description: "Revision returned by the read_file call this edit is based on, or null for legacy callers.",
+        },
       },
-      required: ["path", "edits"],
+      required: ["path", "edits", "baseRevision"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = args.path as string;
       if (!path) return error("path is required");
 
@@ -659,7 +698,16 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
       if ("error" in result) return error(`${result.error.replace(/\.$/, "")} (in ${path}).`);
 
       try {
-        await source.write(path, result.next, file.contentType);
+        const writeResult = await source.write(path, result.next, file.contentType, {
+          baseRevision: typeof args.baseRevision === "string" ? args.baseRevision : file.revision,
+        });
+        const mutations = resolvedMutations(writeResult, {
+          operation: "update",
+          path,
+          contentType: file.contentType,
+          size: new TextEncoder().encode(result.next).byteLength,
+        });
+        publishArtifactDelta(context, mutations);
       } catch (writeError) {
         return error(errorMessage(writeError));
       }
@@ -696,16 +744,25 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
           type: "string",
           description: "The file or folder path to delete.",
         },
+        baseRevision: {
+          type: ["string", "null"],
+          description: "Revision returned by read_file for a file target, or null when deleting a folder.",
+        },
       },
-      required: ["path"],
+      required: ["path", "baseRevision"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = args.path as string;
       if (!path) return error("path is required");
 
-      const success = await source.remove(path);
-      if (!success) return error(`File or folder not found: ${path}`);
+      const file = await source.read(path);
+      const removeResult = await source.remove(path, {
+        baseRevision: typeof args.baseRevision === "string" ? args.baseRevision : file?.revision,
+      });
+      const mutations = resolvedMutations(removeResult, { operation: "delete", path });
+      if (mutations.length === 0) return error(`File or folder not found: ${path}`);
+      publishArtifactDelta(context, mutations);
       return text(JSON.stringify({ success: true, message: `Deleted: ${path}`, path }));
     },
   };
@@ -738,21 +795,34 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
           type: "string",
           description: "The destination file path.",
         },
+        baseRevision: {
+          type: ["string", "null"],
+          description: "Revision returned by read_file for the source file, or null when moving a folder.",
+        },
       },
-      required: ["from", "to"],
+      required: ["from", "to", "baseRevision"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const from = args.from as string;
       const to = args.to as string;
       if (!from || !to) return error("Both from and to are required");
 
       const file = await source.read(from);
 
-      const success = await source.move(from, to);
-      if (!success) {
+      const moveResult = await source.move(from, to, {
+        baseRevision: typeof args.baseRevision === "string" ? args.baseRevision : file?.revision,
+      });
+      const mutations = resolvedMutations(moveResult, {
+        operation: "move",
+        from,
+        path: to,
+        contentType: file?.contentType,
+      });
+      if (mutations.length === 0) {
         return error(`Failed to move from ${from} to ${to}. Source may not exist or destination already exists.`);
       }
+      publishArtifactDelta(context, mutations);
       const validation =
         file && !isDataUrl(file.content) ? await validateWrite(to, file.content, file.contentType, opts) : undefined;
       return text(

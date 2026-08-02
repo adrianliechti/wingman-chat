@@ -12,7 +12,7 @@
 
 import { z } from "zod/v3";
 import { getConfig } from "@/shared/config";
-import { run } from "@/shared/lib/agent";
+import { runMessages as run } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool } from "@/shared/types/chat";

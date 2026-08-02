@@ -13,6 +13,7 @@ type ChatMessageProps = {
 };
 
 export const ChatMessage = memo(function ChatMessage({ message, index, isResponding, isLast }: ChatMessageProps) {
+  if (message.content.length > 0 && message.content.every((part) => part.type === "runtime_feedback")) return null;
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
 

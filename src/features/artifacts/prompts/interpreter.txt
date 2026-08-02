@@ -23,6 +23,7 @@ do not create an OCR/vision wrapper just to read one.
   Don't assume a schema.
 - **Never fabricate a figure.** Every number you report comes from a run over the
   real data; cite the file it came from. If the data can't support a claim, say so.
+- **Protect existing work.** Before overwriting or removing a file you did not create in the current turn, read it and resolve its current revision. Report any material deletion in the final handoff. Never infer that an unfamiliar file is disposable.
 - **Iterate — runs are cheap.** If a run fails, read the traceback, inspect the
   offending input, and fix it. If a result looks wrong, print intermediate values.
 - **Report, don't dump.** After a run, give the user the answer and the key figures

@@ -19,7 +19,19 @@ import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./ch
 import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
 // Error message component
-function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
+function ErrorMessage({
+  title,
+  message,
+  actionLabel = "Retry",
+  onAction,
+  variant = "error",
+}: {
+  title: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  variant?: "error" | "neutral";
+}) {
   const displayTitle = title
     .replace(/_/g, " ")
     .toLowerCase()
@@ -29,20 +41,51 @@ function ErrorMessage({ title, message, onRetry }: { title: string; message: str
   return (
     <div className="flex justify-start pb-4">
       <div className="flex-1 py-3">
-        <div className="border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 rounded-lg p-4 max-w-none">
+        <div
+          className={cn(
+            "rounded-lg border p-4 max-w-none",
+            variant === "neutral"
+              ? "border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900/40"
+              : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20",
+          )}
+        >
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
+            <AlertCircle
+              className={cn(
+                "w-5 h-5 shrink-0 mt-0.5",
+                variant === "neutral" ? "text-neutral-500" : "text-red-500 dark:text-red-400",
+              )}
+            />
             <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-red-800 dark:text-red-200 mb-1">{displayTitle}</h4>
-              <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{displayMessage}</p>
-              {onRetry && (
+              <h4
+                className={cn(
+                  "font-medium mb-1",
+                  variant === "neutral" ? "text-neutral-800 dark:text-neutral-200" : "text-red-800 dark:text-red-200",
+                )}
+              >
+                {displayTitle}
+              </h4>
+              <p
+                className={cn(
+                  "text-sm leading-relaxed",
+                  variant === "neutral" ? "text-neutral-600 dark:text-neutral-300" : "text-red-700 dark:text-red-300",
+                )}
+              >
+                {displayMessage}
+              </p>
+              {onAction && (
                 <button
                   type="button"
-                  onClick={onRetry}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 transition-colors"
+                  onClick={onAction}
+                  className={cn(
+                    "mt-2 inline-flex items-center gap-1.5 text-xs font-medium transition-colors",
+                    variant === "neutral"
+                      ? "text-neutral-700 hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white"
+                      : "text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100",
+                  )}
                 >
                   <RotateCcw className="w-3 h-3" />
-                  Retry
+                  {actionLabel}
                 </button>
               )}
             </div>
@@ -95,13 +138,18 @@ const THINKING_WORDS = [
 ];
 
 /** Spinner + label "working" indicator — identical box to a running tool row. */
-function ThinkingIndicator() {
+function ThinkingIndicator({
+  status,
+}: {
+  status: "compacting" | "thinking" | "responding" | "running_tool" | "waiting" | "idle";
+}) {
   const [word] = useState(() => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
+  const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
   return (
     <div className="rounded-lg overflow-hidden max-w-full">
       <div className="flex items-center gap-2 min-w-0">
         <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{word}…</span>
+        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}…</span>
       </div>
     </div>
   );
@@ -230,7 +278,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { messages, pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { messages, pendingElicitation, resolveElicitation, retryMessage, continueRun, status, toolMeta } = useChat();
   const { providers } = useToolsContext();
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
 
@@ -277,11 +325,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
   // Handle error messages
   if (message.error) {
+    const isMaxTurns = message.error.code === "MAX_TURNS";
     return (
       <ErrorMessage
         title={message.error.code || "Error"}
         message={message.error.message}
-        onRetry={isLast && !isResponding ? retryMessage : undefined}
+        variant={isMaxTurns ? "neutral" : "error"}
+        actionLabel={isMaxTurns ? "Continue" : "Retry"}
+        onAction={isLast && !isResponding ? (isMaxTurns ? continueRun : retryMessage) : undefined}
       />
     );
   }
@@ -357,7 +408,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
               );
             })
-          : !hasReasoning && <ThinkingIndicator />}
+          : !hasReasoning && <ThinkingIndicator status={status} />}
       </div>
     );
   }

@@ -45,6 +45,9 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // Split off artifact-attachment references — rendered as clickable chips that
   // open the file in the artifacts editor — from any other plain text parts.
   const attachedArtifactPaths: string[] = [];
+  attachedArtifactPaths.push(
+    ...message.content.filter((part) => part.type === "artifact_ref").map((part) => part.path),
+  );
   const plainTextAttachments: TextContent[] = [];
   // For the editor: a reference that only points at inline media (images) would
   // render a second time as a file tile, so split those paths out into

@@ -1,9 +1,25 @@
-import type { Content, Message, MessageError, Tool, ToolCallContent, ToolContext } from "../types/chat";
+import {
+  withMessageIdentity,
+  type Content,
+  type Message,
+  type MessageError,
+  type Tool,
+  type ToolCallContent,
+  type ToolContext,
+} from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
-import { isContextOverflowError } from "./errors";
+import { getErrorInfo, isContextOverflowError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
+import {
+  AgentInvocationContext,
+  AgentRunController,
+  type AgentRunEvent,
+  type AgentRunResult,
+} from "./agent-run-controller";
+
+export type { AgentRunEvent, AgentRunResult, AgentRunStatus } from "./agent-run-controller";
 
 /** Safety bound on model calls in one run, guarding against a runaway tool loop. */
 const DEFAULT_MAX_TURNS = 100;
@@ -16,6 +32,15 @@ export type CompleteOptions = Parameters<Client["complete"]>[5];
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  /** Stable run id supplied by a durable caller. Generated when omitted. */
+  runId?: string;
+
+  /** Shared identity, cancellation, and model-call budget for nested agents. */
+  invocationContext?: AgentInvocationContext;
+
+  /** Receives the framework-independent lifecycle stream for this run. */
+  onEvent?: (event: AgentRunEvent) => void;
+
   /**
    * Identifier for this agent (e.g. `"chat"`, `"notebook"`, `"research"`).
    * Used as the suffix on the `invoke_agent` span name and the
@@ -44,6 +69,18 @@ export interface RunHooks {
   /** Fires on every `setMeta`/`updateMeta` — both live (during execution) and late (after commit). */
   onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
 
+  /** Runtime stop gate. Return feedback to continue the same bounded run. */
+  beforeFinish?: (context: {
+    runId: string;
+    invocationId: string;
+    turn: number;
+    messages: Message[];
+    signal?: AbortSignal;
+  }) => Promise<{ action: "finish" } | { action: "continue"; feedback: Message }>;
+
+  /** Persists wire-visible but UI-hidden feedback injected by a stop policy. */
+  onRuntimeFeedback?: (message: Message) => void | Promise<void>;
+
   /**
    * Transform messages before they're sent to the LLM. Used by chat to prune
    * at summary boundaries.
@@ -62,6 +99,9 @@ export interface RunHooks {
    * tool-calling loop stops here rather than never terminating. */
   maxTurns?: number;
 
+  /** Invocation-wide model-call budget shared with nested agents. Defaults to maxTurns. */
+  maxModelCalls?: number | null;
+
   /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
   options?: CompleteOptions;
 
@@ -78,12 +118,48 @@ export async function run(
   messages: Message[],
   tools: Tool[],
   hooks: RunHooks = {},
+): Promise<AgentRunResult> {
+  const controller = new AgentRunController({
+    runId: hooks.runId,
+    invocation:
+      hooks.invocationContext ??
+      new AgentInvocationContext({
+        signal: hooks.options?.signal,
+        maxModelCalls: hooks.maxModelCalls === undefined ? (hooks.maxTurns ?? DEFAULT_MAX_TURNS) : hooks.maxModelCalls,
+      }),
+    onEvent: hooks.onEvent,
+  });
+  try {
+    return await traceInvokeAgent(
+      hooks.agentName,
+      (invokeCtx) => runLoop(client, model, instructions, messages, tools, hooks, invokeCtx, controller),
+      hooks.parentContext,
+    );
+  } catch (error) {
+    if (controller.invocation.signal?.aborted) {
+      return controller.finish("aborted", "abort", messages);
+    }
+    const detail = getErrorInfo(error);
+    return controller.finish("failed", "error", messages, detail);
+  }
+}
+
+/** Compatibility adapter for callers that have not migrated to terminal results yet. */
+export async function runMessages(
+  client: Client,
+  model: string,
+  instructions: string,
+  messages: Message[],
+  tools: Tool[],
+  hooks: RunHooks = {},
 ): Promise<Message[]> {
-  return traceInvokeAgent(
-    hooks.agentName,
-    (invokeCtx) => runLoop(client, model, instructions, messages, tools, hooks, invokeCtx),
-    hooks.parentContext,
-  );
+  const result = await run(client, model, instructions, messages, tools, hooks);
+  if (result.status === "failed") {
+    const error = new Error(result.error?.message ?? "Agent run failed");
+    Object.assign(error, { code: result.error?.code ?? "AGENT_RUN_FAILED" });
+    throw error;
+  }
+  return result.messages;
 }
 
 async function runLoop(
@@ -94,23 +170,39 @@ async function runLoop(
   tools: Tool[],
   hooks: RunHooks,
   invokeCtx: AgentContext,
-): Promise<Message[]> {
+  controller: AgentRunController,
+): Promise<AgentRunResult> {
   const { onStream, onTurnStart, onTurnEnd, onToolResult, prepareMessages, onContextOverflow, options } = hooks;
-  const signal = options?.signal;
+  const signal = options?.signal ?? controller.invocation.signal;
   const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
   let conversation = [...messages];
 
   // Send one model request, recovering from a mid-run context overflow by
   // compacting and re-sending rather than failing the turn. Bounded so a
   // request that stays too large after compacting still surfaces the error.
-  const sendTurn = async (): Promise<Message> => {
+  const sendTurn = async (turn: number): Promise<Message> => {
     for (let compactions = 0; ; compactions++) {
       const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
       try {
-        return await client.complete(model, instructions, modelMessages, tools, onStream, {
-          ...options,
-          parentContext: invokeCtx,
-        });
+        if (!controller.invocation.tryConsumeModelCall()) throw new AgentBudgetExceededError();
+        controller.emit({ type: "model.started", turn });
+        const assistant = await client.complete(
+          model,
+          instructions,
+          modelMessages,
+          tools,
+          (content) => {
+            controller.emit({ type: "model.streaming", turn });
+            onStream?.(content);
+          },
+          {
+            ...options,
+            signal,
+            parentContext: invokeCtx,
+          },
+        );
+        controller.emit({ type: "model.completed", turn });
+        return assistant;
       } catch (error) {
         if (
           onContextOverflow &&
@@ -119,7 +211,9 @@ async function runLoop(
           isContextOverflowError(error)
         ) {
           try {
+            controller.emit({ type: "compaction.started", turn });
             const compacted = await onContextOverflow(conversation);
+            controller.emit({ type: "compaction.completed", turn });
             if (compacted !== conversation) {
               conversation = compacted;
               continue;
@@ -135,29 +229,65 @@ async function runLoop(
     }
   };
 
-  // Bounded to keep a runaway tool-calling loop from never terminating.
-  for (let turn = 0; turn < maxTurns; turn++) {
-    onTurnStart?.();
+  try {
+    // Bounded to keep a runaway tool-calling loop from never terminating.
+    for (let turn = 0; turn < maxTurns; turn++) {
+      if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+      onTurnStart?.();
 
-    const assistantMessage = await sendTurn();
-    if (signal?.aborted) return conversation;
+      const assistantMessage = withMessageIdentity(await sendTurn(turn), controller.runId);
+      if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
 
-    conversation = [...conversation, assistantMessage];
-    onTurnEnd?.(assistantMessage);
+      conversation = [...conversation, assistantMessage];
+      onTurnEnd?.(assistantMessage);
 
-    const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");
-    if (toolCalls.length === 0) return conversation;
+      const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");
+      if (toolCalls.length === 0) {
+        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+        if (hooks.beforeFinish) {
+          controller.emit({ type: "verification.started", turn });
+          const decision = await hooks.beforeFinish({
+            runId: controller.runId,
+            invocationId: controller.invocation.invocationId,
+            turn,
+            messages: conversation,
+            signal,
+          });
+          if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+          controller.emit({ type: "verification.completed", turn });
+          if (decision.action === "continue") {
+            const feedback = withMessageIdentity(decision.feedback, controller.runId);
+            conversation = [...conversation, feedback];
+            await hooks.onRuntimeFeedback?.(feedback);
+            continue;
+          }
+        }
+        return controller.finish("completed", "end_turn", conversation);
+      }
 
-    for (const toolCall of toolCalls) {
-      const toolResult = await dispatchToolCall(toolCall, tools, hooks, invokeCtx);
-      conversation = [...conversation, toolResult];
-      onToolResult?.(toolResult);
-      if (signal?.aborted) return conversation;
+      for (const toolCall of toolCalls) {
+        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+        controller.emit({ type: "tool.started", turn, callId: toolCall.id, name: toolCall.name });
+        const toolResult = withMessageIdentity(
+          await dispatchToolCall(toolCall, tools, hooks, invokeCtx, controller, turn),
+          controller.runId,
+        );
+        conversation = [...conversation, toolResult];
+        onToolResult?.(toolResult);
+        controller.emit({ type: "tool.completed", turn, callId: toolCall.id, name: toolCall.name });
+        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+      }
     }
-  }
 
-  // Turn budget exhausted: stop with whatever we have rather than looping forever.
-  return conversation;
+    return controller.finish("max_turns", "max_turns", conversation);
+  } catch (error) {
+    if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
+    if (error instanceof AgentBudgetExceededError) {
+      return controller.finish("max_turns", "max_turns", conversation);
+    }
+    const detail = getErrorInfo(error);
+    return controller.finish("failed", "error", conversation, detail);
+  }
 }
 
 async function dispatchToolCall(
@@ -165,6 +295,8 @@ async function dispatchToolCall(
   tools: Tool[],
   hooks: RunHooks,
   invokeCtx: AgentContext,
+  controller: AgentRunController,
+  turn: number,
 ): Promise<Message> {
   const tool = tools.find((t) => t.name === toolCall.name);
   if (!tool) {
@@ -212,13 +344,18 @@ async function dispatchToolCall(
         const baseContext = hooks.createToolContext?.(toolCall);
         const toolContext: ToolContext = {
           ...baseContext,
+          runId: controller.runId,
+          invocationContext: controller.invocation,
+          signal: baseContext?.signal ?? controller.invocation.signal,
           setMeta: (meta) => {
             resultMeta = meta;
             hooks.onToolMeta?.(toolCall.id, { ...meta });
+            controller.emit({ type: "tool.updated", turn, callId: toolCall.id, name: toolCall.name });
           },
           updateMeta: (meta) => {
             resultMeta = { ...resultMeta, ...meta };
             hooks.onToolMeta?.(toolCall.id, { ...resultMeta });
+            controller.emit({ type: "tool.updated", turn, callId: toolCall.id, name: toolCall.name });
           },
           setError: (error) => {
             resultError = error;
@@ -254,6 +391,13 @@ async function dispatchToolCall(
       code: "TOOL_EXECUTION_ERROR",
       message: "The tool could not complete the requested action. Please try again or use a different approach.",
     });
+  }
+}
+
+class AgentBudgetExceededError extends Error {
+  constructor() {
+    super("The invocation-wide model-call budget was exhausted.");
+    this.name = "AgentBudgetExceededError";
   }
 }
 

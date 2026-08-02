@@ -14,7 +14,11 @@ export function getModel(): string | null {
   return defaultModel;
 }
 
-export async function runLlm(prompt: string, options: LlmCallOptions = {}): Promise<string> {
+export async function runLlm(
+  prompt: string,
+  options: LlmCallOptions = {},
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
   const model = options.model || defaultModel;
   if (!model) {
     throw new Error("llm: no model");
@@ -26,7 +30,7 @@ export async function runLlm(prompt: string, options: LlmCallOptions = {}): Prom
     [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
     [],
     undefined,
-    options.effort ? { effort: options.effort } : undefined,
+    { ...(options.effort ? { effort: options.effort } : {}), signal: requestOptions.signal },
   );
   return getTextFromContent(result.content);
 }

@@ -17,6 +17,10 @@ async function storeChat(chat: Chat): Promise<void> {
     // Write chat.json to /chats/{id}/chat.json
     await opfs.writeJson(`${COLLECTION}/${chat.id}/chat.json`, stored);
 
+    // The manifest is durable before garbage collection, so a failed save can
+    // never delete data still referenced by the last good chat.json.
+    await opfs.deleteUnreferencedChatBlobs(stored);
+
     // Update index
     await opfs.upsertIndexEntry(COLLECTION, {
       id: chat.id,

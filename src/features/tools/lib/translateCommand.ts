@@ -11,7 +11,11 @@ function requireTranslator() {
 }
 
 /** Translate plain text into `lang`; returns the translated text. */
-export async function runTranslateText(lang: string, text: string): Promise<string> {
+export async function runTranslateText(
+  lang: string,
+  text: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
   const config = requireTranslator();
   if (!lang.trim()) {
     throw new Error("translate: no target language provided");
@@ -19,7 +23,7 @@ export async function runTranslateText(lang: string, text: string): Promise<stri
   if (!text.trim()) {
     throw new Error("translate: no text provided");
   }
-  const result = await config.client.translate(lang, text);
+  const result = await config.client.translate(lang, text, requestOptions);
   // A text input should come back as text; decode defensively if the backend
   // returns a binary blob anyway.
   if (typeof result !== "string") {
@@ -29,7 +33,12 @@ export async function runTranslateText(lang: string, text: string): Promise<stri
 }
 
 /** Translate a whole file into `lang`; returns the translated file bytes. */
-export async function runTranslateFile(lang: string, bytes: Uint8Array, path: string): Promise<Uint8Array> {
+export async function runTranslateFile(
+  lang: string,
+  bytes: Uint8Array,
+  path: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<Uint8Array> {
   const config = requireTranslator();
   if (!lang.trim()) {
     throw new Error("translate: no target language provided");
@@ -44,7 +53,7 @@ export async function runTranslateFile(lang: string, bytes: Uint8Array, path: st
   const type = inferContentTypeFromPath(name) ?? "application/octet-stream";
   const file = new File([bytes as BlobPart], name, { type });
 
-  const result = await config.client.translate(lang, file);
+  const result = await config.client.translate(lang, file, requestOptions);
   // Some formats (e.g. plain text) come back as text rather than a file blob.
   if (typeof result === "string") {
     return new TextEncoder().encode(result);

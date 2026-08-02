@@ -140,22 +140,28 @@ function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): Writ
       const fs = requireFs();
       const file = await fs.getFile(path);
       if (!file) return undefined;
-      return { path: file.path, content: file.content, contentType: file.contentType };
+      return {
+        path: file.path,
+        content: file.content,
+        contentType: file.contentType,
+        revision: await fs.getRevision(file.path),
+      };
     },
 
-    async write(path: string, content: string, contentType?: string): Promise<void> {
+    async write(path: string, content: string, contentType?: string, options?: { baseRevision?: string | null }) {
       const fs = requireFs();
-      await fs.createFile(path, content, contentType);
+      const mutation = await fs.createFile(path, content, contentType, options);
+      return mutation ? [mutation] : [];
     },
 
-    async remove(path: string): Promise<boolean> {
+    async remove(path: string, options?: { baseRevision?: string | null }) {
       const fs = requireFs();
-      return fs.deleteFile(path);
+      return fs.deleteFileWithDelta(path, options);
     },
 
-    async move(from: string, to: string): Promise<boolean> {
+    async move(from: string, to: string, options?: { baseRevision?: string | null }) {
       const fs = requireFs();
-      return fs.renameFile(from, to);
+      return fs.renameFileWithDelta(from, to, options);
     },
   };
 }
@@ -412,7 +418,12 @@ export function useArtifactsProvider(): ToolProvider | null {
                 for (const key of skillKeys) delete result.files[key];
                 const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
                 const written = [...summary.createdPaths, ...summary.updatedPaths];
-                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
+                if (summary.mutations.length > 0) {
+                  context?.setMeta?.({
+                    artifactFiles: written,
+                    artifactDelta: { checkpointId: crypto.randomUUID(), mutations: summary.mutations },
+                  });
+                }
                 artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
               }
 
@@ -532,7 +543,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               if (fs && result.files) {
                 const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
                 const written = [...summary.createdPaths, ...summary.updatedPaths];
-                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
+                if (summary.mutations.length > 0) {
+                  context?.setMeta?.({
+                    artifactFiles: written,
+                    artifactDelta: { checkpointId: crypto.randomUUID(), mutations: summary.mutations },
+                  });
+                }
                 artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
               }
 

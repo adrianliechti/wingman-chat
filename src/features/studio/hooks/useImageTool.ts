@@ -8,6 +8,7 @@ import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { rendererCapabilities } from "@/shared/lib/models";
 import { readAsDataURL } from "@/shared/lib/utils";
+import { artifactDelta } from "@/shared/types/artifact";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
 
 function errorResult(error: string): TextContent[] {
@@ -184,7 +185,9 @@ export function useImageTool(): Tool | null {
             options.background = args.background;
           }
 
-          const imageBlob = await client.generateImage(model, prompt, references, options);
+          const imageBlob = await client.generateImage(model, prompt, references, options, {
+            signal: context?.signal,
+          });
           const dataUrl = await readAsDataURL(imageBlob);
 
           // Save to the artifacts workspace so the image is downloadable, editable
@@ -196,7 +199,10 @@ export function useImageTool(): Tool | null {
             try {
               const ext = mime.getExtension(imageBlob.type) || "png";
               const path = await uniqueImagePath(activeFs, slugify(prompt), ext);
-              await activeFs.createFile(path, dataUrl, imageBlob.type || `image/${ext}`);
+              const mutation = await activeFs.createFile(path, dataUrl, imageBlob.type || `image/${ext}`);
+              if (mutation) {
+                context?.setMeta?.({ artifactFiles: [path], artifactDelta: artifactDelta([mutation]) });
+              }
               name = path;
             } catch (error) {
               console.warn("Failed to save generated image to artifacts:", error);

@@ -32,7 +32,9 @@ import { lookupContentType } from "./utils";
  * Store a blob in a chat's blobs folder and return its ID.
  */
 export async function storeChatBlob(chatId: string, blob: Blob): Promise<string> {
-  const blobId = crypto.randomUUID();
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const blobId = `sha256-${hash}`;
   await writeBlob(`chats/${chatId}/blobs/${blobId}.bin`, blob);
   return blobId;
 }
@@ -76,6 +78,9 @@ export type StoredContent =
   | (Omit<ToolResultContent, "result"> & { result: StoredContent[] });
 
 export interface StoredMessage {
+  id?: string;
+  runId?: string;
+  createdAt?: string;
   role: "user" | "assistant";
   content: StoredContent[];
   usage?: Message["usage"];
@@ -163,6 +168,9 @@ export async function extractMessageBlobsForChat(chatId: string, message: Messag
   const extractedContent = await Promise.all(message.content.map((c) => extractContentBlobForChat(chatId, c)));
 
   return {
+    id: message.id,
+    runId: message.runId,
+    createdAt: message.createdAt,
     role: message.role,
     content: extractedContent,
     usage: message.usage,
@@ -173,10 +181,17 @@ export async function extractMessageBlobsForChat(chatId: string, message: Messag
 /**
  * Rehydrate all blob references in a message from chat folder.
  */
-export async function rehydrateMessageBlobsForChat(chatId: string, message: StoredMessage): Promise<Message> {
+export async function rehydrateMessageBlobsForChat(
+  chatId: string,
+  message: StoredMessage,
+  fallbackIdentity?: { id: string; createdAt: string },
+): Promise<Message> {
   const rehydratedContent = await Promise.all(message.content.map((c) => rehydrateContentBlobForChat(chatId, c)));
 
   return {
+    id: message.id ?? fallbackIdentity?.id ?? crypto.randomUUID(),
+    runId: message.runId,
+    createdAt: message.createdAt ?? fallbackIdentity?.createdAt ?? new Date().toISOString(),
     role: message.role,
     content: rehydratedContent,
     usage: message.usage,
@@ -210,7 +225,15 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
  * Note: Artifacts should be loaded separately via loadArtifacts().
  */
 export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
-  const rehydratedMessages = await Promise.all(stored.messages.map((m) => rehydrateMessageBlobsForChat(stored.id, m)));
+  const fallbackCreatedAt = stored.created ?? new Date(0).toISOString();
+  const rehydratedMessages = await Promise.all(
+    stored.messages.map((message, index) =>
+      rehydrateMessageBlobsForChat(stored.id, message, {
+        id: `legacy-${stored.id}-${index}`,
+        createdAt: fallbackCreatedAt,
+      }),
+    ),
+  );
 
   return {
     id: stored.id,
@@ -254,4 +277,13 @@ export function collectChatBlobIds(chat: StoredChat): string[] {
     ids.push(...collectMessageBlobIds(message));
   }
   return ids;
+}
+
+/** Remove only blobs no longer referenced by an already-persisted chat manifest. */
+export async function deleteUnreferencedChatBlobs(chat: StoredChat): Promise<void> {
+  const referenced = new Set(collectChatBlobIds(chat));
+  const stored = await listChatBlobs(chat.id);
+  await Promise.all(
+    stored.filter((blobId) => !referenced.has(blobId)).map((blobId) => deleteChatBlob(chat.id, blobId)),
+  );
 }

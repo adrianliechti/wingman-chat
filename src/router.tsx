@@ -11,10 +11,9 @@ import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";
 
 // ChatPage is the default landing route, so it stays in the initial bundle.
-// The other pages are loaded on demand — this keeps notebook code, ReactFlow
-// (@xyflow), and translate/canvas out of the initial download.
+// The other active pages are loaded on demand. Legacy Notebook data is only
+// imported when an old deep link is opened.
 const CanvasPage = lazyRouteComponent(() => import("./features/canvas/pages/CanvasPage"), "CanvasPage");
-const NotebookPage = lazyRouteComponent(() => import("./features/notebook/pages/NotebookPage"), "NotebookPage");
 const TranslatePage = lazyRouteComponent(() => import("./features/translate/pages/TranslatePage"), "TranslatePage");
 const OAuthCallbackPage = lazyRouteComponent(
   () => import("./features/settings/pages/OAuthCallbackPage"),
@@ -25,8 +24,8 @@ const hashToRoute: Record<string, string> = {
   chat: "/chat",
   translate: "/translate",
   canvas: "/canvas",
-  research: "/notebook",
-  notebook: "/notebook",
+  research: "/chat",
+  notebook: "/chat",
 };
 
 // Root route — bare outlet, no shell
@@ -99,16 +98,24 @@ const notebookRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/notebook",
   beforeLoad: () => {
-    if (!getConfig().notebook) throw redirect({ to: "/chat" });
+    throw redirect({ to: "/chat" });
   },
-  component: NotebookPage,
 });
 
-// Child route — provides the :notebookId param without remounting the parent.
 const notebookIdRoute = createRoute({
-  getParentRoute: () => notebookRoute,
-  path: "$notebookId",
-  component: () => null,
+  getParentRoute: () => appLayoutRoute,
+  path: "/notebook/$notebookId",
+  beforeLoad: async ({ params }) => {
+    const { convertNotebookToChat } = await import("./features/notebook/lib/convertNotebookToChat");
+    let chatId: string;
+    try {
+      chatId = await convertNotebookToChat(params.notebookId);
+    } catch (error) {
+      console.error("Notebook conversion failed", error);
+      throw redirect({ to: "/chat" });
+    }
+    throw redirect({ to: "/chat/$chatId", params: { chatId } });
+  },
 });
 
 // OAuth callback route — rendered under bare layout (no app shell)
@@ -126,7 +133,8 @@ const routeTree = rootRoute.addChildren([
     chatIdRoute,
     translateRoute,
     canvasRoute,
-    notebookRoute.addChildren([notebookIdRoute]),
+    notebookRoute,
+    notebookIdRoute,
   ]),
   oauthLayoutRoute.addChildren([oauthCallbackRoute]),
 ]);

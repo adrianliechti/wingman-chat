@@ -13,7 +13,9 @@ import {
   listFiles,
   readBlob,
   readFileMetadata,
+  readJson,
   writeBlob,
+  writeJson,
   writeText,
 } from "./opfs-core";
 import { normalizeArtifactPath } from "./sandbox";
@@ -23,6 +25,38 @@ export interface ArtifactEntry {
   contentType?: string;
   size: number;
   lastModified?: number;
+}
+
+export interface StoredArtifactRevision {
+  path: string;
+  revision: string;
+  content: string;
+  contentType?: string;
+  createdAt: string;
+}
+
+function artifactRevisionPath(chatId: string, path: string, revision: string): string {
+  const encodedPath = encodeURIComponent(normalizeArtifactPath(path) ?? path);
+  const encodedRevision = encodeURIComponent(revision);
+  return `chats/${chatId}/artifact-versions/${encodedPath}/${encodedRevision}.json`;
+}
+
+export async function archiveArtifactRevision(chatId: string, revision: StoredArtifactRevision): Promise<void> {
+  await writeJson(artifactRevisionPath(chatId, revision.path, revision.revision), revision);
+}
+
+export async function loadArtifactRevision(
+  chatId: string,
+  path: string,
+  revision: string,
+): Promise<StoredArtifactRevision | undefined> {
+  return readJson<StoredArtifactRevision>(artifactRevisionPath(chatId, path, revision));
+}
+
+export async function listArtifactRevisions(chatId: string, path: string): Promise<string[]> {
+  const encodedPath = encodeURIComponent(normalizeArtifactPath(path) ?? path);
+  const files = await listFiles(`chats/${chatId}/artifact-versions/${encodedPath}`);
+  return files.filter((file) => file.endsWith(".json")).map((file) => decodeURIComponent(file.slice(0, -5)));
 }
 
 // ============================================================================

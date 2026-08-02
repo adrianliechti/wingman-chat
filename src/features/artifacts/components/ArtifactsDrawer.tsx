@@ -13,7 +13,12 @@ import {
 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import {
+  artifactKind,
+  artifactLanguage,
+  processUploadedFile,
+  type ProcessedFile,
+} from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
@@ -95,18 +100,19 @@ export function ArtifactsDrawer() {
       const activeFs = await ensureFs();
       setIsProcessing(true);
       try {
+        const batch: ProcessedFile[] = [];
         for (const file of fileList) {
-          try {
-            const processedFiles = await processUploadedFile(file);
-            for (const processed of processedFiles) {
-              await activeFs.createFile(processed.path, processed.content, processed.contentType);
-              openFile(processed.path);
-            }
-          } catch (error) {
-            console.error(`Error uploading file ${file.name}:`, error);
-            notify.error("Upload failed", error instanceof Error ? error.message : `"${file.name}" couldn't be added.`);
-          }
+          batch.push(...(await processUploadedFile(file)));
         }
+        const ingestion = await activeFs.ingestFiles(batch);
+        const lastPath = ingestion.paths.at(-1);
+        if (lastPath) openFile(lastPath);
+      } catch (error) {
+        console.error("Error uploading files:", error);
+        notify.error(
+          "Upload failed",
+          error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
+        );
       } finally {
         setIsProcessing(false);
       }

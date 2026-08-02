@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 
-import { loadNotebooks } from "./features/notebook/lib/notebooks.ts";
 import { loadConfig } from "./shared/config.ts";
 import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
 import { errorText } from "./shared/lib/errors.ts";
@@ -64,7 +63,7 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 
 const bootstrap = async () => {
   try {
-    const [config] = await Promise.all([loadConfig(), loadNotebooks(), prepareInitialEmojiRendering()]);
+    const [config] = await Promise.all([loadConfig(), prepareInitialEmojiRendering()]);
 
     if (config?.telemetry) {
       // Loaded on demand so the OpenTelemetry SDK stays out of the initial bundle.

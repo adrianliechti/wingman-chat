@@ -24,7 +24,7 @@ export interface WorkerHostConfig {
   /** Spawn a fresh worker. Called on first use and after a crash/teardown. */
   createWorker(): Worker;
   /** Answer one worker→main RPC; the resolved value is posted back on the reply port. */
-  handleMessage(message: WorkerToMainMessage): Promise<unknown>;
+  handleMessage(message: WorkerToMainMessage, options?: { signal?: AbortSignal }): Promise<unknown>;
   /** Message used when the worker dies on an uncaught error. */
   crashMessage: string;
   /** Pure-compute stall ceiling before the run is treated as wedged. */
@@ -60,12 +60,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   // The in-flight execution's stall watchdog, paused while the worker is blocked
   // on a main-thread RPC (those round trips are bounded separately). Runs are
   // serialized, so a single slot suffices.
-  let activeBridge: { enter: () => void; leave: () => void } | null = null;
+  let activeBridge: { enter: () => void; leave: () => void; signal?: AbortSignal } | null = null;
 
-  async function replyOnPort(port: MessagePort, run: () => Promise<unknown>): Promise<void> {
+  async function replyOnPort(
+    port: MessagePort,
+    bridge: typeof activeBridge,
+    run: () => Promise<unknown>,
+  ): Promise<void> {
     // The worker is waiting on us, not stalled — pause its stall timer. Capture
     // the slot now so a reply that lands after teardown can't disturb the next run.
-    const bridge = activeBridge;
     bridge?.enter();
     let reply: RpcReply;
     try {
@@ -87,7 +90,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         // Sandboxed user code can `self.postMessage(...)` directly; ignore
         // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
-        void replyOnPort(message.port, () => config.handleMessage(message));
+        const bridge = activeBridge;
+        void replyOnPort(message.port, bridge, () => config.handleMessage(message, { signal: bridge?.signal }));
       });
       created.addEventListener("error", (event) => {
         // Drop the dead worker so the next call spawns a fresh one.
@@ -193,7 +197,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         }
         signal.addEventListener("abort", onAbort, { once: true });
       }
-      activeBridge = bridge;
+      activeBridge = { ...bridge, signal };
       arm();
       target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
     });
