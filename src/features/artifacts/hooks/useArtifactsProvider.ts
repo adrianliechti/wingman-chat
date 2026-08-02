@@ -63,12 +63,6 @@ function runningCodeLabel(code: unknown): string {
   return `${RUNNING_CODE_WORDS[Math.abs(hash) % RUNNING_CODE_WORDS.length]}…`;
 }
 
-/** Coerce a tool arg into a string[] (models sometimes send a bare string). */
-function asStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
-  return typeof value === "string" ? [value] : [];
-}
-
 type SandboxFiles = Record<string, { content: string; contentType?: string }>;
 
 /**
@@ -149,24 +143,23 @@ function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): Writ
         path: file.path,
         content: file.content,
         contentType: file.contentType,
-        revision: await fs.getRevision(file.path),
       };
     },
 
-    async write(path: string, content: string, contentType?: string, options?: { baseRevision?: string | null }) {
+    async write(path: string, content: string, contentType?: string) {
       const fs = requireFs();
-      const mutation = await fs.createFile(path, content, contentType, options);
+      const mutation = await fs.createFile(path, content, contentType);
       return mutation ? [mutation] : [];
     },
 
-    async remove(path: string, options?: { baseRevision?: string | null }) {
+    async remove(path: string) {
       const fs = requireFs();
-      return fs.deleteFileWithDelta(path, options);
+      return fs.deleteFileWithDelta(path);
     },
 
-    async move(from: string, to: string, options?: { baseRevision?: string | null }) {
+    async move(from: string, to: string) {
       const fs = requireFs();
-      return fs.renameFileWithDelta(from, to, options);
+      return fs.renameFileWithDelta(from, to);
     },
   };
 }
@@ -318,7 +311,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
         },
         description:
-          "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. To run a skill's bundled scripts, pass its name(s) in `skills`: its resources mount read-only under /home/user/skills/<name>/ for that run (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
+          "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. The user's selected skills have bundled resources mounted read-only under /home/user/skills/<name>/ (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
         // Keep this schema-guided rather than provider-compiled: the combined
         // artifact toolbox otherwise exceeds Anthropic's strict-schema budget.
         strict: false,
@@ -333,8 +326,8 @@ export function useArtifactsProvider(): ToolProvider | null {
             const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
 
             try {
-              // Load artifact files into Pyodide's VFS, then mount any requested
-              // skills' bundled resources read-only for this run.
+              // Load artifact files into Pyodide's VFS, then mount the user's
+              // selected skills' bundled resources read-only for this run.
               const artifactFiles: SandboxFiles = {};
               if (fs) {
                 const snapshot = await fs.getOverlaySnapshot();
@@ -342,7 +335,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                   artifactFiles[path] = { content: file.content, contentType: file.contentType };
                 }
               }
-              const skillKeys = mergeSkillFiles(artifactFiles, await mountSkillFiles(asStringArray(args.skills)));
+              const skillKeys = mergeSkillFiles(artifactFiles, await mountSkillFiles());
 
               const hasCode = typeof code === "string" && code.trim().length > 0;
               const hasPath = typeof path === "string" && path.length > 0;

@@ -36,26 +36,6 @@ export function artifactDeltaFromMeta(meta: Record<string, unknown> | undefined)
   return parsed.success ? parsed.data : null;
 }
 
-export class ArtifactRevisionConflictError extends Error {
-  readonly code = "ARTIFACT_REVISION_CONFLICT";
-  readonly path: string;
-  readonly expectedRevision: string;
-  readonly actualRevision: string;
-  readonly proposedPath: string;
-
-  constructor(path: string, expectedRevision: string, actualRevision: string, proposedPath: string) {
-    super(
-      `Revision conflict for ${path}: expected ${expectedRevision}, found ${actualRevision}. ` +
-        `The proposed content was preserved at ${proposedPath}. Reload the current file or move the preserved copy into place.`,
-    );
-    this.name = "ArtifactRevisionConflictError";
-    this.path = path;
-    this.expectedRevision = expectedRevision;
-    this.actualRevision = actualRevision;
-    this.proposedPath = proposedPath;
-  }
-}
-
 export type ArtifactJobPhase =
   | "briefing"
   | "planning"

@@ -3,12 +3,7 @@ import * as opfs from "@/shared/lib/opfs";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry, FileSystem } from "@/shared/types/file";
-import {
-  artifactChecksum,
-  artifactRevision,
-  ArtifactRevisionConflictError,
-  type ArtifactMutation,
-} from "@/shared/types/artifact";
+import { artifactChecksum, artifactRevision, type ArtifactMutation } from "@/shared/types/artifact";
 
 type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 
@@ -126,46 +121,12 @@ export class FileSystemManager implements FileSystem {
    * Create a new file or update an existing file.
    * Writes directly to OPFS, then emits event.
    */
-  async createFile(
-    path: string,
-    content: string,
-    contentType?: string,
-    options: { baseRevision?: string | null } = {},
-  ): Promise<ArtifactMutation | null> {
+  async createFile(path: string, content: string, contentType?: string): Promise<ArtifactMutation | null> {
     const normalized = this.normalizePath(path);
 
     // Check if file exists to determine event type
     const existingFile = await opfs.readArtifact(this.chatId, normalized);
     const isUpdate = existingFile !== undefined;
-
-    if (
-      existingFile &&
-      options.baseRevision &&
-      options.baseRevision !== (await artifactRevision(existingFile.content, existingFile.contentType))
-    ) {
-      const dot = normalized.lastIndexOf(".");
-      const suffix = `.conflict-${Date.now()}`;
-      const proposedPath =
-        dot > normalized.lastIndexOf("/")
-          ? `${normalized.slice(0, dot)}${suffix}${normalized.slice(dot)}`
-          : `${normalized}${suffix}`;
-      const proposedContentType = contentType ?? existingFile.contentType;
-      await opfs.archiveArtifactRevision(this.chatId, {
-        path: proposedPath,
-        revision: await artifactRevision(content, proposedContentType),
-        content,
-        contentType: proposedContentType,
-        createdAt: new Date().toISOString(),
-      });
-      await opfs.writeArtifact(this.chatId, proposedPath, content, proposedContentType);
-      this.emit("fileCreated", proposedPath);
-      throw new ArtifactRevisionConflictError(
-        normalized,
-        options.baseRevision,
-        await artifactRevision(existingFile.content, existingFile.contentType),
-        proposedPath,
-      );
-    }
 
     const resolvedContentType = contentType ?? existingFile?.contentType;
     if (existingFile?.content === content && existingFile.contentType === resolvedContentType) return null;
@@ -288,21 +249,14 @@ export class FileSystemManager implements FileSystem {
     return false;
   }
 
-  /** Revision-aware delete used by agent tools; UI callers may keep using deleteFile. */
-  async deleteFileWithDelta(path: string, options: { baseRevision?: string | null } = {}): Promise<ArtifactMutation[]> {
+  /** Delete used by agent tools, returning artifact-delta metadata. */
+  async deleteFileWithDelta(path: string): Promise<ArtifactMutation[]> {
     const normalized = this.normalizePath(path);
     const direct = await opfs.readArtifact(this.chatId, normalized);
     const paths = direct
       ? [normalized]
       : (await opfs.listArtifacts(this.chatId)).filter((candidate) => candidate.startsWith(`${normalized}/`));
     if (paths.length === 0) return [];
-
-    if (direct && options.baseRevision) {
-      const current = await artifactRevision(direct.content, direct.contentType);
-      if (current !== options.baseRevision) {
-        throw new ArtifactRevisionConflictError(normalized, options.baseRevision, current, normalized);
-      }
-    }
 
     const snapshots = await Promise.all(
       paths.map(async (candidate) => ({
@@ -419,21 +373,11 @@ export class FileSystemManager implements FileSystem {
     return false;
   }
 
-  /** Revision-aware move used by agent tools. */
-  async renameFileWithDelta(
-    oldPath: string,
-    newPath: string,
-    options: { baseRevision?: string | null } = {},
-  ): Promise<ArtifactMutation[]> {
+  /** Move used by agent tools, returning artifact-delta metadata. */
+  async renameFileWithDelta(oldPath: string, newPath: string): Promise<ArtifactMutation[]> {
     const normalizedOld = this.normalizePath(oldPath);
     const normalizedNew = this.normalizePath(newPath);
     const direct = await opfs.readArtifact(this.chatId, normalizedOld);
-    if (direct && options.baseRevision) {
-      const current = await artifactRevision(direct.content, direct.contentType);
-      if (current !== options.baseRevision) {
-        throw new ArtifactRevisionConflictError(normalizedOld, options.baseRevision, current, normalizedOld);
-      }
-    }
     const sources = direct
       ? [normalizedOld]
       : (await opfs.listArtifacts(this.chatId)).filter((candidate) => candidate.startsWith(`${normalizedOld}/`));

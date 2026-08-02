@@ -65,6 +65,59 @@ describe("tool argument recovery", () => {
     });
   });
 
+  it("removes leaked Bedrock AntML boundaries and recovers an embedded array parameter", () => {
+    const parameters = {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        skills: { type: "array", items: { type: "string" } },
+        code: { type: "string" },
+      },
+    };
+    const leaked = JSON.stringify({
+      code: 'print("hello")',
+      path: '</antml_parameter>\n<parameter name="skills">[]',
+    });
+
+    expect(parseToolArguments(leaked, toolArgumentHints(parameters))).toEqual({
+      code: 'print("hello")',
+      path: "",
+      skills: [],
+    });
+  });
+
+  it("cleans a leaked duplicate parameter without overwriting the clean original", () => {
+    const parameters = {
+      type: "object",
+      properties: {
+        from: { type: "string" },
+        to: { type: "string" },
+      },
+    };
+    const leaked = JSON.stringify({
+      from: "/assets/note.txt",
+      to: '</antml_parameter>\n<parameter name="from">/assets/note.txt',
+    });
+
+    expect(parseToolArguments(leaked, toolArgumentHints(parameters))).toEqual({
+      from: "/assets/note.txt",
+      to: "",
+    });
+  });
+
+  it("never treats provider-like markup inside the dominant payload as an argument boundary", () => {
+    const parameters = {
+      type: "object",
+      properties: { path: { type: "string" }, code: { type: "string" } },
+    };
+    const args = {
+      path: "",
+      code: "print('<parameter name=\"skills\">[]</antml_parameter>')",
+    };
+
+    expect(parseToolArguments(JSON.stringify(args), toolArgumentHints(parameters))).toEqual(args);
+  });
+
   it.each([
     {
       name: "double-quoted JSON",

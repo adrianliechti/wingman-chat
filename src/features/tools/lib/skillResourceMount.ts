@@ -1,6 +1,6 @@
 import type { ArtifactFiles } from "./interpreterProtocol";
 
-type Resolver = (names: string[]) => Promise<ArtifactFiles>;
+type Resolver = () => Promise<ArtifactFiles>;
 
 let resolver: Resolver | null = null;
 
@@ -19,14 +19,14 @@ export function setSkillResourceResolver(fn: Resolver | null): void {
 }
 
 /**
- * Resolve bundled resources for the named skills, keyed `skills/<name>/<path>`
- * so they mount under `/home/user/skills/<name>/…`. Returns {} when no resolver
- * is registered or no names are requested.
+ * Resolve bundled resources for the skills selected by the active provider,
+ * keyed `skills/<name>/<path>` so they mount under
+ * `/home/user/skills/<name>/…`. The provider—not the model—owns this selection.
  */
-export async function mountSkillFiles(names: string[]): Promise<ArtifactFiles> {
-  if (!resolver || names.length === 0) return {};
+export async function mountSkillFiles(): Promise<ArtifactFiles> {
+  if (!resolver) return {};
   try {
-    return await resolver(names);
+    return await resolver();
   } catch {
     return {};
   }

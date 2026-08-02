@@ -1,51 +1,26 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { createServer } from "vite";
+import {
+  GATEWAY_URL,
+  lifecycleTypes,
+  messageText,
+  REQUEST_TIMEOUT_MS,
+  resultDetail,
+  startGatewayHarness,
+} from "./gateway-harness.mjs";
 
-const GATEWAY_URL = process.env.WINGMAN_E2E_GATEWAY ?? process.env.WINGMAN_URL ?? "http://localhost:8080";
-const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.WINGMAN_E2E_TIMEOUT_MS ?? "90000", 10);
-
-let vite;
+let harness;
 let client;
 let run;
 let Role;
 let selectedModel;
 let availableModels;
 
-function messageText(messages) {
-  return messages
-    .flatMap((message) => message.content)
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-}
-
-function lifecycleTypes(events) {
-  return events.map((event) => event.type);
-}
-
 void describe("Wingman gateway E2E", { concurrency: false }, () => {
   before(
     async () => {
-      process.env.WINGMAN_URL = GATEWAY_URL.replace(/\/$/, "");
-      vite = await createServer({
-        logLevel: "error",
-        server: { host: "127.0.0.1", port: 0, strictPort: false },
-      });
-      await vite.listen();
-
-      const address = vite.httpServer?.address();
-      assert(address && typeof address !== "string", "Vite E2E proxy did not bind to a TCP port");
-      globalThis.window = { location: { origin: `http://127.0.0.1:${address.port}` } };
-
-      const clientModule = await vite.ssrLoadModule("/src/shared/lib/client.ts");
-      const agentModule = await vite.ssrLoadModule("/src/shared/lib/agent.ts");
-      const chatModule = await vite.ssrLoadModule("/src/shared/types/chat.ts");
-      client = new clientModule.Client();
-      run = agentModule.run;
-      Role = chatModule.Role;
-
-      availableModels = await client.listModels();
+      harness = await startGatewayHarness();
+      ({ client, run, Role, availableModels } = harness);
       const requestedModel = process.env.WINGMAN_E2E_MODEL;
       if (requestedModel) {
         assert(
@@ -63,10 +38,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     { timeout: REQUEST_TIMEOUT_MS },
   );
 
-  after(async () => {
-    delete globalThis.window;
-    await vite?.close();
-  });
+  after(async () => harness?.close());
 
   void test("discovers models through the application client and development proxy", () => {
     assert(availableModels.length > 0);
@@ -86,7 +58,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         { agentName: "gateway-e2e", onEvent: (event) => events.push(event), maxTurns: 1 },
       );
 
-      assert.equal(result.status, "completed", JSON.stringify(result.error));
+      assert.equal(result.status, "completed", resultDetail(result));
       assert.match(messageText(result.messages), /WINGMAN_E2E_OK/i);
       assert.deepEqual(lifecycleTypes(events), [
         "run.started",
@@ -137,7 +109,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         { agentName: "gateway-tool-e2e", onEvent: (event) => events.push(event), maxTurns: 3 },
       );
 
-      assert.equal(result.status, "completed", JSON.stringify(result.error));
+      assert.equal(result.status, "completed", resultDetail(result));
       assert.deepEqual(calls, [{ key: "wingman" }]);
       assert.equal(contexts[0]?.runId, result.runId);
       assert(contexts[0]?.invocationContext);
@@ -173,13 +145,17 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       // pdfjs touches DOMMatrix at module initialization even though this JSON
       // test never opens a PDF. The browser supplies it in production.
       globalThis.DOMMatrix ??= class DOMMatrix {};
-      const fileToolsModule = await vite.ssrLoadModule("/src/shared/lib/file-tools.ts");
-      const validatorsModule = await vite.ssrLoadModule("/src/features/artifacts/lib/artifactValidators.ts");
-      const verifierModule = await vite.ssrLoadModule("/src/features/artifacts/lib/artifact-verifier.ts");
-      const executionSchemasModule = await vite.ssrLoadModule("/src/features/artifacts/lib/executionToolSchemas.ts");
-      const declarationSchemaModule = await vite.ssrLoadModule("/src/features/studio/lib/artifactDeclarationSchema.ts");
-      const artifactModule = await vite.ssrLoadModule("/src/shared/types/artifact.ts");
-      const toolSchemasModule = await vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
+      const fileToolsModule = await harness.vite.ssrLoadModule("/src/shared/lib/file-tools.ts");
+      const validatorsModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/artifactValidators.ts");
+      const verifierModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/artifact-verifier.ts");
+      const executionSchemasModule = await harness.vite.ssrLoadModule(
+        "/src/features/artifacts/lib/executionToolSchemas.ts",
+      );
+      const declarationSchemaModule = await harness.vite.ssrLoadModule(
+        "/src/features/studio/lib/artifactDeclarationSchema.ts",
+      );
+      const artifactModule = await harness.vite.ssrLoadModule("/src/shared/types/artifact.ts");
+      const toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
 
       const files = new Map();
       const source = {
@@ -257,21 +233,18 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
 
       // These are the exact production file, Studio declaration, and execution
       // schemas that previously totaled 22 nullable unions. Keep the full set
-      // union-free so Anthropic-compatible gateways can compile it predictably.
+      // union-free and schema-guided for predictable provider behavior.
       assert.equal(
         tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
         0,
       );
-      assert.deepEqual(
-        tools.filter((tool) => tool.strict).map((tool) => tool.name),
-        ["create_file", "delete_file", "move_file"],
-      );
+      assert.deepEqual(tools.filter((tool) => tool.strict).map((tool) => tool.name), []);
 
       let manifest;
       const result = await run(
         client,
         artifactModel,
-        'Create the requested artifact by calling create_file exactly once with path "/result.json", content "{\\"status\\":\\"ok\\",\\"value\\":42}", and baseRevision "". Do not call execute_python_code, execute_javascript_code, or declare_artifact. After the tool result, reply briefly that the artifact is complete.',
+        'Create the requested artifact by calling create_file exactly once with path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_python_code, execute_javascript_code, or declare_artifact. After the tool result, reply briefly that the artifact is complete.',
         [{ role: Role.User, content: [{ type: "text", text: "Create the deterministic JSON artifact." }] }],
         tools,
         {
@@ -310,7 +283,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         },
       );
 
-      assert.equal(result.status, "completed", JSON.stringify(result.error));
+      assert.equal(result.status, "completed", resultDetail(result));
       assert.deepEqual(JSON.parse(files.get("/result.json")?.content ?? "null"), { status: "ok", value: 42 });
       assert.equal(manifest?.verification.status, "clean", JSON.stringify(manifest?.verification));
       assert.equal(manifest?.files[0]?.role, "primary");

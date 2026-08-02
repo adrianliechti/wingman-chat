@@ -121,15 +121,15 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   const byName = new Map(entries.map((e) => [e.name, e]));
   const hasResources = entries.some((e) => e.resources?.length && e.loadResource);
 
-  // Let the interpreter mount these skills' bundled resources on demand, so the
-  // model can run spec-style scripts (`runpy.run_path("skills/<name>/…")`).
-  // Safe to set from here: only one skills provider is active at a time.
+  // Let the interpreter mount resources from this provider's resolved skill
+  // set. The user/session owns that selection (for an agent this is its curated
+  // agent.skills list); the model only chooses which mounted script to run.
+  // Safe to set here because only one skills provider is active at a time.
   setSkillResourceResolver(
     hasResources
-      ? async (names) => {
+      ? async () => {
           const files: ArtifactFiles = {};
-          for (const name of names) {
-            const entry = byName.get(name);
+          for (const [name, entry] of byName) {
             if (!entry?.resources?.length || !entry.loadResource) continue;
             for (const path of entry.resources) {
               const content = await entry.loadResource(path);
@@ -307,7 +307,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   // Only describe read_skill_resource when it's actually registered (some skill
   // ships resources), so the prompt never references an absent tool.
   const resourcesGuidance = hasResources
-    ? "\n### Bundled resources\n\nSome skills ship support files (scripts, references, assets). When `read_skill` lists them, load one with `read_skill_resource` only when the instructions reference it or the task clearly needs it — respect progressive disclosure, don't eagerly load every file, and use the exact paths returned by `read_skill`. To *run* a bundled script, prefer passing the skill name in the code interpreter's `skills` parameter (it mounts the resources under `skills/<name>/`) over pasting the script body.\n"
+    ? "\n### Bundled resources\n\nSome skills ship support files (scripts, references, assets). When `read_skill` lists them, load one with `read_skill_resource` only when the instructions reference it or the task clearly needs it — respect progressive disclosure, don't eagerly load every file, and use the exact paths returned by `read_skill`. The selected skills' resources are mounted read-only in the code interpreter under `skills/<name>/`, so run scripts from that exact path instead of pasting their bodies.\n"
     : "";
 
   return {

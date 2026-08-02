@@ -27,14 +27,12 @@ export interface FileEntry {
   path: string;
   size?: number;
   contentType?: string;
-  revision?: string;
 }
 
 export interface FileData {
   path: string;
   content: string;
   contentType?: string;
-  revision?: string;
 }
 
 /** Read-only data source (e.g. notebook sources). */
@@ -45,14 +43,9 @@ export interface ReadableFileSource {
 
 /** Read-write data source (e.g. artifacts filesystem). */
 export interface WritableFileSource extends ReadableFileSource {
-  write(
-    path: string,
-    content: string,
-    contentType?: string,
-    options?: { baseRevision?: string | null },
-  ): Promise<void | ArtifactMutation[]>;
-  remove(path: string, options?: { baseRevision?: string | null }): Promise<boolean | ArtifactMutation[]>;
-  move(from: string, to: string, options?: { baseRevision?: string | null }): Promise<boolean | ArtifactMutation[]>;
+  write(path: string, content: string, contentType?: string): Promise<void | ArtifactMutation[]>;
+  remove(path: string): Promise<boolean | ArtifactMutation[]>;
+  move(from: string, to: string): Promise<boolean | ArtifactMutation[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,16 +181,9 @@ function resolvedMutations(
   return result === false ? [] : [fallback];
 }
 
-function revisionArgument(value: unknown, fallback?: string): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
-// Anthropic-compatible gateways compile every strict schema together and can
-// reject a broad artifact toolbox before the model runs. Reserve strict mode
-// for the compact create/delete/move mutations; the read/search helpers and
-// nested edit schema remain schema-guided and are validated defensively here.
+// Keep the shared file toolbox schema-guided so optional defaults can simply be
+// omitted. Every handler validates its required arguments defensively at runtime.
 const SCHEMA_GUIDED = false;
-const STRICT_MUTATION = true;
 
 // ---------------------------------------------------------------------------
 // Tool factories
@@ -219,7 +205,7 @@ function createListTool(source: ReadableFileSource, opts: Required<FileToolsOpti
           description: 'Directory path to filter files, or "/" to list all files.',
         },
       },
-      required: ["directory"],
+      required: [],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {
@@ -268,7 +254,7 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
           description: "End line number (1-indexed, inclusive), or 0 for the default page size.",
         },
       },
-      required: ["path", "startLine", "endLine"],
+      required: ["path"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {
@@ -333,8 +319,7 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
       if (longLineTruncated) notices.push(`line ${startLine} itself exceeds the character cap`);
       if (hasMore) notices.push(`Use startLine=${nextStart} to continue`);
       const notice = notices.length > 0 ? ` [${notices.join(". ")}]` : "";
-      const revision = file.revision ? `, revision ${file.revision}` : "";
-      const header = `# ${path} (lines ${startLine}-${actualEndLine} of ${totalLines}${revision})${notice}`;
+      const header = `# ${path} (lines ${startLine}-${actualEndLine} of ${totalLines})${notice}`;
 
       return text(`${header}\n${formatLineOutput(returnedLines, startLine)}`);
     },
@@ -344,7 +329,7 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}create_file`,
-    strict: STRICT_MUTATION,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
         icon: FilePlus2,
@@ -371,12 +356,8 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
           type: "string",
           description: "The content of the file to create.",
         },
-        baseRevision: {
-          type: "string",
-          description: 'Revision returned by read_file when overwriting an existing file, or "" for a new file.',
-        },
       },
-      required: ["path", "content", "baseRevision"],
+      required: ["path", "content"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>, context?: ToolContext) => {
@@ -397,9 +378,7 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
 
       try {
         const existing = await source.read(path);
-        const writeResult = await source.write(path, content, undefined, {
-          baseRevision: revisionArgument(args.baseRevision, existing?.revision),
-        });
+        const writeResult = await source.write(path, content);
         const mutations = resolvedMutations(writeResult, {
           operation: existing ? "update" : "create",
           path,
@@ -683,16 +662,12 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
                   "Replace every occurrence of find instead of requiring a unique match. Pass false for the default behavior.",
               },
             },
-            required: ["find", "replace", "replace_all"],
+            required: ["find", "replace"],
             additionalProperties: false,
           },
         },
-        baseRevision: {
-          type: "string",
-          description: 'Revision returned by the read_file call this edit is based on, or "" when unavailable.',
-        },
       },
-      required: ["path", "edits", "baseRevision"],
+      required: ["path", "edits"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>, context?: ToolContext) => {
@@ -710,9 +685,7 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
       if ("error" in result) return error(`${result.error.replace(/\.$/, "")} (in ${path}).`);
 
       try {
-        const writeResult = await source.write(path, result.next, file.contentType, {
-          baseRevision: revisionArgument(args.baseRevision, file.revision),
-        });
+        const writeResult = await source.write(path, result.next, file.contentType);
         const mutations = resolvedMutations(writeResult, {
           operation: "update",
           path,
@@ -744,7 +717,7 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
 function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}delete_file`,
-    strict: STRICT_MUTATION,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
     },
@@ -756,22 +729,15 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
           type: "string",
           description: "The file or folder path to delete.",
         },
-        baseRevision: {
-          type: "string",
-          description: 'Revision returned by read_file for a file target, or "" when deleting a folder.',
-        },
       },
-      required: ["path", "baseRevision"],
+      required: ["path"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>, context?: ToolContext) => {
       const path = args.path as string;
       if (!path) return error("path is required");
 
-      const file = await source.read(path);
-      const removeResult = await source.remove(path, {
-        baseRevision: revisionArgument(args.baseRevision, file?.revision),
-      });
+      const removeResult = await source.remove(path);
       const mutations = resolvedMutations(removeResult, { operation: "delete", path });
       if (mutations.length === 0) return error(`File or folder not found: ${path}`);
       publishArtifactDelta(context, mutations);
@@ -783,7 +749,7 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
 function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}move_file`,
-    strict: STRICT_MUTATION,
+    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => {
         const from = (typeof args?.from === "string" ? args.from : "").replace(/^\/+/, "");
@@ -807,12 +773,8 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
           type: "string",
           description: "The destination file path.",
         },
-        baseRevision: {
-          type: "string",
-          description: 'Revision returned by read_file for the source file, or "" when moving a folder.',
-        },
       },
-      required: ["from", "to", "baseRevision"],
+      required: ["from", "to"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>, context?: ToolContext) => {
@@ -821,10 +783,7 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
       if (!from || !to) return error("Both from and to are required");
 
       const file = await source.read(from);
-
-      const moveResult = await source.move(from, to, {
-        baseRevision: revisionArgument(args.baseRevision, file?.revision),
-      });
+      const moveResult = await source.move(from, to);
       const mutations = resolvedMutations(moveResult, {
         operation: "move",
         from,
@@ -885,7 +844,7 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
           description: `Context lines (0 or more) before/after each match. Use ${opts.defaultContextLines} by default.`,
         },
       },
-      required: ["pattern", "filePattern", "ignoreCase", "contextLines"],
+      required: ["pattern"],
       additionalProperties: false,
     },
     function: async (args: Record<string, unknown>) => {

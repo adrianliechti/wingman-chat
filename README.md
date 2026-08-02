@@ -121,21 +121,40 @@ npm run dev
 
 ### Gateway end-to-end tests
 
-The opt-in E2E suite starts the application development proxy and runs the real `Client` and agent loop against a
-live Wingman gateway. It covers model discovery, Responses streaming, tool-call correlation, cancellation, the terminal
-error contract, and a Sonnet 4.6 artifact create/validate/reference flow. These tests make real model requests and are
-intentionally separate from unit checks.
+The opt-in E2E suites start the application development proxy and run the real `Client` and agent loop against a live
+Wingman gateway. The smoke suite covers model discovery, Responses streaming, tool-call correlation, cancellation, the
+terminal error contract, and a Sonnet 4.6 artifact create/validate/reference flow.
+
+The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
+that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
+failure, checks transport retry and retry cancellation, exercises transient tool recovery, runtime verification,
+nested-agent budgets, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
+the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
+workspace to cover invalid structured-file repair, revision/delta metadata, multi-file manifests, and moves. It makes
+many real model requests and requires `python3`; use the smoke suite for
+quick checks.
+
+The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
+`execute_python_code` calls using the production schemas. It reports raw JSON/AntML failures separately from calls
+that succeeded through client-side recovery, which makes gateway/model improvements measurable rather than hidden by
+the workaround.
 
 ```bash
 npm run test:e2e
+npm run test:e2e:challenge
+npm run test:e2e:bedrock-soak
+npm run test:e2e:all
 
 # Optional overrides
 WINGMAN_E2E_GATEWAY=http://localhost:8080 \
 WINGMAN_E2E_MODEL=auto \
 WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
+WINGMAN_E2E_BEDROCK_MODEL=bedrock-sonnet-4-6 \
+WINGMAN_E2E_PYTHON=python3 \
 WINGMAN_E2E_TIMEOUT_MS=90000 \
 WINGMAN_TOKEN=... \
-npm run test:e2e
+npm run test:e2e:challenge
 ```
 
 To run the Go server against the built frontend:
