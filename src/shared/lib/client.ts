@@ -17,6 +17,7 @@ import type {
   Message,
   Model,
   ModelType,
+  ReasoningEffort,
   ReasoningContent,
   Tool,
   ToolCallContent,
@@ -103,6 +104,10 @@ export interface ClientRequestOptions {
 export interface GuardResult {
   flagged: boolean;
   categories: Array<{ name: string; score: number }>;
+}
+
+export interface ParseOptions extends ClientRequestOptions {
+  effort?: ReasoningEffort;
 }
 
 /**
@@ -504,7 +509,7 @@ export class Client {
     input: Message[],
     categories: Array<{ id: string; description: string }> = [],
     risks: Array<{ id: string; description: string }> = [],
-    requestOptions: ClientRequestOptions = {},
+    options: ParseOptions = {},
   ): Promise<{
     title: string | null;
     categories: Array<{ id: string; confidence: number }>;
@@ -557,7 +562,7 @@ export class Client {
       JSON.stringify({ categories, risks, history }),
       schema,
       "classify_chat",
-      requestOptions,
+      options,
     );
     return {
       title: result?.title ?? null,
@@ -921,7 +926,7 @@ export class Client {
     input: string,
     schema: T,
     name: string,
-    requestOptions: ClientRequestOptions = {},
+    options: ParseOptions = {},
   ): Promise<z.infer<T> | null> {
     return traceGenAI(
       name,
@@ -931,21 +936,33 @@ export class Client {
           const response = await this.oai.responses.parse(
             {
               model,
+              store: false,
               instructions,
               input,
               truncation: "auto",
               text: { format: zodTextFormat(schema, name) },
+              ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
             },
-            requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+            options.signal ? { signal: options.signal } : undefined,
           );
-          return { result: response.output_parsed ?? null };
+          return {
+            result: response.output_parsed ?? null,
+            response: {
+              id: response.id,
+              model: response.model,
+              inputTokens: response.usage?.input_tokens,
+              cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+              outputTokens: response.usage?.output_tokens,
+              reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+            },
+          };
         } catch (error) {
           if (isAbortError(error)) throw error;
           console.error(`Error in ${name}:`, error);
           return { result: null };
         }
       },
-      requestOptions.parentContext,
+      options.parentContext,
     );
   }
 

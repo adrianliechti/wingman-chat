@@ -6,6 +6,8 @@ export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | stri
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 /** Image-generation quality tier (renderer models). */
 export type ImageQuality = "low" | "medium" | "high";
 /** Image-generation output resolution (e.g. Gemini's 1K/2K/4K lever). */
@@ -29,14 +31,14 @@ export type Model = {
    * model it doubles as the per-chat override (the config default is recovered
    * from the fresh model list by id). Unset means the backend/model default.
    */
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  effort?: ReasoningEffort;
   /** Reasoning-effort levels offered in the picker; empty/unset hides the effort selector. */
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")[];
+  supportedEfforts?: ReasoningEffort[];
   /**
    * The level the picker badges as "Default" — what a fresh chat gets. Config's
    * `effort` when set, else the provider's own default. Never a per-chat override.
    */
-  defaultEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  defaultEffort?: ReasoningEffort;
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;

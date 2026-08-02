@@ -14,7 +14,7 @@ import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug
 import { run as agentRun, type AgentRunEvent } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
-import { compactThreshold } from "@/shared/lib/models";
+import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
@@ -630,16 +630,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const userTurnCount = conversation.filter(isUserMessage).length;
       const needsTitle = !initialTitle || userTurnCount % 3 === 1;
       if (needsTitle || hasCategories || hasRisks) {
-        const summarizerModel = classificationCfg?.model || config.chat?.summarizer || currentModel.id;
+        const classificationModel = classificationCfg?.model || config.chat?.summarizer || currentModel.id;
+        const classificationEffort = classificationCfg?.effort ?? minimalEffort(classificationModel);
         client
           .classifyChat(
-            summarizerModel,
+            classificationModel,
             // Classification concerns user intent, not tool implementation or
             // output. Keep only recent prose and lightweight media placeholders.
             sanitizeForClassification(conversation),
             categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
             riskConfigs.map((r) => ({ id: riskSlug(r.name), description: r.description })),
-            { signal: abortController.signal },
+            { effort: classificationEffort, signal: abortController.signal },
           )
           .then(({ title, categories: detectedCategories, risks: detectedRisks }) => {
             if (abortController.signal.aborted) return;
