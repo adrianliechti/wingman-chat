@@ -32,7 +32,6 @@ describe("summarizeToolGroup", () => {
         { path: "/stale.ts" },
         {
           artifactDelta: {
-            checkpointId: "c",
             mutations: [{ operation: "move", from: "/a.ts", path: "/b.ts" }],
           },
         },

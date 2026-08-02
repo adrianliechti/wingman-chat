@@ -22,6 +22,7 @@ import { formatArtifactValidationIssue } from "@/shared/lib/artifact-validation"
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { artifactDelta } from "@/shared/types/artifact";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 
@@ -421,7 +422,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                 if (summary.mutations.length > 0) {
                   context?.setMeta?.({
                     artifactFiles: written,
-                    artifactDelta: { checkpointId: crypto.randomUUID(), mutations: summary.mutations },
+                    artifactDelta: artifactDelta(summary.mutations),
                   });
                 }
                 artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
@@ -546,7 +547,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                 if (summary.mutations.length > 0) {
                   context?.setMeta?.({
                     artifactFiles: written,
-                    artifactDelta: { checkpointId: crypto.randomUUID(), mutations: summary.mutations },
+                    artifactDelta: artifactDelta(summary.mutations),
                   });
                 }
                 artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);

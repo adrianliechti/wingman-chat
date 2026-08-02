@@ -24,6 +24,7 @@ import type {
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
+import { combineAbortSignals } from "./abortSignals";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
@@ -352,7 +353,7 @@ export class Client {
         // instead of duplicating deltas. Re-sending is replay-safe: the caller
         // commits the assistant message (and runs its tools) only after this
         // resolves, so a failed attempt left nothing committed.
-        const attemptStream = () => {
+        const attemptStream = async () => {
           // Clearing only matters on a retry: drop the failed attempt's partial
           // render so the UI overwrites it instead of appending duplicate deltas.
           const hadPartial = contentParts.length > 0;
@@ -443,20 +444,20 @@ export class Client {
 
           // Wire abort. Handle the already-aborted case explicitly —
           // addEventListener on a signal that has already fired never invokes.
-          if (options?.signal) {
-            if (options.signal.aborted) {
-              runner.abort();
-            } else {
-              options.signal.addEventListener("abort", () => runner.abort(), { once: true });
-            }
-          }
+          const abortRunner = () => runner.abort();
+          if (options?.signal?.aborted) abortRunner();
+          else options?.signal?.addEventListener("abort", abortRunner, { once: true });
 
           // Attach an error listener so mid-stream errors don't surface as
           // unhandled EventEmitter errors. The same error rejects
           // `finalResponse()`, where we actually handle it.
           runner.on("error", () => {});
 
-          return runner.finalResponse();
+          try {
+            return await runner.finalResponse();
+          } finally {
+            options?.signal?.removeEventListener("abort", abortRunner);
+          }
         };
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
@@ -970,15 +971,12 @@ export class Client {
     // wedges the single interpreter worker and every queued sandbox call. Image
     // generation can legitimately run for minutes, so its caller passes a larger
     // budget (see generateImage).
-    const controller = new AbortController();
-    const callerSignal = requestOptions.signal;
-    const abortFromCaller = () => controller.abort(callerSignal?.reason);
-    if (callerSignal?.aborted) abortFromCaller();
-    else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeoutController = new AbortController();
+    const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      controller.abort();
+      timeoutController.abort();
     }, timeoutMs);
     let resp: Response;
     try {
@@ -986,7 +984,7 @@ export class Client {
         method: "POST",
         headers,
         body: data,
-        signal: controller.signal,
+        signal: combinedSignal.signal,
       });
     } catch (error) {
       // Surface a readable timeout instead of the runtime's opaque abort message
@@ -995,7 +993,7 @@ export class Client {
       throw error;
     } finally {
       clearTimeout(timer);
-      callerSignal?.removeEventListener("abort", abortFromCaller);
+      combinedSignal.cleanup();
     }
 
     if (!resp.ok) {

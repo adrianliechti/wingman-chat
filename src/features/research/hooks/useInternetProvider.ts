@@ -310,11 +310,7 @@ export function useInternetProvider(): ToolProvider | null {
               agentName: "research",
               invocationContext: context?.invocationContext?.fork("research"),
               options: { signal: context?.signal },
-              createToolContext: () => ({
-                model,
-                signal: context?.signal,
-                invocationContext: context?.invocationContext?.fork("research-tool"),
-              }),
+              createToolContext: () => ({ model }),
               // Nest the inner research agent under the outer execute_tool span
               // explicitly — the elicitation `await` above has already dropped
               // the active context.

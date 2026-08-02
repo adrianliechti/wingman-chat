@@ -40,21 +40,8 @@ export interface AgentRunResult {
   messages: Message[];
   startedAt: string;
   endedAt: string;
-  checkpoint: AgentRunCheckpoint;
-  error?: AgentRunError;
-}
-
-export interface AgentRunCheckpoint {
-  schemaVersion: "1.0";
-  invocationId: string;
-  runId: string;
-  branch?: string;
-  status: AgentRunStatus;
-  stopReason: AgentRunStopReason;
-  startedAt: string;
-  endedAt: string;
   modelCalls: { used: number; limit: number | null };
-  messages: Message[];
+  error?: AgentRunError;
 }
 
 interface SharedInvocationBudget {
@@ -93,6 +80,17 @@ export class AgentInvocationContext {
     });
   }
 
+  /** Preserve invocation identity/budget while replacing its cancellation source. */
+  withSignal(signal?: AbortSignal): AgentInvocationContext {
+    if (signal === this.signal) return this;
+    return new AgentInvocationContext({
+      invocationId: this.invocationId,
+      branch: this.branch,
+      signal,
+      budget: this.budget,
+    });
+  }
+
   tryConsumeModelCall(): boolean {
     if (this.budget.limit != null && this.budget.used >= this.budget.limit) return false;
     this.budget.used++;
@@ -117,7 +115,6 @@ export class AgentRunController {
   readonly invocation: AgentInvocationContext;
 
   private readonly onEvent?: (event: AgentRunEvent) => void;
-  private finished = false;
   private result?: AgentRunResult;
   private sequence = 0;
 
@@ -136,7 +133,7 @@ export class AgentRunController {
   }
 
   emit(event: EventInput): void {
-    if (this.finished) return;
+    if (this.result) return;
     this.onEvent?.({
       ...event,
       runId: this.runId,
@@ -155,20 +152,7 @@ export class AgentRunController {
   ): AgentRunResult {
     if (this.result) return this.result;
     this.emit({ type: "run.completed", status, reason: stopReason });
-    this.finished = true;
     const endedAt = new Date().toISOString();
-    const checkpoint: AgentRunCheckpoint = {
-      schemaVersion: "1.0",
-      invocationId: this.invocation.invocationId,
-      runId: this.runId,
-      ...(this.invocation.branch ? { branch: this.invocation.branch } : {}),
-      status,
-      stopReason,
-      startedAt: this.startedAt,
-      endedAt,
-      modelCalls: this.invocation.budgetSnapshot(),
-      messages,
-    };
     this.result = {
       runId: this.runId,
       status,
@@ -176,7 +160,7 @@ export class AgentRunController {
       messages,
       startedAt: this.startedAt,
       endedAt,
-      checkpoint,
+      modelCalls: this.invocation.budgetSnapshot(),
       ...(error ? { error } : {}),
     };
     return this.result;

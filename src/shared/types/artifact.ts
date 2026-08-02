@@ -11,15 +11,14 @@ export const ArtifactMutationSchema = z.object({
 });
 
 export const ArtifactDeltaSchema = z.object({
-  checkpointId: z.string().min(1),
   mutations: z.array(ArtifactMutationSchema),
 });
 
 export type ArtifactMutation = z.infer<typeof ArtifactMutationSchema>;
 export type ArtifactDelta = z.infer<typeof ArtifactDeltaSchema>;
 
-export function artifactDelta(mutations: ArtifactMutation[], checkpointId = crypto.randomUUID()): ArtifactDelta {
-  return ArtifactDeltaSchema.parse({ checkpointId, mutations });
+export function artifactDelta(mutations: ArtifactMutation[]): ArtifactDelta {
+  return ArtifactDeltaSchema.parse({ mutations });
 }
 
 export async function artifactChecksum(content: string, contentType?: string): Promise<string> {

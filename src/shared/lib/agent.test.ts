@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "./client";
 import { run } from "./agent";
+import { AgentInvocationContext } from "./agent-run-controller";
 import type { Message, Tool } from "../types/chat";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
@@ -10,7 +11,7 @@ function fakeClient(complete: Client["complete"]): Client {
 }
 
 describe("agent run controller", () => {
-  it("returns max_turns with an ordered, schema-versioned checkpoint", async () => {
+  it("returns max_turns with ordered events and invocation-wide model usage", async () => {
     const complete = vi.fn(async () => ({
       role: "assistant" as const,
       content: [{ type: "tool_call" as const, id: crypto.randomUUID(), name: "noop", arguments: "{}" }],
@@ -27,8 +28,7 @@ describe("agent run controller", () => {
     });
 
     expect(result.status).toBe("max_turns");
-    expect(result.checkpoint.schemaVersion).toBe("1.0");
-    expect(result.checkpoint.modelCalls).toEqual({ used: 2, limit: 2 });
+    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
     expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index));
   });
 
@@ -41,6 +41,39 @@ describe("agent run controller", () => {
     });
     expect(result.status).toBe("aborted");
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("uses invocation cancellation even when request options provide another signal", async () => {
+    const parent = new AbortController();
+    parent.abort();
+    const complete = vi.fn();
+    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [], {
+      invocationContext: new AgentInvocationContext({ signal: parent.signal }),
+      options: { signal: new AbortController().signal },
+    });
+    expect(result.status).toBe("aborted");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("emits one streaming phase event and appends stop-policy content immutably", async () => {
+    const events: string[] = [];
+    const complete = vi.fn(async (...args: Parameters<Client["complete"]>) => {
+      const stream = args[4];
+      stream?.([{ type: "text", text: "a" }]);
+      stream?.([{ type: "text", text: "ab" }]);
+      return { role: "assistant" as const, content: [{ type: "text" as const, text: "done" }] };
+    });
+    const result = await run(fakeClient(complete), "model", "instructions", prompt, [], {
+      onEvent: (event) => events.push(event.type),
+      beforeFinish: async () => ({
+        action: "finish",
+        appendContent: [{ type: "artifact_ref", path: "/result.md" }],
+      }),
+    });
+
+    expect(events.filter((type) => type === "model.streaming")).toHaveLength(1);
+    expect(result.messages.at(-1)?.content.at(-1)).toEqual({ type: "artifact_ref", path: "/result.md" });
+    expect(prompt).toEqual([{ role: "user", content: [{ type: "text", text: "go" }] }]);
   });
 
   it("continues from runtime policy feedback without exposing a second invocation", async () => {

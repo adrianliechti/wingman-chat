@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
-import { ArtifactJobSchema, artifactDeltaFromMeta, type ArtifactJob } from "@/shared/types/artifact";
-import {
-  findArtifactJobForRun,
-  upsertArtifactJob,
-  upsertArtifactManifest,
-} from "@/features/artifacts/lib/artifact-job-store";
-import { verifyArtifactJob } from "@/features/artifacts/lib/artifact-verifier";
+import { applyArtifactStopPolicy } from "@/features/artifacts/lib/artifact-stop-policy";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
@@ -48,19 +42,6 @@ function isUserMessage(message: Message): boolean {
     message.role === Role.User &&
     message.content.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback")
   );
-}
-
-function artifactKindFromPath(path: string): ArtifactJob["kind"] {
-  const extension = path.split(".").pop()?.toLowerCase();
-  if (extension === "html" || extension === "htm") return "html";
-  if (extension === "pptx") return "slides";
-  if (extension === "docx") return "docx";
-  if (extension === "xlsx") return "xlsx";
-  if (extension === "pdf") return "pdf";
-  if (["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(extension ?? "")) return "image";
-  if (["mp3", "wav", "m4a", "ogg", "flac"].includes(extension ?? "")) return "audio";
-  if (["csv", "tsv", "json", "jsonl"].includes(extension ?? "")) return "data";
-  return "other";
 }
 
 /**
@@ -634,7 +615,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
       runningChatIdRef.current = id;
-      let artifactMutationsSeen = 0;
 
       // Kick off the combined title + classification call in parallel with the model turn so
       // the consent/risk overlay can appear as soon as the user hits send, without waiting for
@@ -865,11 +845,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           },
           createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
           onToolResult: (toolResult) => {
-            for (const part of toolResult.content) {
-              if (part.type === "tool_result") {
-                artifactMutationsSeen += artifactDeltaFromMeta(part.meta)?.mutations.length ?? 0;
-              }
-            }
             conversation = [...conversation, toolResult];
             setPendingElicitation(null);
             // Drop live meta entries — data now lives on tool_result.meta.
@@ -890,129 +865,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
             updateChat(id, () => ({ messages: conversation }));
           },
           beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
-            if (signal?.aborted) return { action: "finish" as const };
             const activeFs = fsRef.current;
             const studioEnabled = tools.some((tool) => tool.name === "declare_artifact");
             if (!activeFs || !studioEnabled) return { action: "finish" as const };
-
-            let job = await findArtifactJobForRun(id, activeRunId);
-            if (!job && artifactMutationsSeen > 0) {
-              const latestPath = [...runMessages]
-                .reverse()
-                .flatMap((candidate) => candidate.content)
-                .flatMap((part) =>
-                  part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : [],
-                )
-                .find((mutation) => mutation.operation !== "delete")?.path;
-              if (!latestPath) return { action: "finish" as const };
-              const now = new Date().toISOString();
-              job = ArtifactJobSchema.parse({
-                id: crypto.randomUUID(),
-                chatId: id,
-                runId: activeRunId,
-                kind: artifactKindFromPath(latestPath),
-                primaryPath: latestPath,
-                phase: "building",
-                inferred: true,
-                sourceRefs: [],
-                createdAt: now,
-                updatedAt: now,
-              });
-              await upsertArtifactJob(id, job);
-              if (signal?.aborted) return { action: "finish" as const };
-            }
-            if (!job) return { action: "finish" as const };
-
-            job = { ...job, phase: "validating", updatedAt: new Date().toISOString() };
-            await upsertArtifactJob(id, job);
-            if (signal?.aborted) return { action: "finish" as const };
-            let manifest;
-            try {
-              manifest = await verifyArtifactJob(activeFs, job);
-            } catch (error) {
-              if (signal?.aborted) return { action: "finish" as const };
-              job = { ...job, phase: "failed", updatedAt: new Date().toISOString() };
-              await upsertArtifactJob(id, job);
-              const lastAssistant = [...runMessages].reverse().find((candidate) => candidate.role === Role.Assistant);
-              if (lastAssistant) {
-                lastAssistant.content.push({
-                  type: "text",
-                  text: `\n\nArtifact verification could not complete, so this deliverable is not marked ready: ${error instanceof Error ? error.message : String(error)}`,
-                });
-                conversation = runMessages;
-                updateChat(id, () => ({ messages: conversation }));
-              }
-              return { action: "finish" as const };
-            }
-            if (signal?.aborted) return { action: "finish" as const };
-            await upsertArtifactManifest(id, manifest);
-            if (signal?.aborted) return { action: "finish" as const };
-            const failures = manifest.verification.checks.filter((item) => item.status === "fail");
-
-            if (failures.length > 0 && job.repairAttempts < 2) {
-              job = {
-                ...job,
-                phase: "repairing",
-                repairAttempts: job.repairAttempts + 1,
-                updatedAt: new Date().toISOString(),
-              };
-              await upsertArtifactJob(id, job);
-              return {
-                action: "continue" as const,
-                feedback: {
-                  role: Role.User,
-                  content: [
-                    {
-                      type: "runtime_feedback",
-                      source: "verification",
-                      text:
-                        "Artifact verification blocked readiness. Fix only these deterministic findings, then finish again:\n" +
-                        failures.map((item) => `- [${item.id}] ${item.message}`).join("\n"),
-                    },
-                  ],
-                },
-              };
-            }
-
-            const primary = manifest.files.find((file) => file.path === manifest.primaryPath);
-            job = {
-              ...job,
-              phase: failures.length === 0 ? "ready" : primary ? "partial" : "failed",
-              updatedAt: new Date().toISOString(),
-            };
-            await upsertArtifactJob(id, job);
-            if (signal?.aborted) return { action: "finish" as const };
-
-            const lastAssistant = [...runMessages].reverse().find((candidate) => candidate.role === Role.Assistant);
-            let assistantChanged = false;
-            if (lastAssistant && failures.length > 0) {
-              lastAssistant.content.push({
-                type: "text",
-                text:
-                  "\n\nArtifact verification remains incomplete after the repair budget was exhausted:\n" +
-                  failures.map((item) => `- ${item.message}`).join("\n"),
-              });
-              assistantChanged = true;
-            }
-            if (
-              lastAssistant &&
-              primary &&
-              !lastAssistant.content.some((part) => part.type === "artifact_ref" && part.jobId === job.id)
-            ) {
-              lastAssistant.content.push({
-                type: "artifact_ref",
-                jobId: job.id,
-                path: primary.path,
-                revision: primary.revision,
-                displayName: primary.path.split("/").pop() ?? primary.path,
-              });
-              assistantChanged = true;
-            }
-            if (assistantChanged) {
-              conversation = runMessages;
-              updateChat(id, () => ({ messages: conversation }));
-            }
-            return { action: "finish" as const };
+            return applyArtifactStopPolicy({
+              chatId: id,
+              runId: activeRunId,
+              messages: runMessages,
+              fs: activeFs,
+              signal,
+            });
           },
           onRuntimeFeedback: (feedback) => {
             conversation = [...conversation, feedback];
@@ -1081,6 +943,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
 
         if (runResult.status === "completed") {
+          // Stop policies may append verification findings or artifact refs
+          // after the model turn was committed by onTurnEnd.
+          updateChat(id, () => ({ messages: conversation }));
           const ready = takeQueuedSends(id);
           if (ready.length > 0) {
             await run(id, mergeQueuedMessages(ready), conversation, initialTitle);

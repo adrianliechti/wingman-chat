@@ -41,11 +41,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
             parentContext: ctx?.agentContext,
             invocationContext: ctx?.invocationContext?.fork("subagent"),
             options: { signal: ctx?.signal },
-            createToolContext: () => ({
-              model,
-              signal: ctx?.signal,
-              invocationContext: ctx?.invocationContext?.fork("subagent-tool"),
-            }),
+            createToolContext: () => ({ model }),
           },
         );
 

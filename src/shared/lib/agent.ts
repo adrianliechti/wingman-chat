@@ -9,6 +9,7 @@ import {
 } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
+import { combineAbortSignals } from "./abortSignals";
 import { getErrorInfo, isContextOverflowError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
@@ -29,6 +30,16 @@ const MAX_OVERFLOW_COMPACTIONS = 2;
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
+
+export interface AgentBeforeFinishContext {
+  runId: string;
+  messages: Message[];
+  signal?: AbortSignal;
+}
+
+export type AgentBeforeFinishDecision =
+  | { action: "finish"; appendContent?: Content[] }
+  | { action: "continue"; feedback: Message };
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
@@ -70,13 +81,7 @@ export interface RunHooks {
   onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
 
   /** Runtime stop gate. Return feedback to continue the same bounded run. */
-  beforeFinish?: (context: {
-    runId: string;
-    invocationId: string;
-    turn: number;
-    messages: Message[];
-    signal?: AbortSignal;
-  }) => Promise<{ action: "finish" } | { action: "continue"; feedback: Message }>;
+  beforeFinish?: (context: AgentBeforeFinishContext) => Promise<AgentBeforeFinishDecision>;
 
   /** Persists wire-visible but UI-hidden feedback injected by a stop policy. */
   onRuntimeFeedback?: (message: Message) => void | Promise<void>;
@@ -119,14 +124,15 @@ export async function run(
   tools: Tool[],
   hooks: RunHooks = {},
 ): Promise<AgentRunResult> {
+  const combinedSignal = combineAbortSignals(hooks.invocationContext?.signal, hooks.options?.signal);
+  const baseInvocation =
+    hooks.invocationContext ??
+    new AgentInvocationContext({
+      maxModelCalls: hooks.maxModelCalls === undefined ? (hooks.maxTurns ?? DEFAULT_MAX_TURNS) : hooks.maxModelCalls,
+    });
   const controller = new AgentRunController({
     runId: hooks.runId,
-    invocation:
-      hooks.invocationContext ??
-      new AgentInvocationContext({
-        signal: hooks.options?.signal,
-        maxModelCalls: hooks.maxModelCalls === undefined ? (hooks.maxTurns ?? DEFAULT_MAX_TURNS) : hooks.maxModelCalls,
-      }),
+    invocation: baseInvocation.withSignal(combinedSignal.signal),
     onEvent: hooks.onEvent,
   });
   try {
@@ -141,6 +147,8 @@ export async function run(
     }
     const detail = getErrorInfo(error);
     return controller.finish("failed", "error", messages, detail);
+  } finally {
+    combinedSignal.cleanup();
   }
 }
 
@@ -173,7 +181,7 @@ async function runLoop(
   controller: AgentRunController,
 ): Promise<AgentRunResult> {
   const { onStream, onTurnStart, onTurnEnd, onToolResult, prepareMessages, onContextOverflow, options } = hooks;
-  const signal = options?.signal ?? controller.invocation.signal;
+  const signal = controller.invocation.signal;
   const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
   let conversation = [...messages];
 
@@ -186,13 +194,17 @@ async function runLoop(
       try {
         if (!controller.invocation.tryConsumeModelCall()) throw new AgentBudgetExceededError();
         controller.emit({ type: "model.started", turn });
+        let streamingStarted = false;
         const assistant = await client.complete(
           model,
           instructions,
           modelMessages,
           tools,
           (content) => {
-            controller.emit({ type: "model.streaming", turn });
+            if (!streamingStarted) {
+              streamingStarted = true;
+              controller.emit({ type: "model.streaming", turn });
+            }
             onStream?.(content);
           },
           {
@@ -248,8 +260,6 @@ async function runLoop(
           controller.emit({ type: "verification.started", turn });
           const decision = await hooks.beforeFinish({
             runId: controller.runId,
-            invocationId: controller.invocation.invocationId,
-            turn,
             messages: conversation,
             signal,
           });
@@ -260,6 +270,9 @@ async function runLoop(
             conversation = [...conversation, feedback];
             await hooks.onRuntimeFeedback?.(feedback);
             continue;
+          }
+          if (decision.appendContent?.length) {
+            conversation = appendToFinalAssistant(conversation, decision.appendContent);
           }
         }
         return controller.finish("completed", "end_turn", conversation);
@@ -346,7 +359,7 @@ async function dispatchToolCall(
           ...baseContext,
           runId: controller.runId,
           invocationContext: controller.invocation,
-          signal: baseContext?.signal ?? controller.invocation.signal,
+          signal: controller.invocation.signal ?? baseContext?.signal,
           setMeta: (meta) => {
             resultMeta = meta;
             hooks.onToolMeta?.(toolCall.id, { ...meta });
@@ -399,6 +412,14 @@ class AgentBudgetExceededError extends Error {
     super("The invocation-wide model-call budget was exhausted.");
     this.name = "AgentBudgetExceededError";
   }
+}
+
+function appendToFinalAssistant(messages: Message[], content: Content[]): Message[] {
+  const index = messages.findLastIndex((message) => message.role === "assistant");
+  if (index < 0) return messages;
+  const next = [...messages];
+  next[index] = { ...next[index], content: [...next[index].content, ...content] };
+  return next;
 }
 
 function toolErrorMessage(
