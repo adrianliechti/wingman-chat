@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultEffort, modelName, shortModelName, supportedEfforts } from "./models";
+import { defaultEffort, minimalEffort, modelName, shortModelName, supportedEfforts } from "./models";
 
 describe("model display names", () => {
   it("omits Anthropic and OpenAI from compact chat labels", () => {
@@ -15,6 +15,13 @@ describe("model display names", () => {
 });
 
 describe("reasoning effort levels", () => {
+  it("selects the lowest supported effort for inexpensive helper calls", () => {
+    expect(minimalEffort("gpt-5.4-nano")).toBe("none");
+    expect(minimalEffort("gpt-5-nano")).toBe("minimal");
+    expect(minimalEffort("claude-haiku-4-5")).toBe("low");
+    expect(minimalEffort("poppy")).toBeUndefined();
+  });
+
   it("offers xhigh and max only where Anthropic ships both", () => {
     const both: ("low" | "medium" | "high" | "xhigh" | "max")[] = ["low", "medium", "high", "xhigh", "max"];
     expect(supportedEfforts("claude-sonnet-5")).toEqual(both);
