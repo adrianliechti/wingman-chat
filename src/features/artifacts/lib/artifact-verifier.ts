@@ -6,6 +6,7 @@ import { inferContentTypeFromPath, isBinaryContentType } from "@/shared/lib/file
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { pdfAssetOptions } from "@/shared/lib/pdf";
 import { validateArtifactFile } from "./artifactValidators";
+import { validateXlsxTableIntegrity } from "./xlsxTableIntegrity";
 import {
   ArtifactManifestSchema,
   VerificationReportSchema,
@@ -172,6 +173,12 @@ async function verifyBinaryPackage(
             `Found ${formulaCount} stored formula(s); browser verification does not recalculate workbooks.`,
           ),
         );
+        const tableIssues = await validateXlsxTableIntegrity(zip, sheets);
+        if (tableIssues.length === 0) {
+          checks.push(check("xlsx.tables", path, "pass", "Structured table relationships and ranges are consistent."));
+        } else {
+          checks.push(...tableIssues.map((issue) => check("xlsx.tables", path, "fail", issue)));
+        }
       }
     } catch (error) {
       checks.push(
