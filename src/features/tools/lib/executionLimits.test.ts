@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_CODE_OUTPUT_MAX_BYTES,
   BoundedOutput,
   CodeExecutionLimitError,
+  DEFAULT_CODE_EXECUTION_LIMITS,
   resolveCodeExecutionLimits,
   validateArtifactFiles,
 } from "./executionLimits";
 
 describe("code execution limits", () => {
+  it("keeps agent output below the interactive runtime allowance", () => {
+    expect(AGENT_CODE_OUTPUT_MAX_BYTES).toBe(32 * 1024);
+    expect(AGENT_CODE_OUTPUT_MAX_BYTES).toBeLessThan(DEFAULT_CODE_EXECUTION_LIMITS.maxOutputBytes);
+  });
+
   it("truncates output on a UTF-8 boundary", () => {
     const output = new BoundedOutput(64);
     output.append(`abc🪽${"tail".repeat(40)}`);

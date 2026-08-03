@@ -11,6 +11,7 @@
 
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
+import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import type { Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
@@ -85,7 +86,7 @@ export function createSourceExecTools(getSources: () => readonly File[], options
     {
       name: "execute_python_code",
       description:
-        "Execute Python code in a sandboxed Pyodide environment. All notebook sources are available under `/home/user/`, and files created or modified there are saved back as notebook sources. Packages numpy, pandas, matplotlib, seaborn, pillow, openpyxl, pypdf, pdfminer.six, pdfplumber, python-docx, beautifulsoup4, markdownify, tabulate are preloaded. For async code use top-level `await` directly; never call asyncio.run() or loop.run_until_complete() — they cannot block in the browser.",
+        'Execute Python 3.14 code in a sandboxed Pyodide environment with NumPy 2.x and pandas 3.x. All notebook sources are available under `/home/user/`, and files created or modified there are saved back as notebook sources. Packages numpy, pandas, matplotlib, seaborn, pillow, openpyxl, pypdf, pdfminer.six, pdfplumber, python-docx, beautifulsoup4, markdownify, tabulate are preloaded. NumPy 2.x does not allow incompatible implicit dtype coercion: for example, string choices in `np.select` require a string default such as `default=""`, not numeric `0`. Keep printed output concise and save large results as sources. If a run fails, diagnose the final exception, correct the code, and retry. For async code use top-level `await` directly; never call asyncio.run() or loop.run_until_complete() — they cannot block in the browser.',
       strict: true,
       parameters: {
         type: "object",
@@ -110,7 +111,11 @@ export function createSourceExecTools(getSources: () => readonly File[], options
           const before = sourcesToFileMap(getSources());
 
           try {
-            const result = await executeCode({ code, files: before });
+            const result = await executeCode({
+              code,
+              files: before,
+              limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES },
+            });
 
             if (!result.success) {
               return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
@@ -163,7 +168,11 @@ export function createSourceExecTools(getSources: () => readonly File[], options
           const before = sourcesToFileMap(getSources());
 
           try {
-            const result = await executeJavaScript({ code, files: before });
+            const result = await executeJavaScript({
+              code,
+              files: before,
+              limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES },
+            });
 
             if (!result.success) {
               return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];

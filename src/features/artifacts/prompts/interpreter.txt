@@ -65,6 +65,8 @@ How to use it:
 5. Print important intermediate results when the output needs explanation.
 6. For async code, use top-level `await` directly (e.g. `result = await main()`). Never call `asyncio.run(...)` or `loop.run_until_complete(...)` — they cannot block inside the browser event loop.
 7. The user's selected skills have bundled resources mounted read-only under `/home/user/skills/<name>/` (using the exact paths from `read_skill`), so you can `runpy.run_path("skills/<name>/scripts/extract.py")`, import them, or open sibling `references/`/`assets/` files. They are not saved as artifacts.
+8. The runtime uses Python 3.14, NumPy 2.x, and pandas 3.x. Do not rely on legacy implicit dtype coercion. In particular, every `np.select` choice and its `default` must have a compatible dtype: with string choices use a string default such as `default=""` (or deliberately use object dtype), not numeric `0`.
+9. Keep printed output compact: show shapes, aggregates, selected rows, and validation results rather than dumping full tables or documents. Agent-triggered stdout/stderr is capped at 32 KiB; write larger results to an artifact and inspect only the relevant portion.
 
 Limitations:
 - No network access.

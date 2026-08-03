@@ -19,6 +19,7 @@ import translateInstructionsText from "@/features/artifacts/prompts/translate.tx
 import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw";
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
+import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
@@ -156,7 +157,10 @@ async function runArtifactCode(options: {
       script = file.content;
     }
 
-    const result = await executor({ code: script, files: artifactFiles }, { signal: context?.signal });
+    const result = await executor(
+      { code: script, files: artifactFiles, limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES } },
+      { signal: context?.signal },
+    );
     if (!result.success) {
       return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
     }

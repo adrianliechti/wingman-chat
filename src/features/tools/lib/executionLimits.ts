@@ -11,6 +11,13 @@ export const DEFAULT_CODE_EXECUTION_LIMITS: Required<CodeExecutionLimits> = {
   maxTotalFileBytes: 512 * 1024 * 1024,
 };
 
+/**
+ * Tool output sent back into an agent's context should be much smaller than
+ * output shown in the interactive editor. Large results belong in artifact or
+ * source files, where the model can inspect them selectively.
+ */
+export const AGENT_CODE_OUTPUT_MAX_BYTES = 32 * 1024;
+
 export class CodeExecutionLimitError extends Error {
   constructor(message: string) {
     super(message);
