@@ -10,6 +10,7 @@ import { AudioViewer } from "../components/AudioViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
 import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
+import { NotebookSunsetNotice, useSunsetNotice } from "../components/NotebookSunsetNotice";
 import { QuizViewer } from "../components/QuizViewer";
 import { ReportViewer } from "../components/ReportViewer";
 import { SlideViewer } from "../components/SlideViewer";
@@ -39,6 +40,8 @@ export function NotebookPage() {
   const [showSourcesDrawer, setShowSourcesDrawer] = useState(false);
   const [showStudioDrawer, setShowStudioDrawer] = useState(false);
   const [panelSizes, setPanelSizes] = useState([0, 0]); // [panel1%, panel2%]
+
+  const sunsetNotice = useSunsetNotice();
 
   // Shared download dispatcher — owns the slide-export overlay + the unified
   // PNG/SVG/PDF/JSON-LD/YAML modal. The same `trigger` powers both the
@@ -421,6 +424,13 @@ export function NotebookPage() {
       </main>
 
       {download.modals}
+
+      {/* Held back until the notebook list is in, so "Export all" doesn't pop in late. */}
+      <NotebookSunsetNotice
+        open={sunsetNotice.open && loaded}
+        canExport={notebooks.length > 0}
+        onDismiss={sunsetNotice.dismiss}
+      />
     </div>
   );
 }
