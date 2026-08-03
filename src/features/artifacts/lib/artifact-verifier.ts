@@ -6,7 +6,9 @@ import { inferContentTypeFromPath, isBinaryContentType } from "@/shared/lib/file
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { pdfAssetOptions } from "@/shared/lib/pdf";
 import { validateArtifactFile } from "./artifactValidators";
-import { validateXlsxTableIntegrity } from "./xlsxTableIntegrity";
+import type { OoxmlIssue } from "./ooxml";
+import { validateOoxmlRelationships } from "./ooxmlRelationships";
+import { validateXlsxIntegrity } from "./xlsxIntegrity";
 import {
   ArtifactManifestSchema,
   VerificationReportSchema,
@@ -22,6 +24,32 @@ type Check = VerificationReport["checks"][number];
 
 function check(id: string, scope: string, status: Check["status"], message: string): Check {
   return { id, scope, status, message };
+}
+
+const REPORTED_ISSUE_LIMIT = 12;
+
+async function integrityChecks(
+  path: string,
+  passId: string,
+  passMessage: string,
+  validate: () => Promise<OoxmlIssue[]>,
+): Promise<Check[]> {
+  let issues: OoxmlIssue[];
+  try {
+    issues = await validate();
+  } catch (error) {
+    return [
+      check(passId, path, "warn", `Could not be validated: ${error instanceof Error ? error.message : String(error)}`),
+    ];
+  }
+  if (issues.length === 0) return [check(passId, path, "pass", passMessage)];
+  const reported = issues
+    .slice(0, REPORTED_ISSUE_LIMIT)
+    .map((issue) => check(issue.id, path, issue.severity, issue.message));
+  if (issues.length > REPORTED_ISSUE_LIMIT) {
+    reported.push(check(passId, path, "warn", `${issues.length - REPORTED_ISSUE_LIMIT} further issue(s) not listed.`));
+  }
+  return reported;
 }
 
 function relativeArtifactPath(basePath: string, reference: string): string | null {
@@ -128,10 +156,20 @@ async function verifyBinaryPackage(
               : "DOCX package is missing non-empty word/document.xml.",
           ),
         );
+        checks.push(
+          ...(await integrityChecks(path, "docx.relationships", "Document relationships resolve.", () =>
+            validateOoxmlRelationships(zip, ["word/document.xml"]),
+          )),
+        );
       } else if (lower.endsWith(".pptx")) {
         const slides = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name));
         checks.push(
           check("pptx.slides", path, slides.length > 0 ? "pass" : "fail", `PPTX contains ${slides.length} slide(s).`),
+        );
+        checks.push(
+          ...(await integrityChecks(path, "pptx.relationships", "Slide relationships resolve.", () =>
+            validateOoxmlRelationships(zip, slides),
+          )),
         );
         if (job.expected?.units && slides.length !== job.expected.units) {
           checks.push(
@@ -173,12 +211,16 @@ async function verifyBinaryPackage(
             `Found ${formulaCount} stored formula(s); browser verification does not recalculate workbooks.`,
           ),
         );
-        const tableIssues = await validateXlsxTableIntegrity(zip, sheets);
-        if (tableIssues.length === 0) {
-          checks.push(check("xlsx.tables", path, "pass", "Structured table relationships and ranges are consistent."));
-        } else {
-          checks.push(...tableIssues.map((issue) => check("xlsx.tables", path, "fail", issue)));
-        }
+        checks.push(
+          ...(await integrityChecks(path, "xlsx.tables", "Worksheet structures are consistent.", () =>
+            validateXlsxIntegrity(zip, sheets),
+          )),
+        );
+        checks.push(
+          ...(await integrityChecks(path, "xlsx.relationships", "Workbook relationships resolve.", () =>
+            validateOoxmlRelationships(zip, ["xl/workbook.xml", ...sheets]),
+          )),
+        );
       }
     } catch (error) {
       checks.push(

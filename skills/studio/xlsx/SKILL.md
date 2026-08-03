@@ -27,6 +27,8 @@ Excel recalculates formulas when the file is opened.)
   least one data row; every header cell is a non-empty, unique **string** (not a number, date, or
   formula); no merged cells or second table inside `ref`; no worksheet-level `auto_filter` on top of
   it; and `displayName` is workbook-unique and not cell-like (`A1`, `T1`, `R1C1`).
+- **Conditional-format formulas take no leading `=`**: `FormulaRule(formula=["A1>3"])`. And never let
+  two `merge_cells()` ranges overlap — both corrupt the sheet.
 
 For a new workbook, establish a compact visual system: one structural header treatment tied to the
 subject or source brand, one input treatment, one accent/status color, clear section bands, deliberate
