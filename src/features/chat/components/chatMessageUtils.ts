@@ -206,24 +206,35 @@ function isToolConnectorMessage(message: Message): boolean {
   return hasToolCalls && !hasReasoning && !messageHasText(message) && !messageHasMedia(message);
 }
 
+function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
+  if (!toolCallId) return false;
+  return message.content.some((p) => p.type === "tool_call" && p.id === toolCallId);
+}
+
 export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
 
 /**
- * Partition messages into render units: standalone messages and folded tool
- * groups. A group is a maximal run of groupable tool results (plus connectors)
- * with at least two results. While responding, the live final message is never
- * folded so its running indicators stay visible.
+ * Partition messages into standalone messages and folded tool groups (runs of
+ * groupable results/connectors with 2+ results). `pendingElicitationToolCallId`
+ * keeps a message hosting an awaiting elicitation prompt standalone.
  */
-export function groupRenderUnits(messages: Message[], isResponding: boolean): RenderUnit[] {
+export function groupRenderUnits(
+  messages: Message[],
+  isResponding: boolean,
+  pendingElicitationToolCallId?: string | null,
+): RenderUnit[] {
   const units: RenderUnit[] = [];
   const limit = isResponding ? messages.length - 1 : messages.length;
+  const groupable = (message: Message) =>
+    !hostsToolCall(message, pendingElicitationToolCallId) &&
+    (isGroupableToolResultMessage(message) || isToolConnectorMessage(message));
 
   let i = 0;
   while (i < limit) {
-    if (isGroupableToolResultMessage(messages[i]) || isToolConnectorMessage(messages[i])) {
+    if (groupable(messages[i])) {
       let j = i;
       const indices: number[] = [];
-      while (j < limit && (isGroupableToolResultMessage(messages[j]) || isToolConnectorMessage(messages[j]))) {
+      while (j < limit && groupable(messages[j])) {
         if (isGroupableToolResultMessage(messages[j])) indices.push(j);
         j++;
       }

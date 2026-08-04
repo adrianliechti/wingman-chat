@@ -317,12 +317,6 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         ) : null,
       );
 
-    // For old messages (not last), only show if there's reasoning to display
-    if (!isLast) {
-      if (!hasReasoning) return null;
-      return <div className="pb-2">{renderReasoning()}</div>;
-    }
-
     // Check if there's a pending elicitation for any of the tool calls
     const hasPendingElicitation =
       hasToolCalls &&
@@ -330,6 +324,12 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         (toolCall) =>
           toolCall.type === "tool_call" && pendingElicitation && pendingElicitation.toolCallId === toolCall.id,
       );
+
+    // Keep a still-awaited elicitation prompt mounted even if a later result made this message not-last.
+    if (!isLast && !hasPendingElicitation) {
+      if (!hasReasoning) return null;
+      return <div className="pb-2">{renderReasoning()}</div>;
+    }
 
     // Show loading indicators for the last message when actively responding,
     // has a pending elicitation, or has reasoning content to display.
