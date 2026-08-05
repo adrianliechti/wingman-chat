@@ -110,7 +110,6 @@ function injectContext(messages: Message[], now: Date): Message[] {
     `Current date and time: ${now.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" })}`,
     `ISO 8601 (UTC): ${now.toISOString()}`,
     `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    `Language: ${navigator.language}`,
     `Client: ${platform}, ${pointer}, ${theme} theme`,
     "</context>",
   ].join("\n");

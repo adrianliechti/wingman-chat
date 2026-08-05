@@ -4,7 +4,7 @@
  * llm/ocr/vision/render/synthesize/transcribe globals proxy back over RPC.
  */
 
-import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
+import { loadPyodide as loadPyodideRuntime, type PyodideInterface, version as pyodideVersion } from "pyodide";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
@@ -110,6 +110,12 @@ const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\
 function needsTzdata(code: string): boolean {
   return TZDATA_USAGE.test(code);
 }
+
+// This chunk is content-hashed, the bundle it loads is not — so the bundle path
+// carries the version the glue was built against (see bundle-pyodide-packages.mjs).
+// Sharing one path across versions let a cached older runtime pair with a freshly
+// deployed glue: "Pyodide version does not match: '<js>' <==> '<wasm>'".
+const PYODIDE_INDEX_URL = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pyodide/${pyodideVersion}/`;
 
 let pyodideReady: Promise<PyodideInterface> | null = null;
 
@@ -258,7 +264,7 @@ function collectPyodideFiles(
 }
 
 /**
- * Load everything the code needs from the offline lock in /pyodide/. The bundler
+ * Load everything the code needs from the offline lock in the bundle. The bundler
  * injects the bundled PyPI wheels into pyodide-lock.json alongside the built-ins,
  * so Pyodide's own lock-driven loader resolves them all by import name — no
  * micropip or dep bookkeeping. (sqlite3/ssl/lzma ship in the base interpreter.)
@@ -341,7 +347,7 @@ async function createExecutionGlobals(pyodide: PyodideInterface): Promise<Pyodid
 
 function loadPyodide(): Promise<PyodideInterface> {
   if (!pyodideReady) {
-    pyodideReady = loadPyodideRuntime({ indexURL: "/pyodide/" })
+    pyodideReady = loadPyodideRuntime({ indexURL: PYODIDE_INDEX_URL })
       .then(async (p) => {
         // Default cwd is /home/pyodide, which is outside the synced tree —
         // relative-path writes (open("out.csv", "w")) would be silently lost.
