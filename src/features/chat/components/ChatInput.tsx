@@ -261,18 +261,23 @@ export function ChatInput() {
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
+        let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
           try {
             const blob = await captureFrame();
             if (blob) {
               const dataUrl = await readAsDataURL(blob);
+              const name = `screen-capture-${Date.now()}.png`;
               const screenContent: ImageContent = {
                 type: "image",
-                name: `screen-capture-${Date.now()}.png`,
+                name,
                 data: dataUrl,
               };
               finalAttachments = [screenContent, ...finalAttachments];
+              if (artifactsAvailable) {
+                screenCaptureFile = new File([blob], name, { type: blob.type || "image/png" });
+              }
             }
           } catch (error) {
             console.error("Error capturing screen during message send:", error);
@@ -296,14 +301,15 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const artifacts = [...fileArtifacts, ...imageArtifacts];
+        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
         // model can read/edit it by name. Images are also shown inline (vision),
         // but the inline copy carries no filename — without this the model can't
         // name the file it's looking at. The redundant chip is suppressed in the
         // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        const referencedPaths = artifacts.map((f) => f.path);
         if (referencedPaths.length > 0) {
           const reference: TextContent = {
             type: "text",
@@ -329,6 +335,7 @@ export function ChatInput() {
       pendingImages,
       isContinuousCaptureActive,
       captureFrame,
+      artifactsAvailable,
       sendMessage,
       clearAttachments,
     ],
