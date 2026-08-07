@@ -1,4 +1,6 @@
-import { downloadBlob } from "@/shared/lib/utils";
+import type JSZip from "jszip";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { decodeDataURL, downloadBlob } from "@/shared/lib/utils";
 
 /**
  * A bundled support file shipped alongside a skill (script, reference, asset).
@@ -191,12 +193,34 @@ export function serializeSkill(skill: Skill): string {
 }
 
 /**
- * Download a single skill as a SKILL.md file
+ * Zip skills as `{name}/SKILL.md` plus their bundled resources at the original
+ * relative paths — the same layout the OPFS skill folder uses, so an exported
+ * archive re-imports losslessly.
  */
-export function downloadSkill(skill: Skill): void {
-  const content = serializeSkill(skill);
-  const blob = new Blob([content], { type: "text/markdown" });
-  downloadBlob(blob, `${skill.name}.SKILL.md`);
+async function downloadSkillZip(skills: Skill[], filename: string): Promise<void> {
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+
+  for (const skill of skills) {
+    zip.file(`${skill.name}/SKILL.md`, serializeSkill(skill));
+    for (const { path, content } of skill.resources ?? []) {
+      zip.file(`${skill.name}/${path}`, content.startsWith("data:") ? decodeDataURL(content) : content);
+    }
+  }
+
+  downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
+}
+
+/**
+ * Download a single skill. Skills with bundled resources export as a zip so the
+ * resources travel with them; a plain skill stays a single SKILL.md.
+ */
+export async function downloadSkill(skill: Skill): Promise<void> {
+  if (skill.resources?.length) {
+    await downloadSkillZip([skill], `${skill.name}.zip`);
+    return;
+  }
+  downloadBlob(new Blob([serializeSkill(skill)], { type: "text/markdown" }), `${skill.name}.SKILL.md`);
 }
 
 /**
@@ -206,19 +230,54 @@ export async function downloadSkillsAsZip(skills: Skill[], filename: string = "s
   if (skills.length === 0) {
     throw new Error("No skills to download");
   }
+  await downloadSkillZip(skills, filename);
+}
 
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
+/** Dotfiles and OS metadata (macOS resource forks, `.DS_Store`) in a zip. */
+function isHiddenZipPath(path: string): boolean {
+  return path.split("/").some((segment) => segment.startsWith("."));
+}
 
-  for (const skill of skills) {
-    const content = serializeSkill(skill);
-    zip.file(`${skill.name}.SKILL.md`, content);
+/**
+ * Parse every skill in a zip, pairing each SKILL.md with the sibling files in
+ * its folder as resources — the inverse of `downloadSkillZip`. A loose `.md` at
+ * the archive root still imports, without resources.
+ */
+export async function parseSkillsFromZip(zip: JSZip): Promise<ParsedSkill[]> {
+  const skills: ParsedSkill[] = [];
+
+  for (const [path, entry] of Object.entries(zip.files)) {
+    if (entry.dir || !path.endsWith(".md") || isHiddenZipPath(path)) continue;
+
+    let result: SkillParseResult;
+    try {
+      result = parseSkillFile(await entry.async("string"));
+    } catch {
+      continue;
+    }
+    if (!result.success) continue;
+
+    // Only a real skill folder can own resources; a loose .md at the archive
+    // root would otherwise claim every sibling file.
+    const dir = path.endsWith("/SKILL.md") ? path.slice(0, -"SKILL.md".length) : null;
+    const resources: SkillResource[] = [];
+
+    if (dir) {
+      for (const [siblingPath, sibling] of Object.entries(zip.files)) {
+        if (sibling.dir || siblingPath === path) continue;
+        if (!siblingPath.startsWith(dir) || isHiddenZipPath(siblingPath)) continue;
+
+        const relative = siblingPath.slice(dir.length);
+        const contentType = inferContentTypeFromPath(relative);
+        const content = isTextContentType(contentType)
+          ? await sibling.async("string")
+          : `data:${contentType || "application/octet-stream"};base64,${await sibling.async("base64")}`;
+        resources.push({ path: relative, content, contentType });
+      }
+    }
+
+    skills.push({ ...result.skill, ...(resources.length ? { resources } : {}) });
   }
 
-  try {
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    downloadBlob(zipBlob, filename);
-  } catch (error) {
-    throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
-  }
+  return skills;
 }
