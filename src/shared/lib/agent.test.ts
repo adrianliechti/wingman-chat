@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Client } from "./client";
 import { run } from "./agent";
 import { AgentInvocationContext } from "./agent-run-controller";
+import { elideToolArguments } from "./toolHistoryTrim";
 import type { Message, Tool } from "../types/chat";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
@@ -175,5 +176,73 @@ describe("agent run controller", () => {
     expect(toolResult && "result" in toolResult ? toolResult.result : []).toEqual(
       expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("must be integer") })]),
     );
+  });
+
+  it("refuses to write content the model copied from a trimmed earlier call", async () => {
+    // What the model can see once history trimming shortened its own earlier
+    // create_skill call — a 300-char preview plus the elision marker.
+    const elided = elideToolArguments(
+      JSON.stringify({ name: "hvb-review-deck-pptx", content: "# HVB review deck\n\n".padEnd(15_414, "detail. ") }),
+    );
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "echoed", name: "update_skill", arguments: elided }],
+      })
+      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "re-reading first" }] });
+    const execute = vi.fn();
+    const tool: Tool = {
+      name: "update_skill",
+      parameters: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string" }, content: { type: "string" } },
+      },
+      function: execute,
+    };
+
+    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool]);
+
+    expect(result.status).toBe("completed");
+    expect(execute).not.toHaveBeenCalled();
+    const toolResult = result.messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result" && part.id === "echoed");
+    expect(toolResult && "result" in toolResult ? toolResult.result : []).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("nothing was written") })]),
+    );
+  });
+
+  it("still writes a full-length payload that merely looks bulky", async () => {
+    const content = "# HVB review deck\n\n".padEnd(15_414, "detail. ");
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "full",
+            name: "update_skill",
+            arguments: JSON.stringify({ name: "hvb-review-deck-pptx", content }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "saved" }] });
+    const execute = vi.fn().mockResolvedValue([{ type: "text", text: "ok" }]);
+    const tool: Tool = {
+      name: "update_skill",
+      parameters: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string" }, content: { type: "string" } },
+      },
+      function: execute,
+    };
+
+    await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool]);
+
+    expect(execute).toHaveBeenCalledWith({ name: "hvb-review-deck-pptx", content }, expect.anything());
   });
 });

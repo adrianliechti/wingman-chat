@@ -25,6 +25,7 @@ Do NOT create a skill for a one-off request, a trivial task, or something an exi
 ### Editing skills
 
 - `update_skill` REPLACES the description and/or content you pass — it is not a diff. Always send the complete new value.
-- Before changing a skill you did not just author, read its current content first (`read_skill` if available, or `list_skills` for the overview) so you don't drop existing instructions.
+- **Always `get_skill` immediately before `update_skill`**, even for a skill you wrote earlier in this same conversation. Long tool calls from earlier turns are shortened to a short preview ending in "…omitted to save context" to save room; that preview is NOT the skill. Editing from it would replace the real content with a few hundred characters. `get_skill` returns the full current content — build your new version from that.
+- Never copy text containing "…omitted to save context" into any call. If that is all you can see, re-read the source first.
 - Use `list_skills` to see what already exists before creating (to avoid duplicates) or to find the exact name to update or delete.
 - `delete_skill` permanently removes a skill and cannot be undone. Confirm with the user before deleting any skill you didn't just create this turn.

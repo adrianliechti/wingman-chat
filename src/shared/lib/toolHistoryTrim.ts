@@ -74,13 +74,32 @@ export function trimBulkyToolHistory(
   });
 }
 
+/**
+ * Sentinel marking where text was cut. Deliberately distinctive: it is also how
+ * {@link containsElidedText} recognises an elided value that came back to us.
+ */
+const ELISION_MARKER = "more chars omitted to save context";
+
 /** Return a shorter preview when that actually saves space. */
 function elideText(text: string, maxChars: number, previewChars: number): string {
   if (text.length <= maxChars) return text;
   const head = text.slice(0, previewChars);
-  const note = `…[${text.length - previewChars} more chars omitted to save context — re-run the tool or re-read the source if needed]`;
+  const note = `…[${text.length - previewChars} ${ELISION_MARKER} — do NOT copy this preview into a new call; re-run the tool or re-read the source to get the full value]`;
   const elided = head ? `${head}\n${note}` : note;
   return elided.length < text.length ? elided : text;
+}
+
+/**
+ * True when a value still carries the elision sentinel.
+ *
+ * Trimming only ever rewrites payloads of *earlier* turns on their way to the
+ * model, so this marker must never come back in a fresh tool call. When it does,
+ * the model copied a shortened preview forward as if it were the real value —
+ * and a wholesale write (`update_skill`, `create_file`, …) would then persist
+ * the 300-char preview over the full content. Callers reject those arguments.
+ */
+export function containsElidedText(value: string): boolean {
+  return value.includes(ELISION_MARKER);
 }
 
 function normalizeElisionOptions(opts: ToolArgumentElisionOptions): Required<ToolArgumentElisionOptions> {

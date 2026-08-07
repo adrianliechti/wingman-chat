@@ -29,6 +29,45 @@ export function useSkillBuilderProvider(): ToolProvider {
         },
       },
       {
+        name: "get_skill",
+        description:
+          "Read one skill's full current content from the library. Always do this before update_skill: that tool " +
+          "replaces content wholesale, and an earlier create_skill/update_skill call in this conversation may show " +
+          "only a shortened preview of what was written.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "The name of the skill to read.",
+            },
+          },
+          required: ["name"],
+        },
+        function: async (args: Record<string, unknown>) => {
+          const name = (args.name as string)?.trim();
+          if (!name) {
+            return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) }];
+          }
+
+          const existing = getSkill(name);
+          if (!existing) {
+            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${name}" not found` }) }];
+          }
+
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                name: existing.name,
+                description: existing.description,
+                content: existing.content,
+              }),
+            },
+          ];
+        },
+      },
+      {
         name: "create_skill",
         display: {
           header: (_args, state) => ({

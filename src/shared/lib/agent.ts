@@ -13,6 +13,7 @@ import { combineAbortSignals } from "./abortSignals";
 import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
+import { containsElidedText } from "./toolHistoryTrim";
 import { compileToolRegistry, ToolArgumentValidationError, ToolRegistryError, type ToolRegistry } from "./toolRegistry";
 import {
   AgentInvocationContext,
@@ -325,6 +326,24 @@ async function dispatchToolCall(
       code: "TOOL_NOT_FOUND",
       message: `Tool "${toolCall.name}" is not available or not executable.`,
     });
+  }
+
+  // History trimming shortens the payloads of *earlier* calls before sending
+  // them to the model. Getting that preview back in a fresh call means the model
+  // copied it forward instead of the real value; running the tool would persist
+  // a few hundred characters over the full content (see `containsElidedText`).
+  if (containsElidedText(toolCall.arguments)) {
+    return toolErrorMessage(
+      toolCall,
+      "Error: These arguments still contain the “…omitted to save context” placeholder that trimming put into an " +
+        "earlier call, so nothing was written. That text is a shortened preview, never real content. Re-read the " +
+        "current full value from its source (e.g. get_skill, read_skill, or the file itself) and re-send the " +
+        "complete value.",
+      {
+        code: "TOOL_ARGS_ELIDED",
+        message: "The tool call reused trimmed placeholder text instead of the real content, so it was not run.",
+      },
+    );
   }
 
   // Parse before tracing so a malformed-JSON failure (model mis-escaped a
