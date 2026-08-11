@@ -215,7 +215,7 @@ function pdfjsAssetsPlugin(): Plugin {
   };
 }
 
-const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
+const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 

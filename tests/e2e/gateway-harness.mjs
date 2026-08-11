@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 
-export const GATEWAY_URL = process.env.WINGMAN_E2E_GATEWAY ?? process.env.WINGMAN_URL ?? "http://localhost:8080";
+export const GATEWAY_URL = process.env.WINGMAN_E2E_GATEWAY ?? process.env.WINGMAN_URL ?? "http://localhost:4242";
 export const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.WINGMAN_E2E_TIMEOUT_MS ?? "90000", 10);
 
 export function messageText(messages) {

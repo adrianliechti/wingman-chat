@@ -112,7 +112,7 @@ directories as libraries the client can read.
 npm install
 
 # Point at your platform
-export WINGMAN_URL=http://localhost:8080      # or OPENAI_BASE_URL
+export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
 export WINGMAN_TOKEN=...                      # or OPENAI_API_KEY
 
 # Frontend dev server (bundles Pyodide packages on first run)
@@ -146,7 +146,7 @@ npm run test:e2e:bedrock-soak
 npm run test:e2e:all
 
 # Optional overrides
-WINGMAN_E2E_GATEWAY=http://localhost:8080 \
+WINGMAN_E2E_GATEWAY=http://localhost:4242 \
 WINGMAN_E2E_MODEL=auto \
 WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
 WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
@@ -161,7 +161,7 @@ To run the Go server against the built frontend:
 
 ```bash
 npm run build
-PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:8080 go run .
+PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
 
@@ -170,7 +170,7 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:8080 go run .
 ```bash
 docker build -t wingman-chat .
 docker run -it --rm -p 8000:8000 \
-  -e WINGMAN_URL=http://host.docker.internal:8080 \
+  -e WINGMAN_URL=http://host.docker.internal:4242 \
   wingman-chat
 # or: task run
 ```
