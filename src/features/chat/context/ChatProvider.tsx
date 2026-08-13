@@ -1013,7 +1013,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const sendMessage = useCallback(
-    async (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => {
+    async (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[], deletedPaths?: string[]) => {
       const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
       if (!chatObj) {
         throw new Error(`Chat ${id} not found`);
@@ -1033,6 +1033,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
           console.error("Failed to add attachments transactionally:", error);
           notify.error("Attachments failed", "No files were added. Resolve the workspace conflict and try again.");
           throw error;
+        }
+      }
+
+      // Delete requested artifact paths from chat FS (best-effort).
+      if (deletedPaths && deletedPaths.length > 0) {
+        try {
+          await Promise.all(
+            deletedPaths.map(async (p) => {
+              try {
+                await chatFs.deleteFileWithDelta(p);
+              } catch (err) {
+                console.error(`Failed to delete artifact ${p}:`, err);
+                throw err;
+              }
+            }),
+          );
+        } catch (err) {
+          console.error("One or more attachment deletions failed:", err);
+          notify.error(
+            "Failed to delete attachments",
+            "One or more attachments couldn't be removed from the workspace.",
+          );
         }
       }
       const identifiedMessage = withMessageIdentity(resolvedMessage);

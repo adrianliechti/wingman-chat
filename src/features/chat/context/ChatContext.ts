@@ -46,7 +46,12 @@ export interface ChatContextType {
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
   addMessage: (message: Message) => Promise<void>;
-  sendMessage: (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => Promise<void>;
+  sendMessage: (
+    message: Message,
+    historyOverride?: Message[],
+    artifactFiles?: ProcessedFile[],
+    deletedPaths?: string[],
+  ) => Promise<void>;
   retryMessage: () => Promise<void>;
   continueRun: () => Promise<void>;
   queuedSends: QueuedSend[];
