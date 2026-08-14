@@ -111,7 +111,6 @@ function injectContext(messages: Message[], now: Date): Message[] {
     `ISO 8601 (UTC): ${now.toISOString()}`,
     `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     `Client: ${platform}, ${pointer}, ${theme} theme`,
-    'Treat "today" and the current date in the timezone above as the full calendar day. Do not refuse the request or restrict it to elapsed hours merely because the day is still in progress; use the current time as a boundary only when the request calls for it (for example, "so far today" or "still open").',
     "</context>",
   ].join("\n");
 
