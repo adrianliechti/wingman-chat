@@ -7,6 +7,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { AgentButton } from "@/features/chat/components/AgentButton";
+import { ChatBanner } from "@/features/chat/components/ChatBanner";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
@@ -192,6 +193,10 @@ export function ChatPage() {
 
   // Track if we're on mobile for drawer positioning
   const isMobile = !useMediaQuery("(min-width: 768px)");
+
+  // Input is vertically centered only on desktop, with an empty chat and no drawers open.
+  const isInputCentered =
+    !isMobile && messages.length === 0 && !showAppDrawer && !showAgentDrawer && !showArtifactsDrawer;
 
   const APP_MIN_PX = 360;
   const ARTIFACTS_MIN_PX = 360;
@@ -614,16 +619,13 @@ export function ChatPage() {
         <div
           className={cn(
             "relative md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
-            messages.length === 0 &&
-              !showAppDrawer &&
-              !showAgentDrawer &&
-              !showArtifactsDrawer &&
-              "md:translate-y-[calc(50%-33.333vh)]",
+            isInputCentered && "md:translate-y-[calc(50%-28vh)]",
           )}
         >
           <div className="pointer-events-auto">
             <ChatInput />
           </div>
+          {isInputCentered && <ChatBanner />}
         </div>
       </footer>
 

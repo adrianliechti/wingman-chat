@@ -189,6 +189,18 @@ export interface CompactionConfig {
   threshold?: number;
 }
 
+export interface ChatBannerAction {
+  label: string;
+  url: string;
+}
+
+export interface ChatBannerConfig {
+  message: string;
+  /** Lucide icon name, kebab-case (e.g. "message-circle-question-mark"). */
+  icon?: string;
+  action?: ChatBannerAction;
+}
+
 interface ChatConfig {
   instructions?: string;
   retentionDays?: number;
@@ -247,6 +259,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
+  banner?: ChatBannerConfig;
   telemetry?: object;
 }
 

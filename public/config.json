@@ -1,46 +1,39 @@
 {
   "navigation": true,
-
   "vision": {},
-
   "stt": {},
-
   "tts": {},
-
   "voice": {},
-
   "artifacts": {},
-
   "repository": {},
-
   "renderer": {},
-
   "extractor": {
-    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+    "files": [
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx",
+      ".ppt",
+      ".pptx"
+    ]
   },
-
   "internet": {
     "elicitation": true,
     "searcher": "web",
     "scraper": "web",
     "researcher": "web"
   },
-
   "notebook": {},
-
   "_telemetry": {},
-
   "_models": [
     {
       "id": "gpt-5.1",
-
       "name": "GPT-5.1",
       "description": "Default Model",
-
       "instructions": "You are a helpful assistant."
     }
   ],
-
   "tools": [
     {
       "id": "web",
@@ -48,10 +41,26 @@
       "description": "Search and browse the web"
     }
   ],
-
   "translator": {
-    "files": [".pdf"],
-
-    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
+    "files": [
+      ".pdf"
+    ],
+    "languages": [
+      "en",
+      "es",
+      "fr",
+      "de",
+      "zh",
+      "ja",
+      "ru"
+    ]
+  },
+  "banner": {
+    "message": "**How is AI changing your work?** Share your experience with Lumen.",
+    "icon": "message-circle-question-mark",
+    "action": {
+      "label": "Take the survey",
+      "url": "https://example.com"
+    }
   }
 }
