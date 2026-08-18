@@ -124,8 +124,8 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   // Let the interpreter mount resources from this provider's resolved skill
   // set. The user/session owns that selection (for an agent this is its curated
   // agent.skills list); the model only chooses which mounted script to run.
-  // Safe to set here because only one skills provider is active at a time.
   setSkillResourceResolver(
+    meta.id,
     hasResources
       ? async () => {
           const files: ArtifactFiles = {};

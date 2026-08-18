@@ -24,6 +24,7 @@ export interface Agent {
 
   files?: import("@/features/repository/types/repository").RepositoryFile[];
   skills: string[]; // names referencing global skill library
+  plugins: string[]; // ids referencing installed plugins
 
   tools: string[]; // active built-in tool IDs: "internet", "canvas"
   servers: BridgeServer[]; // per-agent MCP server definitions

@@ -9,6 +9,7 @@ import { armInteractiveAuth, McpAuthRequiredError } from "@/features/settings/li
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
 import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
@@ -201,6 +202,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled);
   const studioProvider = useStudioProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
+  const { providers: pluginProviders, requiredIds: pluginRequiredIds } = usePluginProviders(currentAgent);
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(
@@ -218,12 +220,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     saveTools(userTools);
   }, [userTools]);
 
-  // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges)
+  // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges, plugins)
   const agentRequired = useMemo(() => {
     const ids = new Set(agentTools);
     for (const p of agentProviders) ids.add(p.id);
+    for (const id of pluginRequiredIds) ids.add(id);
     return ids;
-  }, [agentTools, agentProviders]);
+  }, [agentTools, agentProviders, pluginRequiredIds]);
 
   // What the user + agent + companion want connected (ignores model overrides intentionally).
   // Used by the reconciliation effect to control MCP lifecycle — model-level tool filtering
@@ -270,6 +273,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // when the capability is on. Assembled by useSkillsProvider; null when empty.
     if (skillsProvider) list.push(skillsProvider);
     list.push(skillBuilderProvider);
+    // Each installed plugin is its own independent provider — always assembled;
+    // enablement is decided by desiredTools/agentRequired like any other tool.
+    list.push(...pluginProviders);
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
@@ -280,6 +286,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     artifactsProvider,
     skillsProvider,
     skillBuilderProvider,
+    pluginProviders,
     visibleConfigMcpClients,
     companionAvailable,
     companionClient,

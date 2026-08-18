@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mountSkillFiles, setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { createSkillsProvider } from "./skillsProvider";
 
-afterEach(() => setSkillResourceResolver(null));
+afterEach(() => setSkillResourceResolver("test-skills", null));
 
 describe("selected skill resource mounts", () => {
   it("mounts resources from the provider-selected entries without model arguments", async () => {

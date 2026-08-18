@@ -36,6 +36,7 @@ function serializeAgentMd(agent: Agent): string {
   lines.push(`name: ${agent.name}`);
   if (agent.model) lines.push(`model: ${agent.model}`);
   if (agent.skills.length > 0) lines.push(`skills: [${agent.skills.map((s) => `'${s}'`).join(", ")}]`);
+  if (agent.plugins.length > 0) lines.push(`plugins: [${agent.plugins.map((p) => `'${p}'`).join(", ")}]`);
   if (agent.tools.length > 0) lines.push(`tools: [${agent.tools.map((t) => `'${t}'`).join(", ")}]`);
   if (agent.memory) lines.push("memory: true");
   lines.push("---");
@@ -51,6 +52,7 @@ function parseAgentMd(content: string):
       name: string;
       model?: string;
       skills: string[];
+      plugins: string[];
       tools: string[];
       memory?: boolean;
       instructions?: string;
@@ -92,6 +94,7 @@ function parseAgentMd(content: string):
   return {
     name: fields.name || "Untitled",
     skills: parseList(fields.skills),
+    plugins: parseList(fields.plugins),
     tools: parseList(fields.tools),
     model: fields.model || undefined,
     memory: fields.memory === "true",
@@ -174,6 +177,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
   let name = "Untitled";
   let instructions: string | undefined;
   let skills: string[] = [];
+  let plugins: string[] = [];
   let tools: string[] = [];
   let servers: BridgeServer[] = [];
   let model: string | undefined;
@@ -186,6 +190,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
       name = parsed.name;
       instructions = parsed.instructions;
       skills = parsed.skills;
+      plugins = parsed.plugins;
       tools = parsed.tools;
       model = parsed.model;
       memory = parsed.memory || undefined;
@@ -237,6 +242,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
     name,
     instructions,
     skills,
+    plugins,
     servers,
     tools,
     model,
@@ -414,6 +420,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         model: initialData?.model ?? getSavedModelId() ?? undefined,
         instructions: initialData?.instructions,
         skills: initialData?.skills ?? [],
+        plugins: initialData?.plugins ?? [],
         servers: initialData?.servers ?? [],
         tools: initialData?.tools ?? [],
         memory: initialData?.memory,

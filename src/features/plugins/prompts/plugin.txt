@@ -1,0 +1,13 @@
+## Plugin: {pluginTitle}
+
+{pluginDescription}This plugin bundles specialized skills. Use `{readSkillTool}` to read a skill's full instructions before following them.
+
+### How It Works
+
+1. Check the skills listed below when a user's request matches one
+2. Use `{readSkillTool}` to get the skill's full instructions
+3. Follow the instructions, executing directly in the conversation
+{resourcesGuidance}
+<available_skills>
+{skillsXml}
+</available_skills>

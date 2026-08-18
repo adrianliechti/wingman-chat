@@ -31,6 +31,7 @@ import { FilesSection } from "./FilesSection";
 import { InstructionsSection } from "./InstructionsSection";
 import { MemorySection } from "./MemorySection";
 import { ModelSection } from "./ModelSection";
+import { PluginsSection } from "./PluginsSection";
 import { SkillsSection } from "./SkillsSection";
 import { ToolsSection } from "./ToolsSection";
 import { AgentWizard } from "./wizard/AgentWizard";
@@ -52,6 +53,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <InstructionsSection agent={agent} />
       <ToolsSection agent={agent} />
       <SkillsSection agent={agent} />
+      <PluginsSection agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection agent={agent} />}
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">

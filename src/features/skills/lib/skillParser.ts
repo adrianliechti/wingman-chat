@@ -242,9 +242,16 @@ function isHiddenZipPath(path: string): boolean {
  * Parse every skill in a zip, pairing each SKILL.md with the sibling files in
  * its folder as resources — the inverse of `downloadSkillZip`. A loose `.md` at
  * the archive root still imports, without resources.
+ *
+ * `rootIsSkill` opts into treating a root-level `SKILL.md` as owning every other
+ * root-level file as a resource (the plugin-hub "skill folder" archive layout,
+ * where a skill is distributed as a whole archive rather than a named folder
+ * inside one). Off by default so plain user imports keep ignoring siblings of a
+ * loose root `.md`.
  */
-export async function parseSkillsFromZip(zip: JSZip): Promise<ParsedSkill[]> {
+export async function parseSkillsFromZip(zip: JSZip, options?: { rootIsSkill?: boolean }): Promise<ParsedSkill[]> {
   const skills: ParsedSkill[] = [];
+  const rootIsSkill = options?.rootIsSkill ?? false;
 
   for (const [path, entry] of Object.entries(zip.files)) {
     if (entry.dir || !path.endsWith(".md") || isHiddenZipPath(path)) continue;
@@ -258,16 +265,24 @@ export async function parseSkillsFromZip(zip: JSZip): Promise<ParsedSkill[]> {
     if (!result.success) continue;
 
     // Only a real skill folder can own resources; a loose .md at the archive
-    // root would otherwise claim every sibling file.
-    const dir = path.endsWith("/SKILL.md") ? path.slice(0, -"SKILL.md".length) : null;
+    // root would otherwise claim every sibling file - unless rootIsSkill opts
+    // the whole archive in as a single skill folder.
+    const dir = path.endsWith("/SKILL.md")
+      ? path.slice(0, -"SKILL.md".length)
+      : rootIsSkill && path === "SKILL.md"
+        ? ""
+        : null;
     const resources: SkillResource[] = [];
 
-    if (dir) {
+    if (dir !== null) {
       for (const [siblingPath, sibling] of Object.entries(zip.files)) {
         if (sibling.dir || siblingPath === path) continue;
         if (!siblingPath.startsWith(dir) || isHiddenZipPath(siblingPath)) continue;
+        if (dir === "" && (siblingPath === "plugin.json" || siblingPath === "mcp.json")) continue;
 
         const relative = siblingPath.slice(dir.length);
+        if (relative.split("/").some((segment) => segment === "..")) continue;
+
         const contentType = inferContentTypeFromPath(relative);
         const content = isTextContentType(contentType)
           ? await sibling.async("string")

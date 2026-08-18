@@ -210,12 +210,17 @@ interface BridgeConfig {
   url?: string;
 }
 
+interface PluginsConfig {
+  url?: string;
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
   /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
   navigation?: boolean;
   bridge?: BridgeConfig;
+  plugins?: PluginsConfig;
   support?: SupportConfig;
 
   tools: ToolConfig[];
@@ -268,6 +273,7 @@ interface Config {
   /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
   navigation: boolean;
   bridge: BridgeConfig | null;
+  plugins: PluginsConfig | null;
   support: SupportConfig | null;
 
   client: Client;
@@ -322,6 +328,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       disclaimer: cfg.disclaimer,
       navigation: cfg.navigation !== false,
       bridge: cfg.bridge ?? null,
+      plugins: cfg.plugins ?? null,
       support: cfg.support ?? null,
 
       client: new Client(),

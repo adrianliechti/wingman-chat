@@ -4,6 +4,7 @@ type Config struct {
 	Title      string   `json:"title,omitempty" yaml:"title,omitempty"`
 	Disclaimer string   `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
 	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+	Plugins    *Plugins `json:"plugins,omitempty" yaml:"plugins,omitempty"`
 	Support    *Support `json:"support,omitempty" yaml:"support,omitempty"`
 
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
@@ -206,6 +207,10 @@ type NotebookArchitecture struct {
 }
 
 type Bridge struct {
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+}
+
+type Plugins struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 

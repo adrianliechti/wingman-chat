@@ -24,6 +24,10 @@ func Load() *Config {
 		cfg.Bridge = &Bridge{URL: bridgeURL}
 	}
 
+	if pluginsURL := os.Getenv("PLUGINS_URL"); pluginsURL != "" {
+		cfg.Plugins = &Plugins{URL: pluginsURL}
+	}
+
 	loadConfigFiles(cfg)
 	applyEnvOverrides(cfg)
 

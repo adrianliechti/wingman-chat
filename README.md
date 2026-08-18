@@ -190,6 +190,14 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 
 - `TITLE`, `DISCLAIMER`, `SUPPORT_URL`, `BRIDGE_URL`
 
+**Plugin hub**
+
+- `PLUGINS_URL` — base URL of a [plugin-hub](https://agent-plugins.org) instance. When set, a "Hub" tab
+  appears in the Skill Catalog for browsing and installing its plugins' skills into your local
+  skill library. Only skills are installed; any `mcp_servers` a plugin declares are shown for
+  information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
+  skill-folder archives (`SKILL.md` at the archive root).
+
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
