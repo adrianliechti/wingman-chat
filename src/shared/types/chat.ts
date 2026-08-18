@@ -79,6 +79,7 @@ export const ProviderState = {
   Authenticating: "authenticating",
   Connected: "connected",
   Failed: "failed",
+  Unauthorized: "unauthorized",
 } as const;
 export type ProviderState = (typeof ProviderState)[keyof typeof ProviderState];
 

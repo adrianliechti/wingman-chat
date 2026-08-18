@@ -254,14 +254,26 @@ export default defineConfig({
         target: wingmanUrl,
         ws: true,
         changeOrigin: true,
-        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            if (!req.headers.authorization) {
+              proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+            }
+          });
+        },
       },
       "/api": {
         target: wingmanUrl,
         changeOrigin: true,
-        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            if (!req.headers.authorization) {
+              proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+            }
+          });
+        },
       },
     },
   },

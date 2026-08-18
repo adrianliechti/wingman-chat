@@ -37,6 +37,47 @@ function removeKey(key: string): void {
   }
 }
 
+export type McpAuthFailureReason = "denied" | "cancelled" | "blocked" | "expired" | "failed";
+
+/** Thrown instead of retrying when a server's OAuth flow cannot proceed without user action. */
+export class McpAuthRequiredError extends Error {
+  readonly serverId: string;
+  readonly reason: McpAuthFailureReason;
+
+  constructor(serverId: string, reason: McpAuthFailureReason, message?: string) {
+    super(message ?? `MCP authorization required for "${serverId}" (${reason})`);
+    this.name = "McpAuthRequiredError";
+    this.serverId = serverId;
+    this.reason = reason;
+  }
+}
+
+type McpAuthState = { blocked: true; reason: McpAuthFailureReason; at: number };
+
+/** Whether a prior auth attempt for this server failed and must not auto-retry. */
+export function isAuthBlocked(serverKey: string): boolean {
+  return readJson<McpAuthState>(storageKey(serverKey, "auth_state"))?.blocked === true;
+}
+
+function markAuthBlocked(serverKey: string, reason: McpAuthFailureReason): void {
+  writeJson(storageKey(serverKey, "auth_state"), { blocked: true, reason, at: Date.now() });
+}
+
+function clearAuthBlocked(serverKey: string): void {
+  removeKey(storageKey(serverKey, "auth_state"));
+}
+
+// Per-tab-session guards: one automatic auth attempt per server per page load.
+const sessionAutoAuthAttempted = new Set<string>();
+const interactiveAuthArmed = new Set<string>();
+
+/** Allow exactly one more popup for this server, triggered by an explicit user gesture. */
+export function armInteractiveAuth(serverKey: string): void {
+  clearAuthBlocked(serverKey);
+  sessionAutoAuthAttempted.delete(serverKey);
+  interactiveAuthArmed.add(serverKey);
+}
+
 /**
  * Browser-compatible OAuthClientProvider for MCP servers.
  *
@@ -70,6 +111,11 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     };
   }
 
+  /** Trust the server's declared resource; proxied MCPs have an upstream resource that won't match the proxy URL. */
+  async validateResourceURL(_serverUrl: string | URL, resource?: string): Promise<URL | undefined> {
+    return resource ? new URL(resource) : undefined;
+  }
+
   clientInformation(): OAuthClientInformationMixed | undefined {
     return readJson<OAuthClientInformationMixed>(storageKey(this.serverKey, "client_info"));
   }
@@ -84,6 +130,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
 
   saveTokens(tokens: OAuthTokens): void {
     writeJson(storageKey(this.serverKey, "tokens"), tokens);
+    clearAuthBlocked(this.serverKey);
   }
 
   saveCodeVerifier(verifier: string): void {
@@ -107,10 +154,21 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
   /**
    * Opens a popup window for OAuth authorization and returns a Promise that
    * resolves with the authorization code once the user completes the flow.
+   *
+   * Refuses to reopen a popup if a prior attempt failed and wasn't re-armed by a user gesture.
    */
   redirectToAuthorization(authorizationUrl: URL): Promise<void> {
-    // Clean up any previous popup/listener
     this._cleanup();
+
+    const key = this.serverKey;
+    const armed = interactiveAuthArmed.delete(key);
+
+    if (!armed && (isAuthBlocked(key) || sessionAutoAuthAttempted.has(key))) {
+      this.authCodePromise = Promise.reject(new McpAuthRequiredError(key, "failed"));
+      return Promise.resolve();
+    }
+
+    sessionAutoAuthAttempted.add(key);
 
     return new Promise<void>((resolve) => {
       const popup = window.open(
@@ -120,8 +178,13 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
       );
 
       if (!popup) {
+        markAuthBlocked(key, "blocked");
         this.authCodePromise = Promise.reject(
-          new Error("Popup was blocked. Please allow popups for this site and try again."),
+          new McpAuthRequiredError(
+            key,
+            "blocked",
+            "Popup was blocked. Please allow popups for this site and try again.",
+          ),
         );
         resolve();
         return;
@@ -139,7 +202,8 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
         if (event.data?.type !== "mcp_oauth_callback") return;
 
         if (event.data.error) {
-          this.pendingAuthReject?.(new Error(`OAuth error: ${event.data.error}`));
+          markAuthBlocked(key, "denied");
+          this.pendingAuthReject?.(new McpAuthRequiredError(key, "denied", `OAuth error: ${event.data.error}`));
         } else if (event.data.code) {
           this.pendingAuthResolve?.(event.data.code as string);
         }
@@ -153,13 +217,14 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
       this.pollTimer = setInterval(() => {
         if (popup.closed) {
           if (this.pendingAuthReject) {
-            this.pendingAuthReject(new Error("OAuth popup was closed before authorization completed"));
+            markAuthBlocked(key, "cancelled");
+            this.pendingAuthReject(
+              new McpAuthRequiredError(key, "cancelled", "OAuth popup was closed before authorization completed"),
+            );
           }
           this._cleanup();
         }
       }, 500);
-
-      // authCodePromise is now a proper private field — no type cast needed
 
       resolve();
     });
@@ -189,6 +254,11 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     }
   }
 
+  /** True once a prior auth attempt failed and requires an explicit user gesture to retry. */
+  isAuthBlocked(): boolean {
+    return isAuthBlocked(this.serverKey);
+  }
+
   private _cleanup(): void {
     if (this.messageListener) {
       window.removeEventListener("message", this.messageListener);
@@ -198,6 +268,8 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+    // Reject any promise still awaited by a superseded waitForAuthCode() caller.
+    this.pendingAuthReject?.(new McpAuthRequiredError(this.serverKey, "cancelled", "OAuth flow was superseded"));
     this.pendingAuthResolve = null;
     this.pendingAuthReject = null;
   }
@@ -212,4 +284,5 @@ export function clearMcpOAuthStorage(serverKey: string): void {
   removeKey(storageKey(serverKey, "client_info"));
   removeKey(storageKey(serverKey, "code_verifier"));
   removeKey(storageKey(serverKey, "discovery"));
+  removeKey(storageKey(serverKey, "auth_state"));
 }

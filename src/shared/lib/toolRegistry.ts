@@ -1,4 +1,4 @@
-import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
+import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020";
 import type { Tool } from "../types/chat";
 
 function describeIssue(error: ErrorObject): string {
@@ -42,7 +42,7 @@ export class ToolRegistry {
     this.tools = [...tools];
     this.byName = new Map();
     this.validators = new Map();
-    const ajv = new Ajv({
+    const ajv = new Ajv2020({
       addUsedSchema: false,
       allErrors: true,
       allowUnionTypes: true,
