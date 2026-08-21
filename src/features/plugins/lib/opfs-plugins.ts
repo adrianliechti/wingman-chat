@@ -28,7 +28,7 @@ import {
   writeJson,
   writeText,
 } from "@/shared/lib/opfs-core";
-import type { InstalledPlugin, PluginMCPServer } from "./types";
+import type { HubMcpServer, InstalledPlugin } from "./types";
 
 const COLLECTION = "plugins";
 
@@ -38,9 +38,8 @@ interface PluginManifest {
   version?: string;
   description?: string;
   keywords?: string[];
-  mcpServers?: PluginMCPServer[];
+  mcpServers?: HubMcpServer[];
   hubUrl: string;
-  sha256: string;
   installedAt: string;
   skillNames: string[];
 }
@@ -97,7 +96,9 @@ async function loadResources(skillDir: string): Promise<SkillResource[]> {
     const blob = await readBlob(`${skillDir}/${path}`);
     if (!blob) continue;
     const contentType = inferContentTypeFromPath(path) || blob.type || undefined;
-    const content = isTextContentType(contentType) ? await blob.text() : await blobToDataUrl(blob, contentType);
+    const content = isTextContentType(contentType)
+      ? await blob.text()
+      : await blobToDataUrl(blob, contentType);
     resources.push({ path, content, contentType });
   }
   return resources;
@@ -126,7 +127,6 @@ export async function savePlugin(plugin: InstalledPlugin): Promise<void> {
     keywords: plugin.keywords,
     mcpServers: plugin.mcpServers,
     hubUrl: plugin.hubUrl,
-    sha256: plugin.sha256,
     installedAt: plugin.installedAt,
     skillNames: plugin.skills.map((s) => s.name),
   };
@@ -170,7 +170,6 @@ export async function loadPlugin(id: string): Promise<InstalledPlugin | undefine
     keywords: manifest.keywords,
     mcpServers: manifest.mcpServers,
     hubUrl: manifest.hubUrl,
-    sha256: manifest.sha256,
     installedAt: manifest.installedAt,
     skills,
   };

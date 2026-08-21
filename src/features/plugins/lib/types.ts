@@ -1,10 +1,5 @@
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 
-export interface PluginMCPServer {
-  name: string;
-  type: string;
-}
-
 /** A plugin listed by a hub's catalog, not yet installed. */
 export interface HubPlugin {
   id: string;
@@ -13,11 +8,28 @@ export interface HubPlugin {
   description?: string;
   keywords?: string[];
   skills?: string[];
-  mcp_servers?: PluginMCPServer[];
+  mcpServers?: string[];
   source: string;
-  download: string;
-  sha256: string;
-  size: number;
+}
+
+/** A skill's name and description, as returned by a hub's plugin detail endpoint. */
+export interface HubPluginSkill {
+  name: string;
+  description: string;
+}
+
+/** An MCP server's name and connection info, as returned by a hub's plugin detail endpoint. */
+export interface HubMcpServer {
+  name: string;
+  type: string;
+  url?: string;
+  command?: string;
+}
+
+/** Full detail for a single hub plugin, fetched on demand when previewing it in the store. */
+export interface HubPluginDetail {
+  skills: HubPluginSkill[];
+  mcpServers: HubMcpServer[];
 }
 
 /**
@@ -32,9 +44,8 @@ export interface InstalledPlugin {
   version?: string;
   description?: string;
   keywords?: string[];
-  mcpServers?: PluginMCPServer[];
+  mcpServers?: HubMcpServer[];
   hubUrl: string;
-  sha256: string;
   installedAt: string;
   skills: ParsedSkill[];
 }

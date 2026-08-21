@@ -2,8 +2,8 @@ import { Dialog, Transition } from "@headlessui/react";
 import {
   AlertTriangle,
   ArrowLeft,
-  Check,
   Loader2,
+  MoreVertical,
   Package,
   Plus,
   RefreshCw,
@@ -11,17 +11,17 @@ import {
   ScrollText,
   Search,
   Server,
-  Store,
   Trash2,
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { loadHubPlugins } from "@/features/plugins/lib/hub";
-import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
+import { loadHubPluginDetail, loadHubPlugins } from "@/features/plugins/lib/hub";
+import type { HubPlugin, HubPluginDetail, InstalledPlugin } from "@/features/plugins/lib/types";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -32,7 +32,10 @@ interface PluginsManagerProps {
   onClose: () => void;
 }
 
-function matchesSearch(item: { id: string; title?: string; description?: string; keywords?: string[] }, q: string) {
+function matchesSearch(
+  item: { id: string; title?: string; description?: string; keywords?: string[] },
+  q: string,
+) {
   if (!q) return true;
   const haystack = [item.id, item.title, item.description, ...(item.keywords ?? [])]
     .filter(Boolean)
@@ -53,7 +56,6 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
   const hubUrl = getConfig().plugins?.url;
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<"installed" | "store">("installed");
   const [search, setSearch] = useState("");
 
   const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
@@ -64,7 +66,9 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
   const [selectedStorePlugin, setSelectedStorePlugin] = useState<HubPlugin | null>(null);
   /** Drill-down within the selected plugin's detail view. */
   const [selectedSkill, setSelectedSkill] = useState<ParsedSkill | null>(null);
-  const [selectedStoreSkillName, setSelectedStoreSkillName] = useState<string | null>(null);
+
+  const [storeDetail, setStoreDetail] = useState<HubPluginDetail | null>(null);
+  const [storeDetailLoading, setStoreDetailLoading] = useState(false);
 
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -85,19 +89,39 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
   }, [hubUrl]);
 
   useEffect(() => {
-    if (isOpen && tab === "store" && storePlugins.length === 0 && !storeLoading) {
-      loadStore();
+    if (isOpen && hubUrl) loadStore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!hubUrl || !selectedStorePlugin) {
+      setStoreDetail(null);
+      return;
     }
-  }, [isOpen, tab, storePlugins.length, storeLoading, loadStore]);
+    setStoreDetail(null);
+    setStoreDetailLoading(true);
+    let cancelled = false;
+    void loadHubPluginDetail(hubUrl, selectedStorePlugin.id)
+      .then((detail) => {
+        if (!cancelled) setStoreDetail(detail);
+      })
+      .catch(() => {
+        if (!cancelled) setStoreDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setStoreDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hubUrl, selectedStorePlugin]);
 
   useEffect(() => {
     if (!isOpen) {
-      setTab("installed");
       setSearch("");
       setSelectedInstalled(null);
       setSelectedStorePlugin(null);
       setSelectedSkill(null);
-      setSelectedStoreSkillName(null);
       setInstallError(null);
     }
   }, [isOpen]);
@@ -106,24 +130,14 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
     if (isOpen) searchInputRef.current?.focus();
   }, [isOpen]);
 
-  const switchTab = useCallback((next: "installed" | "store") => {
-    setTab(next);
-    setSearch("");
-    setSelectedInstalled(null);
-    setSelectedStorePlugin(null);
-    setSelectedSkill(null);
-    setSelectedStoreSkillName(null);
-  }, []);
-
-  const filteredInstalled = useMemo(() => {
+  const filteredList = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return plugins.filter((p) => matchesSearch(p, q));
-  }, [plugins, search]);
-
-  const filteredStore = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return storePlugins.filter((p) => matchesSearch(p, q));
-  }, [storePlugins, search]);
+    const installedMatches = plugins.filter((p) => matchesSearch(p, q));
+    const storeOnly = storePlugins
+      .filter((p) => !installedIds.has(p.id))
+      .filter((p) => matchesSearch(p, q));
+    return { installedMatches, storeOnly };
+  }, [plugins, storePlugins, installedIds, search]);
 
   const handleInstall = async (plugin: HubPlugin) => {
     if (!hubUrl) return;
@@ -202,40 +216,6 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                       "min-h-0 w-full flex-1 sm:flex-none sm:shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60",
                     )}
                   >
-                    {/* Tabs: installed vs. store */}
-                    <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200/40 px-2 py-1.5 dark:border-neutral-800/40">
-                      {(
-                        [
-                          { id: "installed" as const, label: "Installed" },
-                          ...(hubUrl ? [{ id: "store" as const, label: "Store" }] : []),
-                        ] as { id: "installed" | "store"; label: string }[]
-                      ).map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => switchTab(t.id)}
-                          className={cn(
-                            "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                            tab === t.id
-                              ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                              : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
-                          )}
-                        >
-                          {t.label}
-                          {t.id === "installed" && plugins.length > 0 && (
-                            <span className="ml-1 text-[10px] text-neutral-400 dark:text-neutral-500">
-                              {plugins.length}
-                            </span>
-                          )}
-                          {t.id === "store" && storePlugins.length > 0 && (
-                            <span className="ml-1 text-[10px] text-neutral-400 dark:text-neutral-500">
-                              {storePlugins.length}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
                     {/* Search */}
                     <div className="flex items-center gap-2 border-b border-neutral-200/40 px-3 py-2 dark:border-neutral-800/40">
                       <Search size={12} className="shrink-0 text-neutral-400" />
@@ -260,36 +240,117 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
 
                     {/* Plugin list */}
                     <div className="flex-1 overflow-y-auto py-1">
-                      {tab === "installed" ? (
-                        plugins.length === 0 ? (
-                          <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                            <Package size={28} className="text-neutral-300 dark:text-neutral-600" />
-                            <div>
-                              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                                No plugins installed
-                              </p>
-                              {hubUrl && (
-                                <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                                  Browse the Store tab to add one
-                                </p>
-                              )}
-                            </div>
+                      {storeLoading && filteredList.installedMatches.length === 0 ? (
+                        <div className="flex h-full items-center justify-center">
+                          <Loader2
+                            size={20}
+                            className="animate-spin text-neutral-300 dark:text-neutral-600"
+                          />
+                        </div>
+                      ) : storeError && plugins.length === 0 && storePlugins.length === 0 ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+                          <AlertTriangle
+                            size={28}
+                            className="text-neutral-300 dark:text-neutral-600"
+                          />
+                          <div>
+                            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                              {storeError}
+                            </p>
+                            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+                              Check that the hub is reachable
+                            </p>
                           </div>
-                        ) : filteredInstalled.length === 0 ? (
+                          <button
+                            type="button"
+                            onClick={loadStore}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/50 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                          >
+                            <RefreshCw size={11} />
+                            Retry
+                          </button>
+                        </div>
+                      ) : filteredList.installedMatches.length === 0 &&
+                        filteredList.storeOnly.length === 0 ? (
+                        search ? (
                           <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
                             No plugins match your search.
                           </p>
                         ) : (
-                          filteredInstalled.map((plugin) => {
+                          <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+                            <Package size={28} className="text-neutral-300 dark:text-neutral-600" />
+                            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                              No plugins available
+                            </p>
+                          </div>
+                        )
+                      ) : (
+                        <>
+                          {filteredList.installedMatches.length > 0 && (
+                            <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                              Installed
+                            </p>
+                          )}
+                          {filteredList.installedMatches.map((plugin) => {
                             const isSelected = selectedInstalled?.id === plugin.id;
+                            return (
+                              <div
+                                key={plugin.id}
+                                className={`group flex w-full items-center gap-2 pl-3 pr-1 py-2 transition-colors ${
+                                  isSelected
+                                    ? "bg-neutral-100 dark:bg-neutral-800/70"
+                                    : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedInstalled(plugin);
+                                    setSelectedSkill(null);
+                                  }}
+                                  className="min-w-0 flex-1 text-left"
+                                >
+                                  <span className="block truncate text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                                    {plugin.title || plugin.id}
+                                  </span>
+                                  {plugin.description && (
+                                    <span className="mt-0.5 block truncate text-[11px] leading-tight text-neutral-400 dark:text-neutral-500">
+                                      {plugin.description}
+                                    </span>
+                                  )}
+                                </button>
+                                <DropdownMenu
+                                  anchor="bottom end"
+                                  trigger={
+                                    <MenuButton className="shrink-0 rounded p-1 text-neutral-300 transition-colors hover:bg-neutral-200/60 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-700/60 dark:hover:text-neutral-300">
+                                      <MoreVertical size={13} />
+                                    </MenuButton>
+                                  }
+                                >
+                                  <DropdownMenuItem
+                                    icon={<Trash2 size={13} />}
+                                    destructive
+                                    onClick={() => void handleUninstall(plugin)}
+                                  >
+                                    Remove
+                                  </DropdownMenuItem>
+                                </DropdownMenu>
+                              </div>
+                            );
+                          })}
+                          {filteredList.installedMatches.length > 0 &&
+                            filteredList.storeOnly.length > 0 && (
+                              <p className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                Available
+                              </p>
+                            )}
+                          {filteredList.storeOnly.map((plugin) => {
+                            const isSelected = selectedStorePlugin?.id === plugin.id;
                             return (
                               <button
                                 key={plugin.id}
                                 type="button"
-                                onClick={() => {
-                                  setSelectedInstalled(plugin);
-                                  setSelectedSkill(null);
-                                }}
+                                onClick={() => setSelectedStorePlugin(plugin)}
                                 className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
                                   isSelected
                                     ? "bg-neutral-100 dark:bg-neutral-800/70"
@@ -308,81 +369,8 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                                 </div>
                               </button>
                             );
-                          })
-                        )
-                      ) : storeLoading ? (
-                        <div className="flex h-full items-center justify-center">
-                          <Loader2 size={20} className="animate-spin text-neutral-300 dark:text-neutral-600" />
-                        </div>
-                      ) : storeError && storePlugins.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                          <AlertTriangle size={28} className="text-neutral-300 dark:text-neutral-600" />
-                          <div>
-                            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{storeError}</p>
-                            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                              Check that the hub is reachable
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={loadStore}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/50 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-                          >
-                            <RefreshCw size={11} />
-                            Retry
-                          </button>
-                        </div>
-                      ) : storePlugins.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                          <Store size={28} className="text-neutral-300 dark:text-neutral-600" />
-                          <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                            No plugins available
-                          </p>
-                        </div>
-                      ) : filteredStore.length === 0 ? (
-                        <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                          No plugins match your search.
-                        </p>
-                      ) : (
-                        filteredStore.map((plugin) => {
-                          const isSelected = selectedStorePlugin?.id === plugin.id;
-                          const added = installedIds.has(plugin.id);
-                          return (
-                            <button
-                              key={plugin.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedStorePlugin(plugin);
-                                setSelectedStoreSkillName(null);
-                              }}
-                              className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
-                                isSelected
-                                  ? "bg-neutral-100 dark:bg-neutral-800/70"
-                                  : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-                              }`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                                  {plugin.title || plugin.id}
-                                </span>
-                                {plugin.description && (
-                                  <span className="mt-0.5 block truncate text-[11px] leading-tight text-neutral-400 dark:text-neutral-500">
-                                    {plugin.description}
-                                  </span>
-                                )}
-                              </div>
-                              {added && (
-                                <span
-                                  title="Already installed"
-                                  className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500"
-                                >
-                                  <Check size={11} />
-                                  Added
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })
+                          })}
+                        </>
                       )}
                     </div>
                   </div>
@@ -397,7 +385,7 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                     {selectedSkill ? (
                       /* ── Skill detail (drilled into from an installed plugin) ── */
                       <>
-                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
+                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
                           <button
                             type="button"
                             onClick={() => setSelectedSkill(null)}
@@ -413,7 +401,9 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                             >
                               {selectedInstalled?.title || selectedInstalled?.id}
                             </button>
-                            <span className="shrink-0 text-neutral-300 dark:text-neutral-600">/</span>
+                            <span className="shrink-0 text-neutral-300 dark:text-neutral-600">
+                              /
+                            </span>
                             <span className="min-w-0 truncate font-semibold text-neutral-900 dark:text-neutral-100">
                               {selectedSkill.name}
                             </span>
@@ -445,148 +435,149 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                           )}
                         </div>
                       </>
-                    ) : selectedStoreSkillName ? (
-                      /* ── Skill detail (not-yet-installed store plugin, name only) ── */
-                      <>
-                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedStoreSkillName(null)}
-                            className="-ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                          >
-                            <ArrowLeft size={16} />
-                          </button>
-                          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedStoreSkillName(null)}
-                              className="shrink-0 truncate font-medium text-neutral-400 transition-colors hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300"
-                            >
-                              {selectedStorePlugin?.title || selectedStorePlugin?.id}
-                            </button>
-                            <span className="shrink-0 text-neutral-300 dark:text-neutral-600">/</span>
-                            <span className="min-w-0 truncate font-semibold text-neutral-900 dark:text-neutral-100">
-                              {selectedStoreSkillName}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-5 py-4">
-                          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                            Install the plugin to read this skill's full instructions.
-                          </p>
-                        </div>
-                      </>
                     ) : selectedInstalled ? (
                       /* ── Installed plugin detail ── */
                       <>
-                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
+                        <div className="flex items-center gap-2 px-4 py-3">
                           <button
                             type="button"
                             onClick={() => setSelectedInstalled(null)}
-                            className="-ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                            className="-ml-1 shrink-0 self-start rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                           >
                             <ArrowLeft size={16} />
                           </button>
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                               {selectedInstalled.title || selectedInstalled.id}
                             </span>
-                            {selectedInstalled.version && (
-                              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                v{selectedInstalled.version}
-                              </span>
+                            {selectedInstalled.description && (
+                              <p className="mt-0.5 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
+                                {selectedInstalled.description}
+                              </p>
                             )}
                           </div>
                           <button
                             type="button"
                             onClick={() => void handleUninstall(selectedInstalled)}
                             title="Uninstall"
-                            className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                            className="self-start rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
                           >
                             <Trash2 size={15} />
                           </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-5 py-4">
-                          {selectedInstalled.description && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                Description
-                              </p>
-                              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                                {selectedInstalled.description}
-                              </p>
-                            </div>
-                          )}
-                          {selectedInstalled.skills.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                Skills
-                              </p>
-                              <ul className="divide-y divide-neutral-200/40 dark:divide-neutral-800/40">
-                                {selectedInstalled.skills.map((skill) => (
-                                  <li key={skill.name}>
+                          <div className="space-y-6">
+                            {selectedInstalled.skills.length > 0 && (
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                  Skills
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedInstalled.skills.map((skill) => (
                                     <button
+                                      key={skill.name}
                                       type="button"
                                       onClick={() => setSelectedSkill(skill)}
-                                      className="group flex w-full items-center gap-2 py-1.5 text-left transition-colors hover:text-neutral-950 dark:hover:text-neutral-50"
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:bg-neutral-700"
                                     >
                                       <ScrollText
-                                        size={13}
+                                        size={11}
                                         className="shrink-0 text-neutral-400 dark:text-neutral-500"
                                       />
-                                      <div className="min-w-0 flex-1">
-                                        <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                                          {skill.name}
-                                        </span>
-                                        {skill.description && (
-                                          <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
-                                            {skill.description}
-                                          </span>
-                                        )}
-                                      </div>
+                                      {skill.name}
                                     </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedInstalled.mcpServers && selectedInstalled.mcpServers.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                MCP servers (informational only, not installed)
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {selectedInstalled.mcpServers &&
+                              selectedInstalled.mcpServers.length > 0 && (
+                                <div>
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                    MCP Servers
+                                  </p>
+                                  <div className="space-y-2">
+                                    {selectedInstalled.mcpServers.map((server) => (
+                                      <div
+                                        key={server.name}
+                                        className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
+                                      >
+                                        <Server
+                                          size={13}
+                                          className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                                            {server.name}
+                                          </span>
+                                          {(server.url || server.command) && (
+                                            <p className="truncate text-xs text-neutral-400 dark:text-neutral-500">
+                                              {server.url || server.command}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <span className="ml-auto shrink-0 rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
+                                          {server.type}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            <div>
+                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                Information
                               </p>
-                              <ul className="divide-y divide-neutral-200/40 dark:divide-neutral-800/40">
-                                {selectedInstalled.mcpServers.map((s) => (
-                                  <li key={s.name} className="flex items-center gap-2 py-1.5">
-                                    <Server size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
-                                    <div className="min-w-0 flex-1">
-                                      <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                                        {s.name}
-                                      </span>
-                                      <span className="block text-xs text-neutral-400 dark:text-neutral-500">
-                                        {s.type}
-                                      </span>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
+                              <table className="w-full text-sm">
+                                <tbody className="divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
+                                  {selectedInstalled.version && (
+                                    <tr>
+                                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                        Version
+                                      </td>
+                                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
+                                        {selectedInstalled.version}
+                                      </td>
+                                    </tr>
+                                  )}
+                                  <tr>
+                                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                      Source
+                                    </td>
+                                    <td className="py-2 break-all text-neutral-700 dark:text-neutral-300">
+                                      {selectedInstalled.hubUrl}
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                      Installed
+                                    </td>
+                                    <td className="py-2 text-neutral-700 dark:text-neutral-300">
+                                      {new Date(selectedInstalled.installedAt).toLocaleDateString()}
+                                    </td>
+                                  </tr>
+                                  {selectedInstalled.keywords &&
+                                    selectedInstalled.keywords.length > 0 && (
+                                      <tr>
+                                        <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                          Keywords
+                                        </td>
+                                        <td className="py-2 text-neutral-700 dark:text-neutral-300">
+                                          {selectedInstalled.keywords.join(", ")}
+                                        </td>
+                                      </tr>
+                                    )}
+                                </tbody>
+                              </table>
                             </div>
-                          )}
-                          <div>
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                              Source
-                            </p>
-                            <p className="break-all text-xs text-neutral-400 dark:text-neutral-500">
-                              {selectedInstalled.hubUrl}
-                            </p>
                           </div>
                         </div>
                       </>
                     ) : selectedStorePlugin ? (
                       /* ── Store plugin preview ── */
                       <>
-                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
+                        <div className="flex items-start gap-2 px-4 py-3">
                           <button
                             type="button"
                             onClick={() => setSelectedStorePlugin(null)}
@@ -594,14 +585,14 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                           >
                             <ArrowLeft size={16} />
                           </button>
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                               {selectedStorePlugin.title || selectedStorePlugin.id}
                             </span>
-                            {selectedStorePlugin.version && (
-                              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                v{selectedStorePlugin.version}
-                              </span>
+                            {selectedStorePlugin.description && (
+                              <p className="mt-0.5 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
+                                {selectedStorePlugin.description}
+                              </p>
                             )}
                           </div>
                           <button
@@ -626,86 +617,113 @@ export function PluginsManager({ isOpen, onClose }: PluginsManagerProps) {
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-5 py-4">
-                          {selectedStorePlugin.description && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                Description
-                              </p>
-                              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                                {selectedStorePlugin.description}
-                              </p>
-                            </div>
-                          )}
-                          {installedIds.has(selectedStorePlugin.id) && (
-                            <p className="mb-4 text-xs text-neutral-500 dark:text-neutral-400">
-                              Already installed. Reinstalling overwrites your local copy of its skills.
-                            </p>
-                          )}
-                          {selectedStorePlugin.skills && selectedStorePlugin.skills.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                Skills
-                              </p>
-                              <ul className="divide-y divide-neutral-200/40 dark:divide-neutral-800/40">
-                                {selectedStorePlugin.skills.map((name) => (
-                                  <li key={name}>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedStoreSkillName(name)}
-                                      className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-neutral-50"
-                                    >
-                                      <ScrollText
-                                        size={13}
-                                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                                      />
-                                      {name}
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedStorePlugin.mcp_servers && selectedStorePlugin.mcp_servers.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                MCP servers (informational only, not installed)
-                              </p>
-                              <ul className="divide-y divide-neutral-200/40 dark:divide-neutral-800/40">
-                                {selectedStorePlugin.mcp_servers.map((s) => (
-                                  <li key={s.name} className="flex items-center gap-2 py-1.5">
-                                    <Server size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
-                                    <div className="min-w-0 flex-1">
-                                      <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                                        {s.name}
-                                      </span>
-                                      <span className="block text-xs text-neutral-400 dark:text-neutral-500">
-                                        {s.type}
-                                      </span>
+                          <div className="space-y-6">
+                            {storeDetailLoading ? (
+                              <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
+                                <Loader2 size={13} className="animate-spin" />
+                                Loading skills and MCP servers…
+                              </div>
+                            ) : (
+                              <>
+                                {storeDetail && storeDetail.skills.length > 0 && (
+                                  <div>
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                      Skills
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {storeDetail.skills.map((skill) => (
+                                        <span
+                                          key={skill.name}
+                                          title={skill.description}
+                                          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                                        >
+                                          <ScrollText
+                                            size={11}
+                                            className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                          />
+                                          {skill.name}
+                                        </span>
+                                      ))}
                                     </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedStorePlugin.keywords && selectedStorePlugin.keywords.length > 0 && (
-                            <div className="mb-4">
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                                Keywords
+                                  </div>
+                                )}
+                                {storeDetail && storeDetail.mcpServers.length > 0 && (
+                                  <div>
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                      MCP Servers
+                                    </p>
+                                    <div className="space-y-2">
+                                      {storeDetail.mcpServers.map((server) => (
+                                        <div
+                                          key={server.name}
+                                          className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
+                                        >
+                                          <Server
+                                            size={13}
+                                            className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                                              {server.name}
+                                            </span>
+                                            {(server.url || server.command) && (
+                                              <p className="truncate text-xs text-neutral-400 dark:text-neutral-500">
+                                                {server.url || server.command}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <span className="ml-auto shrink-0 rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
+                                            {server.type}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            <div>
+                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                                Information
                               </p>
-                              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                                {selectedStorePlugin.keywords.join(", ")}
-                              </p>
+                              <table className="w-full text-sm">
+                                <tbody className="divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
+                                  {selectedStorePlugin.version && (
+                                    <tr>
+                                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                        Version
+                                      </td>
+                                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
+                                        {selectedStorePlugin.version}
+                                      </td>
+                                    </tr>
+                                  )}
+                                  {selectedStorePlugin.keywords &&
+                                    selectedStorePlugin.keywords.length > 0 && (
+                                      <tr>
+                                        <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                          Keywords
+                                        </td>
+                                        <td className="py-2 text-neutral-700 dark:text-neutral-300">
+                                          {selectedStorePlugin.keywords.join(", ")}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  <tr>
+                                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">
+                                      Source
+                                    </td>
+                                    <td className="py-2 break-all text-neutral-700 dark:text-neutral-300">
+                                      {selectedStorePlugin.source}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
                             </div>
-                          )}
-                          <div>
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                              Source
-                            </p>
-                            <p className="break-all text-xs text-neutral-400 dark:text-neutral-500">
-                              {selectedStorePlugin.source}
-                            </p>
                           </div>
-                          {installError && <p className="mt-4 text-xs text-red-500">{installError}</p>}
+                          {installError && (
+                            <p className="mt-4 text-xs text-red-500">{installError}</p>
+                          )}
                         </div>
                       </>
                     ) : (

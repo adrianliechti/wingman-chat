@@ -1,14 +1,14 @@
 /**
  * Client for a plugin-hub instance (https://agent-plugins.org spec). Fetches
- * its plugin catalog and downloads + verifies individual plugin archives,
- * yielding parsed skills ready to install as a plugin.
+ * its plugin catalog and downloads individual plugin archives, yielding
+ * parsed skills ready to install as a plugin.
  */
 
 import type JSZip from "jszip";
 import { type ParsedSkill, parseSkillsFromZip } from "@/features/skills/lib/skillParser";
-import type { HubPlugin } from "./types";
+import type { HubMcpServer, HubPlugin, HubPluginDetail } from "./types";
 
-export type HubErrorKind = "network" | "integrity" | "too-large" | "no-skills" | "invalid";
+export type HubErrorKind = "network" | "too-large" | "invalid";
 
 export class HubError extends Error {
   kind: HubErrorKind;
@@ -25,6 +25,21 @@ const MAX_ZIP_ENTRIES = 500;
 const MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 const catalogCache = new Map<string, Promise<HubPlugin[]>>();
+const detailCache = new Map<string, Promise<HubPluginDetail>>();
+
+interface PluginSummary {
+  name: string;
+  version?: string;
+  description?: string;
+  source: string;
+  skills?: string[];
+  mcpServers?: string[];
+}
+
+interface PluginDetailResponse {
+  skills?: { name: string; description: string }[];
+  mcp?: Record<string, { type: string; url?: string; command?: string }>;
+}
 
 /** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
 export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
@@ -37,7 +52,15 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
       const contentType = resp.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) return [];
       const data = await resp.json();
-      return Array.isArray(data?.plugins) ? (data.plugins as HubPlugin[]) : [];
+      if (!Array.isArray(data)) return [];
+      return (data as PluginSummary[]).map((p) => ({
+        id: p.name,
+        version: p.version,
+        description: p.description,
+        source: p.source,
+        skills: p.skills,
+        mcpServers: p.mcpServers,
+      }));
     })
     .catch(() => []);
 
@@ -48,24 +71,44 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
   return promise;
 }
 
-async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+/** Fetch and cache a single plugin's detail (skills + MCP servers) from a hub. */
+export function loadHubPluginDetail(hubUrl: string, pluginId: string): Promise<HubPluginDetail> {
+  const cacheKey = `${hubUrl}::${pluginId}`;
+  const cached = detailCache.get(cacheKey);
+  if (cached) return cached;
+
+  const url = new URL(encodeURIComponent(pluginId), hubUrl);
+  const promise = fetch(url)
+    .then(async (resp) => {
+      if (!resp.ok) throw new HubError("network", `Hub returned ${resp.status} for ${url}`);
+      const data = (await resp.json()) as PluginDetailResponse;
+      const skills = Array.isArray(data.skills) ? data.skills : [];
+      const mcpServers: HubMcpServer[] = Object.entries(data.mcp ?? {}).map(([name, server]) => ({
+        name,
+        type: server.type,
+        url: server.url,
+        command: server.command,
+      }));
+      return { skills, mcpServers };
+    })
+    .catch((error) => {
+      detailCache.delete(cacheKey);
+      throw error instanceof HubError
+        ? error
+        : new HubError("network", `Failed to reach hub at ${url}`);
+    });
+
+  detailCache.set(cacheKey, promise);
+  return promise;
 }
 
 /**
- * Download a plugin archive, verify its size and sha256, and parse it into
- * skills. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and
- * the plugin-hub skill-folder fallback (`SKILL.md` at the archive root).
+ * Download a plugin archive from the hub's `/{name}.zip` endpoint and parse
+ * it into skills. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`)
+ * and the plugin-hub skill-folder fallback (`SKILL.md` at the archive root).
  */
 export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Promise<ParsedSkill[]> {
-  if (plugin.size > MAX_ARCHIVE_BYTES) {
-    throw new HubError("too-large", `Plugin archive is too large (${plugin.size} bytes)`);
-  }
-
-  const url = new URL(plugin.download, hubUrl);
+  const url = new URL(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
 
   let resp: Response;
   try {
@@ -80,13 +123,6 @@ export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Prom
   const bytes = await resp.arrayBuffer();
   if (bytes.byteLength > MAX_ARCHIVE_BYTES) {
     throw new HubError("too-large", `Downloaded archive is too large (${bytes.byteLength} bytes)`);
-  }
-
-  if (plugin.sha256) {
-    const actual = await sha256Hex(bytes);
-    if (actual.toLowerCase() !== plugin.sha256.toLowerCase()) {
-      throw new HubError("integrity", `Archive checksum mismatch for plugin "${plugin.id}"`);
-    }
   }
 
   const JSZipCtor = (await import("jszip")).default;
@@ -113,10 +149,6 @@ export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Prom
   );
   if (uncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
     throw new HubError("too-large", `Plugin "${plugin.id}" resources exceed the size limit`);
-  }
-
-  if (skills.length === 0) {
-    throw new HubError("no-skills", `Plugin "${plugin.id}" contains no valid skills`);
   }
 
   return skills;

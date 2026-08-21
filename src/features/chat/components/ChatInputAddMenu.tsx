@@ -46,18 +46,29 @@ import {
   User,
   X,
 } from "lucide-react";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
-import { PluginsManager } from "@/features/plugins/components/PluginsManager";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { pluginProviderId, PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import { isStudioSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import {
+  isStudioSkillCategory,
+  SKILLS_PROVIDER_ID,
+  type SkillSources,
+} from "@/features/skills/lib/skillsProvider";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -170,7 +181,12 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
           {isMounted && (
             <FloatingPortal>
               <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
-                <div ref={refs.setFloating} style={floatingStyles} className="z-50" {...getFloatingProps()}>
+                <div
+                  ref={refs.setFloating}
+                  style={floatingStyles}
+                  className="z-50"
+                  {...getFloatingProps()}
+                >
                   <div
                     style={transitionStyles}
                     className={cn(MENU_PANEL_CLASS, "max-h-[60vh] overflow-y-auto min-w-40")}
@@ -199,7 +215,14 @@ interface MenuRowProps {
 }
 
 /** A focusable leaf row in the Add menu, wired for keyboard list navigation. */
-function MenuRow({ label, closeOnClick = true, disabled, onSelect, className, children }: MenuRowProps) {
+function MenuRow({
+  label,
+  closeOnClick = true,
+  disabled,
+  onSelect,
+  className,
+  children,
+}: MenuRowProps) {
   const menu = useContext(MenuContext);
   const item = useListItem({ label: disabled ? null : label });
   const isActive = item.index === menu.activeIndex;
@@ -304,7 +327,12 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
       </button>
       {isOpen && (
         <FloatingPortal>
-          <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            className="z-9999"
+            {...getFloatingProps()}
+          >
             <div className={cn(MENU_PANEL_CLASS, panelClassName)}>{children(close)}</div>
           </div>
         </FloatingPortal>
@@ -349,11 +377,12 @@ export function ChatInputAddMenu({
   onDriveSelect,
 }: ChatInputAddMenuProps) {
   const config = getConfig();
-  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } =
+    useAgents();
   const { skills, openSkillCatalog } = useSkills();
   const { templates } = useSkillTemplates();
   const { plugins } = usePlugins();
-  const [pluginsManagerOpen, setPluginsManagerOpen] = useState(false);
+  const openPluginsManager = () => openSkillCatalog(undefined, false, "plugins");
   // Show the Plugins entry whenever there's something installed or a hub to
   // browse — otherwise there'd be no way to discover/install the first plugin.
   const showPluginsMenu = plugins.length > 0 || Boolean(config.plugins?.url);
@@ -411,14 +440,16 @@ export function ChatInputAddMenu({
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
-    const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+    const providerConnecting =
+      state === ProviderState.Initializing || state === ProviderState.Authenticating;
     const providerUnauthorized = state === ProviderState.Unauthorized;
     const providerFailed = state === ProviderState.Failed;
 
     if (providerConnecting) return <LoaderCircle size={16} className="animate-spin" />;
     if (providerUnauthorized) return <Lock size={16} className="text-amber-500" />;
     if (providerFailed) return <TriangleAlert size={16} />;
-    if (typeof icon === "string") return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
+    if (typeof icon === "string")
+      return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
     const Icon = icon;
     return <Icon size={16} />;
   }
@@ -445,7 +476,11 @@ export function ChatInputAddMenu({
               <span className="font-medium text-sm flex-1 text-left">Add File</span>
             </MenuRow>
           ) : (
-            <Submenu label="Add File" icon={<Paperclip size={16} className="shrink-0" />} panelClassName="min-w-40">
+            <Submenu
+              label="Add File"
+              icon={<Paperclip size={16} className="shrink-0" />}
+              panelClassName="min-w-40"
+            >
               {(close) => (
                 <>
                   <button
@@ -505,7 +540,9 @@ export function ChatInputAddMenu({
               <MenuRow
                 label={isContinuousCaptureActive ? "Stop Screen Capture" : "Share Screen"}
                 onSelect={onContinuousCaptureToggle}
-                className={isContinuousCaptureActive ? "text-green-600 dark:text-green-400" : undefined}
+                className={
+                  isContinuousCaptureActive ? "text-green-600 dark:text-green-400" : undefined
+                }
               >
                 <ScreenShare size={16} className="shrink-0" />
                 <span className="font-medium text-sm">
@@ -522,11 +559,22 @@ export function ChatInputAddMenu({
             >
               {(close) => (
                 <>
-                  <Tooltip content="Skills you've created — editable in Manage Skills" side="right" className="w-full">
-                    <button type="button" onClick={() => toggleSkillSource("personal")} className={ROW_CLASS}>
+                  <Tooltip
+                    content="Skills you've created — editable in Manage Skills"
+                    side="right"
+                    className="w-full"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSkillSource("personal")}
+                      className={ROW_CLASS}
+                    >
                       <User size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
+                        My Skills{" "}
+                        <span className="text-neutral-400 dark:text-neutral-500">
+                          ({skills.length})
+                        </span>
                       </span>
                       <span className="shrink-0 w-4 flex justify-center">
                         {skillSources.personal && (
@@ -535,14 +583,27 @@ export function ChatInputAddMenu({
                       </span>
                     </button>
                   </Tooltip>
-                  <Tooltip content="Ready-made skills shipped with the app" side="right" className="w-full">
-                    <button type="button" onClick={() => toggleSkillSource("catalog")} className={ROW_CLASS}>
+                  <Tooltip
+                    content="Ready-made skills shipped with the app"
+                    side="right"
+                    className="w-full"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSkillSource("catalog")}
+                      className={ROW_CLASS}
+                    >
                       <Library size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
+                        Catalog{" "}
+                        <span className="text-neutral-400 dark:text-neutral-500">
+                          ({catalogTemplateCount})
+                        </span>
                       </span>
                       <span className="shrink-0 w-4 flex justify-center">
-                        {skillSources.catalog && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
+                        {skillSources.catalog && (
+                          <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                        )}
                       </span>
                     </button>
                   </Tooltip>
@@ -607,7 +668,8 @@ export function ChatInputAddMenu({
                             content={
                               required
                                 ? `${plugin.title || plugin.id} is required by this agent`
-                                : (plugin.description ?? `Enable "${plugin.title || plugin.id}" for this conversation`)
+                                : (plugin.description ??
+                                  `Enable "${plugin.title || plugin.id}" for this conversation`)
                             }
                             side="right"
                             className="w-full"
@@ -630,9 +692,17 @@ export function ChatInputAddMenu({
                               </span>
                               <span className="shrink-0 w-4 flex justify-center">
                                 {required ? (
-                                  <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
+                                  <Lock
+                                    size={12}
+                                    className="text-neutral-400 dark:text-neutral-500"
+                                  />
                                 ) : (
-                                  enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                                  enabled && (
+                                    <Check
+                                      size={13}
+                                      className="text-neutral-600 dark:text-neutral-400"
+                                    />
+                                  )
                                 )}
                               </span>
                             </MenuRow>
@@ -645,7 +715,7 @@ export function ChatInputAddMenu({
                   <button
                     type="button"
                     onClick={() => {
-                      setPluginsManagerOpen(true);
+                      openPluginsManager();
                       close();
                     }}
                     className={ROW_CLASS}
@@ -665,7 +735,9 @@ export function ChatInputAddMenu({
             {(close) => (
               <>
                 {agents.length === 0 && (
-                  <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">No agents configured</p>
+                  <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+                    No agents configured
+                  </p>
                 )}
                 <div className="overflow-y-auto">
                   {agents.map((agent) => (
@@ -681,9 +753,14 @@ export function ChatInputAddMenu({
                       className={ROW_CLASS}
                     >
                       <Bot size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
+                      <span className="font-medium text-sm flex-1 text-left truncate">
+                        {agent.name}
+                      </span>
                       {currentAgent?.id === agent.id && (
-                        <Check size={13} className="shrink-0 ml-1 text-neutral-600 dark:text-neutral-400" />
+                        <Check
+                          size={13}
+                          className="shrink-0 ml-1 text-neutral-600 dark:text-neutral-400"
+                        />
                       )}
                     </button>
                   ))}
@@ -715,11 +792,14 @@ export function ChatInputAddMenu({
               </>
             )}
           </Submenu>
-          {otherProviders.length > 0 && <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />}
+          {otherProviders.length > 0 && (
+            <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />
+          )}
           {otherProviders.map((provider: ToolProvider) => {
             const state = getProviderState(provider.id);
             const providerEnabled = state === ProviderState.Connected;
-            const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+            const providerConnecting =
+              state === ProviderState.Initializing || state === ProviderState.Authenticating;
             const providerUnauthorized = state === ProviderState.Unauthorized;
             const providerFailed = state === ProviderState.Failed;
             const providerRequired = getProviderPolicy(provider.id) === "required";
@@ -758,14 +838,18 @@ export function ChatInputAddMenu({
                   className={cn(providerConnecting && !providerRequired && "opacity-50")}
                 >
                   {renderProviderIcon(provider, state)}
-                  <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
+                  <span className="font-medium text-sm flex-1 text-left truncate">
+                    {provider.name}
+                  </span>
                   <span className="shrink-0 w-4 flex justify-center">
                     {providerRequired ? (
                       <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
                     ) : (
                       providerEnabled &&
                       !providerConnecting &&
-                      !providerFailed && <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
+                      !providerFailed && (
+                        <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
+                      )
                     )}
                   </span>
                 </MenuRow>
@@ -775,11 +859,18 @@ export function ChatInputAddMenu({
         </AddMenu>
       </div>
 
-      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
-      <PluginsManager isOpen={pluginsManagerOpen} onClose={() => setPluginsManagerOpen(false)} />
+      <AgentWizard
+        isOpen={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={handleWizardCreated}
+      />
 
       {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
-      <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
+      <Dialog
+        open={showMobileSheet}
+        onClose={setShowMobileSheet}
+        className="relative z-50 md:hidden"
+      >
         <DialogBackdrop
           transition
           className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
@@ -883,7 +974,9 @@ export function ChatInputAddMenu({
                     className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
                   >
                     <Mic size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">Start Recording</span>
+                    <span className="text-xs font-medium leading-tight text-center">
+                      Start Recording
+                    </span>
                   </button>
                 )}
               </div>
@@ -902,7 +995,8 @@ export function ChatInputAddMenu({
                       const state = getProviderState(provider.id);
                       const providerEnabled = state === ProviderState.Connected;
                       const providerConnecting =
-                        state === ProviderState.Initializing || state === ProviderState.Authenticating;
+                        state === ProviderState.Initializing ||
+                        state === ProviderState.Authenticating;
                       const providerUnauthorized = state === ProviderState.Unauthorized;
                       const providerFailed = state === ProviderState.Failed;
                       const providerRequired = getProviderPolicy(provider.id) === "required";
@@ -940,14 +1034,24 @@ export function ChatInputAddMenu({
                             )}
                           </div>
                           {providerRequired ? (
-                            <Lock size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                            <Lock
+                              size={15}
+                              className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                            />
                           ) : (
                             <>
                               {providerEnabled && !providerConnecting && !providerFailed && (
-                                <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                                <Check
+                                  size={16}
+                                  className="shrink-0 text-neutral-600 dark:text-neutral-400"
+                                />
                               )}
-                              {providerUnauthorized && <Lock size={16} className="shrink-0 text-amber-500" />}
-                              {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
+                              {providerUnauthorized && (
+                                <Lock size={16} className="shrink-0 text-amber-500" />
+                              )}
+                              {providerFailed && (
+                                <TriangleAlert size={16} className="shrink-0 text-neutral-400" />
+                              )}
                             </>
                           )}
                         </button>
@@ -992,10 +1096,16 @@ export function ChatInputAddMenu({
                     >
                       <User size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
+                        My Skills{" "}
+                        <span className="text-neutral-400 dark:text-neutral-500">
+                          ({skills.length})
+                        </span>
                       </span>
                       {skillSources.personal && (
-                        <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                        <Check
+                          size={16}
+                          className="shrink-0 text-neutral-600 dark:text-neutral-400"
+                        />
                       )}
                     </button>
                     <button
@@ -1012,10 +1122,16 @@ export function ChatInputAddMenu({
                     >
                       <Library size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
+                        Catalog{" "}
+                        <span className="text-neutral-400 dark:text-neutral-500">
+                          ({catalogTemplateCount})
+                        </span>
                       </span>
                       {skillSources.catalog && (
-                        <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                        <Check
+                          size={16}
+                          className="shrink-0 text-neutral-600 dark:text-neutral-400"
+                        />
                       )}
                     </button>
                     {skillBuilder && (
@@ -1041,7 +1157,10 @@ export function ChatInputAddMenu({
                         <PenTool size={16} className="shrink-0" />
                         <span className="font-medium text-sm flex-1 text-left">Skill Builder</span>
                         {getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected && (
-                          <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          <Check
+                            size={16}
+                            className="shrink-0 text-neutral-600 dark:text-neutral-400"
+                          />
                         )}
                       </button>
                     )}
@@ -1062,7 +1181,7 @@ export function ChatInputAddMenu({
                       title="Manage Plugins"
                       onClick={() => {
                         setShowMobileSheet(false);
-                        setPluginsManagerOpen(true);
+                        openPluginsManager();
                       }}
                       className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
                     >
@@ -1099,9 +1218,17 @@ export function ChatInputAddMenu({
                               {plugin.title || plugin.id}
                             </span>
                             {required ? (
-                              <Lock size={16} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                              <Lock
+                                size={16}
+                                className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                              />
                             ) : (
-                              enabled && <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                              enabled && (
+                                <Check
+                                  size={16}
+                                  className="shrink-0 text-neutral-600 dark:text-neutral-400"
+                                />
+                              )
                             )}
                           </button>
                         );
@@ -1112,7 +1239,7 @@ export function ChatInputAddMenu({
                       type="button"
                       onClick={() => {
                         setShowMobileSheet(false);
-                        setPluginsManagerOpen(true);
+                        openPluginsManager();
                       }}
                       className="mx-3 mb-2 flex items-center gap-3 px-3 py-1.5 rounded-xl text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/60 dark:hover:bg-white/5 transition-colors"
                     >
@@ -1173,7 +1300,9 @@ export function ChatInputAddMenu({
                         }`}
                       >
                         <Bot size={16} className="shrink-0" />
-                        <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
+                        <span className="font-medium text-sm flex-1 text-left truncate">
+                          {agent.name}
+                        </span>
                         {currentAgent?.id === agent.id && (
                           <>
                             <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
