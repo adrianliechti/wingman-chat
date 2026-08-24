@@ -7,8 +7,9 @@ export interface HubPlugin {
   version?: string;
   description?: string;
   keywords?: string[];
-  skills?: string[];
+  skills?: { name: string; description?: string }[];
   mcpServers?: string[];
+  icon?: string;
   source: string;
 }
 
@@ -45,6 +46,7 @@ export interface InstalledPlugin {
   description?: string;
   keywords?: string[];
   mcpServers?: HubMcpServer[];
+  icon?: string;
   hubUrl: string;
   installedAt: string;
   skills: ParsedSkill[];

@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { downloadHubPlugin, loadHubPluginDetail } from "@/features/plugins/lib/hub";
-import { deletePlugin, loadAllPlugins, savePlugin } from "@/features/plugins/lib/opfs-plugins";
+import { downloadHubPlugin } from "@/features/plugins/lib/hub";
+import {
+  deletePlugin,
+  loadAllPlugins,
+  loadPlugin,
+  savePlugin,
+} from "@/features/plugins/lib/opfs-plugins";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
 import { PluginsContext } from "./PluginsContext";
 
@@ -22,25 +27,22 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
 
   const installPlugin = useCallback(
     async (hubUrl: string, plugin: HubPlugin): Promise<InstalledPlugin> => {
-      const [skills, detail] = await Promise.all([
-        downloadHubPlugin(hubUrl, plugin),
-        loadHubPluginDetail(hubUrl, plugin.id).catch(() => null),
-      ]);
+      const skills = await downloadHubPlugin(hubUrl, plugin);
       const installed: InstalledPlugin = {
         id: plugin.id,
         title: plugin.title,
         version: plugin.version,
         description: plugin.description,
         keywords: plugin.keywords,
-        mcpServers: detail?.mcpServers,
         hubUrl,
         installedAt: new Date().toISOString(),
         skills,
       };
 
-      await savePlugin(installed);
-      setPlugins((prev) => [...prev.filter((p) => p.id !== installed.id), installed]);
-      return installed;
+      await savePlugin(installed, plugin.icon);
+      const saved = (await loadPlugin(installed.id)) ?? installed;
+      setPlugins((prev) => [...prev.filter((p) => p.id !== saved.id), saved]);
+      return saved;
     },
     [],
   );

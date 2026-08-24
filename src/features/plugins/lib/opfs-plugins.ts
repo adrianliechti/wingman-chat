@@ -32,6 +32,14 @@ import type { HubMcpServer, InstalledPlugin } from "./types";
 
 const COLLECTION = "plugins";
 
+const EXT_BY_MIME: Record<string, string> = {
+  "image/svg+xml": "svg",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
 interface PluginManifest {
   id: string;
   title?: string;
@@ -39,6 +47,7 @@ interface PluginManifest {
   description?: string;
   keywords?: string[];
   mcpServers?: HubMcpServer[];
+  icon?: string;
   hubUrl: string;
   installedAt: string;
   skillNames: string[];
@@ -116,8 +125,24 @@ async function saveResources(skillDir: string, resources: SkillResource[] = []):
 }
 
 /** Persist a plugin as a whole: manifest + every bundled skill and its resources. */
-export async function savePlugin(plugin: InstalledPlugin): Promise<void> {
+export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Promise<void> {
   const pluginDir = `${COLLECTION}/${plugin.id}`;
+
+  let iconFile: string | undefined;
+  if (iconUrl) {
+    try {
+      const resp = await fetch(iconUrl);
+      const contentType = resp.headers.get("content-type")?.split(";")[0].trim();
+      const raw = await resp.blob();
+      const ext = EXT_BY_MIME[contentType ?? ""] ?? "png";
+      iconFile = `icon.${ext}`;
+      const blob =
+        contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
+      await writeBlob(`${pluginDir}/${iconFile}`, blob);
+    } catch {
+      iconFile = undefined;
+    }
+  }
 
   const manifest: PluginManifest = {
     id: plugin.id,
@@ -126,6 +151,7 @@ export async function savePlugin(plugin: InstalledPlugin): Promise<void> {
     description: plugin.description,
     keywords: plugin.keywords,
     mcpServers: plugin.mcpServers,
+    icon: iconFile,
     hubUrl: plugin.hubUrl,
     installedAt: plugin.installedAt,
     skillNames: plugin.skills.map((s) => s.name),
@@ -162,6 +188,13 @@ export async function loadPlugin(id: string): Promise<InstalledPlugin | undefine
     skills.push({ ...parsed, resources: resources.length ? resources : undefined });
   }
 
+  let iconDataUrl: string | undefined;
+  if (manifest.icon) {
+    const blob = await readBlob(`${pluginDir}/${manifest.icon}`);
+    if (blob)
+      iconDataUrl = await blobToDataUrl(blob, inferContentTypeFromPath(manifest.icon) ?? blob.type);
+  }
+
   return {
     id: manifest.id,
     title: manifest.title,
@@ -169,6 +202,7 @@ export async function loadPlugin(id: string): Promise<InstalledPlugin | undefine
     description: manifest.description,
     keywords: manifest.keywords,
     mcpServers: manifest.mcpServers,
+    icon: iconDataUrl,
     hubUrl: manifest.hubUrl,
     installedAt: manifest.installedAt,
     skills,

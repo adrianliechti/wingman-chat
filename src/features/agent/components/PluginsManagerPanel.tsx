@@ -8,30 +8,25 @@ import {
   Puzzle,
   RefreshCw,
   Replace,
-  ScrollText,
   Server,
-  Store,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { loadHubPluginDetail, loadHubPlugins } from "@/features/plugins/lib/hub";
-import type { HubPlugin, HubPluginDetail, InstalledPlugin } from "@/features/plugins/lib/types";
+import { loadHubPlugins } from "@/features/plugins/lib/hub";
+import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 import { confirm } from "@/shared/lib/confirm";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { notify } from "@/shared/lib/notify";
 import { Markdown } from "@/shared/ui/Markdown";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { SkillResourcesEditor } from "@/features/agent/components/SkillResourcesEditor";
 
 export interface PluginsManagerPanelProps {
   isOpen: boolean;
   onClose: () => void;
   search?: string;
-  view?: "list" | "store";
-  onViewChange?: (v: "list" | "store") => void;
   onViewKindChange?: (
     kind: "list" | "installed-detail" | "installed-skill" | "store" | "store-detail",
   ) => void;
@@ -41,54 +36,32 @@ type View =
   | { kind: "list" }
   | { kind: "installed-detail"; plugin: InstalledPlugin }
   | { kind: "installed-skill"; plugin: InstalledPlugin; skill: ParsedSkill }
-  | { kind: "store" }
   | { kind: "store-detail"; plugin: HubPlugin };
 
 export function PluginsManagerPanel({
   isOpen,
   onClose: _onClose,
   search = "",
-  view: externalView,
-  onViewChange,
   onViewKindChange,
 }: PluginsManagerPanelProps) {
   const { plugins, installPlugin, uninstallPlugin } = usePlugins();
   const hubUrl = getConfig().plugins?.url;
 
-  const [internalView, setInternalView] = useState<View>({ kind: "list" });
+  const [view, setInternalView] = useState<View>({ kind: "list" });
 
-  // Allow parent to control list↔store top-level navigation
-  const view: View = (() => {
-    if (externalView === "store" && internalView.kind === "list") return { kind: "store" };
-    if (
-      externalView === "list" &&
-      (internalView.kind === "store" || internalView.kind === "store-detail")
-    )
-      return { kind: "list" };
-    return internalView;
-  })();
   const setView = (v: View) => {
     setInternalView(v);
     onViewKindChange?.(v.kind);
-    if (onViewChange) {
-      if (v.kind === "store" || v.kind === "store-detail") onViewChange("store");
-      else onViewChange("list");
-    }
   };
 
   const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
   const [storeLoading, setStoreLoading] = useState(false);
   const [storeError, setStoreError] = useState<string | null>(null);
 
-  const [storeDetail, setStoreDetail] = useState<HubPluginDetail | null>(null);
-  const [storeDetailLoading, setStoreDetailLoading] = useState(false);
-
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
 
   const installedIds = useMemo(() => new Set(plugins.map((p) => p.id)), [plugins]);
-
-  const storePlugin = view.kind === "store-detail" ? view.plugin : null;
 
   const loadStore = useCallback(() => {
     if (!hubUrl) return;
@@ -109,29 +82,6 @@ export function PluginsManagerPanel({
   }, []);
 
   useEffect(() => {
-    if (!hubUrl || !storePlugin) {
-      setStoreDetail(null);
-      return;
-    }
-    setStoreDetail(null);
-    setStoreDetailLoading(true);
-    let cancelled = false;
-    void loadHubPluginDetail(hubUrl, storePlugin.id)
-      .then((detail) => {
-        if (!cancelled) setStoreDetail(detail);
-      })
-      .catch(() => {
-        if (!cancelled) setStoreDetail(null);
-      })
-      .finally(() => {
-        if (!cancelled) setStoreDetailLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [hubUrl, storePlugin]);
-
-  useEffect(() => {
     if (!isOpen) {
       setInternalView({ kind: "list" });
       setInstallError(null);
@@ -143,9 +93,8 @@ export function PluginsManagerPanel({
     setInstallingId(plugin.id);
     setInstallError(null);
     try {
-      const installed = await installPlugin(hubUrl, plugin);
+      await installPlugin(hubUrl, plugin);
       notify.success(`Installed "${plugin.title || plugin.id}"`);
-      setView({ kind: "installed-detail", plugin: installed });
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : "Failed to install plugin");
     } finally {
@@ -184,7 +133,7 @@ export function PluginsManagerPanel({
   };
 
   // ── Unified list (installed first, then store-only) ───────────────────────
-  if (view.kind === "list" || view.kind === "store") {
+  if (view.kind === "list") {
     const q = search.trim().toLowerCase();
     const matchesSearch = (p: { id: string; title?: string; description?: string }) =>
       !q ||
@@ -261,7 +210,15 @@ export function PluginsManagerPanel({
                         className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
                       >
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                          <Puzzle size={16} className="text-neutral-400 dark:text-neutral-500" />
+                          {plugin.icon ? (
+                            <img
+                              src={plugin.icon}
+                              alt=""
+                              className="h-6 w-6 rounded object-contain"
+                            />
+                          ) : (
+                            <Puzzle size={16} className="text-neutral-400 dark:text-neutral-500" />
+                          )}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline gap-1.5">
@@ -293,7 +250,7 @@ export function PluginsManagerPanel({
                       <DropdownMenu
                         anchor="bottom end"
                         trigger={
-                          <MenuButton className="shrink-0 rounded p-1.5 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
+                          <MenuButton className="shrink-0 rounded p-1.5 mr-1 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
                             <MoreVertical size={14} />
                           </MenuButton>
                         }
@@ -353,7 +310,15 @@ export function PluginsManagerPanel({
                       className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
                     >
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                        <Puzzle size={16} className="text-neutral-400 dark:text-neutral-500" />
+                        {plugin.icon ? (
+                          <img
+                            src={plugin.icon}
+                            alt=""
+                            className="h-6 w-6 rounded object-contain"
+                          />
+                        ) : (
+                          <Puzzle size={16} className="text-neutral-400 dark:text-neutral-500" />
+                        )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-1.5">
@@ -398,7 +363,7 @@ export function PluginsManagerPanel({
     const updateAvailable = hubVersion && plugin.version && hubVersion !== plugin.version;
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-start gap-2 px-4 py-2">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
           <button
             type="button"
             onClick={() => setView({ kind: "list" })}
@@ -406,23 +371,14 @@ export function PluginsManagerPanel({
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                {plugin.title || plugin.id}
-              </span>
-              {updateAvailable && (
-                <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
-                  Update available
-                </span>
-              )}
-            </span>
-            {plugin.description && (
-              <p className="mt-0.5 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
-                {plugin.description}
-              </p>
-            )}
-          </div>
+          {plugin.icon ? (
+            <img src={plugin.icon} alt="" className="h-5 w-5 shrink-0 rounded object-contain" />
+          ) : (
+            <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+          )}
+          <span className="flex-1 truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {plugin.title || plugin.id}
+          </span>
           {updateAvailable && (
             <button
               type="button"
@@ -462,49 +418,42 @@ export function PluginsManagerPanel({
             <Trash2 size={15} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto">
+          <div className="space-y-6 px-5 py-5">
+            {plugin.description && (
+              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                {plugin.description}
+              </p>
+            )}
             {plugin.skills.length > 0 && (
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                   Skills
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {plugin.skills.map((skill) => {
-                    const chip = (
-                      <button
-                        type="button"
-                        onClick={() => setView({ kind: "installed-skill", plugin, skill })}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:bg-neutral-700"
-                      >
-                        <ScrollText
-                          size={11}
-                          className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                        />
+                <div className="grid grid-cols-[auto_1fr] gap-x-10 divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
+                  {plugin.skills.map((skill) => (
+                    <button
+                      key={skill.name}
+                      type="button"
+                      onClick={() => setView({ kind: "installed-skill", plugin, skill })}
+                      className="col-span-2 grid grid-cols-subgrid items-baseline py-2 text-left transition-colors hover:opacity-70"
+                    >
+                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
                         {skill.name}
-                      </button>
-                    );
-                    return skill.description ? (
-                      <Tooltip
-                        key={skill.name}
-                        content={skill.description}
-                        side="top"
-                        className="inline-flex"
-                      >
-                        {chip}
-                      </Tooltip>
-                    ) : (
-                      <span key={skill.name} className="inline-flex">
-                        {chip}
                       </span>
-                    );
-                  })}
+                      {skill.description && (
+                        <span className="min-w-0 truncate text-xs text-neutral-400 dark:text-neutral-500">
+                          {skill.description}
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
             {plugin.mcpServers && plugin.mcpServers.length > 0 && (
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                   MCP Servers
                 </p>
                 <div className="space-y-2">
@@ -536,48 +485,46 @@ export function PluginsManagerPanel({
               </div>
             )}
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                 Information
               </p>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
-                  {plugin.version && (
-                    <tr>
-                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Version</td>
-                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
-                        <span className="flex items-center gap-2">
-                          {plugin.version}
-                          {updateAvailable && (
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
-                              {hubVersion} available
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Source</td>
-                    <td className="py-2 break-all text-neutral-700 dark:text-neutral-300">
-                      {plugin.hubUrl}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Installed</td>
-                    <td className="py-2 text-neutral-700 dark:text-neutral-300">
-                      {new Date(plugin.installedAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                  {plugin.keywords && plugin.keywords.length > 0 && (
-                    <tr>
-                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Keywords</td>
-                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
-                        {plugin.keywords.join(", ")}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="grid grid-cols-[auto_1fr] gap-x-10 divide-y divide-neutral-200/60 text-xs dark:divide-neutral-800/60">
+                {plugin.version && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Version</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      <span className="flex items-center gap-2">
+                        {plugin.version}
+                        {updateAvailable && (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                            {hubVersion} available
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                  <span className="text-neutral-400 dark:text-neutral-500">Source</span>
+                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">
+                    {plugin.hubUrl}
+                  </span>
+                </div>
+                <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                  <span className="text-neutral-400 dark:text-neutral-500">Installed</span>
+                  <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                    {new Date(plugin.installedAt).toLocaleDateString()}
+                  </span>
+                </div>
+                {plugin.keywords && plugin.keywords.length > 0 && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Keywords</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.keywords.join(", ")}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -590,7 +537,7 @@ export function PluginsManagerPanel({
     const { plugin, skill } = view;
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 py-2 dark:border-neutral-800/60">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
           <button
             type="button"
             onClick={() => setView({ kind: "installed-detail", plugin })}
@@ -626,109 +573,26 @@ export function PluginsManagerPanel({
     );
   }
 
-  // ── Hub store list ──────────────────────────────────────────────────────────
-  if (view.kind === "store") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {storeLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-neutral-300 dark:text-neutral-600" />
-            </div>
-          ) : storeError ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <AlertTriangle size={28} className="text-neutral-300 dark:text-neutral-600" />
-              <div>
-                <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                  {storeError}
-                </p>
-                <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                  Check that the hub is reachable
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={loadStore}
-                className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/50 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-              >
-                <RefreshCw size={11} />
-                Retry
-              </button>
-            </div>
-          ) : storePlugins.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <Store size={28} className="text-neutral-300 dark:text-neutral-600" />
-              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                No plugins available
-              </p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-neutral-200/40 dark:divide-neutral-800/40 py-1">
-              {storePlugins.map((plugin) => {
-                const installed = installedIds.has(plugin.id);
-                return (
-                  <li key={plugin.id}>
-                    <button
-                      type="button"
-                      onClick={() => setView({ kind: "store-detail", plugin })}
-                      className="group flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                        <Package size={16} className="text-neutral-400 dark:text-neutral-500" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                          {plugin.title || plugin.id}
-                        </span>
-                        {plugin.description && (
-                          <span className="mt-0.5 block truncate text-xs text-neutral-400 dark:text-neutral-500">
-                            {plugin.description}
-                          </span>
-                        )}
-                      </div>
-                      {installed ? (
-                        <span className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">
-                          Installed
-                        </span>
-                      ) : plugin.version ? (
-                        <span className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">
-                          v{plugin.version}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Hub store plugin detail ─────────────────────────────────────────────────
   if (view.kind === "store-detail") {
     const plugin = view.plugin;
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-start gap-2 px-4 py-2">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
           <button
             type="button"
-            onClick={() => setView({ kind: "store" })}
+            onClick={() => setView({ kind: "list" })}
             className="-ml-1 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              {plugin.title || plugin.id}
-            </span>
-            {plugin.description && (
-              <p className="mt-0.5 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
-                {plugin.description}
-              </p>
-            )}
-          </div>
+          {plugin.icon ? (
+            <img src={plugin.icon} alt="" className="h-5 w-5 shrink-0 rounded object-contain" />
+          ) : (
+            <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+          )}
+          <span className="flex-1 truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {plugin.title || plugin.id}
+          </span>
           {installedIds.has(plugin.id) ? (
             <button
               type="button"
@@ -760,114 +624,65 @@ export function PluginsManagerPanel({
             </button>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="space-y-6">
-            {storeDetailLoading ? (
-              <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
-                <Loader2 size={13} className="animate-spin" />
-                Loading skills and MCP servers…
+        <div className="flex-1 overflow-y-auto">
+          <div className="space-y-6 px-5 py-5">
+            {plugin.description && (
+              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                {plugin.description}
+              </p>
+            )}
+            {(plugin.skills ?? []).length > 0 && (
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                  Skills
+                </p>
+                <div className="grid grid-cols-[auto_1fr] gap-x-10 divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
+                  {(plugin.skills ?? []).map((skill) => (
+                    <div
+                      key={skill.name}
+                      className="col-span-2 grid grid-cols-subgrid items-baseline py-2"
+                    >
+                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        {skill.name}
+                      </span>
+                      {skill.description && (
+                        <span className="min-w-0 truncate text-xs text-neutral-400 dark:text-neutral-500">
+                          {skill.description}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <>
-                {storeDetail && storeDetail.skills.length > 0 && (
-                  <div>
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
-                      Skills
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {storeDetail.skills.map((skill) => {
-                        const chip = (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                            <ScrollText
-                              size={11}
-                              className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                            />
-                            {skill.name}
-                          </span>
-                        );
-                        return skill.description ? (
-                          <Tooltip
-                            key={skill.name}
-                            content={skill.description}
-                            side="top"
-                            className="inline-flex"
-                          >
-                            {chip}
-                          </Tooltip>
-                        ) : (
-                          <span key={skill.name} className="inline-flex">
-                            {chip}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {storeDetail && storeDetail.mcpServers.length > 0 && (
-                  <div>
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
-                      MCP Servers
-                    </p>
-                    <div className="space-y-2">
-                      {storeDetail.mcpServers.map((server) => (
-                        <div
-                          key={server.name}
-                          className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
-                        >
-                          <Server
-                            size={13}
-                            className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                              {server.name}
-                            </span>
-                            {(server.url || server.command) && (
-                              <p className="truncate text-xs text-neutral-400 dark:text-neutral-500">
-                                {server.url || server.command}
-                              </p>
-                            )}
-                          </div>
-                          <span className="ml-auto shrink-0 rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
-                            {server.type}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
             )}
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                 Information
               </p>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
-                  {plugin.version && (
-                    <tr>
-                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Version</td>
-                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
-                        {plugin.version}
-                      </td>
-                    </tr>
-                  )}
-                  {plugin.keywords && plugin.keywords.length > 0 && (
-                    <tr>
-                      <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Keywords</td>
-                      <td className="py-2 text-neutral-700 dark:text-neutral-300">
-                        {plugin.keywords.join(", ")}
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td className="py-2 pr-4 text-neutral-400 dark:text-neutral-500">Source</td>
-                    <td className="py-2 break-all text-neutral-700 dark:text-neutral-300">
-                      {plugin.source}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="grid grid-cols-[auto_1fr] gap-x-10 divide-y divide-neutral-200/60 text-xs dark:divide-neutral-800/60">
+                {plugin.version && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Version</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.version}
+                    </span>
+                  </div>
+                )}
+                {plugin.keywords && plugin.keywords.length > 0 && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Keywords</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.keywords.join(", ")}
+                    </span>
+                  </div>
+                )}
+                <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                  <span className="text-neutral-400 dark:text-neutral-500">Source</span>
+                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">
+                    {plugin.source}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
           {installError && <p className="mt-4 text-xs text-red-500">{installError}</p>}

@@ -1,10 +1,11 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Puzzle, Search, Sparkles, X } from "lucide-react";
+import { Download, Plus, Puzzle, Search, Sparkles, Upload, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
-import type { SkillCatalogPanelProps } from "./SkillCatalogPanel";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import type { SkillCatalogActions, SkillCatalogPanelProps } from "./SkillCatalogPanel";
 import { SkillCatalogPanel } from "./SkillCatalogPanel";
 import { PluginsManagerPanel } from "./PluginsManagerPanel";
 
@@ -32,15 +33,25 @@ export function LibraryDialog({
   const showPlugins = plugins.length > 0 || Boolean(hubUrl);
 
   const [section, setSection] = useState<LibrarySection>(initialSection);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [skillViewKind, setSkillViewKind] = useState<string>("list");
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginViewKind, setPluginViewKind] = useState<string>("list");
-  const [pluginView, setPluginView] = useState<"list" | "store">("list");
+  const [skillActions, setSkillActions] = useState<SkillCatalogActions | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Sync section when the dialog opens with a new initialSection
   useEffect(() => {
     if (isOpen) setSection(initialSection);
   }, [isOpen, initialSection]);
+
+  // Reset skill search and view when leaving the skills section or closing
+  useEffect(() => {
+    if (section !== "skills") {
+      setSkillSearch("");
+      setSkillViewKind("list");
+    }
+  }, [section]);
 
   // Reset plugin search and view when leaving the plugins section or closing
   useEffect(() => {
@@ -52,13 +63,15 @@ export function LibraryDialog({
 
   useEffect(() => {
     if (!isOpen) {
+      setSkillSearch("");
+      setSkillViewKind("list");
       setPluginSearch("");
       setPluginViewKind("list");
-      setPluginView("list");
     }
   }, [isOpen]);
 
   const pluginIsDrilledIn = pluginViewKind !== "list" && pluginViewKind !== "store";
+  const skillIsDrilledIn = skillViewKind !== "list";
 
   const navItems: { id: LibrarySection; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "skills", label: "Skills", icon: <Sparkles size={15} /> },
@@ -106,55 +119,90 @@ export function LibraryDialog({
                   <Dialog.Title className="w-32 shrink-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                     Catalog
                   </Dialog.Title>
-                  {section === "plugins" ? (
-                    <>
-                      <div className="flex flex-1 items-center justify-center">
-                        <div className="flex w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600">
+                  <div className="flex flex-1 items-center justify-center">
+                    {(() => {
+                      const isDrilledIn =
+                        section === "skills" ? skillIsDrilledIn : pluginIsDrilledIn;
+                      const value = section === "skills" ? skillSearch : pluginSearch;
+                      const onChange = (v: string) => {
+                        if (section === "skills") setSkillSearch(v);
+                        else setPluginSearch(v);
+                      };
+                      const placeholder =
+                        section === "skills" ? "Search skills…" : "Search plugins…";
+                      return (
+                        <div
+                          className={cn(
+                            "flex w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600",
+                            isDrilledIn && "invisible",
+                          )}
+                        >
                           <Search size={11} className="shrink-0 text-neutral-400" />
                           <input
                             ref={searchInputRef}
                             type="text"
-                            value={pluginSearch}
-                            onChange={(e) => {
-                              setPluginSearch(e.target.value);
-                              if (pluginIsDrilledIn) setPluginView("list");
-                            }}
-                            placeholder="Search plugins…"
+                            value={value}
+                            onChange={(e) => onChange(e.target.value)}
+                            placeholder={placeholder}
+                            tabIndex={isDrilledIn ? -1 : undefined}
                             className="flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
                           />
-                          {pluginSearch && (
+                          {value && (
                             <button
                               type="button"
-                              onClick={() => setPluginSearch("")}
+                              onClick={() => onChange("")}
                               className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                             >
                               <X size={10} />
                             </button>
                           )}
                         </div>
-                      </div>
-                      <div className="flex w-32 items-center justify-end">
+                      );
+                    })()}
+                  </div>
+                  <div className="flex w-32 items-center justify-end gap-1">
+                    {section === "skills" && skillActions && (
+                      <>
+                        <DropdownMenu
+                          anchor="bottom end"
+                          trigger={
+                            <MenuButton
+                              title="Add skill"
+                              className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                            >
+                              <Plus size={15} />
+                            </MenuButton>
+                          }
+                        >
+                          <DropdownMenuItem icon={<Plus size={13} />} onClick={skillActions.onNew}>
+                            New
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            icon={<Upload size={13} />}
+                            onClick={skillActions.onImport}
+                          >
+                            Import
+                          </DropdownMenuItem>
+                        </DropdownMenu>
                         <button
                           type="button"
-                          onClick={onClose}
-                          className="ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                          onClick={skillActions.onExportAll}
+                          disabled={!skillActions.canExport}
+                          title="Export all skills as a zip"
+                          className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                         >
-                          <X size={15} />
+                          <Download size={15} />
                         </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex-1" />
-                      <button
-                        type="button"
-                        onClick={onClose}
-                        className="ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                      >
-                        <X size={15} />
-                      </button>
-                    </>
-                  )}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* ── Body: left nav + main panel ── */}
@@ -198,14 +246,15 @@ export function LibraryDialog({
                         onImported={onImported}
                         initialView={initialView}
                         initialSkillName={initialSkillName}
+                        search={skillSearch}
+                        onViewKindChange={setSkillViewKind}
+                        onActionsChange={setSkillActions}
                       />
                     ) : (
                       <PluginsManagerPanel
                         isOpen={isOpen}
                         onClose={onClose}
                         search={pluginSearch}
-                        view={pluginView}
-                        onViewChange={setPluginView}
                         onViewKindChange={setPluginViewKind}
                       />
                     )}

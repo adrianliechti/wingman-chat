@@ -1,27 +1,18 @@
 import {
   ArrowLeft,
-  Check,
   Code,
-  Copy,
   Download,
   Eye,
-  FileText,
-  Filter,
   Loader2,
   MoreVertical,
   Pencil,
   Plus,
-  Replace,
-  Search,
   Sparkles,
   Trash2,
-  Upload,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import type { ParsedSkill, Skill, SkillResource } from "@/features/skills/lib/skillParser";
+import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
 import {
   downloadSkill,
   downloadSkillsAsZip,
@@ -29,7 +20,6 @@ import {
   parseSkillsFromZip,
   validateSkillName,
 } from "@/features/skills/lib/skillParser";
-import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -37,6 +27,13 @@ import { notify } from "@/shared/lib/notify";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 import { SkillResourcesEditor } from "./SkillResourcesEditor";
+
+export interface SkillCatalogActions {
+  onNew: () => void;
+  onImport: () => void;
+  onExportAll: () => void;
+  canExport: boolean;
+}
 
 export interface SkillCatalogPanelProps {
   isOpen: boolean;
@@ -55,6 +52,12 @@ export interface SkillCatalogPanelProps {
   initialView?: "list" | "new";
   /** When set, pre-selects this skill in preview (read-only) mode on open. */
   initialSkillName?: string;
+  /** Search query managed by the parent (dialog top bar). */
+  search?: string;
+  /** Notifies the parent of the current view kind so it can hide the search bar when drilled in. */
+  onViewKindChange?: (kind: "list" | "skill-detail" | "skill-edit") => void;
+  /** Publishes the list-view actions so the parent can render them in its top bar. */
+  onActionsChange?: (actions: SkillCatalogActions | null) => void;
 }
 
 const NO_ENABLED_SKILLS: ReadonlySet<string> = new Set();
@@ -84,25 +87,18 @@ export function SkillCatalogPanel({
   onImported,
   initialView = "list",
   initialSkillName,
+  search = "",
+  onViewKindChange,
+  onActionsChange,
 }: SkillCatalogPanelProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
-  const { templates, loadTemplate } = useSkillTemplates();
   const editorNameInputId = useId();
   const editorDescriptionInputId = useId();
   const editorContentInputId = useId();
   const editorNameInputRef = useRef<HTMLInputElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [search, setSearch] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stableOrder, setStableOrder] = useState<string[]>([]);
-
-  // Tabs: user's own skills vs. shipped templates
-  const [tab, setTab] = useState<"mine" | "templates">("mine");
-  const [templateCategory, setTemplateCategory] = useState<string>("");
-  const [selectedTemplate, setSelectedTemplate] = useState<SkillTemplate | null>(null);
-  const [templateContent, setTemplateContent] = useState<ParsedSkill | null>(null);
-  const [templateLoading, setTemplateLoading] = useState(false);
 
   // Two-panel state
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
@@ -188,11 +184,6 @@ export function SkillCatalogPanel({
     } else {
       setSelectedSkill(null);
       setEditMode(false);
-      setSearch("");
-      setTab("mine");
-      setTemplateCategory("");
-      setSelectedTemplate(null);
-      setTemplateContent(null);
     }
     // setters are stable and intentionally omitted from the deps
   }, [isOpen, initialView, initialSkillName, openEditor, allSkills]);
@@ -201,12 +192,8 @@ export function SkillCatalogPanel({
     if (!isOpen) return;
     if (editMode) {
       editorNameInputRef.current?.focus();
-      return;
     }
-    if (initialView !== "new") {
-      searchInputRef.current?.focus();
-    }
-  }, [editMode, initialView, isOpen]);
+  }, [editMode, isOpen]);
 
   const nameError = useMemo(() => {
     if (!edName || edName.endsWith("-")) return null;
@@ -328,71 +315,6 @@ export function SkillCatalogPanel({
     );
   }, [allSkills, search, stableOrder]);
 
-  const existingNames = useMemo(() => new Set(allSkills.map((s) => s.name)), [allSkills]);
-
-  const templateCategories = useMemo(
-    () => Array.from(new Set(templates.map((t) => t.category).filter(Boolean))).sort(),
-    [templates],
-  );
-
-  const filteredTemplates = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return templates
-      .filter((t) => !templateCategory || t.category === templateCategory)
-      .filter(
-        (t) => !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
-      )
-      .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
-  }, [templates, search, templateCategory]);
-
-  // Group filtered templates by category (preserving the sorted order) for headed sections.
-  const groupedTemplates = useMemo(() => {
-    const groups: { category: string; items: SkillTemplate[] }[] = [];
-    for (const t of filteredTemplates) {
-      const last = groups[groups.length - 1];
-      if (last && last.category === t.category) last.items.push(t);
-      else groups.push({ category: t.category, items: [t] });
-    }
-    return groups;
-  }, [filteredTemplates]);
-
-  const switchTab = useCallback(
-    (next: "mine" | "templates") => {
-      void discardAndRun(() => {
-        setTab(next);
-        setSearch("");
-        setTemplateCategory("");
-        setSelectedSkill(null);
-        setEditMode(false);
-        setSelectedTemplate(null);
-        setTemplateContent(null);
-      });
-    },
-    [discardAndRun],
-  );
-
-  const openTemplate = useCallback(
-    (template: SkillTemplate) => {
-      setSelectedTemplate(template);
-      setTemplateContent(null);
-      setTemplateLoading(true);
-      void loadTemplate(template.path)
-        .then((parsed) => setTemplateContent(parsed))
-        .finally(() => setTemplateLoading(false));
-    },
-    [loadTemplate],
-  );
-
-  // Copy a template into the user's library. Stays in place (no tab switch / no
-  // close) so several can be added in a row. addSkill de-dupes by name, so an
-  // existing skill of the same name is replaced.
-  const addTemplate = async (template: SkillTemplate) => {
-    const parsed = await loadTemplate(template.path);
-    if (!parsed) return;
-    const added = addSkill(parsed);
-    onSkillSaved(added, !existingNames.has(parsed.name));
-  };
-
   const handleDeleteConfirm = (skill: Skill) => {
     removeSkill(skill.id);
     if (enabledSkillNames.has(skill.name)) {
@@ -402,7 +324,38 @@ export function SkillCatalogPanel({
     setEditMode(false);
   };
 
-  const handleImport = () => {
+  const importSkillFiles = useCallback(
+    async (files: File[]) => {
+      const newNames: string[] = [];
+      for (const file of files) {
+        try {
+          if (file.name.endsWith(".zip")) {
+            const JSZip = (await import("jszip")).default;
+            const zip = await JSZip.loadAsync(file);
+            for (const parsed of await parseSkillsFromZip(zip)) {
+              const s = addSkill(parsed);
+              newNames.push(s.name);
+            }
+          } else {
+            const content = await file.text();
+            const result = parseSkillFile(content);
+            if (result.success) {
+              const s = addSkill(result.skill);
+              newNames.push(s.name);
+            }
+          }
+        } catch {
+          /* skip */
+        }
+      }
+      if (newNames.length > 0) {
+        onImported(newNames);
+      }
+    },
+    [addSkill, onImported],
+  );
+
+  const handleImport = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".zip,.md";
@@ -413,41 +366,13 @@ export function SkillCatalogPanel({
       await importSkillFiles(Array.from(files));
     };
     input.click();
-  };
+  }, [importSkillFiles]);
 
-  const handleExportAll = () => {
+  const handleExportAll = useCallback(() => {
     void downloadSkillsAsZip(allSkills).catch((error) =>
       notify.error("Failed to export skills", error),
     );
-  };
-
-  const importSkillFiles = async (files: File[]) => {
-    const newNames: string[] = [];
-    for (const file of files) {
-      try {
-        if (file.name.endsWith(".zip")) {
-          const JSZip = (await import("jszip")).default;
-          const zip = await JSZip.loadAsync(file);
-          for (const parsed of await parseSkillsFromZip(zip)) {
-            const s = addSkill(parsed);
-            newNames.push(s.name);
-          }
-        } else {
-          const content = await file.text();
-          const result = parseSkillFile(content);
-          if (result.success) {
-            const s = addSkill(result.skill);
-            newNames.push(s.name);
-          }
-        }
-      } catch {
-        /* skip */
-      }
-    }
-    if (newNames.length > 0) {
-      onImported(newNames);
-    }
-  };
+  }, [allSkills]);
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -476,6 +401,346 @@ export function SkillCatalogPanel({
     }, 100);
   };
 
+  const viewKind: "list" | "skill-detail" | "skill-edit" = editMode
+    ? "skill-edit"
+    : selectedSkill
+      ? "skill-detail"
+      : "list";
+
+  useEffect(() => {
+    onViewKindChange?.(viewKind);
+  }, [viewKind, onViewKindChange]);
+
+  useEffect(() => {
+    if (!onActionsChange) return;
+    if (viewKind !== "list") {
+      onActionsChange(null);
+      return;
+    }
+    onActionsChange({
+      onNew: () => openEditor("new"),
+      onImport: handleImport,
+      onExportAll: handleExportAll,
+      canExport: allSkills.length > 0,
+    });
+  }, [
+    viewKind,
+    onActionsChange,
+    openEditor,
+    handleImport,
+    handleExportAll,
+    allSkills.length,
+  ]);
+
+  useEffect(() => {
+    return () => onActionsChange?.(null);
+  }, [onActionsChange]);
+
+  if (viewKind === "skill-edit") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* ── Editor header ── */}
+        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
+          <button
+            type="button"
+            onClick={() => void discardAndRun(() => setEditMode(false))}
+            className="-ml-1 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <span className="flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {selectedSkill ? selectedSkill.name : "New Skill"}
+          </span>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row overflow-y-auto sm:overflow-y-visible">
+          <div className="flex-1 min-w-0 space-y-5 sm:overflow-y-auto px-5 py-5">
+            {/* Name */}
+            <div>
+              <label
+                htmlFor={editorNameInputId}
+                className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Name
+              </label>
+              <input
+                ref={editorNameInputRef}
+                id={editorNameInputId}
+                type="text"
+                value={edName}
+                onChange={(e) => setEdName(e.target.value.toLowerCase())}
+                className={cn(FIELD_BASE, nameError ? FIELD_ERROR : FIELD_NEUTRAL)}
+                placeholder="my-skill-name"
+              />
+              {nameError ? (
+                <p className="mt-1 text-xs text-red-500">{nameError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                  Lowercase alphanumeric characters and hyphens only.
+                </p>
+              )}
+            </div>
+
+            {/* Description */}
+            <div>
+              <label
+                htmlFor={editorDescriptionInputId}
+                className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                Description
+              </label>
+              <textarea
+                id={editorDescriptionInputId}
+                value={edDescription}
+                onChange={(e) => setEdDescription(e.target.value)}
+                className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none")}
+                rows={2}
+                placeholder="Describe what this skill does and when to use it…"
+              />
+            </div>
+
+            {/* Instructions with Edit/Preview tabs */}
+            <div className="flex flex-col">
+              <div className="mb-1.5 flex items-center justify-between">
+                <label
+                  htmlFor={editorContentInputId}
+                  className="text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                >
+                  Instructions
+                </label>
+                <div
+                  ref={previewSliderRef}
+                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0"
+                >
+                  {previewSliderStyle.width > 0 && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                      style={{
+                        left: `${previewSliderStyle.left}px`,
+                        width: `${previewSliderStyle.width}px`,
+                        height: "calc(100% - 4px)",
+                        top: "2px",
+                      }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    data-view="edit"
+                    onClick={() => setPreviewTab("edit")}
+                    title="Edit"
+                    className={cn(
+                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      previewTab === "edit"
+                        ? "text-neutral-900 dark:text-neutral-50"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                    )}
+                  >
+                    <Code size={11} strokeWidth={2.25} />
+                  </button>
+                  <button
+                    type="button"
+                    data-view="preview"
+                    onClick={() => setPreviewTab("preview")}
+                    title="Preview"
+                    className={cn(
+                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      previewTab === "preview"
+                        ? "text-neutral-900 dark:text-neutral-50"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                    )}
+                  >
+                    <Eye size={11} strokeWidth={2.25} />
+                  </button>
+                </div>
+              </div>
+
+              {previewTab === "edit" ? (
+                <textarea
+                  id={editorContentInputId}
+                  value={edContent}
+                  onChange={(e) => setEdContent(e.target.value)}
+                  className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none font-mono")}
+                  rows={9}
+                  placeholder={"# Skill Instructions\n\nDetailed instructions for the agent…"}
+                />
+              ) : (
+                <div className="h-49.5 overflow-y-auto rounded-lg border border-neutral-200/70 bg-neutral-50/50 px-3 py-2 text-sm dark:border-neutral-700/50 dark:bg-neutral-800/30">
+                  {edContent.trim() ? (
+                    <Markdown>{edContent}</Markdown>
+                  ) : (
+                    <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
+                      Nothing to preview yet.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Resources sidebar */}
+          <div className="flex w-full sm:w-72 shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
+            <SkillResourcesEditor resources={edResources} onChange={setEdResources} />
+          </div>
+        </div>
+
+        {/* Editor footer */}
+        <div className="flex items-center justify-between border-t border-neutral-200/60 bg-neutral-50/50 px-5 py-3 dark:border-neutral-800/60 dark:bg-neutral-900/30">
+          <button
+            type="button"
+            onClick={handleOptimize}
+            disabled={!canOptimize}
+            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/60 px-2.5 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:border-amber-300/60 hover:bg-amber-50/40 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700/60 dark:text-neutral-400 dark:hover:border-amber-700/60 dark:hover:bg-amber-950/20 dark:hover:text-amber-400"
+          >
+            {isOptimizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {isOptimizing ? "Optimizing…" : "Optimize"}
+          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => void discardAndRun(() => setEditMode(false))}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-neutral-800/60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleEditorSave}
+              disabled={!editorIsValid}
+              className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (viewKind === "skill-detail" && selectedSkill) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedSkill(null);
+              setEditMode(false);
+            }}
+            className="-ml-1 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              {selectedSkill.name}
+            </span>
+            {onToggle && enabledSkillNames.has(selectedSkill.name) && (
+              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                Active
+              </span>
+            )}
+          </div>
+          {onToggle && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabledSkillNames.has(selectedSkill.name)}
+              onClick={() => onToggle(selectedSkill.name)}
+              title={
+                enabledSkillNames.has(selectedSkill.name) ? "Remove from agent" : "Add to agent"
+              }
+              className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                enabledSkillNames.has(selectedSkill.name)
+                  ? "bg-neutral-800 dark:bg-neutral-300"
+                  : "bg-neutral-200 dark:bg-neutral-700"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
+                  enabledSkillNames.has(selectedSkill.name) ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => openEditor(selectedSkill)}
+            title="Edit skill"
+            className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          >
+            <Pencil size={15} />
+          </button>
+          <DropdownMenu
+            anchor="bottom end"
+            trigger={
+              <MenuButton className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
+                <MoreVertical size={15} />
+              </MenuButton>
+            }
+          >
+            <DropdownMenuItem
+              icon={<Download size={13} />}
+              onClick={() => {
+                void downloadSkill(selectedSkill).catch((error) =>
+                  notify.error("Failed to export skill", error),
+                );
+              }}
+            >
+              Export
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={<Trash2 size={13} />}
+              destructive
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete skill?",
+                    message: `"${selectedSkill.name}" will be permanently removed. This can't be undone.`,
+                    danger: true,
+                  })
+                ) {
+                  handleDeleteConfirm(selectedSkill);
+                }
+              }}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {selectedSkill.description && (
+            <div className="mb-4">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                Description
+              </p>
+              <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                {selectedSkill.description}
+              </p>
+            </div>
+          )}
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              Instructions
+            </p>
+            <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
+              <Markdown>{selectedSkill.content}</Markdown>
+            </div>
+          </div>
+          {selectedSkill.resources && selectedSkill.resources.length > 0 && (
+            <div className="mt-4">
+              <SkillResourcesEditor resources={selectedSkill.resources} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ──────────────────────────────────────────────────────────────
+  const isEmpty = allSkills.length === 0;
+  const noSkillsMatch = allSkills.length > 0 && filteredSkills.length === 0;
+
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
@@ -493,673 +758,139 @@ export function SkillCatalogPanel({
         </div>
       )}
 
-      {/* ── Two-column body ── */}
-      <div className="flex min-h-0 flex-1 sm:flex-row flex-col">
-        {/* ── Left panel: skill list ── */}
-        <div
-          className={`${selectedSkill || editMode || selectedTemplate ? "hidden sm:flex" : "flex"} min-h-0 w-full flex-1 sm:flex-none sm:shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60`}
-        >
-          {/* Tabs: my skills vs. templates */}
-          <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200/40 px-2 py-1.5 dark:border-neutral-800/40">
-            {[
-              { id: "mine" as const, label: "My Skills" },
-              { id: "templates" as const, label: "Templates" },
-            ].map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => switchTab(t.id)}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                  tab === t.id
-                    ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                    : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
-                )}
-              >
-                {t.label}
-                {t.id === "templates" && templates.length > 0 && (
-                  <span className="ml-1 text-[10px] text-neutral-400 dark:text-neutral-500">
-                    {templates.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Search (+ category filter on the templates tab) */}
-          <div className="flex items-center gap-2 border-b border-neutral-200/40 px-3 py-2 dark:border-neutral-800/40">
-            <Search size={12} className="shrink-0 text-neutral-400" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
-              className="flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-              >
-                <X size={11} />
-              </button>
-            )}
-            {tab === "templates" && templateCategories.length > 0 && (
-              <DropdownMenu
-                anchor="bottom end"
-                panelClassName="min-w-44 max-h-80 overflow-y-auto"
-                trigger={
-                  <MenuButton
-                    title={
-                      templateCategory
-                        ? `Category: ${templateCategory.replace(/-/g, " ")}`
-                        : "Filter by category"
-                    }
-                    className={cn(
-                      "relative flex shrink-0 items-center rounded-md p-0.5 transition-colors",
-                      templateCategory
-                        ? "text-neutral-900 dark:text-neutral-100"
-                        : "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300",
-                    )}
-                  >
-                    <Filter size={13} className="shrink-0" />
-                    {templateCategory && (
-                      <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-neutral-800 dark:bg-neutral-200" />
-                    )}
-                  </MenuButton>
-                }
-              >
-                <DropdownMenuItem
-                  selected={!templateCategory}
-                  onClick={() => setTemplateCategory("")}
-                >
-                  All categories
-                </DropdownMenuItem>
-                {templateCategories.map((c) => (
-                  <DropdownMenuItem
-                    key={c}
-                    selected={templateCategory === c}
-                    onClick={() => setTemplateCategory(c)}
-                  >
-                    <span className="capitalize">{c.replace(/-/g, " ")}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenu>
-            )}
-          </div>
-
-          {/* Skill list */}
-          <div className="flex-1 overflow-y-auto py-1">
-            {tab === "templates" ? (
-              templates.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                  <Copy size={28} className="text-neutral-300 dark:text-neutral-600" />
-                  <div>
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                      No templates available
-                    </p>
-                    <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                      Default skills shipped with this deployment appear here
-                    </p>
-                  </div>
-                </div>
-              ) : filteredTemplates.length === 0 ? (
-                <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                  No templates match your search.
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 overflow-y-auto py-1">
+          {isEmpty && !search ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+              <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
+              <div>
+                <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  No skills yet
                 </p>
-              ) : (
-                groupedTemplates.map((group) => (
-                  <div key={group.category || "_"}>
-                    {group.category && (
-                      <p className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                        {group.category.replace(/-/g, " ")}
-                      </p>
-                    )}
-                    {group.items.map((template) => {
-                      const added = existingNames.has(template.name);
-                      const isSelected = selectedTemplate?.name === template.name;
-                      return (
-                        <button
-                          key={template.path}
-                          type="button"
-                          onClick={() => openTemplate(template)}
-                          className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
-                            isSelected
-                              ? "bg-neutral-100 dark:bg-neutral-800/70"
-                              : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                              {template.name}
-                            </span>
-                            {template.description && (
-                              <span className="mt-0.5 block truncate text-[11px] leading-tight text-neutral-400 dark:text-neutral-500">
-                                {template.description}
-                              </span>
-                            )}
-                          </div>
-                          {added && (
-                            <span
-                              title="Already in your skills"
-                              className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500"
-                            >
-                              <Check size={11} />
-                              Added
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))
-              )
-            ) : allSkills.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                    No skills yet
-                  </p>
-                  <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                    Skills extend what your agents can do
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openEditor("new")}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
-                >
-                  <Plus size={11} />
-                  Create your first skill
-                </button>
+                <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+                  Skills extend what your agents can do
+                </p>
               </div>
-            ) : filteredSkills.length === 0 ? (
-              <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                No skills match your search.
-              </p>
-            ) : (
-              filteredSkills.map((skill) => {
-                const enabled = enabledSkillNames.has(skill.name);
-                const isSelected = selectedSkill?.id === skill.id;
-
-                return (
-                  <div
-                    key={skill.id}
-                    className={`group flex items-center gap-2 px-3 py-2 transition-colors cursor-pointer ${
-                      isSelected
-                        ? "bg-neutral-100 dark:bg-neutral-800/70"
-                        : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-                    }`}
-                  >
-                    {onToggle && (
-                      <button
-                        type="button"
-                        onClick={() => onToggle(skill.name)}
-                        className="shrink-0 flex items-center justify-center rounded transition-colors"
-                        title={enabled ? "Remove from agent" : "Add to agent"}
-                      >
-                        <span
-                          className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                            enabled
-                              ? "border-neutral-700 bg-neutral-800 dark:border-neutral-300 dark:bg-neutral-300"
-                              : "border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-800"
-                          }`}
-                        >
-                          {enabled && (
-                            <svg
-                              viewBox="0 0 10 8"
-                              className="h-2.5 w-2.5"
-                              fill="none"
-                              aria-hidden="true"
-                            >
-                              <path
-                                d="M1 4l3 3 5-6"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="text-white dark:text-neutral-900"
-                              />
-                            </svg>
-                          )}
-                        </span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => openPreview(skill)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                        {skill.name}
-                      </span>
-                      {skill.description && (
-                        <span className="mt-0.5 block truncate text-[11px] leading-tight text-neutral-400 dark:text-neutral-500">
-                          {skill.description}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* List footer actions */}
-          {tab === "mine" && (
-            <div className="flex items-center gap-1.5 border-t border-neutral-200/60 px-3 py-3 dark:border-neutral-800/60">
               <button
                 type="button"
                 onClick={() => openEditor("new")}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
               >
                 <Plus size={11} />
-                New
-              </button>
-              <button
-                type="button"
-                onClick={handleImport}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-              >
-                <Upload size={11} />
-                Import
-              </button>
-              <button
-                type="button"
-                onClick={handleExportAll}
-                disabled={allSkills.length === 0}
-                title="Export all skills as a zip"
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-              >
-                <Download size={11} />
-                Export
+                Create your first skill
               </button>
             </div>
-          )}
-        </div>
-
-        {/* ── Right panel ── */}
-        <div
-          className={`${!selectedSkill && !editMode && !selectedTemplate ? "hidden sm:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
-        >
-          {selectedTemplate ? (
-            /* ── Template preview ── */
-            <>
-              <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTemplate(null);
-                    setTemplateContent(null);
-                  }}
-                  className="-ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                >
-                  <ArrowLeft size={16} />
-                </button>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                    {selectedTemplate.name}
-                  </span>
-                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                    Template
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => addTemplate(selectedTemplate)}
-                  disabled={templateLoading || !templateContent}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
-                >
-                  {existingNames.has(selectedTemplate.name) ? (
-                    <Replace size={13} />
-                  ) : (
-                    <Plus size={13} />
-                  )}
-                  {existingNames.has(selectedTemplate.name) ? "Replace" : "Add to my skills"}
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-5 py-4">
-                {templateLoading ? (
-                  <div className="flex h-full items-center justify-center">
-                    <Loader2
-                      size={20}
-                      className="animate-spin text-neutral-300 dark:text-neutral-600"
-                    />
-                  </div>
-                ) : !templateContent ? (
-                  <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                    Failed to load this template.
-                  </p>
-                ) : (
-                  <>
-                    {templateContent.description && (
-                      <div className="mb-4">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                          Description
-                        </p>
-                        <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                          {templateContent.description}
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                        Instructions
-                      </p>
-                      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
-                        <Markdown>{templateContent.content}</Markdown>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
-          ) : editMode ? (
-            /* ── Editor ── */
-            <>
-              <div className="flex min-h-0 flex-1 flex-col sm:flex-row overflow-y-auto sm:overflow-y-visible">
-                <div className="flex-1 min-w-0 space-y-5 sm:overflow-y-auto px-5 py-5">
-                  {/* Name */}
-                  <div>
-                    <label
-                      htmlFor={editorNameInputId}
-                      className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                    >
-                      Name
-                    </label>
-                    <input
-                      ref={editorNameInputRef}
-                      id={editorNameInputId}
-                      type="text"
-                      value={edName}
-                      onChange={(e) => setEdName(e.target.value.toLowerCase())}
-                      className={cn(FIELD_BASE, nameError ? FIELD_ERROR : FIELD_NEUTRAL)}
-                      placeholder="my-skill-name"
-                    />
-                    {nameError ? (
-                      <p className="mt-1 text-xs text-red-500">{nameError}</p>
-                    ) : (
-                      <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                        Lowercase alphanumeric characters and hyphens only.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label
-                      htmlFor={editorDescriptionInputId}
-                      className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                    >
-                      Description
-                    </label>
-                    <textarea
-                      id={editorDescriptionInputId}
-                      value={edDescription}
-                      onChange={(e) => setEdDescription(e.target.value)}
-                      className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none")}
-                      rows={2}
-                      placeholder="Describe what this skill does and when to use it…"
-                    />
-                  </div>
-
-                  {/* Instructions with Edit/Preview tabs */}
-                  <div className="flex flex-col">
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <label
-                        htmlFor={editorContentInputId}
-                        className="text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                      >
-                        Instructions
-                      </label>
-                      <div
-                        ref={previewSliderRef}
-                        className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0"
-                      >
-                        {previewSliderStyle.width > 0 && (
-                          <div
-                            className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                            style={{
-                              left: `${previewSliderStyle.left}px`,
-                              width: `${previewSliderStyle.width}px`,
-                              height: "calc(100% - 4px)",
-                              top: "2px",
-                            }}
-                          />
-                        )}
-                        <button
-                          type="button"
-                          data-view="edit"
-                          onClick={() => setPreviewTab("edit")}
-                          title="Edit"
-                          className={cn(
-                            "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                            previewTab === "edit"
-                              ? "text-neutral-900 dark:text-neutral-50"
-                              : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                          )}
-                        >
-                          <Code size={11} strokeWidth={2.25} />
-                        </button>
-                        <button
-                          type="button"
-                          data-view="preview"
-                          onClick={() => setPreviewTab("preview")}
-                          title="Preview"
-                          className={cn(
-                            "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                            previewTab === "preview"
-                              ? "text-neutral-900 dark:text-neutral-50"
-                              : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                          )}
-                        >
-                          <Eye size={11} strokeWidth={2.25} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {previewTab === "edit" ? (
-                      <textarea
-                        id={editorContentInputId}
-                        value={edContent}
-                        onChange={(e) => setEdContent(e.target.value)}
-                        className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none font-mono")}
-                        rows={9}
-                        placeholder={"# Skill Instructions\n\nDetailed instructions for the agent…"}
-                      />
-                    ) : (
-                      <div className="h-49.5 overflow-y-auto rounded-lg border border-neutral-200/70 bg-neutral-50/50 px-3 py-2 text-sm dark:border-neutral-700/50 dark:bg-neutral-800/30">
-                        {edContent.trim() ? (
-                          <Markdown>{edContent}</Markdown>
-                        ) : (
-                          <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
-                            Nothing to preview yet.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Resources sidebar */}
-                <div className="flex w-full sm:w-72 shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
-                  <SkillResourcesEditor resources={edResources} onChange={setEdResources} />
-                </div>
-              </div>
-
-              {/* Editor footer */}
-              <div className="flex items-center justify-between border-t border-neutral-200/60 bg-neutral-50/50 px-5 py-3 dark:border-neutral-800/60 dark:bg-neutral-900/30">
-                <button
-                  type="button"
-                  onClick={handleOptimize}
-                  disabled={!canOptimize}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/60 px-2.5 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:border-amber-300/60 hover:bg-amber-50/40 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700/60 dark:text-neutral-400 dark:hover:border-amber-700/60 dark:hover:bg-amber-950/20 dark:hover:text-amber-400"
-                >
-                  {isOptimizing ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={12} />
-                  )}
-                  {isOptimizing ? "Optimizing…" : "Optimize"}
-                </button>
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => discardAndRun(() => setEditMode(false))}
-                    className="rounded-md px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-neutral-800/60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleEditorSave}
-                    disabled={!editorIsValid}
-                    className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : selectedSkill ? (
-            /* ── Preview ── */
-            <>
-              <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedSkill(null);
-                    setEditMode(false);
-                  }}
-                  className="-ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                >
-                  <ArrowLeft size={16} />
-                </button>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                    {selectedSkill.name}
-                  </span>
-                  {onToggle && enabledSkillNames.has(selectedSkill.name) && (
-                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                      Active
-                    </span>
-                  )}
-                </div>
-                {onToggle && (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={enabledSkillNames.has(selectedSkill.name)}
-                    onClick={() => onToggle(selectedSkill.name)}
-                    title={
-                      enabledSkillNames.has(selectedSkill.name)
-                        ? "Remove from agent"
-                        : "Add to agent"
-                    }
-                    className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                      enabledSkillNames.has(selectedSkill.name)
-                        ? "bg-neutral-800 dark:bg-neutral-300"
-                        : "bg-neutral-200 dark:bg-neutral-700"
+          ) : (
+            <ul>
+              {noSkillsMatch && (
+                <li className="px-5 py-2 text-xs text-neutral-400 dark:text-neutral-500">
+                  No skills match your search.
+                </li>
+              )}
+              {filteredSkills.map((skill) => {
+                const enabled = enabledSkillNames.has(skill.name);
+                const isSelected = selectedSkill?.id === skill.id;
+                return (
+                  <li
+                    key={skill.id}
+                    className={`group border-t border-neutral-200/40 first:border-t-0 dark:border-neutral-800/40 ${
+                      isSelected ? "bg-neutral-100 dark:bg-neutral-800/70" : ""
                     }`}
                   >
-                    <span
-                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
-                        enabledSkillNames.has(selectedSkill.name)
-                          ? "translate-x-4"
-                          : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openEditor(selectedSkill)}
-                  title="Edit skill"
-                  className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                >
-                  <Pencil size={15} />
-                </button>
-                <DropdownMenu
-                  anchor="bottom end"
-                  trigger={
-                    <MenuButton className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
-                      <MoreVertical size={15} />
-                    </MenuButton>
-                  }
-                >
-                  <DropdownMenuItem
-                    icon={<Download size={13} />}
-                    onClick={() => {
-                      void downloadSkill(selectedSkill).catch((error) =>
-                        notify.error("Failed to export skill", error),
-                      );
-                    }}
-                  >
-                    Export
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    icon={<Trash2 size={13} />}
-                    destructive
-                    onClick={async () => {
-                      if (
-                        await confirm({
-                          title: "Delete skill?",
-                          message: `"${selectedSkill.name}" will be permanently removed. This can't be undone.`,
-                          danger: true,
-                        })
-                      ) {
-                        handleDeleteConfirm(selectedSkill);
-                      }
-                    }}
-                  >
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenu>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-5 py-4">
-                {selectedSkill.description && (
-                  <div className="mb-4">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                      Description
-                    </p>
-                    <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                      {selectedSkill.description}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                    Instructions
-                  </p>
-                  <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
-                    <Markdown>{selectedSkill.content}</Markdown>
-                  </div>
-                </div>
-                {selectedSkill.resources && selectedSkill.resources.length > 0 && (
-                  <div className="mt-4">
-                    <SkillResourcesEditor resources={selectedSkill.resources} />
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            /* ── Empty right panel ── */
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <FileText size={32} className="text-neutral-200 dark:text-neutral-700" />
-              <div>
-                <p className="text-sm font-medium text-neutral-400 dark:text-neutral-500">
-                  Select a skill to view
-                </p>
-                <p className="mt-0.5 text-xs text-neutral-300 dark:text-neutral-600">
-                  Or create a new one to get started
-                </p>
-              </div>
-            </div>
+                    <div className="flex w-full items-center gap-3 pl-5 pr-2 py-3">
+                      <button
+                        type="button"
+                        onClick={() => openPreview(skill)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
+                          <Sparkles size={16} className="text-neutral-400 dark:text-neutral-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                              {skill.name}
+                            </span>
+                            {onToggle && enabled && (
+                              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          {skill.description && (
+                            <span className="mt-0.5 block truncate text-xs text-neutral-400 dark:text-neutral-500">
+                              {skill.description}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                      {onToggle && (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={enabled}
+                          onClick={() => onToggle(skill.name)}
+                          title={enabled ? "Remove from agent" : "Add to agent"}
+                          className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                            enabled
+                              ? "bg-neutral-800 dark:bg-neutral-300"
+                              : "bg-neutral-200 dark:bg-neutral-700"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
+                              enabled ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      )}
+                      <DropdownMenu
+                        anchor="bottom end"
+                        trigger={
+                          <MenuButton className="shrink-0 rounded p-1.5 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
+                            <MoreVertical size={14} />
+                          </MenuButton>
+                        }
+                      >
+                        <DropdownMenuItem
+                          icon={<Pencil size={13} />}
+                          onClick={() => openEditor(skill)}
+                        >
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          icon={<Download size={13} />}
+                          onClick={() => {
+                            void downloadSkill(skill).catch((error) =>
+                              notify.error("Failed to export skill", error),
+                            );
+                          }}
+                        >
+                          Export
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          icon={<Trash2 size={13} />}
+                          destructive
+                          onClick={async () => {
+                            if (
+                              await confirm({
+                                title: "Delete skill?",
+                                message: `"${skill.name}" will be permanently removed. This can't be undone.`,
+                                danger: true,
+                              })
+                            ) {
+                              handleDeleteConfirm(skill);
+                            }
+                          }}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenu>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>

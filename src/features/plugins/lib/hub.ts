@@ -32,8 +32,9 @@ interface PluginSummary {
   version?: string;
   description?: string;
   source: string;
-  skills?: string[];
+  skills?: { name: string; description?: string }[] | string[];
   mcpServers?: string[];
+  icon?: string;
 }
 
 interface PluginDetailResponse {
@@ -58,8 +59,9 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
         version: p.version,
         description: p.description,
         source: p.source,
-        skills: p.skills,
+        skills: p.skills?.map((s) => (typeof s === "string" ? { name: s } : s)),
         mcpServers: p.mcpServers,
+        icon: p.icon ? new URL(p.icon, hubUrl).href : undefined,
       }));
     })
     .catch(() => []);
