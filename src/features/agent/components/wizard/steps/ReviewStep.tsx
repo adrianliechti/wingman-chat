@@ -4,7 +4,7 @@ import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { getConfig } from "@/shared/config";
-import { defaultModelId } from "@/shared/lib/models";
+import { defaultModelId, trimModelName } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
@@ -75,7 +75,7 @@ export function ReviewStep({
                 {...getProps()}
                 className="w-full flex items-center justify-between rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer text-left"
               >
-                <span className="truncate">{models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel}</span>
+                <span className="truncate">{trimModelName(models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel)}</span>
                 <ChevronDown
                   size={14}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 transition-transform"

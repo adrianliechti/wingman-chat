@@ -418,7 +418,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
   }, [models, currentChatModel]);
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model, models);
 
   useEffect(() => {
     setInterpreterModel(model?.id ?? null);
