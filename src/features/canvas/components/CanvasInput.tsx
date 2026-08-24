@@ -16,6 +16,7 @@ import { Fragment, useCallback, useMemo } from "react";
 import type { ImageStyle } from "@/shared/lib/imageStyles";
 import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, MenuButton } from "@/shared/ui/DropdownMenu";
+import { trimModelName } from "@/shared/lib/models";
 import { ModelDropdown, type SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
 /** Aspect-ratio option metadata; only those the selected model supports are shown. */
@@ -279,7 +280,7 @@ export function CanvasInput({
                 <span className="shrink-0 flex justify-center">
                   <Sparkles size={14} />
                 </span>
-                <span className="truncate min-w-0">{selectedModel?.name ?? selectedModel?.id ?? "Model"}</span>
+                <span className="truncate min-w-0">{trimModelName(selectedModel?.name ?? selectedModel?.id ?? "Model")}</span>
               </button>
             )}
           />

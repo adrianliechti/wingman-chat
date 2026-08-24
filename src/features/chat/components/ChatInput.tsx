@@ -32,6 +32,7 @@ import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
+import { trimModelName } from "@/shared/lib/models";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -755,7 +756,7 @@ export function ChatInput() {
                     >
                       <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        <span className="truncate min-w-0">{trimModelName(model?.name ?? model?.id ?? "Select Model")}</span>
                       </Tooltip>
                     </button>
                   )}
