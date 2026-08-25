@@ -9,7 +9,7 @@ import type { SkillCatalogActions, SkillCatalogPanelProps } from "./SkillCatalog
 import { SkillCatalogPanel } from "./SkillCatalogPanel";
 import { PluginsManagerPanel } from "./PluginsManagerPanel";
 
-export type LibrarySection = "skills" | "plugins";
+export type LibrarySection = "home" | "skills" | "plugins";
 
 export interface LibraryDialogProps extends SkillCatalogPanelProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ export interface LibraryDialogProps extends SkillCatalogPanelProps {
 export function LibraryDialog({
   isOpen,
   onClose,
-  initialSection = "skills",
+  initialSection = "home",
   onToggle,
   enabledSkillNames,
   onSkillSaved,
@@ -72,6 +72,20 @@ export function LibraryDialog({
 
   const pluginIsDrilledIn = pluginViewKind !== "list" && pluginViewKind !== "store";
   const skillIsDrilledIn = skillViewKind !== "list";
+  const isHome = section === "home";
+
+  const activeSearch = section === "skills" ? skillSearch : pluginSearch;
+  const hasSearch = !isHome && activeSearch.length > 0;
+
+  const handleClose = () => {
+    if (hasSearch) {
+      if (section === "skills") setSkillSearch("");
+      else setPluginSearch("");
+      searchInputRef.current?.focus();
+    } else {
+      onClose();
+    }
+  };
 
   const navItems: { id: LibrarySection; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: "skills", label: "Skills", icon: <Sparkles size={15} /> },
@@ -89,7 +103,7 @@ export function LibraryDialog({
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-80" onClose={onClose}>
+      <Dialog as="div" className="relative z-80" onClose={handleClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -103,24 +117,26 @@ export function LibraryDialog({
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
+              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              enterTo="opacity-100 translate-y-0 sm:scale-100"
               leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
+              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative flex h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-neutral-200/50 bg-white/95 shadow-xl backdrop-blur-xl sm:h-[75dvh] dark:border-neutral-700/50 dark:bg-neutral-900/95">
+              <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
                 {/* ── Full-width top bar ── */}
                 <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 py-2 dark:border-neutral-800/60">
-                  <Dialog.Title className="w-32 shrink-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                    Catalog
-                  </Dialog.Title>
+                  <div className="w-32 shrink-0 flex items-center gap-1">
+                    <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      Catalog
+                    </Dialog.Title>
+                  </div>
                   <div className="flex flex-1 items-center justify-center">
-                    {(() => {
+                    {!isHome && (() => {
                       const isDrilledIn =
                         section === "skills" ? skillIsDrilledIn : pluginIsDrilledIn;
                       const value = section === "skills" ? skillSearch : pluginSearch;
@@ -133,7 +149,7 @@ export function LibraryDialog({
                       return (
                         <div
                           className={cn(
-                            "flex w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600",
+                            "flex w-full max-w-xs sm:w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600",
                             isDrilledIn && "invisible",
                           )}
                         >
@@ -198,68 +214,100 @@ export function LibraryDialog({
                     <button
                       type="button"
                       onClick={onClose}
-                      className="ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                     >
                       <X size={15} />
                     </button>
                   </div>
                 </div>
 
-                {/* ── Body: left nav + main panel ── */}
-                <div className="flex min-h-0 flex-1">
-                  {/* ── Narrow left nav ── */}
-                  <div className="flex w-40 shrink-0 flex-col border-r border-neutral-200/60 dark:border-neutral-800/60">
-                    <nav className="flex flex-col gap-0.5 p-2">
-                      {navItems.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSection(item.id)}
-                          className={cn(
-                            "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors",
-                            section === item.id
-                              ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                              : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800/40 dark:hover:text-neutral-200",
-                          )}
-                        >
-                          <span className="shrink-0">{item.icon}</span>
-                          <span className="flex-1">{item.label}</span>
-                          {item.badge !== undefined && item.badge > 0 && (
-                            <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
-                              {item.badge}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </nav>
-                  </div>
-
-                  {/* ── Main panel area ── */}
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                    {section === "skills" ? (
-                      <SkillCatalogPanel
-                        isOpen={isOpen}
-                        onClose={onClose}
-                        onToggle={onToggle}
-                        enabledSkillNames={enabledSkillNames}
-                        onSkillSaved={onSkillSaved}
-                        onImported={onImported}
-                        initialView={initialView}
-                        initialSkillName={initialSkillName}
-                        search={skillSearch}
-                        onViewKindChange={setSkillViewKind}
-                        onActionsChange={setSkillActions}
-                      />
-                    ) : (
-                      <PluginsManagerPanel
-                        isOpen={isOpen}
-                        onClose={onClose}
-                        search={pluginSearch}
-                        onViewKindChange={setPluginViewKind}
-                      />
+                {/* ── Body ── */}
+                {isHome ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 sm:flex-row sm:gap-4 sm:p-8">
+                    <button
+                      type="button"
+                      onClick={() => setSection("skills")}
+                      className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-colors hover:border-neutral-300 hover:bg-white sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/70"
+                    >
+                      <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                        <Sparkles size={18} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Skills</p>
+                        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                          Your personal collection of reusable instructions and workflows
+                        </p>
+                      </div>
+                    </button>
+                    {showPlugins && (
+                      <button
+                        type="button"
+                        onClick={() => setSection("plugins")}
+                        className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-colors hover:border-neutral-300 hover:bg-white sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/70"
+                      >
+                        <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                          <Puzzle size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Plugins</p>
+                          <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                            Bundles of skills and MCP connectors, packaged to share and install across teams
+                          </p>
+                        </div>
+                      </button>
                     )}
                   </div>
-                </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+                    {/* ── Nav: tab bar on mobile, sidebar on desktop ── */}
+                    <div className="flex shrink-0 flex-row border-b border-neutral-200/60 sm:w-40 sm:flex-col sm:border-b-0 sm:border-r dark:border-neutral-800/60">
+                      <nav className="flex flex-1 flex-row justify-center gap-0 px-2 pt-1 sm:flex-none sm:flex-col sm:justify-start sm:gap-0.5 sm:p-2 sm:pt-2">
+                        {navItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSection(item.id)}
+                            className={cn(
+                              "flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors sm:w-full sm:rounded-md sm:gap-2.5 sm:text-left",
+                              "border-b-2 sm:border-b-0",
+                              section === item.id
+                                ? "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100 sm:border-0 sm:bg-neutral-100 sm:dark:bg-neutral-800"
+                                : "border-transparent text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 sm:hover:bg-neutral-50 sm:dark:hover:bg-neutral-800/40",
+                            )}
+                          >
+                            <span className="shrink-0">{item.icon}</span>
+                            <span className="sm:flex-1">{item.label}</span>
+                          </button>
+                        ))}
+                      </nav>
+                    </div>
+
+                    {/* ── Main panel area ── */}
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      {section === "skills" ? (
+                        <SkillCatalogPanel
+                          isOpen={isOpen}
+                          onClose={onClose}
+                          onToggle={onToggle}
+                          enabledSkillNames={enabledSkillNames}
+                          onSkillSaved={onSkillSaved}
+                          onImported={onImported}
+                          initialView={initialView}
+                          initialSkillName={initialSkillName}
+                          search={skillSearch}
+                          onViewKindChange={setSkillViewKind}
+                          onActionsChange={setSkillActions}
+                        />
+                      ) : (
+                        <PluginsManagerPanel
+                          isOpen={isOpen}
+                          onClose={onClose}
+                          search={pluginSearch}
+                          onViewKindChange={setPluginViewKind}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
               </Dialog.Panel>
             </Transition.Child>
           </div>

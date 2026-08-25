@@ -634,34 +634,7 @@ export function SkillCatalogPanel({
             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedSkill.name}
             </span>
-            {onToggle && enabledSkillNames.has(selectedSkill.name) && (
-              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                Active
-              </span>
-            )}
           </div>
-          {onToggle && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={enabledSkillNames.has(selectedSkill.name)}
-              onClick={() => onToggle(selectedSkill.name)}
-              title={
-                enabledSkillNames.has(selectedSkill.name) ? "Remove from agent" : "Add to agent"
-              }
-              className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                enabledSkillNames.has(selectedSkill.name)
-                  ? "bg-neutral-800 dark:bg-neutral-300"
-                  : "bg-neutral-200 dark:bg-neutral-700"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
-                  enabledSkillNames.has(selectedSkill.name) ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
-            </button>
-          )}
           <button
             type="button"
             onClick={() => openEditor(selectedSkill)}
@@ -811,11 +784,6 @@ export function SkillCatalogPanel({
                             <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                               {skill.name}
                             </span>
-                            {onToggle && enabled && (
-                              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                Active
-                              </span>
-                            )}
                           </div>
                           {skill.description && (
                             <span className="mt-0.5 block truncate text-xs text-neutral-400 dark:text-neutral-500">
@@ -824,26 +792,6 @@ export function SkillCatalogPanel({
                           )}
                         </div>
                       </button>
-                      {onToggle && (
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={enabled}
-                          onClick={() => onToggle(skill.name)}
-                          title={enabled ? "Remove from agent" : "Add to agent"}
-                          className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                            enabled
-                              ? "bg-neutral-800 dark:bg-neutral-300"
-                              : "bg-neutral-200 dark:bg-neutral-700"
-                          }`}
-                        >
-                          <span
-                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
-                              enabled ? "translate-x-4" : "translate-x-0"
-                            }`}
-                          />
-                        </button>
-                      )}
                       <DropdownMenu
                         anchor="bottom end"
                         trigger={
