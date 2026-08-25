@@ -124,11 +124,12 @@ async function saveResources(skillDir: string, resources: SkillResource[] = []):
   }
 }
 
-/** Persist a plugin as a whole: manifest + every bundled skill and its resources. */
-export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Promise<void> {
+/** Persist a plugin as a whole: manifest + every bundled skill and its resources. Returns the icon as a data URL if one was saved. */
+export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Promise<string | undefined> {
   const pluginDir = `${COLLECTION}/${plugin.id}`;
 
   let iconFile: string | undefined;
+  let iconDataUrl: string | undefined;
   if (iconUrl) {
     try {
       const resp = await fetch(iconUrl);
@@ -139,6 +140,7 @@ export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Pro
       const blob =
         contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
       await writeBlob(`${pluginDir}/${iconFile}`, blob);
+      iconDataUrl = await blobToDataUrl(blob, contentType ?? blob.type);
     } catch {
       iconFile = undefined;
     }
@@ -169,6 +171,8 @@ export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Pro
     title: plugin.title || plugin.id,
     updated: new Date().toISOString(),
   });
+
+  return iconDataUrl;
 }
 
 /** Load one installed plugin by id, including its bundled skills and resources. */
@@ -215,12 +219,8 @@ export async function listPluginIds(): Promise<string[]> {
 
 export async function loadAllPlugins(): Promise<InstalledPlugin[]> {
   const ids = await listPluginIds();
-  const plugins: InstalledPlugin[] = [];
-  for (const id of ids) {
-    const plugin = await loadPlugin(id);
-    if (plugin) plugins.push(plugin);
-  }
-  return plugins;
+  const results = await Promise.all(ids.map(loadPlugin));
+  return results.filter((p): p is InstalledPlugin => p !== undefined);
 }
 
 export async function deletePlugin(id: string): Promise<void> {

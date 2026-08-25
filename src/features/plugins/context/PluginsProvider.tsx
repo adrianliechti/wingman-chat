@@ -4,7 +4,6 @@ import { downloadHubPlugin } from "@/features/plugins/lib/hub";
 import {
   deletePlugin,
   loadAllPlugins,
-  loadPlugin,
   savePlugin,
 } from "@/features/plugins/lib/opfs-plugins";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
@@ -39,8 +38,8 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
         skills,
       };
 
-      await savePlugin(installed, plugin.icon);
-      const saved = (await loadPlugin(installed.id)) ?? installed;
+      const iconDataUrl = await savePlugin(installed, plugin.icon);
+      const saved = iconDataUrl ? { ...installed, icon: iconDataUrl } : installed;
       setPlugins((prev) => [...prev.filter((p) => p.id !== saved.id), saved]);
       return saved;
     },

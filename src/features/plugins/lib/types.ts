@@ -13,24 +13,12 @@ export interface HubPlugin {
   source: string;
 }
 
-/** A skill's name and description, as returned by a hub's plugin detail endpoint. */
-export interface HubPluginSkill {
-  name: string;
-  description: string;
-}
-
 /** An MCP server's name and connection info, as returned by a hub's plugin detail endpoint. */
 export interface HubMcpServer {
   name: string;
   type: string;
   url?: string;
   command?: string;
-}
-
-/** Full detail for a single hub plugin, fetched on demand when previewing it in the store. */
-export interface HubPluginDetail {
-  skills: HubPluginSkill[];
-  mcpServers: HubMcpServer[];
 }
 
 /**

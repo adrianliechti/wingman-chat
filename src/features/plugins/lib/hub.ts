@@ -6,7 +6,7 @@
 
 import type JSZip from "jszip";
 import { type ParsedSkill, parseSkillsFromZip } from "@/features/skills/lib/skillParser";
-import type { HubMcpServer, HubPlugin, HubPluginDetail } from "./types";
+import type { HubPlugin } from "./types";
 
 export type HubErrorKind = "network" | "too-large" | "invalid";
 
@@ -25,7 +25,6 @@ const MAX_ZIP_ENTRIES = 500;
 const MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 const catalogCache = new Map<string, Promise<HubPlugin[]>>();
-const detailCache = new Map<string, Promise<HubPluginDetail>>();
 
 interface PluginSummary {
   name: string;
@@ -35,11 +34,6 @@ interface PluginSummary {
   skills?: { name: string; description?: string }[] | string[];
   mcpServers?: string[];
   icon?: string;
-}
-
-interface PluginDetailResponse {
-  skills?: { name: string; description: string }[];
-  mcp?: Record<string, { type: string; url?: string; command?: string }>;
 }
 
 /** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
@@ -70,37 +64,6 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
     if (plugins.length === 0) catalogCache.delete(hubUrl);
   });
   catalogCache.set(hubUrl, promise);
-  return promise;
-}
-
-/** Fetch and cache a single plugin's detail (skills + MCP servers) from a hub. */
-export function loadHubPluginDetail(hubUrl: string, pluginId: string): Promise<HubPluginDetail> {
-  const cacheKey = `${hubUrl}::${pluginId}`;
-  const cached = detailCache.get(cacheKey);
-  if (cached) return cached;
-
-  const url = new URL(encodeURIComponent(pluginId), hubUrl);
-  const promise = fetch(url)
-    .then(async (resp) => {
-      if (!resp.ok) throw new HubError("network", `Hub returned ${resp.status} for ${url}`);
-      const data = (await resp.json()) as PluginDetailResponse;
-      const skills = Array.isArray(data.skills) ? data.skills : [];
-      const mcpServers: HubMcpServer[] = Object.entries(data.mcp ?? {}).map(([name, server]) => ({
-        name,
-        type: server.type,
-        url: server.url,
-        command: server.command,
-      }));
-      return { skills, mcpServers };
-    })
-    .catch((error) => {
-      detailCache.delete(cacheKey);
-      throw error instanceof HubError
-        ? error
-        : new HubError("network", `Failed to reach hub at ${url}`);
-    });
-
-  detailCache.set(cacheKey, promise);
   return promise;
 }
 

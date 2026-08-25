@@ -300,7 +300,6 @@ export function LibraryDialog({
                       ) : (
                         <PluginsManagerPanel
                           isOpen={isOpen}
-                          onClose={onClose}
                           search={pluginSearch}
                           onViewKindChange={setPluginViewKind}
                         />

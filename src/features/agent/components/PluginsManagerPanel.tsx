@@ -25,7 +25,6 @@ import { SkillResourcesEditor } from "@/features/agent/components/SkillResources
 
 export interface PluginsManagerPanelProps {
   isOpen: boolean;
-  onClose: () => void;
   search?: string;
   onViewKindChange?: (
     kind: "list" | "installed-detail" | "installed-skill" | "store" | "store-detail",
@@ -40,7 +39,6 @@ type View =
 
 export function PluginsManagerPanel({
   isOpen,
-  onClose: _onClose,
   search = "",
   onViewKindChange,
 }: PluginsManagerPanelProps) {
@@ -49,10 +47,13 @@ export function PluginsManagerPanel({
 
   const [view, setInternalView] = useState<View>({ kind: "list" });
 
-  const setView = (v: View) => {
-    setInternalView(v);
-    onViewKindChange?.(v.kind);
-  };
+  const setView = useCallback(
+    (v: View) => {
+      setInternalView(v);
+      onViewKindChange?.(v.kind);
+    },
+    [onViewKindChange],
+  );
 
   const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
   const [storeLoading, setStoreLoading] = useState(false);
