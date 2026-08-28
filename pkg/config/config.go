@@ -25,7 +25,11 @@ func Load() *Config {
 	}
 
 	if pluginsURL := os.Getenv("PLUGINS_URL"); pluginsURL != "" {
-		cfg.Plugins = &Plugins{URL: pluginsURL}
+		if u, err := url.Parse(pluginsURL); err == nil {
+			u.RawQuery = ""
+			u.Fragment = ""
+			cfg.Plugins = &Plugins{URL: u.String()}
+		}
 	}
 
 	loadConfigFiles(cfg)
