@@ -327,6 +327,17 @@ async function dispatchToolCall(
     });
   }
 
+  if (toolCall.incomplete) {
+    return toolErrorMessage(
+      toolCall,
+      `Error: The response hit its output token limit while writing the arguments for "${toolCall.name}", so they are incomplete. Nothing was executed. Retry with a smaller payload — write the file in several smaller calls, or use \`edit_file\` to build it up in steps.`,
+      {
+        code: "TOOL_ARGS_TRUNCATED",
+        message: `Arguments for "${toolCall.name}" were truncated by the output token limit.`,
+      },
+    );
+  }
+
   // Parse before tracing so a malformed-JSON failure (model mis-escaped a
   // string field like `code`) yields an actionable, model-facing message it can
   // self-correct from — instead of a raw V8 SyntaxError. `parseToolArguments`

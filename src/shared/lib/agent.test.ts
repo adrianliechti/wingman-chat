@@ -177,3 +177,78 @@ describe("agent run controller", () => {
     );
   });
 });
+
+describe("truncated tool calls", () => {
+  const truncatedArguments = '{"path": "/etl/pipeline.py"';
+
+  function writeTool(fn: () => Promise<unknown>): Tool {
+    return {
+      name: "create_file",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" }, content: { type: "string" } },
+        required: ["path", "content"],
+        additionalProperties: false,
+      },
+      function: fn as Tool["function"],
+    };
+  }
+
+  // A response cut short by max_output_tokens finalizes the call with a
+  // truncated JSON prefix. Repairing it yields {"path": "..."} — valid, but
+  // missing the payload the model was mid-way through writing — so the tool
+  // would blame the model for omitting `content`.
+  it("reports the token limit instead of running the tool with a missing payload", async () => {
+    const invoked = vi.fn(async () => [{ type: "text" as const, text: "written" }]);
+    const complete = vi.fn(async () => ({
+      role: "assistant" as const,
+      content: [
+        {
+          type: "tool_call" as const,
+          id: "call_truncated",
+          name: "create_file",
+          arguments: truncatedArguments,
+          incomplete: true,
+        },
+      ],
+    }));
+
+    const result = await run(
+      fakeClient(complete as Client["complete"]),
+      "model",
+      "instructions",
+      prompt,
+      [writeTool(invoked)],
+      { maxTurns: 1 },
+    );
+
+    expect(invoked).not.toHaveBeenCalled();
+
+    const text = JSON.stringify(result);
+    expect(text).toContain("output token limit");
+    expect(text).not.toContain("content is required");
+  });
+
+  // Without the flag the same arguments must still take the ordinary repair
+  // path, so the fix does not change behaviour for complete calls.
+  it("still parses complete arguments normally", async () => {
+    const invoked = vi.fn(async () => [{ type: "text" as const, text: "written" }]);
+    const complete = vi.fn(async () => ({
+      role: "assistant" as const,
+      content: [
+        {
+          type: "tool_call" as const,
+          id: "call_ok",
+          name: "create_file",
+          arguments: '{"path": "/a.py", "content": "print(1)"}',
+        },
+      ],
+    }));
+
+    await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [writeTool(invoked)], {
+      maxTurns: 1,
+    });
+
+    expect(invoked).toHaveBeenCalled();
+  });
+});

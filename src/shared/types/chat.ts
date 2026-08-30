@@ -193,6 +193,7 @@ export type ToolCallContent = {
   id: string;
   name: string;
   arguments: string;
+  incomplete?: boolean;
 };
 
 export type ToolResultContent = {
