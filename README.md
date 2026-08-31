@@ -42,12 +42,6 @@ Ask for a real deliverable and Wingman builds it for real, then drops it in your
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
 and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
 
-### Notebook
-
-Turn source material into polished, long-form output: **reports**, **slide decks**, **infographics**,
-**podcasts** (briefing, debate, deep-dive, overview, story formats).
-**quizzes**, **mind maps**, and **podcasts** (briefing, debate, deep-dive, overview, story formats).
-
 ### Repository (retrieval)
 
 Upload files into a repository; Wingman extracts and embeds them so the model can answer questions
@@ -91,12 +85,12 @@ or a **local** directory.
 | -------------- | ------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
 | Code execution | Pyodide (Python in WebAssembly), bundled at build time                                      |
-| Server         | Go — static hosting, API proxy, skills/notebook libraries, drive providers, OpenTelemetry   |
+| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry              |
 | Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
-prefix (default `/api`) to the configured platform, and mounts the `skills/` and `notebook/`
-directories as libraries the client can read.
+prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
+the client can read.
 
 ## Getting started
 
@@ -184,7 +178,7 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `WINGMAN_URL` / `OPENAI_BASE_URL` — platform API base URL (required)
 - `WINGMAN_TOKEN` / `OPENAI_API_KEY` — API token
 - `PORT` (default `8000`), `PREFIX` (default `/api`)
-- `SKILLS_PATH` (default `skills`), `NOTEBOOKS_PATH` (default `notebook`)
+- `SKILLS_PATH` (default `skills`)
 
 **Branding**
 
@@ -195,11 +189,11 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
-- `NOTEBOOK_ENABLED`, `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
+- `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`,
-`backgrounds.yaml`, `chat.yaml`, `notebook.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
+`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.

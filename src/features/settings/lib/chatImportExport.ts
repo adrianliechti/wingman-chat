@@ -5,9 +5,9 @@ import { migrateChat } from "./v1Migration";
  * Import chats from a ZIP file into the OPFS chats folder.
  * Merges with existing chats.
  *
- * Rejects archives that don't look like a chats export (e.g. an agents or
- * notebook ZIP) — merging those would pollute chats/ with folders the index
- * rebuild then surfaces as phantom chats.
+ * Rejects archives that don't look like a chats export; merging an unrelated
+ * collection would pollute chats/ with folders the index rebuild then surfaces
+ * as phantom chats.
  */
 export async function importChatsFromZip(file: File): Promise<void> {
   const JSZip = (await import("jszip")).default;

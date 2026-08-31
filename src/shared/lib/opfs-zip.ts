@@ -118,7 +118,7 @@ export async function downloadFolderAsZip(folderPath: string, filename: string):
  *
  * Probe order per subfolder:
  *  1. AGENTS.md / AGENT.md  (agent collection)
- *  2. chat.json / notebook.json  (chat & notebook collections)
+ *  2. chat.json  (chat collection)
  *  3. agent.json / repository.json / metadata.json  (legacy formats)
  */
 export async function rebuildFolderIndex(collection: string): Promise<void> {
@@ -152,7 +152,6 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
         // Try JSON metadata files
         const metadataFiles = [
           `${collection}/${id}/chat.json`,
-          `${collection}/${id}/notebook.json`,
           `${collection}/${id}/agent.json`,
           `${collection}/${id}/repository.json`,
           `${collection}/${id}/metadata.json`,

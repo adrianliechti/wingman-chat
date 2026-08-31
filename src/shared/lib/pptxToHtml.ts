@@ -33,8 +33,7 @@ import { getSlideOrder } from "./pptx";
  * shapes), rich text formatting, images, tables, gradients and groups.
  *
  * Each slide is a complete HTML document sized to the deck's slide
- * dimensions (in CSS px at 96 dpi) — render it in an iframe and scale to
- * fit, like the notebook slide viewer does.
+ * dimensions (in CSS px at 96 dpi), ready to render in a scaled iframe.
  */
 
 export interface PptxHtmlResult {

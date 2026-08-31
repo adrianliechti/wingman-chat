@@ -24,11 +24,12 @@ import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
 import { formatArtifactValidationIssue } from "@/shared/lib/artifact-validation";
-import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
+import { createFileTools, type FileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { artifactDelta } from "@/shared/types/artifact";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
+import type { File, FileEntry } from "@/shared/types/file";
 import { useArtifacts } from "./useArtifacts";
 
 function executionFailure(context: ToolContext | undefined, text: string) {
@@ -188,9 +189,9 @@ async function runArtifactCode(options: {
 }
 
 /**
- * Adapt FileSystemManager into a WritableFileSource for the shared file tools.
+ * Adapt FileSystemManager for the shared file tools.
  */
-function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): WritableFileSource {
+function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): FileSource {
   const requireFs = () => {
     const fs = fsRef.current;
     if (!fs) throw new Error("File system not available");
@@ -208,7 +209,7 @@ function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): Writ
       }));
     },
 
-    async read(path: string): Promise<FileData | undefined> {
+    async read(path: string): Promise<File | undefined> {
       const fs = requireFs();
       const file = await fs.getFile(path);
       if (!file) return undefined;

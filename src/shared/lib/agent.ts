@@ -54,7 +54,7 @@ export interface RunHooks {
   onEvent?: (event: AgentRunEvent) => void;
 
   /**
-   * Identifier for this agent (e.g. `"chat"`, `"notebook"`, `"research"`).
+   * Identifier for this agent (e.g. `"chat"` or `"research"`).
    * Used as the suffix on the `invoke_agent` span name and the
    * `gen_ai.agent.name` attribute. Omitted → span is just `invoke_agent`.
    */

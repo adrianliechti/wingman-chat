@@ -12,8 +12,8 @@ interface PptxEditorProps {
 
 /**
  * High-fidelity PPTX preview: converts the deck to per-slide HTML documents
- * (see `pptxToHtml`) and renders them like the notebook slide viewer — a
- * thumbnail strip on top and the active slide scaled to fit below.
+ * (see `pptxToHtml`) with a thumbnail strip on top and the active slide
+ * scaled to fit below.
  *
  * Falls back to the extracted-markdown preview if conversion fails.
  */
@@ -167,8 +167,7 @@ export const PptxEditor = memo(function PptxEditor({ path, content, contentType 
 
 /**
  * Render HTML slides to small image data URLs one-by-one using a single
- * off-screen iframe + canvas — same approach as the notebook slide viewer,
- * but parameterized by the deck's slide dimensions.
+ * off-screen iframe + canvas, parameterized by the deck's slide dimensions.
  */
 function useSlideThumbnails(htmlSlides: string[] | undefined, slideW: number, slideH: number): string[] {
   const [thumbs, setThumbs] = useState<string[]>([]);
