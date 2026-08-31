@@ -136,45 +136,46 @@ export function LibraryDialog({
                     </Dialog.Title>
                   </div>
                   <div className="flex flex-1 items-center justify-center">
-                    {!isHome && (() => {
-                      const isDrilledIn =
-                        section === "skills" ? skillIsDrilledIn : pluginIsDrilledIn;
-                      const value = section === "skills" ? skillSearch : pluginSearch;
-                      const onChange = (v: string) => {
-                        if (section === "skills") setSkillSearch(v);
-                        else setPluginSearch(v);
-                      };
-                      const placeholder =
-                        section === "skills" ? "Search skills…" : "Search plugins…";
-                      return (
-                        <div
-                          className={cn(
-                            "flex w-full max-w-xs sm:w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600",
-                            isDrilledIn && "invisible",
-                          )}
-                        >
-                          <Search size={11} className="shrink-0 text-neutral-400" />
-                          <input
-                            ref={searchInputRef}
-                            type="text"
-                            value={value}
-                            onChange={(e) => onChange(e.target.value)}
-                            placeholder={placeholder}
-                            tabIndex={isDrilledIn ? -1 : undefined}
-                            className="flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
-                          />
-                          {value && (
-                            <button
-                              type="button"
-                              onClick={() => onChange("")}
-                              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                            >
-                              <X size={10} />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {!isHome &&
+                      (() => {
+                        const isDrilledIn =
+                          section === "skills" ? skillIsDrilledIn : pluginIsDrilledIn;
+                        const value = section === "skills" ? skillSearch : pluginSearch;
+                        const onChange = (v: string) => {
+                          if (section === "skills") setSkillSearch(v);
+                          else setPluginSearch(v);
+                        };
+                        const placeholder =
+                          section === "skills" ? "Search skills…" : "Search plugins…";
+                        return (
+                          <div
+                            className={cn(
+                              "flex w-full max-w-xs sm:w-64 items-center gap-2 rounded-md border border-neutral-200/70 bg-neutral-50/50 px-2 py-1.5 focus-within:border-neutral-300 focus-within:ring-2 focus-within:ring-neutral-500/15 dark:border-neutral-700/50 dark:bg-neutral-800/30 dark:focus-within:border-neutral-600",
+                              isDrilledIn && "invisible",
+                            )}
+                          >
+                            <Search size={11} className="shrink-0 text-neutral-400" />
+                            <input
+                              ref={searchInputRef}
+                              type="text"
+                              value={value}
+                              onChange={(e) => onChange(e.target.value)}
+                              placeholder={placeholder}
+                              tabIndex={isDrilledIn ? -1 : undefined}
+                              className="flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
+                            />
+                            {value && (
+                              <button
+                                type="button"
+                                onClick={() => onChange("")}
+                                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                   </div>
                   <div className="flex w-32 items-center justify-end gap-1">
                     {section === "skills" && skillActions && (
@@ -211,10 +212,7 @@ export function LibraryDialog({
                         </button>
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={onClose}
-                    >
+                    <button type="button" onClick={onClose}>
                       <X size={15} />
                     </button>
                   </div>
@@ -226,13 +224,15 @@ export function LibraryDialog({
                     <button
                       type="button"
                       onClick={() => setSection("skills")}
-                      className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-colors hover:border-neutral-300 hover:bg-white sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/70"
+                      className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-all duration-200 hover:border-neutral-300 hover:shadow-md sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:shadow-black/30"
                     >
-                      <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                      <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition-colors duration-200 group-hover:border-neutral-300 group-hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:group-hover:border-neutral-600 dark:group-hover:bg-neutral-700/60 text-neutral-500 group-hover:text-neutral-700 dark:text-neutral-400 dark:group-hover:text-neutral-200">
                         <Sparkles size={18} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Skills</p>
+                        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                          Skills
+                        </p>
                         <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                           Your personal collection of reusable instructions and workflows
                         </p>
@@ -242,15 +242,18 @@ export function LibraryDialog({
                       <button
                         type="button"
                         onClick={() => setSection("plugins")}
-                        className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-colors hover:border-neutral-300 hover:bg-white sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/70"
+                        className="group flex w-full max-w-sm flex-row items-center gap-4 rounded-xl border border-neutral-200/70 bg-neutral-50/60 p-4 text-left transition-all duration-200 hover:border-neutral-300 hover:shadow-md sm:max-w-xs sm:flex-col sm:items-start sm:gap-3 sm:p-6 dark:border-neutral-700/50 dark:bg-neutral-800/40 dark:hover:border-neutral-600 dark:hover:shadow-black/30"
                       >
-                        <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                        <div className="flex shrink-0 h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 transition-colors duration-200 group-hover:border-neutral-300 group-hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:group-hover:border-neutral-600 dark:group-hover:bg-neutral-700/60 text-neutral-500 group-hover:text-neutral-700 dark:text-neutral-400 dark:group-hover:text-neutral-200">
                           <Puzzle size={18} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Plugins</p>
+                          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                            Plugins
+                          </p>
                           <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                            Bundles of skills and MCP connectors, packaged to share and install across teams
+                            Bundles of skills and MCP connectors, packaged to share and install
+                            across teams
                           </p>
                         </div>
                       </button>

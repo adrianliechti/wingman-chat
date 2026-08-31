@@ -378,7 +378,7 @@ export function ChatInputAddMenu({
   const openPluginsManager = () => openSkillCatalog();
   // Show the Plugins entry whenever there's something installed or a hub to
   // browse — otherwise there'd be no way to discover/install the first plugin.
-  const showPluginsMenu = plugins.length > 0 || Boolean(config.plugins?.url);
+  const showPluginsMenu = !currentAgent && (plugins.length > 0 || Boolean(config.plugins?.url));
 
   const otherProviders = visibleProviders.filter(
     (p) =>
@@ -597,7 +597,7 @@ export function ChatInputAddMenu({
                   )}
                   {showPluginsMenu && (
                     <>
-                      {showSkillsMenu && (
+                      {showSkillsMenu && plugins.length > 0 && (
                         <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />
                       )}
                       {plugins.length > 0 && (

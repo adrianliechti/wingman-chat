@@ -37,7 +37,16 @@ interface PluginSummary {
 }
 
 /** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
+function normalizeHubUrl(hubUrl: string): string {
+  const u = new URL(hubUrl);
+  u.search = "";
+  u.hash = "";
+  if (!u.pathname.endsWith("/")) u.pathname += "/";
+  return u.toString();
+}
+
 export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
+  hubUrl = normalizeHubUrl(hubUrl);
   const cached = catalogCache.get(hubUrl);
   if (cached) return cached;
 
@@ -73,6 +82,7 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
  * and the plugin-hub skill-folder fallback (`SKILL.md` at the archive root).
  */
 export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Promise<ParsedSkill[]> {
+  hubUrl = normalizeHubUrl(hubUrl);
   const url = new URL(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
 
   let resp: Response;

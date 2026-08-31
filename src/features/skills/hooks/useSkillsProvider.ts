@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import type { Agent } from "@/features/agent/types/agent";
+import { pluginEntries } from "@/features/plugins/lib/pluginProvider";
+import type { InstalledPlugin } from "@/features/plugins/lib/types";
 import {
   createSkillsProvider,
   isStudioSkillCategory,
@@ -36,6 +38,7 @@ export function useSkillsProvider(
   agent: Agent | null,
   sources: SkillSources,
   studioEnabled: boolean,
+  activePlugins: InstalledPlugin[] = [],
 ): ToolProvider | null {
   const { skills } = useSkills();
   const { templates, loadTemplate } = useSkillTemplates();
@@ -45,23 +48,41 @@ export function useSkillsProvider(
 
     // 1. General catalog — no-agent only.
     if (!agent && sources.catalog) {
-      entries.push(...templateEntries(templates, loadTemplate, (t) => !isStudioSkillCategory(t.category)));
+      entries.push(
+        ...templateEntries(templates, loadTemplate, (t) => !isStudioSkillCategory(t.category)),
+      );
     }
     // 2. Studio skill pack — whenever the capability is on, in either mode.
     if (studioEnabled) {
       entries.push(...studioTemplateEntries(templates, loadTemplate));
     }
     // 3. Personal library — an agent's curated subset, or the full library.
-    const personal = agent ? skills.filter((s) => agent.skills.includes(s.name)) : sources.personal ? skills : [];
+    const personal = agent
+      ? skills.filter((s) => agent.skills.includes(s.name))
+      : sources.personal
+        ? skills
+        : [];
     entries.push(...libraryEntries(personal));
 
     // Single dedup: last push wins, so precedence is exactly the order above.
     const deduped = [...new Map(entries.map((e) => [e.name, e])).values()];
 
-    return createSkillsProvider(deduped, {
+    // Plugin skills are keyed by plugin id, so they never collide with the above.
+    const pluginSkills = pluginEntries(activePlugins);
+
+    return createSkillsProvider([...deduped, ...pluginSkills], {
       id: SKILLS_PROVIDER_ID,
       name: "Skills",
       description: agent ? "Specialized agent skills" : "Available skills",
     });
-  }, [agent, skills, templates, loadTemplate, sources.personal, sources.catalog, studioEnabled]);
+  }, [
+    agent,
+    skills,
+    templates,
+    loadTemplate,
+    sources.personal,
+    sources.catalog,
+    studioEnabled,
+    activePlugins,
+  ]);
 }

@@ -28,7 +28,11 @@ func Load() *Config {
 		if u, err := url.Parse(pluginsURL); err == nil {
 			u.RawQuery = ""
 			u.Fragment = ""
-			cfg.Plugins = &Plugins{URL: u.String()}
+			s := u.String()
+			if !strings.HasSuffix(s, "/") {
+				s += "/"
+			}
+			cfg.Plugins = &Plugins{URL: s}
 		}
 	}
 

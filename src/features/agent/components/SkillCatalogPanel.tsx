@@ -423,14 +423,7 @@ export function SkillCatalogPanel({
       onExportAll: handleExportAll,
       canExport: allSkills.length > 0,
     });
-  }, [
-    viewKind,
-    onActionsChange,
-    openEditor,
-    handleImport,
-    handleExportAll,
-    allSkills.length,
-  ]);
+  }, [viewKind, onActionsChange, openEditor, handleImport, handleExportAll, allSkills.length]);
 
   useEffect(() => {
     return () => onActionsChange?.(null);
@@ -761,7 +754,6 @@ export function SkillCatalogPanel({
                 </li>
               )}
               {filteredSkills.map((skill) => {
-                const enabled = enabledSkillNames.has(skill.name);
                 const isSelected = selectedSkill?.id === skill.id;
                 return (
                   <li

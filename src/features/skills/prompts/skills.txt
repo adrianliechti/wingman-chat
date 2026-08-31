@@ -28,6 +28,7 @@ Skills are specialized prompts that provide detailed instructions for specific t
 2. **Read before executing**: Always use `read_skill` to get full instructions first
 3. **Match by description**: Use skill descriptions to determine relevance
 4. **Seamless execution**: Apply skill instructions naturally in your response
+5. **Pass the owning plugin**: When a listed skill has a `plugin` attribute, pass that value as the `plugin` argument; omit it for all other skills
 {resourcesGuidance}
 <available_skills>
 {skillsXml}
