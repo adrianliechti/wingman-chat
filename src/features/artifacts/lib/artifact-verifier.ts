@@ -5,7 +5,10 @@ import { contentToBlob, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isBinaryContentType } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { pdfAssetOptions } from "@/shared/lib/pdf";
+import { ooxmlDescendants, SPREADSHEETML_NAMESPACES } from "@/shared/lib/ooxml";
 import { validateArtifactFile } from "./artifactValidators";
+import { validateOoxmlPackage, type OoxmlIssue } from "./ooxmlPackage";
+import { validateXlsxIntegrity } from "./xlsxIntegrity";
 import {
   ArtifactManifestSchema,
   VerificationReportSchema,
@@ -21,6 +24,32 @@ type Check = VerificationReport["checks"][number];
 
 function check(id: string, scope: string, status: Check["status"], message: string): Check {
   return { id, scope, status, message };
+}
+
+const REPORTED_ISSUE_LIMIT = 12;
+
+async function integrityChecks(
+  path: string,
+  passId: string,
+  passMessage: string,
+  validate: () => Promise<OoxmlIssue[]>,
+): Promise<Check[]> {
+  let issues: OoxmlIssue[];
+  try {
+    issues = await validate();
+  } catch (error) {
+    return [
+      check(passId, path, "fail", `Validation failed: ${error instanceof Error ? error.message : String(error)}`),
+    ];
+  }
+  if (issues.length === 0) return [check(passId, path, "pass", passMessage)];
+  const reported = issues
+    .slice(0, REPORTED_ISSUE_LIMIT)
+    .map((issue) => check(issue.id, path, issue.severity, issue.message));
+  if (issues.length > REPORTED_ISSUE_LIMIT) {
+    reported.push(check(passId, path, "warn", `${issues.length - REPORTED_ISSUE_LIMIT} further issue(s) not listed.`));
+  }
+  return reported;
 }
 
 function relativeArtifactPath(basePath: string, reference: string): string | null {
@@ -115,8 +144,20 @@ async function verifyBinaryPackage(
   if (lower.endsWith(".docx") || lower.endsWith(".pptx") || lower.endsWith(".xlsx")) {
     try {
       const zip = await JSZip.loadAsync(bytes);
+      const format = lower.endsWith(".docx") ? "docx" : lower.endsWith(".pptx") ? "pptx" : "xlsx";
+      const packageValidation = await validateOoxmlPackage(zip, format);
+      checks.push(
+        ...(await integrityChecks(
+          path,
+          "ooxml.package",
+          "OOXML package structure and relationships are consistent.",
+          async () => packageValidation.issues,
+        )),
+      );
       if (lower.endsWith(".docx")) {
-        const xml = await zip.file("word/document.xml")?.async("string");
+        const xml = packageValidation.mainPart
+          ? await packageValidation.reader.text(packageValidation.mainPart)
+          : undefined;
         checks.push(
           check(
             "docx.package",
@@ -124,13 +165,19 @@ async function verifyBinaryPackage(
             xml?.trim() ? "pass" : "fail",
             xml?.trim()
               ? "DOCX package contains document content."
-              : "DOCX package is missing non-empty word/document.xml.",
+              : "DOCX package is missing a non-empty main document part.",
           ),
         );
       } else if (lower.endsWith(".pptx")) {
-        const slides = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name));
+        const slides = packageValidation.logicalUnits;
+        const missingSlides = slides.filter((slide) => !slide.present).length;
         checks.push(
-          check("pptx.slides", path, slides.length > 0 ? "pass" : "fail", `PPTX contains ${slides.length} slide(s).`),
+          check(
+            "pptx.slides",
+            path,
+            slides.length > 0 && missingSlides === 0 ? "pass" : "fail",
+            `PPTX declares ${slides.length} logical slide(s)${missingSlides ? `; ${missingSlides} are missing` : ""}.`,
+          ),
         );
         if (job.expected?.units && slides.length !== job.expected.units) {
           checks.push(
@@ -145,25 +192,33 @@ async function verifyBinaryPackage(
         if (job.expected?.units) {
           return Array.from({ length: job.expected.units }, (_, index) => ({
             ordinal: index + 1,
-            status: index < slides.length ? ("ready" as const) : ("missing" as const),
-            ...(index < slides.length ? {} : { message: `Slide ${index + 1} is missing.` }),
+            ...(slides[index]?.path ? { path: slides[index].path } : {}),
+            status: slides[index]?.present ? ("ready" as const) : ("missing" as const),
+            ...(slides[index]?.present ? {} : { message: `Slide ${index + 1} is missing.` }),
           }));
         }
       } else {
-        const workbook = await zip.file("xl/workbook.xml")?.async("string");
-        const sheets = Object.keys(zip.files).filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name));
+        const workbook = packageValidation.mainPart
+          ? await packageValidation.reader.text(packageValidation.mainPart)
+          : undefined;
+        const sheets = packageValidation.logicalUnits;
+        const missingSheets = sheets.filter((sheet) => !sheet.present).length;
         checks.push(
           check(
             "xlsx.package",
             path,
-            workbook?.trim() && sheets.length > 0 ? "pass" : "fail",
-            `XLSX contains ${sheets.length} worksheet(s).`,
+            workbook?.trim() && sheets.length > 0 && missingSheets === 0 ? "pass" : "fail",
+            `XLSX declares ${sheets.length} logical sheet(s)${missingSheets ? `; ${missingSheets} are missing` : ""}.`,
           ),
         );
-        const formulaCount = (await Promise.all(sheets.map(async (name) => zip.file(name)?.async("string")))).reduce(
-          (total, xml) => total + (xml?.match(/<f(?:\s|>)/g)?.length ?? 0),
-          0,
-        );
+        const formulaCount = (
+          await Promise.all(
+            packageValidation.worksheetParts.map(async (sheetPath) => {
+              const root = await packageValidation.reader.xml(sheetPath);
+              return [...ooxmlDescendants(root, "f", SPREADSHEETML_NAMESPACES)].length;
+            }),
+          )
+        ).reduce((total, count) => total + count, 0);
         checks.push(
           check(
             "xlsx.formulas",
@@ -171,6 +226,11 @@ async function verifyBinaryPackage(
             "warn",
             `Found ${formulaCount} stored formula(s); browser verification does not recalculate workbooks.`,
           ),
+        );
+        checks.push(
+          ...(await integrityChecks(path, "xlsx.tables", "Worksheet structures are consistent.", () =>
+            validateXlsxIntegrity(packageValidation),
+          )),
         );
       }
     } catch (error) {
