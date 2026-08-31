@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import {
+  assertOoxmlInputSize,
   boolAttr,
   child,
   childList,
@@ -11,7 +12,13 @@ import {
   intAttr,
   loadMediaDataUrl,
   mapBulletChar,
+  normalizeHexColor,
+  OFFICE_PREVIEW_CSP,
+  OoxmlPackageReader,
+  ooxmlDescendants,
+  ooxmlText,
   type OoxmlTheme,
+  parseOoxmlXml,
   parseRels,
   parseThemeDoc,
   parseXml,
@@ -20,6 +27,7 @@ import {
   type Rel,
   relsPathFor,
   resolveTarget,
+  sanitizeHyperlinkUrl,
   toAlpha,
   toRoman,
 } from "./ooxml";
@@ -41,43 +49,113 @@ export interface PptxHtmlResult {
   width: number;
   /** Slide height in CSS px */
   height: number;
-  /** One self-contained HTML document per slide, in presentation order */
-  slides: string[];
+  slideCount: number;
+  /** Render one zero-based slide on demand. Recently used HTML is cached. */
+  getSlide(index: number): Promise<string>;
+  /** Search visible slide text without rasterizing/rendering the deck. */
+  findSlides(query: string, signal?: AbortSignal): Promise<number[]>;
+}
+
+const MAX_RENDERED_SLIDES = 12;
+const MAX_SLIDE_TEXTS = 256;
+const MAX_PPTX_XML_DOCUMENTS = 64;
+const MAX_PPTX_RELATIONSHIP_MAPS = 128;
+const MAX_PPTX_MEDIA = 64;
+
+function touchCache<K, V>(cache: Map<K, V>, key: K): V | undefined {
+  const value = cache.get(key);
+  if (value === undefined) return undefined;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+
+function trimCache<K, V>(cache: Map<K, V>, maxEntries: number): void {
+  while (cache.size > maxEntries) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
+}
+
+function slideDimension(value: string | null | undefined, fallbackEmu: number): number {
+  const emu = parseInt(value || String(fallbackEmu), 10);
+  const dimension = emuToPx(emu);
+  return Number.isFinite(dimension) ? Math.max(96, Math.min(8_192, dimension)) : emuToPx(fallbackEmu);
 }
 
 export async function pptxToHtml(file: File): Promise<PptxHtmlResult> {
+  assertOoxmlInputSize(file);
   const zip = await JSZip.loadAsync(file);
+  const reader = new OoxmlPackageReader(zip);
 
-  const slidePaths = await getSlideOrder(zip);
+  const slidePaths = await getSlideOrder(zip, reader);
   if (slidePaths.length === 0) {
     throw new Error("Invalid PPTX: no slides found");
   }
 
   // Slide dimensions from presentation.xml
-  const presXml = await zip.file("ppt/presentation.xml")?.async("string");
+  const presXml = await reader.text("ppt/presentation.xml");
   if (!presXml) {
     throw new Error("Invalid PPTX: missing presentation.xml");
   }
   const presDoc = parseXml(presXml);
   const sldSz = presDoc.getElementsByTagName("p:sldSz")[0];
-  const width = emuToPx(parseInt(sldSz?.getAttribute("cx") || "12192000", 10));
-  const height = emuToPx(parseInt(sldSz?.getAttribute("cy") || "6858000", 10));
+  const width = slideDimension(sldSz?.getAttribute("cx"), 12_192_000);
+  const height = slideDimension(sldSz?.getAttribute("cy"), 6_858_000);
 
   const shared: SharedCtx = {
-    zip,
+    reader,
     mediaCache: new Map(),
     themeCache: new Map(),
     xmlCache: new Map(),
     relsCache: new Map(),
-    tableStyles: await loadTableStyles(zip),
+    tableStyles: await loadTableStyles(reader),
   };
 
-  const slides: string[] = [];
-  for (let i = 0; i < slidePaths.length; i++) {
-    slides.push(await renderSlideDocument(shared, slidePaths[i], i + 1, width, height));
-  }
+  const slideCache = new Map<number, Promise<string>>();
+  const slideTextCache = new Map<number, Promise<string>>();
+  const getSlide = (index: number): Promise<string> => {
+    if (!Number.isInteger(index) || index < 0 || index >= slidePaths.length) {
+      return Promise.reject(new RangeError(`Slide index ${index} is outside this presentation`));
+    }
+    const cached = touchCache(slideCache, index);
+    if (cached) {
+      return cached;
+    }
+    const rendered = renderSlideDocument(shared, slidePaths[index], index + 1, width, height);
+    slideCache.set(index, rendered);
+    // Keep active/recent slides hot without retaining every generated document.
+    trimCache(slideCache, MAX_RENDERED_SLIDES);
+    return rendered;
+  };
 
-  return { width, height, slides };
+  const slideText = (index: number): Promise<string> => {
+    const cached = touchCache(slideTextCache, index);
+    if (cached) return cached;
+    const path = slidePaths[index];
+    const pending = reader.text(path).then((content) => {
+      if (!content) return "";
+      const root = parseOoxmlXml(content, path);
+      return Array.from(ooxmlDescendants(root, "t"), ooxmlText).join("\n");
+    });
+    slideTextCache.set(index, pending);
+    trimCache(slideTextCache, MAX_SLIDE_TEXTS);
+    return pending;
+  };
+  const findSlides = async (query: string, signal?: AbortSignal): Promise<number[]> => {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return [];
+    const matches: number[] = [];
+    for (let index = 0; index < slidePaths.length; index++) {
+      if (signal?.aborted) throw new DOMException("Presentation search was cancelled", "AbortError");
+      if ((await slideText(index)).toLocaleLowerCase().includes(needle)) matches.push(index);
+      if (index % 16 === 15) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    return matches;
+  };
+
+  return { width, height, slideCount: slidePaths.length, getSlide, findSlides };
 }
 
 // ============================================================================
@@ -93,11 +171,11 @@ interface Theme extends OoxmlTheme {
 }
 
 interface SharedCtx {
-  zip: JSZip;
+  reader: OoxmlPackageReader;
   /** part path → data URL */
   mediaCache: Map<string, string>;
   themeCache: Map<string, Theme>;
-  xmlCache: Map<string, Document | null>;
+  xmlCache: Map<string, Promise<Document | null>>;
   relsCache: Map<string, Rels>;
   tableStyles: Map<string, Element>;
 }
@@ -122,18 +200,25 @@ interface SlideCtx {
 }
 
 async function loadXml(shared: SharedCtx, path: string): Promise<Document | null> {
-  if (shared.xmlCache.has(path)) return shared.xmlCache.get(path) ?? null;
-  const content = await shared.zip.file(path)?.async("string");
-  const doc = content ? parseXml(content) : null;
-  shared.xmlCache.set(path, doc);
-  return doc;
+  const cached = touchCache(shared.xmlCache, path);
+  if (cached) return cached;
+  const pending = shared.reader.text(path).then((content) => (content ? parseXml(content, path) : null));
+  shared.xmlCache.set(path, pending);
+  trimCache(shared.xmlCache, MAX_PPTX_XML_DOCUMENTS);
+  try {
+    return await pending;
+  } catch (error) {
+    if (shared.xmlCache.get(path) === pending) shared.xmlCache.delete(path);
+    throw error;
+  }
 }
 
 async function loadRels(shared: SharedCtx, partPath: string): Promise<Rels> {
-  const cached = shared.relsCache.get(partPath);
+  const cached = touchCache(shared.relsCache, partPath);
   if (cached) return cached;
   const rels = parseRels(await loadXml(shared, relsPathFor(partPath)));
   shared.relsCache.set(partPath, rels);
+  trimCache(shared.relsCache, MAX_PPTX_RELATIONSHIP_MAPS);
   return rels;
 }
 
@@ -145,7 +230,11 @@ function findRelByType(rels: Rels, typeSuffix: string): Rel | undefined {
 }
 
 async function loadMedia(shared: SharedCtx, path: string): Promise<string | undefined> {
-  return loadMediaDataUrl(shared.zip, shared.mediaCache, path);
+  const cached = touchCache(shared.mediaCache, path);
+  if (cached !== undefined) return cached || undefined;
+  const result = await loadMediaDataUrl(shared.reader, shared.mediaCache, path);
+  trimCache(shared.mediaCache, MAX_PPTX_MEDIA);
+  return result;
 }
 
 // ============================================================================
@@ -169,9 +258,9 @@ async function loadTheme(shared: SharedCtx, themePath: string): Promise<Theme> {
   return theme;
 }
 
-async function loadTableStyles(zip: JSZip): Promise<Map<string, Element>> {
+async function loadTableStyles(reader: OoxmlPackageReader): Promise<Map<string, Element>> {
   const styles = new Map<string, Element>();
-  const xml = await zip.file("ppt/tableStyles.xml")?.async("string");
+  const xml = await reader.text("ppt/tableStyles.xml");
   if (!xml) return styles;
   const doc = parseXml(xml);
   for (const style of doc.getElementsByTagName("a:tblStyle")) {
@@ -220,9 +309,9 @@ function resolveColor(colorEl: Element | undefined, env: ColorEnv): string | und
   const tag = colorEl.tagName;
 
   if (tag === "a:srgbClr") {
-    hex = colorEl.getAttribute("val") ?? undefined;
+    hex = normalizeHexColor(colorEl.getAttribute("val"));
   } else if (tag === "a:sysClr") {
-    hex = colorEl.getAttribute("lastClr") ?? undefined;
+    hex = normalizeHexColor(colorEl.getAttribute("lastClr"));
     if (!hex) hex = colorEl.getAttribute("val") === "window" ? "FFFFFF" : "000000";
   } else if (tag === "a:schemeClr") {
     const val = colorEl.getAttribute("val") || "";
@@ -446,7 +535,7 @@ function resolveStyleRef(
   const i = idx >= 1001 ? idx - 1001 : idx - 1;
   const fill = list[Math.min(i, list.length - 1)];
   if (!fill) return undefined;
-  return { fill, phClr: phClr ? (cssToHex(phClr) ?? phClr) : undefined };
+  return { fill, phClr };
 }
 
 // ============================================================================
@@ -547,7 +636,7 @@ async function renderSlideDocument(
     if (bgRef) {
       const ref = resolveStyleRef(bgRef, theme.fillStyles, theme.bgFillStyles, env);
       if (ref) {
-        const css = await fillToCss(ref.fill, { ...env, phClr: ref.phClr ? `#${ref.phClr}` : undefined }, ctx, part);
+        const css = await fillToCss(ref.fill, { ...env, phClr: ref.phClr }, ctx, part);
         if (css) bgCss = css;
       } else {
         const color = resolveColorIn(bgRef, env);
@@ -582,7 +671,7 @@ async function renderSlideDocument(
 
   return [
     "<!DOCTYPE html>",
-    '<html><head><meta charset="utf-8"><style>',
+    `<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${OFFICE_PREVIEW_CSP}"><style>`,
     "*{margin:0;padding:0;box-sizing:border-box;}",
     `html,body{width:${px(width)};height:${px(height)};overflow:hidden;}`,
     `body{position:relative;font-family:${cssFontStack(theme.minorFont)};color:${textColor};` +
@@ -1106,7 +1195,7 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
   } else if (fillRef) {
     const ref = resolveStyleRef(fillRef, ctx.theme.fillStyles, ctx.theme.bgFillStyles, env);
     if (ref) {
-      bgCss = await fillToCss(ref.fill, { ...env, phClr: ref.phClr ? `#${ref.phClr}` : undefined }, ctx, part);
+      bgCss = await fillToCss(ref.fill, { ...env, phClr: ref.phClr }, ctx, part);
     } else {
       bgCss = resolveColorIn(fillRef, env);
     }
@@ -1535,7 +1624,7 @@ function renderRun(r: Element, defRPrChain: Element[], tenv: TextEnv, fontScale:
   const hlink = child(rPr, "a:hlinkClick");
   const linkRId = getRId(hlink, "id");
   const linkRel = linkRId ? tenv.part.rels.get(linkRId) : undefined;
-  const href = linkRel?.external ? linkRel.target : undefined;
+  const href = linkRel?.external ? sanitizeHyperlinkUrl(linkRel.target) : undefined;
 
   // Color: explicit on the run → hyperlink scheme color → inherited → font style ref.
   // PowerPoint colors hyperlinks with the hlink theme color unless the run
@@ -1552,7 +1641,7 @@ function renderRun(r: Element, defRPrChain: Element[], tenv: TextEnv, fontScale:
 
   const span = `<span style="${styles.join(";")};">${escapeHtml(text)}</span>`;
   if (href) {
-    return `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${span}</a>`;
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${span}</a>`;
   }
   return span;
 }

@@ -1,4 +1,14 @@
 import JSZip from "jszip";
+import {
+  ooxmlAttribute,
+  ooxmlDescendants,
+  OoxmlPackageReader,
+  OoxmlResourceLimitError,
+  parseOoxmlRelationships,
+  PRESENTATIONML_NAMESPACES,
+  R_NAMESPACES,
+  relsPathFor,
+} from "./ooxml";
 
 /**
  * Converts a PPTX file to GitHub-flavored Markdown
@@ -55,48 +65,33 @@ export async function pptxToMarkdown(file: File): Promise<string> {
 // Slide order parsing
 // ============================================================================
 
-export async function getSlideOrder(zip: JSZip): Promise<string[]> {
+export async function getSlideOrder(zip: JSZip, packageReader = new OoxmlPackageReader(zip)): Promise<string[]> {
   // Parse presentation.xml.rels to map rId -> slide paths
-  const relsContent = await zip.file("ppt/_rels/presentation.xml.rels")?.async("string");
+  const relsContent = await packageReader.text(relsPathFor("ppt/presentation.xml"));
   if (!relsContent) {
     return [];
   }
 
-  const parser = new DOMParser();
-  const relsDoc = parser.parseFromString(relsContent, "application/xml");
-
   const rIdToPath = new Map<string, string>();
-  const relationships = relsDoc.getElementsByTagName("Relationship");
-
-  for (const rel of relationships) {
-    const id = rel.getAttribute("Id");
-    const target = rel.getAttribute("Target");
-    const type = rel.getAttribute("Type");
-
-    if (id && target && type?.includes("/slide")) {
-      // Normalize path
-      const slidePath = target.startsWith("/") ? target.slice(1) : `ppt/${target}`;
-      rIdToPath.set(id, slidePath);
+  for (const relationship of parseOoxmlRelationships(relsContent, "ppt/presentation.xml").relationships) {
+    if (!relationship.external && relationship.path && relationship.type.endsWith("/slide")) {
+      rIdToPath.set(relationship.id, relationship.path);
     }
   }
 
   // Parse presentation.xml to get slide order
-  const presContent = await zip.file("ppt/presentation.xml")?.async("string");
-  if (!presContent) {
-    return [];
-  }
-
-  const presDoc = parser.parseFromString(presContent, "application/xml");
-  const sldIdList = presDoc.getElementsByTagName("p:sldId");
+  const presentation = await packageReader.xml("ppt/presentation.xml");
+  if (!presentation) return [];
 
   const slides: string[] = [];
-  for (const sldId of sldIdList) {
-    const rId =
-      sldId.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
-      sldId.getAttribute("r:id");
+  for (const sldId of ooxmlDescendants(presentation, "sldId", PRESENTATIONML_NAMESPACES)) {
+    const rId = ooxmlAttribute(sldId, "id", R_NAMESPACES);
     const slidePath = rId ? rIdToPath.get(rId) : undefined;
-    if (slidePath) {
+    if (slidePath && packageReader.has(slidePath)) {
       slides.push(slidePath);
+      if (slides.length > 4_096) {
+        throw new OoxmlResourceLimitError("Presentation contains more than the 4096-slide limit");
+      }
     }
   }
 

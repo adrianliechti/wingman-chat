@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { ommlToMathml } from "./ommlToMathml";
 import {
+  assertOoxmlInputSize,
   child,
   childList,
   cssFontStack,
@@ -12,6 +13,9 @@ import {
   loadMediaDataUrl,
   mapBulletChar,
   mixHex,
+  normalizeHexColor,
+  OFFICE_PREVIEW_CSP,
+  OoxmlPackageReader,
   type OoxmlTheme,
   parseRels,
   parseThemeDoc,
@@ -21,6 +25,8 @@ import {
   type Rel,
   relsPathFor,
   resolveTarget,
+  sanitizeHyperlinkUrl,
+  sanitizeCssColor,
   toAlpha,
   toRoman,
   twipToPx,
@@ -31,22 +37,26 @@ import {
  * content retention: styles.xml inheritance (docDefaults → named styles →
  * direct formatting), theme colors/fonts, multi-level numbering, tables
  * (borders, shading, merges), inline & floating images, hyperlinks and
- * page-sized "sheets" split at explicit page breaks.
+ * page-sized sheets with measured pagination, section furniture, and bounded
+ * OOXML/media processing.
  *
  * Render it in an iframe — a small inline script zooms the page to fit the
  * viewport width.
  */
 export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<string> {
+  assertOoxmlInputSize(file);
   const zip = await JSZip.loadAsync(file as Blob);
+  const reader = new OoxmlPackageReader(zip);
 
-  const docXml = await zip.file("word/document.xml")?.async("string");
+  const docXml = await reader.text("word/document.xml");
   if (!docXml) {
     throw new Error("Invalid DOCX: missing word/document.xml");
   }
 
   const ctx: DocxCtx = {
-    zip,
+    reader,
     doc: parseXml(docXml),
+    partPath: "word/document.xml",
     rels: new Map(),
     theme: { colors: {}, majorFont: "Calibri Light", minorFont: "Calibri" },
     styles: new Map(),
@@ -58,17 +68,27 @@ export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<strin
     mediaCache: new Map(),
     footnotes: new Map(),
     endnotes: new Map(),
+    comments: new Map(),
     fnRefs: [],
     enRefs: [],
-    headers: new Map(),
-    footers: new Map(),
-    titlePg: false,
+    commentRefs: [],
+    sections: [],
+    renderSectionIndex: 0,
+    evenAndOddHeaders: false,
   };
 
   // Independent parts — overlap the zip reads/parses
-  await Promise.all([loadDocxRels(ctx), loadDocxTheme(ctx), loadStyles(ctx), loadNumbering(ctx), loadDocxNotes(ctx)]);
-  // Headers/footers need the document rels resolved first.
-  await loadHeadersFooters(ctx);
+  await Promise.all([
+    loadDocxRels(ctx),
+    loadDocxTheme(ctx),
+    loadStyles(ctx),
+    loadNumbering(ctx),
+    loadDocxNotes(ctx),
+    loadDocxComments(ctx),
+    loadDocxSettings(ctx),
+  ]);
+  // Section furniture needs the document relationships resolved first.
+  await loadDocxSections(ctx);
 
   return renderDocument(ctx);
 }
@@ -91,8 +111,9 @@ interface NumDef {
 }
 
 interface DocxCtx {
-  zip: JSZip;
+  reader: OoxmlPackageReader;
   doc: Document;
+  partPath: string;
   rels: Map<string, Rel>;
   theme: OoxmlTheme;
   /** styleId → style element */
@@ -107,38 +128,89 @@ interface DocxCtx {
   listCounters: Map<string, number[]>;
   /** media part path → data URL */
   mediaCache: Map<string, string>;
-  /** footnote / endnote id → note element (separators excluded) */
-  footnotes: Map<string, Element>;
-  endnotes: Map<string, Element>;
+  /** footnote / endnote id → note story (separators excluded) */
+  footnotes: Map<string, NotePart>;
+  endnotes: Map<string, NotePart>;
+  comments: Map<string, CommentPart>;
   /** references in document order → assigned display number */
   fnRefs: { id: string; num: number }[];
   enRefs: { id: string; num: number }[];
-  /** header/footer parts by type (default/first/even) + their own rels */
-  headers: Map<string, HeaderFooter>;
-  footers: Map<string, HeaderFooter>;
-  /** different first-page header/footer */
-  titlePg: boolean;
+  commentRefs: { id: string; num: number }[];
+  sections: DocxSection[];
+  renderSectionIndex: number;
+  evenAndOddHeaders: boolean;
 }
 
 interface HeaderFooter {
   doc: Document;
   rels: Map<string, Rel>;
+  partPath: string;
+}
+
+interface NotePart {
+  element: Element;
+  rels: Map<string, Rel>;
+  partPath: string;
+}
+
+interface CommentPart extends NotePart {
+  author: string;
+  date: string;
+}
+
+interface DocxSection {
+  pageWidth: number;
+  pageHeight: number;
+  marginTop: number;
+  marginRight: number;
+  marginBottom: number;
+  marginLeft: number;
+  headerDistance: number;
+  footerDistance: number;
+  reserveHeader: boolean;
+  reserveFooter: boolean;
+  docGridType: string;
+  docGridLinePitch: number;
+  headers: Map<string, HeaderFooter>;
+  footers: Map<string, HeaderFooter>;
+  titlePage: boolean;
+  breakType: "continuous" | "nextColumn" | "nextPage" | "evenPage" | "oddPage";
+}
+
+function sectionLength(
+  element: Element | undefined,
+  attribute: string,
+  inherited: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const twips = intAttr(element, attribute);
+  const value = twips === undefined ? (inherited ?? fallback) : twipToPx(twips);
+  return Math.max(minimum, Math.min(maximum, Number.isFinite(value) ? value : fallback));
 }
 
 async function loadDocxRels(ctx: DocxCtx): Promise<void> {
-  const xml = await ctx.zip.file(relsPathFor("word/document.xml"))?.async("string");
+  const xml = await ctx.reader.text(relsPathFor("word/document.xml"));
   if (!xml) return;
   ctx.rels = parseRels(xml);
 }
 
 async function loadDocxTheme(ctx: DocxCtx): Promise<void> {
-  const xml = await ctx.zip.file("word/theme/theme1.xml")?.async("string");
+  const xml = await ctx.reader.text("word/theme/theme1.xml");
   if (!xml) return;
   ctx.theme = parseThemeDoc(parseXml(xml));
 }
 
+async function loadDocxSettings(ctx: DocxCtx): Promise<void> {
+  const xml = await ctx.reader.text("word/settings.xml");
+  if (!xml) return;
+  const settings = parseXml(xml, "word/settings.xml");
+  ctx.evenAndOddHeaders = onOff(settings.getElementsByTagName("w:evenAndOddHeaders")[0]) ?? false;
+}
+
 async function loadStyles(ctx: DocxCtx): Promise<void> {
-  const xml = await ctx.zip.file("word/styles.xml")?.async("string");
+  const xml = await ctx.reader.text("word/styles.xml");
   if (!xml) return;
   const doc = parseXml(xml);
 
@@ -157,7 +229,7 @@ async function loadStyles(ctx: DocxCtx): Promise<void> {
 }
 
 async function loadNumbering(ctx: DocxCtx): Promise<void> {
-  const xml = await ctx.zip.file("word/numbering.xml")?.async("string");
+  const xml = await ctx.reader.text("word/numbering.xml");
   if (!xml) return;
   const doc = parseXml(xml);
 
@@ -207,19 +279,21 @@ async function loadNumbering(ctx: DocxCtx): Promise<void> {
 }
 
 async function loadDocxMedia(ctx: DocxCtx, path: string): Promise<string | undefined> {
-  return loadMediaDataUrl(ctx.zip, ctx.mediaCache, path);
+  return loadMediaDataUrl(ctx.reader, ctx.mediaCache, path);
 }
 
 /** Load footnotes.xml / endnotes.xml. Separator notes (which carry a w:type)
  *  are skipped — only real notes are indexed by id. */
 async function loadDocxNotes(ctx: DocxCtx): Promise<void> {
-  const load = async (file: string, tag: string, map: Map<string, Element>): Promise<void> => {
-    const xml = await ctx.zip.file(file)?.async("string");
+  const load = async (file: string, tag: string, map: Map<string, NotePart>): Promise<void> => {
+    const xml = await ctx.reader.text(file);
     if (!xml) return;
+    const relsXml = await ctx.reader.text(relsPathFor(file));
+    const rels = relsXml ? parseRels(relsXml) : new Map<string, Rel>();
     for (const note of parseXml(xml).getElementsByTagName(tag)) {
       const id = note.getAttribute("w:id");
       // Real notes have no w:type; separator/continuationSeparator/notice do.
-      if (id && !note.getAttribute("w:type")) map.set(id, note);
+      if (id && !note.getAttribute("w:type")) map.set(id, { element: note, rels, partPath: file });
     }
   };
   await Promise.all([
@@ -228,29 +302,117 @@ async function loadDocxNotes(ctx: DocxCtx): Promise<void> {
   ]);
 }
 
-/** Load header/footer parts referenced by the document's section properties.
- *  Each part keeps its own relationships (images/hyperlinks use a separate id
- *  space from the main document). */
-async function loadHeadersFooters(ctx: DocxCtx): Promise<void> {
-  const sectPrs = ctx.doc.getElementsByTagName("w:sectPr");
-  const sectPr = sectPrs[sectPrs.length - 1]; // last section governs the page furniture
-  if (!sectPr) return;
-  ctx.titlePg = !!child(sectPr, "w:titlePg") && onOff(child(sectPr, "w:titlePg")) !== false;
+async function loadDocxComments(ctx: DocxCtx): Promise<void> {
+  const file = "word/comments.xml";
+  const xml = await ctx.reader.text(file);
+  if (!xml) return;
+  const relsXml = await ctx.reader.text(relsPathFor(file));
+  const rels = relsXml ? parseRels(relsXml) : new Map<string, Rel>();
+  for (const comment of parseXml(xml, file).getElementsByTagName("w:comment")) {
+    const id = comment.getAttribute("w:id");
+    if (id == null) continue;
+    ctx.comments.set(id, {
+      element: comment,
+      rels,
+      partPath: file,
+      author: comment.getAttribute("w:author") ?? "",
+      date: comment.getAttribute("w:date") ?? "",
+    });
+  }
+}
 
-  const load = async (refTag: string, store: Map<string, HeaderFooter>): Promise<void> => {
-    for (const ref of childList(sectPr, refTag)) {
-      const type = ref.getAttribute("w:type") || "default";
-      const rId = getRId(ref, "id");
-      const rel = rId ? ctx.rels.get(rId) : undefined;
-      if (!rel || rel.external) continue;
-      const partPath = resolveTarget("word/document.xml", rel.target);
-      const xml = await ctx.zip.file(partPath)?.async("string");
-      if (!xml) continue;
-      const relsXml = await ctx.zip.file(relsPathFor(partPath))?.async("string");
-      store.set(type, { doc: parseXml(xml), rels: relsXml ? parseRels(relsXml) : new Map() });
+/** Load page geometry and inherited header/footer references for every section. */
+async function loadDocxSections(ctx: DocxCtx): Promise<void> {
+  const body = descend(ctx.doc.documentElement, "w:body");
+  const sectPrs: Element[] = [];
+  const collect = (parent: Element): void => {
+    for (const block of parent.children) {
+      if (block.tagName === "w:p") {
+        const sectPr = descend(block, "w:pPr", "w:sectPr");
+        if (sectPr) sectPrs.push(sectPr);
+      } else if (block.tagName === "w:sdt") {
+        const content = child(block, "w:sdtContent");
+        if (content) collect(content);
+      }
     }
   };
-  await Promise.all([load("w:headerReference", ctx.headers), load("w:footerReference", ctx.footers)]);
+  if (body) {
+    collect(body);
+    const finalSection = child(body, "w:sectPr");
+    if (finalSection) sectPrs.push(finalSection);
+  }
+  const parts = new Map<string, Promise<HeaderFooter | undefined>>();
+  const loadPart = (partPath: string): Promise<HeaderFooter | undefined> => {
+    const cached = parts.get(partPath);
+    if (cached) return cached;
+    const pending = (async () => {
+      const xml = await ctx.reader.text(partPath);
+      if (!xml) return undefined;
+      const relsXml = await ctx.reader.text(relsPathFor(partPath));
+      return { doc: parseXml(xml, partPath), rels: relsXml ? parseRels(relsXml) : new Map(), partPath };
+    })();
+    parts.set(partPath, pending);
+    return pending;
+  };
+
+  let previous: DocxSection | undefined;
+  for (const sectPr of sectPrs.length ? sectPrs : [undefined]) {
+    const pgSz = child(sectPr, "w:pgSz");
+    const pgMar = child(sectPr, "w:pgMar");
+    const docGrid = child(sectPr, "w:docGrid");
+    const headers = new Map(previous?.headers);
+    const footers = new Map(previous?.footers);
+
+    const loadReferences = async (tag: string, store: Map<string, HeaderFooter>): Promise<void> => {
+      for (const ref of childList(sectPr, tag)) {
+        const type = ref.getAttribute("w:type") || "default";
+        const rId = getRId(ref, "id");
+        const rel = rId ? ctx.rels.get(rId) : undefined;
+        if (!rel || rel.external) continue;
+        const partPath = resolveTarget("word/document.xml", rel.target);
+        const loaded = partPath ? await loadPart(partPath) : undefined;
+        if (loaded) store.set(type, loaded);
+      }
+    };
+    await Promise.all([loadReferences("w:headerReference", headers), loadReferences("w:footerReference", footers)]);
+
+    const pageWidth = sectionLength(pgSz, "w:w", previous?.pageWidth, 816, 96, 8_192);
+    const pageHeight = sectionLength(pgSz, "w:h", previous?.pageHeight, 1_056, 96, 8_192);
+    const topTwips = intAttr(pgMar, "w:top");
+    const bottomTwips = intAttr(pgMar, "w:bottom");
+    const marginTop =
+      topTwips === undefined ? (previous?.marginTop ?? 96) : Math.min(Math.abs(twipToPx(topTwips)), pageHeight * 0.45);
+    const marginBottom =
+      bottomTwips === undefined
+        ? (previous?.marginBottom ?? 96)
+        : Math.min(Math.abs(twipToPx(bottomTwips)), pageHeight * 0.45);
+    const rawBreakType = child(sectPr, "w:type")?.getAttribute("w:val") ?? "nextPage";
+    const breakType = (["continuous", "nextColumn", "nextPage", "evenPage", "oddPage"] as const).includes(
+      rawBreakType as DocxSection["breakType"],
+    )
+      ? (rawBreakType as DocxSection["breakType"])
+      : "nextPage";
+    const section: DocxSection = {
+      pageWidth,
+      pageHeight,
+      marginTop,
+      marginRight: sectionLength(pgMar, "w:right", previous?.marginRight, 96, 0, pageWidth * 0.45),
+      marginBottom,
+      marginLeft: sectionLength(pgMar, "w:left", previous?.marginLeft, 96, 0, pageWidth * 0.45),
+      headerDistance: sectionLength(pgMar, "w:header", previous?.headerDistance, 48, 0, pageHeight * 0.45),
+      footerDistance: sectionLength(pgMar, "w:footer", previous?.footerDistance, 48, 0, pageHeight * 0.45),
+      reserveHeader: topTwips === undefined ? (previous?.reserveHeader ?? true) : topTwips >= 0,
+      reserveFooter: bottomTwips === undefined ? (previous?.reserveFooter ?? true) : bottomTwips >= 0,
+      docGridType: docGrid?.getAttribute("w:type") ?? previous?.docGridType ?? "default",
+      docGridLinePitch: sectionLength(docGrid, "w:linePitch", previous?.docGridLinePitch, 0, 0, pageHeight),
+      headers,
+      footers,
+      titlePage: !!child(sectPr, "w:titlePg") && onOff(child(sectPr, "w:titlePg")) !== false,
+      breakType,
+    };
+    ctx.sections.push(section);
+    previous = section;
+  }
 }
 
 type NoteKind = "fn" | "en";
@@ -268,6 +430,14 @@ function assignNote(ctx: DocxCtx, kind: NoteKind, id: string): number {
 
 function noteLabel(kind: NoteKind, num: number): string {
   return kind === "en" ? toRoman(num).toLowerCase() : String(num);
+}
+
+function assignComment(ctx: DocxCtx, id: string): number {
+  const existing = ctx.commentRefs.find((reference) => reference.id === id);
+  if (existing) return existing.num;
+  const num = ctx.commentRefs.length + 1;
+  ctx.commentRefs.push({ id, num });
+  return num;
 }
 
 // ============================================================================
@@ -354,6 +524,14 @@ function chainOnOff(chain: (Element | undefined)[], name: string): boolean {
   return false;
 }
 
+function chainOnOffValue(chain: (Element | undefined)[], name: string): boolean | undefined {
+  for (const el of chain) {
+    const c = child(el, name);
+    if (c) return onOff(c) ?? true;
+  }
+  return undefined;
+}
+
 // ============================================================================
 // Colors
 // ============================================================================
@@ -391,17 +569,17 @@ function wordColor(
   const themeColor = el.getAttribute(themeAttr);
   if (themeColor) {
     const slot = WORD_THEME_SLOTS[themeColor] || themeColor;
-    let hex = ctx.theme.colors[slot];
+    let hex = normalizeHexColor(ctx.theme.colors[slot]);
     if (hex) {
       const tint = el.getAttribute(`${themeAttr.replace("Color", "")}Tint`) || el.getAttribute("w:themeTint");
       const shade = el.getAttribute(`${themeAttr.replace("Color", "")}Shade`) || el.getAttribute("w:themeShade");
-      if (tint) hex = mixHex(hex, parseInt(tint, 16) / 255, true);
-      else if (shade) hex = mixHex(hex, parseInt(shade, 16) / 255, false);
+      if (tint && /^[0-9a-f]{2}$/i.test(tint)) hex = mixHex(hex, parseInt(tint, 16) / 255, true);
+      else if (shade && /^[0-9a-f]{2}$/i.test(shade)) hex = mixHex(hex, parseInt(shade, 16) / 255, false);
       return `#${hex}`;
     }
   }
-  const val = el.getAttribute(valAttr);
-  if (val && val !== "auto") return `#${val}`;
+  const val = normalizeHexColor(el.getAttribute(valAttr));
+  if (val) return `#${val}`;
   return undefined;
 }
 
@@ -513,6 +691,8 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
 
 /** Private-use marker for a tab character, resolved during paragraph assembly. */
 const TAB_SENTINEL = "\uE000";
+/** Internal-only marker. Authored text is HTML-escaped before paragraph assembly. */
+const PAGE_BREAK_SENTINEL = "<!--ooxml-authored-page-break-->";
 
 async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined): Promise<string> {
   const rPr = child(r, "w:rPr");
@@ -527,9 +707,13 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
         break;
       case "w:br": {
         const type = node.getAttribute("w:type");
-        if (type !== "page") parts.push("<br/>");
+        if (type === "page" || type === "column") parts.push(PAGE_BREAK_SENTINEL);
+        else parts.push("<br/>");
         break;
       }
+      case "w:lastRenderedPageBreak":
+        // Cached output from a previous layout producer, not an authored break.
+        break;
       case "w:cr":
         parts.push("<br/>");
         break;
@@ -561,7 +745,20 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
         if (!notes.has(id)) break; // separator/unknown — nothing to link
         const num = assignNote(ctx, kind, id);
         const lbl = noteLabel(kind, num);
-        parts.push(`<sup class="noteref"><a id="${kind}ref-${num}" href="#${kind}-${num}">${lbl}</a></sup>`);
+        parts.push(
+          `<sup class="noteref"><a id="${kind}ref-${num}" data-note-key="${kind}-${num}" href="#${kind}-${num}">${lbl}</a></sup>`,
+        );
+        break;
+      }
+      case "w:commentReference": {
+        const id = node.getAttribute("w:id") ?? "";
+        const comment = ctx.comments.get(id);
+        if (!comment) break;
+        const num = assignComment(ctx, id);
+        const label = comment.author ? `Comment ${num} by ${comment.author}` : `Comment ${num}`;
+        parts.push(
+          `<sup class="commentref"><a id="commentref-${num}" href="#comment-${num}" title="${escapeHtml(label)}">${num}</a></sup>`,
+        );
         break;
       }
     }
@@ -572,7 +769,11 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
   // A tab-only run returns bare sentinels so the paragraph can split on them
   // for tab-stop layout without breaking span nesting.
   if (parts.every((p) => p === TAB_SENTINEL)) return text;
-  return styles.length ? `<span style="${styles.join(";")};">${text}</span>` : text;
+  if (!styles.length) return text;
+  return text
+    .split(PAGE_BREAK_SENTINEL)
+    .map((part) => (part ? `<span style="${styles.join(";")};">${part}</span>` : ""))
+    .join(PAGE_BREAK_SENTINEL);
 }
 
 // ============================================================================
@@ -585,17 +786,91 @@ function dmlSolidColor(fill: Element | undefined, ctx: DocxCtx): string | undefi
   if (!fill) return undefined;
   const srgb = fill.getElementsByTagName("a:srgbClr")[0];
   if (srgb) {
-    const v = srgb.getAttribute("val");
+    const v = normalizeHexColor(srgb.getAttribute("val"));
     if (v) return `#${v}`;
   }
   const sch = fill.getElementsByTagName("a:schemeClr")[0];
   if (sch) {
     const v = sch.getAttribute("val") || "";
     const slot = ({ tx1: "dk1", bg1: "lt1", tx2: "dk2", bg2: "lt2" } as Record<string, string>)[v] || v;
-    const hex = ctx.theme.colors[slot];
+    const hex = normalizeHexColor(ctx.theme.colors[slot]);
     if (hex) return `#${hex}`;
   }
   return undefined;
+}
+
+function boundedEmuPx(value: number | undefined, maximum = 8_192): number {
+  const converted = emuToPx(value ?? 0);
+  return Number.isFinite(converted) ? Math.max(0, Math.min(converted, maximum)) : 0;
+}
+
+/** Approximate Word's anchored-object placement with native HTML float and
+ * absolute-positioning primitives. Square/tight wrapping maps well to floats;
+ * page/margin anchored no-wrap objects retain authored offsets and z-order. */
+function drawingPlacementStyles(container: Element, width = 0, availableWidth = 0): string[] {
+  if (container.tagName !== "wp:anchor") return ["vertical-align:middle"];
+
+  const positionH = child(container, "wp:positionH");
+  const positionV = child(container, "wp:positionV");
+  const horizontal = child(positionH, "wp:align")?.textContent?.trim() ?? "";
+  const vertical = child(positionV, "wp:align")?.textContent?.trim() ?? "";
+  const relativeH = positionH?.getAttribute("relativeFrom") ?? "column";
+  const relativeV = positionV?.getAttribute("relativeFrom") ?? "paragraph";
+  const offsetH = boundedEmuPx(Number.parseInt(child(positionH, "wp:posOffset")?.textContent ?? "", 10), 16_384);
+  const offsetV = boundedEmuPx(Number.parseInt(child(positionV, "wp:posOffset")?.textContent ?? "", 10), 16_384);
+  const distanceTop = boundedEmuPx(intAttr(container, "distT"), 1_024);
+  const distanceRight = boundedEmuPx(intAttr(container, "distR"), 1_024);
+  const distanceBottom = boundedEmuPx(intAttr(container, "distB"), 1_024);
+  const distanceLeft = boundedEmuPx(intAttr(container, "distL"), 1_024);
+  const wrapTopBottom = !!child(container, "wp:wrapTopAndBottom");
+  const wrapsText =
+    !!child(container, "wp:wrapSquare") || !!child(container, "wp:wrapTight") || !!child(container, "wp:wrapThrough");
+  const noWrap = !!child(container, "wp:wrapNone") || (!wrapTopBottom && !wrapsText);
+  const behind = container.getAttribute("behindDoc") === "1" || container.getAttribute("behindDoc") === "true";
+  const styles = [
+    `margin:${px(distanceTop)} ${px(distanceRight)} ${px(distanceBottom)} ${px(distanceLeft)}`,
+    `z-index:${behind ? 0 : Math.max(2, Math.min(2_000, 2 + (intAttr(container, "relativeHeight") ?? 0)))}`,
+  ];
+
+  const pagePositioned =
+    (relativeH === "page" || relativeH === "margin" || relativeH === "column") &&
+    (relativeV === "page" || relativeV === "margin");
+  if ((noWrap || behind) && pagePositioned) {
+    styles.push("position:absolute");
+    if (horizontal === "right" || horizontal === "outside") {
+      styles.push(relativeH === "page" ? "right:calc(0px - var(--pg-margin-right))" : "right:0");
+    } else if (horizontal === "center") {
+      styles.push("left:50%", "transform:translateX(-50%)");
+    } else {
+      styles.push(relativeH === "page" ? `left:calc(${px(offsetH)} - var(--pg-margin-left))` : `left:${px(offsetH)}`);
+    }
+    if (vertical === "bottom" || vertical === "outside") {
+      styles.push(relativeV === "page" ? "bottom:calc(0px - var(--body-bottom))" : "bottom:0");
+    } else if (vertical === "center") {
+      styles.push("top:50%");
+    } else {
+      styles.push(relativeV === "page" ? `top:calc(${px(offsetV)} - var(--body-top))` : `top:${px(offsetV)}`);
+    }
+    return styles;
+  }
+
+  if (wrapTopBottom) {
+    styles.push("display:block", "clear:both", "margin-left:auto", "margin-right:auto");
+  } else if (horizontal === "right" || horizontal === "outside") {
+    styles.push("float:right");
+  } else if (horizontal === "center") {
+    styles.push("display:block", "clear:both", "margin-left:auto", "margin-right:auto");
+  } else if (availableWidth > 0 && offsetH > Math.max(64, (availableWidth - width) / 2)) {
+    // CSS floats cannot wrap on both sides of an explicitly positioned Word
+    // anchor. A far-column offset is best represented as a right float; adding
+    // that offset as a left margin would consume the left text band as margin
+    // and incorrectly force following paragraphs below the picture.
+    styles.push("float:right");
+  } else {
+    styles.push("float:left");
+    if (offsetH) styles.push(`margin-left:${px(offsetH)}`);
+  }
+  return styles;
 }
 
 /** Render a DrawingML WordprocessingShape (text box / autoshape with text). */
@@ -657,17 +932,17 @@ async function renderWpShape(ctx: DocxCtx, container: Element, wsp: Element, w: 
   if (radiusCss) styles.push(radiusCss);
 
   if (vCenter) {
-    styles.push("display:flex", "flex-direction:column", `justify-content:${anchor === "ctr" ? "center" : "flex-end"}`);
+    styles.push(
+      `display:${isAnchor ? "flex" : "inline-flex"}`,
+      "flex-direction:column",
+      `justify-content:${anchor === "ctr" ? "center" : "flex-end"}`,
+    );
   } else {
-    styles.push(`display:${isAnchor ? "block" : "inline-block"}`);
-    if (!isAnchor) styles.push("vertical-align:top");
+    styles.push("display:inline-block", "vertical-align:top");
   }
-  if (isAnchor) {
-    const align = descend(container, "wp:positionH", "wp:align")?.textContent;
-    if (align === "right") styles.push("float:right", "margin:4px 0 4px 12px");
-    else if (align === "left") styles.push("float:left", "margin:4px 12px 4px 0");
-    else styles.push("margin:8px auto");
-  }
+  const section = ctx.sections[ctx.renderSectionIndex];
+  const availableWidth = section ? section.pageWidth - section.marginLeft - section.marginRight : 0;
+  styles.push(...drawingPlacementStyles(container, w, availableWidth));
 
   return `<div style="${styles.join(";")};">${inner}</div>`;
 }
@@ -677,8 +952,8 @@ async function renderDrawing(ctx: DocxCtx, drawing: Element): Promise<string> {
   if (!container) return "";
 
   const extent = child(container, "wp:extent");
-  const w = emuToPx(intAttr(extent, "cx") ?? 0);
-  const h = emuToPx(intAttr(extent, "cy") ?? 0);
+  const w = boundedEmuPx(intAttr(extent, "cx"));
+  const h = boundedEmuPx(intAttr(extent, "cy"));
 
   const graphicData = descend(container, "a:graphic", "a:graphicData");
 
@@ -688,18 +963,15 @@ async function renderDrawing(ctx: DocxCtx, drawing: Element): Promise<string> {
     const rId = getRId(blip);
     const rel = rId ? ctx.rels.get(rId) : undefined;
     if (rel && !rel.external) {
-      const url = await loadDocxMedia(ctx, resolveTarget("word/document.xml", rel.target));
+      const url = await loadDocxMedia(ctx, resolveTarget(ctx.partPath, rel.target));
       if (url) {
-        const styles = [`width:${px(w)}`, `height:${px(h)}`];
-        if (container.tagName === "wp:anchor") {
-          const align = descend(container, "wp:positionH", "wp:align")?.textContent;
-          if (align === "right") styles.push("float:right", "margin:4px 0 4px 12px");
-          else if (align === "left") styles.push("float:left", "margin:4px 12px 4px 0");
-          else styles.push("display:block", "margin:8px auto");
-        } else {
-          styles.push("vertical-align:middle");
-        }
-        return `<img src="${url}" alt="" style="${styles.join(";")};"/>`;
+        const styles = [...(w ? [`width:${px(w)}`] : []), ...(h ? [`height:${px(h)}`] : [])];
+        const section = ctx.sections[ctx.renderSectionIndex];
+        const availableWidth = section ? section.pageWidth - section.marginLeft - section.marginRight : 0;
+        styles.push(...drawingPlacementStyles(container, w, availableWidth));
+        const docPr = child(container, "wp:docPr");
+        const alt = docPr?.getAttribute("descr") || docPr?.getAttribute("title") || docPr?.getAttribute("name") || "";
+        return `<img src="${url}" alt="${escapeHtml(alt)}" style="${styles.join(";")};"/>`;
       }
     }
   }
@@ -733,10 +1005,10 @@ async function renderLegacyPict(ctx: DocxCtx, pict: Element): Promise<string> {
     const styles = ["display:inline-block", "vertical-align:top", "box-sizing:border-box", "padding:4px 6px"];
     if (wMatch) styles.push(`width:${px(ptToPx(parseFloat(wMatch[1])))}`);
     if (hMatch) styles.push(`min-height:${px(ptToPx(parseFloat(hMatch[1])))}`);
-    const fill = shape?.getAttribute("fillcolor");
+    const fill = sanitizeCssColor(shape?.getAttribute("fillcolor"));
     if (fill && shape?.getAttribute("filled") !== "f") styles.push(`background:${fill}`);
     if (shape?.getAttribute("stroked") !== "f") {
-      const stroke = shape?.getAttribute("strokecolor") || "#000000";
+      const stroke = sanitizeCssColor(shape?.getAttribute("strokecolor")) || "#000000";
       const sw = shape?.getAttribute("strokeweight");
       const swPx = sw ? ptToPx(parseFloat(sw)) : 1;
       styles.push(`border:${px(Math.max(swPx, 0.75))} solid ${stroke}`);
@@ -754,7 +1026,7 @@ async function renderLegacyPict(ctx: DocxCtx, pict: Element): Promise<string> {
   const rId = getRId(imagedata, "id");
   const rel = rId ? ctx.rels.get(rId) : undefined;
   if (!rel || rel.external) return "";
-  const url = await loadDocxMedia(ctx, resolveTarget("word/document.xml", rel.target));
+  const url = await loadDocxMedia(ctx, resolveTarget(ctx.partPath, rel.target));
   if (!url) return "";
 
   // Size from the VML shape style ("width:123pt;height:45pt")
@@ -843,8 +1115,15 @@ function resolveNumbering(ctx: DocxCtx, numId: string, ilvl: number): NumberingI
 
 interface BlockResult {
   html: string;
+  pageSegments: string[];
   pageBreakBefore?: boolean;
-  pageBreakAfter?: boolean;
+}
+
+type PageField = "PAGE" | "NUMPAGES" | "SECTION" | "SECTIONPAGES";
+
+function pageField(instruction: string): PageField | undefined {
+  const name = instruction.trim().split(/\s+/u)[0]?.toUpperCase();
+  return name === "PAGE" || name === "NUMPAGES" || name === "SECTION" || name === "SECTIONPAGES" ? name : undefined;
 }
 
 async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
@@ -907,7 +1186,17 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
     if (lineRule === "exact" || lineRule === "atLeast") {
       styles.push(`line-height:${px(twipToPx(line))}`);
     } else {
-      styles.push(`line-height:${Math.round((line / 240) * 1000) / 1000}`);
+      const section = ctx.sections[ctx.renderSectionIndex];
+      const multiple = Math.max(0.05, Math.min(line / 240, 20));
+      if (section?.docGridLinePitch && (section.docGridType === "lines" || section.docGridType === "linesAndChars")) {
+        // With an active document line grid, Word multiplies against the grid
+        // pitch rather than a large run's font size. This is crucial for cover
+        // headings (for example 56pt at 4.33 lines), which would otherwise
+        // consume hundreds of pixels and force false page breaks.
+        styles.push(`line-height:${px(section.docGridLinePitch * multiple)}`);
+      } else {
+        styles.push(`line-height:${Math.round(multiple * 1000) / 1000}`);
+      }
     }
   }
 
@@ -935,10 +1224,21 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
 
   // Runs & inline content
   let html = "";
-  let pageBreakAfter = false;
 
-  // Field state: skip instruction text between fldChar begin…separate
-  let inFieldInstr = 0;
+  // Complex fields keep their instruction and result phases separate. Retain
+  // page-dependent fields as data so the paginator can update cloned headers
+  // and footers after the final physical page count is known.
+  const fieldStack: { instruction: string; inResult: boolean }[] = [];
+  const appendResult = (value: string): void => {
+    const current = fieldStack[fieldStack.length - 1];
+    const kind = current?.inResult ? pageField(current.instruction) : undefined;
+    html += kind
+      ? value
+          .split(PAGE_BREAK_SENTINEL)
+          .map((part) => (part ? `<span data-docx-field="${kind}">${part}</span>` : ""))
+          .join(PAGE_BREAK_SENTINEL)
+      : value;
+  };
 
   const walkInline = async (parent: Element): Promise<void> => {
     for (const node of parent.children) {
@@ -947,15 +1247,21 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
           const fldChar = child(node, "w:fldChar");
           if (fldChar) {
             const type = fldChar.getAttribute("w:fldCharType");
-            if (type === "begin") inFieldInstr++;
-            else if (type === "separate" || type === "end") inFieldInstr = Math.max(0, inFieldInstr - 1);
+            if (type === "begin") fieldStack.push({ instruction: "", inResult: false });
+            else if (type === "separate") {
+              const current = fieldStack[fieldStack.length - 1];
+              if (current) current.inResult = true;
+            } else if (type === "end") fieldStack.pop();
             break;
           }
-          if (inFieldInstr > 0) break;
-          if (Array.from(node.getElementsByTagName("w:br")).some((br) => br.getAttribute("w:type") === "page")) {
-            pageBreakAfter = true;
+          const current = fieldStack[fieldStack.length - 1];
+          if (current && !current.inResult) {
+            current.instruction += Array.from(node.getElementsByTagName("w:instrText"))
+              .map((part) => part.textContent ?? "")
+              .join("");
+            break;
           }
-          html += await renderRun(ctx, node, pStyleId);
+          appendResult(await renderRun(ctx, node, pStyleId));
           break;
         }
         case "w:hyperlink": {
@@ -965,16 +1271,31 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
           for (const r of childList(node, "w:r")) {
             inner += await renderRun(ctx, r, pStyleId);
           }
-          if (rel?.external) {
-            html += `<a href="${escapeHtml(rel.target)}" target="_blank" rel="noreferrer">${inner}</a>`;
+          const safeHref = rel?.external ? sanitizeHyperlinkUrl(rel.target) : undefined;
+          if (safeHref) {
+            appendResult(
+              inner
+                .split(PAGE_BREAK_SENTINEL)
+                .map((part) =>
+                  part ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${part}</a>` : "",
+                )
+                .join(PAGE_BREAK_SENTINEL),
+            );
           } else {
-            html += inner;
+            appendResult(inner);
           }
           break;
         }
-        case "w:fldSimple":
+        case "w:fldSimple": {
+          const kind = pageField(node.getAttribute("w:instr") ?? "");
+          if (kind) html += `<span data-docx-field="${kind}">`;
+          await walkInline(node);
+          if (kind) html += "</span>";
+          break;
+        }
         case "w:smartTag":
         case "w:ins":
+        case "w:moveTo":
           await walkInline(node);
           break;
         case "w:sdt": {
@@ -982,6 +1303,16 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
           if (content) await walkInline(content);
           break;
         }
+        case "w:commentRangeStart": {
+          const id = node.getAttribute("w:id") ?? "";
+          if (ctx.comments.has(id)) {
+            const num = assignComment(ctx, id);
+            html += `<a class="comment-anchor" id="comment-anchor-${num}" href="#comment-${num}" aria-label="Comment ${num}"></a>`;
+          }
+          break;
+        }
+        case "w:commentRangeEnd":
+          break;
         case "mc:AlternateContent": {
           // Prefer the modern DrawingML Choice (text boxes/shapes live here);
           // fall back to the legacy VML Fallback only if there's no Choice.
@@ -1009,7 +1340,8 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
   // Tabs: TOC/index-style tab stops (a leader, or right/center/decimal stops)
   // become a flex row whose tab gaps stretch and carry leader dots; everything
   // else keeps a simple fixed-width spacer.
-  if (html.includes(TAB_SENTINEL)) {
+  const resolveTabs = (content: string): string => {
+    if (!content.includes(TAB_SENTINEL)) return content;
     const tabsEl = chainChild(pChain, "w:tabs");
     const stops = tabsEl
       ? childList(tabsEl, "w:tab")
@@ -1027,15 +1359,14 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
             : leaderStop?.leader
               ? " ld-d"
               : "";
-      const segs = html.split(TAB_SENTINEL);
+      const segs = content.split(TAB_SENTINEL);
       const inner = segs
         .map((s, i) => (i === 0 ? `<span>${s}</span>` : `<span class="tab-ld${leaderCls}"></span><span>${s}</span>`))
         .join("");
-      html = `<div class="tab-row">${inner}</div>`;
-    } else {
-      html = html.split(TAB_SENTINEL).join('<span style="display:inline-block;min-width:36px;"></span>');
+      return `<div class="tab-row">${inner}</div>`;
     }
-  }
+    return content.split(TAB_SENTINEL).join('<span style="display:inline-block;min-width:36px;"></span>');
+  };
 
   // List marker
   let markerHtml = "";
@@ -1050,12 +1381,26 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
   }
 
   const allStyles = [...paraRunStyles, ...styles].filter(Boolean);
-  const styleAttr = allStyles.length ? ` style="${allStyles.join(";")};"` : "";
+  const keepNext = chainOnOff(pChain, "w:keepNext");
+  const commonPaginationAttrs = [
+    chainOnOff(pChain, "w:keepLines") ? ' data-keep-lines="1"' : "",
+    chainOnOffValue(pChain, "w:widowControl") !== false ? ' data-widow-control="1"' : "",
+  ].join("");
+  const rawSegments = html.split(PAGE_BREAK_SENTINEL);
+  const pageSegments = rawSegments.map((segment, index) => {
+    const segmentStyles = [...allStyles];
+    if (index > 0) segmentStyles.push("margin-top:0", "text-indent:0");
+    if (index < rawSegments.length - 1) segmentStyles.push("margin-bottom:0");
+    const styleAttr = segmentStyles.length ? ` style="${segmentStyles.join(";")};"` : "";
+    const marker = index === 0 ? markerHtml : "";
+    const keepNextAttr = keepNext && index === rawSegments.length - 1 ? ' data-keep-next="1"' : "";
+    return `<div class="p"${keepNextAttr}${commonPaginationAttrs}${styleAttr}>${marker}${resolveTabs(segment) || "&nbsp;"}</div>`;
+  });
 
   return {
-    html: `<div class="p"${styleAttr}>${markerHtml}${html || "&nbsp;"}</div>`,
-    pageBreakBefore: chainOnOff([pPr], "w:pageBreakBefore"),
-    pageBreakAfter,
+    html: pageSegments.join(""),
+    pageSegments,
+    pageBreakBefore: chainOnOff(pChain, "w:pageBreakBefore"),
   };
 }
 
@@ -1217,6 +1562,8 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
   for (let ri = 0; ri < rows.length; ri++) {
     const trPr = child(rows[ri], "w:trPr");
     const trHeight = intAttr(child(trPr, "w:trHeight"), "w:val");
+    const cantSplit = onOff(child(trPr, "w:cantSplit")) ?? false;
+    const repeatHeader = onOff(child(trPr, "w:tblHeader")) ?? false;
     const cellsHtml: string[] = [];
 
     for (const info of grid[ri]) {
@@ -1317,7 +1664,8 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
     }
 
     const trStyle = trHeight ? ` style="height:${px(twipToPx(trHeight))};"` : "";
-    rowsHtml.push(`<tr${trStyle}>${cellsHtml.join("")}</tr>`);
+    const rowAttrs = `${cantSplit ? ' data-cant-split="1"' : ""}${repeatHeader ? ' data-repeat-header="1"' : ""}`;
+    rowsHtml.push(`<tr${rowAttrs}${trStyle}>${cellsHtml.join("")}</tr>`);
   }
 
   return `<table style="${widthCss}margin:4px 0;"><colgroup>${colgroup}</colgroup><tbody>${rowsHtml.join("")}</tbody></table>`;
@@ -1327,32 +1675,84 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
 // Document assembly
 // ============================================================================
 
-/** Render the collected footnotes and endnotes as linked sections. Called
- *  after the body so references have been numbered in document order. */
-async function renderNotesSection(ctx: DocxCtx): Promise<string> {
-  const block = async (kind: NoteKind, title: string): Promise<string> => {
-    const refs = kind === "fn" ? ctx.fnRefs : ctx.enRefs;
-    const map = kind === "fn" ? ctx.footnotes : ctx.endnotes;
-    if (!refs.length) return "";
-    const items: string[] = [];
-    // Index-based loop: rendering a note may reference further notes, which
-    // append to the list and get rendered in turn.
-    for (let i = 0; i < refs.length; i++) {
-      const { id, num } = refs[i];
-      const note = map.get(id);
-      if (!note) continue;
-      let content = "";
-      for (const blk of note.children) {
+/** Render note bodies after the main story has assigned their display numbers. */
+async function renderNoteItems(ctx: DocxCtx, kind: NoteKind, includeId: boolean): Promise<string[]> {
+  const refs = kind === "fn" ? ctx.fnRefs : ctx.enRefs;
+  const map = kind === "fn" ? ctx.footnotes : ctx.endnotes;
+  const items: string[] = [];
+  // Index-based loop: rendering a note may reference further notes, which
+  // append to the list and get rendered in turn.
+  for (let i = 0; i < refs.length; i++) {
+    const { id, num } = refs[i];
+    const notePart = map.get(id);
+    if (!notePart) continue;
+    let content = "";
+    const savedRels = ctx.rels;
+    const savedPartPath = ctx.partPath;
+    ctx.rels = notePart.rels;
+    ctx.partPath = notePart.partPath;
+    try {
+      for (const blk of notePart.element.children) {
         if (blk.tagName === "w:p") content += (await renderParagraph(ctx, blk)).html;
         else if (blk.tagName === "w:tbl") content += await renderTable(ctx, blk);
       }
-      items.push(
-        `<div class="note" id="${kind}-${num}"><a class="note-num" href="#${kind}ref-${num}">${noteLabel(kind, num)}</a><div class="note-body">${content}</div></div>`,
-      );
+    } finally {
+      ctx.rels = savedRels;
+      ctx.partPath = savedPartPath;
     }
-    return items.length ? `<div class="notes"><div class="notes-h">${title}</div>${items.join("")}</div>` : "";
-  };
-  return (await block("fn", "Footnotes")) + (await block("en", "Endnotes"));
+    const key = `${kind}-${num}`;
+    items.push(
+      `<div class="note" data-note-key="${key}"${includeId ? ` id="${key}"` : ""}>` +
+        `<a class="note-num" href="#${kind}ref-${num}">${noteLabel(kind, num)}</a>` +
+        `<div class="note-body">${content}</div></div>`,
+    );
+  }
+  return items;
+}
+
+async function renderEndnotesSection(ctx: DocxCtx): Promise<string> {
+  const items = await renderNoteItems(ctx, "en", true);
+  return items.length ? `<div class="notes endnotes"><div class="notes-h">Endnotes</div>${items.join("")}</div>` : "";
+}
+
+async function renderFootnoteTemplate(ctx: DocxCtx): Promise<string> {
+  const items = await renderNoteItems(ctx, "fn", false);
+  return items.length ? `<template id="docx-footnotes">${items.join("")}</template>` : "";
+}
+
+async function renderCommentsSection(ctx: DocxCtx): Promise<string> {
+  if (!ctx.commentRefs.length) return "";
+  const items: string[] = [];
+  for (const { id, num } of ctx.commentRefs) {
+    const comment = ctx.comments.get(id);
+    if (!comment) continue;
+    const savedRels = ctx.rels;
+    const savedPartPath = ctx.partPath;
+    ctx.rels = comment.rels;
+    ctx.partPath = comment.partPath;
+    let content = "";
+    try {
+      for (const block of comment.element.children) {
+        if (block.tagName === "w:p") content += (await renderParagraph(ctx, block)).html;
+        else if (block.tagName === "w:tbl") content += await renderTable(ctx, block);
+      }
+    } finally {
+      ctx.rels = savedRels;
+      ctx.partPath = savedPartPath;
+    }
+    const meta = [comment.author, comment.date.slice(0, 10)].filter(Boolean).map(escapeHtml).join(" · ");
+    items.push(
+      `<div class="comment" id="comment-${num}"><a class="comment-num" href="#commentref-${num}">${num}</a>` +
+        `<div class="comment-content">${meta ? `<div class="comment-meta">${meta}</div>` : ""}${content}</div></div>`,
+    );
+  }
+  return items.length
+    ? `<button class="comments-toggle" type="button" aria-controls="docx-comments" aria-expanded="false">` +
+        `Comments <span>${items.length}</span></button>` +
+        `<aside class="comments" id="docx-comments" aria-label="Document comments" hidden>` +
+        `<div class="comments-head"><strong>Comments</strong><button type="button" data-comments-close aria-label="Close comments">×</button></div>` +
+        `<div class="comments-list">${items.join("")}</div></aside>`
+    : "";
 }
 
 /** Render the block-level children (paragraphs, tables, content controls) of a container. */
@@ -1372,49 +1772,338 @@ async function renderBlocks(ctx: DocxCtx, parent: Element): Promise<string> {
 /** Render a header/footer part with its own relationships in scope. */
 async function renderHeaderFooter(ctx: DocxCtx, hf: HeaderFooter): Promise<string> {
   const saved = ctx.rels;
+  const savedPartPath = ctx.partPath;
   ctx.rels = hf.rels;
+  ctx.partPath = hf.partPath;
   try {
     return await renderBlocks(ctx, hf.doc.documentElement);
   } finally {
     ctx.rels = saved;
+    ctx.partPath = savedPartPath;
   }
 }
+
+const DOCX_PAGINATION_SCRIPT = `(function(){
+var LIMIT=10000,originalPages;
+function pages(){return document.querySelectorAll('body > .pg')}
+function pageBody(page){
+  for(var i=0;i<page.children.length;i++)if(page.children[i].classList.contains('pg-body'))return page.children[i];
+  return null;
+}
+function resetPages(){
+  document.body.style.zoom='1';
+  if(!originalPages){
+    originalPages=Array.prototype.map.call(pages(),function(page){return page.cloneNode(true)});
+    return;
+  }
+  Array.prototype.forEach.call(pages(),function(page){page.remove()});
+  var anchor=document.querySelector('body > template[id^="pg-template-"]');
+  for(var i=0;i<originalPages.length;i++)document.body.insertBefore(originalPages[i].cloneNode(true),anchor);
+}
+function numberVar(page,name){
+  var value=parseFloat(getComputedStyle(page).getPropertyValue(name));
+  return isFinite(value)?Math.max(0,value):0;
+}
+function sectionAtEnd(page){
+  var body=pageBody(page),section=page.dataset.section;
+  if(!body)return section;
+  for(var i=0;i<body.children.length;i++)if(body.children[i].dataset.sectionStart)section=body.children[i].dataset.sectionStart;
+  return section;
+}
+function nextPage(page){
+  var section=sectionAtEnd(page),next=page.nextElementSibling;
+  if(next&&next.classList.contains('pg')&&!next.dataset.hardStart&&next.dataset.section===section)return next;
+  var template=document.getElementById('pg-template-'+section);
+  if(!template||!template.content||!template.content.firstElementChild)return null;
+  next=template.content.firstElementChild.cloneNode(true);
+  page.after(next);
+  return next;
+}
+function selectVariant(root,kind){
+  if(!root)return;
+  var variants=root.querySelectorAll(':scope > .hf-variant'),selected=null;
+  for(var i=0;i<variants.length;i++){
+    variants[i].hidden=true;
+    if(variants[i].dataset.kind===kind)selected=variants[i];
+  }
+  if(!selected&&kind!=='default')for(var j=0;j<variants.length;j++)if(variants[j].dataset.kind==='default')selected=variants[j];
+  if(selected)selected.hidden=false;
+  root.hidden=!selected;
+}
+function syncFields(all){
+  var counts={};
+  for(var i=0;i<all.length;i++)counts[all[i].dataset.section]=(counts[all[i].dataset.section]||0)+1;
+  for(var pageIndex=0;pageIndex<all.length;pageIndex++){
+    var page=all[pageIndex],fields=page.querySelectorAll('[data-docx-field]');
+    for(var j=0;j<fields.length;j++){
+      var kind=fields[j].dataset.docxField,value='';
+      if(kind==='PAGE')value=String(pageIndex+1);
+      else if(kind==='NUMPAGES')value=String(all.length);
+      else if(kind==='SECTION')value=String((parseInt(page.dataset.section,10)||0)+1);
+      else if(kind==='SECTIONPAGES')value=String(counts[page.dataset.section]||1);
+      if(value)fields[j].textContent=value;
+    }
+  }
+}
+function syncFurniture(page,index,firstInSection){
+  var first=firstInSection&&page.dataset.titlePage==='1';
+  var even=page.dataset.evenOdd==='1'&&(index+1)%2===0;
+  var kind=first?'first':even?'even':'default';
+  selectVariant(page.querySelector(':scope > .hf-top'),kind);
+  selectVariant(page.querySelector(':scope > .hf-bot'),kind);
+}
+function reserveFurniture(page){
+  var top=numberVar(page,'--pg-margin-top'),bottom=numberVar(page,'--pg-margin-bottom');
+  var header=page.querySelector(':scope > .hf-top'),footer=page.querySelector(':scope > .hf-bot');
+  if(page.dataset.reserveHeader==='1'&&header&&!header.hidden)top=Math.max(top,numberVar(page,'--header-distance')+header.offsetHeight);
+  if(page.dataset.reserveFooter==='1'&&footer&&!footer.hidden)bottom=Math.max(bottom,numberVar(page,'--footer-distance')+footer.offsetHeight);
+  page.style.setProperty('--body-top',top+'px');
+  page.style.setProperty('--body-bottom',bottom+'px');
+  page.dataset.footerReserve=String(bottom);
+  var body=pageBody(page);
+  if(body){body.style.top=top+'px';body.style.bottom=bottom+'px'}
+}
+function footnoteSource(template,key){
+  if(!template||!template.content)return null;
+  var sources=template.content.querySelectorAll('[data-note-key]');
+  for(var i=0;i<sources.length;i++)if(sources[i].dataset.noteKey===key)return sources[i];
+  return null;
+}
+function syncNotes(page){
+  var body=pageBody(page),notes=page.querySelector(':scope > .pg-notes');
+  if(!body||!notes)return;
+  notes.replaceChildren();
+  var template=document.getElementById('docx-footnotes'),refs=body.querySelectorAll('a[data-note-key^="fn-"]'),seen={};
+  for(var i=0;i<refs.length;i++){
+    var key=refs[i].dataset.noteKey;
+    if(!key||seen[key])continue;
+    var source=footnoteSource(template,key);
+    if(source){var clone=source.cloneNode(true);clone.id=key;notes.appendChild(clone);seen[key]=true}
+  }
+  notes.hidden=!notes.children.length;
+  var base=parseFloat(page.dataset.footerReserve||'0')||0;
+  notes.style.bottom=base+'px';
+  var reserve=base+(notes.hidden?0:notes.offsetHeight+6);
+  page.style.setProperty('--body-bottom',reserve+'px');
+  body.style.bottom=reserve+'px';
+}
+function normalizeParity(){
+  Array.prototype.forEach.call(document.querySelectorAll('body > .pg[data-parity-blank]'),function(page){page.remove()});
+  var all=pages();
+  for(var i=0;i<all.length;i++){
+    var desired=all[i].dataset.startParity;
+    if(!desired)continue;
+    var pageNumber=i+1,correct=desired==='odd'?pageNumber%2===1:pageNumber%2===0;
+    if(correct)continue;
+    var section=i>0?sectionAtEnd(all[i-1]):all[i].dataset.section;
+    var template=document.getElementById('pg-template-'+section);
+    if(!template||!template.content||!template.content.firstElementChild)continue;
+    var blank=template.content.firstElementChild.cloneNode(true),blankBody=pageBody(blank);
+    blank.dataset.parityBlank='1';blank.dataset.hardStart='1';blank.classList.add('pg-blank');
+    blank.removeAttribute('data-start-parity');if(blankBody)blankBody.replaceChildren();
+    all[i].before(blank);all=pages();i++;
+  }
+}
+function syncAll(){
+  normalizeParity();
+  var all=pages(),seen={};
+  syncFields(all);
+  for(var i=0;i<all.length;i++){
+    var section=all[i].dataset.section,first=!seen[section];seen[section]=true;
+    syncFurniture(all[i],i,first);reserveFurniture(all[i]);syncNotes(all[i]);
+  }
+}
+function fits(body){return body.scrollHeight<=body.clientHeight+1}
+function textNodes(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),nodes=[],node;
+  while((node=walker.nextNode()))nodes.push(node);
+  return nodes;
+}
+function pointAt(nodes,offset){
+  var seen=0;
+  for(var i=0;i<nodes.length;i++){
+    var length=nodes[i].data.length;
+    if(offset<=seen+length)return {node:nodes[i],offset:offset-seen};
+    seen+=length;
+  }
+  var last=nodes[nodes.length-1];
+  return {node:last,offset:last?last.data.length:0};
+}
+function fragment(root,start,end){
+  var nodes=textNodes(root);
+  if(!nodes.length)return document.createDocumentFragment();
+  var a=pointAt(nodes,start),b=pointAt(nodes,end),range=document.createRange();
+  range.setStart(a.node,a.offset);range.setEnd(b.node,b.offset);
+  return range.cloneContents();
+}
+function safeTextOffset(root,offset){
+  var text=root.textContent||'',best=offset;
+  var before=text.charCodeAt(best-1),after=text.charCodeAt(best);
+  if(best>0&&best<text.length&&before>=55296&&before<=56319&&after>=56320&&after<=57343)best--;
+  var floor=Math.max(1,best-80);
+  for(var i=best;i>floor;i--){var code=text.charCodeAt(i-1);if(code===9||code===10||code===13||code===32||code===45||(code>=8208&&code<=8212))return i}
+  return best;
+}
+function visualLines(root){
+  var range=document.createRange();range.selectNodeContents(root);
+  var rects=range.getClientRects(),tops=[];
+  for(var i=0;i<rects.length;i++)if(rects[i].width||rects[i].height){
+    var top=Math.round(rects[i].top*2)/2,known=false;
+    for(var j=0;j<tops.length;j++)if(Math.abs(tops[j]-top)<1){known=true;break}
+    if(!known)tops.push(top);
+  }
+  return tops.length;
+}
+function splitParagraph(paragraph,body,target){
+  if(paragraph.dataset.keepLines||paragraph.querySelector('img,svg,math,table,.tab-row,[id]'))return false;
+  var source=paragraph.cloneNode(true),nodes=textNodes(source),total=0;
+  for(var i=0;i<nodes.length;i++)total+=nodes[i].data.length;
+  if(total<2)return false;
+  var low=1,high=total-1,best=0;
+  while(low<=high){
+    var mid=(low+high)>>1;
+    paragraph.replaceChildren(fragment(source,0,mid));
+    if(fits(body)){best=mid;low=mid+1}else high=mid-1;
+  }
+  best=safeTextOffset(source,best);
+  if(best<1||best>=total){paragraph.replaceChildren(fragment(source,0,total));return false}
+  var attempts=0;
+  while(best>0&&attempts++<256){
+    paragraph.replaceChildren(fragment(source,0,best));
+    var rest=source.cloneNode(false);rest.removeAttribute('data-keep-next');rest.appendChild(fragment(source,best,total));
+    target.insertBefore(rest,target.firstChild);
+    var firstLines=visualLines(paragraph),lastLines=visualLines(rest);
+    if(!paragraph.dataset.widowControl||(!firstLines&&!lastLines)||(firstLines>=2&&lastLines>=2))return true;
+    rest.remove();
+    if(firstLines<2)break;
+    best=safeTextOffset(source,best-1);
+  }
+  paragraph.replaceChildren(fragment(source,0,total));
+  return false;
+}
+function splitTable(table,body,target){
+  var tbody=table.tBodies&&table.tBodies[0];
+  if(!tbody||tbody.rows.length<2||table.querySelector('[rowspan]'))return false;
+  var originalRows=Array.prototype.slice.call(tbody.rows),headerCount=0;
+  while(headerCount<originalRows.length&&originalRows[headerCount].dataset.repeatHeader)headerCount++;
+  if(headerCount===originalRows.length)headerCount=0;
+  var headerClones=[];
+  for(var h=0;h<headerCount;h++)headerClones.push(originalRows[h].cloneNode(true));
+  var tail=table.cloneNode(false),children=table.children;
+  for(var i=0;i<children.length;i++)if(children[i].tagName==='COLGROUP')tail.appendChild(children[i].cloneNode(true));
+  var tailBody=document.createElement('tbody'),movedRows=[];tail.appendChild(tailBody);
+  while(!fits(body)&&tbody.rows.length>1)movedRows.unshift(tbody.rows[tbody.rows.length-1]);
+  if(!movedRows.length)return false;
+  for(var j=0;j<headerClones.length;j++)tailBody.appendChild(headerClones[j]);
+  for(var k=0;k<movedRows.length;k++)tailBody.appendChild(movedRows[k]);
+  if(headerCount&&tbody.rows.length===headerCount)table.remove();
+  target.insertBefore(tail,target.firstChild);
+  return true;
+}
+function paginate(){
+  resetPages();syncAll();
+  var operations=0;
+  for(var index=0;index<LIMIT;index++){
+    var all=pages();
+    if(index>=all.length)break;
+    var page=all[index],body=pageBody(page);
+    if(!body||body.clientHeight<=0)continue;
+    while(!fits(body)&&operations++<LIMIT){
+      var targetPage=nextPage(page);syncAll();
+      var target=targetPage&&pageBody(targetPage),last=body.lastElementChild;
+      if(!target||!last)break;
+      if(body.children.length===1){
+        var split=last.tagName==='TABLE'?splitTable(last,body,target):last.classList.contains('p')&&splitParagraph(last,body,target);
+        if(!split){page.style.height='auto';body.style.overflow='visible';break}
+      }else target.insertBefore(last,target.firstChild);
+      syncAll();
+    }
+    var following=page.nextElementSibling;
+    if(following&&following.classList.contains('pg')&&!following.dataset.hardStart){
+      var followingBody=pageBody(following),keep=body.lastElementChild;
+      while(keep&&keep.dataset.keepNext&&followingBody&&followingBody.firstElementChild&&operations++<LIMIT){
+        followingBody.insertBefore(keep,followingBody.firstChild);keep=body.lastElementChild;syncAll();
+      }
+    }
+  }
+  syncAll();
+}
+window.__ooxmlPaginate=paginate;
+})();`;
 
 async function renderDocument(ctx: DocxCtx): Promise<string> {
   const body = descend(ctx.doc.documentElement, "w:body");
   if (!body) throw new Error("Invalid DOCX: empty body");
 
-  // Page geometry from the last section properties
-  const sectPr = child(body, "w:sectPr") ?? ctx.doc.getElementsByTagName("w:sectPr")[0];
-  const pgSz = child(sectPr, "w:pgSz");
-  const pgMar = child(sectPr, "w:pgMar");
-  const pageW = twipToPx(intAttr(pgSz, "w:w") ?? 12240);
-  const pageH = twipToPx(intAttr(pgSz, "w:h") ?? 15840);
-  const mt = twipToPx(intAttr(pgMar, "w:top") ?? 1440);
-  const mr = twipToPx(intAttr(pgMar, "w:right") ?? 1440);
-  const mb = twipToPx(intAttr(pgMar, "w:bottom") ?? 1440);
-  const ml = twipToPx(intAttr(pgMar, "w:left") ?? 1440);
+  interface PageDraft {
+    blocks: string[];
+    section: number;
+    hardStart: boolean;
+    startParity?: "odd" | "even";
+  }
 
-  // Walk blocks, splitting pages at explicit breaks
-  const pages: string[][] = [[]];
-  const pushPage = () => {
-    if (pages[pages.length - 1].length > 0) pages.push([]);
+  // Explicit breaks remain hard boundaries. Measured continuation pages are
+  // inserted before them by the iframe paginator instead of flowing across.
+  let sectionIndex = 0;
+  const pages: PageDraft[] = [{ blocks: [], section: 0, hardStart: false }];
+  const pushPage = (section = sectionIndex, startParity?: "odd" | "even") => {
+    const current = pages[pages.length - 1];
+    if (current.blocks.length > 0) pages.push({ blocks: [], section, hardStart: true, startParity });
+    else {
+      current.section = section;
+      if (startParity) current.startParity = startParity;
+    }
   };
+  const continuousGeometryMatches = (left: DocxSection, right: DocxSection): boolean =>
+    ["pageWidth", "pageHeight", "marginTop", "marginRight", "marginBottom", "marginLeft"].every(
+      (key) =>
+        Math.abs(left[key as keyof DocxSection] as number) === Math.abs(right[key as keyof DocxSection] as number),
+    );
 
   const walkBlocks = async (parent: Element): Promise<void> => {
     for (const block of parent.children) {
       switch (block.tagName) {
         case "w:p": {
+          ctx.renderSectionIndex = sectionIndex;
           const result = await renderParagraph(ctx, block);
           if (result.pageBreakBefore) pushPage();
-          pages[pages.length - 1].push(result.html);
-          if (result.pageBreakAfter) pushPage();
-          // A section break mid-document also starts a new page
-          if (descend(block, "w:pPr", "w:sectPr")) pushPage();
+          for (let segmentIndex = 0; segmentIndex < result.pageSegments.length; segmentIndex++) {
+            if (segmentIndex > 0) pushPage(sectionIndex);
+            pages[pages.length - 1].blocks.push(result.pageSegments[segmentIndex]);
+          }
+          // A paragraph-level sectPr closes the current section. The body-level
+          // sectPr describes the final section and is not itself a content block.
+          if (descend(block, "w:pPr", "w:sectPr")) {
+            const endingSection = ctx.sections[sectionIndex];
+            const nextSectionIndex = Math.min(sectionIndex + 1, ctx.sections.length - 1);
+            const nextSection = ctx.sections[nextSectionIndex];
+            sectionIndex = nextSectionIndex;
+            if (
+              endingSection?.breakType === "continuous" &&
+              nextSection &&
+              continuousGeometryMatches(endingSection, nextSection)
+            ) {
+              pages[pages.length - 1].blocks.push(
+                `<div class="section-boundary" data-section-start="${sectionIndex}"></div>`,
+              );
+            } else {
+              // nextColumn falls back to a page because this lightweight HTML
+              // renderer does not model Word's independent column cursors.
+              pushPage(
+                sectionIndex,
+                endingSection?.breakType === "oddPage"
+                  ? "odd"
+                  : endingSection?.breakType === "evenPage"
+                    ? "even"
+                    : undefined,
+              );
+            }
+          }
           break;
         }
         case "w:tbl":
-          pages[pages.length - 1].push(await renderTable(ctx, block));
+          ctx.renderSectionIndex = sectionIndex;
+          pages[pages.length - 1].blocks.push(await renderTable(ctx, block));
           break;
         case "w:sdt": {
           const content = child(block, "w:sdtContent");
@@ -1426,9 +2115,12 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
   };
   await walkBlocks(body);
 
-  // Footnotes / endnotes, appended on the final page (references are now numbered)
-  const notesHtml = await renderNotesSection(ctx);
-  if (notesHtml) pages[pages.length - 1].push(notesHtml);
+  // Physical-page footnotes are cloned from a hidden template by the paginator;
+  // endnotes remain an end-of-document story.
+  const footnotesTemplate = await renderFootnoteTemplate(ctx);
+  const endnotesHtml = await renderEndnotesSection(ctx);
+  if (endnotesHtml) pages[pages.length - 1].blocks.push(endnotesHtml);
+  const commentsHtml = await renderCommentsSection(ctx);
 
   // Document-wide default text style (docDefaults + default paragraph style)
   const baseChain = buildRPrChain(ctx, undefined, undefined);
@@ -1438,42 +2130,104 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     baseStyles.push(`font-family:${cssFontStack(ctx.theme.minorFont)}`);
   }
 
-  // Header/footer furniture. Rendered once; the first page may use a distinct
-  // "first" header/footer when w:titlePg is set, otherwise the default repeats.
-  const defHdr = ctx.headers.get("default");
-  const defFtr = ctx.footers.get("default");
-  const firstHdr = ctx.titlePg ? ctx.headers.get("first") : undefined;
-  const firstFtr = ctx.titlePg ? ctx.footers.get("first") : undefined;
-  const defHdrHtml = defHdr ? await renderHeaderFooter(ctx, defHdr) : "";
-  const defFtrHtml = defFtr ? await renderHeaderFooter(ctx, defFtr) : "";
-  const firstHdrHtml = firstHdr ? await renderHeaderFooter(ctx, firstHdr) : "";
-  const firstFtrHtml = firstFtr ? await renderHeaderFooter(ctx, firstFtr) : "";
-  const hasHF = ctx.headers.size > 0 || ctx.footers.size > 0;
+  interface RenderedSection extends DocxSection {
+    defaultHeader: string;
+    defaultFooter: string;
+    firstHeader: string;
+    firstFooter: string;
+    evenHeader: string;
+    evenFooter: string;
+  }
+  const renderedSections: RenderedSection[] = [];
+  for (let renderedSectionIndex = 0; renderedSectionIndex < ctx.sections.length; renderedSectionIndex++) {
+    const section = ctx.sections[renderedSectionIndex];
+    ctx.renderSectionIndex = renderedSectionIndex;
+    const defaultHeaderPart = section.headers.get("default");
+    const defaultFooterPart = section.footers.get("default");
+    const firstHeaderPart = section.titlePage ? section.headers.get("first") : undefined;
+    const firstFooterPart = section.titlePage ? section.footers.get("first") : undefined;
+    const evenHeaderPart = ctx.evenAndOddHeaders ? section.headers.get("even") : undefined;
+    const evenFooterPart = ctx.evenAndOddHeaders ? section.footers.get("even") : undefined;
+    renderedSections.push({
+      ...section,
+      defaultHeader: defaultHeaderPart ? await renderHeaderFooter(ctx, defaultHeaderPart) : "",
+      defaultFooter: defaultFooterPart ? await renderHeaderFooter(ctx, defaultFooterPart) : "",
+      firstHeader: firstHeaderPart ? await renderHeaderFooter(ctx, firstHeaderPart) : "",
+      firstFooter: firstFooterPart ? await renderHeaderFooter(ctx, firstFooterPart) : "",
+      evenHeader: evenHeaderPart ? await renderHeaderFooter(ctx, evenHeaderPart) : "",
+      evenFooter: evenFooterPart ? await renderHeaderFooter(ctx, evenFooterPart) : "",
+    });
+  }
+
+  const sectionStyle = (section: DocxSection): string =>
+    [
+      `--pg-width:${px(section.pageWidth)}`,
+      `--pg-height:${px(section.pageHeight)}`,
+      `--pg-margin-top:${px(section.marginTop)}`,
+      `--pg-margin-right:${px(section.marginRight)}`,
+      `--pg-margin-bottom:${px(section.marginBottom)}`,
+      `--pg-margin-left:${px(section.marginLeft)}`,
+      `--header-distance:${px(section.headerDistance)}`,
+      `--footer-distance:${px(section.footerDistance)}`,
+      `--body-top:${px(section.marginTop)}`,
+      `--body-bottom:${px(section.marginBottom)}`,
+    ].join(";");
+  const furniture = (className: string, variants: { default: string; first: string; even: string }): string => {
+    const parts = (["default", "first", "even"] as const)
+      .filter((kind) => variants[kind])
+      .map((kind) => `<div class="hf-variant" data-kind="${kind}" hidden>${variants[kind]}</div>`)
+      .join("");
+    return `<div class="hf ${className}"${parts ? "" : " hidden"}>${parts}</div>`;
+  };
+  const pageShell = (
+    section: RenderedSection,
+    index: number,
+    bodyHtml: string,
+    hardStart: boolean,
+    startParity?: "odd" | "even",
+  ): string => {
+    return (
+      `<div class="pg" data-section="${index}" data-title-page="${section.titlePage ? 1 : 0}" ` +
+      `data-even-odd="${ctx.evenAndOddHeaders ? 1 : 0}" data-reserve-header="${section.reserveHeader ? 1 : 0}" ` +
+      `data-reserve-footer="${section.reserveFooter ? 1 : 0}"${hardStart ? ' data-hard-start="1"' : ""}` +
+      `${startParity ? ` data-start-parity="${startParity}"` : ""} ` +
+      `style="${sectionStyle(section)}">` +
+      furniture("hf-top", {
+        default: section.defaultHeader,
+        first: section.firstHeader,
+        even: section.evenHeader,
+      }) +
+      `<div class="pg-body">${bodyHtml}</div>` +
+      `<div class="pg-notes" hidden></div>` +
+      furniture("hf-bot", {
+        default: section.defaultFooter,
+        first: section.firstFooter,
+        even: section.evenFooter,
+      }) +
+      `</div>`
+    );
+  };
 
   const pagesHtml = pages
-    .map((blocks, idx) => {
-      if (!hasHF) return `<div class="pg">${blocks.join("")}</div>`;
-      const hdr = idx === 0 && firstHdrHtml ? firstHdrHtml : defHdrHtml;
-      const ftr = idx === 0 && firstFtrHtml ? firstFtrHtml : defFtrHtml;
-      return (
-        `<div class="pg pg-hf">` +
-        (hdr ? `<div class="hf hf-top">${hdr}</div>` : "") +
-        `<div class="pg-body">${blocks.join("")}</div>` +
-        (ftr ? `<div class="hf hf-bot">${ftr}</div>` : "") +
-        `</div>`
-      );
+    .map((page) => {
+      const index = Math.max(0, Math.min(page.section, renderedSections.length - 1));
+      const section = renderedSections[index];
+      return pageShell(section, index, page.blocks.join(""), page.hardStart, page.startParity);
     })
+    .join("");
+  const pageTemplates = renderedSections
+    .map((section, index) => `<template id="pg-template-${index}">${pageShell(section, index, "", false)}</template>`)
     .join("");
 
   return [
     "<!DOCTYPE html>",
-    '<html><head><meta charset="utf-8"><style>',
+    `<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${OFFICE_PREVIEW_CSP}"><style>`,
     "*{margin:0;padding:0;box-sizing:border-box;}",
     "html,body{background:#E9E9ED;}",
-    `.pg{width:${px(pageW)};min-height:${px(pageH)};padding:${px(mt)} ${px(mr)} ${px(mb)} ${px(ml)};` +
+    ".pg{width:var(--pg-width);height:var(--pg-height);position:relative;overflow:hidden;" +
       `background:#fff;margin:16px auto;box-shadow:0 1px 4px rgba(0,0,0,0.18);` +
-      `${baseStyles.join(";")};color:#000;line-height:1.35;display:flow-root;}`,
-    ".p{white-space:pre-wrap;word-wrap:break-word;min-height:1em;}",
+      `${baseStyles.join(";")};color:#000;line-height:1.35;}`,
+    ".p{white-space:pre-wrap;overflow-wrap:break-word;min-height:1em;orphans:2;widows:2;}",
     "table{border-collapse:collapse;table-layout:fixed;}",
     "td{word-wrap:break-word;}",
     "a{color:#0563C1;text-decoration:underline;}",
@@ -1482,17 +2236,33 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     "math{font-size:1.1em;}",
     ".noteref a{color:inherit;text-decoration:none;}",
     ".noteref a:hover{text-decoration:underline;}",
+    ".commentref{display:inline-block;position:relative;width:0;height:0;line-height:0;}",
+    ".commentref a{position:absolute;left:2px;top:-1.35em;display:grid;place-items:center;min-width:1.25em;height:1.25em;border-radius:999px;background:#FFF1A8;color:#604B00;font-size:.72em;line-height:1;text-decoration:none;z-index:5;}",
+    ".comment-anchor{position:relative;top:-.15em;}",
     ".notes{margin-top:20px;padding-top:8px;border-top:1px solid #C9CCD1;}",
     ".notes-h{font-size:0.82em;font-weight:bold;color:#444;margin-bottom:4px;}",
     ".note{display:flex;gap:6px;font-size:0.82em;line-height:1.35;margin:2px 0;}",
     ".note-num{color:#0563C1;text-decoration:none;flex:0 0 auto;min-width:1.4em;text-align:right;}",
     ".note-body .p{min-height:0;}",
-    ".pg-hf{display:flex;flex-direction:column;}",
-    ".pg-hf .pg-body{flex:1 0 auto;display:flow-root;}",
-    ".hf{color:#3c3c3c;}",
-    ".hf-top{margin-bottom:12px;}",
-    ".hf-bot{margin-top:auto;padding-top:8px;}",
+    ".comments-toggle{position:fixed;right:14px;top:14px;z-index:20;border:1px solid #C6A528;border-radius:999px;padding:7px 11px;background:#FFFBE8;color:#332800;font:600 13px system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.16);cursor:pointer;}",
+    ".comments-toggle span{display:inline-grid;place-items:center;min-width:1.35em;height:1.35em;margin-left:4px;border-radius:999px;background:#E3C24B;}",
+    ".comments{position:fixed;right:14px;top:54px;z-index:21;width:min(360px,calc(100vw - 28px));max-height:calc(100vh - 68px);overflow:hidden;background:#fff;border:1px solid #D8B94C;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.22);font-family:system-ui,sans-serif;}",
+    ".comments[hidden]{display:none;}.comments-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #E6DDAF;}",
+    ".comments-head button{border:0;background:transparent;font:22px/1 system-ui,sans-serif;cursor:pointer;color:#5B5441;}.comments-list{max-height:calc(100vh - 118px);overflow:auto;padding:6px;}",
+    ".comment{display:flex;gap:8px;margin:5px 0;padding:8px;background:#FFFBE8;border-left:3px solid #E3C24B;border-radius:3px;font-size:12px;}",
+    ".comment.is-active{outline:2px solid #C6A528;outline-offset:-1px;}",
+    ".comment-num{display:grid;place-items:center;align-self:start;min-width:1.45em;height:1.45em;border-radius:999px;background:#E3C24B;color:#332800;text-decoration:none;font-weight:bold;}",
+    ".comment-content{min-width:0;flex:1;}.comment-content .p{min-height:0;}.comment-meta{font-size:.86em;color:#6B6250;margin-bottom:3px;}",
+    ".pg-body{position:absolute;left:var(--pg-margin-left);right:var(--pg-margin-right);top:var(--body-top);bottom:var(--body-bottom);display:flow-root;overflow:hidden;}",
+    ".hf{position:absolute;left:var(--pg-margin-left);right:var(--pg-margin-right);color:#3c3c3c;z-index:3;}",
+    ".hf-top{top:var(--header-distance);}",
+    ".hf-bot{bottom:var(--footer-distance);}",
+    ".hf-variant[hidden]{display:none;}",
     ".hf .p{min-height:0;}",
+    ".pg-notes{position:absolute;left:var(--pg-margin-left);right:var(--pg-margin-right);bottom:var(--body-bottom);max-height:42%;overflow:hidden;padding-top:5px;border-top:1px solid #777;background:#fff;z-index:4;}",
+    ".pg-notes[hidden]{display:none;}",
+    ".pg-notes .note{font-size:0.78em;line-height:1.25;}",
+    ".section-boundary{display:none!important;}",
     ".tab-row{display:flex;align-items:baseline;width:100%;}",
     ".tab-ld{flex:1 1 auto;min-width:1.5em;align-self:center;height:0;margin:0 3px;position:relative;top:0.35em;}",
     ".tab-ld.ld-d{border-bottom:1.5px dotted;}",
@@ -1500,8 +2270,11 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     ".tab-ld.ld-u{border-bottom:1px solid;top:0.45em;}",
     "</style></head><body>",
     pagesHtml,
-    // Fit the page to the viewport width
-    `<script>(function(){var W=${Math.ceil(pageW) + 32};function f(){var z=Math.min(1,document.documentElement.clientWidth/W);document.body.style.zoom=z;}window.addEventListener('resize',f);f();})();</script>`,
+    footnotesTemplate,
+    pageTemplates,
+    commentsHtml,
+    // Paginate after fonts/images settle, then fit the page stack to the viewport.
+    `<script>${DOCX_PAGINATION_SCRIPT}(function(){var userZoom=1;function f(){document.body.style.zoom='1';var W=0,p=document.querySelectorAll('body > .pg');for(var i=0;i<p.length;i++)W=Math.max(W,p[i].offsetWidth);var z=Math.min(1,document.documentElement.clientWidth/(W+32));document.body.style.zoom=z*userZoom;}function run(){window.__ooxmlPaginate();f()}function setupComments(){var toggle=document.querySelector('.comments-toggle'),panel=document.getElementById('docx-comments');if(!toggle||!panel)return;function setOpen(open,id){panel.hidden=!open;toggle.setAttribute('aria-expanded',open?'true':'false');var items=panel.querySelectorAll('.comment');for(var i=0;i<items.length;i++)items[i].classList.toggle('is-active',items[i].id===id);if(open&&id){var item=document.getElementById(id);if(item)item.scrollIntoView({block:'nearest'})}}toggle.addEventListener('click',function(){setOpen(panel.hidden)});var close=panel.querySelector('[data-comments-close]');if(close)close.addEventListener('click',function(){setOpen(false);toggle.focus()});document.addEventListener('click',function(event){var target=event.target,link=target&&target.closest&&target.closest('a[href^="#comment-"]');if(!link)return;event.preventDefault();setOpen(true,link.getAttribute('href').slice(1))});document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!panel.hidden){setOpen(false);toggle.focus()}})}window.addEventListener('message',function(event){var data=event.data;if(event.source!==parent||!data||data.type!=='wingman:docx-zoom')return;var next=Number(data.value);if(!Number.isFinite(next))return;userZoom=Math.max(.5,Math.min(2,next));f()});window.addEventListener('resize',f);window.addEventListener('load',run);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run);requestAnimationFrame(run);setupComments()})();</script>`,
     "</body></html>",
   ].join("");
 }

@@ -25,22 +25,33 @@ export const SPREADSHEETML_NAMESPACES = [
 ] as const;
 
 export const DEFAULT_OOXML_READER_LIMITS = Object.freeze({
-  maxArchiveEntries: 20_000,
+  maxArchiveEntries: 4_096,
+  maxArchiveEntryBytes: 128 * 1024 * 1024,
+  maxTotalInflatedBytes: 256 * 1024 * 1024,
   maxXmlPartBytes: 32 * 1024 * 1024,
   maxTotalXmlBytes: 128 * 1024 * 1024,
   maxXmlNodes: 500_000,
   maxXmlDepth: 256,
+  maxImageBytes: 32 * 1024 * 1024,
+  maxImagePixels: 40_000_000,
+  maxTotalImagePixels: 100_000_000,
 });
+export const MAX_OOXML_INPUT_BYTES = 128 * 1024 * 1024;
 export const MAX_OOXML_METADATA_ENTRIES = 20_000;
 
 const MAX_OOXML_PARSE_PROBLEMS = 64;
 
 export interface OoxmlReaderLimits {
   maxArchiveEntries: number;
+  maxArchiveEntryBytes: number;
+  maxTotalInflatedBytes: number;
   maxXmlPartBytes: number;
   maxTotalXmlBytes: number;
   maxXmlNodes: number;
   maxXmlDepth: number;
+  maxImageBytes: number;
+  maxImagePixels: number;
+  maxTotalImagePixels: number;
 }
 
 export class OoxmlResourceLimitError extends Error {
@@ -54,6 +65,14 @@ export class OoxmlXmlError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "OoxmlXmlError";
+  }
+}
+
+/** Reject an oversized compressed package before JSZip allocates/inflates it. */
+export function assertOoxmlInputSize(input: Blob | ArrayBuffer, maxBytes = MAX_OOXML_INPUT_BYTES): void {
+  const bytes = "byteLength" in input ? input.byteLength : input.size;
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > maxBytes) {
+    throw new OoxmlResourceLimitError(`OOXML package is over the ${maxBytes}-byte compressed input limit`);
   }
 }
 
@@ -236,7 +255,50 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function parseXml(xml: string): Document {
+/** Canonicalize the six-digit RGB values used throughout OOXML. */
+export function normalizeHexColor(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const hex = value.startsWith("#") ? value.slice(1) : value;
+  return /^[0-9a-f]{6}$/i.test(hex) ? hex.toUpperCase() : undefined;
+}
+
+/**
+ * Accept the small, inert CSS-color grammar needed by legacy VML and by our
+ * generated rgba() values. This is safe to interpolate into a style or SVG
+ * attribute; document-authored quotes, semicolons and URL syntax are rejected.
+ */
+export function sanitizeCssColor(value: string | null | undefined): string | undefined {
+  const color = value?.trim();
+  if (!color) return undefined;
+  if (/^#[0-9a-f]{3,4}$/i.test(color) || /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(color)) return color;
+  if (/^[a-z]+$/i.test(color)) return color;
+  if (/^rgba?\([0-9.,%+\-\s]+\)$/i.test(color)) return color;
+  return undefined;
+}
+
+const SAFE_HYPERLINK_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+
+/** Allow navigation targets that cannot execute document-authored script. */
+export function sanitizeHyperlinkUrl(url: string): string | undefined {
+  if (!url) return undefined;
+  let browserComparable = "";
+  for (const character of url) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && codePoint > 0x20) browserComparable += character;
+  }
+  const match = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(browserComparable);
+  if (!match) return url;
+  return SAFE_HYPERLINK_SCHEMES.has(match[1].toLowerCase()) ? url : undefined;
+}
+
+/** CSP used by converter-owned srcdoc documents. */
+export const OFFICE_PREVIEW_CSP =
+  "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'";
+
+export function parseXml(xml: string, label = "XML part"): Document {
+  // DOMParser does not expose depth/node controls. Preflight with the bounded
+  // streaming parser before constructing the browser DOM used by renderers.
+  parseOoxmlXml(xml, label);
   const document = new DOMParser().parseFromString(xml, "application/xml");
   const parserError = document.getElementsByTagNameNS("*", "parsererror")[0];
   if (parserError) throw new OoxmlXmlError(parserError.textContent?.trim() || "XML is malformed");
@@ -571,7 +633,7 @@ function nonCanonicalPartPath(path: string): boolean {
   );
 }
 
-/** Bounded, cached access to XML parts in one JSZip package. */
+/** Bounded, cached access to untrusted parts in one JSZip package. */
 export class OoxmlPackageReader {
   readonly paths: string[];
   readonly pathProblems: string[] = [];
@@ -579,7 +641,11 @@ export class OoxmlPackageReader {
   private readonly limits: OoxmlReaderLimits;
   private readonly textCache = new Map<string, Promise<string | undefined>>();
   private readonly xmlCache = new Map<string, Promise<OoxmlXmlElement | undefined>>();
+  private readonly inflatedBytesByPath = new Map<string, number>();
+  private readonly imagePixelsByPath = new Map<string, number>();
+  private totalInflatedBytes = 0;
   private totalXmlBytes = 0;
+  private totalImagePixels = 0;
 
   constructor(zip: JSZip, limits: Partial<OoxmlReaderLimits> = {}) {
     this.zip = zip;
@@ -592,8 +658,26 @@ export class OoxmlPackageReader {
       );
     }
     const folded = new Map<string, string>();
+    let declaredTotal = 0;
     for (const entry of entries) {
       const path = entry.name;
+      const declaredSize = (entry as unknown as InternalZipEntry)._data?.uncompressedSize;
+      if (declaredSize !== undefined) {
+        if (!Number.isSafeInteger(declaredSize) || declaredSize < 0) {
+          throw new OoxmlResourceLimitError(`${path} has an invalid declared inflated size`);
+        }
+        if (declaredSize > this.limits.maxArchiveEntryBytes) {
+          throw new OoxmlResourceLimitError(
+            `${path} declares ${declaredSize} inflated bytes, over the ${this.limits.maxArchiveEntryBytes}-byte archive entry limit`,
+          );
+        }
+        declaredTotal += declaredSize;
+        if (declaredTotal > this.limits.maxTotalInflatedBytes) {
+          throw new OoxmlResourceLimitError(
+            `OOXML package declares more than the ${this.limits.maxTotalInflatedBytes}-byte total inflated limit`,
+          );
+        }
+      }
       const unsafeOriginalName = (entry as unknown as InternalZipEntry).unsafeOriginalName;
       if (unsafeOriginalName && unsafeOriginalName !== path) {
         this.pathProblems.push(`OOXML part name "${unsafeOriginalName}" was sanitized to "${path}"`);
@@ -634,6 +718,61 @@ export class OoxmlPackageReader {
     return pending;
   }
 
+  /** Inflate a non-XML part while applying the archive-wide byte budget. */
+  async bytes(path: string): Promise<Uint8Array | undefined> {
+    const entry = this.zip.file(path);
+    if (!entry) return undefined;
+    const bytes = await entry.async("uint8array");
+    this.chargeInflated(path, bytes.byteLength);
+    return bytes;
+  }
+
+  /** Charge decoded raster dimensions once per package part. */
+  trackImagePixels(path: string, pixels: number): void {
+    if (!Number.isSafeInteger(pixels) || pixels <= 0) {
+      throw new OoxmlResourceLimitError(`${path} has invalid image dimensions`);
+    }
+    if (pixels > this.limits.maxImagePixels) {
+      throw new OoxmlResourceLimitError(
+        `${path} contains ${pixels} pixels, over the ${this.limits.maxImagePixels}-pixel image limit`,
+      );
+    }
+    const previous = this.imagePixelsByPath.get(path) ?? 0;
+    if (pixels <= previous) return;
+    this.totalImagePixels += pixels - previous;
+    if (this.totalImagePixels > this.limits.maxTotalImagePixels) {
+      throw new OoxmlResourceLimitError(
+        `OOXML preview images exceed the ${this.limits.maxTotalImagePixels}-pixel cumulative limit`,
+      );
+    }
+    this.imagePixelsByPath.set(path, pixels);
+  }
+
+  assertImageBytes(path: string, bytes: number): void {
+    if (bytes > this.limits.maxImageBytes) {
+      throw new OoxmlResourceLimitError(
+        `${path} contains ${bytes} bytes, over the ${this.limits.maxImageBytes}-byte image limit`,
+      );
+    }
+  }
+
+  private chargeInflated(path: string, bytes: number): void {
+    if (bytes > this.limits.maxArchiveEntryBytes) {
+      throw new OoxmlResourceLimitError(
+        `${path} contains ${bytes} inflated bytes, over the ${this.limits.maxArchiveEntryBytes}-byte archive entry limit`,
+      );
+    }
+    const previous = this.inflatedBytesByPath.get(path) ?? 0;
+    if (bytes <= previous) return;
+    this.totalInflatedBytes += bytes - previous;
+    if (this.totalInflatedBytes > this.limits.maxTotalInflatedBytes) {
+      throw new OoxmlResourceLimitError(
+        `OOXML preview exceeds the ${this.limits.maxTotalInflatedBytes}-byte total inflated limit`,
+      );
+    }
+    this.inflatedBytesByPath.set(path, bytes);
+  }
+
   private async readText(path: string): Promise<string | undefined> {
     const entry = this.zip.file(path);
     if (!entry) return undefined;
@@ -645,6 +784,7 @@ export class OoxmlPackageReader {
     }
     const text = await entry.async("string");
     const bytes = new TextEncoder().encode(text).byteLength;
+    this.chargeInflated(path, bytes);
     if (bytes > this.limits.maxXmlPartBytes) {
       throw new OoxmlResourceLimitError(
         `${path} contains ${bytes} bytes, over the ${this.limits.maxXmlPartBytes}-byte XML part limit`,
@@ -660,12 +800,177 @@ export class OoxmlPackageReader {
   }
 }
 
+function readUint24Le(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+}
+
+function rasterImageDimensions(bytes: Uint8Array, mime: string): { width: number; height: number } | undefined {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // PNG: signature + IHDR width/height.
+  if (
+    mime === "image/png" &&
+    bytes.length >= 24 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a &&
+    String.fromCharCode(...bytes.subarray(12, 16)) === "IHDR"
+  ) {
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  // GIF logical screen descriptor.
+  if (
+    mime === "image/gif" &&
+    bytes.length >= 10 &&
+    (String.fromCharCode(...bytes.subarray(0, 6)) === "GIF87a" ||
+      String.fromCharCode(...bytes.subarray(0, 6)) === "GIF89a")
+  ) {
+    return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  }
+  // BMP DIB header.
+  if (mime === "image/bmp" && bytes.length >= 22 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
+    const dibSize = view.getUint32(14, true);
+    if (dibSize === 12 && bytes.length >= 22) {
+      return { width: view.getUint16(18, true), height: view.getUint16(20, true) };
+    }
+    if (dibSize >= 40 && bytes.length >= 26) {
+      return { width: Math.abs(view.getInt32(18, true)), height: Math.abs(view.getInt32(22, true)) };
+    }
+  }
+  // WebP VP8X / VP8 / VP8L headers.
+  if (
+    mime === "image/webp" &&
+    bytes.length >= 20 &&
+    String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
+  ) {
+    const kind = String.fromCharCode(...bytes.subarray(12, 16));
+    if (kind === "VP8X" && bytes.length >= 30) {
+      return { width: readUint24Le(bytes, 24) + 1, height: readUint24Le(bytes, 27) + 1 };
+    }
+    const data = 20;
+    if (
+      kind === "VP8 " &&
+      bytes.length >= data + 10 &&
+      bytes[data + 3] === 0x9d &&
+      bytes[data + 4] === 0x01 &&
+      bytes[data + 5] === 0x2a
+    ) {
+      return { width: view.getUint16(data + 6, true) & 0x3fff, height: view.getUint16(data + 8, true) & 0x3fff };
+    }
+    if (kind === "VP8L" && bytes.length >= data + 5 && bytes[data] === 0x2f) {
+      const packed = view.getUint32(data + 1, true);
+      return { width: (packed & 0x3fff) + 1, height: ((packed >>> 14) & 0x3fff) + 1 };
+    }
+  }
+  // TIFF: read the first IFD's ImageWidth/ImageLength scalar tags.
+  if (
+    mime === "image/tiff" &&
+    bytes.length >= 8 &&
+    ((bytes[0] === 0x49 && bytes[1] === 0x49) || (bytes[0] === 0x4d && bytes[1] === 0x4d))
+  ) {
+    const littleEndian = bytes[0] === 0x49;
+    if (view.getUint16(2, littleEndian) === 42) {
+      const ifdOffset = view.getUint32(4, littleEndian);
+      if (ifdOffset + 2 <= bytes.length) {
+        const entryCount = Math.min(view.getUint16(ifdOffset, littleEndian), 4_096);
+        let width = 0;
+        let height = 0;
+        for (let index = 0; index < entryCount; index++) {
+          const entryOffset = ifdOffset + 2 + index * 12;
+          if (entryOffset + 12 > bytes.length) break;
+          const tag = view.getUint16(entryOffset, littleEndian);
+          if (tag !== 256 && tag !== 257) continue;
+          const type = view.getUint16(entryOffset + 2, littleEndian);
+          const count = view.getUint32(entryOffset + 4, littleEndian);
+          if (count !== 1 || (type !== 3 && type !== 4)) continue;
+          const value =
+            type === 3 ? view.getUint16(entryOffset + 8, littleEndian) : view.getUint32(entryOffset + 8, littleEndian);
+          if (tag === 256) width = value;
+          else height = value;
+        }
+        if (width > 0 && height > 0) return { width, height };
+      }
+    }
+  }
+  // JPEG: walk bounded marker segments until a Start Of Frame marker.
+  if (mime === "image/jpeg" && bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 3 < bytes.length) {
+      while (offset < bytes.length && bytes[offset] !== 0xff) offset++;
+      while (offset < bytes.length && bytes[offset] === 0xff) offset++;
+      if (offset >= bytes.length) break;
+      const marker = bytes[offset++];
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 1 >= bytes.length) break;
+      const length = view.getUint16(offset);
+      if (length < 2 || offset + length > bytes.length) break;
+      const isSof =
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf);
+      if (isSof && length >= 7) {
+        return { width: view.getUint16(offset + 5), height: view.getUint16(offset + 3) };
+      }
+      offset += length;
+    }
+  }
+  return undefined;
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function assertSafeSvg(bytes: Uint8Array, path: string): void {
+  let xml: string;
+  try {
+    xml = decodeUtf8(bytes);
+  } catch {
+    throw new OoxmlXmlError(`${path} is not valid UTF-8 SVG data`);
+  }
+  const root = parseOoxmlXml(xml, path, { maxXmlNodes: 100_000, maxXmlDepth: 128 });
+  if (root.localName !== "svg") throw new OoxmlXmlError(`${path} does not contain an SVG root element`);
+  const forbidden = new Set(["script", "foreignObject", "iframe", "object", "embed", "audio", "video"]);
+  for (const element of [root, ...ooxmlDescendants(root)]) {
+    if (forbidden.has(element.localName)) throw new OoxmlXmlError(`${path} contains forbidden SVG content`);
+    for (const attribute of element.attributes) {
+      if (attribute.localName.toLowerCase().startsWith("on")) {
+        throw new OoxmlXmlError(`${path} contains an SVG event handler`);
+      }
+      if (attribute.localName === "href" && attribute.value && !attribute.value.startsWith("#")) {
+        throw new OoxmlXmlError(`${path} contains an external SVG resource reference`);
+      }
+      if (/javascript:|@import|url\s*\(\s*[^#)]/i.test(attribute.value)) {
+        throw new OoxmlXmlError(`${path} contains an unsafe SVG style or URL`);
+      }
+    }
+    if (element.localName === "style" && /javascript:|@import|url\s*\(\s*[^#)]/i.test(ooxmlText(element))) {
+      throw new OoxmlXmlError(`${path} contains an unsafe SVG stylesheet`);
+    }
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
 /**
  * Load a zip-internal media part as a data URL, with caching. Unsupported
  * formats (EMF/WMF, …) cache an empty sentinel and return undefined.
  */
 export async function loadMediaDataUrl(
-  zip: { file(path: string): { async(type: "base64"): Promise<string> } | null },
+  reader: OoxmlPackageReader,
   cache: Map<string, string>,
   path: string,
 ): Promise<string | undefined> {
@@ -679,8 +984,17 @@ export async function loadMediaDataUrl(
     return undefined;
   }
 
-  const base64 = await zip.file(path)?.async("base64");
-  const dataUrl = base64 ? `data:${mime};base64,${base64}` : "";
+  const bytes = await reader.bytes(path);
+  if (!bytes) return undefined;
+  reader.assertImageBytes(path, bytes.byteLength);
+  if (mime === "image/svg+xml") {
+    assertSafeSvg(bytes, path);
+  } else {
+    const dimensions = rasterImageDimensions(bytes, mime);
+    if (!dimensions) throw new OoxmlResourceLimitError(`${path} has an unsupported or malformed raster image header`);
+    reader.trackImagePixels(path, dimensions.width * dimensions.height);
+  }
+  const dataUrl = bytes.length ? `data:${mime};base64,${bytesToBase64(bytes)}` : "";
   cache.set(path, dataUrl);
   return dataUrl || undefined;
 }
@@ -704,7 +1018,9 @@ export function parseThemeDoc(doc: Document | null): OoxmlTheme {
   if (clrScheme) {
     for (const slot of clrScheme.children) {
       const name = slot.tagName.replace("a:", "");
-      const hex = child(slot, "a:srgbClr")?.getAttribute("val") || child(slot, "a:sysClr")?.getAttribute("lastClr");
+      const hex = normalizeHexColor(
+        child(slot, "a:srgbClr")?.getAttribute("val") || child(slot, "a:sysClr")?.getAttribute("lastClr"),
+      );
       if (hex) theme.colors[name] = hex;
     }
   }
