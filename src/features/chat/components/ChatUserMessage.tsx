@@ -89,7 +89,18 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleStartEdit = () => {
     if (isResponding) return;
     setEditContent(textContent);
-    setEditAdditionalTextContent(editableAdditionalText);
+    // Preserve `artifact_ref` paths so attachments aren't lost.
+    try {
+      const existingPaths = editableAdditionalText.flatMap((p) => parseArtifactReference(p.text));
+      const toAdd = attachedArtifactPaths.filter((p) => !existingPaths.includes(p));
+      setEditAdditionalTextContent(
+        toAdd.length
+          ? [...editableAdditionalText, { type: "text", text: formatArtifactReference(toAdd) }]
+          : editableAdditionalText,
+      );
+    } catch {
+      setEditAdditionalTextContent(editableAdditionalText);
+    }
     setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
@@ -97,7 +108,18 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditContent(textContent);
-    setEditAdditionalTextContent(editableAdditionalText);
+    // Restore original text and artifact refs.
+    try {
+      const existingPaths = editableAdditionalText.flatMap((p) => parseArtifactReference(p.text));
+      const toAdd = attachedArtifactPaths.filter((p) => !existingPaths.includes(p));
+      setEditAdditionalTextContent(
+        toAdd.length
+          ? [...editableAdditionalText, { type: "text", text: formatArtifactReference(toAdd) }]
+          : editableAdditionalText,
+      );
+    } catch {
+      setEditAdditionalTextContent(editableAdditionalText);
+    }
     setEditMediaContent(mediaContent);
   };
 
@@ -133,7 +155,29 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
       newContent.push({ type: "text", text: formatArtifactReference(keptMediaRefs) });
     }
     const editedMessage = { ...message, content: newContent };
-    await sendMessage(editedMessage, truncatedHistory);
+
+    // Compute removed artifact paths and delete only unreferenced ones.
+    const newArtifactPaths = new Set<string>([
+      ...editAdditionalTextContent.flatMap((p) => parseArtifactReference(p.text)),
+      ...keptMediaRefs,
+    ]);
+    const removed = attachedArtifactPaths.filter((p) => !newArtifactPaths.has(p));
+    const safeToDelete = removed.filter(
+      (p) =>
+        !chat.messages.some(
+          (m, i) =>
+            i !== index &&
+            m.content.some((part) =>
+              part.type === "artifact_ref"
+                ? part.path === p
+                : part.type === "text"
+                  ? parseArtifactReference(part.text).includes(p)
+                  : false,
+            ),
+        ),
+    );
+
+    await sendMessage(editedMessage, truncatedHistory, undefined, safeToDelete.length ? safeToDelete : undefined);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

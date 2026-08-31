@@ -25,7 +25,7 @@ func (h *Handler) Attach(mux *http.ServeMux) {
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(h.url)
 
-			if h.token != "" {
+			if h.token != "" && r.In.Header.Get("Authorization") == "" {
 				r.Out.Header.Set("Authorization", "Bearer "+h.token)
 			}
 		},

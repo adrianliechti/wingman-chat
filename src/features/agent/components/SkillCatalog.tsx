@@ -23,11 +23,18 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
 import type { ParsedSkill, Skill, SkillResource } from "@/features/skills/lib/skillParser";
-import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
+import {
+  downloadSkill,
+  downloadSkillsAsZip,
+  parseSkillFile,
+  parseSkillsFromZip,
+  validateSkillName,
+} from "@/features/skills/lib/skillParser";
 import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
+import { notify } from "@/shared/lib/notify";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 import { SkillResourcesEditor } from "./SkillResourcesEditor";
@@ -394,6 +401,10 @@ export function SkillCatalog({
     input.click();
   };
 
+  const handleExportAll = () => {
+    void downloadSkillsAsZip(allSkills).catch((error) => notify.error("Failed to export skills", error));
+  };
+
   const importSkillFiles = async (files: File[]) => {
     const newNames: string[] = [];
     for (const file of files) {
@@ -401,18 +412,9 @@ export function SkillCatalog({
         if (file.name.endsWith(".zip")) {
           const JSZip = (await import("jszip")).default;
           const zip = await JSZip.loadAsync(file);
-          for (const [filename, zipEntry] of Object.entries(zip.files)) {
-            if (zipEntry.dir || !filename.endsWith(".md")) continue;
-            try {
-              const content = await zipEntry.async("string");
-              const result = parseSkillFile(content);
-              if (result.success) {
-                const s = addSkill(result.skill);
-                newNames.push(s.name);
-              }
-            } catch {
-              /* skip */
-            }
+          for (const parsed of await parseSkillsFromZip(zip)) {
+            const s = addSkill(parsed);
+            newNames.push(s.name);
           }
         } else {
           const content = await file.text();
@@ -778,6 +780,16 @@ export function SkillCatalog({
                           <Upload size={11} />
                           Import
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleExportAll}
+                          disabled={allSkills.length === 0}
+                          title="Export all skills as a zip"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                        >
+                          <Download size={11} />
+                          Export
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1077,7 +1089,11 @@ export function SkillCatalog({
                           >
                             <DropdownMenuItem
                               icon={<Download size={13} />}
-                              onClick={() => downloadSkill(selectedSkill)}
+                              onClick={() => {
+                                void downloadSkill(selectedSkill).catch((error) =>
+                                  notify.error("Failed to export skill", error),
+                                );
+                              }}
                             >
                               Export
                             </DropdownMenuItem>

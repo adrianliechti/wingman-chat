@@ -23,6 +23,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -81,6 +82,9 @@ export function AgentDrawer() {
   const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer, agentDrawerView } =
     useAgents();
   const config = getConfig();
+
+  // On mobile, tapping an agent activates it and closes the drawer instead of opening details.
+  const isMobile = !useMediaQuery("(min-width: 768px)");
 
   // "list" shows the agent list; "details" shows the selected agent's configuration
   const [view, setView] = useState<"list" | "details">("list");
@@ -167,6 +171,17 @@ export function AgentDrawer() {
   };
 
   const handleListSelect = (agent: Agent) => {
+    cancelInlineEdit();
+    setCurrentAgent(agent);
+    if (isMobile) {
+      setShowAgentDrawer(false);
+    } else {
+      setView("details");
+    }
+  };
+
+  // Explicit "Edit" action from the row menu always opens details, even on mobile.
+  const handleEditAgent = (agent: Agent) => {
     cancelInlineEdit();
     setCurrentAgent(agent);
     setView("details");
@@ -472,7 +487,7 @@ export function AgentDrawer() {
                               <DropdownMenuItem icon={<PenLine size={12} />} onClick={() => startInlineEdit(agent)}>
                                 Rename
                               </DropdownMenuItem>
-                              <DropdownMenuItem icon={<SquarePen size={12} />} onClick={() => handleListSelect(agent)}>
+                              <DropdownMenuItem icon={<SquarePen size={12} />} onClick={() => handleEditAgent(agent)}>
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuDivider />

@@ -5,6 +5,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
+import { armInteractiveAuth, McpAuthRequiredError } from "@/features/settings/lib/mcpAuth";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
@@ -315,6 +316,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         if (pending) await pending;
         return;
       }
+      // A prior auth attempt failed; the persisted flag survives a recreated client.
+      if (enabled && (current === ProviderState.Unauthorized || client.isAuthBlocked())) {
+        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Unauthorized));
+        return;
+      }
       if (!enabled && (!current || current === ProviderState.Disconnected)) return;
 
       if (enabled) {
@@ -328,6 +334,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
                 setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
                 return;
               } catch (error) {
+                if (error instanceof McpAuthRequiredError) {
+                  console.warn(`MCP ${id} requires sign-in:`, error);
+                  setMcpStates((prev) => new Map(prev).set(id, ProviderState.Unauthorized));
+                  return;
+                }
                 lastError = error;
                 if (attempt < MCP_CONNECT_MAX_RETRIES) {
                   console.warn(`MCP ${id} connect attempt ${attempt + 1} failed, retrying...`, error);
@@ -357,7 +368,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     for (const client of allMcpClients) {
       // Mutating these external MCP client objects is the purpose of this effect.
       client.onDisconnected = () => {
-        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Failed));
+        const state = client.isAuthBlocked() ? ProviderState.Unauthorized : ProviderState.Failed;
+        setMcpStates((prev) => new Map(prev).set(client.id, state));
       };
       client.onAuthenticating = () => {
         setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Authenticating));
@@ -393,10 +405,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       for (const id of mcpIds) {
-        // Skip failed providers — they must be retried explicitly by the user.
-        // Without this, toggling any other provider would re-trigger a connection
-        // attempt for every previously-failed MCP.
-        if (mcpStatesRef.current.get(id) === ProviderState.Failed) continue;
+        // Skip failed/unauthorized providers; they must be retried explicitly by the user.
+        const state = mcpStatesRef.current.get(id);
+        if (state === ProviderState.Failed || state === ProviderState.Unauthorized) continue;
         connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
       }
     }, 0);
@@ -407,6 +418,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
+      // Re-enabling after a failed auth reopens the popup; update the ref synchronously
+      // since connectMcp below reads it before the setMcpStates re-render lands.
+      if (enabled && mcpIds.has(id) && mcpStatesRef.current.get(id) === ProviderState.Unauthorized) {
+        armInteractiveAuth(id);
+        mcpStatesRef.current = new Map(mcpStatesRef.current).set(id, ProviderState.Disconnected);
+        setMcpStates(mcpStatesRef.current);
+      }
+
       // Companion has its own enable flag that gates desiredTools; toggling
       // userTools alone is not enough because desiredTools re-adds the id when
       // companionEnabled is still true.
@@ -465,6 +484,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       // provider was just enabled in the current interaction.
       await connectMcp(providerId, true);
       if (!client.isConnected()) {
+        if (mcpStatesRef.current.get(providerId) === ProviderState.Unauthorized) {
+          throw new Error(`Sign in required for ${client.name}`);
+        }
         throw new Error(`Cannot restore tool UI: MCP client ${providerId} not connected`);
       }
 

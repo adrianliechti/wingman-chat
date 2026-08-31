@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import { AlertTriangle, Loader2, Lock, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -153,7 +153,13 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
               <div key={server.id} className="group flex items-center gap-2 py-1.5">
                 <button
                   type="button"
-                  onClick={() => toggleServer(agent.id, server.id)}
+                  onClick={() => {
+                    if (state === ProviderState.Failed || state === ProviderState.Unauthorized) {
+                      void setProviderEnabled(server.id, true);
+                    } else {
+                      toggleServer(agent.id, server.id);
+                    }
+                  }}
                   className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <Tooltip
@@ -166,6 +172,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     >
                       {state === ProviderState.Initializing ? (
                         <Loader2 size={13} className="animate-spin" aria-label="Connecting…" />
+                      ) : state === ProviderState.Unauthorized ? (
+                        <Lock size={13} className="text-amber-500" />
                       ) : state === ProviderState.Failed ? (
                         <AlertTriangle size={13} className="text-amber-500" />
                       ) : resolvedIcon ? (
@@ -193,22 +201,24 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (state === ProviderState.Failed) {
+                    if (state === ProviderState.Failed || state === ProviderState.Unauthorized) {
                       void setProviderEnabled(server.id, true);
                     } else {
                       toggleServer(agent.id, server.id);
                     }
                   }}
-                  className={`shrink-0 ${server.enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                  className={`shrink-0 ${state === ProviderState.Connected ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
                   title={
-                    state === ProviderState.Failed
-                      ? "Connection failed — click to retry"
-                      : server.enabled
-                        ? "Enabled (click to disable)"
-                        : "Disabled (click to enable)"
+                    state === ProviderState.Unauthorized
+                      ? "Sign in required — click to authenticate"
+                      : state === ProviderState.Failed
+                        ? "Connection failed — click to retry"
+                        : server.enabled
+                          ? "Enabled (click to disable)"
+                          : "Disabled (click to enable)"
                   }
                 >
-                  {server.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                  {state === ProviderState.Connected ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 </button>
               </div>
             );

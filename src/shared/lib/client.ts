@@ -434,15 +434,18 @@ export class Client {
             })
             .on("response.output_item.done", (event) => {
               if (event.item.type === "function_call") {
+                const incomplete = event.item.status === "incomplete";
                 const existing = toolCallsByIndex.get(event.output_index);
                 if (existing) {
                   existing.arguments = event.item.arguments; // authoritative final value
+                  if (incomplete) existing.incomplete = true;
                 } else {
                   contentParts.push({
                     type: "tool_call",
                     id: event.item.call_id,
                     name: event.item.name,
                     arguments: event.item.arguments,
+                    ...(incomplete ? { incomplete: true } : {}),
                   });
                 }
                 emit();

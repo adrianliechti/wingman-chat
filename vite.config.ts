@@ -215,7 +215,7 @@ function pdfjsAssetsPlugin(): Plugin {
   };
 }
 
-const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
+const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 
@@ -254,14 +254,26 @@ export default defineConfig({
         target: wingmanUrl,
         ws: true,
         changeOrigin: true,
-        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            if (!req.headers.authorization) {
+              proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+            }
+          });
+        },
       },
       "/api": {
         target: wingmanUrl,
         changeOrigin: true,
-        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            if (!req.headers.authorization) {
+              proxyReq.setHeader("Authorization", wingmanHeaders.Authorization);
+            }
+          });
+        },
       },
     },
   },

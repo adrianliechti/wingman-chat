@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Offline end-to-end test of the bundled Pyodide distribution in public/pyodide/.
+ * Offline end-to-end test of the bundled Pyodide distribution in
+ * public/pyodide/<pyodide-version>/.
  *
  * Boots a real Pyodide runtime in Node pointed at the bundle (indexURL), then
  * loads packages purely from the (injected) pyodide-lock.json — no network, no
@@ -20,9 +21,10 @@
  */
 
 import path from "node:path";
-import { loadPyodide } from "pyodide";
+import { loadPyodide, version } from "pyodide";
 
-const indexURL = `${path.resolve("public/pyodide")}/`;
+// Same version-scoped path the worker derives; see bundle-pyodide-packages.mjs.
+const indexURL = `${path.resolve("public/pyodide", version)}/`;
 const light = process.argv.includes("--light");
 
 // Keep in sync with TZDATA_USAGE in interpreter.worker.ts.

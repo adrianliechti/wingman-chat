@@ -77,6 +77,18 @@ function summarizeUrls(urls: string[]): string {
   return `${urls.length} pages`;
 }
 
+function appendCurrentDateContext(instructions: string, now = new Date()): string {
+  const block = [
+    "<context>",
+    `Date/time: ${now.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" })}`,
+    `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+    "</context>",
+  ].join("\n");
+
+  const trimmed = instructions.trim();
+  return trimmed ? `${trimmed}\n\n${block}` : block;
+}
+
 function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) return "_No results found._";
   return results
@@ -258,6 +270,8 @@ export function useInternetProvider(): ToolProvider | null {
           return [{ type: "text" as const, text: "Error: instructions are required" }];
         }
 
+        const request = appendCurrentDateContext(instructions);
+
         const model = context?.model;
         if (!model) {
           return [{ type: "text" as const, text: "Error: no active model available" }];
@@ -267,7 +281,7 @@ export function useInternetProvider(): ToolProvider | null {
           const result = await context.elicit({
             message:
               "The assistant wants to research the web. The following instructions will be sent to external search/fetch services:\n\n" +
-              instructions,
+              request,
           });
           if (result.action !== "accept") {
             return [{ type: "text" as const, text: "Cancelled by user." }];
@@ -276,7 +290,7 @@ export function useInternetProvider(): ToolProvider | null {
 
         let guard;
         try {
-          guard = await client.guard(internet?.guard ?? "", instructions, { signal: context?.signal });
+          guard = await client.guard(internet?.guard ?? "", request, { signal: context?.signal });
         } catch {
           return [
             {
@@ -304,7 +318,7 @@ export function useInternetProvider(): ToolProvider | null {
             client,
             model,
             internetInstructionsText,
-            [{ role: Role.User, content: [{ type: "text", text: instructions }] }],
+            [{ role: Role.User, content: [{ type: "text", text: request }] }],
             innerTools,
             {
               agentName: "research",

@@ -1,9 +1,11 @@
-import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
+import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020";
 import type { Tool } from "../types/chat";
 
 function describeIssue(error: ErrorObject): string {
   const missing =
-    error.keyword === "required" ? (error.params as { missingProperty?: string }).missingProperty : undefined;
+    error.keyword === "required"
+      ? (error.params as { missingProperty?: string }).missingProperty
+      : undefined;
   const extra =
     error.keyword === "additionalProperties"
       ? (error.params as { additionalProperty?: string }).additionalProperty
@@ -42,12 +44,13 @@ export class ToolRegistry {
     this.tools = [...tools];
     this.byName = new Map();
     this.validators = new Map();
-    const ajv = new Ajv({
+    const ajv = new Ajv2020({
       addUsedSchema: false,
       allErrors: true,
       allowUnionTypes: true,
       strict: false,
       validateFormats: false,
+      validateSchema: false,
     });
     for (const tool of this.tools) {
       const name = tool.name.trim();

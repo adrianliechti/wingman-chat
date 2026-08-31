@@ -61,7 +61,8 @@ const Disclaimer = () => {
 };
 
 export function ChatPage() {
-  const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel } = useChat();
+  const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel, pendingElicitation } =
+    useChat();
   const { isListening, stopVoice } = useVoice();
 
   const navigate = useNavigate();
@@ -351,7 +352,10 @@ export function ChatPage() {
 
   // Fold runs of consecutive tool results into collapsible groups so tool-heavy
   // turns read as one tidy "Used N tools" row instead of a scattered stack.
-  const renderUnits = useMemo(() => groupRenderUnits(messages, isResponding), [messages, isResponding]);
+  const renderUnits = useMemo(
+    () => groupRenderUnits(messages, isResponding, pendingElicitation?.toolCallId ?? null),
+    [messages, isResponding, pendingElicitation?.toolCallId],
+  );
 
   const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
     resetKey: chat?.id ?? routeChatId ?? "__draft__",

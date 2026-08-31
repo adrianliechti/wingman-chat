@@ -110,7 +110,6 @@ function injectContext(messages: Message[], now: Date): Message[] {
     `Current date and time: ${now.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" })}`,
     `ISO 8601 (UTC): ${now.toISOString()}`,
     `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    `Language: ${navigator.language}`,
     `Client: ${platform}, ${pointer}, ${theme} theme`,
     "</context>",
   ].join("\n");
@@ -419,7 +418,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
   }, [models, currentChatModel]);
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model, models);
 
   useEffect(() => {
     setInterpreterModel(model?.id ?? null);
@@ -1014,7 +1013,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const sendMessage = useCallback(
-    async (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => {
+    async (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[], deletedPaths?: string[]) => {
       const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
       if (!chatObj) {
         throw new Error(`Chat ${id} not found`);
@@ -1034,6 +1033,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
           console.error("Failed to add attachments transactionally:", error);
           notify.error("Attachments failed", "No files were added. Resolve the workspace conflict and try again.");
           throw error;
+        }
+      }
+
+      // Delete requested artifact paths from chat FS (best-effort).
+      if (deletedPaths && deletedPaths.length > 0) {
+        try {
+          await Promise.all(
+            deletedPaths.map(async (p) => {
+              try {
+                await chatFs.deleteFileWithDelta(p);
+              } catch (err) {
+                console.error(`Failed to delete artifact ${p}:`, err);
+                throw err;
+              }
+            }),
+          );
+        } catch (err) {
+          console.error("One or more attachment deletions failed:", err);
+          notify.error(
+            "Failed to delete attachments",
+            "One or more attachments couldn't be removed from the workspace.",
+          );
         }
       }
       const identifiedMessage = withMessageIdentity(resolvedMessage);

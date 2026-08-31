@@ -61,7 +61,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const model = chat?.model ?? selectedModel ?? models[0];
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model, models);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
   const { start, stop, sendText, updateSession, pauseAudio, resumeAudio } = useVoiceWebSockets(

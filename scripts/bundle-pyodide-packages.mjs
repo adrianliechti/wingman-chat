@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 /**
- * Downloads Python wheels for offline use into public/pyodide/:
+ * Downloads Python wheels for offline use into public/pyodide/<pyodide-version>/:
  *   - Pyodide built-in wheels (numpy, pandas, …) from the Pyodide CDN.
  *     Hashes are verified against pyodide-lock.json on download and on cache.
  *   - Pure-Python PyPI wheels (seaborn, openpyxl, …) from PyPI.
  *     Hashes are verified against PyPI's published digests.sha256.
  *
  * The PyPI wheels aren't in Pyodide's lock, so we *inject* them into the copied
- * public/pyodide/pyodide-lock.json — synthesizing each entry's `imports` (from
- * the wheel contents), `depends` (from the resolved dep graph), version and
- * sha256. The runtime then loads them through Pyodide's normal lock-driven loader
+ * pyodide-lock.json — synthesizing each entry's `imports` (from the wheel
+ * contents), `depends` (from the resolved dep graph), version and sha256. The
+ * runtime then loads them through Pyodide's normal lock-driven loader
  * (`loadPackagesFromImports` / `loadPackage`) exactly like the built-ins — no
  * separate manifest or micropip orchestration needed.
+ *
+ * The output directory is version-scoped because the runtime files are served
+ * under stable names while the Pyodide JS glue that loads them is bundled into a
+ * content-hashed chunk. Sharing one URL across versions let a browser pair a
+ * freshly-deployed glue with a cached older runtime, which Pyodide rejects with
+ * "Pyodide version does not match: '<js>' <==> '<wasm>'". A version in the path
+ * makes that pairing impossible; interpreter.worker.ts derives the same path
+ * from the npm package's own `version` export.
  */
 
 import crypto from "node:crypto";
@@ -21,7 +29,9 @@ import JSZip from "jszip";
 
 // --- Config -----------------------------------------------------------------
 
-const OUTPUT_DIR = "public/pyodide";
+const PYODIDE_ROOT = "public/pyodide";
+const PYODIDE_VERSION = JSON.parse(fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8")).version;
+const OUTPUT_DIR = path.join(PYODIDE_ROOT, PYODIDE_VERSION);
 
 const PYODIDE_BUILTIN_TARGETS = [
   "micropip",
@@ -502,6 +512,16 @@ function copyPyodideRuntime() {
   }
 }
 
+/** Drop bundles for other Pyodide versions (and the pre-versioned flat layout). */
+function pruneOtherBundles() {
+  if (!fs.existsSync(PYODIDE_ROOT)) return;
+  for (const entry of fs.readdirSync(PYODIDE_ROOT)) {
+    if (entry === PYODIDE_VERSION) continue;
+    fs.rmSync(path.join(PYODIDE_ROOT, entry), { recursive: true, force: true });
+    console.log(`  - removed stale bundle ${entry}`);
+  }
+}
+
 function pruneUnexpectedWheelFiles(expectedWheelFiles) {
   for (const file of fs.readdirSync(OUTPUT_DIR)) {
     if (file.endsWith(".whl") && !expectedWheelFiles.has(file)) {
@@ -515,10 +535,7 @@ async function main() {
   copyPyodideRuntime();
 
   const pyodideLock = JSON.parse(fs.readFileSync(path.resolve("node_modules/pyodide/pyodide-lock.json"), "utf8"));
-  const pyodideNpmVersion = JSON.parse(
-    fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8"),
-  ).version;
-  const cdnBase = `https://cdn.jsdelivr.net/pyodide/v${pyodideNpmVersion}/full/`;
+  const cdnBase = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
   const pypiNames = [];
   for (const spec of PYPI_PACKAGES) {
@@ -539,14 +556,10 @@ async function main() {
   injectPypiIntoLock(entries);
   assertAcyclicLock();
   pruneUnexpectedWheelFiles(new Set([...builtinWheelFiles, ...pypiWheelFiles]));
+  // Clean up old layouts only after the current bundle completed successfully.
+  pruneOtherBundles();
 
-  // Remove the manifest from the previous (micropip-based) scheme if present.
-  const staleManifest = path.join(OUTPUT_DIR, "pypi-manifest.json");
-  if (fs.existsSync(staleManifest)) {
-    fs.unlinkSync(staleManifest);
-    console.log("  - removed stale pypi-manifest.json");
-  }
-  console.log("Done.");
+  console.log(`Done — bundle at ${OUTPUT_DIR}/`);
 }
 
 main().catch((err) => {

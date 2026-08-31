@@ -1,14 +1,25 @@
 import {
+  columnResizingFeature,
+  columnSizingFeature,
   type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
+  createSortedRowModel,
+  rowSortingFeature,
   type SortingState,
-  useReactTable,
+  sortFns,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+
+const features = tableFeatures({
+  columnSizingFeature,
+  columnResizingFeature,
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns,
+});
 
 interface CsvEditorProps {
   content: string;
@@ -104,7 +115,7 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
   const parsedData = useMemo(() => parseCSV(content), [content]);
   const rows = useMemo(() => parsedData.slice(1), [parsedData]);
 
-  const columns = useMemo<ColumnDef<string[]>[]>(() => {
+  const columns = useMemo<ColumnDef<typeof features, string[]>[]>(() => {
     const headers = parsedData.length > 0 ? parsedData[0] : [];
     return headers.map((header, index) => ({
       id: String(index),
@@ -116,13 +127,12 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
     }));
   }, [parsedData]);
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: rows,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     columnResizeMode: "onChange",
   });
 
@@ -173,7 +183,7 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                         onClick={header.column.getToggleSortingHandler()}
                         disabled={!header.column.getCanSort()}
                       >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        <table.FlexRender header={header} />
                         {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ?? ""}
                       </button>
                       <button
@@ -223,14 +233,14 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                       width: "100%",
                     }}
                   >
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getAllCells().map((cell) => (
                       <td
                         key={cell.id}
                         className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
                         style={{ width: cell.column.getSize(), flex: "none" }}
                         title={String(cell.getValue())}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        <table.FlexRender cell={cell} />
                       </td>
                     ))}
                   </tr>

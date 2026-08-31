@@ -3,6 +3,7 @@ import {
   Bot,
   Loader2,
   LoaderCircle,
+  Lock,
   Mic,
   Rocket,
   ScreenShare,
@@ -26,10 +27,12 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
+import { trimModelName } from "@/shared/lib/models";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -59,7 +62,7 @@ export function ChatInput() {
     sendHeldMessage,
     chat,
   } = useChat();
-  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
+  const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
@@ -228,6 +231,26 @@ export function ChatInput() {
     }
   }, [visibleProviders, getProviderState]);
 
+  // Providers whose OAuth flow needs an explicit user gesture to retry.
+  const unauthorizedProviders = useMemo(
+    () =>
+      visibleProviders.filter((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized),
+    [visibleProviders, getProviderState],
+  );
+
+  // Shows a spinner on the agent badge while a retried sign-in is in flight.
+  const authenticatingProviders = useMemo(
+    () =>
+      visibleProviders.filter((provider: ToolProvider) => {
+        const state = getProviderState(provider.id);
+        return state === ProviderState.Initializing || state === ProviderState.Authenticating;
+      }),
+    [visibleProviders, getProviderState],
+  );
+
+  // Touch devices have no hover, so the agent badge opens a dropdown instead.
+  const isTouchDevice = useMediaQuery("(pointer: coarse)");
+
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
@@ -261,18 +284,23 @@ export function ChatInput() {
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
+        let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
           try {
             const blob = await captureFrame();
             if (blob) {
               const dataUrl = await readAsDataURL(blob);
+              const name = `screen-capture-${Date.now()}.png`;
               const screenContent: ImageContent = {
                 type: "image",
-                name: `screen-capture-${Date.now()}.png`,
+                name,
                 data: dataUrl,
               };
               finalAttachments = [screenContent, ...finalAttachments];
+              if (artifactsAvailable) {
+                screenCaptureFile = new File([blob], name, { type: blob.type || "image/png" });
+              }
             }
           } catch (error) {
             console.error("Error capturing screen during message send:", error);
@@ -296,14 +324,15 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const artifacts = [...fileArtifacts, ...imageArtifacts];
+        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
         // model can read/edit it by name. Images are also shown inline (vision),
         // but the inline copy carries no filename — without this the model can't
         // name the file it's looking at. The redundant chip is suppressed in the
         // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        const referencedPaths = artifacts.map((f) => f.path);
         if (referencedPaths.length > 0) {
           const reference: TextContent = {
             type: "text",
@@ -329,6 +358,7 @@ export function ChatInput() {
       pendingImages,
       isContinuousCaptureActive,
       captureFrame,
+      artifactsAvailable,
       sendMessage,
       clearAttachments,
     ],
@@ -726,35 +756,133 @@ export function ChatInput() {
                     >
                       <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        <span className="truncate min-w-0">{trimModelName(model?.name ?? model?.id ?? "Select Model")}</span>
                       </Tooltip>
                     </button>
                   )}
                 />
               )}
 
-              {/* Agent picker — combined trigger + active-agent badge (hidden when listening, agent name shown in hint) */}
-              {currentAgent && !(isRealtimeSelected && isListening) && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCurrentAgent(null);
-                    setShowAgentDrawer(false);
-                  }}
-                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  title="Deselect agent"
-                >
-                  <span className="shrink-0 w-3.5 flex justify-center relative">
-                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                    <X
-                      size={14}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                    />
-                  </span>
-                  <span className="truncate max-w-28">{currentAgent.name}</span>
-                </button>
-              )}
+              {/* Agent picker badge: shows a lock icon and retries sign-in when auth is needed. */}
+              {currentAgent &&
+                !(isRealtimeSelected && isListening) &&
+                (isTouchDevice ? (
+                  <DropdownMenu
+                    anchor="bottom start"
+                    trigger={
+                      <MenuButton
+                        className={cn(
+                          "flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors",
+                          unauthorizedProviders.length > 0
+                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+                        )}
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : unauthorizedProviders.length > 0 ? (
+                          <Lock size={14} className="shrink-0" />
+                        ) : (
+                          <Bot size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate max-w-28">{currentAgent.name}</span>
+                      </MenuButton>
+                    }
+                  >
+                    {unauthorizedProviders.length > 0 && (
+                      <DropdownMenuItem
+                        icon={<Lock size={14} />}
+                        render={({ className, children }) => (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              for (const provider of unauthorizedProviders) {
+                                void setProviderEnabled(provider.id, true);
+                              }
+                            }}
+                            className={cn(className, "text-amber-600 dark:text-amber-400")}
+                          >
+                            {children}
+                          </button>
+                        )}
+                      >
+                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      icon={<Bot size={14} />}
+                      onClick={() => {
+                        setAgentDrawerView("details");
+                        setShowAgentDrawer(true);
+                      }}
+                    >
+                      Open agent
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      icon={<X size={14} />}
+                      destructive
+                      onClick={() => {
+                        setCurrentAgent(null);
+                        setShowAgentDrawer(false);
+                      }}
+                    >
+                      Deselect agent
+                    </DropdownMenuItem>
+                  </DropdownMenu>
+                ) : (
+                  <div className="group flex items-center gap-0.5">
+                    <Tooltip
+                      content={
+                        unauthorizedProviders.length > 0
+                          ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
+                          : `${currentAgent.name} is active`
+                      }
+                      side="bottom"
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (unauthorizedProviders.length > 0) {
+                            for (const provider of unauthorizedProviders) {
+                              void setProviderEnabled(provider.id, true);
+                            }
+                            return;
+                          }
+                          setAgentDrawerView("details");
+                          setShowAgentDrawer(true);
+                        }}
+                        className={cn(
+                          "flex items-center gap-1 pl-1 pr-0.5 py-1 rounded-lg text-xs font-medium transition-colors",
+                          unauthorizedProviders.length > 0
+                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+                        )}
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : unauthorizedProviders.length > 0 ? (
+                          <Lock size={14} className="shrink-0" />
+                        ) : (
+                          <Bot size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate max-w-28">{currentAgent.name}</span>
+                      </button>
+                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setCurrentAgent(null);
+                        setShowAgentDrawer(false);
+                      }}
+                      className="p-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      title="Deselect agent"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
                   type="button"
