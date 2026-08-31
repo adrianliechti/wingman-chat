@@ -128,7 +128,7 @@ interface HeaderFooter {
 async function loadDocxRels(ctx: DocxCtx): Promise<void> {
   const xml = await ctx.zip.file(relsPathFor("word/document.xml"))?.async("string");
   if (!xml) return;
-  ctx.rels = parseRels(parseXml(xml));
+  ctx.rels = parseRels(xml);
 }
 
 async function loadDocxTheme(ctx: DocxCtx): Promise<void> {
@@ -247,7 +247,7 @@ async function loadHeadersFooters(ctx: DocxCtx): Promise<void> {
       const xml = await ctx.zip.file(partPath)?.async("string");
       if (!xml) continue;
       const relsXml = await ctx.zip.file(relsPathFor(partPath))?.async("string");
-      store.set(type, { doc: parseXml(xml), rels: relsXml ? parseRels(parseXml(relsXml)) : new Map() });
+      store.set(type, { doc: parseXml(xml), rels: relsXml ? parseRels(relsXml) : new Map() });
     }
   };
   await Promise.all([load("w:headerReference", ctx.headers), load("w:footerReference", ctx.footers)]);
