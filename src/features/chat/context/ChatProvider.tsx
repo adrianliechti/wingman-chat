@@ -18,7 +18,7 @@ import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
-import type { Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type { Chat, Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role, withMessageIdentity } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -405,6 +405,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, []);
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
+  // Realtime events can deliver the user transcription and response.done within
+  // the same render. Keep the active chat available synchronously so both
+  // callbacks append to the same newly-created conversation.
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const pendingChatCreationRef = useRef<Promise<Chat> | null>(null);
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
   const currentChatModel = chat?.model;
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
@@ -534,10 +540,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     const existingId = chatIdRef.current;
-    let chatItem = existingId ? chats.find((c) => c.id === existingId) : undefined;
+    let chatItem = existingId
+      ? chatRef.current?.id === existingId
+        ? chatRef.current
+        : chats.find((c) => c.id === existingId)
+      : undefined;
     if (!chatItem) {
-      chatItem = await createChatHook();
+      let creation = pendingChatCreationRef.current;
+      if (!creation) {
+        creation = createChatHook();
+        pendingChatCreationRef.current = creation;
+      }
+
+      try {
+        chatItem = await creation;
+      } finally {
+        if (pendingChatCreationRef.current === creation) {
+          pendingChatCreationRef.current = null;
+        }
+      }
+
       chatItem.model = model;
+      chatRef.current = chatItem;
       chatIdRef.current = chatItem.id;
       setChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));

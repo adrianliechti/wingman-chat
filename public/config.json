@@ -1,9 +1,14 @@
 {
   "navigation": true,
   "vision": {},
-  "stt": {},
+  "stt": {
+    "model": "gpt-transcribe"
+  },
   "tts": {},
-  "voice": {},
+  "voice": {
+    "model": "gpt-realtime-2.1",
+    "transcriber": "gpt-live-transcribe"
+  },
   "artifacts": {},
   "repository": {},
   "renderer": {},
