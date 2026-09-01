@@ -21,7 +21,6 @@ import {
   DropdownMenuLabel,
   MenuButton,
 } from "@/shared/ui/DropdownMenu";
-import { trimModelName } from "@/shared/lib/models";
 import { ModelDropdown, type SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
 /** Aspect-ratio option metadata; only those the selected model supports are shown. */
@@ -294,7 +293,7 @@ export function CanvasInput({
                   <Sparkles size={14} />
                 </span>
                 <span className="truncate min-w-0">
-                  {trimModelName(selectedModel?.name ?? selectedModel?.id ?? "Model")}
+                  {selectedModel?.name ?? selectedModel?.id ?? "Model"}
                 </span>
               </button>
             )}

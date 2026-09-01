@@ -5,7 +5,7 @@ import type { Agent } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { cn } from "@/shared/lib/cn";
-import { defaultModelId, trimModelName } from "@/shared/lib/models";
+import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Section } from "./Section";
 
@@ -38,10 +38,17 @@ export function ModelSection({ agent }: ModelSectionProps) {
   const effectiveModelName =
     effectiveModel === "realtime"
       ? "Real-time Voice"
-      : trimModelName(models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel);
+      : (models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel);
 
   return (
-    <Section title="Model" isOpen={true} collapsible={false} overflowVisible headerClassName="pt-2" key={agent.id}>
+    <Section
+      title="Model"
+      isOpen={true}
+      collapsible={false}
+      overflowVisible
+      headerClassName="pt-2"
+      key={agent.id}
+    >
       <ModelDropdown
         models={models}
         value={effectiveModel}

@@ -32,7 +32,6 @@ import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
-import { trimModelName } from "@/shared/lib/models";
 import type {
   Content,
   ImageContent,
@@ -803,7 +802,7 @@ export function ChatInput() {
                       >
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
                         <span className="truncate min-w-0">
-                          {trimModelName(model?.name ?? model?.id ?? "Select Model")}
+                          {model?.name ?? model?.id ?? "Select Model"}
                         </span>
                       </Tooltip>
                     </button>

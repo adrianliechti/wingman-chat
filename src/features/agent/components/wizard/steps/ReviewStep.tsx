@@ -1,10 +1,19 @@
-import { ChevronDown, FileText, Mic, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import {
+  ChevronDown,
+  FileText,
+  Mic,
+  Server,
+  ToggleLeft,
+  ToggleRight,
+  Wrench,
+  Zap,
+} from "lucide-react";
 import { type Dispatch, useId } from "react";
 import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { getConfig } from "@/shared/config";
-import { defaultModelId, trimModelName } from "@/shared/lib/models";
+import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
@@ -50,7 +59,9 @@ export function ReviewStep({
         <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/30 dark:bg-neutral-900/20">
           <Mic size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
           <div>
-            <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Real-time Voice Mode</div>
+            <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              Real-time Voice Mode
+            </div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
               This agent uses low-latency real-time voice conversation.
             </div>
@@ -75,7 +86,9 @@ export function ReviewStep({
                 {...getProps()}
                 className="w-full flex items-center justify-between rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer text-left"
               >
-                <span className="truncate">{trimModelName(models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel)}</span>
+                <span className="truncate">
+                  {models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel}
+                </span>
                 <ChevronDown
                   size={14}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 transition-transform"
@@ -92,7 +105,9 @@ export function ReviewStep({
         <div className="px-3 py-2.5">
           <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{name}</div>
           {instructions && (
-            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">{instructions}</div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">
+              {instructions}
+            </div>
           )}
         </div>
 
@@ -167,7 +182,9 @@ export function ReviewStep({
         <div className="flex items-center justify-between py-1">
           <div>
             <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Memory</div>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500">Remember context across conversations</div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500">
+              Remember context across conversations
+            </div>
           </div>
           <button
             type="button"
