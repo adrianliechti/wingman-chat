@@ -480,7 +480,10 @@ export function ChatInput() {
       try {
         const text = await stopTranscription();
         if (text.trim()) {
-          setContent(text);
+          setContent((previous) =>
+            previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text,
+          );
+          contentInputRef.current?.focus();
         }
       } catch (error) {
         console.error("Transcription failed:", error);
@@ -1085,97 +1088,83 @@ export function ChatInput() {
                     <Square size={16} className="hidden group-hover/stop:block" />
                   </button>
                 </div>
-              ) : content.trim() ? (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                >
-                  <Send size={16} />
-                </button>
-              ) : canTranscribe && !isListening ? (
-                transcribingContent ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                    disabled
-                    title="Processing audio..."
-                  >
-                    <Loader2 size={16} className="animate-spin" />
-                  </button>
-                ) : isTranscribing ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                    onClick={handleTranscriptionClick}
-                    title="Stop recording"
-                    disabled={isResponding}
-                  >
-                    <Square size={16} />
-                  </button>
-                ) : (
-                  // Not yet recording — desktop shows dictate mic + voice-mode wave; mobile uses the + menu and wave
-                  <>
-                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+              ) : (
+                // The dictate mic keeps its own slot so a transcript can be extended;
+                // only the trailing voice-mode slot turns into Send once there's text.
+                <>
+                  {canTranscribe &&
+                    !isListening &&
+                    (transcribingContent ? (
                       <button
                         type="button"
-                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={handleTranscriptionClick}
-                        disabled={isResponding}
+                        className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                        disabled
+                        title="Processing audio..."
                       >
-                        <Mic size={16} />
+                        <Loader2 size={16} className="animate-spin" />
                       </button>
-                    </Tooltip>
-                    {voiceAvailable && !currentAgent?.model ? (
-                      <Tooltip content="Voice mode" side="bottom">
+                    ) : isTranscribing ? (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        onClick={handleTranscriptionClick}
+                        title="Stop recording"
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <Tooltip
+                        content={content.trim() ? "Add dictation" : "Start dictate"}
+                        side="bottom"
+                        className="hidden md:block"
+                      >
                         <button
                           type="button"
-                          className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          onClick={() =>
-                            onModelChange({
-                              id: "realtime",
-                              name: "Voice Mode",
-                              description: "Real-time voice conversation",
-                            })
-                          }
-                          title="Voice mode"
-                          aria-label="Start voice mode"
+                          className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          onClick={handleTranscriptionClick}
                         >
-                          <AudioLines size={16} />
+                          <Mic size={16} />
                         </button>
                       </Tooltip>
-                    ) : (
+                    ))}
+                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : voiceAvailable && !currentAgent?.model ? (
+                    <Tooltip content="Voice mode" side="bottom">
                       <button
-                        className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        type="submit"
-                        disabled={isResponding}
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() =>
+                          onModelChange({
+                            id: "realtime",
+                            name: "Voice Mode",
+                            description: "Real-time voice conversation",
+                          })
+                        }
+                        title="Voice mode"
+                        aria-label="Start voice mode"
                       >
-                        <Send size={16} />
+                        <AudioLines size={16} />
                       </button>
-                    )}
-                  </>
-                )
-              ) : voiceAvailable && !currentAgent?.model ? (
-                <Tooltip content="Voice mode" side="bottom">
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    onClick={() =>
-                      onModelChange({
-                        id: "realtime",
-                        name: "Voice Mode",
-                        description: "Real-time voice conversation",
-                      })
-                    }
-                    title="Voice mode"
-                    aria-label="Start voice mode"
-                  >
-                    <AudioLines size={16} />
-                  </button>
-                </Tooltip>
-              ) : (
-                <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
-                  <AudioLines size={16} />
-                </span>
+                    </Tooltip>
+                  ) : canTranscribe && !isListening ? (
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : (
+                    <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                      <AudioLines size={16} />
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>
