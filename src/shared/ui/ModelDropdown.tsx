@@ -24,7 +24,6 @@ import { Check, ChevronRight, Gauge, Mic, Search } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "@/shared/lib/cn";
-import { splitModelName } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 // Show the filter box once the visible list is long enough to be unwieldy.
@@ -398,19 +397,16 @@ function ModelDropdownRoot({
     closeAll();
   };
 
-  const renderModel = (m: Model) => {
-    const { label, qualifier } = splitModelName(m.name ?? m.id);
-    return (
-      <OptionRow
-        key={m.id}
-        name={label}
-        caption={m.caption ?? qualifier}
-        description={m.description}
-        selected={m.id === value}
-        onSelect={() => select(m.id)}
-      />
-    );
-  };
+  const renderModel = (m: Model) => (
+    <OptionRow
+      key={m.id}
+      name={m.name ?? m.id}
+      caption={m.caption}
+      description={m.description}
+      selected={m.id === value}
+      onSelect={() => select(m.id)}
+    />
+  );
 
   // Effort is just a submenu with model-specific labels; flatten it in with any
   // caller-provided submenus so they render uniformly below the model list.

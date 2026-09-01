@@ -17,21 +17,6 @@ export function defaultModelId(models: Model[], savedId?: string | null): string
   return models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "";
 }
 
-/** Strips a trailing parenthesized qualifier from a display name, e.g. "Lumen (OpenAI GPT-5)" → "Lumen". */
-export function trimModelName(name: string): string {
-  return name.replace(/\s*\(.*\)\s*$/, "");
-}
-
-/**
- * Splits a display name into its label and trailing parenthesized qualifier, so
- * a branded name like "Lumen (OpenAI GPT-5)" can render the qualifier as a
- * subdued caption. Fallback for configs that predate the `caption` field.
- */
-export function splitModelName(name: string): { label: string; qualifier?: string } {
-  const match = name.match(/^(.*?)\s*\((.*)\)\s*$/);
-  return match ? { label: match[1], qualifier: match[2] } : { label: name };
-}
-
 /**
  * Best-guess reasoning-effort levels for a model id, used as a fallback when a
  * model's config omits `supportedEfforts`. Levels are derived from the models.dev
