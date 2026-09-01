@@ -4,7 +4,13 @@ import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
+export type ModelType =
+  | "completer"
+  | "embedder"
+  | "renderer"
+  | "reranker"
+  | "synthesizer"
+  | "transcriber";
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -18,6 +24,9 @@ export type ImageBackground = "opaque" | "transparent";
 export type Model = {
   id: string;
   name: string;
+
+  /** Short subdued text shown inline after `name`, e.g. the underlying model. */
+  caption?: string;
 
   type?: ModelType;
   description?: string;

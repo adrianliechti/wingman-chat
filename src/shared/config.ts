@@ -24,6 +24,7 @@ interface ToolConfig {
 interface ModelConfig {
   id: string;
   name: string;
+  caption?: string;
   description?: string;
   instructions?: string;
   effort?: ReasoningEffort;
