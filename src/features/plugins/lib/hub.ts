@@ -6,7 +6,7 @@
 
 import type JSZip from "jszip";
 import { type ParsedSkill, parseSkillsFromZip } from "@/features/skills/lib/skillParser";
-import type { HubPlugin } from "./types";
+import type { HubMcpServer, HubPlugin } from "./types";
 
 export type HubErrorKind = "network" | "too-large" | "invalid";
 
@@ -25,6 +25,12 @@ const MAX_ZIP_ENTRIES = 500;
 const MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 const catalogCache = new Map<string, Promise<HubPlugin[]>>();
+
+/** Contents of a downloaded plugin archive: its skills plus any `mcp.json` servers. */
+export interface DownloadedPlugin {
+  skills: ParsedSkill[];
+  mcpServers: HubMcpServer[];
+}
 
 interface PluginSummary {
   name: string;
@@ -76,12 +82,46 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
   return promise;
 }
 
+/** Read the Agent Plugins `mcp.json` document from an archive, if present. */
+async function parseMcpServers(zip: JSZip): Promise<HubMcpServer[]> {
+  const entry = zip.file("mcp.json");
+  if (!entry) return [];
+
+  let doc: unknown;
+  try {
+    doc = JSON.parse(await entry.async("string"));
+  } catch {
+    return [];
+  }
+
+  const servers = (doc as { mcpServers?: unknown })?.mcpServers;
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) return [];
+
+  const result: HubMcpServer[] = [];
+  for (const [name, raw] of Object.entries(servers as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const { type, url, command } = raw as { type?: unknown; url?: unknown; command?: unknown };
+    if (typeof type !== "string") continue;
+    result.push({
+      name,
+      type,
+      url: typeof url === "string" ? url : undefined,
+      command: typeof command === "string" ? command : undefined,
+    });
+  }
+  return result;
+}
+
 /**
  * Download a plugin archive from the hub's `/{name}.zip` endpoint and parse
- * it into skills. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`)
- * and the plugin-hub skill-folder fallback (`SKILL.md` at the archive root).
+ * it into skills and MCP servers. Supports both Agent Plugin archives
+ * (`skills/{name}/SKILL.md`, `mcp.json`) and the plugin-hub skill-folder
+ * fallback (`SKILL.md` at the archive root).
  */
-export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Promise<ParsedSkill[]> {
+export async function downloadHubPlugin(
+  hubUrl: string,
+  plugin: HubPlugin,
+): Promise<DownloadedPlugin> {
   hubUrl = normalizeHubUrl(hubUrl);
   const url = new URL(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
 
@@ -126,5 +166,5 @@ export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Prom
     throw new HubError("too-large", `Plugin "${plugin.id}" resources exceed the size limit`);
   }
 
-  return skills;
+  return { skills, mcpServers: await parseMcpServers(zip) };
 }

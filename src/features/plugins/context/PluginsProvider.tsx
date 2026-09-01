@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { downloadHubPlugin } from "@/features/plugins/lib/hub";
-import {
-  deletePlugin,
-  loadAllPlugins,
-  savePlugin,
-} from "@/features/plugins/lib/opfs-plugins";
+import { deletePlugin, loadAllPlugins, savePlugin } from "@/features/plugins/lib/opfs-plugins";
+import { pluginMcpClientId } from "@/features/plugins/lib/pluginProvider";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
+import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
 import { PluginsContext } from "./PluginsContext";
 
 interface PluginsProviderProps {
@@ -26,13 +24,14 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
 
   const installPlugin = useCallback(
     async (hubUrl: string, plugin: HubPlugin): Promise<InstalledPlugin> => {
-      const skills = await downloadHubPlugin(hubUrl, plugin);
+      const { skills, mcpServers } = await downloadHubPlugin(hubUrl, plugin);
       const installed: InstalledPlugin = {
         id: plugin.id,
         title: plugin.title,
         version: plugin.version,
         description: plugin.description,
         keywords: plugin.keywords,
+        mcpServers: mcpServers.length ? mcpServers : undefined,
         hubUrl,
         installedAt: new Date().toISOString(),
         skills,
@@ -46,10 +45,19 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
     [],
   );
 
-  const uninstallPlugin = useCallback(async (id: string): Promise<void> => {
-    await deletePlugin(id);
-    setPlugins((prev) => prev.filter((p) => p.id !== id));
-  }, []);
+  const uninstallPlugin = useCallback(
+    async (id: string): Promise<void> => {
+      const plugin = plugins.find((p) => p.id === id);
+      await deletePlugin(id);
+      // Bundled skills go with the plugin folder, but each MCP server also
+      // leaves OAuth credentials behind under its own client id.
+      for (const server of plugin?.mcpServers ?? []) {
+        clearMcpOAuthStorage(pluginMcpClientId(id, server.name));
+      }
+      setPlugins((prev) => prev.filter((p) => p.id !== id));
+    },
+    [plugins],
+  );
 
   const getPlugin = useCallback((id: string) => plugins.find((p) => p.id === id), [plugins]);
 

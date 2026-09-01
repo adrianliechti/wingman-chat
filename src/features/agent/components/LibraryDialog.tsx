@@ -129,7 +129,7 @@ export function LibraryDialog({
             >
               <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
                 {/* ── Full-width top bar ── */}
-                <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 py-2 dark:border-neutral-800/60">
+                <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-2 py-2 dark:border-neutral-800/60">
                   <div className="w-32 shrink-0 flex items-center gap-1">
                     <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                       Catalog
@@ -185,7 +185,7 @@ export function LibraryDialog({
                           trigger={
                             <MenuButton
                               title="Add skill"
-                              className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                              className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
                             >
                               <Plus size={15} />
                             </MenuButton>
@@ -206,13 +206,17 @@ export function LibraryDialog({
                           onClick={skillActions.onExportAll}
                           disabled={!skillActions.canExport}
                           title="Export all skills as a zip"
-                          className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                          className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800"
                         >
                           <Download size={15} />
                         </button>
                       </>
                     )}
-                    <button type="button" onClick={onClose}>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
                       <X size={15} />
                     </button>
                   </div>

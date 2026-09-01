@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent } from "@/features/agent/types/agent";
-import { pluginProviderId } from "@/features/plugins/lib/pluginProvider";
+import { pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import type { InstalledPlugin } from "@/features/plugins/lib/types";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { MCPClient } from "@/features/settings/lib/mcp";
-
-export function pluginMcpClientId(pluginId: string, serverName: string): string {
-  return `plugin:${pluginId}:mcp:${serverName}`;
-}
 
 export interface PluginProviders {
   /** All installed plugins, for assembling skill entries. */

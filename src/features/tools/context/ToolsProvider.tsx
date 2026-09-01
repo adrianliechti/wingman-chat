@@ -10,7 +10,12 @@ import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilder
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
-import { pluginProviderId } from "@/features/plugins/lib/pluginProvider";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
+import {
+  PLUGIN_PROVIDER_PREFIX,
+  pluginMcpClientId,
+  pluginProviderId,
+} from "@/features/plugins/lib/pluginProvider";
 import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
@@ -236,6 +241,31 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     studioEnabled,
     activePlugins,
   );
+
+  // Drop selections for plugins that are no longer installed, so an uninstalled
+  // plugin's provider and MCP server ids don't linger in persisted storage.
+  const { isLoaded: pluginsLoaded } = usePlugins();
+  useEffect(() => {
+    if (!pluginsLoaded) return;
+    const liveIds = new Set<string>();
+    for (const plugin of installedPlugins) {
+      liveIds.add(pluginProviderId(plugin.id));
+      for (const server of plugin.mcpServers ?? []) {
+        liveIds.add(pluginMcpClientId(plugin.id, server.name));
+      }
+    }
+    const prune = (prev: Set<string>) => {
+      const stale = [...prev].filter(
+        (id) => id.startsWith(PLUGIN_PROVIDER_PREFIX) && !liveIds.has(id),
+      );
+      if (stale.length === 0) return prev;
+      const next = new Set(prev);
+      for (const id of stale) next.delete(id);
+      return next;
+    };
+    setUserTools(prune);
+    setSessionTools(prune);
+  }, [pluginsLoaded, installedPlugins]);
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(

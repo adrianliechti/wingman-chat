@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { loadHubPlugins } from "@/features/plugins/lib/hub";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
@@ -43,6 +44,7 @@ export function PluginsManagerPanel({
   onViewKindChange,
 }: PluginsManagerPanelProps) {
   const { plugins, installPlugin, uninstallPlugin } = usePlugins();
+  const { agents, updateAgent } = useAgents();
   const hubUrl = getConfig().plugins?.url;
 
   const [view, setInternalView] = useState<View>({ kind: "list" });
@@ -121,15 +123,29 @@ export function PluginsManagerPanel({
   };
 
   const handleUninstall = async (plugin: InstalledPlugin) => {
+    const serverCount = plugin.mcpServers?.length ?? 0;
+    const removed = [
+      plugin.skills.length > 0 &&
+        `${plugin.skills.length} bundled skill${plugin.skills.length === 1 ? "" : "s"}`,
+      serverCount > 0 && `${serverCount} MCP server${serverCount === 1 ? "" : "s"}`,
+    ].filter((part): part is string => Boolean(part));
     if (
       !(await confirm({
         title: "Uninstall plugin?",
-        message: `"${plugin.title || plugin.id}" and all its bundled skills will be removed.`,
+        message: removed.length
+          ? `"${plugin.title || plugin.id}" and its ${removed.join(" and ")} will be removed.`
+          : `"${plugin.title || plugin.id}" will be removed.`,
         danger: true,
       }))
     )
       return;
     await uninstallPlugin(plugin.id);
+    // Agents keep plugin ids by reference; drop the dangling ones.
+    for (const agent of agents) {
+      if (agent.plugins?.includes(plugin.id)) {
+        updateAgent(agent.id, { plugins: agent.plugins.filter((id) => id !== plugin.id) });
+      }
+    }
     setView({ kind: "list" });
   };
 
@@ -651,6 +667,29 @@ export function PluginsManagerPanel({
                           {skill.description}
                         </span>
                       )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(plugin.mcpServers ?? []).length > 0 && (
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                  MCP Servers
+                </p>
+                <div className="space-y-2">
+                  {(plugin.mcpServers ?? []).map((name) => (
+                    <div
+                      key={name}
+                      className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
+                    >
+                      <Server
+                        size={13}
+                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                        {name}
+                      </span>
                     </div>
                   ))}
                 </div>
