@@ -1,16 +1,21 @@
 import JSZip from "jszip";
 import {
+  assertOoxmlInputSize,
   child,
   cssFontStack,
   emuToPx,
   escapeHtml,
   loadMediaDataUrl,
   mixHex,
+  normalizeHexColor,
+  OoxmlPackageReader,
+  OoxmlResourceLimitError,
   parseThemeDoc,
   parseXml,
   ptToPx,
   px,
   resolveTarget,
+  sanitizeHyperlinkUrl,
 } from "./ooxml";
 import { type FillResolver, parseChart, renderChartSvg } from "./ooxmlChart";
 
@@ -21,20 +26,70 @@ import { type FillResolver, parseChart, renderChartSvg } from "./ooxmlChart";
  * heights, hyperlinks, and Excel-style row/column headers.
  */
 
-export interface XlsxHtmlResult {
-  sheets: { name: string; html: string }[];
+export interface XlsxCellView {
+  /** Zero-based indexes in the visible (hidden tracks removed) grid. */
+  row: number;
+  column: number;
+  sourceRow: number;
+  sourceColumn: number;
+  html: string;
+  text: string;
+  css: string;
+  rowSpan: number;
+  columnSpan: number;
+  spill: boolean;
 }
 
-/** Rendering caps — beyond this the sheet is truncated with a notice. */
-const MAX_ROWS = 2000;
-const MAX_COLS = 100;
+export interface XlsxSheetView {
+  name: string;
+  rowCount: number;
+  columnCount: number;
+  /** Display labels retain authored row/column coordinates across hidden tracks. */
+  rowNumbers: readonly number[];
+  columnLabels: readonly string[];
+  rowHeights: readonly number[];
+  columnWidths: readonly number[];
+  frozenRows: number;
+  frozenColumns: number;
+  showGridLines: boolean;
+  overlayHtml: string;
+  truncated: boolean;
+  cellAt(row: number, column: number): XlsxCellView | null;
+}
+
+export interface XlsxSheetHandle {
+  name: string;
+  /** Parse/materialize this sheet on demand. Recently viewed sheets are cached. */
+  load(): Promise<XlsxSheetView>;
+}
+
+export interface XlsxHtmlResult {
+  sheets: XlsxSheetHandle[];
+}
+
+/** Hard materialization limits; viewport rendering itself is virtualized. */
+export const MAX_XLSX_ROWS = 100_000;
+export const MAX_XLSX_COLS = 16_384;
+export const MAX_XLSX_CELLS = 250_000;
+const MAX_XLSX_MERGED_CELLS = 250_000;
+const MAX_XLSX_DRAWING_OBJECTS = 2_000;
+const MAX_CACHED_XLSX_SHEETS = 4;
+const MAX_XLSX_SHARED_STRINGS = 250_000;
+const MAX_XLSX_STYLE_RECORDS = 100_000;
+const MAX_XLSX_COLUMN_ASSIGNMENTS = 250_000;
+const MAX_XLSX_HYPERLINK_CELLS = 100_000;
+const MAX_XLSX_CF_RULES = 2_000;
+const MAX_XLSX_CF_RANGES = 4_096;
+const MAX_XLSX_SHEETS = 1_024;
 
 export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxHtmlResult> {
+  assertOoxmlInputSize(file);
   const zip = await JSZip.loadAsync(file as Blob);
+  const reader = new OoxmlPackageReader(zip);
 
-  const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
+  const workbookXml = await reader.text("xl/workbook.xml");
   const ctx: XlsxCtx = {
-    zip,
+    reader,
     workbookDoc: workbookXml ? parseXml(workbookXml) : null,
     sharedStrings: [],
     themeColors: [],
@@ -57,20 +112,49 @@ export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxH
   if (sheets.length === 0) {
     throw new Error("Invalid XLSX: no sheets found");
   }
-
-  const out: XlsxHtmlResult = { sheets: [] };
-  for (const entry of sheets) {
-    const xml = await zip.file(entry.path)?.async("string");
-    if (!xml) continue;
-    const rels = await loadSheetRels(ctx, entry.path);
-    const drawing = await loadSheetDrawing(ctx, entry.path);
-    out.sheets.push({ name: entry.name, html: await renderSheet(ctx, xml, rels, drawing) });
+  if (sheets.length > MAX_XLSX_SHEETS) {
+    throw new OoxmlResourceLimitError(
+      `Workbook contains ${sheets.length} sheets, over the ${MAX_XLSX_SHEETS}-sheet limit`,
+    );
   }
 
-  if (out.sheets.length === 0) {
+  const availableSheets = sheets.filter((entry) => reader.has(entry.path));
+  if (availableSheets.length === 0) {
     throw new Error("Invalid XLSX: no readable sheets");
   }
-  return out;
+
+  const cache = new Map<number, Promise<XlsxSheetView>>();
+  const loadSheet = (entry: SheetEntry, index: number): Promise<XlsxSheetView> => {
+    const cached = cache.get(index);
+    if (cached) {
+      cache.delete(index);
+      cache.set(index, cached);
+      return cached;
+    }
+    const pending = (async () => {
+      const xml = await reader.text(entry.path);
+      if (!xml) throw new Error(`Invalid XLSX: missing ${entry.path}`);
+      const [rels, drawing] = await Promise.all([loadSheetRels(ctx, entry.path), loadSheetDrawing(ctx, entry.path)]);
+      return renderSheet(ctx, entry.name, xml, rels, drawing);
+    })();
+    cache.set(index, pending);
+    while (cache.size > MAX_CACHED_XLSX_SHEETS) {
+      const oldest = cache.keys().next();
+      if (oldest.done) break;
+      cache.delete(oldest.value);
+    }
+    pending.catch(() => {
+      if (cache.get(index) === pending) cache.delete(index);
+    });
+    return pending;
+  };
+
+  return {
+    sheets: availableSheets.map((entry, index) => ({
+      name: entry.name,
+      load: () => loadSheet(entry, index),
+    })),
+  };
 }
 
 // ============================================================================
@@ -128,7 +212,7 @@ interface Dxf {
 }
 
 interface XlsxCtx {
-  zip: JSZip;
+  reader: OoxmlPackageReader;
   workbookDoc: Document | null;
   sharedStrings: RichString[];
   themeColors: string[];
@@ -158,10 +242,16 @@ function loadWorkbookProps(ctx: XlsxCtx): void {
 }
 
 async function loadSharedStrings(ctx: XlsxCtx): Promise<void> {
-  const xml = await ctx.zip.file("xl/sharedStrings.xml")?.async("string");
+  const xml = await ctx.reader.text("xl/sharedStrings.xml");
   if (!xml) return;
   const doc = parseXml(xml);
-  ctx.sharedStrings = els(doc, "si").map((si) => parseRichString(si, ctx));
+  const strings = els(doc, "si");
+  if (strings.length > MAX_XLSX_SHARED_STRINGS) {
+    throw new OoxmlResourceLimitError(
+      `Workbook contains ${strings.length} shared strings, over the ${MAX_XLSX_SHARED_STRINGS}-string limit`,
+    );
+  }
+  ctx.sharedStrings = strings.map((si) => parseRichString(si, ctx));
 }
 
 /** CSS for a rich-text run's <rPr> (b/i/u/strike/sz/color/font). */
@@ -215,7 +305,7 @@ function parseRichString(node: Element, ctx: XlsxCtx): RichString {
 
 /** Excel theme color indices: lt1, dk1, lt2, dk2, accent1–6, hlink, folHlink */
 async function loadThemeColors(ctx: XlsxCtx): Promise<void> {
-  const xml = await ctx.zip.file("xl/theme/theme1.xml")?.async("string");
+  const xml = await ctx.reader.text("xl/theme/theme1.xml");
   if (!xml) {
     ctx.themeColors = [
       "FFFFFF",
@@ -308,12 +398,16 @@ function xlsxColor(el: Element | undefined, ctx: XlsxCtx): string | undefined {
   if (el.getAttribute("auto") === "1") return undefined;
 
   const rgb = el.getAttribute("rgb");
-  if (rgb) return `#${rgb.length === 8 ? rgb.slice(2) : rgb}`;
+  if (rgb) {
+    const hex = normalizeHexColor(rgb.length === 8 ? rgb.slice(2) : rgb);
+    if (hex) return `#${hex}`;
+  }
 
   const themeIdx = el.getAttribute("theme");
   if (themeIdx != null) {
     let hex = ctx.themeColors[parseInt(themeIdx, 10)] ?? "000000";
-    const tint = parseFloat(el.getAttribute("tint") || "0");
+    const parsedTint = parseFloat(el.getAttribute("tint") || "0");
+    const tint = Number.isFinite(parsedTint) ? Math.max(-1, Math.min(1, parsedTint)) : 0;
     if (tint) hex = applyTint(hex, tint);
     return `#${hex}`;
   }
@@ -332,11 +426,30 @@ function applyTint(hex: string, tint: number): string {
 }
 
 async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
-  const xml = await ctx.zip.file("xl/styles.xml")?.async("string");
+  const xml = await ctx.reader.text("xl/styles.xml");
   if (!xml) return;
   const doc = parseXml(xml);
 
-  for (const nf of els(firstEl(doc, "numFmts"), "numFmt")) {
+  const numFormats = els(firstEl(doc, "numFmts"), "numFmt");
+  const fontElements = els(firstEl(doc, "fonts"), "font");
+  const fillElements = els(firstEl(doc, "fills"), "fill");
+  const borderElements = els(firstEl(doc, "borders"), "border");
+  const xfElements = els(firstEl(doc, "cellXfs"), "xf");
+  const dxfElements = els(firstEl(doc, "dxfs"), "dxf");
+  const styleRecordCount =
+    numFormats.length +
+    fontElements.length +
+    fillElements.length +
+    borderElements.length +
+    xfElements.length +
+    dxfElements.length;
+  if (styleRecordCount > MAX_XLSX_STYLE_RECORDS) {
+    throw new OoxmlResourceLimitError(
+      `Workbook contains ${styleRecordCount} style records, over the ${MAX_XLSX_STYLE_RECORDS}-record limit`,
+    );
+  }
+
+  for (const nf of numFormats) {
     const id = parseInt(nf.getAttribute("numFmtId") || "", 10);
     const code = nf.getAttribute("formatCode");
     if (!Number.isNaN(id) && code) ctx.numFmts.set(id, code);
@@ -350,20 +463,21 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
     return v !== "0" && v !== "false" && v !== "none";
   };
 
-  for (const font of els(firstEl(doc, "fonts"), "font")) {
+  for (const font of fontElements) {
     const szAttr = firstEl(font, "sz")?.getAttribute("val");
+    const parsedSize = szAttr ? parseFloat(szAttr) : undefined;
     ctx.fonts.push({
       bold: flagOn(firstEl(font, "b")),
       italic: flagOn(firstEl(font, "i")),
       underline: flagOn(firstEl(font, "u")),
       strike: flagOn(firstEl(font, "strike")),
-      sizePt: szAttr ? parseFloat(szAttr) : undefined,
+      sizePt: parsedSize && Number.isFinite(parsedSize) ? Math.max(1, Math.min(400, parsedSize)) : undefined,
       color: xlsxColor(firstEl(font, "color"), ctx),
       name: firstEl(font, "name")?.getAttribute("val") ?? undefined,
     });
   }
 
-  for (const fill of els(firstEl(doc, "fills"), "fill")) {
+  for (const fill of fillElements) {
     const pattern = firstEl(fill, "patternFill");
     const type = pattern?.getAttribute("patternType");
     if (!pattern || type === "none" || !type) {
@@ -374,7 +488,7 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
     ctx.fills.push(xlsxColor(firstEl(pattern, "fgColor"), ctx) ?? xlsxColor(firstEl(pattern, "bgColor"), ctx));
   }
 
-  for (const border of els(firstEl(doc, "borders"), "border")) {
+  for (const border of borderElements) {
     const side = (name: string): BorderSide | undefined => {
       const el = firstEl(border, name);
       const style = el?.getAttribute("style");
@@ -384,8 +498,7 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
     ctx.borders.push({ left: side("left"), right: side("right"), top: side("top"), bottom: side("bottom") });
   }
 
-  const cellXfs = firstEl(doc, "cellXfs");
-  for (const xf of els(cellXfs, "xf")) {
+  for (const xf of xfElements) {
     const alignment = firstEl(xf, "alignment");
     ctx.cellXfs.push({
       numFmtId: parseInt(xf.getAttribute("numFmtId") || "0", 10),
@@ -395,15 +508,16 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
       hAlign: alignment?.getAttribute("horizontal") ?? undefined,
       vAlign: alignment?.getAttribute("vertical") ?? undefined,
       wrapText: alignment?.getAttribute("wrapText") === "1" || alignment?.getAttribute("wrapText") === "true",
-      indent: parseInt(alignment?.getAttribute("indent") || "0", 10) || undefined,
-      rotation: parseInt(alignment?.getAttribute("textRotation") || "0", 10) || undefined,
+      indent: Math.max(0, Math.min(250, parseInt(alignment?.getAttribute("indent") || "0", 10) || 0)) || undefined,
+      rotation:
+        Math.max(0, Math.min(255, parseInt(alignment?.getAttribute("textRotation") || "0", 10) || 0)) || undefined,
     });
   }
 
   // Differential formats for conditional formatting. In a CF <dxf> the visible
   // highlight is stored in the patternFill's bgColor (not fgColor like a normal
   // cell fill) — a well-known Excel quirk — so prefer bgColor here.
-  for (const dxf of els(firstEl(doc, "dxfs"), "dxf")) {
+  for (const dxf of dxfElements) {
     const font = firstEl(dxf, "font");
     const pattern = firstEl(dxf, "patternFill");
     ctx.dxfs.push({
@@ -425,7 +539,7 @@ interface SheetEntry {
 }
 
 async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
-  const relsXml = await ctx.zip.file("xl/_rels/workbook.xml.rels")?.async("string");
+  const relsXml = await ctx.reader.text("xl/_rels/workbook.xml.rels");
 
   const rIdToPath = new Map<string, string>();
   if (relsXml) {
@@ -458,9 +572,7 @@ async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
   }
 
   if (entries.length === 0) {
-    const paths = Object.keys(ctx.zip.files)
-      .filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(p))
-      .sort();
+    const paths = ctx.reader.paths.filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(p)).sort();
     for (let i = 0; i < paths.length; i++) entries.push({ name: `Sheet${i + 1}`, path: paths[i] });
   }
   return entries;
@@ -469,13 +581,14 @@ async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
 async function loadSheetRels(ctx: XlsxCtx, sheetPath: string): Promise<Map<string, string>> {
   const dir = sheetPath.substring(0, sheetPath.lastIndexOf("/"));
   const name = sheetPath.substring(sheetPath.lastIndexOf("/") + 1);
-  const xml = await ctx.zip.file(`${dir}/_rels/${name}.rels`)?.async("string");
+  const xml = await ctx.reader.text(`${dir}/_rels/${name}.rels`);
   const map = new Map<string, string>();
   if (!xml) return map;
   for (const rel of els(parseXml(xml), "Relationship")) {
     const id = rel.getAttribute("Id");
     const target = rel.getAttribute("Target");
-    if (id && target && rel.getAttribute("TargetMode") === "External") map.set(id, target);
+    const safeTarget = target ? sanitizeHyperlinkUrl(target) : undefined;
+    if (id && safeTarget && rel.getAttribute("TargetMode") === "External") map.set(id, safeTarget);
   }
   return map;
 }
@@ -494,7 +607,7 @@ interface SheetDrawing {
 async function loadSheetDrawing(ctx: XlsxCtx, sheetPath: string): Promise<SheetDrawing | null> {
   const dir = sheetPath.substring(0, sheetPath.lastIndexOf("/"));
   const name = sheetPath.substring(sheetPath.lastIndexOf("/") + 1);
-  const relsXml = await ctx.zip.file(`${dir}/_rels/${name}.rels`)?.async("string");
+  const relsXml = await ctx.reader.text(`${dir}/_rels/${name}.rels`);
   if (!relsXml) return null;
 
   let target: string | undefined;
@@ -504,12 +617,12 @@ async function loadSheetDrawing(ctx: XlsxCtx, sheetPath: string): Promise<SheetD
   if (!target) return null;
 
   const drawingPath = resolveTarget(sheetPath, target);
-  const dxml = await ctx.zip.file(drawingPath)?.async("string");
+  const dxml = await ctx.reader.text(drawingPath);
   if (!dxml) return null;
 
   const ddir = drawingPath.substring(0, drawingPath.lastIndexOf("/"));
   const dname = drawingPath.substring(drawingPath.lastIndexOf("/") + 1);
-  const drelsXml = await ctx.zip.file(`${ddir}/_rels/${dname}.rels`)?.async("string");
+  const drelsXml = await ctx.reader.text(`${ddir}/_rels/${dname}.rels`);
   const rels = new Map<string, string>();
   if (drelsXml) {
     for (const rel of els(parseXml(drelsXml), "Relationship")) {
@@ -548,7 +661,8 @@ function drawingFill(ctx: XlsxCtx): FillResolver {
     const fill = child(spPr, "a:solidFill");
     if (!fill) return undefined;
     const srgb = child(fill, "a:srgbClr");
-    if (srgb?.getAttribute("val")) return `#${srgb.getAttribute("val")}`;
+    const srgbHex = normalizeHexColor(srgb?.getAttribute("val"));
+    if (srgbHex) return `#${srgbHex}`;
     const sch = child(fill, "a:schemeClr");
     if (sch) {
       const hex = scheme[sch.getAttribute("val") || ""];
@@ -570,6 +684,11 @@ async function renderDrawings(
 ): Promise<string> {
   const anchors = [...els(drawing.doc, "twoCellAnchor"), ...els(drawing.doc, "oneCellAnchor")];
   if (!anchors.length) return "";
+  if (anchors.length > MAX_XLSX_DRAWING_OBJECTS) {
+    throw new OoxmlResourceLimitError(
+      `Worksheet drawing contains ${anchors.length} objects, over the ${MAX_XLSX_DRAWING_OBJECTS}-object limit`,
+    );
+  }
 
   const accents = ctx.themeColors.slice(4, 10).map((h) => (h ? `#${h}` : undefined));
   const resolveFill = drawingFill(ctx);
@@ -604,7 +723,7 @@ async function renderDrawings(
       const rId = blip.getAttributeNS(REL_NS, "embed") || blip.getAttribute("r:embed");
       const target = rId ? drawing.rels.get(rId) : undefined;
       if (target) {
-        const url = await loadMediaDataUrl(ctx.zip, ctx.mediaCache, resolveTarget(drawing.path, target));
+        const url = await loadMediaDataUrl(ctx.reader, ctx.mediaCache, resolveTarget(drawing.path, target));
         if (url) items.push(`<img src="${url}" alt="" style="${pos}object-fit:contain;"/>`);
       }
       continue;
@@ -616,7 +735,7 @@ async function renderDrawings(
       const rId = chartEl.getAttributeNS(REL_NS, "id") || chartEl.getAttribute("r:id");
       const target = rId ? drawing.rels.get(rId) : undefined;
       if (target) {
-        const cxml = await ctx.zip.file(resolveTarget(drawing.path, target))?.async("string");
+        const cxml = await ctx.reader.text(resolveTarget(drawing.path, target));
         if (cxml) {
           const data = parseChart(parseXml(cxml), resolveFill, accents);
           if (data?.series.length) {
@@ -1069,7 +1188,7 @@ function formatNumberValue(raw: string, code: string, date1904: boolean): string
 
 function colIndexFromRef(ref: string): number {
   const match = ref.match(/^([A-Z]+)/);
-  if (!match) return 0;
+  if (!match) return -1;
   let index = 0;
   for (const ch of match[1]) index = index * 26 + (ch.charCodeAt(0) - 64);
   return index - 1;
@@ -1087,6 +1206,7 @@ function colLetter(index: number): string {
 
 interface CellData {
   html: string;
+  displayText: string;
   styleIdx: number;
   /** general-alignment hint: numbers right, text left, bool/error center */
   kind: "n" | "s" | "b";
@@ -1149,10 +1269,11 @@ function parseCfRange(token: string): CfRange | null {
   const [a, b] = t.split(":");
   const r1 = parseInt(a.replace(/^[A-Za-z]+/, ""), 10) - 1;
   const c1 = colIndexFromRef(a.toUpperCase());
-  if (Number.isNaN(r1)) return null;
+  if (Number.isNaN(r1) || r1 < 0 || c1 < 0) return null;
   if (!b) return { top: r1, left: c1, bottom: r1, right: c1 };
   const r2 = parseInt(b.replace(/^[A-Za-z]+/, ""), 10) - 1;
   const c2 = colIndexFromRef(b.toUpperCase());
+  if (Number.isNaN(r2) || r2 < 0 || c2 < 0) return null;
   return { top: Math.min(r1, r2), left: Math.min(c1, c2), bottom: Math.max(r1, r2), right: Math.max(c1, c2) };
 }
 
@@ -1214,6 +1335,7 @@ function compileCf(
   textsIn: (r: CfRange) => string[],
 ): CompiledCf[] {
   const out: CompiledCf[] = [];
+  let rangeCount = 0;
   const cfvos = (parent: Element | undefined): Cfvo[] =>
     els(parent, "cfvo").map((v) => ({ kind: v.getAttribute("type") || "num", value: v.getAttribute("val") }));
 
@@ -1223,6 +1345,12 @@ function compileCf(
       .map(parseCfRange)
       .filter((r): r is CfRange => r !== null);
     if (!ranges.length) continue;
+    rangeCount += ranges.length;
+    if (rangeCount > MAX_XLSX_CF_RANGES) {
+      throw new OoxmlResourceLimitError(
+        `Worksheet conditional formatting exceeds the ${MAX_XLSX_CF_RANGES}-range limit`,
+      );
+    }
     const samples = ranges.flatMap(numbersIn);
 
     for (const el of els(cf, "cfRule")) {
@@ -1304,7 +1432,14 @@ function compileCf(
       }
       // type === "expression" is intentionally skipped (needs a formula engine).
 
-      if (rule) out.push({ ranges, rule });
+      if (rule) {
+        out.push({ ranges, rule });
+        if (out.length > MAX_XLSX_CF_RULES) {
+          throw new OoxmlResourceLimitError(
+            `Worksheet conditional formatting exceeds the ${MAX_XLSX_CF_RULES}-rule limit`,
+          );
+        }
+      }
     }
   }
 
@@ -1519,10 +1654,11 @@ function hexToRgba(hex: string, alpha: number): string {
 
 async function renderSheet(
   ctx: XlsxCtx,
+  name: string,
   xml: string,
   extRels: Map<string, string>,
   drawing: SheetDrawing | null,
-): Promise<string> {
+): Promise<XlsxSheetView> {
   const doc = parseXml(xml);
 
   const sheetView = firstEl(doc, "sheetView");
@@ -1538,40 +1674,66 @@ async function renderSheet(
   // Column widths (Excel width unit ≈ characters of Calibri 11 ≈ 7px)
   const colWidthPx = new Map<number, number>();
   const hiddenCols = new Set<number>();
+  let authoredMaxColumn = -1;
+  let truncated = false;
+  let columnAssignments = 0;
   for (const col of els(firstEl(doc, "cols"), "col")) {
     const min = parseInt(col.getAttribute("min") || "1", 10) - 1;
     const max = parseInt(col.getAttribute("max") || "1", 10) - 1;
-    const width = parseFloat(col.getAttribute("width") || "0");
+    if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < min) continue;
+    const parsedWidth = parseFloat(col.getAttribute("width") || "0");
+    const width =
+      Number.isFinite(parsedWidth) && parsedWidth > 0 ? Math.max(2, Math.min(2_048, parsedWidth * 7 + 5)) : 0;
     const hidden = col.getAttribute("hidden") === "1";
-    for (let c = min; c <= Math.min(max, MAX_COLS - 1); c++) {
-      if (width) colWidthPx.set(c, Math.round(width * 7 + 5));
+    if (max >= MAX_XLSX_COLS) truncated = true;
+    const first = Math.max(0, min);
+    const last = Math.min(max, MAX_XLSX_COLS - 1);
+    if (first > last) continue;
+    columnAssignments += last - first + 1;
+    if (columnAssignments > MAX_XLSX_COLUMN_ASSIGNMENTS) {
+      throw new OoxmlResourceLimitError(
+        `Worksheet column definitions cover more than the ${MAX_XLSX_COLUMN_ASSIGNMENTS}-assignment limit`,
+      );
+    }
+    authoredMaxColumn = Math.max(authoredMaxColumn, last);
+    for (let c = first; c <= last; c++) {
+      if (width) colWidthPx.set(c, Math.round(width));
       if (hidden) hiddenCols.add(c);
     }
   }
 
-  // Merged ranges
-  const mergeStart = new Map<string, { cols: number; rows: number }>();
-  const mergedAway = new Set<string>();
+  // Merged ranges are admitted by covered-cell count before any expansion.
+  const mergeRanges: { top: number; left: number; bottom: number; right: number }[] = [];
+  let mergedCellCount = 0;
   for (const merge of els(firstEl(doc, "mergeCells"), "mergeCell")) {
-    const ref = merge.getAttribute("ref") || "";
+    const ref = (merge.getAttribute("ref") || "").toUpperCase();
     const [a, b] = ref.split(":");
     if (!a || !b) continue;
     const c1 = colIndexFromRef(a);
     const r1 = parseInt(a.replace(/^[A-Z]+/, ""), 10) - 1;
     const c2 = colIndexFromRef(b);
     const r2 = parseInt(b.replace(/^[A-Z]+/, ""), 10) - 1;
-    mergeStart.set(`${r1}:${c1}`, { cols: c2 - c1 + 1, rows: r2 - r1 + 1 });
-    for (let r = r1; r <= r2; r++) {
-      for (let c = c1; c <= c2; c++) {
-        if (r !== r1 || c !== c1) mergedAway.add(`${r}:${c}`);
-      }
+    if ([r1, c1, r2, c2].some((value) => !Number.isInteger(value) || value < 0)) continue;
+    const top = Math.min(r1, r2);
+    const left = Math.min(c1, c2);
+    const bottom = Math.min(Math.max(r1, r2), MAX_XLSX_ROWS - 1);
+    const right = Math.min(Math.max(c1, c2), MAX_XLSX_COLS - 1);
+    if (Math.max(r1, r2) >= MAX_XLSX_ROWS || Math.max(c1, c2) >= MAX_XLSX_COLS) truncated = true;
+    if (top > bottom || left > right) continue;
+    mergedCellCount += (bottom - top + 1) * (right - left + 1);
+    if (mergedCellCount > MAX_XLSX_MERGED_CELLS) {
+      throw new OoxmlResourceLimitError(
+        `Worksheet merged ranges cover more than the ${MAX_XLSX_MERGED_CELLS}-cell limit`,
+      );
     }
+    mergeRanges.push({ top, left, bottom, right });
   }
 
   // Hyperlinks
   const links = new Map<string, string>();
+  let hyperlinkCells = 0;
   for (const link of els(firstEl(doc, "hyperlinks"), "hyperlink")) {
-    const ref = link.getAttribute("ref");
+    const ref = link.getAttribute("ref")?.toUpperCase();
     const rId =
       link.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
       link.getAttribute("r:id");
@@ -1579,6 +1741,9 @@ async function renderSheet(
     if (!ref || !target) continue;
     const [a, b] = ref.split(":");
     if (!b) {
+      if (++hyperlinkCells > MAX_XLSX_HYPERLINK_CELLS) {
+        throw new OoxmlResourceLimitError(`Worksheet hyperlinks exceed the ${MAX_XLSX_HYPERLINK_CELLS}-cell limit`);
+      }
       links.set(a, target);
       continue;
     }
@@ -1587,9 +1752,18 @@ async function renderSheet(
     const r1 = parseInt(a.replace(/^[A-Z]+/, ""), 10);
     const c2 = colIndexFromRef(b);
     const r2 = parseInt(b.replace(/^[A-Z]+/, ""), 10);
-    if ((r2 - r1 + 1) * (c2 - c1 + 1) > 10000) {
+    if ([r1, c1, r2, c2].some((value) => !Number.isInteger(value) || value < 0) || r2 < r1 || c2 < c1) continue;
+    const coveredCells = (r2 - r1 + 1) * (c2 - c1 + 1);
+    if (coveredCells > 10_000) {
+      if (++hyperlinkCells > MAX_XLSX_HYPERLINK_CELLS) {
+        throw new OoxmlResourceLimitError(`Worksheet hyperlinks exceed the ${MAX_XLSX_HYPERLINK_CELLS}-cell limit`);
+      }
       links.set(a, target);
       continue;
+    }
+    hyperlinkCells += coveredCells;
+    if (hyperlinkCells > MAX_XLSX_HYPERLINK_CELLS) {
+      throw new OoxmlResourceLimitError(`Worksheet hyperlinks exceed the ${MAX_XLSX_HYPERLINK_CELLS}-cell limit`);
     }
     for (let rr = r1; rr <= r2; rr++) {
       for (let cc = c1; cc <= c2; cc++) links.set(`${colLetter(cc)}${rr}`, target);
@@ -1602,71 +1776,92 @@ async function renderSheet(
   const hiddenRows = new Set<number>();
   let maxRow = -1;
   let maxCol = -1;
-  let truncated = false;
+  let materializedCellCount = 0;
+  let materializedRowCount = 0;
 
   for (const row of els(firstEl(doc, "sheetData"), "row")) {
+    materializedRowCount++;
+    if (materializedRowCount > MAX_XLSX_ROWS) {
+      throw new OoxmlResourceLimitError(`Worksheet contains more than the ${MAX_XLSX_ROWS}-row limit`);
+    }
     const r = parseInt(row.getAttribute("r") || "0", 10) - 1;
-    if (r < 0) continue;
-    if (r >= MAX_ROWS) {
+    if (!Number.isInteger(r) || r < 0) continue;
+    if (r >= MAX_XLSX_ROWS) {
       truncated = true;
-      break;
+      continue;
     }
     const ht = row.getAttribute("ht");
-    if (ht) rowHeightPx.set(r, ptToPx(parseFloat(ht)));
+    if (ht) {
+      const height = ptToPx(parseFloat(ht));
+      if (Number.isFinite(height) && height > 0) rowHeightPx.set(r, Math.min(2_048, height));
+    }
     if (row.getAttribute("hidden") === "1") hiddenRows.add(r);
 
     let positional = 0;
     const cells = new Map<number, CellData>();
     for (const cell of els(row, "c")) {
-      const ref = cell.getAttribute("r");
+      materializedCellCount++;
+      if (materializedCellCount > MAX_XLSX_CELLS) {
+        throw new OoxmlResourceLimitError(`Worksheet contains more than the ${MAX_XLSX_CELLS}-cell limit`);
+      }
+      const ref = cell.getAttribute("r")?.toUpperCase();
       const c = ref ? colIndexFromRef(ref) : positional;
       positional = c + 1;
-      if (c >= MAX_COLS) {
+      if (c < 0) continue;
+      if (c >= MAX_XLSX_COLS) {
         truncated = true;
         continue;
       }
 
       const type = cell.getAttribute("t") || "n";
-      const styleIdx = parseInt(cell.getAttribute("s") || "0", 10);
+      const parsedStyleIndex = parseInt(cell.getAttribute("s") || "0", 10);
+      const styleIdx = Number.isInteger(parsedStyleIndex) && parsedStyleIndex >= 0 ? parsedStyleIndex : 0;
       const vEl = firstEl(cell, "v");
       const v = vEl?.textContent ?? "";
 
       let html = "";
+      let displayText = "";
       let kind: CellData["kind"] = "n";
       let rawNum: number | undefined;
       let rawText: string | undefined;
       if (type === "s") {
         const ss = ctx.sharedStrings[parseInt(v, 10)];
         html = ss?.html ?? "";
-        rawText = ss?.text ?? "";
+        displayText = ss?.text ?? "";
+        rawText = displayText;
         kind = "s";
       } else if (type === "str") {
         rawText = v;
+        displayText = v;
         html = escapeHtml(v);
         kind = "s";
       } else if (type === "inlineStr" || (!vEl && firstEl(cell, "is"))) {
         const isEl = firstEl(cell, "is");
         const rich = isEl ? parseRichString(isEl, ctx) : { html: "", text: "" };
         html = rich.html;
-        rawText = rich.text;
+        displayText = rich.text;
+        rawText = displayText;
         kind = "s";
       } else if (type === "b") {
-        html = v === "1" ? "TRUE" : "FALSE";
+        displayText = v === "1" ? "TRUE" : "FALSE";
+        html = displayText;
         kind = "b";
       } else if (type === "e") {
+        displayText = v;
         html = escapeHtml(v);
         kind = "b";
       } else if (v !== "") {
         const xf = ctx.cellXfs[styleIdx];
         const n = parseFloat(v);
         if (!Number.isNaN(n)) rawNum = n;
-        html = escapeHtml(formatNumberValue(v, formatCode(ctx, xf?.numFmtId ?? 0), ctx.date1904));
+        displayText = formatNumberValue(v, formatCode(ctx, xf?.numFmtId ?? 0), ctx.date1904);
+        html = escapeHtml(displayText);
         kind = "n";
       }
 
       if (html === "" && styleIdx === 0) continue;
       const link = ref ? links.get(ref) : undefined;
-      cells.set(c, { html, styleIdx, kind, link, num: rawNum, text: rawText });
+      cells.set(c, { html, displayText, styleIdx, kind, link, num: rawNum, text: rawText });
       maxCol = Math.max(maxCol, c);
     }
     if (cells.size > 0 || rowHeightPx.has(r)) {
@@ -1675,29 +1870,24 @@ async function renderSheet(
     }
   }
 
-  // Also extend bounds to cover merges and styled columns
-  for (const key of mergeStart.keys()) {
-    const [r, c] = key.split(":").map(Number);
-    maxRow = Math.max(maxRow, r);
-    maxCol = Math.max(maxCol, c);
+  // Also extend bounds to cover merges and explicitly described columns.
+  for (const merge of mergeRanges) {
+    maxRow = Math.max(maxRow, merge.bottom);
+    maxCol = Math.max(maxCol, merge.right);
   }
-  maxRow = Math.min(maxRow, MAX_ROWS - 1);
-  maxCol = Math.min(maxCol, MAX_COLS - 1);
+  maxCol = Math.max(maxCol, authoredMaxColumn);
+  maxRow = Math.max(0, Math.min(maxRow, MAX_XLSX_ROWS - 1));
+  maxCol = Math.max(0, Math.min(maxCol, MAX_XLSX_COLS - 1));
 
   const gridBorder = showGridLines ? "1px solid #E3E6EA" : "1px solid transparent";
 
-  // Build table
-  const colgroup: string[] = ['<col style="width:46px"/>'];
-  for (let c = 0; c <= maxCol; c++) {
-    if (hiddenCols.has(c)) continue;
-    colgroup.push(`<col style="width:${px(colWidthPx.get(c) ?? 64)}"/>`);
-  }
-
-  const headerCells: string[] = ['<th class="rn"></th>'];
-  for (let c = 0; c <= maxCol; c++) {
-    if (hiddenCols.has(c)) continue;
-    headerCells.push(`<th>${colLetter(c)}</th>`);
-  }
+  const visibleRows = Array.from({ length: maxRow + 1 }, (_, index) => index).filter((row) => !hiddenRows.has(row));
+  const visibleColumns = Array.from({ length: maxCol + 1 }, (_, index) => index).filter(
+    (column) => !hiddenCols.has(column),
+  );
+  // Keep an addressable grid even when every authored track is hidden.
+  if (visibleRows.length === 0) visibleRows.push(0);
+  if (visibleColumns.length === 0) visibleColumns.push(0);
 
   const sideCss = (side: BorderSide | undefined): string | undefined => {
     if (!side) return undefined;
@@ -1754,9 +1944,15 @@ async function renderSheet(
 
     // Alignment: explicit, else Excel "general" (numbers right, bool center)
     const hAlign = xf?.hAlign ?? (kind === "n" ? "right" : kind === "b" ? "center" : undefined);
-    if (hAlign && hAlign !== "general") styles.push(`text-align:${hAlign === "centerContinuous" ? "center" : hAlign}`);
-    if (xf?.vAlign === "center") styles.push("vertical-align:middle");
-    else if (xf?.vAlign === "top") styles.push("vertical-align:top");
+    const cssAlignment =
+      hAlign === "centerContinuous"
+        ? "center"
+        : hAlign && ["left", "right", "center", "justify", "fill", "distributed"].includes(hAlign)
+          ? hAlign
+          : undefined;
+    if (cssAlignment) styles.push(`text-align:${cssAlignment}`);
+    if (xf?.vAlign === "center") styles.push("align-items:center");
+    else if (xf?.vAlign === "top") styles.push("align-items:flex-start");
     if (xf?.wrapText) styles.push("white-space:pre-wrap", "word-wrap:break-word");
 
     // Indent (~8px per level), applied on the alignment side.
@@ -1797,162 +1993,158 @@ async function renderSheet(
   };
   const cfRules = compileCf(doc, ctx, numbersIn, textsIn);
 
-  // Pixel geometry of the grid (shared by frozen panes and the drawing overlay).
-  // colX/rowY give a cell's offset from the table's top-left, accounting for the
-  // leading row-number column and header row, skipping hidden tracks.
-  const ROWNUM_W = 46;
-  const HEADER_H = 20;
+  // Pixel geometry of the data grid. Hidden tracks have zero extent and are
+  // removed from the virtualizer's visible index space below.
   const colW = (c: number) => (hiddenCols.has(c) ? 0 : (colWidthPx.get(c) ?? 64));
   const rowH = (r: number) => (hiddenRows.has(r) ? 0 : (rowHeightPx.get(r) ?? 20));
-  const colX = (c: number) => {
-    let x = ROWNUM_W;
-    for (let i = 0; i < c; i++) x += colW(i);
-    return x;
-  };
-  const rowY = (r: number) => {
-    let y = HEADER_H;
-    for (let i = 0; i < r; i++) y += rowH(i);
-    return y;
-  };
+  const columnOffsets = [0];
+  for (let column = 0; column <= maxCol; column++) {
+    columnOffsets.push(columnOffsets[column] + colW(column));
+  }
+  const rowOffsets = [0];
+  for (let row = 0; row <= maxRow; row++) rowOffsets.push(rowOffsets[row] + rowH(row));
+  const colX = (column: number) => columnOffsets[Math.max(0, Math.min(column, maxCol + 1))];
+  const rowY = (row: number) => rowOffsets[Math.max(0, Math.min(row, maxRow + 1))];
 
-  const bodyRows: string[] = [];
-  for (let r = 0; r <= maxRow; r++) {
-    if (hiddenRows.has(r)) continue;
-    const cells = rowData.get(r) ?? new Map<number, CellData>();
-    const frozenR = r < frozenRows;
-    // Row-number cell: sticky-left always; also sticky-top when in a frozen row.
-    const rnSticky = frozenR ? ` style="top:${px(rowY(r))};z-index:6;"` : "";
-    const tds: string[] = [`<td class="rn"${rnSticky}>${r + 1}</td>`];
-
-    for (let c = 0; c <= maxCol; c++) {
-      if (hiddenCols.has(c)) continue;
-      if (mergedAway.has(`${r}:${c}`)) continue;
-
-      const data = cells.get(c);
-      const merge = mergeStart.get(`${r}:${c}`);
-      const frozenC = c < frozenCols;
-
-      const decls: string[] = [];
-      // Frozen cells need an opaque background so scrolled content doesn't show
-      // through; placed first so the cell's own fill/CF background wins.
-      if (frozenR || frozenC) decls.push("background:#fff");
-      const base = data ? cellStyleCss(data.styleIdx, data.kind) : "";
-      if (base) decls.push(base);
-
-      let iconHtml = "";
-      if (data && cfRules.length) {
-        const cf = evaluateCf(cfRules, ctx, r, c, data.num ?? null, data.text ?? null);
-        // Data bar paints behind the value; its translucent gradient overlays
-        // the (already-emitted) base background-color.
-        if (cf.bar) {
-          const pct = Math.round(cf.bar.ratio * 100);
-          decls.push(
-            `background-image:linear-gradient(90deg,${hexToRgba(cf.bar.color, 0.85)} ${pct}%,transparent ${pct}%)`,
-            "background-repeat:no-repeat",
-          );
-        }
-        if (cf.bg) decls.push(`background-color:${cf.bg}`);
-        if (cf.fontColor) decls.push(`color:${cf.fontColor}`);
-        if (cf.bold) decls.push("font-weight:bold");
-        if (cf.italic) decls.push("font-style:italic");
-        const deco: string[] = [];
-        if (cf.underline) deco.push("underline");
-        if (cf.strike) deco.push("line-through");
-        if (deco.length) decls.push(`text-decoration:${deco.join(" ")}`);
-        if (cf.icon) iconHtml = `<span class="cf-ico">${cf.icon}</span>`;
+  const actualToVisibleRow = new Map(visibleRows.map((row, index) => [row, index]));
+  const actualToVisibleColumn = new Map(visibleColumns.map((column, index) => [column, index]));
+  const mergeStarts = new Map<
+    string,
+    { sourceRow: number; sourceColumn: number; rowSpan: number; columnSpan: number }
+  >();
+  const mergedAway = new Set<string>();
+  for (const merge of mergeRanges) {
+    const rows: number[] = [];
+    const columns: number[] = [];
+    for (let row = merge.top; row <= merge.bottom; row++) {
+      const visible = actualToVisibleRow.get(row);
+      if (visible !== undefined) rows.push(visible);
+    }
+    for (let column = merge.left; column <= merge.right; column++) {
+      const visible = actualToVisibleColumn.get(column);
+      if (visible !== undefined) columns.push(visible);
+    }
+    const firstRow = rows[0];
+    const firstColumn = columns[0];
+    if (firstRow === undefined || firstColumn === undefined) continue;
+    mergeStarts.set(`${firstRow}:${firstColumn}`, {
+      sourceRow: merge.top,
+      sourceColumn: merge.left,
+      rowSpan: rows.length,
+      columnSpan: columns.length,
+    });
+    for (const row of rows) {
+      for (const column of columns) {
+        if (row !== firstRow || column !== firstColumn) mergedAway.add(`${row}:${column}`);
       }
+    }
+  }
 
-      // Text spill: an unwrapped text cell overflows into adjacent empty cells
-      // (Excel's default for long labels). Left/general spills right, right-align
-      // spills left, center spills if both sides are free.
-      const xf = data ? ctx.cellXfs[data.styleIdx] : undefined;
-      if (data && data.kind === "s" && data.html && !xf?.wrapText) {
-        const hA = xf?.hAlign;
-        const emptyAt = (cc: number) =>
-          cc < 0 || cc > maxCol || (!cells.get(cc) && !mergedAway.has(`${r}:${cc}`) && !mergeStart.has(`${r}:${cc}`));
-        const isLeft = !hA || hA === "left" || hA === "general";
-        const spill =
-          (isLeft && emptyAt(c + 1)) ||
-          (hA === "right" && emptyAt(c - 1)) ||
-          (hA === "center" && emptyAt(c + 1) && emptyAt(c - 1));
-        if (spill) decls.push("overflow:visible");
-      }
+  // Cache authored and merged cells only. Virtual scrolling can visit millions
+  // of blank coordinates over time, so retaining generated blank grid cells
+  // would defeat the bounded sparse model.
+  const renderedCells = new Map<string, XlsxCellView>();
+  const cellAt = (viewRow: number, viewColumn: number): XlsxCellView | null => {
+    if (viewRow < 0 || viewRow >= visibleRows.length || viewColumn < 0 || viewColumn >= visibleColumns.length) {
+      return null;
+    }
+    const cacheKey = `${viewRow}:${viewColumn}`;
+    const cached = renderedCells.get(cacheKey);
+    if (cached) return cached;
+    if (mergedAway.has(cacheKey)) return null;
 
-      // Frozen panes: stick the cell within the scroll viewport.
-      if (frozenR || frozenC) {
-        decls.push("position:sticky");
-        if (frozenR) decls.push(`top:${px(rowY(r))}`);
-        if (frozenC) decls.push(`left:${px(colX(c))}`);
-        decls.push(`z-index:${frozenR && frozenC ? 6 : 5}`);
-      }
+    const merge = mergeStarts.get(cacheKey);
+    const sourceRow = merge?.sourceRow ?? visibleRows[viewRow];
+    const sourceColumn = merge?.sourceColumn ?? visibleColumns[viewColumn];
+    const data = rowData.get(sourceRow)?.get(sourceColumn);
+    const declarations = [`border:${gridBorder}`];
+    const base = data ? cellStyleCss(data.styleIdx, data.kind) : "";
+    if (base) declarations.push(base);
 
-      const styleAttr = decls.length ? ` style="${decls.join(";")};"` : "";
-
-      // Span only visible tracks — a merge crossing a hidden row/col must not
-      // count it, or the colspan/rowspan overshoots and misaligns the row.
-      let spanAttrs = "";
-      if (merge) {
-        let cols = merge.cols;
-        let rows = merge.rows;
-        for (let cc = c; cc < c + merge.cols; cc++) if (hiddenCols.has(cc)) cols--;
-        for (let rr = r; rr < r + merge.rows; rr++) if (hiddenRows.has(rr)) rows--;
-        spanAttrs = `${cols > 1 ? ` colspan="${cols}"` : ""}${rows > 1 ? ` rowspan="${rows}"` : ""}`;
+    let iconHtml = "";
+    if (data && cfRules.length) {
+      const cf = evaluateCf(cfRules, ctx, sourceRow, sourceColumn, data.num ?? null, data.text ?? null);
+      if (cf.bar) {
+        const percent = Math.round(cf.bar.ratio * 100);
+        declarations.push(
+          `background-image:linear-gradient(90deg,${hexToRgba(cf.bar.color, 0.85)} ${percent}%,transparent ${percent}%)`,
+          "background-repeat:no-repeat",
+        );
       }
-      let inner = data?.link
-        ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noreferrer">${data.html}</a>`
-        : (data?.html ?? "");
-      // Text rotation: 1–90 = counter-clockwise, 91–180 = clockwise (val−90),
-      // 255 = vertically stacked. Wrap content so the cell box stays put.
-      const rot = data ? ctx.cellXfs[data.styleIdx]?.rotation : undefined;
-      if (rot && inner) {
-        const transform = rot === 255 ? "" : `transform:rotate(${rot <= 90 ? -rot : rot - 90}deg);`;
-        const css =
-          rot === 255
-            ? "writing-mode:vertical-rl;text-orientation:upright;"
-            : `display:inline-block;${transform}transform-origin:center;white-space:nowrap;`;
-        inner = `<span style="${css}">${inner}</span>`;
-      }
-      tds.push(`<td${spanAttrs}${styleAttr}>${iconHtml}${inner}</td>`);
+      if (cf.bg) declarations.push(`background-color:${cf.bg}`);
+      if (cf.fontColor) declarations.push(`color:${cf.fontColor}`);
+      if (cf.bold) declarations.push("font-weight:bold");
+      if (cf.italic) declarations.push("font-style:italic");
+      const decorations: string[] = [];
+      if (cf.underline) decorations.push("underline");
+      if (cf.strike) decorations.push("line-through");
+      if (decorations.length) declarations.push(`text-decoration:${decorations.join(" ")}`);
+      if (cf.icon) iconHtml = `<span class="cf-ico">${cf.icon}</span>`;
     }
 
-    const ht = rowHeightPx.get(r);
-    bodyRows.push(`<tr${ht ? ` style="height:${px(ht)};"` : ""}>${tds.join("")}</tr>`);
-  }
+    const xf = data ? ctx.cellXfs[data.styleIdx] : undefined;
+    let spill = false;
+    if (data && !merge && data.kind === "s" && data.html && !xf?.wrapText) {
+      const emptyAt = (column: number) => {
+        if (column < 0 || column >= visibleColumns.length) return true;
+        const key = `${viewRow}:${column}`;
+        return !rowData.get(sourceRow)?.has(visibleColumns[column]) && !mergedAway.has(key) && !mergeStarts.has(key);
+      };
+      const alignment = xf?.hAlign;
+      const leftAligned = !alignment || alignment === "left" || alignment === "general";
+      if (
+        (leftAligned && emptyAt(viewColumn + 1)) ||
+        (alignment === "right" && emptyAt(viewColumn - 1)) ||
+        (alignment === "center" && emptyAt(viewColumn - 1) && emptyAt(viewColumn + 1))
+      ) {
+        declarations.push("overflow:visible");
+        spill = true;
+      }
+    }
 
-  const truncationNote = truncated
-    ? `<div class="trunc">Preview truncated to ${MAX_ROWS} rows × ${MAX_COLS} columns — download the file for the full sheet.</div>`
-    : "";
+    let inner = data?.link
+      ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noopener noreferrer">${data.html}</a>`
+      : (data?.html ?? "");
+    const rotation = data ? ctx.cellXfs[data.styleIdx]?.rotation : undefined;
+    if (rotation && inner) {
+      const transform = rotation === 255 ? "" : `transform:rotate(${rotation <= 90 ? -rotation : rotation - 90}deg);`;
+      const css =
+        rotation === 255
+          ? "writing-mode:vertical-rl;text-orientation:upright;"
+          : `display:inline-block;${transform}transform-origin:center;white-space:nowrap;`;
+      inner = `<span style="${css}">${inner}</span>`;
+    }
 
-  // Drawing overlay (images & charts), positioned with the shared grid geometry.
-  let overlay = "";
-  if (drawing) {
-    overlay = await renderDrawings(ctx, drawing, colX, rowY);
-  }
+    const result: XlsxCellView = {
+      row: viewRow,
+      column: viewColumn,
+      sourceRow,
+      sourceColumn,
+      html: iconHtml + inner,
+      text: data?.displayText ?? "",
+      css: declarations.join(";"),
+      rowSpan: merge?.rowSpan ?? 1,
+      columnSpan: merge?.columnSpan ?? 1,
+      spill,
+    };
+    if (data || merge) renderedCells.set(cacheKey, result);
+    return result;
+  };
 
-  const tableHtml =
-    `<table><colgroup>${colgroup.join("")}</colgroup><thead><tr>${headerCells.join("")}</tr></thead><tbody>` +
-    `${bodyRows.join("")}</tbody></table>`;
-  const grid = overlay
-    ? `<div style="position:relative;display:inline-block;">${tableHtml}${overlay}</div>`
-    : tableHtml;
-
-  return [
-    "<!DOCTYPE html>",
-    '<html><head><meta charset="utf-8"><style>',
-    "*{margin:0;padding:0;box-sizing:border-box;}",
-    "html,body{background:#fff;}",
-    "body{font-family:Calibri, 'Segoe UI', system-ui, sans-serif;font-size:14.67px;color:#111;}",
-    "table{border-collapse:collapse;table-layout:fixed;}",
-    `td{border:${gridBorder};padding:1px 4px;height:20px;overflow:hidden;white-space:nowrap;text-overflow:clip;vertical-align:bottom;}`,
-    "th{background:#F6F7F9;border:1px solid #DEE1E6;color:#5F6368;font-weight:normal;font-size:11.5px;height:20px;position:sticky;top:0;z-index:2;}",
-    "td.rn{background:#F6F7F9;border:1px solid #DEE1E6;color:#5F6368;text-align:center;font-size:11.5px;position:sticky;left:0;z-index:1;}",
-    "th.rn{left:0;z-index:3;position:sticky;}",
-    "a{color:#0563C1;}",
-    ".cf-ico{display:inline-block;width:1.1em;margin-right:3px;text-align:center;font-size:0.85em;line-height:1;}",
-    ".trunc{padding:6px 10px;background:#FFF7E0;color:#8A6D1A;font-size:12px;border-bottom:1px solid #EFE3B5;position:sticky;top:0;z-index:4;}",
-    "</style></head><body>",
-    truncationNote,
-    grid,
-    "</body></html>",
-  ].join("");
+  const overlayHtml = drawing ? await renderDrawings(ctx, drawing, colX, rowY) : "";
+  return {
+    name,
+    rowCount: visibleRows.length,
+    columnCount: visibleColumns.length,
+    rowNumbers: visibleRows.map((row) => row + 1),
+    columnLabels: visibleColumns.map(colLetter),
+    rowHeights: visibleRows.map(rowH),
+    columnWidths: visibleColumns.map(colW),
+    frozenRows: visibleRows.filter((row) => row < frozenRows).length,
+    frozenColumns: visibleColumns.filter((column) => column < frozenCols).length,
+    showGridLines,
+    overlayHtml,
+    truncated,
+    cellAt,
+  };
 }

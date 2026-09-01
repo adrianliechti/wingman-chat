@@ -7,7 +7,6 @@ import {
   Image,
   Languages,
   MessageCircle,
-  NotebookPen,
   PanelLeftOpen,
   Settings,
 } from "lucide-react";
@@ -24,7 +23,7 @@ import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
-type Page = "chat" | "translate" | "notebook" | "canvas";
+type Page = "chat" | "translate" | "canvas";
 
 function getPageFromPath(pathname: string): Page {
   const segment = pathname.split("/")[1] || "chat";
@@ -33,8 +32,6 @@ function getPageFromPath(pathname: string): Page {
       return "chat";
     case "translate":
       return "translate";
-    case "notebook":
-      return "notebook";
     case "canvas":
       return "canvas";
     default:
@@ -159,13 +156,11 @@ export function AppLayout() {
   // Navigation pages
   const pages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
-    { key: "notebook" as const, label: "Notebook", icon: <NotebookPen size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
     { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
-    if (page.key === "notebook") return !!config.notebook;
     if (page.key === "canvas") return !!config.renderer;
     return true;
   });

@@ -24,6 +24,7 @@ import { Check, ChevronRight, Gauge, Mic, Search } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "@/shared/lib/cn";
+import { splitModelName } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 // Show the filter box once the visible list is long enough to be unwieldy.
@@ -113,6 +114,7 @@ interface ModelDropdownProps {
 
 function OptionRow({
   name,
+  caption,
   description,
   badge,
   selected,
@@ -120,6 +122,7 @@ function OptionRow({
   onSelect,
 }: {
   name: string;
+  caption?: string;
   description?: string;
   badge?: string;
   selected: boolean;
@@ -129,17 +132,32 @@ function OptionRow({
   return (
     <button
       type="button"
+      role="menuitemradio"
+      aria-checked={selected}
       onClick={onSelect}
-      title={description}
       className={cn(
-        "group flex w-full items-start gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5",
-        selected ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-800 dark:text-neutral-200",
+        "group flex w-full items-start gap-2 px-3 py-2 rounded-lg text-left transition-colors focus:outline-none",
+        selected
+          ? "bg-neutral-100/70 text-neutral-900 dark:bg-white/10 dark:text-neutral-100"
+          : "text-neutral-800 hover:bg-neutral-100/60 focus:bg-neutral-100/60 dark:text-neutral-200 dark:hover:bg-white/5 dark:focus:bg-white/5",
       )}
     >
       {icon && <span className="shrink-0 mt-0.5 flex justify-center text-neutral-400">{icon}</span>}
       <span className="flex flex-col items-start flex-1 min-w-0">
-        <span className="flex items-center gap-1.5">
-          <span className={cn("text-sm leading-tight", selected ? "font-semibold" : "font-normal")}>{name}</span>
+        <span className="flex w-full items-baseline gap-1.5 min-w-0">
+          <span
+            className={cn(
+              "truncate text-[13px] leading-tight",
+              selected ? "font-semibold" : "font-medium",
+            )}
+          >
+            {name}
+          </span>
+          {caption && (
+            <span className="truncate text-[11px] font-normal leading-tight text-neutral-500 dark:text-neutral-400">
+              {caption}
+            </span>
+          )}
           {badge && (
             <span className="shrink-0 rounded px-1 py-px text-[10px] font-medium leading-none text-neutral-600 bg-neutral-200/70 dark:text-neutral-300 dark:bg-white/10">
               {badge}
@@ -147,16 +165,29 @@ function OptionRow({
           )}
         </span>
         {description && (
-          <span className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 leading-snug opacity-90">
+          <span className="mt-0.5 truncate text-xs leading-snug text-neutral-500 dark:text-neutral-400">
             {description}
           </span>
         )}
       </span>
       <Check
         size={14}
-        className={cn("shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400", selected ? "opacity-100" : "opacity-0")}
+        className={cn(
+          "shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400",
+          selected ? "opacity-100" : "opacity-0",
+        )}
       />
     </button>
+  );
+}
+
+// ─── Section label ────────────────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+      {children}
+    </div>
   );
 }
 
@@ -233,16 +264,25 @@ function OptionSubmenu({
         {icon && <span className="shrink-0 flex justify-center text-neutral-400">{icon}</span>}
         <span className="flex-1 min-w-0">{label}</span>
         {selectedLabel && (
-          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{selectedLabel}</span>
+          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
+            {selectedLabel}
+          </span>
         )}
         <ChevronRight size={14} className="shrink-0 text-neutral-400" />
       </button>
       {isOpen && (
         <FloatingPortal>
-          <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            className="z-9999"
+            {...getFloatingProps()}
+          >
             <div className={cn(PANEL_CLASS, "w-auto min-w-44 max-w-64")}>
               {hint && (
-                <p className="px-3 pt-1.5 pb-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{hint}</p>
+                <p className="px-3 pt-1.5 pb-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">
+                  {hint}
+                </p>
               )}
               {defaultLabel && (
                 <>
@@ -310,7 +350,10 @@ function ModelDropdownRoot({
       size({
         apply({ availableHeight, elements }) {
           // Cap the panel so a long model list scrolls instead of stretching tall.
-          elements.floating.style.setProperty("--panel-max-h", `${Math.min(availableHeight, 384)}px`);
+          elements.floating.style.setProperty(
+            "--panel-max-h",
+            `${Math.min(availableHeight, 384)}px`,
+          );
         },
         padding: 8,
       }),
@@ -355,6 +398,20 @@ function ModelDropdownRoot({
     closeAll();
   };
 
+  const renderModel = (m: Model) => {
+    const { label, qualifier } = splitModelName(m.name ?? m.id);
+    return (
+      <OptionRow
+        key={m.id}
+        name={label}
+        caption={m.caption ?? qualifier}
+        description={m.description}
+        selected={m.id === value}
+        onSelect={() => select(m.id)}
+      />
+    );
+  };
+
   // Effort is just a submenu with model-specific labels; flatten it in with any
   // caller-provided submenus so they render uniformly below the model list.
   // Every level is explicit here — an unset chat shows the default level checked
@@ -394,7 +451,9 @@ function ModelDropdownRoot({
                 showHiddenRef.current = e.altKey;
                 setQuery("");
               });
-              (overrides?.onPointerDownCapture as ((e: React.PointerEvent) => void) | undefined)?.(e);
+              (overrides?.onPointerDownCapture as ((e: React.PointerEvent) => void) | undefined)?.(
+                e,
+              );
             },
           }),
       })}
@@ -403,12 +462,20 @@ function ModelDropdownRoot({
         {isMounted && (
           <FloatingPortal>
             <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
-              <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+              <div
+                ref={refs.setFloating}
+                style={floatingStyles}
+                className="z-9999"
+                {...getFloatingProps()}
+              >
                 <div
                   style={transitionStyles}
                   className={cn(PANEL_CLASS, "flex flex-col overflow-hidden", dropdownClassName)}
                 >
-                  <div className="flex flex-col overflow-hidden" style={{ maxHeight: "var(--panel-max-h, 24rem)" }}>
+                  <div
+                    className="flex flex-col overflow-hidden"
+                    style={{ maxHeight: "var(--panel-max-h, 24rem)" }}
+                  >
                     {showSearch && (
                       <div className="mb-1 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-neutral-100/70 dark:bg-white/5">
                         <Search size={13} className="shrink-0 text-neutral-400" />
@@ -441,30 +508,13 @@ function ModelDropdownRoot({
                         </>
                       )}
 
-                      {filteredVisible.map((m) => (
-                        <OptionRow
-                          key={m.id}
-                          name={m.name ?? m.id}
-                          description={m.description}
-                          selected={m.id === value}
-                          onSelect={() => select(m.id)}
-                        />
-                      ))}
+                      {filteredVisible.map(renderModel)}
 
                       {showHiddenRef.current && filteredHidden.length > 0 && (
                         <>
-                          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 border-y border-neutral-200/60 dark:border-white/10">
-                            Hidden
-                          </div>
-                          {filteredHidden.map((m) => (
-                            <OptionRow
-                              key={m.id}
-                              name={m.name ?? m.id}
-                              description={m.description}
-                              selected={m.id === value}
-                              onSelect={() => select(m.id)}
-                            />
-                          ))}
+                          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                          <SectionLabel>Hidden</SectionLabel>
+                          {filteredHidden.map(renderModel)}
                         </>
                       )}
 

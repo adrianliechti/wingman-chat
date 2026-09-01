@@ -22,13 +22,13 @@ export function dropOrphanFunctionCalls(items: ResponseInputItem[]): ResponseInp
   const outputs = new Set<string>();
   const calls = new Set<string>();
   for (const item of items) {
-    if (item.type === "function_call_output") outputs.add(item.call_id);
+    if (item.type === "function_call_output" && item.call_id != null) outputs.add(item.call_id);
     else if (item.type === "function_call") calls.add(item.call_id);
   }
 
   return items.filter((item) => {
     if (item.type === "function_call") return outputs.has(item.call_id);
-    if (item.type === "function_call_output") return calls.has(item.call_id);
+    if (item.type === "function_call_output") return item.call_id != null && calls.has(item.call_id);
     return true;
   });
 }

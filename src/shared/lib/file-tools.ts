@@ -2,13 +2,13 @@
  * Shared file tool factory.
  *
  * Produces list, read, create, delete, move, grep, and glob tools that
- * operate on a pluggable data source. Both the artifacts filesystem and
- * notebook sources use this instead of duplicating tool definitions.
+ * operate on a pluggable data source.
  */
 
 import { FilePen, FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
 import { artifactDelta, type ArtifactMutation } from "../types/artifact";
 import type { TextContent, Tool, ToolContext } from "../types/chat";
+import type { File, FileEntry } from "../types/file";
 import {
   type ArtifactValidationResult,
   type ArtifactValidator,
@@ -20,29 +20,12 @@ import { artifactLanguage } from "./fileTypes";
 import { formatLineOutput, getLineRange, grepText, matchGlob, splitLines, truncateLine } from "./text-utils";
 
 // ---------------------------------------------------------------------------
-// Data-source adapter
+// File-source adapter
 // ---------------------------------------------------------------------------
 
-export interface FileEntry {
-  path: string;
-  size?: number;
-  contentType?: string;
-}
-
-export interface FileData {
-  path: string;
-  content: string;
-  contentType?: string;
-}
-
-/** Read-only data source (e.g. notebook sources). */
-export interface ReadableFileSource {
+export interface FileSource {
   list(): Promise<FileEntry[]>;
-  read(path: string): Promise<FileData | undefined>;
-}
-
-/** Read-write data source (e.g. artifacts filesystem). */
-export interface WritableFileSource extends ReadableFileSource {
+  read(path: string): Promise<File | undefined>;
   write(path: string, content: string, contentType?: string): Promise<void | ArtifactMutation[]>;
   remove(path: string): Promise<boolean | ArtifactMutation[]>;
   move(from: string, to: string): Promise<boolean | ArtifactMutation[]>;
@@ -52,7 +35,7 @@ export interface WritableFileSource extends ReadableFileSource {
 // Options
 // ---------------------------------------------------------------------------
 
-export interface FileToolsOptions {
+interface FileToolsOptions {
   /** Maximum lines returned by read (default: 500). */
   maxReadLines?: number;
   /** Maximum characters returned by read (default: 50000). */
@@ -65,8 +48,6 @@ export interface FileToolsOptions {
   maxGrepLineChars?: number;
   /** Default context lines for grep (default: 2). */
   defaultContextLines?: number;
-  /** Tool name namespace prefix (e.g. "source_" for notebook). Empty string by default. */
-  namespace?: string;
   /** Optional syntax/structure validators run before text writes and extension-changing moves. */
   validators?: readonly ArtifactValidator[];
 }
@@ -78,7 +59,6 @@ const DEFAULTS: Required<FileToolsOptions> = {
   maxTotalGrepMatches: 100,
   maxGrepLineChars: 200,
   defaultContextLines: 2,
-  namespace: "",
   validators: [],
 };
 
@@ -189,9 +169,9 @@ const SCHEMA_GUIDED = false;
 // Tool factories
 // ---------------------------------------------------------------------------
 
-function createListTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createListTool(source: FileSource): Tool {
   return {
-    name: `${opts.namespace}list_files`,
+    name: "list_files",
     strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Files, label: state.error ? "List failed" : "Listed files" }),
@@ -227,9 +207,9 @@ function createListTool(source: ReadableFileSource, opts: Required<FileToolsOpti
   };
 }
 
-function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createReadTool(source: FileSource, opts: Required<FileToolsOptions>): Tool {
   return {
-    name: `${opts.namespace}read_file`,
+    name: "read_file",
     strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
@@ -326,9 +306,9 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
   };
 }
 
-function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createWriteTool(source: FileSource, opts: Required<FileToolsOptions>): Tool {
   return {
-    name: `${opts.namespace}create_file`,
+    name: "create_file",
     strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
@@ -627,9 +607,9 @@ function applyEdits(
   return { next, usedFuzzy, spans: spans.length };
 }
 
-function createEditTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createEditTool(source: FileSource, opts: Required<FileToolsOptions>): Tool {
   return {
-    name: `${opts.namespace}edit_file`,
+    name: "edit_file",
     strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
@@ -714,9 +694,9 @@ function createEditTool(source: WritableFileSource, opts: Required<FileToolsOpti
   };
 }
 
-function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createDeleteTool(source: FileSource): Tool {
   return {
-    name: `${opts.namespace}delete_file`,
+    name: "delete_file",
     strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
@@ -746,9 +726,9 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
   };
 }
 
-function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createMoveTool(source: FileSource, opts: Required<FileToolsOptions>): Tool {
   return {
-    name: `${opts.namespace}move_file`,
+    name: "move_file",
     strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => {
@@ -811,9 +791,9 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
   };
 }
 
-function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createGrepTool(source: FileSource, opts: Required<FileToolsOptions>): Tool {
   return {
-    name: `${opts.namespace}grep`,
+    name: "grep",
     strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
@@ -908,9 +888,9 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
   };
 }
 
-function createGlobTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
+function createGlobTool(source: FileSource): Tool {
   return {
-    name: `${opts.namespace}glob`,
+    name: "glob",
     strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
@@ -954,33 +934,19 @@ function createGlobTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 // ---------------------------------------------------------------------------
 
 /**
- * Create file tools for a read-only data source.
- * Returns: list_files, read_file, grep, glob
- */
-export function createReadOnlyFileTools(source: ReadableFileSource, options?: FileToolsOptions): Tool[] {
-  const opts = { ...DEFAULTS, ...options };
-  return [
-    createListTool(source, opts),
-    createReadTool(source, opts),
-    createGrepTool(source, opts),
-    createGlobTool(source, opts),
-  ];
-}
-
-/**
  * Create file tools for a read-write data source.
  * Returns: list_files, read_file, create_file, edit_file, delete_file, move_file, grep, glob
  */
-export function createFileTools(source: WritableFileSource, options?: FileToolsOptions): Tool[] {
+export function createFileTools(source: FileSource, options?: FileToolsOptions): Tool[] {
   const opts = { ...DEFAULTS, ...options };
   return [
-    createListTool(source, opts),
+    createListTool(source),
     createReadTool(source, opts),
     createWriteTool(source, opts),
     createEditTool(source, opts),
-    createDeleteTool(source, opts),
+    createDeleteTool(source),
     createMoveTool(source, opts),
     createGrepTool(source, opts),
-    createGlobTool(source, opts),
+    createGlobTool(source),
   ];
 }

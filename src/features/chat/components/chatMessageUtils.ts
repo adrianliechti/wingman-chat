@@ -1,8 +1,7 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
 
-// Artifacts-provider tools that produce/write files (unnamespaced — the
-// notebook source tools use a `source_` prefix and a different filesystem).
+// Artifacts-provider tools that produce or write files.
 const ARTIFACT_WRITE_TOOLS = new Set([
   "create_file",
   "edit_file",

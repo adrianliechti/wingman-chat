@@ -11,15 +11,7 @@
   "repository": {},
   "renderer": {},
   "extractor": {
-    "files": [
-      ".pdf",
-      ".doc",
-      ".docx",
-      ".xls",
-      ".xlsx",
-      ".ppt",
-      ".pptx"
-    ]
+    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
   },
   "internet": {
     "elicitation": true,
@@ -27,7 +19,6 @@
     "scraper": "web",
     "researcher": "web"
   },
-  "notebook": {},
   "_telemetry": {},
   "_models": [
     {
@@ -50,17 +41,7 @@
     }
   ],
   "translator": {
-    "files": [
-      ".pdf"
-    ],
-    "languages": [
-      "en",
-      "es",
-      "fr",
-      "de",
-      "zh",
-      "ja",
-      "ru"
-    ]
+    "files": [".pdf"],
+    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
   }
 }

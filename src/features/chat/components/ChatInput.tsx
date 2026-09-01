@@ -33,7 +33,13 @@ import { getDriveContentUrl } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { trimModelName } from "@/shared/lib/models";
-import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
+import type {
+  Content,
+  ImageContent,
+  Message,
+  TextContent,
+  ToolProvider,
+} from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -90,7 +96,12 @@ export function ChatInput() {
     stopVoice,
     sendText: sendVoiceText,
   } = useVoice();
-  const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
+  const {
+    inputDeviceId,
+    inputDevices,
+    setInputDevice,
+    requestPermission: requestAudioPermission,
+  } = useAudioDevices();
 
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
@@ -132,7 +143,9 @@ export function ChatInput() {
     if (!artifactsFs) return new Set<string>();
     const entries = await artifactsFs.listEntries();
     // Root-level entries only — uploads land at `/${name}`, so nested files can't collide.
-    return new Set(entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)));
+    return new Set(
+      entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)),
+    );
   }, [artifactsFs]);
 
   const {
@@ -180,7 +193,9 @@ export function ChatInput() {
     const variations = profileName ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
 
-    return profileName ? variations[randomIndex].replace("[Name]", profileName) : variations[randomIndex];
+    return profileName
+      ? variations[randomIndex].replace("[Name]", profileName)
+      : variations[randomIndex];
   }, [profileName]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
@@ -193,7 +208,8 @@ export function ChatInput() {
 
   const shouldShowPlaceholder = !content.trim();
 
-  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } =
+    useTranscription();
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
@@ -234,7 +250,9 @@ export function ChatInput() {
   // Providers whose OAuth flow needs an explicit user gesture to retry.
   const unauthorizedProviders = useMemo(
     () =>
-      visibleProviders.filter((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized),
+      visibleProviders.filter(
+        (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized,
+      ),
     [visibleProviders, getProviderState],
   );
 
@@ -324,7 +342,9 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
+        const screenCaptureArtifacts = screenCaptureFile
+          ? await toArtifacts([screenCaptureFile])
+          : [];
         const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
@@ -460,11 +480,17 @@ export function ChatInput() {
       try {
         const text = await stopTranscription();
         if (text.trim()) {
-          setContent(text);
+          setContent((previous) =>
+            previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text,
+          );
+          contentInputRef.current?.focus();
         }
       } catch (error) {
         console.error("Transcription failed:", error);
-        notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
+        notify.error(
+          "Transcription failed",
+          "The recording couldn't be transcribed. Please try again.",
+        );
       } finally {
         setTranscribingContent(false);
       }
@@ -483,7 +509,9 @@ export function ChatInput() {
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
-            const label = item.message.content.find((part) => part.type === "text")?.text.trim() || "Attachment";
+            const label =
+              item.message.content.find((part) => part.type === "text")?.text.trim() ||
+              "Attachment";
             return (
               <div
                 key={item.id}
@@ -494,7 +522,9 @@ export function ChatInput() {
                     : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
                 )}
               >
-                <span className="max-w-56 truncate">{item.status === "held" ? `Held: ${label}` : label}</span>
+                <span className="max-w-56 truncate">
+                  {item.status === "held" ? `Held: ${label}` : label}
+                </span>
                 {item.status === "held" && (
                   <button
                     type="button"
@@ -506,7 +536,9 @@ export function ChatInput() {
                 )}
                 <button
                   type="button"
-                  aria-label={item.status === "held" ? "Discard held message" : "Remove queued message"}
+                  aria-label={
+                    item.status === "held" ? "Discard held message" : "Remove queued message"
+                  }
                   className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => removeQueuedMessage(item.id)}
                 >
@@ -546,7 +578,9 @@ export function ChatInput() {
             </div>
           )}
 
-          {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
+          {(attachments.length > 0 ||
+            pendingFiles.length > 0 ||
+            extractingAttachments.size > 0) && (
             <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
@@ -558,7 +592,9 @@ export function ChatInput() {
             </div>
           )}
 
-          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
+          <div
+            className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}
+          >
             {isRealtimeSelected ? (
               <textarea
                 className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
@@ -697,7 +733,10 @@ export function ChatInput() {
             )}
             <div className="flex items-center gap-2">
               {isRealtimeSelected && isListening && !voiceTextInput && (
-                <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400" aria-live="polite">
+                <div
+                  className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400"
+                  aria-live="polite"
+                >
                   <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -706,7 +745,10 @@ export function ChatInput() {
                     <span className="font-medium text-neutral-700 dark:text-neutral-300">
                       {currentAgent?.name ?? "Listening"}
                     </span>
-                    <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
+                    <span className="text-neutral-500 dark:text-neutral-400">
+                      {" "}
+                      — speak or type a message
+                    </span>
                   </span>
                 </div>
               )}
@@ -754,9 +796,15 @@ export function ChatInput() {
                       {...getProps()}
                       className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
                     >
-                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                      <Tooltip
+                        content="Switch model"
+                        side="bottom"
+                        className="flex items-center gap-1.5 min-w-0"
+                      >
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{trimModelName(model?.name ?? model?.id ?? "Select Model")}</span>
+                        <span className="truncate min-w-0">
+                          {trimModelName(model?.name ?? model?.id ?? "Select Model")}
+                        </span>
                       </Tooltip>
                     </button>
                   )}
@@ -806,7 +854,8 @@ export function ChatInput() {
                           </button>
                         )}
                       >
-                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})
+                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}
+                        )
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
@@ -935,7 +984,9 @@ export function ChatInput() {
                             </span>
                             <span className="hidden @md:inline truncate min-w-0">
                               {(() => {
-                                const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                                const selected = inputDevices.find(
+                                  (d) => d.deviceId === inputDeviceId,
+                                );
                                 if (selected) return selected.label || "Microphone";
                                 return "Default Mic";
                               })()}
@@ -958,7 +1009,10 @@ export function ChatInput() {
                               System Default
                             </DropdownMenuItem>
                             {inputDevices.map((device) => (
-                              <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
+                              <DropdownMenuItem
+                                key={device.deviceId}
+                                onClick={() => setInputDevice(device.deviceId)}
+                              >
                                 {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
                               </DropdownMenuItem>
                             ))}
@@ -975,7 +1029,8 @@ export function ChatInput() {
                       onClick={async () => {
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored =
+                          (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >
@@ -993,7 +1048,8 @@ export function ChatInput() {
                         }
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored =
+                          (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >
@@ -1032,97 +1088,83 @@ export function ChatInput() {
                     <Square size={16} className="hidden group-hover/stop:block" />
                   </button>
                 </div>
-              ) : content.trim() ? (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                >
-                  <Send size={16} />
-                </button>
-              ) : canTranscribe && !isListening ? (
-                transcribingContent ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                    disabled
-                    title="Processing audio..."
-                  >
-                    <Loader2 size={16} className="animate-spin" />
-                  </button>
-                ) : isTranscribing ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                    onClick={handleTranscriptionClick}
-                    title="Stop recording"
-                    disabled={isResponding}
-                  >
-                    <Square size={16} />
-                  </button>
-                ) : (
-                  // Not yet recording — desktop shows dictate mic + voice-mode wave; mobile uses the + menu and wave
-                  <>
-                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+              ) : (
+                // The dictate mic keeps its own slot so a transcript can be extended;
+                // only the trailing voice-mode slot turns into Send once there's text.
+                <>
+                  {canTranscribe &&
+                    !isListening &&
+                    (transcribingContent ? (
                       <button
                         type="button"
-                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={handleTranscriptionClick}
-                        disabled={isResponding}
+                        className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                        disabled
+                        title="Processing audio..."
                       >
-                        <Mic size={16} />
+                        <Loader2 size={16} className="animate-spin" />
                       </button>
-                    </Tooltip>
-                    {voiceAvailable && !currentAgent?.model ? (
-                      <Tooltip content="Voice mode" side="bottom">
+                    ) : isTranscribing ? (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        onClick={handleTranscriptionClick}
+                        title="Stop recording"
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <Tooltip
+                        content={content.trim() ? "Add dictation" : "Start dictate"}
+                        side="bottom"
+                        className="hidden md:block"
+                      >
                         <button
                           type="button"
-                          className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          onClick={() =>
-                            onModelChange({
-                              id: "realtime",
-                              name: "Voice Mode",
-                              description: "Real-time voice conversation",
-                            })
-                          }
-                          title="Voice mode"
-                          aria-label="Start voice mode"
+                          className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          onClick={handleTranscriptionClick}
                         >
-                          <AudioLines size={16} />
+                          <Mic size={16} />
                         </button>
                       </Tooltip>
-                    ) : (
+                    ))}
+                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : voiceAvailable && !currentAgent?.model ? (
+                    <Tooltip content="Voice mode" side="bottom">
                       <button
-                        className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        type="submit"
-                        disabled={isResponding}
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() =>
+                          onModelChange({
+                            id: "realtime",
+                            name: "Voice Mode",
+                            description: "Real-time voice conversation",
+                          })
+                        }
+                        title="Voice mode"
+                        aria-label="Start voice mode"
                       >
-                        <Send size={16} />
+                        <AudioLines size={16} />
                       </button>
-                    )}
-                  </>
-                )
-              ) : voiceAvailable && !currentAgent?.model ? (
-                <Tooltip content="Voice mode" side="bottom">
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    onClick={() =>
-                      onModelChange({
-                        id: "realtime",
-                        name: "Voice Mode",
-                        description: "Real-time voice conversation",
-                      })
-                    }
-                    title="Voice mode"
-                    aria-label="Start voice mode"
-                  >
-                    <AudioLines size={16} />
-                  </button>
-                </Tooltip>
-              ) : (
-                <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
-                  <AudioLines size={16} />
-                </span>
+                    </Tooltip>
+                  ) : canTranscribe && !isListening ? (
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : (
+                    <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                      <AudioLines size={16} />
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { File } from "../types/file";
 import { countSchemaUnions } from "./toolSchemas";
-import { createFileTools, type FileData, type WritableFileSource } from "./file-tools";
+import { createFileTools, type FileSource } from "./file-tools";
 
 function memorySource(initial: Record<string, string> = {}): {
-  files: Map<string, FileData>;
-  source: WritableFileSource;
+  files: Map<string, File>;
+  source: FileSource;
 } {
-  const files = new Map<string, FileData>(Object.entries(initial).map(([path, content]) => [path, { path, content }]));
+  const files = new Map<string, File>(Object.entries(initial).map(([path, content]) => [path, { path, content }]));
   return {
     files,
     source: {

@@ -12,7 +12,7 @@ Review an analysis for accuracy, methodology, and potential biases before sharin
 The analysis can be:
 
 - A document or report in the conversation
-- A file (markdown, notebook, spreadsheet)
+- A file (markdown, script, spreadsheet)
 - SQL queries and their results
 - Charts and their underlying data
 - A description of methodology and findings

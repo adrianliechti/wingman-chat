@@ -23,6 +23,16 @@ export function trimModelName(name: string): string {
 }
 
 /**
+ * Splits a display name into its label and trailing parenthesized qualifier, so
+ * a branded name like "Lumen (OpenAI GPT-5)" can render the qualifier as a
+ * subdued caption. Fallback for configs that predate the `caption` field.
+ */
+export function splitModelName(name: string): { label: string; qualifier?: string } {
+  const match = name.match(/^(.*?)\s*\((.*)\)\s*$/);
+  return match ? { label: match[1], qualifier: match[2] } : { label: name };
+}
+
+/**
  * Best-guess reasoning-effort levels for a model id, used as a fallback when a
  * model's config omits `supportedEfforts`. Levels are derived from the models.dev
  * catalog (https://models.dev) and kept forgiving: `undefined` (no picker) is the
@@ -79,7 +89,8 @@ export function supportedEfforts(id: string): ReasoningEffort[] | undefined {
   // GLM 5.2+ adds a top "Max" tier (folded into xhigh); earlier GLM stop at high.
   // Levels are host-dependent (many expose none, official z.ai only high/max); we
   // pick the common low/medium/high baseline.
-  if (/glm-?5[.-][2-9]/.test(lowerId) || /glm-?[6-9]/.test(lowerId)) return ["low", "medium", "high", "xhigh"];
+  if (/glm-?5[.-][2-9]/.test(lowerId) || /glm-?[6-9]/.test(lowerId))
+    return ["low", "medium", "high", "xhigh"];
   if (lowerId.includes("glm")) return ["low", "medium", "high"];
 
   // ── Moonshot Kimi ──

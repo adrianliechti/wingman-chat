@@ -24,6 +24,7 @@ interface ToolConfig {
 interface ModelConfig {
   id: string;
   name: string;
+  caption?: string;
   description?: string;
   instructions?: string;
   effort?: ReasoningEffort;
@@ -60,36 +61,6 @@ export type STTFormat = "opus" | "webm" | "wav" | "mp4";
 interface STTConfig {
   model?: string;
   format?: STTFormat;
-}
-
-interface NotebookStyleBase {
-  name: string;
-  /**
-   * Either inline prompt text, or a URL (absolute `https://…` or
-   * page-relative `/notebooks/…`) fetched on demand and cached.
-   * Use a URL for long templates so they don't bloat `config.json`.
-   */
-  prompt: string;
-}
-
-interface NotebookSlide extends NotebookStyleBase {}
-interface NotebookPodcast extends NotebookStyleBase {
-  voices?: string[];
-}
-interface NotebookReport extends NotebookStyleBase {}
-interface NotebookInfographic extends NotebookStyleBase {}
-interface NotebookProcess extends NotebookStyleBase {}
-interface NotebookArchitecture extends NotebookStyleBase {}
-
-interface NotebookConfig {
-  model?: string;
-  renderer?: string;
-  slides?: NotebookSlide[];
-  podcasts?: NotebookPodcast[];
-  reports?: NotebookReport[];
-  infographics?: NotebookInfographic[];
-  processes?: NotebookProcess[];
-  architectures?: NotebookArchitecture[];
 }
 
 interface VoiceConfig {
@@ -233,8 +204,6 @@ interface ConfigSchema {
   tts?: TTSConfig;
   stt?: STTConfig;
 
-  notebook?: NotebookConfig;
-
   voice?: VoiceConfig;
   vision?: VisionConfig;
 
@@ -285,8 +254,6 @@ interface Config {
 
   tts: TTSConfig | null;
   stt: STTConfig | null;
-
-  notebook: NotebookConfig | null;
 
   voice: VoiceConfig | null;
   vision: VisionConfig | null;
@@ -348,8 +315,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,
-
-      notebook: cfg.notebook ?? null,
 
       voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
       vision: cfg.vision

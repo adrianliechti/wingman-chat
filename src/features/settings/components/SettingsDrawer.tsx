@@ -7,7 +7,6 @@ import {
   HardDrive,
   MessageSquare,
   Mic,
-  Notebook,
   Settings,
   Trash2,
   Upload,
@@ -18,8 +17,6 @@ import {
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
-import { exportNotebooksAsZip, triggerNotebookImport } from "@/features/notebook/lib/notebookImportExport";
-import { deleteNotebook, listNotebooks } from "@/features/notebook/lib/opfs-notebook";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { exportAgentsAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import {
@@ -193,16 +190,6 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     error: null,
   });
 
-  const [notebooks, setNotebooks] = useState<{ id: string }[]>([]);
-
-  const loadNotebooks = useCallback(async () => {
-    try {
-      setNotebooks(await listNotebooks());
-    } catch (error) {
-      console.error("Failed to load notebooks:", error);
-    }
-  }, []);
-
   // Load storage info when drawer opens
   const loadStorageInfo = useCallback(async () => {
     try {
@@ -226,9 +213,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   useEffect(() => {
     if (isOpen) {
       void loadStorageInfo();
-      void loadNotebooks();
     }
-  }, [isOpen, loadStorageInfo, loadNotebooks]);
+  }, [isOpen, loadStorageInfo]);
 
   const deleteChats = async () => {
     if (
@@ -405,38 +391,6 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     } catch (error) {
       console.error("Failed to delete agents:", error);
       notify.error("Couldn't delete agents", "Something went wrong. Please try again.");
-    }
-  };
-
-  const exportNotebooks = async () => {
-    try {
-      await exportNotebooksAsZip();
-    } catch (error) {
-      console.error("Failed to export notebooks:", error);
-      notify.error("Couldn't export notebooks", "Something went wrong. Please try again.");
-    }
-  };
-
-  const deleteNotebooks = async () => {
-    if (
-      !(await confirm({
-        title: "Delete all notebooks?",
-        message: `This permanently removes all ${notebooks.length} notebook${notebooks.length === 1 ? "" : "s"} and can't be undone.`,
-        danger: true,
-      }))
-    ) {
-      return;
-    }
-
-    try {
-      for (const notebook of notebooks) {
-        await deleteNotebook(notebook.id);
-      }
-      notify.success("Notebooks deleted", "Reloading to apply changes…");
-      setTimeout(() => window.location.reload(), 1200);
-    } catch (error) {
-      console.error("Failed to delete notebooks:", error);
-      notify.error("Couldn't delete notebooks", "Something went wrong. Please try again.");
     }
   };
 
@@ -759,63 +713,6 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
                     <p className="text-xs text-neutral-400 dark:text-neutral-500">
                       Includes instructions, files, skills, and MCP server configurations
-                    </p>
-                  </div>
-                </SectionPanel>
-
-                {/* Notebooks Section */}
-                <SectionPanel
-                  title="Notebooks"
-                  icon={<Notebook size={20} />}
-                  isOpen={openSection === "notebooks"}
-                  onClick={() => toggleSection("notebooks")}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
-                      <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                        {notebooks.length} notebook{notebooks.length === 1 ? "" : "s"} •{" "}
-                        {storageInfo.isLoading
-                          ? "..."
-                          : formatBytes(
-                              storageInfo.entries
-                                .filter((e) => e.path.startsWith("notebooks/"))
-                                .reduce((sum, e) => sum + e.size, 0),
-                            )}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={triggerNotebookImport}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                      >
-                        <Upload size={14} />
-                        Import
-                      </button>
-                      <button
-                        type="button"
-                        onClick={exportNotebooks}
-                        disabled={notebooks.length === 0}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                      >
-                        <Download size={14} />
-                        Export
-                      </button>
-                      <button
-                        type="button"
-                        onClick={deleteNotebooks}
-                        disabled={notebooks.length === 0}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                      >
-                        <Trash2 size={14} />
-                        Delete All
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                      Includes sources, chat, and generated studio outputs
                     </p>
                   </div>
                 </SectionPanel>

@@ -1,6 +1,8 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
-import { pptxToHtml } from "@/shared/lib/pptxToHtml";
+import { type PptxHtmlResult, pptxToHtml } from "@/shared/lib/pptxToHtml";
+import { OfficeZoomControls } from "./OfficeZoomControls";
 import { OfficeMarkdownEditor } from "./OfficeMarkdownEditor";
 import { OFFICE_IFRAME_SANDBOX, useOfficeConversion } from "./useOfficeConversion";
 
@@ -10,249 +12,272 @@ interface PptxEditorProps {
   contentType?: string;
 }
 
+interface SlideHtmlState {
+  presentation: PptxHtmlResult | null;
+  index: number;
+  html: string | null;
+  failed: boolean;
+}
+
+function useSlideHtml(presentation: PptxHtmlResult | null, index: number): SlideHtmlState {
+  const [state, setState] = useState<SlideHtmlState>({ presentation: null, index: -1, html: null, failed: false });
+  useEffect(() => {
+    let cancelled = false;
+    if (!presentation) return;
+    presentation.getSlide(index).then(
+      (html) => {
+        if (!cancelled) setState({ presentation, index, html, failed: false });
+      },
+      () => {
+        if (!cancelled) setState({ presentation, index, html: null, failed: true });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [index, presentation]);
+  return state.presentation === presentation && state.index === index
+    ? state
+    : { presentation, index, html: null, failed: false };
+}
+
 /**
- * High-fidelity PPTX preview: converts the deck to per-slide HTML documents
- * (see `pptxToHtml`) and renders them like the notebook slide viewer — a
- * thumbnail strip on top and the active slide scaled to fit below.
- *
- * Falls back to the extracted-markdown preview if conversion fails.
+ * Progressive PPTX preview: slide HTML and thumbnail iframes are materialized
+ * only for the active/visible virtual window. No all-deck html2canvas pass runs.
  */
 export const PptxEditor = memo(function PptxEditor({ path, content, contentType }: PptxEditorProps) {
   const { result, failed } = useOfficeConversion(path, content, contentType, pptxToHtml);
-  const [activeIndex, setActiveIndex] = useState(1);
+  const [viewState, setViewState] = useState<{
+    presentation: PptxHtmlResult | null;
+    activeIndex: number;
+    zoom: number;
+  }>({ presentation: null, activeIndex: 0, zoom: 1 });
+  const view = viewState.presentation === result ? viewState : { presentation: result, activeIndex: 0, zoom: 1 };
+  const { activeIndex, zoom } = view;
 
-  // New deck → back to the first slide
-  useEffect(() => {
-    setActiveIndex(1);
-  }, [result]);
-
-  // Scale the active slide to fit its container
+  const currentIndex = result ? Math.max(0, Math.min(result.slideCount - 1, activeIndex)) : 0;
+  const { html: currentSlideHtml, failed: slideFailed } = useSlideHtml(result, currentIndex);
   const [slideContainer, setSlideContainer] = useState<HTMLDivElement | null>(null);
-  const [slideScale, setSlideScale] = useState(1);
-  const slideW = result?.width ?? 1280;
-  const slideH = result?.height ?? 720;
+  const [fitScale, setFitScale] = useState(1);
+  const slideWidth = result?.width ?? 1280;
+  const slideHeight = result?.height ?? 720;
 
   useEffect(() => {
     if (!slideContainer) return;
     const observer = new ResizeObserver(([entry]) => {
-      const cw = entry.contentRect.width;
-      const ch = entry.contentRect.height;
-      setSlideScale(Math.min(cw / slideW, ch / slideH));
+      const availableWidth = Math.max(1, entry.contentRect.width - 24);
+      const availableHeight = Math.max(1, entry.contentRect.height - 24);
+      setFitScale(Math.min(availableWidth / slideWidth, availableHeight / slideHeight));
     });
     observer.observe(slideContainer);
     return () => observer.disconnect();
-  }, [slideContainer, slideW, slideH]);
-
-  const thumbnails = useSlideThumbnails(result?.slides, slideW, slideH);
-
-  // Keep the active thumbnail in view while navigating
-  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  useEffect(() => {
-    const el = thumbRefs.current[activeIndex - 1];
-    if (el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [activeIndex]);
+  }, [slideContainer, slideHeight, slideWidth]);
 
   if (failed) {
     return <OfficeMarkdownEditor path={path} content={content} contentType={contentType} />;
   }
-
   if (!result) {
     return (
       <div className="h-full flex items-center justify-center gap-2 text-sm text-neutral-400 dark:text-neutral-500 p-8">
         <Loader2 size={16} className="animate-spin" />
-        Rendering slides…
+        Opening presentation…
       </div>
     );
   }
 
-  const slideCount = result.slides.length;
-  const currentSlideHtml = result.slides[activeIndex - 1];
+  const scale = fitScale * zoom;
+  const slideCount = result.slideCount;
+  const selectSlide = (index: number) => {
+    const next = Math.max(0, Math.min(slideCount - 1, index));
+    setViewState({ ...view, activeIndex: next });
+  };
 
   return (
-    <div className="h-full flex flex-col bg-neutral-50 dark:bg-neutral-900/60">
-      {/* Thumbnail strip */}
-      <div className="shrink-0 overflow-x-auto px-3 py-2">
-        <div className="flex items-center gap-2">
-          {result.slides.map((_, i) => (
-            <button
-              key={i}
-              ref={(el) => {
-                thumbRefs.current[i] = el;
-              }}
-              type="button"
-              onClick={() => setActiveIndex(i + 1)}
-              className={`shrink-0 w-32 rounded-lg border-2 overflow-hidden transition-colors bg-white dark:bg-neutral-800 ${
-                activeIndex === i + 1
-                  ? "border-blue-500"
-                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-              }`}
-              style={{ aspectRatio: `${slideW} / ${slideH}` }}
-            >
-              {thumbnails[i] ? (
-                <img src={thumbnails[i]} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-xs font-medium text-neutral-400 flex items-center justify-center h-full">
-                  {i + 1}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div
+      className="h-full min-h-0 flex flex-col bg-neutral-50 dark:bg-neutral-900/60 outline-none"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if ((event.target as Element).closest("a,button,input,select,textarea")) return;
+        if (event.key === "ArrowLeft" || event.key === "PageUp") selectSlide(currentIndex - 1);
+        else if (event.key === "ArrowRight" || event.key === "PageDown") selectSlide(currentIndex + 1);
+        else return;
+        event.preventDefault();
+      }}
+    >
+      <SlideStrip presentation={result} activeIndex={currentIndex} onSelect={selectSlide} />
 
-      {/* Main slide view */}
-      <div className="flex-1 overflow-hidden min-h-0 relative">
-        <div className="h-full flex items-center justify-center px-3 pt-2 pb-8" ref={setSlideContainer}>
-          <div
-            className="rounded-lg shadow-lg overflow-hidden bg-white"
-            style={{ width: slideW * slideScale, height: slideH * slideScale }}
-          >
-            <iframe
-              srcDoc={currentSlideHtml}
-              style={{
-                width: slideW,
-                height: slideH,
-                border: "none",
-                transform: `scale(${slideScale})`,
-                transformOrigin: "top left",
-              }}
-              sandbox={OFFICE_IFRAME_SANDBOX}
-              title={`Slide ${activeIndex}`}
-            />
+      <div className="flex-1 min-h-0 relative overflow-hidden">
+        <div ref={setSlideContainer} className="h-full overflow-auto">
+          <div className="min-w-full min-h-full grid place-items-center p-3">
+            <div
+              className="rounded-lg shadow-lg overflow-hidden bg-white shrink-0"
+              style={{ width: slideWidth * scale, height: slideHeight * scale }}
+            >
+              {currentSlideHtml ? (
+                <iframe
+                  key={currentIndex}
+                  srcDoc={currentSlideHtml}
+                  style={{
+                    width: slideWidth,
+                    height: slideHeight,
+                    border: "none",
+                    transform: `scale(${scale})`,
+                    transformOrigin: "top left",
+                  }}
+                  sandbox={OFFICE_IFRAME_SANDBOX}
+                  title={`Slide ${currentIndex + 1}`}
+                />
+              ) : slideFailed ? (
+                <div className="h-full grid place-items-center px-6 text-center text-sm text-neutral-500">
+                  This slide could not be rendered. You can still open another slide.
+                </div>
+              ) : (
+                <div className="h-full grid place-items-center text-sm text-neutral-400">
+                  <Loader2 size={16} className="animate-spin" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Prev / next navigation */}
         {slideCount > 1 && (
-          <div className="absolute inset-0 px-2 pt-2 pb-8 flex items-center justify-between pointer-events-none z-10">
-            <div>
-              {activeIndex > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveIndex((i) => Math.max(1, i - 1))}
-                  className="pointer-events-auto p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  title="Previous slide"
-                  aria-label="Previous slide"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-              )}
-            </div>
-            <div>
-              {activeIndex < slideCount && (
-                <button
-                  type="button"
-                  onClick={() => setActiveIndex((i) => Math.min(slideCount, i + 1))}
-                  className="pointer-events-auto p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  title="Next slide"
-                  aria-label="Next slide"
-                >
-                  <ChevronRight size={18} />
-                </button>
-              )}
-            </div>
+          <div className="absolute inset-y-0 left-0 right-0 px-2 flex items-center justify-between pointer-events-none z-10">
+            <button
+              type="button"
+              onClick={() => selectSlide(currentIndex - 1)}
+              disabled={currentIndex === 0}
+              className="pointer-events-auto p-1.5 rounded-full text-neutral-500 bg-white/70 dark:bg-neutral-800/70 shadow-sm disabled:opacity-0"
+              aria-label="Previous slide"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => selectSlide(currentIndex + 1)}
+              disabled={currentIndex === slideCount - 1}
+              className="pointer-events-auto p-1.5 rounded-full text-neutral-500 bg-white/70 dark:bg-neutral-800/70 shadow-sm disabled:opacity-0"
+              aria-label="Next slide"
+            >
+              <ChevronRight size={18} />
+            </button>
           </div>
         )}
-
-        {/* Slide counter */}
-        <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
-          <span className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">
-            {activeIndex} / {slideCount}
-          </span>
-        </div>
+      </div>
+      <div className="flex h-8 shrink-0 items-center border-t border-neutral-200 bg-neutral-50 text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900">
+        <span className="px-3 text-[11px] tabular-nums">
+          Slide {currentIndex + 1} of {slideCount}
+        </span>
+        <OfficeZoomControls
+          value={zoom}
+          onChange={(value) => setViewState({ ...view, zoom: value })}
+          className="ml-auto border-l border-neutral-200 dark:border-neutral-800"
+        />
       </div>
     </div>
   );
 });
 
-/**
- * Render HTML slides to small image data URLs one-by-one using a single
- * off-screen iframe + canvas — same approach as the notebook slide viewer,
- * but parameterized by the deck's slide dimensions.
- */
-function useSlideThumbnails(htmlSlides: string[] | undefined, slideW: number, slideH: number): string[] {
-  const [thumbs, setThumbs] = useState<string[]>([]);
+function SlideStrip({
+  presentation,
+  activeIndex,
+  onSelect,
+}: {
+  presentation: PptxHtmlResult;
+  activeIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const thumbnailWidth = 128;
+  const thumbnailHeight = Math.min(108, (thumbnailWidth * presentation.height) / presentation.width);
+  const itemWidth = thumbnailWidth + 10;
+  const virtualizer = useVirtualizer({
+    horizontal: true,
+    count: presentation.slideCount,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => itemWidth,
+    overscan: 2,
+  });
 
   useEffect(() => {
-    if (!htmlSlides?.length) {
-      setThumbs([]);
-      return;
-    }
+    virtualizer.scrollToIndex(activeIndex, { align: "auto" });
+  }, [activeIndex, virtualizer]);
 
-    const slides = htmlSlides;
-    let cancelled = false;
-    setThumbs([]);
+  return (
+    <div ref={scrollRef} className="shrink-0 overflow-x-auto px-3 py-2" style={{ height: thumbnailHeight + 18 }}>
+      <div className="relative" style={{ width: virtualizer.getTotalSize(), height: thumbnailHeight }}>
+        {virtualizer.getVirtualItems().map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onSelect(item.index)}
+            className={`absolute top-0 rounded-md border-2 overflow-hidden bg-white dark:bg-neutral-800 transition-colors ${
+              activeIndex === item.index
+                ? "border-blue-500"
+                : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-400"
+            }`}
+            style={{
+              left: item.start,
+              width: thumbnailWidth,
+              height: thumbnailHeight,
+            }}
+            aria-label={`Show slide ${item.index + 1}`}
+          >
+            <LazySlideThumbnail
+              presentation={presentation}
+              index={item.index}
+              width={thumbnailWidth}
+              height={thumbnailHeight}
+            />
+            <span className="absolute left-1 bottom-0.5 rounded bg-black/55 px-1 text-[9px] leading-4 text-white">
+              {item.index + 1}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-    const THUMB_W = 256;
-
-    async function render() {
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.left = "-9999px";
-      iframe.style.width = `${slideW}px`;
-      iframe.style.height = `${slideH}px`;
-      iframe.style.border = "none";
-      iframe.style.visibility = "hidden";
-      document.body.appendChild(iframe);
-
-      try {
-        for (let i = 0; i < slides.length; i++) {
-          if (cancelled) break;
-
-          iframe.srcdoc = slides[i];
-          // Guard with a timeout — a srcdoc swap that never fires load would
-          // otherwise stall the loop and leave the remaining thumbnails blank.
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, 1500);
-            iframe.onload = () => {
-              clearTimeout(timer);
-              resolve();
-            };
-          });
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-          // Give the slide's inline autofit script a beat to re-run after
-          // fonts load, so thumbnails capture the fitted text.
-          await new Promise<void>((resolve) => setTimeout(resolve, 80));
-
-          try {
-            const html2canvas = (await import("html2canvas")).default;
-            const body = iframe.contentDocument?.body;
-            if (!body) continue;
-
-            const canvas = await html2canvas(body, {
-              width: slideW,
-              height: slideH,
-              scale: THUMB_W / slideW,
-              logging: false,
-              useCORS: true,
-              allowTaint: true,
-              backgroundColor: "#ffffff",
-            });
-
-            if (cancelled) break;
-
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-            setThumbs((prev) => {
-              const next = [...prev];
-              next[i] = dataUrl;
-              return next;
-            });
-          } catch {
-            // skip failed thumbnail
-          }
-
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        }
-      } finally {
-        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-      }
-    }
-
-    void render();
-    return () => {
-      cancelled = true;
-    };
-  }, [htmlSlides, slideW, slideH]);
-
-  return thumbs;
+function LazySlideThumbnail({
+  presentation,
+  index,
+  width,
+  height,
+}: {
+  presentation: PptxHtmlResult;
+  index: number;
+  width: number;
+  height: number;
+}) {
+  const { html, failed } = useSlideHtml(presentation, index);
+  if (!html || failed) {
+    return (
+      <span className="h-full flex items-center justify-center text-xs text-neutral-400">
+        {failed ? index + 1 : <Loader2 size={12} className="animate-spin" />}
+      </span>
+    );
+  }
+  const scale = Math.min(width / presentation.width, height / presentation.height);
+  const renderedWidth = presentation.width * scale;
+  const renderedHeight = presentation.height * scale;
+  return (
+    <iframe
+      srcDoc={html}
+      sandbox={OFFICE_IFRAME_SANDBOX}
+      tabIndex={-1}
+      aria-hidden="true"
+      title={`Slide ${index + 1} thumbnail`}
+      style={{
+        position: "absolute",
+        left: (width - renderedWidth) / 2,
+        top: (height - renderedHeight) / 2,
+        width: presentation.width,
+        height: presentation.height,
+        border: 0,
+        pointerEvents: "none",
+        transform: `scale(${scale})`,
+        transformOrigin: "top left",
+      }}
+    />
+  );
 }
