@@ -22,7 +22,7 @@ import {
   readBlob,
   writeBlob,
 } from "./opfs-core";
-import { lookupContentType } from "./utils";
+import { fileExtension, lookupContentType } from "./utils";
 
 // ============================================================================
 // Co-located Blob Storage (blobs stored within their parent entity folder)
@@ -136,7 +136,7 @@ async function rehydrateContentBlobForChat(chatId: string, content: StoredConten
         // OPFS never persists the blob's MIME, so re-infer it from the content
         // name (or a per-type default) and let blobToDataUrl stamp it — never
         // trust the `.bin` read-back type (see blobToDataUrl).
-        const ext = (content as { name?: string }).name?.split(".").pop() ?? "";
+        const ext = fileExtension((content as { name?: string }).name ?? "");
         const contentType =
           lookupContentType(ext) ??
           (content.type === "image" ? "image/png" : content.type === "audio" ? "audio/wav" : undefined);

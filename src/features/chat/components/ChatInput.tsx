@@ -29,7 +29,8 @@ import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
+import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type {
@@ -397,10 +398,16 @@ export function ChatInput() {
       try {
         const fetched = await Promise.all(
           files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.id);
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            return new File([blob], f.name, { type: f.mime || blob.type });
+            const effectiveType =
+              f.mime && f.mime !== "application/octet-stream"
+                ? f.mime
+                : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
+            const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+              ? config.vision?.maxFileSize
+              : artifactsAvailable
+                ? config.artifacts?.maxFileSize
+                : undefined;
+            return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
           }),
         );
 
@@ -413,7 +420,14 @@ export function ChatInput() {
         });
       }
     },
-    [handleFiles, setExtractingAttachments],
+    [
+      artifactsAvailable,
+      config.artifacts?.maxFileSize,
+      config.vision?.files,
+      config.vision?.maxFileSize,
+      handleFiles,
+      setExtractingAttachments,
+    ],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {

@@ -9,7 +9,7 @@ import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { getConfig } from "@/shared/config";
 import { acceptTypes } from "@/shared/lib/convert";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { downloadDriveFile } from "@/shared/lib/drives";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
 import { SectionEmptyState } from "./SectionEmptyState";
@@ -87,11 +87,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const handleDriveFiles = useCallback(
     async (selected: SelectedFile[]) => {
       for (const f of selected) {
-        const url = getDriveContentUrl(f.driveId, f.id);
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.mime || blob.type || "" });
-        await addFile(file);
+        await addFile(await downloadDriveFile(f));
       }
     },
     [addFile],
