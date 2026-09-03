@@ -26,13 +26,11 @@ func Load() *Config {
 
 	if pluginsURL := os.Getenv("PLUGINS_URL"); pluginsURL != "" {
 		if u, err := url.Parse(pluginsURL); err == nil {
-			u.RawQuery = ""
 			u.Fragment = ""
-			s := u.String()
-			if !strings.HasSuffix(s, "/") {
-				s += "/"
+			if !strings.HasSuffix(u.Path, "/") {
+				u.Path += "/"
 			}
-			cfg.Plugins = &Plugins{URL: s}
+			cfg.Plugins = &Plugins{URL: u.String()}
 		}
 	}
 

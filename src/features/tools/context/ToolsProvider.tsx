@@ -360,6 +360,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
+    list.push(...pluginMcpClients);
     return list;
   }, [
     internetProvider,
@@ -371,6 +372,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     companionAvailable,
     companionClient,
     agentProviders,
+    pluginMcpClients,
     toolsVersion,
   ]);
 

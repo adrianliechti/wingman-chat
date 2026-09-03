@@ -45,10 +45,21 @@ interface PluginSummary {
 /** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
 function normalizeHubUrl(hubUrl: string): string {
   const u = new URL(hubUrl);
-  u.search = "";
   u.hash = "";
   if (!u.pathname.endsWith("/")) u.pathname += "/";
   return u.toString();
+}
+
+/** Resolve a path against the hub URL, carrying over any query params the hub URL needs (e.g. auth tokens). */
+function resolveHubUrl(path: string, hubUrl: string): URL {
+  const base = new URL(hubUrl);
+  const resolved = new URL(path, base);
+  if (resolved.origin === base.origin) {
+    for (const [key, value] of base.searchParams) {
+      if (!resolved.searchParams.has(key)) resolved.searchParams.append(key, value);
+    }
+  }
+  return resolved;
 }
 
 export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
@@ -70,7 +81,7 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
         source: p.source,
         skills: p.skills?.map((s) => (typeof s === "string" ? { name: s } : s)),
         mcpServers: p.mcpServers,
-        icon: p.icon ? new URL(p.icon, hubUrl).href : undefined,
+        icon: p.icon ? resolveHubUrl(p.icon, hubUrl).href : undefined,
       }));
     })
     .catch(() => []);
@@ -123,7 +134,7 @@ export async function downloadHubPlugin(
   plugin: HubPlugin,
 ): Promise<DownloadedPlugin> {
   hubUrl = normalizeHubUrl(hubUrl);
-  const url = new URL(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
+  const url = resolveHubUrl(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
 
   let resp: Response;
   try {
