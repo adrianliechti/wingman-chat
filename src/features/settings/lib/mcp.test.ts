@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
+import { mcpToolName } from "./mcpToolNames";
 
 describe("MCP tool execution", () => {
   it("forwards the harness abort signal to the SDK request", async () => {
@@ -23,11 +24,15 @@ describe("MCP tool execution", () => {
     };
     internals.client = sdkClient;
     await internals.loadToolsAndInstructions();
+    expect(provider.tools[0].name).toBe(mcpToolName("test", "cancel_me"));
+    expect(provider.toolDefinitions.get(provider.tools[0].name)?.name).toBe("cancel_me");
+    expect(provider.toolDefinitions.get("cancel_me")?.name).toBe("cancel_me");
     controller.abort();
 
     await expect(provider.tools[0].function({}, { signal: controller.signal })).rejects.toMatchObject({
       name: "AbortError",
     });
     expect(callTool).toHaveBeenCalledOnce();
+    expect(callTool.mock.calls[0][0]).toEqual({ name: "cancel_me", arguments: {} });
   });
 });

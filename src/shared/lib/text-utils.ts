@@ -12,6 +12,28 @@ export function splitLines(text: string): string[] {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
+/** Format of the decoded text, not the encoding of an original imported document. */
+export function textFormat(content: string): {
+  utf8_bom: boolean;
+  line_endings: "none" | "LF" | "CRLF" | "CR" | "mixed";
+} {
+  let endings = 0;
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\r") {
+      if (content[i + 1] === "\n") {
+        endings |= 2;
+        i++;
+      } else endings |= 4;
+    } else if (content[i] === "\n") endings |= 1;
+    if (endings !== 0 && (endings & (endings - 1)) !== 0) break;
+  }
+  return {
+    utf8_bom: content.startsWith("\uFEFF"),
+    line_endings:
+      endings === 0 ? "none" : endings === 1 ? "LF" : endings === 2 ? "CRLF" : endings === 4 ? "CR" : "mixed",
+  };
+}
+
 /**
  * Get a range of lines from an array (1-indexed, inclusive).
  * Returns empty array if range is invalid.
@@ -60,6 +82,7 @@ export function formatLineOutput(lines: string[], startLine: number = 1): string
  * - ** matches any characters including /
  * - ? matches a single character except /
  * - Character classes [abc], [a-z], [!abc]
+ * - Brace alternatives, including nested groups and wildcards: {*.{ts,tsx},*.md}
  *
  * @param filename - The filename to test
  * @param pattern - The glob pattern
@@ -77,8 +100,8 @@ export function matchGlob(filename: string, pattern: string): boolean {
     const regex = new RegExp(`^${regexPattern}$`, "i");
     return regex.test(normalizedFilename);
   } catch {
-    // Invalid regex, fall back to simple includes check
-    return normalizedFilename.toLowerCase().includes(normalizedPattern.toLowerCase());
+    // A malformed pattern must not become an unrelated substring search.
+    return false;
   }
 }
 
@@ -86,6 +109,22 @@ export function matchGlob(filename: string, pattern: string): boolean {
  * Convert a glob pattern to a regex pattern string.
  */
 function globToRegex(glob: string): string {
+  // Pair braces before compiling so nested alternatives stay linear in size,
+  // without expanding every combination or recursing on model-provided input.
+  const bracePairs = new Map<number, number>();
+  const openBraces: number[] = [];
+  for (let index = 0; index < glob.length; index++) {
+    if (glob[index] === "[") {
+      const end = glob.indexOf("]", index + 1);
+      if (end !== -1) index = end;
+    } else if (glob[index] === "{") openBraces.push(index);
+    else if (glob[index] === "}") {
+      const start = openBraces.pop();
+      if (start !== undefined) bracePairs.set(start, index);
+    }
+  }
+  const closingBraces = new Set(bracePairs.values());
+  let braceDepth = 0;
   let regex = "";
   let i = 0;
 
@@ -96,12 +135,13 @@ function globToRegex(glob: string): string {
       // Check for **
       if (glob[i + 1] === "*") {
         // ** matches everything including /
-        regex += ".*";
         i += 2;
-        // Skip trailing / after **
+        // **/ includes zero directories: src/**/*.ts must match src/app.ts.
         if (glob[i] === "/") {
-          regex += "(?:/|$)";
+          regex += "(?:.*/)?";
           i++;
+        } else {
+          regex += ".*";
         }
       } else {
         // * matches everything except /
@@ -128,17 +168,17 @@ function globToRegex(glob: string): string {
         regex += `[${classContent}]`;
         i = classEnd + 1;
       }
-    } else if (c === "{") {
-      // Brace expansion {a,b,c}
-      const braceEnd = glob.indexOf("}", i + 1);
-      if (braceEnd === -1) {
-        regex += escapeRegex(c);
-        i++;
-      } else {
-        const options = glob.slice(i + 1, braceEnd).split(",");
-        regex += `(?:${options.map(escapeRegex).join("|")})`;
-        i = braceEnd + 1;
-      }
+    } else if (c === "{" && bracePairs.has(i)) {
+      regex += "(?:";
+      braceDepth++;
+      i++;
+    } else if (c === "}" && closingBraces.has(i)) {
+      regex += ")";
+      braceDepth--;
+      i++;
+    } else if (c === "," && braceDepth > 0) {
+      regex += "|";
+      i++;
     } else {
       // Escape special regex characters
       regex += escapeRegex(c);

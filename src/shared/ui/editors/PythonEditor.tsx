@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { executeCode } from "@/features/tools/lib/interpreter";
-import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { CodeEditor } from "./CodeEditor";
 
@@ -29,15 +28,8 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
     setError(null);
 
     try {
-      const result = await withSandboxLock(async () => {
-        // Read files fresh from filesystem at execution time
-        const files: Record<string, { content: string; contentType?: string }> = {};
-        const fileList = (await fs?.listFiles()) ?? [];
-        for (const file of fileList) {
-          files[file.path] = { content: file.content, contentType: file.contentType };
-        }
-        return executeCode({ code: content, files });
-      });
+      const files = (await fs?.getOverlaySnapshot()) ?? {};
+      const result = await executeCode({ code: content, files });
 
       if (result.success) {
         setOutput(result.output);

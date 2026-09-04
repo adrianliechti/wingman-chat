@@ -180,6 +180,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           },
         },
         required: ["name"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;
@@ -247,6 +248,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           },
         },
         required: ["name", "path"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;

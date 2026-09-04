@@ -7,11 +7,20 @@ type ExecutionResult = {
   files?: Record<string, { content: string; contentType?: string }>;
 };
 
+type TextToolResult = Array<{ type: "text"; text: string }>;
+
 declare global {
   interface Window {
     interpreterE2E: {
       executePython(request: unknown, options?: unknown): Promise<ExecutionResult>;
       executeJavaScript(request: unknown, options?: unknown): Promise<ExecutionResult>;
+      runToolFlow(chatId: string): Promise<{
+        created: TextToolResult;
+        edited: TextToolResult;
+        read: TextToolResult;
+        listed: TextToolResult;
+        file?: { content: string };
+      }>;
       runArtifactFlow(chatId: string): Promise<{
         execution: ExecutionResult;
         commit?: { createdPaths: string[]; updatedPaths: string[]; deletedPaths: string[] };
@@ -25,6 +34,20 @@ async function openFixture(page: Page): Promise<void> {
   await page.goto("/tests/browser/fixtures/interpreter.html");
   await page.waitForFunction(() => Boolean(window.interpreterE2E));
 }
+
+test("production file tools preserve BOM/CRLF through OPFS and accept their own writes", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() => window.interpreterE2E.runToolFlow(`tools-${crypto.randomUUID()}`));
+  expect(JSON.stringify(result.created)).toContain("success");
+  expect(JSON.stringify(result.edited)).not.toContain("changed since");
+  expect(result.file?.content).toBe("\uFEFFALPHA\r\nbeta\r\n");
+  const format = { utf8_bom: true, line_endings: "CRLF" };
+  expect(JSON.parse(result.created[0].text).text_format).toEqual(format);
+  expect(JSON.parse(result.edited[0].text).text_formats).toEqual({ "/bom.txt": format });
+  expect(result.read[0].text).toContain("[UTF-8 BOM: yes; line endings: CRLF]");
+  expect(result.listed[0].text).toContain("# 1 files");
+  expect(result.listed[0].text).toContain("/bom.txt");
+});
 
 test("Python uses real Pyodide, blocks fetch, writes files, and resets per-run state", async ({ page }) => {
   await openFixture(page);

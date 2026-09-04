@@ -3,7 +3,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { applyArtifactStopPolicy } from "@/features/artifacts/lib/artifact-stop-policy";
-import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
 import { useChats } from "@/features/chat/hooks/useChats";
@@ -17,6 +17,7 @@ import type { Client } from "@/shared/lib/client";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
+import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
 import type { Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
@@ -93,29 +94,6 @@ function pruneAtSummary(messages: Message[]): Message[] {
     console.log(`[Summary] Pruning ${messages.length - pruned.length} messages before summary marker`);
   }
   return pruned;
-}
-
-// Wire-only: append a current time/locale `<context>` to the user's real message —
-// the last human turn, not a tool result. `now` is captured once per run so the loop
-// keeps a stable, cacheable prefix.
-function injectContext(messages: Message[], now: Date): Message[] {
-  const idx = messages.findLastIndex(isUserMessage);
-  if (idx < 0) return messages;
-
-  const platform = window.innerWidth < 768 ? "mobile" : "desktop";
-  const pointer = window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
-  const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
-
-  const block = [
-    "<context>",
-    `Current date and time: ${now.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" })}`,
-    `ISO 8601 (UTC): ${now.toISOString()}`,
-    `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    `Client: ${platform}, ${pointer}, ${theme} theme`,
-    "</context>",
-  ].join("\n");
-
-  return messages.map((m, i) => (i === idx ? { ...m, content: [...m.content, { type: "text", text: block }] } : m));
 }
 
 /** Replace inline images before the latest user message with a placeholder.
@@ -425,7 +403,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
   }, [models, currentChatModel]);
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model, models);
+  const {
+    tools: chatTools,
+    instructions: chatInstructions,
+    runtimeContext: chatRuntimeContext,
+  } = useChatContext("chat", model, models);
 
   useEffect(() => {
     setInterpreterModel(model?.id ?? null);
@@ -569,8 +551,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [getOrCreateChat]);
 
   const addMessage = useCallback(
-    async (message: Message) => {
-      const { id } = await getOrCreateChat();
+    async (message: Message, targetChatId?: string) => {
+      const id = targetChatId ?? (await getOrCreateChat()).id;
 
       // Use the updater pattern to get fresh messages from the chat
       updateChat(id, (currentChat) => ({
@@ -615,6 +597,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       pendingModelContextRef.current.delete(id);
 
       const runId = crypto.randomUUID();
+      const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
       const outgoingMessage = withMessageIdentity(appendTextContent(message, pendingModelContext), runId);
 
       let conversation = [...history, outgoingMessage];
@@ -730,6 +713,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
         return {
           model: currentModel.id,
+          chatId: id,
           signal: abortController.signal,
           content: () =>
             outgoingMessage.content.filter(
@@ -758,7 +742,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Get tools and instructions when needed
         const tools = await chatTools();
         const instructions = chatInstructions();
-        const now = new Date();
+        const requestContext = captureRequestContext(chatRuntimeContext());
 
         // Proactive compaction: condense older messages into a summary marker
         // before the LLM call when the estimated token count exceeds the
@@ -813,7 +797,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             verbosity: model?.verbosity,
             signal: abortController.signal,
           },
-          prepareMessages: (msgs) => injectContext(stripHistoryImages(trimBulkyToolHistory(pruneAtSummary(msgs))), now),
+          prepareMessages: (msgs) =>
+            injectRequestContext(stripHistoryImages(trimBulkyToolHistory(pruneAtSummary(msgs))), requestContext),
           onContextOverflow: (msgs) =>
             (async () => {
               setRunPhase("compacting");
@@ -877,14 +862,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
             updateChat(id, () => ({ messages: conversation }));
           },
           beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
-            const activeFs = fsRef.current;
             const studioEnabled = tools.some((tool) => tool.name === "declare_artifact");
-            if (!activeFs || !studioEnabled) return { action: "finish" as const };
+            if (!runFs || !studioEnabled) return { action: "finish" as const };
             return applyArtifactStopPolicy({
               chatId: id,
               runId: activeRunId,
               messages: runMessages,
-              fs: activeFs,
+              fs: runFs,
               signal,
             });
           },
@@ -1004,6 +988,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     },
     [
+      artifactsEnabled,
       chats,
       updateChat,
       client,
@@ -1015,6 +1000,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       config.chat?.risks,
       chatTools,
       chatInstructions,
+      chatRuntimeContext,
       requestElicitation,
       updateModelContext,
       updateStreamingMessage,

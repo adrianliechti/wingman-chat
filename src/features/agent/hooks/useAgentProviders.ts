@@ -173,6 +173,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
             },
           },
           required: ["content"],
+          additionalProperties: false,
         },
         function: async (args: Record<string, unknown>) => {
           const content = args.content as string;
@@ -219,7 +220,8 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       name: "Memory",
       description: "Persistent memory across conversations",
       icon: BrainCircuit,
-      instructions: memoryPrompt + memorySection,
+      instructions: memoryPrompt,
+      runtimeContext: memorySection,
       tools,
     };
   }, [memoryEnabled, memoryContent, agentId]);

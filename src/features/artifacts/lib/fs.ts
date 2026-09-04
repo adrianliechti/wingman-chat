@@ -4,6 +4,14 @@ import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry, FileSystem } from "@/shared/types/file";
 import { artifactChecksum, artifactRevision, type ArtifactMutation } from "@/shared/types/artifact";
+import { withArtifactWorkspaceLock } from "./workspaceCoordinator";
+
+export function resolveArtifactFileSystem(
+  current: FileSystemManager | null,
+  chatId?: string,
+): FileSystemManager | null {
+  return chatId && current?.chatId !== chatId ? new FileSystemManager(chatId) : current;
+}
 
 type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 
@@ -48,6 +56,24 @@ export interface ArtifactIngestResult {
   mutations: ArtifactMutation[];
 }
 
+/** Non-reentrant view used only inside one coordinated workspace transaction. */
+export interface ArtifactWorkspaceAccess {
+  createFile(path: string, content: string, contentType?: string): Promise<ArtifactMutation | null>;
+  deleteFile(path: string): Promise<boolean>;
+  deleteFileWithDelta(path: string): Promise<ArtifactMutation[]>;
+  renameFile(oldPath: string, newPath: string): Promise<boolean>;
+  renameFileWithDelta(oldPath: string, newPath: string): Promise<ArtifactMutation[]>;
+  getFile(path: string): Promise<File | undefined>;
+  listEntries(): Promise<FileEntry[]>;
+  listFiles(): Promise<File[]>;
+  getOverlaySnapshot(): Promise<Record<string, OverlayFile>>;
+  applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary>;
+  applyOverlaySnapshot(
+    runtimeFiles: Record<string, string | OverlayFile>,
+    options?: OverlaySnapshotOptions,
+  ): Promise<OverlayCommitSummary>;
+}
+
 /** A file cannot replace an existing file, contain one, or sit below one. */
 function hasFileTreeConflict(path: string, existingPaths: readonly string[]): boolean {
   return existingPaths.some(
@@ -61,7 +87,7 @@ function hasFileTreeConflict(path: string, existingPaths: readonly string[]): bo
  * All operations go directly to OPFS. Events are emitted synchronously
  * after OPFS operations complete to notify UI of changes.
  */
-export class FileSystemManager implements FileSystem {
+class ArtifactWorkspace implements FileSystem, ArtifactWorkspaceAccess {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
   readonly chatId: string;
 
@@ -182,6 +208,11 @@ export class FileSystemManager implements FileSystem {
     const taken = new Set(await opfs.listArtifacts(this.chatId));
     const staged = files.map((file) => {
       const requested = this.normalizePath(file.path);
+      // Renaming the leaf cannot resolve a file occupying one of its parents.
+      // Fail before writing anything instead of looping over suffixes forever.
+      if ([...taken].some((existing) => requested.startsWith(`${existing}/`))) {
+        throw new Error(`Cannot ingest ${requested}: a parent path is an existing file`);
+      }
       let path = requested;
       let counter = 2;
       while (taken.has(path) || hasFileTreeConflict(path, [...taken])) {
@@ -197,23 +228,17 @@ export class FileSystemManager implements FileSystem {
       return { ...file, requested, path };
     });
 
-    const created: string[] = [];
-    const mutations: ArtifactMutation[] = [];
-    try {
-      for (const file of staged) {
-        const mutation = await this.createFile(file.path, file.content, file.contentType);
-        created.push(file.path);
-        if (mutation) mutations.push(mutation);
-      }
-    } catch (error) {
-      await Promise.allSettled(created.map((path) => this.deleteFile(path)));
-      throw error;
-    }
+    const summary = await this.applyOverlayDelta({
+      upserts: Object.fromEntries(
+        staged.map((file) => [file.path, { content: file.content, contentType: file.contentType }]),
+      ),
+      deletes: [],
+    });
 
     return {
       paths: staged.map((file) => file.path),
       pathMap: Object.fromEntries(staged.map((file) => [file.requested, file.path])),
-      mutations,
+      mutations: summary.mutations,
     };
   }
 
@@ -300,77 +325,57 @@ export class FileSystemManager implements FileSystem {
   async renameFile(oldPath: string, newPath: string): Promise<boolean> {
     const normalizedOld = this.normalizePath(oldPath);
     const normalizedNew = this.normalizePath(newPath);
-
-    if (normalizedOld === normalizedNew || normalizedNew.startsWith(`${normalizedOld}/`)) {
+    if (
+      normalizedOld === normalizedNew ||
+      normalizedNew.startsWith(`${normalizedOld}/`) ||
+      normalizedOld.startsWith(`${normalizedNew}/`)
+    )
       return false;
-    }
 
     const allFiles = await opfs.listArtifacts(this.chatId);
+    const direct = await opfs.readArtifact(this.chatId, normalizedOld);
+    const sources = direct ? [normalizedOld] : allFiles.filter((path) => path.startsWith(`${normalizedOld}/`));
+    if (!sources.length) return false;
+    const sourceSet = new Set(sources);
+    const unaffected = allFiles.filter((path) => !sourceSet.has(path));
+    const moves = sources.map((from) => ({ from, to: normalizedNew + from.slice(normalizedOld.length) }));
+    if (moves.some(({ to }) => hasFileTreeConflict(to, unaffected))) return false;
 
-    // Check if source is a file
-    const file = await opfs.readArtifact(this.chatId, normalizedOld);
-    if (file) {
-      const unaffectedFiles = allFiles.filter((path) => path !== normalizedOld);
-      if (hasFileTreeConflict(normalizedNew, unaffectedFiles)) {
-        return false;
+    const before = new Map<string, OverlayFile | undefined>();
+    for (const { from, to } of moves) {
+      const file = await opfs.readArtifact(this.chatId, from);
+      if (!file) return false;
+      before.set(from, file);
+      before.set(to, undefined);
+      const revision = await artifactRevision(file.content, file.contentType);
+      for (const path of [from, to]) {
+        await opfs.archiveArtifactRevision(this.chatId, {
+          path,
+          revision,
+          content: file.content,
+          contentType: file.contentType,
+          createdAt: new Date().toISOString(),
+        });
       }
-
-      // Copy first so the source remains intact on failure. The write itself
-      // can fail after creating a partial file, so every error removes it.
-      try {
-        await opfs.writeArtifact(this.chatId, normalizedNew, file.content, file.contentType);
-        await opfs.deleteArtifact(this.chatId, normalizedOld);
-      } catch (error) {
-        await opfs.deleteArtifact(this.chatId, normalizedNew).catch(() => undefined);
-        throw error;
-      }
-      this.emit("fileRenamed", normalizedOld, normalizedNew);
-      return true;
     }
 
-    // Check if source is a folder
-    const affectedFiles = allFiles.filter((f) => f.startsWith(`${normalizedOld}/`));
-
-    if (affectedFiles.length > 0) {
-      const affectedSet = new Set(affectedFiles);
-      const unaffectedFiles = allFiles.filter((path) => !affectedSet.has(path));
-      const moves = affectedFiles.map((from) => ({
-        from,
-        to: normalizedNew + from.substring(normalizedOld.length),
-      }));
-
-      // Reject all collisions before changing anything.
-      if (moves.some(({ to }) => hasFileTreeConflict(to, unaffectedFiles))) {
-        return false;
+    // Keep both sides recoverable even if a source deletion partially succeeds.
+    try {
+      for (const { from, to } of moves) {
+        const file = before.get(from)!;
+        await opfs.writeArtifact(this.chatId, to, file.content, file.contentType);
       }
-
-      // This store is small, so stage the reads plainly before changing anything.
-      const staged: Array<{ from: string; to: string; file: { content: string; contentType?: string } }> = [];
-      for (const move of moves) {
-        const sourceFile = await opfs.readArtifact(this.chatId, move.from);
-        if (!sourceFile) return false;
-        staged.push({ ...move, file: sourceFile });
-      }
-
-      const written: string[] = [];
+      for (const { from } of moves) await opfs.deleteArtifact(this.chatId, from);
+    } catch (commitError) {
       try {
-        for (const { to, file: sourceFile } of staged) {
-          // Track the attempt before writing: OPFS may create the file and then
-          // reject while writing or closing the stream.
-          written.push(to);
-          await opfs.writeArtifact(this.chatId, to, sourceFile.content, sourceFile.contentType);
-        }
-        await opfs.deleteArtifactFolder(this.chatId, normalizedOld);
-      } catch (error) {
-        await Promise.allSettled(written.map((path) => opfs.deleteArtifact(this.chatId, path)));
-        throw error;
+        await this.restoreTouchedFiles(before);
+      } catch (rollbackError) {
+        throw new AggregateError([commitError, rollbackError], "Artifact move failed and its rollback was incomplete");
       }
-
-      for (const { from, to } of moves) this.emit("fileRenamed", from, to);
-      return true;
+      throw commitError;
     }
-
-    return false;
+    for (const { from, to } of moves) this.emit("fileRenamed", from, to);
+    return true;
   }
 
   /** Move used by agent tools, returning artifact-delta metadata. */
@@ -385,23 +390,6 @@ export class FileSystemManager implements FileSystem {
       sources.map(async (from) => ({ from, file: await opfs.readArtifact(this.chatId, from) })),
     );
     if (!(await this.renameFile(normalizedOld, normalizedNew))) return [];
-    await Promise.all(
-      snapshots.flatMap(({ from, file }) => {
-        if (!file) return [];
-        const path = normalizedNew + from.slice(normalizedOld.length);
-        return [
-          artifactRevision(file.content, file.contentType).then((revision) =>
-            opfs.archiveArtifactRevision(this.chatId, {
-              path,
-              revision,
-              content: file.content,
-              contentType: file.contentType,
-              createdAt: new Date().toISOString(),
-            }),
-          ),
-        ];
-      }),
-    );
     return Promise.all(
       snapshots.map(async ({ from, file }) => {
         const path = normalizedNew + from.slice(normalizedOld.length);
@@ -495,13 +483,25 @@ export class FileSystemManager implements FileSystem {
       ),
       deletes: delta.deletes.map((path) => this.normalizePath(path)),
     };
-    const before = await this.getOverlaySnapshot();
+    // Snapshot only paths this delta can touch, including descendants of folder deletes.
+    const touched = new Set(Object.keys(normalizedDelta.upserts));
+    if (normalizedDelta.deletes.length) {
+      const entries = await this.listEntries();
+      for (const path of normalizedDelta.deletes) {
+        touched.add(path);
+        for (const entry of entries) {
+          if (entry.path.startsWith(`${path}/`)) touched.add(entry.path);
+        }
+      }
+    }
+    const before = new Map<string, OverlayFile | undefined>();
+    for (const path of touched) before.set(path, await opfs.readArtifact(this.chatId, path));
 
     try {
       return await this.applyOverlayDeltaUnsafe(normalizedDelta);
     } catch (commitError) {
       try {
-        await this.restoreOverlaySnapshot(before);
+        await this.restoreTouchedFiles(before);
       } catch (rollbackError) {
         throw new AggregateError(
           [commitError, rollbackError],
@@ -526,7 +526,10 @@ export class FileSystemManager implements FileSystem {
         const mutation = await this.createFile(path, file.content, file.contentType);
         createdPaths.push(path);
         if (mutation) mutations.push(mutation);
-      } else if (existing.content !== file.content || existing.contentType !== file.contentType) {
+      } else if (
+        existing.content !== file.content ||
+        existing.contentType !== (file.contentType ?? existing.contentType)
+      ) {
         const mutation = await this.createFile(path, file.content, file.contentType ?? existing.contentType);
         updatedPaths.push(path);
         if (mutation) mutations.push(mutation);
@@ -555,21 +558,26 @@ export class FileSystemManager implements FileSystem {
 
   /** Restore only the live workspace. Revision archives are immutable history
    * and may safely retain revisions written by a failed transaction. */
-  private async restoreOverlaySnapshot(before: Record<string, OverlayFile>): Promise<void> {
-    const current = await this.getOverlaySnapshot();
-    const extraPaths = Object.keys(current).filter((path) => !(path in before));
-
-    for (const path of extraPaths) {
-      await opfs.deleteArtifact(this.chatId, path);
-      this.emit("fileDeleted", path);
+  private async restoreTouchedFiles(before: Map<string, OverlayFile | undefined>): Promise<void> {
+    const failures: unknown[] = [];
+    for (const [path, file] of before) {
+      try {
+        const currentFile = await opfs.readArtifact(this.chatId, path);
+        if (!file) {
+          if (currentFile) {
+            await opfs.deleteArtifact(this.chatId, path);
+            this.emit("fileDeleted", path);
+          }
+          continue;
+        }
+        if (currentFile?.content === file.content && currentFile.contentType === file.contentType) continue;
+        await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
+        this.emit(currentFile ? "fileUpdated" : "fileCreated", path);
+      } catch (error) {
+        failures.push(error);
+      }
     }
-
-    for (const [path, file] of Object.entries(before)) {
-      const currentFile = current[path];
-      if (currentFile?.content === file.content && currentFile.contentType === file.contentType) continue;
-      await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
-      this.emit(currentFile ? "fileUpdated" : "fileCreated", path);
-    }
+    if (failures.length) throw new AggregateError(failures, "Could not restore every touched artifact");
   }
 
   /**
@@ -663,5 +671,108 @@ export class FileSystemManager implements FileSystem {
 
     const blob = contentToBlob(file.content, file.contentType);
     downloadBlob(blob, getFileName(file.path));
+  }
+}
+/** Coordinates UI, tools and interpreter transactions for this chat across instances/tabs. */
+export class FileSystemManager implements FileSystem {
+  private readonly workspace: ArtifactWorkspace;
+  readonly chatId: string;
+
+  constructor(chatId: string) {
+    this.workspace = new ArtifactWorkspace(chatId);
+    this.chatId = chatId;
+  }
+
+  /** Use only the supplied access inside the callback; reacquiring this manager would deadlock. */
+  withExclusiveAccess<T>(run: (access: ArtifactWorkspaceAccess) => Promise<T>): Promise<T> {
+    return this.coordinate(run);
+  }
+
+  private coordinate<T>(run: (access: ArtifactWorkspace) => Promise<T>): Promise<T> {
+    return withArtifactWorkspaceLock(this.chatId, () => run(this.workspace));
+  }
+
+  subscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): () => void {
+    return this.workspace.subscribe(eventType, handler);
+  }
+
+  unsubscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): void {
+    this.workspace.unsubscribe(eventType, handler);
+  }
+
+  createFile(path: string, content: string, contentType?: string) {
+    return this.coordinate(
+      async (access) =>
+        (await access.applyOverlayDelta({ upserts: { [path]: { content, contentType } }, deletes: [] })).mutations[0] ??
+        null,
+    );
+  }
+
+  getRevision(path: string) {
+    return this.coordinate((access) => access.getRevision(path));
+  }
+
+  ingestFiles(files: Array<{ path: string; content: string; contentType?: string }>) {
+    return this.coordinate((access) => access.ingestFiles(files));
+  }
+
+  deleteFile(path: string) {
+    return this.coordinate(
+      async (access) => (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).deleted > 0,
+    );
+  }
+
+  deleteFileWithDelta(path: string) {
+    return this.coordinate(
+      async (access) => (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).mutations,
+    );
+  }
+
+  renameFile(oldPath: string, newPath: string) {
+    return this.coordinate((access) => access.renameFile(oldPath, newPath));
+  }
+
+  renameFileWithDelta(oldPath: string, newPath: string) {
+    return this.coordinate((access) => access.renameFileWithDelta(oldPath, newPath));
+  }
+
+  getFile(path: string) {
+    return this.coordinate((access) => access.getFile(path));
+  }
+
+  listEntries() {
+    return this.coordinate((access) => access.listEntries());
+  }
+
+  listFiles() {
+    return this.coordinate((access) => access.listFiles());
+  }
+
+  getOverlaySnapshot() {
+    return this.coordinate((access) => access.getOverlaySnapshot());
+  }
+
+  applyOverlayDelta(delta: OverlayDelta) {
+    return this.coordinate((access) => access.applyOverlayDelta(delta));
+  }
+
+  applyOverlaySnapshot(files: Record<string, string | OverlayFile>, options?: OverlaySnapshotOptions) {
+    return this.coordinate((access) => access.applyOverlaySnapshot(files, options));
+  }
+
+  fileExists(path: string) {
+    return this.coordinate((access) => access.fileExists(path));
+  }
+
+  getFileCount() {
+    return this.coordinate((access) => access.getFileCount());
+  }
+
+  downloadAsZip(filename = "filesystem.zip") {
+    return this.coordinate((access) => access.downloadAsZip(filename));
+  }
+
+  downloadFile(path: string) {
+    return this.coordinate((access) => access.downloadFile(path));
   }
 }

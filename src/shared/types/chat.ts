@@ -4,13 +4,7 @@ import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType =
-  | "completer"
-  | "embedder"
-  | "renderer"
-  | "reranker"
-  | "synthesizer"
-  | "transcriber";
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -100,6 +94,8 @@ export interface ToolProvider {
   readonly description?: string;
 
   readonly instructions?: string;
+  /** Request-only metadata appended to the latest human message, outside static instructions. */
+  readonly runtimeContext?: string;
 
   readonly tools: Tool[];
 }
@@ -172,6 +168,7 @@ export interface RenderedAppHandle {
 
 export interface ToolContext {
   model?: string;
+  chatId?: string;
   runId?: string;
   invocationContext?: AgentInvocationContext;
   signal?: AbortSignal;

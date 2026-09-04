@@ -44,6 +44,7 @@ import {
 } from "@/shared/types/chat";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
+import { mcpToolName } from "./mcpToolNames";
 
 export type DisplayMode = McpUiDisplayMode;
 
@@ -364,7 +365,10 @@ export class MCPClient implements ToolProvider {
       // Load tools
       const toolsResponse = await client.listTools();
       const tools = toolsResponse.tools || [];
-      this.toolDefinitions = new Map(tools.map((tool) => [tool.name, tool]));
+      // Keep raw keys for restoring historical app calls and namespaced keys for new calls.
+      this.toolDefinitions = new Map(
+        tools.flatMap((tool) => [[tool.name, tool] as const, [mcpToolName(this.id, tool.name), tool] as const]),
+      );
 
       this.tools = tools
         .filter((tool) => !isToolVisibilityAppOnly(tool))
@@ -372,7 +376,7 @@ export class MCPClient implements ToolProvider {
           const icon =
             pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined);
           return {
-            name: tool.name,
+            name: mcpToolName(this.id, tool.name),
             title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
             icon,
 
@@ -405,7 +409,7 @@ export class MCPClient implements ToolProvider {
                 const normalizedResult: CallToolResult =
                   "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
 
-                const resource = this.uiResources.get(tool.name);
+                const resource = this.uiResources.get(mcpToolName(this.id, tool.name));
 
                 if (resource && context?.setMeta) {
                   // Don't render the UI here — McpApp handles rendering via
@@ -755,7 +759,7 @@ export class MCPClient implements ToolProvider {
 
       if (resourceUri) {
         const toolNames = uriToTools.get(resourceUri) || [];
-        toolNames.push(tool.name);
+        toolNames.push(tool.name, mcpToolName(this.id, tool.name));
         uriToTools.set(resourceUri, toolNames);
       }
     }

@@ -187,6 +187,28 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
             },
           ];
         },
+        async writeBatch(updates) {
+          const next = new Map(files);
+          const mutations = [];
+          for (const { path, content, contentType } of updates) {
+            const previous = next.get(path);
+            const resolvedContentType = contentType ?? (path.endsWith(".json") ? "application/json" : "text/plain");
+            const checksum = await artifactModule.artifactChecksum(content, resolvedContentType);
+            const revision = `sha256:${checksum}`;
+            next.set(path, { path, content, contentType: resolvedContentType, revision });
+            mutations.push({
+              operation: previous ? "update" : "create",
+              path,
+              contentType: resolvedContentType,
+              size: new TextEncoder().encode(content).byteLength,
+              checksum,
+              revision,
+            });
+          }
+          files.clear();
+          for (const [path, file] of next) files.set(path, file);
+          return mutations;
+        },
         async remove(path) {
           return files.delete(path);
         },
@@ -204,6 +226,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         },
       };
       const fileTools = fileToolsModule.createFileTools(source, {
+        namespace: "artifacts",
         validators: validatorsModule.ARTIFACT_VALIDATORS,
       });
       const schemaOnlyTools = [
@@ -238,13 +261,16 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
         0,
       );
-      assert.deepEqual(tools.filter((tool) => tool.strict).map((tool) => tool.name), []);
+      assert.deepEqual(
+        tools.filter((tool) => tool.strict).map((tool) => tool.name),
+        [],
+      );
 
       let manifest;
       const result = await run(
         client,
         artifactModel,
-        'Create the requested artifact by calling create_file exactly once with path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_python_code, execute_javascript_code, or declare_artifact. After the tool result, reply briefly that the artifact is complete.',
+        'Create the requested artifact by calling artifacts_create exactly once with file_path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_python_code, execute_javascript_code, or declare_artifact. After the tool result, reply briefly that the artifact is complete.',
         [{ role: Role.User, content: [{ type: "text", text: "Create the deterministic JSON artifact." }] }],
         tools,
         {
@@ -290,7 +316,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
 
       const toolResult = result.messages
         .flatMap((message) => message.content)
-        .find((part) => part.type === "tool_result" && part.name === "create_file");
+        .find((part) => part.type === "tool_result" && part.name === "artifacts_create");
       const delta = artifactModule.artifactDeltaFromMeta(toolResult?.meta);
       assert.equal(delta?.mutations[0]?.operation, "create");
       assert.equal(delta?.mutations[0]?.path, "/result.json");

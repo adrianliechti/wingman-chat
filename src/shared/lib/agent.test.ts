@@ -183,7 +183,7 @@ describe("truncated tool calls", () => {
 
   function writeTool(fn: () => Promise<unknown>): Tool {
     return {
-      name: "create_file",
+      name: "create",
       parameters: {
         type: "object",
         properties: { path: { type: "string" }, content: { type: "string" } },
@@ -206,7 +206,7 @@ describe("truncated tool calls", () => {
         {
           type: "tool_call" as const,
           id: "call_truncated",
-          name: "create_file",
+          name: "create",
           arguments: truncatedArguments,
           incomplete: true,
         },
@@ -239,7 +239,7 @@ describe("truncated tool calls", () => {
         {
           type: "tool_call" as const,
           id: "call_ok",
-          name: "create_file",
+          name: "create",
           arguments: '{"path": "/a.py", "content": "print(1)"}',
         },
       ],

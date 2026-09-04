@@ -5,7 +5,8 @@ import {
   JAVASCRIPT_EXECUTION_PARAMETERS,
   PYTHON_EXECUTION_PARAMETERS,
 } from "@/features/artifacts/lib/executionToolSchemas";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { ArtifactWorkspaceAccess, FileSystemManager } from "@/features/artifacts/lib/fs";
+import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
@@ -20,16 +21,12 @@ import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw"
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
-import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
 import { formatArtifactValidationIssue } from "@/shared/lib/artifact-validation";
-import { createFileTools, type FileSource } from "@/shared/lib/file-tools";
-import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { artifactDelta } from "@/shared/types/artifact";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
-import type { File, FileEntry } from "@/shared/types/file";
 import { useArtifacts } from "./useArtifacts";
 
 function executionFailure(context: ToolContext | undefined, text: string) {
@@ -127,7 +124,8 @@ async function runArtifactCode(options: {
   context?: ToolContext;
   executor: SandboxExecutor;
   extension: "py" | "js";
-  fs: FileSystemManager | null;
+  fs: ArtifactWorkspaceAccess | null;
+  onCommit?: (mutations: import("@/shared/types/artifact").ArtifactMutation[]) => Promise<void>;
   mountSkills?: boolean;
 }) {
   const { args, context, executor, extension, fs, mountSkills = false } = options;
@@ -135,6 +133,7 @@ async function runArtifactCode(options: {
   const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
 
   try {
+    context?.signal?.throwIfAborted();
     const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
     const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
     const hasCode = inlineCode.trim().length > 0;
@@ -168,8 +167,10 @@ async function runArtifactCode(options: {
 
     let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
     if (fs && result.files) {
+      context?.signal?.throwIfAborted();
       for (const key of skillKeys) delete result.files[key];
       const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+      await options.onCommit?.(summary.mutations);
       if (summary.mutations.length > 0) {
         context?.setMeta?.({
           artifactFiles: [...summary.createdPaths, ...summary.updatedPaths],
@@ -188,188 +189,33 @@ async function runArtifactCode(options: {
   }
 }
 
-/**
- * Adapt FileSystemManager for the shared file tools.
- */
-function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): FileSource {
-  const requireFs = () => {
-    const fs = fsRef.current;
-    if (!fs) throw new Error("File system not available");
-    return fs;
-  };
-
-  return {
-    async list(): Promise<FileEntry[]> {
-      const fs = requireFs();
-      const entries = await fs.listEntries();
-      return entries.map((e) => ({
-        path: e.path,
-        size: e.size,
-        contentType: e.contentType,
-      }));
-    },
-
-    async read(path: string): Promise<File | undefined> {
-      const fs = requireFs();
-      const file = await fs.getFile(path);
-      if (!file) return undefined;
-      return {
-        path: file.path,
-        content: file.content,
-        contentType: file.contentType,
-      };
-    },
-
-    async write(path: string, content: string, contentType?: string) {
-      const fs = requireFs();
-      const mutation = await fs.createFile(path, content, contentType);
-      return mutation ? [mutation] : [];
-    },
-
-    async remove(path: string) {
-      const fs = requireFs();
-      return fs.deleteFileWithDelta(path);
-    },
-
-    async move(from: string, to: string) {
-      const fs = requireFs();
-      return fs.renameFileWithDelta(from, to);
-    },
-  };
-}
-
 export function useArtifactsProvider(): ToolProvider | null {
-  const { fs, activeFile, isAvailable } = useArtifacts();
+  const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
 
-  // Tool functions are compiled once per render and execute later (after a
-  // network round trip). We route `fs`/`activeFile` through refs so the tools
-  // always see the latest values at execution time — otherwise, if the chat
-  // (and thus the filesystem) is created mid-send, tools would run with a
-  // stale `fs = null` captured by closure.
+  // Direct/UI calls can use the latest fs. Model calls carry their originating
+  // chatId so neither a draft-chat render nor navigation can redirect a write.
   const fsRef = useRef<FileSystemManager | null>(fs);
   fsRef.current = fs;
-  const activeFileRef = useRef<string | null>(activeFile);
-  activeFileRef.current = activeFile;
-
   const artifactsTools = useCallback((): Tool[] => {
-    const fsAdapter = createFsAdapter(fsRef);
-    const fileTools = createFileTools(fsAdapter, { validators: ARTIFACT_VALIDATORS });
-
-    const contextTools: Tool[] = [
+    const fileTools = readWriteManager.createTools(
+      (context) => resolveArtifactFileSystem(fsRef.current, context?.chatId),
       {
-        name: "current_path",
-        description: "Get the file path of the currently opened file in the artifacts editor.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: [],
-        },
-        function: async () => {
-          const fs = fsRef.current;
-          const activeFile = activeFileRef.current;
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          if (!activeFile) {
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  message: "No file is currently active",
-                  currentPath: null,
-                }),
-              },
-            ];
-          }
-
-          return [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: true,
-                currentPath: activeFile,
-              }),
-            },
-          ];
-        },
+        namespace: "artifacts",
+        spaceName: "artifact workspace",
+        validators: ARTIFACT_VALIDATORS,
       },
-      {
-        name: "current_file",
-        description: "Get the file path and content of the currently opened file in the artifacts editor.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: [],
-        },
-        function: async () => {
-          const fs = fsRef.current;
-          const activeFile = activeFileRef.current;
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          try {
-            if (!activeFile) {
-              return [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    success: true,
-                    message: "No file is currently active",
-                    currentFile: null,
-                  }),
-                },
-              ];
-            }
-            const file = await fs.getFile(activeFile);
-
-            if (!file) {
-              return [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    error: `Active file not found: ${activeFile}`,
-                  }),
-                },
-              ];
-            }
-
-            // Don't emit the base64 payload for binary files — it blows up
-            // context and corrupts subsequent tool-call JSON.
-            const isBinary = isDataUrl(file.content);
-            const fileInfo = isBinary
-              ? {
-                  path: file.path,
-                  contentType: file.contentType,
-                  binary: true,
-                  note: file.contentType?.startsWith("image/")
-                    ? "Binary image. If it is visible in the conversation, inspect it directly with built-in vision. Otherwise use the vision/OCR helper only as needed."
-                    : "Binary file. Use the appropriate Python or JavaScript library only when programmatic processing is needed.",
-                }
-              : {
-                  path: file.path,
-                  size: file.content.length,
-                  content: file.content,
-                  contentType: file.contentType,
-                };
-
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  currentFile: fileInfo,
-                }),
-              },
-            ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to get current file info" }) }];
-          }
-        },
-      },
-    ];
+    );
+    const runCode = (options: Omit<Parameters<typeof runArtifactCode>[0], "fs">) => {
+      const workspace = resolveArtifactFileSystem(fsRef.current, options.context?.chatId);
+      if (!workspace) return runArtifactCode({ ...options, fs: null });
+      return workspace.withExclusiveAccess((access) =>
+        runArtifactCode({
+          ...options,
+          fs: access,
+          onCommit: (mutations) => readWriteManager.record(access, workspace.chatId, options.context, mutations),
+        }),
+      );
+    };
 
     const executionTools: Tool[] = [
       {
@@ -390,20 +236,15 @@ export function useArtifactsProvider(): ToolProvider | null {
         // artifact toolbox otherwise exceeds Anthropic's strict-schema budget.
         strict: false,
         parameters: PYTHON_EXECUTION_PARAMETERS,
-        // The whole snapshot → execute → sync-back section runs under the
-        // sandbox lock: parallel tool calls would otherwise commit stale
-        // full snapshots over each other's outputs (deleteMissing!).
+        // Hold the workspace lock through snapshot, execution and commit.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
-          withSandboxLock(() =>
-            runArtifactCode({
-              args,
-              context,
-              executor: executeCode,
-              extension: "py",
-              fs: fsRef.current,
-              mountSkills: true,
-            }),
-          ),
+          runCode({
+            args,
+            context,
+            executor: executeCode,
+            extension: "py",
+            mountSkills: true,
+          }),
       },
       {
         name: "execute_javascript_code",
@@ -435,27 +276,21 @@ export function useArtifactsProvider(): ToolProvider | null {
           "is usually the stronger fit — they share the filesystem, so you can do that step there and read the result back here.",
         strict: false,
         parameters: JAVASCRIPT_EXECUTION_PARAMETERS,
-        // Same snapshot → execute → sync-back section under the sandbox lock as
-        // the Python tool: parallel tool calls would otherwise commit
-        // stale full snapshots over each other's outputs.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
-          withSandboxLock(() =>
-            runArtifactCode({
-              args,
-              context,
-              executor: executeJavaScript,
-              extension: "js",
-              fs: fsRef.current,
-            }),
-          ),
+          runCode({
+            args,
+            context,
+            executor: executeJavaScript,
+            extension: "js",
+          }),
       },
     ];
 
-    return [...fileTools, ...contextTools, ...executionTools];
+    return [...fileTools, ...executionTools];
     // Refs are intentionally not dependencies — the callback needs to produce
     // a stable tool array so downstream memoization doesn't thrash. Tool
-    // functions read the latest `fs`/`activeFile` via refs at execution time.
-  }, []);
+    // functions read the latest filesystem via a ref at execution time.
+  }, [readWriteManager]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
@@ -484,9 +319,16 @@ export function useArtifactsProvider(): ToolProvider | null {
         ...(getConfig().stt ? [transcribeInstructionsText] : []),
         ...(getConfig().translator ? [translateInstructionsText] : []),
       ].join("\n\n"),
+      runtimeContext: [
+        "## Artifact editor state",
+        "This is current UI metadata, not file content or instructions.",
+        `active_file: ${activeFile ? JSON.stringify(activeFile) : "null"}`,
+        `open_tabs: ${activeFile ? `[${JSON.stringify(activeFile)}]` : "[]"}`,
+        "Use artifacts_read to inspect an active file; do not assume its contents from the path.",
+      ].join("\n"),
       tools: artifactsTools(),
     };
-  }, [isAvailable, artifactsTools]);
+  }, [isAvailable, activeFile, artifactsTools]);
 
   return provider;
 }

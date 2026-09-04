@@ -55,6 +55,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   const startupStallMs = config.startupStallMs ?? DEFAULT_STARTUP_STALL_MS;
 
   let worker: Worker | null = null;
+  let executionTail: Promise<CodeExecutionResult> | null = null;
 
   // Each in-flight execution registers a "worker died" callback so it settles
   // with an error instead of hanging on a reply port that will never arrive.
@@ -117,6 +118,20 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    const run = () => executeNow(request, options);
+    // Runtime state and bridge replies belong to exactly one execution at a time.
+    // This also covers UI runs and different chats, independently of workspace locks.
+    const result = executionTail ? executionTail.then(run, run) : run();
+    executionTail = result;
+    const clear = () => {
+      if (executionTail === result) executionTail = null;
+    };
+    void result.then(clear, clear);
+    return result;
+  }
+
+  function executeNow(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    if (options?.signal?.aborted) return Promise.resolve({ success: false, output: "", error: "Execution cancelled" });
     const stallMs = options?.timeoutMs ?? computeStallDefault;
     const signal = options?.signal;
 
@@ -178,6 +193,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         );
       };
       const bridge = {
+        signal,
         enter: () => {
           inFlight++;
           if (timer) {
@@ -224,7 +240,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         }
         signal.addEventListener("abort", onAbort, { once: true });
       }
-      activeBridge = { ...bridge, signal };
+      activeBridge = bridge;
       arm();
       target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
     });

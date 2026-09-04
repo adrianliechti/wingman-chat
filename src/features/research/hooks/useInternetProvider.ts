@@ -4,6 +4,7 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import type { SearchResult } from "@/features/research/types/search";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
+import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
 import { getTextFromContent, Role, type Tool, type ToolContext, type ToolProvider } from "@/shared/types/chat";
 
@@ -19,40 +20,13 @@ function clip(text: string, max: number): string {
   return `${text.slice(0, max)}\n\n…[truncated, ${text.length - max} more chars]`;
 }
 
-/**
- * Normalize a tool argument that should be `string[]`. Models sometimes pass
- * a bare string, or a JSON-stringified array (`"[\"a\", \"b\"]"`); coerce
- * both into a real array of non-empty strings.
- */
-function coerceStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+/** Validate the canonical string-array shape without inventing aliases. */
+function stringArray(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error("Expected an array of strings");
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("[")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-        }
-      } catch {
-        // Malformed array-like string (model garbled the JSON). Best-effort:
-        // strip the brackets and split on top-level commas.
-        const inner = trimmed.replace(/^\[+/, "").replace(/\]+$/, "");
-        const parts = inner.split(",").map((p) =>
-          p
-            .trim()
-            .replace(/^["']|["']$/g, "")
-            .trim(),
-        );
-        const cleaned = parts.filter((p) => p.length > 0);
-        if (cleaned.length > 0) return cleaned;
-      }
-    }
-    return trimmed.length > 0 ? [trimmed] : [];
-  }
-  return [];
+  return value.map((entry: string) => entry.trim()).filter(Boolean);
 }
 
 function summarizeQueries(queries: string[]): string {
@@ -75,18 +49,6 @@ function summarizeUrls(urls: string[]): string {
     }
   }
   return `${urls.length} pages`;
-}
-
-function appendCurrentDateContext(instructions: string, now = new Date()): string {
-  const block = [
-    "<context>",
-    `Date/time: ${now.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" })}`,
-    `Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    "</context>",
-  ].join("\n");
-
-  const trimmed = instructions.trim();
-  return trimmed ? `${trimmed}\n\n${block}` : block;
 }
 
 function formatSearchResults(results: SearchResult[]): string {
@@ -147,12 +109,11 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
           },
         },
         required: ["queries"],
+        additionalProperties: false,
       },
       function: async (args) => {
-        // Tolerate models that pass `queries` as a single string, or as a
-        // JSON-stringified array (e.g. `"[\"a\", \"b\"]"`).
-        const queries = coerceStringArray(args.queries);
-        const domains = coerceStringArray(args.domains);
+        const queries = stringArray(args.queries);
+        const domains = stringArray(args.domains);
 
         if (queries.length === 0) {
           return [{ type: "text" as const, text: "No queries provided." }];
@@ -207,9 +168,10 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
           },
         },
         required: ["urls"],
+        additionalProperties: false,
       },
       function: async (args) => {
-        const urls = coerceStringArray(args.urls);
+        const urls = stringArray(args.urls);
         if (urls.length === 0) {
           return [{ type: "text" as const, text: "No URLs provided." }];
         }
@@ -263,6 +225,7 @@ export function useInternetProvider(): ToolProvider | null {
           },
         },
         required: ["instructions"],
+        additionalProperties: false,
       },
       function: async (args, context) => {
         const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
@@ -270,7 +233,7 @@ export function useInternetProvider(): ToolProvider | null {
           return [{ type: "text" as const, text: "Error: instructions are required" }];
         }
 
-        const request = appendCurrentDateContext(instructions);
+        const request = `${instructions}\n\n${captureRequestContext()}`;
 
         const model = context?.model;
         if (!model) {

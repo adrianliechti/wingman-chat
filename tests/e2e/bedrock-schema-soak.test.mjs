@@ -198,8 +198,8 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
       const executionSchemas = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/executionToolSchemas.ts");
       workspace = await createArtifactWorkspace(artifactModule);
       createFile = fileToolsModule
-        .createFileTools(workspace.source, { validators: validatorsModule.ARTIFACT_VALIDATORS })
-        .find((tool) => tool.name === "create_file");
+        .createFileTools(workspace.source, { namespace: "artifacts", validators: validatorsModule.ARTIFACT_VALIDATORS })
+        .find((tool) => tool.name === "artifacts_create");
       assert(createFile);
       assert.equal(createFile.strict, false);
       pythonParameters = executionSchemas.PYTHON_EXECUTION_PARAMETERS;
@@ -215,19 +215,19 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
 
   for (const fixture of createFixtures) {
     void test(
-      `create_file: ${fixture.name}`,
+      `create: ${fixture.name}`,
       async () => {
         const result = await run(
           client,
           MODEL,
-          `This is a schema transport probe. Call create_file exactly once and emit no prose. Use path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
+          `This is a schema transport probe. Call artifacts_create exactly once and emit no prose. Use file_path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
           [user("Create the exact fixture now.")],
           [createFile],
           { agentName: "bedrock-create-soak", maxTurns: 1 },
         );
 
         assert.equal(result.status, "max_turns", resultDetail(result));
-        const observed = recordArguments(result, "create_file", "content");
+        const observed = recordArguments(result, "artifacts_create", "content");
         assert.equal(
           (await workspace.read(fixture.path))?.content,
           fixture.content,

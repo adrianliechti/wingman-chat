@@ -1,6 +1,8 @@
 import type JSZip from "jszip";
-import { parser as createSaxParser, type QualifiedAttribute, type QualifiedTag } from "sax";
+import sax, { type QualifiedAttribute, type QualifiedTag } from "sax";
 import { fileExtension } from "./utils";
+
+const { parser: createSaxParser } = sax;
 
 /**
  * Shared helpers for parsing Office Open XML (pptx/docx) parts:

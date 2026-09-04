@@ -237,6 +237,7 @@ export async function importAgentsFromLegacyJson(
           const meta = {
             id: fileId,
             name: fileData.name || "Unknown File",
+            path: typeof fileData.path === "string" ? fileData.path : undefined,
             status: fileData.status || "completed",
             progress: typeof fileData.progress === "number" ? fileData.progress : 100,
             error: fileData.error,

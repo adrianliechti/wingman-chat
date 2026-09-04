@@ -12,7 +12,10 @@ export interface Repository {
 
 export interface RepositoryFile {
   id: string;
+  /** Original upload name shown to the user. */
   name: string;
+  /** Stable, collision-safe virtual path used by repository tools. Legacy records are backfilled on load. */
+  path?: string;
   status: "pending" | "processing" | "completed" | "error";
   progress: number;
   text?: string;

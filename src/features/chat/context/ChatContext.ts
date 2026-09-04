@@ -45,7 +45,7 @@ export interface ChatContextType {
    */
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
-  addMessage: (message: Message) => Promise<void>;
+  addMessage: (message: Message, targetChatId?: string) => Promise<void>;
   sendMessage: (
     message: Message,
     historyOverride?: Message[],

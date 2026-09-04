@@ -3,12 +3,21 @@ import type { Message, TextContent, ToolResultContent } from "@/shared/types/cha
 
 // Artifacts-provider tools that produce or write files.
 const ARTIFACT_WRITE_TOOLS = new Set([
+  "artifacts_create",
+  "artifacts_edit",
+  "artifacts_move",
+  "artifacts_delete",
+  "create",
+  "edit",
+  "move",
+  "delete",
+  "execute_python_code",
+  "execute_javascript_code",
+  // Render artifacts from conversations saved before the concise tool rename.
   "create_file",
   "edit_file",
   "move_file",
   "delete_file",
-  "execute_python_code",
-  "execute_javascript_code",
 ]);
 
 // User attachments are uploaded into the artifacts workspace and referenced in
@@ -52,7 +61,7 @@ function toolResultArtifactPaths(result: ToolResultContent): string[] {
         : [],
     );
   }
-  if (result.name === "create_file") {
+  if (result.name === "artifacts_create" || result.name === "create" || result.name === "create_file") {
     const resultText = result.result?.find((c): c is TextContent => c.type === "text");
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
     return path ? [path] : [];
@@ -255,20 +264,36 @@ export function groupRenderUnits(
 type ToolFamily = "read" | "search" | "edit" | "run" | "generic";
 
 const TOOL_FAMILIES: Record<string, ToolFamily> = {
-  read_file: "read",
-  list_files: "read",
+  artifacts_read: "read",
+  repository_read: "read",
+  artifacts_glob: "search",
+  artifacts_grep: "search",
+  repository_glob: "search",
+  repository_grep: "search",
+  repository_search: "search",
+  artifacts_create: "edit",
+  artifacts_edit: "edit",
+  artifacts_move: "edit",
+  artifacts_delete: "edit",
+  read: "read",
   current_file: "read",
   current_selection: "read",
   grep: "search",
   glob: "search",
   web_search: "search",
   search: "search",
+  create: "edit",
+  edit: "edit",
+  move: "edit",
+  delete: "edit",
+  execute_python_code: "run",
+  execute_javascript_code: "run",
+  // Historical names can still occur in persisted message content.
+  read_file: "read",
   create_file: "edit",
   edit_file: "edit",
   move_file: "edit",
   delete_file: "edit",
-  execute_python_code: "run",
-  execute_javascript_code: "run",
 };
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
@@ -300,11 +325,13 @@ export function summarizeToolGroup(messages: Message[], indices: number[]): stri
       const family = TOOL_FAMILIES[part.name] ?? (part.name.startsWith("execute_") ? "run" : "generic");
       const args = tryParseToolArguments(part.arguments);
       const argumentPath =
-        typeof args?.path === "string"
-          ? args.path
-          : typeof args?.from === "string"
-            ? args.from
-            : `${part.name}:${part.id}`;
+        typeof args?.file_path === "string"
+          ? args.file_path
+          : typeof args?.path === "string"
+            ? args.path
+            : typeof args?.from === "string"
+              ? args.from
+              : `${part.name}:${part.id}`;
 
       if (family === "read") readTargets.add(argumentPath);
       else if (family === "edit") {

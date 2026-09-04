@@ -120,7 +120,9 @@ export async function readArtifact(
     return { content: await blobToDataUrl(blob, contentType), contentType };
   }
 
-  return { content: await blob.text(), contentType };
+  // Blob.text() strips a UTF-8 BOM. File tools must preserve it when editing.
+  const content = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await blob.arrayBuffer());
+  return { content, contentType };
 }
 
 /**

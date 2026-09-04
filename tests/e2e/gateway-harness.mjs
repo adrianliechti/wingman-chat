@@ -163,12 +163,6 @@ export async function startGatewayHarness(options = {}) {
     server: { host: "127.0.0.1", port: 0, strictPort: false },
     ...(options.plugins?.length ? { plugins: options.plugins } : {}),
   });
-  await vite.listen();
-
-  const address = vite.httpServer?.address();
-  assert(address && typeof address !== "string", "Vite E2E proxy did not bind to a TCP port");
-  globalThis.window = { location: { origin: `http://127.0.0.1:${address.port}` } };
-
   let clientModule;
   let agentModule;
   let controllerModule;
@@ -176,6 +170,10 @@ export async function startGatewayHarness(options = {}) {
   let client;
   let availableModels;
   try {
+    await vite.listen();
+    const address = vite.httpServer?.address();
+    assert(address && typeof address !== "string", "Vite E2E proxy did not bind to a TCP port");
+    globalThis.window = { location: { origin: `http://127.0.0.1:${address.port}` } };
     clientModule = await vite.ssrLoadModule("/src/shared/lib/client.ts");
     agentModule = await vite.ssrLoadModule("/src/shared/lib/agent.ts");
     controllerModule = await vite.ssrLoadModule("/src/shared/lib/agent-run-controller.ts");

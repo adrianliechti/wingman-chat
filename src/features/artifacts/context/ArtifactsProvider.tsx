@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
 import { getConfig } from "@/shared/config";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { ArtifactsContext } from "./ArtifactsContext";
@@ -13,6 +14,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [fs, setFs] = useState<FileSystemManager | null>(null);
+  const [readWriteManager] = useState(() => new ArtifactReadWriteManager());
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
@@ -96,6 +98,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const value = {
     isAvailable,
     fs,
+    readWriteManager,
     activeFile,
     showArtifactsDrawer,
     openFile,

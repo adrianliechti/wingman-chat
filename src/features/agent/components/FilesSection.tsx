@@ -180,9 +180,12 @@ export function FilesSection({ agent }: FilesSectionProps) {
                     )}
                     <span
                       className="flex-1 min-w-0 text-xs truncate text-neutral-700 dark:text-neutral-300"
-                      title={file.name}
+                      title={file.path ?? file.name}
                     >
                       {file.name}
+                      {file.path && file.path !== `/${file.name}` && (
+                        <span className="block truncate text-neutral-400 dark:text-neutral-500">{file.path}</span>
+                      )}
                     </span>
                     {file.status === "processing" && (
                       <span className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{file.progress}%</span>

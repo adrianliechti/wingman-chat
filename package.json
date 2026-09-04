@@ -11,6 +11,8 @@
     "test:e2e:challenge": "node --test --test-concurrency=1 tests/e2e/gateway-challenge.test.mjs",
     "test:e2e:bedrock-soak": "node --test --test-concurrency=1 tests/e2e/bedrock-schema-soak.test.mjs",
     "test:e2e:browser": "playwright test",
+    "test:compare:codex": "node tests/e2e/codex-comparison.mjs",
+    "test:compare:grader": "node --test tests/e2e/file-edit-scenario.test.mjs",
     "test:e2e:all": "npm run test:e2e && npm run test:e2e:browser && npm run test:e2e:challenge",
     "test:pyodide": "node scripts/test-pyodide-bundle.mjs",
     "prebuild": "npm run bundle:pyodide",

@@ -64,7 +64,7 @@ export function toolArgumentHints(parameters: unknown): ToolArgumentHints {
   const stringNames = names.filter((n) => isStringType(properties[n]));
 
   // Only recover fields whose name identifies them as a free-text payload.
-  // A lone top-level string is not necessarily the payload: edit_file, for
+  // A lone top-level string is not necessarily the payload: edit, for
   // example, has a string `path` plus quote-heavy strings nested in `edits`.
   // Treating `path` as dominant would discard the edits on malformed input.
   const payloadKey = stringNames.find((n) => PAYLOAD_NAME.test(n));
