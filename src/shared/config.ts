@@ -284,9 +284,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
     const cfg: ConfigSchema = await resp.json();
 
-    const realtimeModel = import.meta.env.VITE_REALTIME_MODEL?.trim() || cfg.voice?.model;
-    const realtimeTranscriber = import.meta.env.VITE_REALTIME_TRANSCRIBER?.trim() || cfg.voice?.transcriber;
-
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
@@ -312,7 +309,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,
 
-      voice: cfg.voice || realtimeModel ? { model: realtimeModel, transcriber: realtimeTranscriber } : null,
+      voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
       vision: cfg.vision
         ? {
             model: cfg.vision.model,

@@ -8,6 +8,7 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
+import { createChatCreationGate } from "@/features/chat/lib/chatCreation";
 import { mergeQueuedMessages, queuedSend, type QueuedSend } from "@/features/chat/lib/chatQueue";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug } from "@/shared/config";
@@ -18,7 +19,7 @@ import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
-import type { Chat, Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type { Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role, withMessageIdentity } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -410,7 +411,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // callbacks append to the same newly-created conversation.
   const chatRef = useRef(chat);
   chatRef.current = chat;
-  const pendingChatCreationRef = useRef<Promise<Chat> | null>(null);
+  const createChatOnce = useMemo(() => createChatCreationGate(), []);
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
   const currentChatModel = chat?.model;
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
@@ -546,20 +547,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         : chats.find((c) => c.id === existingId)
       : undefined;
     if (!chatItem) {
-      let creation = pendingChatCreationRef.current;
-      if (!creation) {
-        creation = createChatHook();
-        pendingChatCreationRef.current = creation;
-      }
-
-      try {
-        chatItem = await creation;
-      } finally {
-        if (pendingChatCreationRef.current === creation) {
-          pendingChatCreationRef.current = null;
-        }
-      }
-
+      chatItem = await createChatOnce(createChatHook);
       chatItem.model = model;
       chatRef.current = chatItem;
       chatIdRef.current = chatItem.id;
@@ -571,7 +559,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     fsRef.current = fsForChat;
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
-  }, [model, createChatHook, updateChat, chats]);
+  }, [model, createChatHook, createChatOnce, updateChat, chats]);
 
   // Public alias for features (drawer, terminal, attachment sends) that need a
   // filesystem before the user's first message — same creation path as sending.
