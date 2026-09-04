@@ -21,7 +21,7 @@ import { useTranslate } from "@/features/translate/hooks/useTranslate";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -90,16 +90,12 @@ export function TranslatePage() {
       if (!f) return;
       setIsFetchingDrive(true);
       try {
-        const url = getDriveContentUrl(f.driveId, f.id);
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.mime || blob.type });
-        selectFile(file);
+        selectFile(await downloadDriveFile(f, config.translator?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
       } finally {
         setIsFetchingDrive(false);
       }
     },
-    [selectFile],
+    [config.translator?.maxFileSize, selectFile],
   );
 
   // Local state for editable translated text (to allow rewriting)

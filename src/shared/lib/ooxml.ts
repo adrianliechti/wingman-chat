@@ -1,5 +1,6 @@
 import type JSZip from "jszip";
 import { parser as createSaxParser, type QualifiedAttribute, type QualifiedTag } from "sax";
+import { fileExtension } from "./utils";
 
 /**
  * Shared helpers for parsing Office Open XML (pptx/docx) parts:
@@ -69,11 +70,15 @@ export class OoxmlXmlError extends Error {
 }
 
 /** Reject an oversized compressed package before JSZip allocates/inflates it. */
-export function assertOoxmlInputSize(input: Blob | ArrayBuffer, maxBytes = MAX_OOXML_INPUT_BYTES): void {
-  const bytes = "byteLength" in input ? input.byteLength : input.size;
+export function assertOoxmlInputByteLength(bytes: number, maxBytes = MAX_OOXML_INPUT_BYTES): void {
   if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > maxBytes) {
     throw new OoxmlResourceLimitError(`OOXML package is over the ${maxBytes}-byte compressed input limit`);
   }
+}
+
+/** Reject an oversized compressed package before JSZip allocates/inflates it. */
+export function assertOoxmlInputSize(input: Blob | ArrayBuffer, maxBytes = MAX_OOXML_INPUT_BYTES): void {
+  assertOoxmlInputByteLength("byteLength" in input ? input.byteLength : input.size, maxBytes);
 }
 
 export interface OoxmlXmlAttribute {
@@ -977,7 +982,7 @@ export async function loadMediaDataUrl(
   const cached = cache.get(path);
   if (cached !== undefined) return cached || undefined;
 
-  const ext = path.substring(path.lastIndexOf(".") + 1).toLowerCase();
+  const ext = fileExtension(path);
   const mime = MEDIA_MIME[ext];
   if (!mime) {
     cache.set(path, "");

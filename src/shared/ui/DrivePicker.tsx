@@ -2,20 +2,15 @@ import { Dialog, Transition } from "@headlessui/react";
 import { ChevronRight, File, Folder, FolderOpen, Loader2, Square, SquareCheckBig, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
-import { type DriveEntry, listDriveEntries } from "@/shared/lib/drives";
-import { formatBytes, lookupContentType } from "@/shared/lib/utils";
+import { type DriveEntry, type DriveFileSelection, listDriveEntries } from "@/shared/lib/drives";
+import { fileExtension, formatBytes, lookupContentType } from "@/shared/lib/utils";
 
 interface DriveConfig {
   id: string;
   name: string;
 }
 
-export interface SelectedFile {
-  id: string;
-  name: string;
-  driveId: string;
-  mime?: string;
-}
+export type SelectedFile = DriveFileSelection;
 
 interface DrivePickerProps {
   isOpen: boolean;
@@ -46,8 +41,8 @@ function parseAccept(accept?: string): { extensions: Set<string>; mimePatterns: 
 }
 
 function fileMatchesAccept(entry: DriveEntry, filter: { extensions: Set<string>; mimePatterns: string[] }): boolean {
-  const dotIdx = entry.name.lastIndexOf(".");
-  const ext = dotIdx >= 0 ? entry.name.slice(dotIdx).toLowerCase() : "";
+  const extension = fileExtension(entry.name);
+  const ext = extension ? `.${extension}` : "";
 
   if (ext && filter.extensions.has(ext)) return true;
 
@@ -264,6 +259,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
       name: entry.name,
       driveId: drive.id,
       mime: entry.mime,
+      size: entry.size,
     }));
 
     onFilesSelected(files);
