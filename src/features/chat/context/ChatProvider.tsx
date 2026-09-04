@@ -8,6 +8,7 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
+import { createChatCreationGate } from "@/features/chat/lib/chatCreation";
 import { mergeQueuedMessages, queuedSend, type QueuedSend } from "@/features/chat/lib/chatQueue";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug } from "@/shared/config";
@@ -405,6 +406,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, []);
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
+  // Realtime events can deliver the user transcription and response.done within
+  // the same render. Keep the active chat available synchronously so both
+  // callbacks append to the same newly-created conversation.
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const createChatOnce = useMemo(() => createChatCreationGate(), []);
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
   const currentChatModel = chat?.model;
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
@@ -534,10 +541,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     const existingId = chatIdRef.current;
-    let chatItem = existingId ? chats.find((c) => c.id === existingId) : undefined;
+    let chatItem = existingId
+      ? chatRef.current?.id === existingId
+        ? chatRef.current
+        : chats.find((c) => c.id === existingId)
+      : undefined;
     if (!chatItem) {
-      chatItem = await createChatHook();
+      chatItem = await createChatOnce(createChatHook);
       chatItem.model = model;
+      chatRef.current = chatItem;
       chatIdRef.current = chatItem.id;
       setChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));
@@ -547,7 +559,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     fsRef.current = fsForChat;
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
-  }, [model, createChatHook, updateChat, chats]);
+  }, [model, createChatHook, createChatOnce, updateChat, chats]);
 
   // Public alias for features (drawer, terminal, attachment sends) that need a
   // filesystem before the user's first message — same creation path as sending.

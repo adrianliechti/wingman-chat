@@ -1,6 +1,6 @@
 ---
 name: canvas-design
-description: Create beautiful static visual art — posters, design pieces, cover art — as .png or .pdf, driven by a design philosophy. Use when the user asks for a poster, a piece of art, a design, or any static, design-forward visual. Create original work, never copying existing artists.
+description: Create beautiful static visual art — posters, design pieces, cover art — as .png or .pdf, driven by a design philosophy. Use when the user asks for a poster, a piece of art, a design, or any static, design-forward visual. Create an original composition with a coherent visual language.
 ---
 
 # Canvas Design

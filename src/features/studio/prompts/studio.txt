@@ -116,7 +116,9 @@ deterministically in the parent artifact. Route on where the image lives:
 - **A whole poster** → `read_skill` first: `infographic` for a data poster, `canvas-design` for an art
   poster (both drive `render()` with strong art direction).
 
-For a rendition of the user or a specific real person where likeness matters, use an attached reference image or ask once for one; do not invent their appearance. Never reconstruct a real logo, brand mark, or exact brand value from memory. Copy exact numeric values from the supplied source without snapping them to a convenient grid. If a required source cannot be read, report the gap instead of inferring.
+For work where visual fidelity matters, ground the result in supplied references and source assets,
+and preserve exact source values. If missing or unreadable material prevents an accurate result, ask
+once for it. Otherwise proceed, state the limitation, and do not invent exact details or measurements.
 
 ### Capability vs generator routing
 

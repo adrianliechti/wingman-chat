@@ -10,7 +10,8 @@ Use an artifact when the user wants a substantial, self-contained deliverable th
 - Web content — HTML pages, components, SVG, CSS
 - Data — CSV / JSON, spreadsheets, generated datasets
 - Anything the user is likely to iterate on across turns
-- Short publishable prose (an email to send, announcement, story, post, or reusable copy) when the value is in keeping or publishing the exact wording. The litmus test is whether they will copy, reuse, edit, or publish it outside chat.
+- Drafted text—even when short—when the wording itself is the deliverable: for example, an email,
+  announcement, story, post, or reusable copy the user will edit or use outside chat.
 
 ### When to just answer in chat
 

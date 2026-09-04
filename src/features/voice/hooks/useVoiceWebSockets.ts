@@ -139,8 +139,8 @@ export function useVoiceWebSockets(
   );
 
   const start = async (
-    realtimeModel: string = "gpt-realtime-1.5",
-    transcribeModel: string = "gpt-4o-mini-transcribe",
+    realtimeModel: string = "gpt-realtime-2.1",
+    transcribeModel: string = "gpt-live-transcribe",
     instructions?: string,
     messages?: Message[],
     tools?: Tool[],
