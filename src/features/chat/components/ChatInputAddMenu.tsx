@@ -396,10 +396,12 @@ export function ChatInputAddMenu({
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
-    const providerInitializing = state === ProviderState.Initializing;
+    const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+    const providerUnauthorized = state === ProviderState.Unauthorized;
     const providerFailed = state === ProviderState.Failed;
 
-    if (providerInitializing) return <LoaderCircle size={16} className="animate-spin" />;
+    if (providerConnecting) return <LoaderCircle size={16} className="animate-spin" />;
+    if (providerUnauthorized) return <Lock size={16} className="text-amber-500" />;
     if (providerFailed) return <TriangleAlert size={16} />;
     if (typeof icon === "string") return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
     const Icon = icon;
@@ -631,7 +633,8 @@ export function ChatInputAddMenu({
           {otherProviders.map((provider: ToolProvider) => {
             const state = getProviderState(provider.id);
             const providerEnabled = state === ProviderState.Connected;
-            const providerInitializing = state === ProviderState.Initializing;
+            const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
+            const providerUnauthorized = state === ProviderState.Unauthorized;
             const providerFailed = state === ProviderState.Failed;
             const providerRequired = getProviderPolicy(provider.id) === "required";
 
@@ -641,14 +644,16 @@ export function ChatInputAddMenu({
                 content={
                   providerRequired
                     ? `${provider.name} is required by this agent`
-                    : providerFailed
-                      ? `${provider.name} failed to connect`
-                      : providerInitializing
-                        ? `${provider.name} is connecting…`
-                        : (provider.description ??
-                          (providerEnabled
-                            ? `Disable ${provider.name} tools for this conversation`
-                            : `Enable ${provider.name} tools for this conversation`))
+                    : providerUnauthorized
+                      ? `Sign in required for ${provider.name}`
+                      : providerFailed
+                        ? `${provider.name} failed to connect`
+                        : providerConnecting
+                          ? `${provider.name} is connecting…`
+                          : (provider.description ??
+                            (providerEnabled
+                              ? `Disable ${provider.name} tools for this conversation`
+                              : `Enable ${provider.name} tools for this conversation`))
                 }
                 side="right"
                 className="w-full"
@@ -656,7 +661,7 @@ export function ChatInputAddMenu({
                 <MenuRow
                   label={provider.name}
                   closeOnClick={false}
-                  disabled={providerInitializing || providerRequired}
+                  disabled={providerConnecting || providerRequired}
                   onSelect={async () => {
                     try {
                       await setProviderEnabled(provider.id, !providerEnabled);
@@ -664,7 +669,7 @@ export function ChatInputAddMenu({
                       console.error(`Failed to toggle provider ${provider.name}:`, error);
                     }
                   }}
-                  className={cn(providerInitializing && !providerRequired && "opacity-50")}
+                  className={cn(providerConnecting && !providerRequired && "opacity-50")}
                 >
                   {renderProviderIcon(provider, state)}
                   <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
@@ -673,7 +678,7 @@ export function ChatInputAddMenu({
                       <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
                     ) : (
                       providerEnabled &&
-                      !providerInitializing &&
+                      !providerConnecting &&
                       !providerFailed && <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
                     )}
                   </span>
@@ -809,7 +814,9 @@ export function ChatInputAddMenu({
                     {otherProviders.map((provider: ToolProvider) => {
                       const state = getProviderState(provider.id);
                       const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
+                      const providerConnecting =
+                        state === ProviderState.Initializing || state === ProviderState.Authenticating;
+                      const providerUnauthorized = state === ProviderState.Unauthorized;
                       const providerFailed = state === ProviderState.Failed;
                       const providerRequired = getProviderPolicy(provider.id) === "required";
 
@@ -820,16 +827,16 @@ export function ChatInputAddMenu({
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (providerInitializing || providerRequired) return;
+                            if (providerConnecting || providerRequired) return;
                             try {
                               await setProviderEnabled(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={providerInitializing || providerRequired}
+                          disabled={providerConnecting || providerRequired}
                           className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                            providerInitializing && !providerRequired ? "opacity-50" : ""
+                            providerConnecting && !providerRequired ? "opacity-50" : ""
                           } ${
                             providerEnabled
                               ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
@@ -849,9 +856,10 @@ export function ChatInputAddMenu({
                             <Lock size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                           ) : (
                             <>
-                              {providerEnabled && !providerInitializing && !providerFailed && (
+                              {providerEnabled && !providerConnecting && !providerFailed && (
                                 <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
                               )}
+                              {providerUnauthorized && <Lock size={16} className="shrink-0 text-amber-500" />}
                               {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
                             </>
                           )}

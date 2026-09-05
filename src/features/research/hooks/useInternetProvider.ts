@@ -4,6 +4,7 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import type { SearchResult } from "@/features/research/types/search";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
+import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
 import { getTextFromContent, Role, type Tool, type ToolContext, type ToolProvider } from "@/shared/types/chat";
 
@@ -19,40 +20,13 @@ function clip(text: string, max: number): string {
   return `${text.slice(0, max)}\n\n…[truncated, ${text.length - max} more chars]`;
 }
 
-/**
- * Normalize a tool argument that should be `string[]`. Models sometimes pass
- * a bare string, or a JSON-stringified array (`"[\"a\", \"b\"]"`); coerce
- * both into a real array of non-empty strings.
- */
-function coerceStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+/** Validate the canonical string-array shape without inventing aliases. */
+function stringArray(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error("Expected an array of strings");
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("[")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-        }
-      } catch {
-        // Malformed array-like string (model garbled the JSON). Best-effort:
-        // strip the brackets and split on top-level commas.
-        const inner = trimmed.replace(/^\[+/, "").replace(/\]+$/, "");
-        const parts = inner.split(",").map((p) =>
-          p
-            .trim()
-            .replace(/^["']|["']$/g, "")
-            .trim(),
-        );
-        const cleaned = parts.filter((p) => p.length > 0);
-        if (cleaned.length > 0) return cleaned;
-      }
-    }
-    return trimmed.length > 0 ? [trimmed] : [];
-  }
-  return [];
+  return value.map((entry: string) => entry.trim()).filter(Boolean);
 }
 
 function summarizeQueries(queries: string[]): string {
@@ -135,12 +109,11 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
           },
         },
         required: ["queries"],
+        additionalProperties: false,
       },
       function: async (args) => {
-        // Tolerate models that pass `queries` as a single string, or as a
-        // JSON-stringified array (e.g. `"[\"a\", \"b\"]"`).
-        const queries = coerceStringArray(args.queries);
-        const domains = coerceStringArray(args.domains);
+        const queries = stringArray(args.queries);
+        const domains = stringArray(args.domains);
 
         if (queries.length === 0) {
           return [{ type: "text" as const, text: "No queries provided." }];
@@ -148,7 +121,9 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
 
         outer?.updateMeta?.({ status: `Searching ${summarizeQueries(queries)}`, queries });
 
-        const settled = await Promise.allSettled(queries.map((query) => client.search(searcher, query, { domains })));
+        const settled = await Promise.allSettled(
+          queries.map((query) => client.search(searcher, query, { domains }, { signal: outer?.signal })),
+        );
 
         const blocks = settled.map((entry, i) => {
           const query = queries[i];
@@ -193,16 +168,19 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
           },
         },
         required: ["urls"],
+        additionalProperties: false,
       },
       function: async (args) => {
-        const urls = coerceStringArray(args.urls);
+        const urls = stringArray(args.urls);
         if (urls.length === 0) {
           return [{ type: "text" as const, text: "No URLs provided." }];
         }
 
         outer?.updateMeta?.({ status: `Fetching ${summarizeUrls(urls)}`, urls });
 
-        const settled = await Promise.allSettled(urls.map((url) => client.scrape(scraper, url)));
+        const settled = await Promise.allSettled(
+          urls.map((url) => client.scrape(scraper, url, { signal: outer?.signal })),
+        );
 
         const sections = settled.map((entry, i) => {
           const url = urls[i];
@@ -247,12 +225,15 @@ export function useInternetProvider(): ToolProvider | null {
           },
         },
         required: ["instructions"],
+        additionalProperties: false,
       },
       function: async (args, context) => {
         const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
         if (!instructions) {
           return [{ type: "text" as const, text: "Error: instructions are required" }];
         }
+
+        const request = `${instructions}\n\n${captureRequestContext()}`;
 
         const model = context?.model;
         if (!model) {
@@ -263,14 +244,25 @@ export function useInternetProvider(): ToolProvider | null {
           const result = await context.elicit({
             message:
               "The assistant wants to research the web. The following instructions will be sent to external search/fetch services:\n\n" +
-              instructions,
+              request,
           });
           if (result.action !== "accept") {
             return [{ type: "text" as const, text: "Cancelled by user." }];
           }
         }
 
-        const guard = await client.guard(internet?.guard ?? "", instructions);
+        let guard;
+        try {
+          guard = await client.guard(internet?.guard ?? "", request, { signal: context?.signal });
+        } catch {
+          return [
+            {
+              type: "text" as const,
+              text: "The Guardrail system is not available. Please try again later.",
+            },
+          ];
+        }
+
         if (guard.flagged) {
           const categories = guard.categories.map((c) => c.name).join(", ");
           return [
@@ -285,24 +277,39 @@ export function useInternetProvider(): ToolProvider | null {
 
         try {
           context?.updateMeta?.({ status: "Planning research…" });
-          const conversation = await agentRun(
+          const runResult = await agentRun(
             client,
             model,
             internetInstructionsText,
-            [{ role: Role.User, content: [{ type: "text", text: instructions }] }],
+            [{ role: Role.User, content: [{ type: "text", text: request }] }],
             innerTools,
             {
               agentName: "research",
+              invocationContext: context?.invocationContext?.fork("research"),
               options: { signal: context?.signal },
+              createToolContext: () => ({ model }),
               // Nest the inner research agent under the outer execute_tool span
               // explicitly — the elicitation `await` above has already dropped
               // the active context.
               parentContext: context?.agentContext,
             },
           );
+          if (runResult.status === "aborted") {
+            return [{ type: "text" as const, text: "Research interrupted before finishing." }];
+          }
+          if (runResult.status === "failed") {
+            return [
+              {
+                type: "text" as const,
+                text: `Search agent error: ${runResult.error?.message ?? "Unknown error"}`,
+              },
+            ];
+          }
+          const conversation = runResult.messages;
           const last = conversation[conversation.length - 1];
           const text = last ? getTextFromContent(last.content).trim() : "";
-          return [{ type: "text" as const, text: text || "No answer produced." }];
+          const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
+          return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
         } catch (error) {
           return [
             {

@@ -10,15 +10,18 @@ the side panel.
 
 ## Get the content first, then design
 
-Pull the real material from the conversation/workspace. Then commit to ONE visual system before slide
-1 (read `theme-factory` for a ready palette + fonts, or pick your own):
+Pull the real material from the conversation/workspace. Then derive and commit to one visual system
+before slide 1. Use `theme-factory` only when the user specifically asks for a reusable theme:
 
 - **Insight titles, not topic labels** — "Enterprise ACV grew 38% as mid-market stalled", not
   "Revenue". Lead with a verb, one line.
 - **One focal point per slide**; big numbers shown large with a small label.
 - **Vary the rhythm** — cover / section / hero-stat / chart / comparison / quote / close. Not ten
   "title + 3 bullets" slides.
-- **8–12 slides** unless asked otherwise. Cite figures on the slide. No filler.
+- **Make the subject visible** through real imagery, product states, charts, diagrams, or a material
+  motif; typography over empty color fields cannot carry every slide.
+- Use the fewest slides that tell the story, usually **6–10** unless asked otherwise. Cite figures on
+  the slide. No filler.
 
 ## Typography & hierarchy (legible from across a room)
 
@@ -26,26 +29,21 @@ Pull the real material from the conversation/workspace. Then commit to ONE visua
   unreadable when projected.
 - **Size hierarchy:** title **32–40pt bold**, section header 24–28pt bold, body 16–18pt, caption 14pt.
   The title must be **≥ 1.75× the body size**.
-- **Pick a palette archetype** per deck — corporate-neutral / warm-editorial / bold-startup /
-  academic-muted / playful-bright — and commit to it. Make it **content-informed**: if swapping the
-  palette into an unrelated deck would still work, it's too generic — tie the colors to _this_ topic.
-  **One color dominates** (~60% of the deck), 1–2 supporting tones, one sharp accent — never equal
-  weight. **Do not reflexively default to a dark-blue background.** Two background colors max (content +
-  section dividers). `read_skill theme-factory` for ready palettes.
+- Derive the palette from the subject or source brand. One field color should dominate, with 1–2
+  supporting tones and one sharp accent. If swapping the palette and motif into an unrelated deck
+  would still work, they are too generic. Do not reflexively default to dark navy, gray consulting
+  slides, or a different accent color on every page.
 
 ## Build it
 
 ```python
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 
 prs = Presentation()
 prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)   # 16:9
 BLANK = prs.slide_layouts[6]
-
-BG, INK, ACC = RGBColor(0x0F,0x14,0x1A), RGBColor(0xF5,0xF5,0xF5), RGBColor(0x4F,0x9C,0xF5)
 
 def bg(s, c):
     s.background.fill.solid(); s.background.fill.fore_color.rgb = c
@@ -57,13 +55,7 @@ def text(s, l, t, w, h, txt, size, color, bold=False, align=PP_ALIGN.LEFT):
     f.size, f.bold, f.color.rgb = Pt(size), bold, color
     return tb
 
-# Cover
-s = prs.slides.add_slide(BLANK); bg(s, BG)
-text(s, 0.9, 2.6, 11.5, 1.8, "Enterprise ACV grew 38% as mid-market stalled", 40, INK, bold=True)
-text(s, 0.9, 4.3, 11.5, 0.8, "FY24 revenue review", 20, ACC)
-
-prs.save("presentation.pptx")
-print("wrote presentation.pptx")
+# Define theme colors from the brief, storyboard the slide forms, then build each slide with these helpers.
 ```
 
 Notes:
@@ -74,18 +66,23 @@ Notes:
   give it a title, a legend (top), and data labels (`plot.has_data_labels = True`); keep chart text
   ≥14pt. For anything beyond bar/line/pie, draw it in `matplotlib` (`savefig("c.png", dpi=200)`) and
   `add_picture`.
-- **Imagery**: `await render("<prompt>", "img/cover.png")` then `add_picture`.
+- **Imagery**: `await render("<brief-specific prompt>", "cover.png", quality="medium", aspect_ratio="16:9")`
+  then `add_picture`. Crop intentionally rather than stretching.
 - **Speaker notes**: `slide.notes_slide.notes_text_frame.text = "..."`.
 - **Editing an existing deck**: open it (`Presentation("deck.pptx")`), change only the shapes you need,
   re-save — don't rebuild from scratch when revising. Keep the template's masters/layouts.
 
-## Verify before handing off
+## Verify the deck
 
-**Assume the first build has problems** — go slide by slide hunting for them, don't just confirm the
-file exists. On each slide check: no text box runs past the slide edge or overlaps another; titles fit
-one line (a title that wrapped to two breaks decorative lines positioned for one); every figure is
-real and sourced; no leftover placeholder; nothing below 14pt; even margins and gaps. Fix what you
-find and re-check the affected slides — one fix often creates the next problem.
+Check slide count, bounds, obvious overlaps, title fit, source labels, placeholders, and minimum type
+size. Inspect shape coordinates programmatically where useful. This is functional verification;
+deeper visual critique is optional when the user asks for polish.
+
+Then read back only the slide titles in order. They must tell a coherent story without body copy and
+use one grammatical style throughout (for example, all declarative insight statements). Replace topic
+labels and canned punchlines—especially “It’s not X. It’s Y.”—with specific claims. An intentionally
+open bottom third can be strong composition; do not flag whitespace as a defect by itself. When
+translating design measurements, use `px = pt × 1.333`, and verify the result at projected size.
 
 ## Deliver
 

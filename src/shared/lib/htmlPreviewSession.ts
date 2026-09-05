@@ -46,9 +46,34 @@ export interface PreviewSession {
 }
 
 let registrationPromise: Promise<ServiceWorkerRegistration> | null = null;
+const sessionSnapshots = new Map<string, Map<string, PreviewFilePayload>>();
+let recoveryListenerInstalled = false;
 
 function serviceWorkerSupported(): boolean {
   return typeof navigator !== "undefined" && "serviceWorker" in navigator && typeof window !== "undefined";
+}
+
+/**
+ * Service workers are disposable: the browser may stop one while the page is
+ * still open, losing its in-memory session map. Keep the authoritative snapshot
+ * in the page and let a restarted worker request it before serving a 404.
+ */
+function ensureRecoveryListener(): void {
+  if (recoveryListenerInstalled || !serviceWorkerSupported()) return;
+  recoveryListenerInstalled = true;
+
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type !== "html-preview/recover-request") return;
+    const port = event.ports?.[0];
+    if (!port) return;
+
+    const files = sessionSnapshots.get(String(event.data.token ?? ""));
+    if (!files) {
+      port.postMessage({ ok: false });
+      return;
+    }
+    port.postMessage({ ok: true, files: Object.fromEntries(files) });
+  });
 }
 
 /**
@@ -199,8 +224,11 @@ export function encodePreviewPath(path: string): string {
 
 export async function createPreviewSession(): Promise<PreviewSession> {
   await ensureRegistration();
+  ensureRecoveryListener();
   const token = generateToken();
   let destroyed = false;
+  const snapshot = new Map<string, PreviewFilePayload>();
+  sessionSnapshots.set(token, snapshot);
 
   const session: PreviewSession = {
     token,
@@ -212,18 +240,18 @@ export async function createPreviewSession(): Promise<PreviewSession> {
 
     async setFiles(input) {
       if (destroyed) return;
-      const filesMap: Record<string, PreviewFilePayload> = {};
+      snapshot.clear();
       const entries = Array.isArray(input) ? input : Object.values(input);
       for (const file of entries) {
         if (!file?.path) continue;
         const key = normalizeInputPath(file.path);
         if (!key) continue;
-        filesMap[key] = toPayload(file);
+        snapshot.set(key, toPayload(file));
       }
       await postMessage({
         type: "html-preview/register",
         token,
-        files: filesMap,
+        files: Object.fromEntries(snapshot),
       });
     },
 
@@ -231,11 +259,13 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key) return;
+      const payload = toPayload(file);
+      snapshot.set(key, payload);
       await postMessage({
         type: "html-preview/update",
         token,
         path: key,
-        file: toPayload(file),
+        file: payload,
       });
     },
 
@@ -243,6 +273,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key) return;
+      snapshot.delete(key);
       await postMessage({
         type: "html-preview/delete",
         token,
@@ -255,6 +286,19 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       const fromKey = normalizeInputPath(fromPath);
       const toKey = normalizeInputPath(toPath);
       if (!fromKey || !toKey) return;
+      const entry = snapshot.get(fromKey);
+      if (entry) {
+        snapshot.delete(fromKey);
+        snapshot.set(toKey, entry);
+      }
+      const folderPrefix = `${fromKey}/`;
+      const toPrefix = `${toKey}/`;
+      for (const key of Array.from(snapshot.keys())) {
+        if (!key.startsWith(folderPrefix)) continue;
+        const child = snapshot.get(key);
+        snapshot.delete(key);
+        if (child) snapshot.set(`${toPrefix}${key.slice(folderPrefix.length)}`, child);
+      }
       await postMessage({
         type: "html-preview/rename",
         token,
@@ -266,6 +310,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     async destroy() {
       if (destroyed) return;
       destroyed = true;
+      sessionSnapshots.delete(token);
       try {
         await postMessage({ type: "html-preview/unregister", token });
       } catch {

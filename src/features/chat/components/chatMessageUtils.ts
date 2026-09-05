@@ -1,9 +1,24 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
 
-// Artifacts-provider tools that produce/write files (unnamespaced — the
-// notebook source tools use a `source_` prefix and a different filesystem).
-const ARTIFACT_WRITE_TOOLS = new Set(["create_file", "execute_python_code", "execute_javascript_code"]);
+// Artifacts-provider tools that produce or write files.
+const ARTIFACT_WRITE_TOOLS = new Set([
+  "artifacts_create",
+  "artifacts_edit",
+  "artifacts_move",
+  "artifacts_delete",
+  "create",
+  "edit",
+  "move",
+  "delete",
+  "execute_python_code",
+  "execute_javascript_code",
+  // Render artifacts from conversations saved before the concise tool rename.
+  "create_file",
+  "edit_file",
+  "move_file",
+  "delete_file",
+]);
 
 // User attachments are uploaded into the artifacts workspace and referenced in
 // the sent message by this prose line so the model knows to read them. The UI
@@ -34,7 +49,19 @@ function parsePathFromJson(raw: string | undefined): string | null {
 
 /** Artifact file paths a single tool result wrote, if any. */
 function toolResultArtifactPaths(result: ToolResultContent): string[] {
-  if (result.name === "create_file") {
+  const delta = result.meta?.artifactDelta;
+  if (delta && typeof delta === "object" && "mutations" in delta && Array.isArray(delta.mutations)) {
+    return delta.mutations.flatMap((mutation) =>
+      mutation &&
+      typeof mutation === "object" &&
+      "path" in mutation &&
+      typeof mutation.path === "string" &&
+      (!("operation" in mutation) || mutation.operation !== "delete")
+        ? [mutation.path]
+        : [],
+    );
+  }
+  if (result.name === "artifacts_create" || result.name === "create" || result.name === "create_file") {
     const resultText = result.result?.find((c): c is TextContent => c.type === "text");
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
     return path ? [path] : [];
@@ -67,6 +94,10 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
   const seen = new Set<string>();
   for (let i = start; i <= assistantIndex; i++) {
     for (const part of messages[i]?.content ?? []) {
+      if (part.type === "artifact_ref") {
+        seen.add(part.path);
+        continue;
+      }
       if (part.type !== "tool_result") continue;
       if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
       for (const path of toolResultArtifactPaths(part)) seen.add(path);
@@ -183,24 +214,35 @@ function isToolConnectorMessage(message: Message): boolean {
   return hasToolCalls && !hasReasoning && !messageHasText(message) && !messageHasMedia(message);
 }
 
+function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
+  if (!toolCallId) return false;
+  return message.content.some((p) => p.type === "tool_call" && p.id === toolCallId);
+}
+
 export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
 
 /**
- * Partition messages into render units: standalone messages and folded tool
- * groups. A group is a maximal run of groupable tool results (plus connectors)
- * with at least two results. While responding, the live final message is never
- * folded so its running indicators stay visible.
+ * Partition messages into standalone messages and folded tool groups (runs of
+ * groupable results/connectors with 2+ results). `pendingElicitationToolCallId`
+ * keeps a message hosting an awaiting elicitation prompt standalone.
  */
-export function groupRenderUnits(messages: Message[], isResponding: boolean): RenderUnit[] {
+export function groupRenderUnits(
+  messages: Message[],
+  isResponding: boolean,
+  pendingElicitationToolCallId?: string | null,
+): RenderUnit[] {
   const units: RenderUnit[] = [];
   const limit = isResponding ? messages.length - 1 : messages.length;
+  const groupable = (message: Message) =>
+    !hostsToolCall(message, pendingElicitationToolCallId) &&
+    (isGroupableToolResultMessage(message) || isToolConnectorMessage(message));
 
   let i = 0;
   while (i < limit) {
-    if (isGroupableToolResultMessage(messages[i]) || isToolConnectorMessage(messages[i])) {
+    if (groupable(messages[i])) {
       let j = i;
       const indices: number[] = [];
-      while (j < limit && (isGroupableToolResultMessage(messages[j]) || isToolConnectorMessage(messages[j]))) {
+      while (j < limit && groupable(messages[j])) {
         if (isGroupableToolResultMessage(messages[j])) indices.push(j);
         j++;
       }
@@ -217,6 +259,99 @@ export function groupRenderUnits(messages: Message[], isResponding: boolean): Re
   }
   for (; i < messages.length; i++) units.push({ kind: "message", index: i });
   return units;
+}
+
+type ToolFamily = "read" | "search" | "edit" | "run" | "generic";
+
+const TOOL_FAMILIES: Record<string, ToolFamily> = {
+  artifacts_read: "read",
+  repository_read: "read",
+  artifacts_glob: "search",
+  artifacts_grep: "search",
+  repository_glob: "search",
+  repository_grep: "search",
+  repository_search: "search",
+  artifacts_create: "edit",
+  artifacts_edit: "edit",
+  artifacts_move: "edit",
+  artifacts_delete: "edit",
+  read: "read",
+  current_file: "read",
+  current_selection: "read",
+  grep: "search",
+  glob: "search",
+  web_search: "search",
+  search: "search",
+  create: "edit",
+  edit: "edit",
+  move: "edit",
+  delete: "edit",
+  execute_python_code: "run",
+  execute_javascript_code: "run",
+  // Historical names can still occur in persisted message content.
+  read_file: "read",
+  create_file: "edit",
+  edit_file: "edit",
+  move_file: "edit",
+  delete_file: "edit",
+};
+
+function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+function deltaPaths(result: ToolResultContent): string[] {
+  const delta = result.meta?.artifactDelta;
+  if (!delta || typeof delta !== "object" || !("mutations" in delta) || !Array.isArray(delta.mutations)) return [];
+  return delta.mutations.flatMap((mutation) => {
+    if (!mutation || typeof mutation !== "object" || !("path" in mutation) || typeof mutation.path !== "string") {
+      return [];
+    }
+    return [mutation.path];
+  });
+}
+
+/** Past-tense semantic summary for a completed group of tool result messages. */
+export function summarizeToolGroup(messages: Message[], indices: number[]): string {
+  const readTargets = new Set<string>();
+  const editTargets = new Set<string>();
+  let searches = 0;
+  let runs = 0;
+  let generic = 0;
+
+  for (const index of indices) {
+    for (const part of messages[index]?.content ?? []) {
+      if (part.type !== "tool_result") continue;
+      const family = TOOL_FAMILIES[part.name] ?? (part.name.startsWith("execute_") ? "run" : "generic");
+      const args = tryParseToolArguments(part.arguments);
+      const argumentPath =
+        typeof args?.file_path === "string"
+          ? args.file_path
+          : typeof args?.path === "string"
+            ? args.path
+            : typeof args?.from === "string"
+              ? args.from
+              : `${part.name}:${part.id}`;
+
+      if (family === "read") readTargets.add(argumentPath);
+      else if (family === "edit") {
+        const paths = deltaPaths(part);
+        if (paths.length > 0) paths.forEach((path) => editTargets.add(path));
+        else editTargets.add(argumentPath);
+      } else if (family === "search") searches++;
+      else if (family === "run") runs++;
+      else generic++;
+    }
+  }
+
+  const segments: string[] = [];
+  if (readTargets.size) segments.push(`Read ${plural(readTargets.size, "file")}`);
+  if (searches) segments.push(`Ran ${plural(searches, "search", "searches")}`);
+  if (editTargets.size) segments.push(`Edited ${plural(editTargets.size, "file")}`);
+  if (runs) segments.push(`Ran ${plural(runs, "command")}`);
+  if (generic && segments.length > 0) segments.push(`used ${plural(generic, "other tool")}`);
+  if (segments.length === 0) return `Used ${plural(generic || indices.length, "tool")}`;
+  return segments.join(", ");
 }
 
 export function getToolCallPreview(args: Record<string, unknown> | null): string | null {

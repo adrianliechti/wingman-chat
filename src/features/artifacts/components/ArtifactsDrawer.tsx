@@ -13,12 +13,17 @@ import {
 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import {
+  artifactKind,
+  artifactLanguage,
+  processUploadedFile,
+  type ProcessedFile,
+} from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
@@ -95,18 +100,19 @@ export function ArtifactsDrawer() {
       const activeFs = await ensureFs();
       setIsProcessing(true);
       try {
+        const batch: ProcessedFile[] = [];
         for (const file of fileList) {
-          try {
-            const processedFiles = await processUploadedFile(file);
-            for (const processed of processedFiles) {
-              await activeFs.createFile(processed.path, processed.content, processed.contentType);
-              openFile(processed.path);
-            }
-          } catch (error) {
-            console.error(`Error uploading file ${file.name}:`, error);
-            notify.error("Upload failed", error instanceof Error ? error.message : `"${file.name}" couldn't be added.`);
-          }
+          batch.push(...(await processUploadedFile(file)));
         }
+        const ingestion = await activeFs.ingestFiles(batch);
+        const lastPath = ingestion.paths.at(-1);
+        if (lastPath) openFile(lastPath);
+      } catch (error) {
+        console.error("Error uploading files:", error);
+        notify.error(
+          "Upload failed",
+          error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
+        );
       } finally {
         setIsProcessing(false);
       }
@@ -120,17 +126,14 @@ export function ArtifactsDrawer() {
       try {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          const url = getDriveContentUrl(f.driveId, f.id);
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
+          fetched.push(await downloadDriveFile(f, config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
         }
         await uploadFiles(fetched);
       } finally {
         setIsProcessing(false);
       }
     },
-    [uploadFiles],
+    [config.artifacts?.maxFileSize, uploadFiles],
   );
 
   // Callback for editors to register their run handler
@@ -472,6 +475,8 @@ export function ArtifactsDrawer() {
           <CsvEditor
             key={editorKey}
             content={activeFileData.content}
+            path={activeFileData.path}
+            contentType={activeFileData.contentType}
             viewMode={viewMode === "preview" ? "table" : "code"}
             onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
           />

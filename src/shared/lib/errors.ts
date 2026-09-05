@@ -80,6 +80,81 @@ export function getRetryAfterMs(error: unknown): number | undefined {
 }
 
 /**
+ * Whether a streaming failure is worth retrying. Mirrors the server agent's
+ * `isRecoverableError`: transport-level drops (a stream that EOF'd mid-response),
+ * rate limits, and 5xx are transient; user aborts, content-filter and length
+ * finish-reasons, and other 4xx are terminal. The SDK's own `maxRetries` only
+ * covers failures *before* the stream is established, so this handles the
+ * mid-stream case it does not.
+ */
+export function isRecoverableStreamError(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  if (error instanceof ContentFilterFinishReasonError) return false;
+  if (error instanceof LengthFinishReasonError) return false;
+
+  if (isOpenAIError(error)) {
+    // Network-level failures (no or partial HTTP response) — this is the
+    // mid-stream connection drop. APIConnectionTimeoutError extends this.
+    if (error instanceof APIConnectionError) return true;
+    if (error instanceof RateLimitError) return true;
+    if (error instanceof InternalServerError) return true;
+    const status = error.status;
+    return typeof status === "number" && (status === 408 || status === 409 || status === 429 || status >= 500);
+  }
+
+  // Native fetch failure in the browser (e.g. connection reset mid-stream).
+  if (error instanceof TypeError) return true;
+
+  const s = errorText(error).toLowerCase();
+  return (
+    s.includes("terminated") || s.includes("econnreset") || s.includes("network error") || s.includes("connection")
+  );
+}
+
+/**
+ * Wait before re-sending a failed stream. Honors a server `Retry-After` when
+ * present, otherwise exponential backoff with jitter. Resolves early (without
+ * throwing) if the abort signal fires during the wait so the caller can bail.
+ */
+export function waitBeforeStreamRetry(attempt: number, error: unknown, signal?: AbortSignal): Promise<void> {
+  const base = Math.min(500 * 2 ** attempt, 8000);
+  const delay = getRetryAfterMs(error) ?? base + Math.floor(Math.random() * 250);
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Whether a request failed because its *input* exceeded the model's context
+ * window — the recoverable-by-compaction case. This is distinct from
+ * `LengthFinishReasonError` (the output was truncated at max tokens), which
+ * compaction cannot fix. Matches the SDK's machine code first, then falls back
+ * to message markers for providers that don't set one.
+ */
+export function isContextOverflowError(error: unknown): boolean {
+  if (!(error instanceof BadRequestError)) return false;
+  const code = error.code ?? "";
+  if (code === "context_length_exceeded" || code === "string_above_max_length") return true;
+  const msg = (getServerMessage(error) ?? "").toLowerCase();
+  return (
+    msg.includes("context length") ||
+    msg.includes("context window") ||
+    msg.includes("maximum context") ||
+    msg.includes("too many tokens") ||
+    msg.includes("too long")
+  );
+}
+
+/**
  * Best-effort extraction of the server-provided error message from an APIError.
  * OpenAI's SDK puts the parsed response body in `error.error`, which is the
  * user-facing text. Falls back to `error.message` (which may include the

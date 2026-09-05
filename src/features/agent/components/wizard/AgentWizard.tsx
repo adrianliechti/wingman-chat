@@ -165,8 +165,6 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   const canAdvanceFromNameStep = !!state.name.trim();
   const nameStepId = steps.find((s) => s.id === "type") ? "type" : "identity";
 
-  const canNext = currentStepId === nameStepId ? canAdvanceFromNameStep : true;
-
   const handleNext = useCallback(() => {
     if (currentStepId === nameStepId && !canAdvanceFromNameStep) {
       dispatch({ type: "SHOW_VALIDATION" });
@@ -309,7 +307,6 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                 <WizardNavFooter
                   currentStep={state.currentStep}
                   totalSteps={steps.length}
-                  canNext={canNext}
                   isLastStep={isLastStep}
                   onBack={handleBack}
                   onNext={handleNext}

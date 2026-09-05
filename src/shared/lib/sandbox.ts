@@ -15,7 +15,8 @@ const SANDBOX_PREFIXES = [`${SANDBOX_HOME}/`, "/home/pyodide/"];
 
 /**
  * Normalize an artifact path: strip sandbox mount prefixes, ensure a leading
- * slash, collapse duplicate slashes, strip trailing slash.
+ * slash, collapse duplicate slashes and dot segments, and reject parent/null
+ * segments before the path crosses an OPFS or interpreter boundary.
  */
 export function normalizeArtifactPath(path: string | undefined): string | undefined {
   if (!path) {
@@ -40,6 +41,12 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
 
   normalized = normalized.replace(/\/+/g, "/");
 
+  const segments = normalized.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.some((segment) => segment === ".." || segment.includes("\0"))) {
+    return undefined;
+  }
+  normalized = `/${segments.join("/")}`;
+
   if (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);
   }
@@ -53,4 +60,25 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
  */
 export function normalizeArtifactReferencePath(path: string): string {
   return path.replace(/^\.\//, "").replace(/^\//, "");
+}
+
+const ARTIFACT_LINK_SCHEME = /^(sandbox|artifact):/i;
+
+export function getArtifactLinkPath(url: string): string | null {
+  if (!url) {
+    return null;
+  }
+
+  let candidate = url;
+  if (ARTIFACT_LINK_SCHEME.test(candidate)) {
+    candidate = candidate.replace(ARTIFACT_LINK_SCHEME, "").replace(/^\/\//, "/");
+  } else if (candidate.startsWith(`${SANDBOX_HOME}/`) || candidate.startsWith("/home/pyodide/")) {
+    // Bare sandbox mount path with no scheme; normalized below.
+  } else {
+    return null;
+  }
+
+  candidate = candidate.split(/[?#]/, 1)[0];
+  const normalized = normalizeArtifactPath(candidate);
+  return normalized && normalized !== "/" ? normalized : null;
 }

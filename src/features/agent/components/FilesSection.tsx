@@ -9,7 +9,7 @@ import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { getConfig } from "@/shared/config";
 import { acceptTypes } from "@/shared/lib/convert";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { downloadDriveFile } from "@/shared/lib/drives";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
 import { SectionEmptyState } from "./SectionEmptyState";
@@ -87,11 +87,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const handleDriveFiles = useCallback(
     async (selected: SelectedFile[]) => {
       for (const f of selected) {
-        const url = getDriveContentUrl(f.driveId, f.id);
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.mime || blob.type || "" });
-        await addFile(file);
+        await addFile(await downloadDriveFile(f));
       }
     },
     [addFile],
@@ -184,9 +180,12 @@ export function FilesSection({ agent }: FilesSectionProps) {
                     )}
                     <span
                       className="flex-1 min-w-0 text-xs truncate text-neutral-700 dark:text-neutral-300"
-                      title={file.name}
+                      title={file.path ?? file.name}
                     >
                       {file.name}
+                      {file.path && file.path !== `/${file.name}` && (
+                        <span className="block truncate text-neutral-400 dark:text-neutral-500">{file.path}</span>
+                      )}
                     </span>
                     {file.status === "processing" && (
                       <span className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{file.progress}%</span>

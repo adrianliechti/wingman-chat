@@ -31,10 +31,6 @@ export function OAuthCallbackPage() {
         window.opener.postMessage({ type: "mcp_oauth_callback", error: errorMessage }, window.location.origin);
         setTimeout(() => window.close(), 3000);
       }
-    } else if (code) {
-      // Opened as a full-page redirect (popup blocker fallback)
-      // Store the code in localStorage so the app can pick it up
-      localStorage.setItem("mcp_oauth_redirect_code", code);
     }
   }, [code, errorMessage]);
 

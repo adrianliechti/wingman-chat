@@ -9,6 +9,9 @@ import type {
   PendingConsent,
   PendingElicitation,
 } from "@/shared/types/elicitation";
+import type { QueuedSend } from "../lib/chatQueue";
+
+export type RunStatus = "idle" | "compacting" | "thinking" | "responding" | "running_tool" | "waiting";
 
 export interface ChatContextType {
   // Models
@@ -25,6 +28,7 @@ export interface ChatContextType {
   chat: Chat | null;
   messages: Message[];
   isResponding: boolean;
+  status: RunStatus;
   stopStreaming: () => void;
 
   // Chat actions
@@ -41,9 +45,18 @@ export interface ChatContextType {
    */
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
-  addMessage: (message: Message) => Promise<void>;
-  sendMessage: (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => Promise<void>;
+  addMessage: (message: Message, targetChatId?: string) => Promise<void>;
+  sendMessage: (
+    message: Message,
+    historyOverride?: Message[],
+    artifactFiles?: ProcessedFile[],
+    deletedPaths?: string[],
+  ) => Promise<void>;
   retryMessage: () => Promise<void>;
+  continueRun: () => Promise<void>;
+  queuedSends: QueuedSend[];
+  removeQueuedMessage: (id: string) => void;
+  sendHeldMessage: (id: string) => Promise<void>;
   setVoiceToolCall: (toolName: string | null, callId?: string) => void;
 
   // Elicitation state

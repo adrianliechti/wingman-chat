@@ -2,12 +2,13 @@ import { Image } from "lucide-react";
 import mime from "mime";
 import { useCallback, useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { resolveArtifactFileSystem, type FileSystemManager } from "@/features/artifacts/lib/fs";
 import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { rendererCapabilities } from "@/shared/lib/models";
 import { readAsDataURL } from "@/shared/lib/utils";
+import { artifactDelta } from "@/shared/types/artifact";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
 
 function errorResult(error: string): TextContent[] {
@@ -26,18 +27,6 @@ function slugify(prompt: string): string {
     .slice(0, 50)
     .replace(/-+$/g, "");
   return slug || "image";
-}
-
-/** Find an unused `/<slug>[-N].<ext>` path so generations never overwrite. */
-async function uniqueImagePath(fs: FileSystemManager, slug: string, ext: string): Promise<string> {
-  const base = `/${slug}`;
-  let path = `${base}.${ext}`;
-  let n = 1;
-  while (await fs.fileExists(path)) {
-    path = `${base}-${n}.${ext}`;
-    n += 1;
-  }
-  return path;
 }
 
 async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
@@ -84,7 +73,7 @@ export function useImageTool(): Tool | null {
       prompt: {
         type: "string",
         description:
-          "The image request in the user's own words. Pass it through faithfully — preserve their intent and do not invent style, lighting, or details they did not ask for. Resolve only contextual references (e.g. what 'it' refers to). When reference images are provided, describe just the changes to make.",
+          "The complete production prompt. Preserve every explicit user constraint and do not change the subject or intent. When the user delegates the look, or the image belongs inside a larger artifact, add concrete composition, palette, lighting, material, camera, and negative-space direction grounded in that brief. When editing reference images, describe the requested changes and what must remain unchanged.",
       },
       images: {
         type: "array",
@@ -138,8 +127,10 @@ export function useImageTool(): Tool | null {
         type: "object",
         properties,
         required: ["prompt"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>, context?: ToolContext) => {
+        const activeFs = resolveArtifactFileSystem(fsRef.current, context?.chatId);
         const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
         if (!prompt) return errorResult("`prompt` is required.");
 
@@ -155,7 +146,7 @@ export function useImageTool(): Tool | null {
           const references: Blob[] = [];
           const paths = Array.isArray(args.images) ? args.images.filter((p): p is string => typeof p === "string") : [];
           for (const path of paths) {
-            const file = fsRef.current ? await fsRef.current.getFile(path) : undefined;
+            const file = activeFs ? await activeFs.getFile(path) : undefined;
             if (!file || !isDataUrl(file.content)) return errorResult(`No image artifact found at ${path}.`);
             references.push(await blobFromDataUrl(file.content));
           }
@@ -184,20 +175,29 @@ export function useImageTool(): Tool | null {
             options.background = args.background;
           }
 
-          const imageBlob = await client.generateImage(model, prompt, references, options);
+          const imageBlob = await client.generateImage(model, prompt, references, options, {
+            signal: context?.signal,
+          });
           const dataUrl = await readAsDataURL(imageBlob);
 
           // Save to the artifacts workspace so the image is downloadable, editable
           // by path, and usable by the Python tool. Best-effort — a save
           // failure must not discard a successfully generated image.
           let name: string | undefined;
-          const activeFs = fsRef.current;
           if (activeFs) {
             try {
               const ext = mime.getExtension(imageBlob.type) || "png";
-              const path = await uniqueImagePath(activeFs, slugify(prompt), ext);
-              await activeFs.createFile(path, dataUrl, imageBlob.type || `image/${ext}`);
-              name = path;
+              const saved = await activeFs.ingestFiles([
+                {
+                  path: `/${slugify(prompt)}.${ext}`,
+                  content: dataUrl,
+                  contentType: imageBlob.type || `image/${ext}`,
+                },
+              ]);
+              if (saved.mutations.length) {
+                context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });
+              }
+              name = saved.paths[0];
             } catch (error) {
               console.warn("Failed to save generated image to artifacts:", error);
             }

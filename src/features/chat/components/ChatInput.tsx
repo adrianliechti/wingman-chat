@@ -3,6 +3,7 @@ import {
   Bot,
   Loader2,
   LoaderCircle,
+  Lock,
   Mic,
   Rocket,
   ScreenShare,
@@ -26,11 +27,19 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
+import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
+import type {
+  Content,
+  ImageContent,
+  Message,
+  TextContent,
+  ToolProvider,
+} from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -54,10 +63,13 @@ export function ChatInput() {
     messages,
     isResponding,
     stopStreaming,
+    queuedSends,
+    removeQueuedMessage,
+    sendHeldMessage,
     chat,
   } = useChat();
-  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
-  const { isAvailable: artifactsAvailable } = useArtifacts();
+  const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
     isAvailable: isScreenCaptureAvailable,
@@ -84,7 +96,12 @@ export function ChatInput() {
     stopVoice,
     sendText: sendVoiceText,
   } = useVoice();
-  const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
+  const {
+    inputDeviceId,
+    inputDevices,
+    setInputDevice,
+    requestPermission: requestAudioPermission,
+  } = useAudioDevices();
 
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
@@ -120,6 +137,17 @@ export function ChatInput() {
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
+  // Attachments are written to the workspace root by name at send, so new
+  // uploads must not reuse a name a previous message already persisted.
+  const getTakenFileNames = useCallback(async () => {
+    if (!artifactsFs) return new Set<string>();
+    const entries = await artifactsFs.listEntries();
+    // Root-level entries only — uploads land at `/${name}`, so nested files can't collide.
+    return new Set(
+      entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)),
+    );
+  }, [artifactsFs]);
+
   const {
     attachments,
     pendingFiles,
@@ -135,6 +163,7 @@ export function ChatInput() {
     artifactsAvailable,
     visionMaxFileSize: config.vision?.maxFileSize,
     artifactsMaxFileSize: config.artifacts?.maxFileSize,
+    getTakenFileNames,
   });
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -164,7 +193,9 @@ export function ChatInput() {
     const variations = profileName ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
 
-    return profileName ? variations[randomIndex].replace("[Name]", profileName) : variations[randomIndex];
+    return profileName
+      ? variations[randomIndex].replace("[Name]", profileName)
+      : variations[randomIndex];
   }, [profileName]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
@@ -177,7 +208,8 @@ export function ChatInput() {
 
   const shouldShowPlaceholder = !content.trim();
 
-  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } =
+    useTranscription();
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
@@ -215,6 +247,28 @@ export function ChatInput() {
     }
   }, [visibleProviders, getProviderState]);
 
+  // Providers whose OAuth flow needs an explicit user gesture to retry.
+  const unauthorizedProviders = useMemo(
+    () =>
+      visibleProviders.filter(
+        (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized,
+      ),
+    [visibleProviders, getProviderState],
+  );
+
+  // Shows a spinner on the agent badge while a retried sign-in is in flight.
+  const authenticatingProviders = useMemo(
+    () =>
+      visibleProviders.filter((provider: ToolProvider) => {
+        const state = getProviderState(provider.id);
+        return state === ProviderState.Initializing || state === ProviderState.Authenticating;
+      }),
+    [visibleProviders, getProviderState],
+  );
+
+  // Touch devices have no hover, so the agent badge opens a dropdown instead.
+  const isTouchDevice = useMediaQuery("(pointer: coarse)");
+
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
@@ -246,24 +300,25 @@ export function ChatInput() {
     async (e: FormEvent) => {
       e.preventDefault();
 
-      if (isResponding) {
-        return;
-      }
-
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
+        let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
           try {
             const blob = await captureFrame();
             if (blob) {
               const dataUrl = await readAsDataURL(blob);
+              const name = `screen-capture-${Date.now()}.png`;
               const screenContent: ImageContent = {
                 type: "image",
-                name: `screen-capture-${Date.now()}.png`,
+                name,
                 data: dataUrl,
               };
               finalAttachments = [screenContent, ...finalAttachments];
+              if (artifactsAvailable) {
+                screenCaptureFile = new File([blob], name, { type: blob.type || "image/png" });
+              }
             }
           } catch (error) {
             console.error("Error capturing screen during message send:", error);
@@ -287,14 +342,17 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const artifacts = [...fileArtifacts, ...imageArtifacts];
+        const screenCaptureArtifacts = screenCaptureFile
+          ? await toArtifacts([screenCaptureFile])
+          : [];
+        const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
         // model can read/edit it by name. Images are also shown inline (vision),
         // but the inline copy carries no filename — without this the model can't
         // name the file it's looking at. The redundant chip is suppressed in the
         // UI (see ChatUserMessage) since the image already renders inline.
-        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        const referencedPaths = artifacts.map((f) => f.path);
         if (referencedPaths.length > 0) {
           const reference: TextContent = {
             type: "text",
@@ -314,13 +372,13 @@ export function ChatInput() {
       }
     },
     [
-      isResponding,
       content,
       attachments,
       pendingFiles,
       pendingImages,
       isContinuousCaptureActive,
       captureFrame,
+      artifactsAvailable,
       sendMessage,
       clearAttachments,
     ],
@@ -340,10 +398,16 @@ export function ChatInput() {
       try {
         const fetched = await Promise.all(
           files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.id);
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            return new File([blob], f.name, { type: f.mime || blob.type });
+            const effectiveType =
+              f.mime && f.mime !== "application/octet-stream"
+                ? f.mime
+                : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
+            const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+              ? config.vision?.maxFileSize
+              : artifactsAvailable
+                ? config.artifacts?.maxFileSize
+                : undefined;
+            return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
           }),
         );
 
@@ -356,7 +420,14 @@ export function ChatInput() {
         });
       }
     },
-    [handleFiles, setExtractingAttachments],
+    [
+      artifactsAvailable,
+      config.artifacts?.maxFileSize,
+      config.vision?.files,
+      config.vision?.maxFileSize,
+      handleFiles,
+      setExtractingAttachments,
+    ],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -422,11 +493,17 @@ export function ChatInput() {
       try {
         const text = await stopTranscription();
         if (text.trim()) {
-          setContent(text);
+          setContent((previous) =>
+            previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text,
+          );
+          contentInputRef.current?.focus();
         }
       } catch (error) {
         console.error("Transcription failed:", error);
-        notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
+        notify.error(
+          "Transcription failed",
+          "The recording couldn't be transcribed. Please try again.",
+        );
       } finally {
         setTranscribingContent(false);
       }
@@ -442,6 +519,49 @@ export function ChatInput() {
 
   return (
     <>
+      {queuedSends.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
+          {queuedSends.map((item) => {
+            const label =
+              item.message.content.find((part) => part.type === "text")?.text.trim() ||
+              "Attachment";
+            return (
+              <div
+                key={item.id}
+                className={cn(
+                  "flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+                  item.status === "held"
+                    ? "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+                    : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
+                )}
+              >
+                <span className="max-w-56 truncate">
+                  {item.status === "held" ? `Held: ${label}` : label}
+                </span>
+                {item.status === "held" && (
+                  <button
+                    type="button"
+                    className="font-medium hover:underline"
+                    onClick={() => void sendHeldMessage(item.id)}
+                  >
+                    Send
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label={
+                    item.status === "held" ? "Discard held message" : "Remove queued message"
+                  }
+                  className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => removeQueuedMessage(item.id)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
@@ -471,7 +591,9 @@ export function ChatInput() {
             </div>
           )}
 
-          {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
+          {(attachments.length > 0 ||
+            pendingFiles.length > 0 ||
+            extractingAttachments.size > 0) && (
             <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
@@ -483,7 +605,9 @@ export function ChatInput() {
             </div>
           )}
 
-          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
+          <div
+            className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}
+          >
             {isRealtimeSelected ? (
               <textarea
                 className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
@@ -526,9 +650,11 @@ export function ChatInput() {
                       .map((item) => item.getAsFile())
                       .filter(Boolean) as File[];
 
-                    // A pasted file may also expose a text/plain representation (e.g.
-                    // an OS file copy yields the filename) — don't pollute the textarea.
-                    if (fileItems.length > 0) {
+                    // Apps like PowerPoint/Excel put a rendered image of the selection
+                    // on the clipboard alongside the actual text. When real text is
+                    // present, prefer it and ignore the image thumbnail; only route to
+                    // handleFiles when there's no usable text (a genuine file/image paste).
+                    if (fileItems.length > 0 && !text.trim()) {
                       await handleFiles(fileItems);
                       return;
                     }
@@ -560,7 +686,10 @@ export function ChatInput() {
                         ? ({
                             "--text-length": placeholderText.length,
                             "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                          } as React.CSSProperties & {
+                            "--text-length": number;
+                            "--animation-duration": string;
+                          })
                         : {}
                     }
                   >
@@ -617,7 +746,10 @@ export function ChatInput() {
             )}
             <div className="flex items-center gap-2">
               {isRealtimeSelected && isListening && !voiceTextInput && (
-                <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400" aria-live="polite">
+                <div
+                  className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400"
+                  aria-live="polite"
+                >
                   <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -626,7 +758,10 @@ export function ChatInput() {
                     <span className="font-medium text-neutral-700 dark:text-neutral-300">
                       {currentAgent?.name ?? "Listening"}
                     </span>
-                    <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
+                    <span className="text-neutral-500 dark:text-neutral-400">
+                      {" "}
+                      — speak or type a message
+                    </span>
                   </span>
                 </div>
               )}
@@ -659,7 +794,12 @@ export function ChatInput() {
                   }}
                   effort={
                     model?.supportedEfforts?.length
-                      ? { options: model.supportedEfforts, value: effort ?? null, onChange: setEffort }
+                      ? {
+                          options: model.supportedEfforts,
+                          value: effort ?? null,
+                          defaultValue: model.defaultEffort,
+                          onChange: setEffort,
+                        }
                       : undefined
                   }
                   dropdownClassName="w-auto min-w-48 whitespace-nowrap"
@@ -669,37 +809,142 @@ export function ChatInput() {
                       {...getProps()}
                       className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
                     >
-                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                      <Tooltip
+                        content="Switch model"
+                        side="bottom"
+                        className="flex items-center gap-1.5 min-w-0"
+                      >
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        <span className="truncate min-w-0">
+                          {model?.name ?? model?.id ?? "Select Model"}
+                        </span>
                       </Tooltip>
                     </button>
                   )}
                 />
               )}
 
-              {/* Agent picker — combined trigger + active-agent badge (hidden when listening, agent name shown in hint) */}
-              {currentAgent && !(isRealtimeSelected && isListening) && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setCurrentAgent(null);
-                    setShowAgentDrawer(false);
-                  }}
-                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  title="Deselect agent"
-                >
-                  <span className="shrink-0 w-3.5 flex justify-center relative">
-                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                    <X
-                      size={14}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                    />
-                  </span>
-                  <span className="truncate max-w-28">{currentAgent.name}</span>
-                </button>
-              )}
+              {/* Agent picker badge: shows a lock icon and retries sign-in when auth is needed. */}
+              {currentAgent &&
+                !(isRealtimeSelected && isListening) &&
+                (isTouchDevice ? (
+                  <DropdownMenu
+                    anchor="bottom start"
+                    trigger={
+                      <MenuButton
+                        className={cn(
+                          "flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors",
+                          unauthorizedProviders.length > 0
+                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+                        )}
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : unauthorizedProviders.length > 0 ? (
+                          <Lock size={14} className="shrink-0" />
+                        ) : (
+                          <Bot size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate max-w-28">{currentAgent.name}</span>
+                      </MenuButton>
+                    }
+                  >
+                    {unauthorizedProviders.length > 0 && (
+                      <DropdownMenuItem
+                        icon={<Lock size={14} />}
+                        render={({ className, children }) => (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              for (const provider of unauthorizedProviders) {
+                                void setProviderEnabled(provider.id, true);
+                              }
+                            }}
+                            className={cn(className, "text-amber-600 dark:text-amber-400")}
+                          >
+                            {children}
+                          </button>
+                        )}
+                      >
+                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}
+                        )
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      icon={<Bot size={14} />}
+                      onClick={() => {
+                        setAgentDrawerView("details");
+                        setShowAgentDrawer(true);
+                      }}
+                    >
+                      Open agent
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      icon={<X size={14} />}
+                      destructive
+                      onClick={() => {
+                        setCurrentAgent(null);
+                        setShowAgentDrawer(false);
+                      }}
+                    >
+                      Deselect agent
+                    </DropdownMenuItem>
+                  </DropdownMenu>
+                ) : (
+                  <div className="group flex items-center gap-0.5">
+                    <Tooltip
+                      content={
+                        unauthorizedProviders.length > 0
+                          ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
+                          : `${currentAgent.name} is active`
+                      }
+                      side="bottom"
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (unauthorizedProviders.length > 0) {
+                            for (const provider of unauthorizedProviders) {
+                              void setProviderEnabled(provider.id, true);
+                            }
+                            return;
+                          }
+                          setAgentDrawerView("details");
+                          setShowAgentDrawer(true);
+                        }}
+                        className={cn(
+                          "flex items-center gap-1 pl-1 pr-0.5 py-1 rounded-lg text-xs font-medium transition-colors",
+                          unauthorizedProviders.length > 0
+                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+                        )}
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : unauthorizedProviders.length > 0 ? (
+                          <Lock size={14} className="shrink-0" />
+                        ) : (
+                          <Bot size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate max-w-28">{currentAgent.name}</span>
+                      </button>
+                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setCurrentAgent(null);
+                        setShowAgentDrawer(false);
+                      }}
+                      className="p-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      title="Deselect agent"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
                   type="button"
@@ -752,7 +997,9 @@ export function ChatInput() {
                             </span>
                             <span className="hidden @md:inline truncate min-w-0">
                               {(() => {
-                                const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                                const selected = inputDevices.find(
+                                  (d) => d.deviceId === inputDeviceId,
+                                );
                                 if (selected) return selected.label || "Microphone";
                                 return "Default Mic";
                               })()}
@@ -775,7 +1022,10 @@ export function ChatInput() {
                               System Default
                             </DropdownMenuItem>
                             {inputDevices.map((device) => (
-                              <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
+                              <DropdownMenuItem
+                                key={device.deviceId}
+                                onClick={() => setInputDevice(device.deviceId)}
+                              >
                                 {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
                               </DropdownMenuItem>
                             ))}
@@ -792,7 +1042,8 @@ export function ChatInput() {
                       onClick={async () => {
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored =
+                          (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >
@@ -810,7 +1061,8 @@ export function ChatInput() {
                         }
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored =
+                          (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >
@@ -829,106 +1081,103 @@ export function ChatInput() {
                   )}
                 </>
               ) : isResponding ? (
-                <button
-                  type="button"
-                  className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  onClick={stopStreaming}
-                  title="Stop generating (Esc)"
-                >
-                  <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
-                  <Square size={16} className="hidden group-hover/stop:block" />
-                </button>
-              ) : content.trim() ? (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                >
-                  <Send size={16} />
-                </button>
-              ) : canTranscribe && !isListening ? (
-                transcribingContent ? (
+                <div className="flex items-center">
+                  {content.trim() && (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                      title="Queue message"
+                    >
+                      <Send size={16} />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                    disabled
-                    title="Processing audio..."
+                    className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={stopStreaming}
+                    title="Stop generating (Esc)"
                   >
-                    <Loader2 size={16} className="animate-spin" />
+                    <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                    <Square size={16} className="hidden group-hover/stop:block" />
                   </button>
-                ) : isTranscribing ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                    onClick={handleTranscriptionClick}
-                    title="Stop recording"
-                    disabled={isResponding}
-                  >
-                    <Square size={16} />
-                  </button>
-                ) : (
-                  // Not yet recording — desktop shows dictate mic + voice-mode wave; mobile uses the + menu and wave
-                  <>
-                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+                </div>
+              ) : (
+                // The dictate mic keeps its own slot so a transcript can be extended;
+                // only the trailing voice-mode slot turns into Send once there's text.
+                <>
+                  {canTranscribe &&
+                    !isListening &&
+                    (transcribingContent ? (
                       <button
                         type="button"
-                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={handleTranscriptionClick}
-                        disabled={isResponding}
+                        className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                        disabled
+                        title="Processing audio..."
                       >
-                        <Mic size={16} />
+                        <Loader2 size={16} className="animate-spin" />
                       </button>
-                    </Tooltip>
-                    {voiceAvailable && !currentAgent?.model ? (
-                      <Tooltip content="Voice mode" side="bottom">
+                    ) : isTranscribing ? (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        onClick={handleTranscriptionClick}
+                        title="Stop recording"
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <Tooltip
+                        content={content.trim() ? "Add dictation" : "Start dictate"}
+                        side="bottom"
+                        className="hidden md:block"
+                      >
                         <button
                           type="button"
-                          className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          onClick={() =>
-                            onModelChange({
-                              id: "realtime",
-                              name: "Voice Mode",
-                              description: "Real-time voice conversation",
-                            })
-                          }
-                          title="Voice mode"
-                          aria-label="Start voice mode"
+                          className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          onClick={handleTranscriptionClick}
                         >
-                          <AudioLines size={16} />
+                          <Mic size={16} />
                         </button>
                       </Tooltip>
-                    ) : (
+                    ))}
+                  {isTranscribing || transcribingContent ? null : content.trim() ? (
+                    <button
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : voiceAvailable && !currentAgent?.model ? (
+                    <Tooltip content="Voice mode" side="bottom">
                       <button
-                        className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        type="submit"
-                        disabled={isResponding}
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() =>
+                          onModelChange({
+                            id: "realtime",
+                            name: "Voice Mode",
+                            description: "Real-time voice conversation",
+                          })
+                        }
+                        title="Voice mode"
+                        aria-label="Start voice mode"
                       >
-                        <Send size={16} />
+                        <AudioLines size={16} />
                       </button>
-                    )}
-                  </>
-                )
-              ) : voiceAvailable && !currentAgent?.model ? (
-                <Tooltip content="Voice mode" side="bottom">
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    onClick={() =>
-                      onModelChange({
-                        id: "realtime",
-                        name: "Voice Mode",
-                        description: "Real-time voice conversation",
-                      })
-                    }
-                    title="Voice mode"
-                    aria-label="Start voice mode"
-                  >
-                    <AudioLines size={16} />
-                  </button>
-                </Tooltip>
-              ) : (
-                <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
-                  <AudioLines size={16} />
-                </span>
+                    </Tooltip>
+                  ) : canTranscribe && !isListening ? (
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : (
+                    <span className="p-2.5 md:p-1.5 text-neutral-400 dark:text-neutral-500">
+                      <AudioLines size={16} />
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>

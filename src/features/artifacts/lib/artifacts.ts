@@ -74,7 +74,7 @@ export { artifactLanguage } from "@/shared/lib/fileTypes";
 
 // Helper function to determine the kind of artifact based on file extension and content type.
 export function artifactKind(path: string, contentType?: string): ArtifactKind {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const ext = fileExtension(path);
   const basename = path.split("/").pop()?.toLowerCase() || "";
   const normalizedContentType = contentType?.toLowerCase();
 

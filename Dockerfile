@@ -1,4 +1,4 @@
-FROM node:lts-slim AS app
+FROM --platform=$BUILDPLATFORM node:lts-slim AS app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -15,7 +15,7 @@ RUN echo '{}' > public/config.json
 RUN npm run build
 
 
-FROM golang:1-alpine AS server
+FROM --platform=$BUILDPLATFORM golang:1-alpine AS server
 
 WORKDIR /src
 
@@ -24,7 +24,9 @@ RUN go mod download
 
 COPY *.go ./
 COPY pkg ./pkg
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o server
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o server
 
 FROM alpine
 
@@ -34,7 +36,6 @@ COPY --from=app /src/dist ./dist
 COPY --from=server /src/server .
 
 COPY skills ./skills
-COPY notebook ./notebook
 
 EXPOSE 8080
 

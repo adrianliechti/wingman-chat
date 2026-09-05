@@ -5,82 +5,74 @@ description: Generate a single poster-style infographic image (.png) that visual
 
 # Infographic
 
-Produce one striking infographic **image** that captures the key points at a glance: you write a
-detailed image prompt and render it with the interpreter's `render()` helper. The `.png` lands in the
-workspace and shows inline in chat.
+Produce one striking infographic **image** that captures the key points at a glance. Use image
+generation for the visual world and deterministic layout for exact titles, labels, and numbers. The
+final `.png` lands in the workspace and shows inline in chat.
 
 This is a **data-driven** poster — real facts and numbers. For an **art-led** poster where aesthetics
 lead, use `canvas-design` instead.
 
-> Requires a configured image service. If `render()` reports none is configured, say so and offer a
-> report or slides instead.
+If image generation is unavailable, build a precise SVG/HTML infographic with the same art direction;
+do not fall back to a generic report.
 
-## `render()` builds the poster — text and all
+## Hybrid by default
 
-An infographic is a **generated image**, not a hand-laid-out figure. Do **not** assemble it from
-`matplotlib` / `Pillow` / `reportlab` shapes — plotted boxes and text cards produce a cluttered,
-dead, corporate artefact, never a designed poster. If you're reaching for `plt.subplots`, `ax.text`,
-or a grid of `Rectangle`s to "lay out the infographic", stop: wrong tool.
+Do not ask an image model to typeset critical facts. Generate a visually rich foundation — hero
+object, illustration, texture, spatial frame, or background — with little or no text, then composite
+the exact title, numbers, short labels, source, and simple chart marks with Pillow or SVG. This keeps
+the result expressive without gambling on spelling or numerical accuracy.
 
-Modern image models render text well, so write the real title, stats, and labels straight into the
-prompt and trust `render()` with them — don't pre-emptively strip the text out and letter it by hand.
-What trips a renderer up isn't text, it's _too much_ text: cram a whole deck of exact copy into one
-image and words start to garble. The fix is to **distil** (next step), not to avoid text.
+The deterministic layer is not permission to make a grid of generic stat cards. Treat type, rules,
+data marks, and negative space as one composition around the generated visual. Use code for precision,
+not for inventing clip-art.
 
 ## 1. Gather and distil
 
-Source = the conversation plus workspace files. Pull the real title and the **5–7** key stats/points
+Source = the conversation plus workspace files. Pull the real title and the **3–5** key stats/points
 that matter — a poster carries a headline and a handful of numbers, not a slide's worth of bullets.
 Use real numbers; never invent data. From a deck or doc, extract the text first, then cut hard.
 
 ## 2. Commit to an art direction — don't default to "plain"
 
 A generic "modern flat-vector, clean, whitespace, grid of stat cards" prompt reads boring and
-corporate. Pick a distinctive style and apply it fully:
-
-- **Bento** — modular cards, app-like, bold per-card accents
-- **Editorial** — magazine spread, serif headlines, hero numbers
-- **Scientific** — diagram-led, precise, annotated
-- **Sketch-note** — hand-drawn, energetic, doodle icons
-- **Clay / kawaii / anime** — illustrative, characterful
-- **Professional** — polished corporate (only when the user wants understated)
-
-If the user names a look, use it; otherwise pick the one that fits the subject (tech overview → bento
-or editorial) and commit — never fall back to plain flat vector unless they ask for minimal.
+corporate. If the user names a look, use it. Otherwise derive the visual language from three concrete
+subject cues: an object/environment, a material/texture, and a native information form such as a map,
+cross-section, ledger, field guide, signal trace, or annotated specimen. Commit to that language rather
+than mapping a whole domain to a preset style.
 
 ## 3. What makes it striking
 
 - **One dominant hero** — a big focal visual or one huge headline number, not a uniform grid.
 - **Bold, specific color** — a real palette with a confident accent, not safe grey-and-blue.
-- **Depth and texture** — layering, soft shadows, grain, illustration; pure flat fills read generic.
+- **Intentional material** — flat, tactile, photographic, dimensional, or diagrammatic can all work;
+  make the treatment specific and consistent.
 - **Characterful icons/illustration**, not stock line icons.
-- **Varied rhythm** — mix card sizes and density; asymmetry beats a tidy 2×2.
+- **Varied rhythm** — mix scale and density; asymmetry often beats a tidy 2×2.
 - **Light text load** — a headline, the hero number, and short labels. Renderers handle that cleanly;
   they only stumble when one image carries a deck's worth of exact copy, so distil rather than dump.
 
-## 4. Write the prompt, then render
+## 4. Build the visual foundation, then typeset
 
-Lead with the **art direction** (style, palette, mood, composition, hero), then layer the content: the
-exact title/subtitle words, the key stats with their values, the section treatment, and the type
-hierarchy — all in the chosen style.
+Lead the image prompt with the **art direction**: style, palette, mood, composition, material, hero,
+and intentional clear zones for typography. Keep exact copy out of the generated foundation.
 
 ```python
 await render(
-    "Bold bento-grid infographic poster, dark mode. Deep near-black (#0E0E16) with vibrant per-card "
-    "accents (electric indigo #6C5CE7, teal #19C3B2, amber #FFB020). Asymmetric grid of rounded cards "
-    "of varying sizes, soft depth shadows, subtle grain. HERO: large top-left card with a glowing 3D "
-    "abstract neural-network sculpture, title 'NovaLLM', subtitle 'The AI platform for production LLM "
-    "apps'. Accent cards each with one huge number + tiny label: '175B parameters', '128K context', "
-    "'99.9% uptime', '40+ languages'. A wide card lists four capabilities with custom glyph icons: "
-    "Chat & Reasoning, Code Gen, RAG / Search, Function Calling. Confident modern sans-serif, oversized "
-    "tabular numbers, app-like polish, high contrast — not flat or corporate.",
-    "infographic.png",
+    "Portrait editorial infographic foundation about a production AI platform. Deep mineral blue field "
+    "with coral and mint color blocking, tactile translucent layers, one luminous abstract network "
+    "sculpture occupying the lower-right half, strong asymmetry, generous clean zones at top-left and "
+    "along the left edge for later typography, no letters, no numbers, no logos.",
+    "foundation.png", quality="medium", aspect_ratio="4:5"
 )
 ```
 
+Open `foundation.png` with Pillow, place the distilled copy using a real type hierarchy, and save
+`infographic.png`. Measure text with `textbbox`, wrap deliberately, align numbers on a shared axis,
+and include a compact source line. Use an available font such as DejaVu Sans/Serif or another font
+already present in the source artifact.
+
 ## 5. Deliver
 
-Save `infographic.png` to the workspace root and hand off in one line. Glance at the result; if a word
-or number is clearly off, re-render (distilling the text a little more usually fixes it), or — for one
-stubborn critical value — overlay just that with Pillow. To revise, push the art direction further and
-re-render rather than rebuilding by hand.
+Save `infographic.png` to the workspace root and hand off in one line. Check the final dimensions and
+that every required number matches the source. To revise, preserve the exact typography layer and
+change only the art direction or layout requested.

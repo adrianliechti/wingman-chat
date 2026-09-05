@@ -108,6 +108,9 @@ export function HtmlPreview({
     void (async () => {
       try {
         const newSession = await createPreviewSession();
+        // Own the session immediately so failures during initial file loading
+        // cannot leave its page-side snapshot or worker registration behind.
+        localSession = newSession;
         if (cancelled) {
           await newSession.destroy();
           return;
@@ -144,13 +147,13 @@ export function HtmlPreview({
           return;
         }
 
-        // Commit: publish the session only after all init work succeeded,
-        // so cleanup can cleanly destroy via `localSession`.
-        localSession = newSession;
+        // Publish only after all initial files are registered.
         sessionRef.current = newSession;
         setSession(newSession);
       } catch (err) {
         console.error("Failed to start HTML preview session:", err);
+        await localSession?.destroy().catch(() => undefined);
+        localSession = null;
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
         }

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interpreter browser E2E</title>
+  </head>
+  <body>
+    <script type="module">
+      import { FileSystemManager } from "/src/features/artifacts/lib/fs.ts";
+      import { ArtifactReadWriteManager } from "/src/features/artifacts/lib/artifactFileTools.ts";
+      import { executeCode } from "/src/features/tools/lib/interpreter.ts";
+      import { executeJavaScript } from "/src/features/tools/lib/javascript.ts";
+
+      window.interpreterE2E = {
+        executePython: executeCode,
+        executeJavaScript,
+        async runToolFlow(chatId) {
+          const fs = new FileSystemManager(chatId);
+          const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
+          const invoke = (name, args) =>
+            tools.find((tool) => tool.name === name).function(args, { runId: "browser-run" });
+          const created = await invoke("artifacts_create", {
+            file_path: "/bom.txt",
+            content: "\uFEFFalpha\r\nbeta\r\n",
+          });
+          const edited = await invoke("artifacts_edit", {
+            edits: [{ file_path: "/bom.txt", old_string: "alpha", new_string: "ALPHA" }],
+          });
+          const read = await invoke("artifacts_read", { file_path: "/bom.txt" });
+          const listed = await invoke("artifacts_glob", { pattern: "{missing.txt,**/*}" });
+          return { created, edited, read, listed, file: await fs.getFile("/bom.txt") };
+        },
+        async runArtifactFlow(chatId) {
+          const fs = new FileSystemManager(chatId);
+          await fs.createFile("/input.txt", "hello from opfs", "text/plain");
+          const files = await fs.getOverlaySnapshot();
+          const execution = await executeCode({
+            code: `from pathlib import Path\ntext = Path("input.txt").read_text()\nPath("output.txt").write_text(text.upper())\nprint(text)`,
+            files,
+          });
+          if (!execution.success || !execution.files) return { execution };
+          const commit = await fs.applyOverlaySnapshot(execution.files, { deleteMissing: true });
+          return {
+            execution,
+            commit,
+            output: await fs.getFile("/output.txt"),
+          };
+        },
+      };
+    </script>
+  </body>
+</html>

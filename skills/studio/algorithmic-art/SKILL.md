@@ -7,19 +7,20 @@ description: Create generative / algorithmic art — flow fields, particle syste
 
 Make a computational aesthetic — emergent behaviour expressed through code. Render it **offline** with
 the bundled Python interpreter (`numpy` + `matplotlib`/Pillow) to a `.png`; don't depend on a CDN.
-Work in two steps: **(1) an algorithmic philosophy**, then **(2) express it in code**.
+Define an algorithmic idea, then express it in code.
 
-## Step 1 — Algorithmic philosophy (.md)
+## Algorithmic direction
 
 Name the movement (1–2 words: "Organic Turbulence", "Emergent Stillness"). In 4–6 paragraphs describe
 how it manifests through computational processes, seeded randomness / noise fields, particle
 behaviour and forces, temporal evolution, and parametric variation. Emphasize emergent beauty and
-master-level craft. Save as `philosophy.md`.
+master-level craft. Keep this as the working concept unless the user asks for a written rationale.
 
-## Step 2 — Express it (Python → PNG, offline)
+## Express it (Python → PNG, offline)
 
 Use **seeded** randomness so the piece is reproducible, and let the algorithm do the work (90%
-generation, 10% parameters). A flow-field example tracing particles through a smooth field:
+generation, 10% parameters). The flow field below demonstrates mechanics, not a default dark visual
+style; derive the field, palette, density, and mark-making from the requested concept.
 
 ```python
 import numpy as np, matplotlib
@@ -61,5 +62,4 @@ algorithm so both render as the same piece.
 
 ## Deliver
 
-Save `art.png` (and `philosophy.md`) to the workspace; one line on what it is. To revise, tweak the
-parameters and re-run.
+Save `art.png` to the workspace; one line on what it is. To revise, tweak the parameters and re-run.

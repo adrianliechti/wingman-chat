@@ -12,13 +12,28 @@ Excel recalculates formulas when the file is opened.)
 ## Requirements for every workbook
 
 - **Professional font** (e.g. Calibri, Arial) consistently across the file.
-- **Zero formula errors** — no `#REF!`, `#DIV/0!`, `#VALUE!`, `#N/A`, `#NAME?`. Verify ranges and
-  references.
-- **Use formulas, not hardcoded values.** Let Excel compute, so the model stays live:
+- **No known broken formulas** — scan formula strings for invalid references and error literals. The
+  sandbox cannot calculate formulas; Excel/Sheets recalculates them when opened.
+- **Use formulas for derived values, not source facts.** Imported data and assumptions are hardcoded
+  inputs; totals, ratios, forecasts, and checks should remain live formulas:
   - ✅ `ws["B10"] = "=SUM(B2:B9)"` · ✅ `ws["C5"] = "=(C4-C2)/C2"`
   - ❌ computing the total in Python and writing the number.
 - **Assumptions in their own cells**, referenced by formulas: `=B5*(1+$B$6)`, not `=B5*1.05`.
 - When editing an existing file, **match its conventions exactly** — don't impose new formatting.
+- **Structured `Table` only when table semantics earn it** — for filtering and banding alone, a styled
+  range plus `ws.auto_filter.ref` is safer.
+- **A `Table` must satisfy all of this**, or Excel silently drops it during file recovery even though
+  `openpyxl` saved it: `ref` starts on the real header row (no titles or spacer rows) and spans at
+  least one data row; every header cell is a non-empty, unique **string** (not a number, date, or
+  formula); no merged cells or second table inside `ref`; no worksheet-level `auto_filter` on top of
+  it; and `displayName` is workbook-unique and not cell-like (`A1`, `T1`, `R1C1`).
+- **Conditional-format formulas take no leading `=`**: `FormulaRule(formula=["A1>3"])`. And never let
+  two `merge_cells()` ranges overlap — both corrupt the sheet.
+
+For a new workbook, establish a compact visual system: one structural header treatment tied to the
+subject or source brand, one input treatment, one accent/status color, clear section bands, deliberate
+column widths, frozen panes, filters, and number formats. Optimize for scanning and repeated use, not
+decoration.
 
 ## Financial-model conventions (when modelling)
 
@@ -70,9 +85,10 @@ index=False)` then reopen with openpyxl to format.
 
 ## Before you finish
 
-Check: zero formula errors (`#REF! / #DIV/0! / #VALUE! / #N/A / #NAME?`); ranges still correct after
-any row/column inserts; every assumption is a labeled cell (never a magic number buried in a formula)
-with a `Source:` note; charts point at the right ranges.
+Check formula strings for `#REF! / #DIV/0! / #VALUE! / #N/A / #NAME?`; confirm ranges after row/column
+inserts; label every assumption and add a `Source:` note; confirm charts point at the intended ranges.
+Do not claim calculated values were verified in the sandbox. Treat any `openpyxl` save warning
+("column headings must be strings", "file may not be readable") as a failed build — fix and re-save.
 
 ## Deliver
 

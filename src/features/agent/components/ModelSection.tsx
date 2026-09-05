@@ -41,7 +41,14 @@ export function ModelSection({ agent }: ModelSectionProps) {
       : (models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel);
 
   return (
-    <Section title="Model" isOpen={true} collapsible={false} overflowVisible headerClassName="pt-2" key={agent.id}>
+    <Section
+      title="Model"
+      isOpen={true}
+      collapsible={false}
+      overflowVisible
+      headerClassName="pt-2"
+      key={agent.id}
+    >
       <ModelDropdown
         models={models}
         value={effectiveModel}

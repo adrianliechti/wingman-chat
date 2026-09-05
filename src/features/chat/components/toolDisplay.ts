@@ -40,7 +40,7 @@ export function resolveToolHeader(
 ): ResolvedToolHeader {
   // Parsed once with the tool's schema hints and reused for both the header and
   // the preview fallback below — without hints, a still-streaming payload field
-  // (e.g. `content` on create_file) makes recovery flaky and the preview flicker.
+  // (e.g. `content` on create) makes recovery flaky and the preview flicker.
   const args = tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters));
   const h = tool?.display?.header?.(args, state);
   return {

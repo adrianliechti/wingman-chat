@@ -44,7 +44,45 @@ function MermaidPreview({ content }: { content: string }) {
       try {
         const mermaid = (await import("mermaid")).default;
         const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-        mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default", securityLevel: "strict" });
+        const themeVariables = dark
+          ? {
+              darkMode: true,
+              background: "#111715",
+              primaryColor: "#153d39",
+              primaryTextColor: "#f3f7f5",
+              primaryBorderColor: "#4fc1b2",
+              secondaryColor: "#4a2d27",
+              secondaryTextColor: "#fff5ef",
+              secondaryBorderColor: "#f08a68",
+              tertiaryColor: "#302845",
+              tertiaryTextColor: "#f7f2ff",
+              tertiaryBorderColor: "#a991d4",
+              lineColor: "#a8bab4",
+              textColor: "#f3f7f5",
+              clusterBkg: "#18211e",
+              clusterBorder: "#60736d",
+              edgeLabelBackground: "#18211e",
+              fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            }
+          : {
+              background: "#ffffff",
+              primaryColor: "#e4f4f0",
+              primaryTextColor: "#17332f",
+              primaryBorderColor: "#168779",
+              secondaryColor: "#fff0e8",
+              secondaryTextColor: "#4b2b22",
+              secondaryBorderColor: "#d96846",
+              tertiaryColor: "#f1ecfb",
+              tertiaryTextColor: "#322747",
+              tertiaryBorderColor: "#7659a3",
+              lineColor: "#53645f",
+              textColor: "#20302c",
+              clusterBkg: "#f7faf8",
+              clusterBorder: "#9bada7",
+              edgeLabelBackground: "#ffffff",
+              fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            };
+        mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables, securityLevel: "strict" });
         renderSeq += 1;
         const { svg: rendered } = await mermaid.render(`mermaid-${renderSeq}`, content);
         if (!cancelled) setSvg(rendered);

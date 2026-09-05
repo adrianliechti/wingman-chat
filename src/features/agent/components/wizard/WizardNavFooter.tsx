@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, Upload } from "lucide-react";
 interface WizardNavFooterProps {
   currentStep: number;
   totalSteps: number;
-  canNext: boolean;
   isLastStep: boolean;
   onBack: () => void;
   onNext: () => void;

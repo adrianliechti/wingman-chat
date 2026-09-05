@@ -1,6 +1,6 @@
 ---
 name: visualize
-description: Make a diagram or chart that explains something — flowcharts, structural/architecture diagrams, illustrative "how it works" mechanism drawings, data charts, or interactive explainers. Trigger when the user wants to see a concept visualized, a process diagrammed, or data charted. Output is a .mmd / .svg / .png / .html that renders in the side panel.
+description: Create a general explanatory visual — a mechanism drawing, simple flow/chart, or interactive explainer — as .mmd/.svg/.png/.html. Use when no specialized process, architecture, mind-map, or rigorous data-visualization skill fits better.
 ---
 
 # Visualize — diagrams & charts
@@ -39,6 +39,8 @@ dense diagram.
 - **Flat.** No gradients, drop shadows, glow, or neon.
 - **Color encodes meaning, not sequence.** Group by _category_ (one hue per category); 2–3 hues, not
   a rainbow. Reserve red/amber/green for error/warning/success.
+- **Style the semantics.** For Mermaid, add a small set of `classDef` rules derived from the subject
+  and assign them by role (actor/system/data/risk), so the output does not rely on default gray nodes.
 - **Budget the complexity.** Box labels ≤ 5 words — detail goes in the prose, not the box. ≤ 4 boxes
   across at full width; more than that, wrap to rows or split into two diagrams. Aim for 8–25 nodes.
 - **Sentence case**, never Title Case or ALL CAPS. Nothing below ~11px.
@@ -47,19 +49,28 @@ dense diagram.
 
 Write the Mermaid source to a `.mmd` file; the drawer renders it.
 
-```python
-diagram = """flowchart LR
+```mermaid
+flowchart LR
   user([User]) -->|request| api[API service]
   api -->|SQL| db[(Postgres)]
-"""
-with open("diagram.mmd", "w") as f:
-    f.write(diagram)
-print("wrote diagram.mmd")
+  classDef actor fill:#fff0e8,stroke:#d96846,color:#4b2b22
+  classDef service fill:#e4f4f0,stroke:#168779,color:#17332f
+  classDef data fill:#f1ecfb,stroke:#7659a3,color:#322747
+  class user actor
+  class api service
+  class db data
 ```
 
+Pass the source directly to `create_file` as `/diagram.mmd`; do not write a Python wrapper for a text
+artifact.
+
 `flowchart` for flows/architecture (with `subgraph` for lanes/boundaries), `sequenceDiagram` for
-interactions, `erDiagram` for schemas, `mindmap` for trees. Escape `&`/`<`/`>` in labels. Decision
-nodes `{ }`, start/end `([ ])`, datastore `[( )]`, queue `[[ ]]`.
+interactions, `erDiagram` for schemas, `mindmap` for trees. Mermaid grammars differ: quote
+flowchart labels containing punctuation and use `<br/>` only for an intentional label break. In
+sequence message/note text, use plain words: write "and", "under", or "at least" instead of HTML
+entities or angle-bracket comparisons. Keep `alt`/`opt`/`loop` nesting shallow. Decision nodes `{ }`,
+start/end `([ ])`, datastore `[( )]`, queue `[[ ]]`. The file tool validates `.mmd` syntax; fix any
+reported parse error before finishing.
 
 ## Charts → matplotlib (`.png`)
 

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { reconcileRepositoryFilePaths } from "@/features/repository/lib/repository-paths";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
 import * as opfs from "@/shared/lib/opfs";
@@ -15,6 +16,7 @@ const AGENT_STORAGE_KEY = "app_agent";
 interface StoredFileMeta {
   id: string;
   name: string;
+  path?: string;
   status: "pending" | "processing" | "completed" | "error";
   progress: number;
   error?: string;
@@ -129,17 +131,7 @@ async function storeAgent(agent: Agent): Promise<void> {
 async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<void> {
   const filePath = `${COLLECTION}/${agentId}/files/${file.id}`;
 
-  const meta: StoredFileMeta = {
-    id: file.id,
-    name: file.name,
-    status: file.status,
-    progress: file.progress,
-    error: file.error,
-    uploadedAt:
-      file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : (file.uploadedAt as unknown as string),
-  };
-
-  await opfs.writeJson(`${filePath}/metadata.json`, meta);
+  await storeAgentFileMetadata(agentId, file);
 
   if (file.text) {
     await opfs.writeText(`${filePath}/content.txt`, file.text);
@@ -165,6 +157,23 @@ async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<vo
     });
     await opfs.writeBlob(`${filePath}/embeddings.bin`, blob);
   }
+}
+
+async function storeAgentFileMetadata(agentId: string, file: RepositoryFile): Promise<void> {
+  const filePath = `${COLLECTION}/${agentId}/files/${file.id}`;
+
+  const meta: StoredFileMeta = {
+    id: file.id,
+    name: file.name,
+    path: file.path,
+    status: file.status,
+    progress: file.progress,
+    error: file.error,
+    uploadedAt:
+      file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : (file.uploadedAt as unknown as string),
+  };
+
+  await opfs.writeJson(`${filePath}/metadata.json`, meta);
 }
 
 async function loadAgent(id: string): Promise<Agent | undefined> {
@@ -232,6 +241,21 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
     }
   }
 
+  // Legacy repository records stored only the display name. Resolve a stable
+  // model-facing path before exposing files, and persist metadata-only updates
+  // so subsequent loads, exports, and imports keep the same allocation.
+  const reconciled = reconcileRepositoryFilePaths(files);
+  if (reconciled.changedIds.length > 0) {
+    const changed = new Set(reconciled.changedIds);
+    const writes = await Promise.allSettled(
+      reconciled.files.filter((file) => changed.has(file.id)).map((file) => storeAgentFileMetadata(id, file)),
+    );
+    for (const result of writes) {
+      if (result.status === "rejected")
+        console.warn("Failed to persist a migrated repository file path", result.reason);
+    }
+  }
+
   return {
     id,
     name,
@@ -241,7 +265,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
     tools,
     model,
     memory,
-    files: files.length > 0 ? files : undefined,
+    files: reconciled.files.length > 0 ? reconciled.files : undefined,
   };
 }
 
@@ -278,6 +302,7 @@ async function loadAgentFile(agentId: string, fileId: string): Promise<Repositor
   return {
     id: meta.id,
     name: meta.name,
+    path: meta.path,
     status: meta.status,
     progress: meta.progress,
     error: meta.error,
@@ -476,7 +501,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           const files = agent.files ? [...agent.files] : [];
           const existingIdx = files.findIndex((f) => f.id === file.id);
           if (existingIdx !== -1) {
-            files[existingIdx] = file;
+            // Processing updates are intentionally partial snapshots. Preserve
+            // stable identity metadata such as the allocated repository path.
+            files[existingIdx] = { ...files[existingIdx], ...file };
           } else {
             files.push(file);
           }

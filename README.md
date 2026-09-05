@@ -42,12 +42,6 @@ Ask for a real deliverable and Wingman builds it for real, then drops it in your
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
 and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
 
-### Notebook
-
-Turn source material into polished, long-form output: **reports**, **slide decks**, **infographics**,
-**podcasts** (briefing, debate, deep-dive, overview, story formats).
-**quizzes**, **mind maps**, and **podcasts** (briefing, debate, deep-dive, overview, story formats).
-
 ### Repository (retrieval)
 
 Upload files into a repository; Wingman extracts and embeds them so the model can answer questions
@@ -91,12 +85,12 @@ or a **local** directory.
 | -------------- | ------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
 | Code execution | Pyodide (Python in WebAssembly), bundled at build time                                      |
-| Server         | Go — static hosting, API proxy, skills/notebook libraries, drive providers, OpenTelemetry   |
+| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry              |
 | Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
-prefix (default `/api`) to the configured platform, and mounts the `skills/` and `notebook/`
-directories as libraries the client can read.
+prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
+the client can read.
 
 ## Getting started
 
@@ -112,18 +106,56 @@ directories as libraries the client can read.
 npm install
 
 # Point at your platform
-export WINGMAN_URL=http://localhost:8080      # or OPENAI_BASE_URL
+export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
 export WINGMAN_TOKEN=...                      # or OPENAI_API_KEY
 
 # Frontend dev server (bundles Pyodide packages on first run)
 npm run dev
 ```
 
+### Gateway end-to-end tests
+
+The opt-in E2E suites start the application development proxy and run the real `Client` and agent loop against a live
+Wingman gateway. The smoke suite covers model discovery, Responses streaming, tool-call correlation, cancellation, the
+terminal error contract, and a Sonnet 4.6 artifact create/validate/reference flow.
+
+The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
+that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
+failure, checks transport retry and retry cancellation, exercises transient tool recovery, runtime verification,
+nested-agent budgets, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
+the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
+workspace to cover invalid structured-file repair, revision/delta metadata, multi-file manifests, and moves. It makes
+many real model requests and requires `python3`; use the smoke suite for
+quick checks.
+
+The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
+`execute_python_code` calls using the production schemas. It reports raw JSON/AntML failures separately from calls
+that succeeded through client-side recovery, which makes gateway/model improvements measurable rather than hidden by
+the workaround.
+
+```bash
+npm run test:e2e
+npm run test:e2e:challenge
+npm run test:e2e:bedrock-soak
+npm run test:e2e:all
+
+# Optional overrides
+WINGMAN_E2E_GATEWAY=http://localhost:4242 \
+WINGMAN_E2E_MODEL=auto \
+WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
+WINGMAN_E2E_BEDROCK_MODEL=bedrock-sonnet-4-6 \
+WINGMAN_E2E_PYTHON=python3 \
+WINGMAN_E2E_TIMEOUT_MS=90000 \
+WINGMAN_TOKEN=... \
+npm run test:e2e:challenge
+```
+
 To run the Go server against the built frontend:
 
 ```bash
 npm run build
-PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:8080 go run .
+PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
 
@@ -132,7 +164,7 @@ PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:8080 go run .
 ```bash
 docker build -t wingman-chat .
 docker run -it --rm -p 8000:8000 \
-  -e WINGMAN_URL=http://host.docker.internal:8080 \
+  -e WINGMAN_URL=http://host.docker.internal:4242 \
   wingman-chat
 # or: task run
 ```
@@ -146,7 +178,7 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `WINGMAN_URL` / `OPENAI_BASE_URL` — platform API base URL (required)
 - `WINGMAN_TOKEN` / `OPENAI_API_KEY` — API token
 - `PORT` (default `8000`), `PREFIX` (default `/api`)
-- `SKILLS_PATH` (default `skills`), `NOTEBOOKS_PATH` (default `notebook`)
+- `SKILLS_PATH` (default `skills`)
 
 **Branding**
 
@@ -157,11 +189,11 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
-- `NOTEBOOK_ENABLED`, `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
+- `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`,
-`backgrounds.yaml`, `chat.yaml`, `notebook.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
+`backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.

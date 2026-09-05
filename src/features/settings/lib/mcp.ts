@@ -43,7 +43,8 @@ import {
   type ToolProvider,
 } from "@/shared/types/chat";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
-import { BrowserOAuthClientProvider } from "./mcpAuth";
+import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
+import { mcpToolName } from "./mcpToolNames";
 
 export type DisplayMode = McpUiDisplayMode;
 
@@ -146,6 +147,10 @@ export class MCPClient implements ToolProvider {
   }
 
   async connect(): Promise<void> {
+    await this.connectInternal(true);
+  }
+
+  private async connectInternal(allowAuth: boolean): Promise<void> {
     if (this.client) {
       await this.disconnect();
     }
@@ -225,6 +230,14 @@ export class MCPClient implements ToolProvider {
       await client.connect(transport);
     } catch (error) {
       if (error instanceof UnauthorizedError) {
+        if (!allowAuth) {
+          throw new McpAuthRequiredError(
+            this.id,
+            "expired",
+            `Authorization for "${this.name}" expired again after a fresh token exchange`,
+          );
+        }
+
         // The transport has already called authProvider.redirectToAuthorization(),
         // opening the OAuth popup. Notify listeners and wait for the auth code.
         console.log(`[MCP OAuth] Authorization required for "${this.name}". Waiting for OAuth flow...`);
@@ -238,13 +251,21 @@ export class MCPClient implements ToolProvider {
           throw authError;
         }
 
-        // Exchange the auth code for tokens via the transport, then reconnect.
-        await transport.finishAuth(authCode);
+        try {
+          await transport.finishAuth(authCode);
+        } catch (finishError) {
+          this.onAuthComplete?.();
+          throw new McpAuthRequiredError(
+            this.id,
+            "failed",
+            `Failed to complete authorization for "${this.name}": ${String(finishError)}`,
+          );
+        }
         this.onAuthComplete?.();
 
         console.log(`[MCP OAuth] Authorization complete for "${this.name}". Reconnecting...`);
-        // Reconnect with the freshly obtained tokens.
-        await this.connect();
+        // Reconnect without allowing another auth round, so a repeat 401 fails fast.
+        await this.connectInternal(false);
         return;
       }
       throw error;
@@ -344,7 +365,10 @@ export class MCPClient implements ToolProvider {
       // Load tools
       const toolsResponse = await client.listTools();
       const tools = toolsResponse.tools || [];
-      this.toolDefinitions = new Map(tools.map((tool) => [tool.name, tool]));
+      // Keep raw keys for restoring historical app calls and namespaced keys for new calls.
+      this.toolDefinitions = new Map(
+        tools.flatMap((tool) => [[tool.name, tool] as const, [mcpToolName(this.id, tool.name), tool] as const]),
+      );
 
       this.tools = tools
         .filter((tool) => !isToolVisibilityAppOnly(tool))
@@ -352,7 +376,7 @@ export class MCPClient implements ToolProvider {
           const icon =
             pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined);
           return {
-            name: tool.name,
+            name: mcpToolName(this.id, tool.name),
             title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
             icon,
 
@@ -371,17 +395,21 @@ export class MCPClient implements ToolProvider {
               try {
                 annotateMcpSpan(this.url, context);
 
-                const result = await activeClient.callTool({
-                  name: tool.name,
-                  arguments: args,
-                });
+                const result = await activeClient.callTool(
+                  {
+                    name: tool.name,
+                    arguments: args,
+                  },
+                  undefined,
+                  { signal: context?.signal },
+                );
 
                 // Handle both current and compatibility result formats
                 // Compatibility format has toolResult field, current has content field
                 const normalizedResult: CallToolResult =
                   "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
 
-                const resource = this.uiResources.get(tool.name);
+                const resource = this.uiResources.get(mcpToolName(this.id, tool.name));
 
                 if (resource && context?.setMeta) {
                   // Don't render the UI here — McpApp handles rendering via
@@ -731,7 +759,7 @@ export class MCPClient implements ToolProvider {
 
       if (resourceUri) {
         const toolNames = uriToTools.get(resourceUri) || [];
-        toolNames.push(tool.name);
+        toolNames.push(tool.name, mcpToolName(this.id, tool.name));
         uriToTools.set(resourceUri, toolNames);
       }
     }
@@ -786,6 +814,10 @@ export class MCPClient implements ToolProvider {
 
   isConnected(): boolean {
     return this.client !== null;
+  }
+
+  isAuthBlocked(): boolean {
+    return this.authProvider.isAuthBlocked();
   }
 }
 

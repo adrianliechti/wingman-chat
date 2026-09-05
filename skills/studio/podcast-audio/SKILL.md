@@ -34,7 +34,7 @@ count and tone. Default: a single warm narrator giving a clear overview, ~3–5 
 concatenate with Python's stdlib `wave` (all segments share the speech service's format):
 
 ```python
-import wave
+import os, wave
 
 # Single or multi-voice: list of (voice, text) turns.
 turns = [
@@ -56,6 +56,9 @@ with wave.open("podcast.wav", "wb") as out:
         with wave.open(p, "rb") as w:
             out.writeframes(w.readframes(w.getnframes()))
 
+for p in paths:
+    os.remove(p)  # keep only the final artifact
+
 print("wrote podcast.wav")
 ```
 
@@ -63,8 +66,8 @@ Notes:
 
 - Keep each `synthesize` call to a reasonable chunk (a paragraph or a turn) rather than one giant
   call or hundreds of tiny ones.
-- Voice ids/names come from the selected style skill or the user's request; pass `None` for the
-  default voice. Use **distinct** voices for distinct speakers.
+- Use a voice name only when the user or deployment supplied it; otherwise pass `None` rather than
+  inventing an unsupported voice id. Multi-speaker output needs distinct configured voices.
 
 ## 4. Deliver
 

@@ -2,6 +2,7 @@ import pLimit from "p-limit";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Document } from "@/features/repository/lib/vectordb";
 import { VectorDB } from "@/features/repository/lib/vectordb";
+import { allocateRepositoryFilePath } from "@/features/repository/lib/repository-paths";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { getConfig } from "@/shared/config";
 import { Client } from "@/shared/lib/client";
@@ -29,6 +30,13 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
   const [vectorDB, setVectorDB] = useState(() => new VectorDB());
   const currentAgentIdRef = useRef(agentId);
   const agentsRef = useRef(agents);
+  const filesRef = useRef<RepositoryFile[]>([]);
+  const reservedPathsRef = useRef(new Set<string>());
+  const reservationAgentIdRef = useRef(agentId);
+  if (reservationAgentIdRef.current !== agentId) {
+    reservationAgentIdRef.current = agentId;
+    reservedPathsRef.current = new Set();
+  }
 
   useEffect(() => {
     currentAgentIdRef.current = agentId;
@@ -40,6 +48,10 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
 
   const agent = agents.find((a) => a.id === agentId);
   const files = useMemo(() => agent?.files || [], [agent?.files]);
+  filesRef.current = files;
+  for (const file of files) {
+    if (file.path) reservedPathsRef.current.add(file.path);
+  }
 
   // Rebuild vector database when files change
   useEffect(() => {
@@ -56,7 +68,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
               const chunkDoc: Document = {
                 id: `${agentId}:${file.id}:${index}`,
                 text: segment.text,
-                source: file.name,
+                source: file.path ?? file.name,
                 vector: segment.vector,
               };
               newVectorDB.addDocument(chunkDoc);
@@ -95,7 +107,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
   );
 
   const processFile = useCallback(
-    async (file: File, fileId: string) => {
+    async (file: File, fileId: string, path: string) => {
       const currentId = currentAgentIdRef.current;
 
       const text = await convertFileToText(file);
@@ -107,6 +119,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       upsertFile(agentId, {
         id: fileId,
         name: file.name,
+        path,
         status: "processing",
         progress: 10,
         text,
@@ -122,6 +135,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       upsertFile(agentId, {
         id: fileId,
         name: file.name,
+        path,
         status: "processing",
         progress: 20,
         text,
@@ -148,6 +162,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
             upsertFile(agentId, {
               id: fileId,
               name: file.name,
+              path,
               status: "processing",
               progress: Math.round(progress),
               text,
@@ -168,7 +183,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
         const chunkDoc: Document = {
           id: `${currentId}:${fileId}:${index}`,
           text: chunk.text,
-          source: file.name,
+          source: path,
           vector: chunk.vector,
         };
         vectorDB.addDocument(chunkDoc);
@@ -177,6 +192,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       upsertFile(agentId, {
         id: fileId,
         name: file.name,
+        path,
         status: "completed",
         progress: 100,
         text,
@@ -191,22 +207,30 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
     async (file: File) => {
       const fileId = crypto.randomUUID();
       const currentId = currentAgentIdRef.current;
+      const existingPaths = new Set(reservedPathsRef.current);
+      for (const existing of filesRef.current) {
+        if (existing.path) existingPaths.add(existing.path);
+      }
+      const path = allocateRepositoryFilePath(file.name, fileId, existingPaths);
+      reservedPathsRef.current.add(path);
 
       upsertFile(agentId, {
         id: fileId,
         name: file.name,
+        path,
         status: "processing",
         progress: 0,
         uploadedAt: new Date(),
       });
 
       try {
-        await processFile(file, fileId);
+        await processFile(file, fileId, path);
       } catch (error) {
         if (currentAgentIdRef.current === currentId) {
           upsertFile(agentId, {
             id: fileId,
             name: file.name,
+            path,
             status: "error",
             progress: 0,
             error: error instanceof Error ? error.message : "Processing failed",
@@ -248,7 +272,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
           });
       } catch (error) {
         console.error("[agent] Search failed", { query, agentId, error });
-        return [];
+        throw error;
       }
     },
     [vectorDB, agentId, files],

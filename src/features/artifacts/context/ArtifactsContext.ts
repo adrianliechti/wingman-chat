@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
@@ -11,6 +12,8 @@ export interface ArtifactsContextType {
    * dependency or React key.
    */
   fs: FileSystemManager | null;
+  /** Shared observations across the exclusive chat/voice modes and user turns. */
+  readWriteManager: ArtifactReadWriteManager;
   activeFile: string | null;
   showArtifactsDrawer: boolean;
   openFile: (path: string) => void;

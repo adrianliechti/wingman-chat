@@ -16,31 +16,24 @@ export function parseDataUrl(dataUrl: string): { mimeType: string; data: string 
  * to avoid sending large base64 data URLs to the model which it cannot process.
  */
 export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
-  const serialized = result.map((item) => {
-    if (item.type === "text") {
-      return item;
-    }
-    if (item.type === "image") {
-      return {
-        type: "text",
-        text: `[Image${item.name ? `: ${item.name}` : ""} - displayed to user]`,
-      };
-    }
-    if (item.type === "audio") {
-      return {
-        type: "text",
-        text: `[Audio${item.name ? `: ${item.name}` : ""} - displayed to user]`,
-      };
-    }
-    if (item.type === "file") {
-      return {
-        type: "text",
-        text: `[File: ${item.name} - displayed to user]`,
-      };
-    }
-    return item;
-  });
-  return JSON.stringify(serialized);
+  return result
+    .map((item) => {
+      if (item.type === "text") {
+        return item.text;
+      }
+      if (item.type === "image") {
+        return `[Image${item.name ? `: ${item.name}` : ""} - displayed to user]`;
+      }
+      if (item.type === "audio") {
+        return `[Audio${item.name ? `: ${item.name}` : ""} - displayed to user]`;
+      }
+      if (item.type === "file") {
+        return `[File: ${item.name} - displayed to user]`;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function lookupContentType(ext: string): string | undefined {

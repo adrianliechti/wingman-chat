@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useModels } from "@/features/chat/hooks/useModels";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
@@ -16,9 +15,14 @@ import { ProviderState } from "@/shared/types/chat";
 export interface ChatContext {
   tools: () => Promise<Tool[]>;
   instructions: () => string;
+  runtimeContext: () => string;
 }
 
-export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | null): ChatContext {
+export function useChatContext(
+  mode: "voice" | "chat" = "chat",
+  model?: Model | null,
+  models: Model[] = [],
+): ChatContext {
   const { generateInstructions } = useProfile();
   const { providers, getProviderState } = useToolsContext();
 
@@ -28,7 +32,6 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
   // Get current agent for its instructions
   const { currentAgent } = useAgents();
-  const { models } = useModels();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
@@ -94,8 +97,15 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
           .map((p: ToolProvider) => p.instructions?.trim())
           .filter((s): s is string => !!s)
           .join("\n\n");
+        const providerRuntimeContext = filteredProviders
+          .map((p: ToolProvider) => p.runtimeContext?.trim())
+          .filter((s): s is string => !!s)
+          .join("\n\n");
 
-        return [...baseTools, createSubagentTool(subagentModel, providerInstructions, baseTools)];
+        return [
+          ...baseTools,
+          createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext),
+        ];
       },
 
       instructions: () => {
@@ -142,6 +152,11 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
         return instructionsList.join("\n\n");
       },
+      runtimeContext: () =>
+        getFilteredProviders()
+          .map((provider) => provider.runtimeContext?.trim())
+          .filter(Boolean)
+          .join("\n\n"),
     };
   }, [mode, model, models, generateInstructions, providers, getProviderState, artifactsProvider, currentAgent]);
 

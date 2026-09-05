@@ -1,6 +1,6 @@
 ---
 name: docx
-description: Create or edit Word documents (.docx) — reports, memos, letters, proposals, templates with headings, tables, page numbers, and images. Trigger on "Word doc", ".docx", "write a report/memo/letter", or any request for a polished written document delivered as a Word file. Not for PDFs, spreadsheets, or slides.
+description: Create or edit a Word (.docx) deliverable such as a report, memo, letter, proposal, or template. Use when the user explicitly wants a Word file or asks to modify an existing .docx; not for a report that should remain in chat.
 ---
 
 # DOCX — Word documents (Python runtime)
@@ -14,6 +14,10 @@ Pull the real facts/figures/quotes from the conversation and workspace files bef
 with the conclusion (executive summary), then support it. Short sections, one point each; tables for
 anything comparative; cite figures. No filler.
 
+Choose an editorial system before writing: page size/margins, body and display fonts, heading color,
+rule/table treatment, header/footer, and one restrained visual motif tied to the subject. A polished
+document is not the default Word theme with a logo added.
+
 ## Create a document
 
 ```python
@@ -25,8 +29,14 @@ doc = Document()
 
 # Base styles — set once, reuse everywhere.
 normal = doc.styles["Normal"]
-normal.font.name = "Calibri"          # or a theme font
+normal.font.name = "Aptos"            # replace with the source/theme body font
 normal.font.size = Pt(11)
+
+for style_name, size, color in [("Title", 30, "17324D"), ("Heading 1", 18, "C4512D"), ("Heading 2", 13, "17324D")]:
+    style = doc.styles[style_name]
+    style.font.name = "Aptos Display"
+    style.font.size = Pt(size)
+    style.font.color.rgb = RGBColor.from_string(color)
 
 doc.add_heading("FY24 Revenue Review", level=0)            # title
 doc.add_paragraph("Enterprise ACV grew 38% while mid-market stalled. …")  # summary
@@ -45,7 +55,6 @@ for seg, acv, yoy in [("Enterprise", "$128M", "+38%"), ("Mid-market", "$54M", "+
     c = t.add_row().cells
     c[0].text, c[1].text, c[2].text = seg, acv, yoy
 
-doc.add_page_break()
 doc.save("report.docx")
 print("wrote report.docx")
 ```
@@ -55,7 +64,7 @@ Notes:
 - **Headings**: `add_heading(text, level)` (0 = title, 1–4 = sections). Style headings via the
   built-in `Heading N` styles or set run fonts/colors for a custom look.
 - **Images**: `doc.add_picture("chart.png", width=Inches(6))` — generate charts with `matplotlib`
-  (`savefig`) or art with `await render(...)`.
+  (`savefig`) or art with `await render(..., quality="medium")`.
 - **Page numbers / headers / footers**: use `doc.sections[0].header` / `.footer` and field codes if
   needed; keep it simple unless asked.
 - **Reading an existing .docx**: `Document("in.docx")` then iterate `doc.paragraphs` / `doc.tables`.
@@ -67,9 +76,11 @@ Notes:
 - **Use named styles, not hand-rolled formatting.** `add_heading(text, level)` and the built-in
   `Heading N` / `Normal` styles cascade correctly; setting `font.bold`/`font.size` by hand on every
   paragraph drifts. When inserting into an existing doc, match its body font.
-- **Footnotes**: use real Word footnotes, not `[1]` markers typed into the body text.
+- **Notes/citations**: `python-docx` cannot reliably create new Word footnotes through its public API.
+  Preserve existing footnotes when editing; for new documents use a references/endnotes section or
+  concise source lines unless the user requires manual Word footnotes.
 - **Legal documents** (contract, brief, memo, NDA) on a blank doc default to **Times New Roman**.
-- **Long docs (3+ sections)**: state the section outline first, then build section by section.
+- **Long docs (3+ sections)**: outline internally, then build section by section using named styles.
 
 ## Deliver
 

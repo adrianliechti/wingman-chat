@@ -35,14 +35,16 @@ lane conventions.
 - **Design-first with traceability:** where the source is silent, fill in what a senior analyst
   would draw, and **mark synthesized steps** (prefix the label or add a note with "inferred") so
   the user can review them.
+- **Style by function, not lane order:** use a small `classDef` set for action, decision, control, and
+  outcome nodes. Keep risk/control colors semantically consistent.
 
 ## 4. Write it as Mermaid (.mmd)
 
 Use a `flowchart` with one `subgraph` per lane, and write it to a `.mmd` file — the drawer renders it
 natively, **offline**.
 
-```python
-mermaid = """flowchart TB
+```mermaid
+flowchart TB
   subgraph Customer
     start([Customer submits application]) --> rcv
   end
@@ -57,14 +59,22 @@ mermaid = """flowchart TB
     ok -- no --> reject([End: rejected])
   end
   approve --> done([End: onboarded])
-"""
-with open("process.mmd", "w") as f:
-    f.write(mermaid)
-print("wrote process.mmd")
+  classDef action fill:#e4f4f0,stroke:#168779,color:#17332f
+  classDef decision fill:#fff0e8,stroke:#d96846,color:#4b2b22
+  classDef outcome fill:#f1ecfb,stroke:#7659a3,color:#322747
+  class rcv,review,approve action
+  class kyc,ok decision
+  class start,reject,done outcome
 ```
 
-Use stable node ids; escape `&`, `<`, `>` in labels (`&amp;` etc.). Decision nodes use `{ }`;
-start/end use `([ ])`.
+Pass the Mermaid source directly to `create_file` as `/process.mmd`; do not write a Python wrapper
+for a text artifact. The drawer renders it natively, **offline**.
+
+Use stable node ids. Quote labels containing punctuation; use `<br/>` only for an intentional visual
+line break and `&amp;` only when a literal ampersand must appear in a flowchart label. Prefer plain
+words such as "at least" or "under" over angle-bracket comparisons. Decision nodes use `{ }`;
+start/end use `([ ])`. The file tool validates `.mmd` syntax; fix any reported parser error before
+finishing.
 
 ## 5. Deliver
 

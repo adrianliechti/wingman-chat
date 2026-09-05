@@ -1,12 +1,13 @@
 ---
 name: pdf
-description: Work with PDF files — create new PDFs, merge/split/rotate, extract text or tables, add watermarks, fill simple forms. Trigger whenever a .pdf is an input or output. For polished multi-page documents prefer building in docx/pptx first; use this for PDF-native operations and direct PDF generation.
+description: Create or manipulate a PDF deliverable — designed reports/one-pagers, merge/split/rotate, extraction to another file, watermarks, or form filling. Do not trigger merely because the user asks a question about an attached PDF.
 ---
 
 # PDF — create, combine, and extract (Python runtime)
 
-Use **`reportlab`** to create PDFs, **`pypdf`** to merge/split/rotate/encrypt, and **`pdfplumber`**
-to extract text/tables. Save to the workspace; the drawer renders PDFs.
+Use **`reportlab`** or the JavaScript executor's **`jsPDF`** to create PDFs, **`pypdf`** to
+merge/split/rotate/encrypt, and **`pdfplumber`** to extract text/tables. Save to the workspace; the
+drawer renders PDFs.
 
 ## Bundled helpers
 
@@ -45,6 +46,11 @@ For **non-fillable** forms you usually don't need a raster at all: take coordina
 
 ## Create a PDF (reportlab)
 
+Before building, define page geometry, type roles, palette, header/footer, and recurring figure/table
+treatment from the brief. The sample below demonstrates mechanics, not a default visual theme. For a
+designed multi-page report, use `BaseDocTemplate`/`PageTemplate` so page furniture and grids stay
+consistent.
+
 ```python
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
@@ -72,8 +78,9 @@ doc.build(story)
 print("wrote report.pdf")
 ```
 
-For a richly designed one-pager, you can instead build HTML and render it, or place a `matplotlib`/
-`render()` image with `canvas.drawImage`.
+For a richly designed one-pager, use ReportLab canvas or `jsPDF` for exact layout and place a
+`matplotlib` chart or `render(..., quality="medium")` image as a visual layer. There is no HTML-to-PDF,
+LibreOffice, or Pandoc conversion path in this sandbox.
 
 ## Manipulate (pypdf)
 

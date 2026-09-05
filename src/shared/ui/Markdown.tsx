@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import { getArtifactLinkPath } from "@/shared/lib/sandbox";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
@@ -577,6 +578,7 @@ function createComponents(
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
   compact = false,
+  onOpenArtifact?: (path: string) => void,
 ): Partial<Components> {
   return {
     pre: ({ children }) => {
@@ -640,6 +642,19 @@ function createComponents(
     a: ({ children, href, ...props }) => {
       let url = href || "";
       const internalHash = getInternalHash(url);
+
+      const artifactPath = getArtifactLinkPath(url);
+      if (artifactPath && onOpenArtifact) {
+        return (
+          <button
+            type="button"
+            className={cn(markdownLinkClassName, "cursor-pointer border-0 bg-transparent p-0 font-[inherit]")}
+            onClick={() => onOpenArtifact(artifactPath)}
+          >
+            {children}
+          </button>
+        );
+      }
 
       if (url && !url.startsWith("http") && !url.startsWith("#")) {
         url = `https://${url}`;
@@ -1010,6 +1025,7 @@ function createMarkdownProcessor(
   blockCounterRef: { current: number },
   compact = false,
   math: MathPlugins | null = null,
+  onOpenArtifact?: (path: string) => void,
 ) {
   // remark-math + rehype-katex are wired in only once the content is known to
   // contain `$$…$$` math, keeping KaTeX out of first paint.
@@ -1023,7 +1039,7 @@ function createMarkdownProcessor(
     rehypeReact,
     {
       ...baseRehypeReactOptions,
-      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact),
+      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact, onOpenArtifact),
     },
   ]);
 
@@ -1048,11 +1064,20 @@ type MarkdownProps = {
    * resolving relative asset URLs. Only meaningful when `fs` is provided.
    */
   basePath?: string;
+  /** Opens a link the model emitted to a generated artifact (e.g. `sandbox:`) in the artifact panel. */
+  onOpenArtifact?: (path: string) => void;
 };
 
 let markdownInstanceCounter = 0;
 
-const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, fs, basePath }: MarkdownProps) => {
+const NonMemoizedMarkdown = ({
+  children,
+  isStreaming = false,
+  compact = false,
+  fs,
+  basePath,
+  onOpenArtifact,
+}: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
   const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
   const lastFlushRef = useRef(0);
@@ -1075,8 +1100,9 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, f
         blockCounterRef,
         compact,
         mathPlugins,
+        onOpenArtifact,
       ),
-    [isStreaming, resolveAsset, compact, mathPlugins],
+    [isStreaming, resolveAsset, compact, mathPlugins, onOpenArtifact],
   );
 
   useEffect(() => {
@@ -1136,7 +1162,8 @@ export const Markdown = memo(
     prev.isStreaming === next.isStreaming &&
     prev.compact === next.compact &&
     prev.fs === next.fs &&
-    prev.basePath === next.basePath,
+    prev.basePath === next.basePath &&
+    prev.onOpenArtifact === next.onOpenArtifact,
 );
 
 const extractFilename = (code: string): string | undefined => {

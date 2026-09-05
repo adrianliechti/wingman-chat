@@ -12,6 +12,7 @@ import type {
   RpcReply,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
+import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
@@ -24,13 +25,15 @@ export interface WorkerHostConfig {
   /** Spawn a fresh worker. Called on first use and after a crash/teardown. */
   createWorker(): Worker;
   /** Answer one worker→main RPC; the resolved value is posted back on the reply port. */
-  handleMessage(message: WorkerToMainMessage): Promise<unknown>;
+  handleMessage(message: WorkerToMainMessage, options?: { signal?: AbortSignal }): Promise<unknown>;
   /** Message used when the worker dies on an uncaught error. */
   crashMessage: string;
   /** Pure-compute stall ceiling before the run is treated as wedged. */
   computeStallMs?: number;
   /** Bootstrap budget before the worker reports user code has started. */
   startupStallMs?: number;
+  /** Reuse the runtime after a successful execution. Defaults to true. */
+  reuseWorker?: boolean;
 }
 
 /** Pure-compute no-progress ceiling before the run is treated as wedged and
@@ -52,6 +55,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   const startupStallMs = config.startupStallMs ?? DEFAULT_STARTUP_STALL_MS;
 
   let worker: Worker | null = null;
+  let executionTail: Promise<CodeExecutionResult> | null = null;
 
   // Each in-flight execution registers a "worker died" callback so it settles
   // with an error instead of hanging on a reply port that will never arrive.
@@ -60,12 +64,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   // The in-flight execution's stall watchdog, paused while the worker is blocked
   // on a main-thread RPC (those round trips are bounded separately). Runs are
   // serialized, so a single slot suffices.
-  let activeBridge: { enter: () => void; leave: () => void } | null = null;
+  let activeBridge: { enter: () => void; leave: () => void; signal?: AbortSignal } | null = null;
 
-  async function replyOnPort(port: MessagePort, run: () => Promise<unknown>): Promise<void> {
+  async function replyOnPort(
+    port: MessagePort,
+    bridge: typeof activeBridge,
+    run: () => Promise<unknown>,
+  ): Promise<void> {
     // The worker is waiting on us, not stalled — pause its stall timer. Capture
     // the slot now so a reply that lands after teardown can't disturb the next run.
-    const bridge = activeBridge;
     bridge?.enter();
     let reply: RpcReply;
     try {
@@ -75,8 +82,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
     } finally {
       bridge?.leave();
     }
-    port.postMessage(reply);
-    port.close();
+    // Abort/teardown may close the transferred port while the main-thread RPC
+    // is still settling. A late reply must not become an unhandled rejection.
+    try {
+      port.postMessage(reply);
+    } catch {
+      // The owning run has already ended; there is no receiver left to notify.
+    } finally {
+      port.close();
+    }
   }
 
   function getWorker(): Worker {
@@ -87,7 +101,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         // Sandboxed user code can `self.postMessage(...)` directly; ignore
         // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
-        void replyOnPort(message.port, () => config.handleMessage(message));
+        const bridge = activeBridge;
+        void replyOnPort(message.port, bridge, () => config.handleMessage(message, { signal: bridge?.signal }));
       });
       created.addEventListener("error", (event) => {
         // Drop the dead worker so the next call spawns a fresh one.
@@ -103,8 +118,35 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    const run = () => executeNow(request, options);
+    // Runtime state and bridge replies belong to exactly one execution at a time.
+    // This also covers UI runs and different chats, independently of workspace locks.
+    const result = executionTail ? executionTail.then(run, run) : run();
+    executionTail = result;
+    const clear = () => {
+      if (executionTail === result) executionTail = null;
+    };
+    void result.then(clear, clear);
+    return result;
+  }
+
+  function executeNow(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    if (options?.signal?.aborted) return Promise.resolve({ success: false, output: "", error: "Execution cancelled" });
     const stallMs = options?.timeoutMs ?? computeStallDefault;
     const signal = options?.signal;
+
+    // Reject malformed or oversized inputs before paying the cost of starting a
+    // runtime. Workers repeat these checks as a defense-in-depth boundary.
+    try {
+      const limits = resolveCodeExecutionLimits(request.limits);
+      validateArtifactFiles(request.files ?? {}, limits, "Interpreter input");
+    } catch (error) {
+      return Promise.resolve({
+        success: false,
+        output: "",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     let target: Worker;
     try {
@@ -151,6 +193,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         );
       };
       const bridge = {
+        signal,
         enter: () => {
           inFlight++;
           if (timer) {
@@ -173,6 +216,10 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
         port1.close();
+        if (config.reuseWorker === false && worker === target) {
+          worker = null;
+          target.terminate();
+        }
         resolve(result);
       }
 

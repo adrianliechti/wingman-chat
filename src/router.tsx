@@ -11,10 +11,8 @@ import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";
 
 // ChatPage is the default landing route, so it stays in the initial bundle.
-// The other pages are loaded on demand — this keeps notebook code, ReactFlow
-// (@xyflow), and translate/canvas out of the initial download.
+// The other active pages are loaded on demand.
 const CanvasPage = lazyRouteComponent(() => import("./features/canvas/pages/CanvasPage"), "CanvasPage");
-const NotebookPage = lazyRouteComponent(() => import("./features/notebook/pages/NotebookPage"), "NotebookPage");
 const TranslatePage = lazyRouteComponent(() => import("./features/translate/pages/TranslatePage"), "TranslatePage");
 const OAuthCallbackPage = lazyRouteComponent(
   () => import("./features/settings/pages/OAuthCallbackPage"),
@@ -25,8 +23,6 @@ const hashToRoute: Record<string, string> = {
   chat: "/chat",
   translate: "/translate",
   canvas: "/canvas",
-  research: "/notebook",
-  notebook: "/notebook",
 };
 
 // Root route — bare outlet, no shell
@@ -95,22 +91,6 @@ const canvasRoute = createRoute({
   component: CanvasPage,
 });
 
-const notebookRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: "/notebook",
-  beforeLoad: () => {
-    if (!getConfig().notebook) throw redirect({ to: "/chat" });
-  },
-  component: NotebookPage,
-});
-
-// Child route — provides the :notebookId param without remounting the parent.
-const notebookIdRoute = createRoute({
-  getParentRoute: () => notebookRoute,
-  path: "$notebookId",
-  component: () => null,
-});
-
 // OAuth callback route — rendered under bare layout (no app shell)
 const oauthCallbackRoute = createRoute({
   getParentRoute: () => oauthLayoutRoute,
@@ -120,14 +100,7 @@ const oauthCallbackRoute = createRoute({
 
 // Build route tree
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([
-    indexRoute,
-    chatRoute,
-    chatIdRoute,
-    translateRoute,
-    canvasRoute,
-    notebookRoute.addChildren([notebookIdRoute]),
-  ]),
+  appLayoutRoute.addChildren([indexRoute, chatRoute, chatIdRoute, translateRoute, canvasRoute]),
   oauthLayoutRoute.addChildren([oauthCallbackRoute]),
 ]);
 

@@ -15,7 +15,12 @@ import {
 import { Fragment, useCallback, useMemo } from "react";
 import type { ImageStyle } from "@/shared/lib/imageStyles";
 import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
-import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, MenuButton } from "@/shared/ui/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  MenuButton,
+} from "@/shared/ui/DropdownMenu";
 import { ModelDropdown, type SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
 /** Aspect-ratio option metadata; only those the selected model supports are shown. */
@@ -156,10 +161,18 @@ export function CanvasInput({
   // Show only the controls the selected model supports — capabilities come from
   // the renderer model mapping. Background appears only for models that do
   // transparent/opaque (e.g. gpt-image-1 / 1.5).
-  const aspectOptions = ASPECT_OPTIONS.filter((o) => selectedModel?.supportedAspectRatios?.includes(o.value));
-  const qualityOptions = QUALITY_OPTIONS.filter((o) => selectedModel?.supportedQualities?.includes(o.value));
-  const resolutionOptions = RESOLUTION_OPTIONS.filter((o) => selectedModel?.supportedResolutions?.includes(o.value));
-  const backgroundOptions = BACKGROUND_OPTIONS.filter((o) => selectedModel?.supportedBackgrounds?.includes(o.value));
+  const aspectOptions = ASPECT_OPTIONS.filter((o) =>
+    selectedModel?.supportedAspectRatios?.includes(o.value),
+  );
+  const qualityOptions = QUALITY_OPTIONS.filter((o) =>
+    selectedModel?.supportedQualities?.includes(o.value),
+  );
+  const resolutionOptions = RESOLUTION_OPTIONS.filter((o) =>
+    selectedModel?.supportedResolutions?.includes(o.value),
+  );
+  const backgroundOptions = BACKGROUND_OPTIONS.filter((o) =>
+    selectedModel?.supportedBackgrounds?.includes(o.value),
+  );
 
   const submenus: SubmenuConfig[] = [];
   if (aspectOptions.length) {
@@ -279,7 +292,9 @@ export function CanvasInput({
                 <span className="shrink-0 flex justify-center">
                   <Sparkles size={14} />
                 </span>
-                <span className="truncate min-w-0">{selectedModel?.name ?? selectedModel?.id ?? "Model"}</span>
+                <span className="truncate min-w-0">
+                  {selectedModel?.name ?? selectedModel?.id ?? "Model"}
+                </span>
               </button>
             )}
           />
@@ -317,7 +332,11 @@ export function CanvasInput({
                     selected={selectedStyle === style.name}
                     onClick={() => onSelectStyle(selectedStyle === style.name ? null : style.name)}
                   >
-                    <span className={selectedStyle === style.name ? "text-blue-600 dark:text-blue-400" : ""}>
+                    <span
+                      className={
+                        selectedStyle === style.name ? "text-blue-600 dark:text-blue-400" : ""
+                      }
+                    >
                       {style.name}
                     </span>
                   </DropdownMenuItem>
@@ -345,7 +364,11 @@ export function CanvasInput({
                   Upload
                 </DropdownMenuItem>
                 {drives.map((drive) => (
-                  <DropdownMenuItem key={drive.id} icon={<HardDrive size={15} />} onClick={() => onDriveSelect(drive)}>
+                  <DropdownMenuItem
+                    key={drive.id}
+                    icon={<HardDrive size={15} />}
+                    onClick={() => onDriveSelect(drive)}
+                  >
                     {drive.name}
                   </DropdownMenuItem>
                 ))}
@@ -374,7 +397,9 @@ export function CanvasInput({
       </div>
 
       {helperText ? (
-        <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">{helperText}</div>
+        <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
+          {helperText}
+        </div>
       ) : null}
     </div>
   );

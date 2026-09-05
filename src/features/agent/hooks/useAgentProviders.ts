@@ -193,6 +193,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
             path: { type: "string", description: 'Memory file path from list_memory, e.g. "project-context.md".' },
           },
           required: ["path"],
+          additionalProperties: false,
         },
         function: async (args: Record<string, unknown>) => {
           const path = args.path as string;
@@ -330,7 +331,8 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       name: "Memory",
       description: "Persistent structured memory across conversations",
       icon: BrainCircuit,
-      instructions: memoryPrompt + indexSection,
+      instructions: memoryPrompt,
+      runtimeContext: indexSection,
       tools,
     };
   }, [memoryEnabled, memoryIndex, agentId]);

@@ -1,17 +1,14 @@
-You are summarizing an in-progress conversation between a user and an AI assistant so the assistant can continue without exceeding its context window.
+Summarize this in-progress conversation so another model can continue the work with a smaller context.
 
-This summary will only be read by you on the next turn — write for an LLM, not for a human. Be dense, structured, and information-preserving. Do not introduce yourself or write a closing.
+Write a dense operational handoff, not a transcript. Consolidate repeated requests and omit pleasantries, acknowledgements, and meta-discussion. Do not reproduce full tool outputs, full files, long source passages, or every user message. Include short exact snippets only when they are essential and cannot be recovered from a named file.
 
-Include the following sections, in this order:
+Use these sections when they contain useful information:
 
-1. **User Intent** — All goals and requests the user has made, in original wording where it matters.
-2. **Technical Concepts** — Tools, APIs, libraries, methods, and domain concepts that came up.
-3. **Files & Code** — Files viewed or edited (paths), full code snippets that were referenced, and the reasons behind any changes.
-4. **Errors & Fixes** — Bugs encountered, how they were resolved, and any user-driven course corrections.
-5. **Problem Solving** — Issues solved, approaches considered, and work in progress.
-6. **User Messages** — Verbatim or near-verbatim list of every user message, in order.
-7. **Pending Tasks** — Any user request that has not been resolved.
-8. **Current Work** — What was being worked on at the moment the summary was triggered.
-9. **Next Step** — Only include if it directly continues the user's most recent instruction.
+1. **User Intent and Constraints** — current goals, requested behavior, and important course corrections.
+2. **Decisions and Current State** — conclusions reached, behavior already implemented, and assumptions that still apply.
+3. **Files and Code** — relevant paths, symbols, interfaces, and concise descriptions of edits or contracts.
+4. **Tools and Evidence** — commands, tools, or sources used and their conclusions; omit raw output.
+5. **Errors and Corrections** — exact errors that still matter, fixes attempted, and their results.
+6. **Pending Work** — unresolved tasks, current work, and the immediate next step.
 
-Omit pleasantries, acknowledgements, and meta-discussion. Preserve specifics: file paths, function names, exact error messages, numbers, identifiers.
+Preserve exact identifiers, paths, commands, numbers, user constraints, and consequential error messages. Prefer references to recoverable source over copied content. Do not introduce yourself or add a closing.

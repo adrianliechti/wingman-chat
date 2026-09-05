@@ -9,7 +9,12 @@ const DEFAULT_PROMPT =
   "Transcribe all text in this image verbatim, preserving the layout where possible. " +
   "If the image contains no text, describe its content in detail instead.";
 
-export async function runVision(bytes: Uint8Array, path: string, prompt?: string): Promise<string> {
+export async function runVision(
+  bytes: Uint8Array,
+  path: string,
+  prompt?: string,
+  requestOptions: { signal?: AbortSignal } = {},
+): Promise<string> {
   const config = getConfig();
   if (!config.vision) {
     throw new Error("vision: no vision service configured");
@@ -45,6 +50,8 @@ export async function runVision(bytes: Uint8Array, path: string, prompt?: string
       },
     ],
     [],
+    undefined,
+    { signal: requestOptions.signal },
   );
   const text = getTextFromContent(result.content);
   console.debug(`vision: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);

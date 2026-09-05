@@ -1,110 +1,63 @@
 import {
+  columnResizingFeature,
+  columnSizingFeature,
   type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
+  createSortedRowModel,
+  rowSortingFeature,
   type SortingState,
-  useReactTable,
+  sortFns,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { parseDelimitedText } from "@/shared/lib/delimitedText";
+import { fileExtension } from "@/shared/lib/utils";
+
+const features = tableFeatures({
+  columnSizingFeature,
+  columnResizingFeature,
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns,
+});
 
 interface CsvEditorProps {
   content: string;
+  path?: string;
+  contentType?: string;
   viewMode?: "table" | "code";
   onViewModeChange?: (mode: "table" | "code") => void;
 }
 
-// Utility function to detect separator (comma, semicolon, or tab)
-const detectSeparator = (csv: string): string => {
-  if (!csv.trim()) return ",";
-
-  const firstLine = csv.trim().split("\n")[0];
-  let commaCount = 0;
-  let semicolonCount = 0;
-  let tabCount = 0;
-  let inQuotes = false;
-
-  for (let i = 0; i < firstLine.length; i++) {
-    const char = firstLine[i];
-    const nextChar = firstLine[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        i++; // Skip escaped quote
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (!inQuotes) {
-      if (char === ",") commaCount++;
-      if (char === ";") semicolonCount++;
-      if (char === "\t") tabCount++;
-    }
-  }
-
-  // Return the separator with the highest count
-  if (tabCount > 0 && tabCount >= commaCount && tabCount >= semicolonCount) return "\t";
-  if (semicolonCount > commaCount) return ";";
-  return ",";
-};
-
-// Utility function to parse CSV content
-const parseCSV = (csv: string): string[][] => {
-  if (!csv.trim()) return []; // Return empty array for empty content
-
-  const separator = detectSeparator(csv);
-  const lines = csv.trim().split("\n");
-  const result: string[][] = [];
-
-  for (const line of lines) {
-    const row: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      const nextChar = line[i + 1];
-
-      if (char === '"') {
-        if (inQuotes && nextChar === '"') {
-          // Escaped quote
-          current += '"';
-          i++; // Skip next quote
-        } else {
-          // Toggle quote state
-          inQuotes = !inQuotes;
-        }
-      } else if (char === separator && !inQuotes) {
-        // End of field
-        row.push(current);
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-
-    // Add the last field
-    row.push(current);
-    result.push(row);
-  }
-
-  return result;
-};
-
 const ROW_HEIGHT = 35;
 const OVERSCAN = 20;
 
-export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
+export function CsvEditor({ content, path, contentType, viewMode = "table" }: CsvEditorProps) {
   "use no memo";
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const parsedData = useMemo(() => parseCSV(content), [content]);
+  const isTsv =
+    fileExtension(path ?? "") === "tsv" ||
+    contentType?.split(";", 1)[0].trim().toLowerCase() === "text/tab-separated-values";
+  const parsed = useMemo(() => {
+    if (viewMode === "code") return { data: [] as string[][], error: null as string | null };
+    try {
+      return { data: parseDelimitedText(content, isTsv ? { delimiter: "\t" } : {}), error: null };
+    } catch (error) {
+      return {
+        data: [] as string[][],
+        error: error instanceof Error ? error.message : "The delimited-text file is invalid",
+      };
+    }
+  }, [content, isTsv, viewMode]);
+  const parsedData = parsed.data;
   const rows = useMemo(() => parsedData.slice(1), [parsedData]);
 
-  const columns = useMemo<ColumnDef<string[]>[]>(() => {
+  const columns = useMemo<ColumnDef<typeof features, string[]>[]>(() => {
     const headers = parsedData.length > 0 ? parsedData[0] : [];
     return headers.map((header, index) => ({
       id: String(index),
@@ -116,13 +69,12 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
     }));
   }, [parsedData]);
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: rows,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     columnResizeMode: "onChange",
   });
 
@@ -151,6 +103,10 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
             </pre>
           </div>
         </div>
+      ) : parsed.error ? (
+        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-red-600 dark:text-red-400">
+          {parsed.error}
+        </div>
       ) : parsedData.length > 0 ? (
         <div ref={scrollContainerRef} className="flex-1 overflow-auto min-h-0">
           <table style={{ display: "grid", minWidth: "100%" }}>
@@ -173,7 +129,7 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                         onClick={header.column.getToggleSortingHandler()}
                         disabled={!header.column.getCanSort()}
                       >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        <table.FlexRender header={header} />
                         {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ?? ""}
                       </button>
                       <button
@@ -223,14 +179,14 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                       width: "100%",
                     }}
                   >
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getAllCells().map((cell) => (
                       <td
                         key={cell.id}
                         className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
                         style={{ width: cell.column.getSize(), flex: "none" }}
                         title={String(cell.getValue())}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        <table.FlexRender cell={cell} />
                       </td>
                     ))}
                   </tr>

@@ -10,6 +10,7 @@ export {
   downloadSkill,
   downloadSkillsAsZip,
   parseSkillFile,
+  parseSkillsFromZip,
   serializeSkill,
   validateSkillName,
 } from "./lib/skillParser";

@@ -22,8 +22,8 @@ material.
 
 ## 3. Write it as Mermaid (.mmd)
 
-```python
-mindmap = """mindmap
+```mermaid
+mindmap
   root((FY24 Review))
     Revenue
       Enterprise +38%
@@ -34,14 +34,12 @@ mindmap = """mindmap
     Risks
       Sales cycle length
       Concentration
-"""
-with open("mindmap.mmd", "w") as f:
-    f.write(mindmap)
-print("wrote mindmap.mmd")
 ```
 
 Indentation defines the hierarchy — keep it consistent. Avoid characters Mermaid treats specially in
-labels (or wrap them in quotes).
+labels (or wrap them in quotes). Pass the source directly to `create_file` as `/mindmap.mmd`; do not
+write a Python wrapper for a text artifact. The file tool validates the syntax, so fix any reported
+parser error before finishing.
 
 ## 4. Deliver
 

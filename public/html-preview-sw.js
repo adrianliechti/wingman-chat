@@ -23,6 +23,8 @@ const SCOPE_PREFIX = "/__preview__/";
  * }
  */
 const sessions = new Map();
+const pendingRecoveries = new Map();
+const RECOVERY_TIMEOUT_MS = 1000;
 
 function normalizePath(path) {
   if (!path) return "";
@@ -33,7 +35,15 @@ function normalizePath(path) {
   p = p.replace(/^\.\//, "").replace(/^\/+/, "");
   // Resolve any ".." segments (defensive — browser usually resolves first)
   const parts = [];
-  for (const seg of p.split("/")) {
+  for (const encodedSegment of p.split("/")) {
+    let seg = encodedSegment;
+    try {
+      // URL.pathname keeps percent escapes, while artifact paths are stored
+      // decoded (for example, "my photo.png" rather than "my%20photo.png").
+      seg = decodeURIComponent(encodedSegment);
+    } catch {
+      // Leave malformed escapes untouched so they produce a normal 404.
+    }
     if (seg === "" || seg === ".") continue;
     if (seg === "..") {
       parts.pop();
@@ -113,6 +123,61 @@ function renameFileInSession(token, fromPath, toPath) {
 
 function unregisterSession(token) {
   sessions.delete(token);
+}
+
+function requestSessionSnapshot(client, token) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      channel.port1.close();
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), RECOVERY_TIMEOUT_MS);
+
+    channel.port1.onmessage = (event) => finish(event.data?.ok ? event.data.files : null);
+    try {
+      client.postMessage({ type: "html-preview/recover-request", token }, [channel.port2]);
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+async function recoverSession(token) {
+  if (!token || sessions.has(token)) return sessions.has(token);
+  const pending = pendingRecoveries.get(token);
+  if (pending) return pending;
+
+  const recovery = (async () => {
+    // The app itself is outside this worker's narrow preview scope, so include
+    // uncontrolled same-origin windows when asking for the live page snapshot.
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    let files;
+    try {
+      files = await Promise.any(
+        clients.map(async (client) => {
+          const reply = await requestSessionSnapshot(client, token);
+          if (!reply || typeof reply !== "object" || Array.isArray(reply)) throw new Error("Session not owned");
+          return reply;
+        }),
+      );
+    } catch {
+      return false;
+    }
+    registerSession(token, files);
+    return true;
+  })();
+
+  pendingRecoveries.set(token, recovery);
+  try {
+    return await recovery;
+  } finally {
+    if (pendingRecoveries.get(token) === recovery) pendingRecoveries.delete(token);
+  }
 }
 
 function lookupFile(token, path) {
@@ -252,6 +317,10 @@ async function handleFetch(request, { token, path }) {
   if (method !== "GET" && method !== "HEAD" && method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
   }
+
+  // A service worker's global memory is not durable. If the browser restarted
+  // it while the app stayed open, rehydrate this token from the owning page.
+  if (!sessions.has(token)) await recoverSession(token);
 
   const hit = lookupFile(token, path);
   if (!hit) {

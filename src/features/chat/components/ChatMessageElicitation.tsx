@@ -1,6 +1,7 @@
 import { Check, CheckCircle2, ExternalLink, Loader2, ShieldQuestion, X } from "lucide-react";
 import { useState } from "react";
 import { getToolDisplayName } from "@/shared/lib/utils";
+import { Markdown } from "@/shared/ui/Markdown";
 
 import type {
   Elicitation,
@@ -130,8 +131,8 @@ function UrlElicitationView({
           <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
             {getToolDisplayName(toolName)}
           </div>
-          <div className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
-            {elicitation.message}
+          <div className="text-xs text-neutral-500 dark:text-neutral-400">
+            <Markdown compact>{elicitation.message}</Markdown>
           </div>
           <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-200 break-all">
             {elicitation.url}
@@ -165,8 +166,8 @@ function FormElicitationView({
         <div className="flex items-start gap-2 min-w-0">
           <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
-              {elicitation.message}
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">
+              <Markdown compact>{elicitation.message}</Markdown>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -230,7 +231,9 @@ function FormElicitationView({
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
               {getToolDisplayName(toolName)}
             </span>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{elicitation.message}</div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+              <Markdown compact>{elicitation.message}</Markdown>
+            </div>
           </div>
           <form className="mt-2 space-y-3" onSubmit={handleSubmit}>
             {requestedSchema && (

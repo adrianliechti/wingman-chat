@@ -1,4 +1,4 @@
-import { lookupContentType } from "./utils";
+import { fileExtension, lookupContentType } from "./utils";
 
 // Overrides for two cases:
 // 1. Text/code files where `mime` maps to a wrong binary type
@@ -39,12 +39,9 @@ const MIME_OVERRIDES: Record<string, string> = {
 };
 
 export function inferContentTypeFromPath(path: string): string | undefined {
-  const lastDot = path.lastIndexOf(".");
-  if (lastDot === -1) {
-    return undefined;
-  }
-
-  const ext = path.slice(lastDot).toLowerCase();
+  const extension = fileExtension(path);
+  if (!extension) return undefined;
+  const ext = `.${extension}`;
   return MIME_OVERRIDES[ext] ?? lookupContentType(ext);
 }
 
@@ -91,7 +88,7 @@ export function fileMatchesTypeList(name: string, type: string, list: string[]):
  * extensionless build files.
  */
 export function artifactLanguage(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const ext = fileExtension(path);
   const basename = path.split("/").pop()?.toLowerCase() || "";
   if (basename === "dockerfile" || basename.startsWith("dockerfile.")) return "dockerfile";
   if (basename === "makefile" || basename.startsWith("makefile.")) return "makefile";

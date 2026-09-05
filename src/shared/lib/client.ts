@@ -17,6 +17,7 @@ import type {
   Message,
   Model,
   ModelType,
+  ReasoningEffort,
   ReasoningContent,
   Tool,
   ToolCallContent,
@@ -24,11 +25,20 @@ import type {
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
-import { isAbortError } from "./errors";
+import { combineAbortSignals } from "./abortSignals";
+import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
 import { dropOrphanFunctionCalls } from "./recovery";
+import { planStrictToolSchemas } from "./toolSchemas";
+import { compileToolRegistry } from "./toolRegistry";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
+
+/**
+ * Extra application-level retries for stream failures the SDK's own maxRetries
+ * does not cover — a connection dropped mid-response after streaming started.
+ */
+const MAX_STREAM_RETRIES = 2;
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
@@ -87,9 +97,19 @@ export interface ImageRenderOptions {
   format?: "png" | "jpeg" | "webp";
 }
 
+/** Trace and cancellation context shared by every cancellable client request. */
+export interface ClientRequestOptions {
+  signal?: AbortSignal;
+  parentContext?: AgentContext;
+}
+
 export interface GuardResult {
   flagged: boolean;
   categories: Array<{ name: string; score: number }>;
+}
+
+export interface ParseOptions extends ClientRequestOptions {
+  effort?: ReasoningEffort;
 }
 
 /**
@@ -182,7 +202,7 @@ export class Client {
     tools: Tool[],
     handler?: (content: Content[]) => void,
     options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       signal?: AbortSignal;
@@ -204,6 +224,13 @@ export class Client {
               for (const part of m.content) {
                 if (part.type === "text") {
                   content.push({ type: "input_text", text: part.text });
+                } else if (part.type === "runtime_feedback") {
+                  content.push({ type: "input_text", text: part.text });
+                } else if (part.type === "artifact_ref") {
+                  content.push({
+                    type: "input_text",
+                    text: `[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`,
+                  });
                 } else if (part.type === "image") {
                   const imgPart = part as ImageContent;
                   // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
@@ -274,6 +301,11 @@ export class Client {
                   continue;
                 }
 
+                if (part.type === "artifact_ref") {
+                  bufferedText += `\n[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`;
+                  continue;
+                }
+
                 if (part.type === "tool_call") {
                   flushAssistantText();
                   items.push({
@@ -323,124 +355,154 @@ export class Client {
         // the item id is optional and the call id isn't on the delta events.)
         const toolCallsByIndex = new Map<number, ToolCallContent>();
 
-        const runner = this.oai.responses
-          .stream({
-            model: model,
-            store: false,
-            truncation: "auto",
-            tools: this.toTools(tools),
-            input: dropOrphanFunctionCalls(items),
-            instructions: instructions,
-            ...(options?.effort
-              ? {
-                  reasoning: {
-                    effort: options.effort,
-                    summary: options.summary ?? "auto",
-                  },
-                }
-              : {}),
-            ...(options?.verbosity
-              ? {
-                  text: { verbosity: options.verbosity },
-                }
-              : {}),
-          })
-          .on("response.reasoning_summary_text.delta", (event) => {
-            const r = ensureReasoning(event.item_id);
-            r.summary = (r.summary ?? "") + event.delta;
-            emit();
-          })
-          .on("response.reasoning_text.delta", (event) => {
-            ensureReasoning(event.item_id).text += event.delta;
-            emit();
-          })
-          .on("response.output_text.delta", (event) => {
-            const last = contentParts[contentParts.length - 1];
-            if (last?.type === "text") {
-              last.text += event.delta;
-            } else {
-              contentParts.push({ type: "text", text: event.delta });
-            }
-            emit();
-          })
-          // Materialize the tool-call part as soon as the call starts, so its
-          // spinner appears right after the intro instead of only once the model
-          // has finished writing all the arguments.
-          .on("response.output_item.added", (event) => {
-            if (event.item.type === "function_call") {
-              const part: ToolCallContent = {
-                type: "tool_call",
-                id: event.item.call_id,
-                name: event.item.name,
-                arguments: event.item.arguments ?? "",
-              };
-              toolCallsByIndex.set(event.output_index, part);
-              contentParts.push(part);
+        // Build and run one streaming attempt. Resets the accumulators so a
+        // retry re-streams from empty and the UI overwrites the partial render
+        // instead of duplicating deltas. Re-sending is replay-safe: the caller
+        // commits the assistant message (and runs its tools) only after this
+        // resolves, so a failed attempt left nothing committed.
+        const attemptStream = async () => {
+          // Clearing only matters on a retry: drop the failed attempt's partial
+          // render so the UI overwrites it instead of appending duplicate deltas.
+          const hadPartial = contentParts.length > 0;
+          contentParts.length = 0;
+          toolCallsByIndex.clear();
+          if (hadPartial) emit();
+
+          const runner = this.oai.responses
+            .stream({
+              model: model,
+              store: false,
+              truncation: "auto",
+              tools: this.toTools(tools),
+              input: dropOrphanFunctionCalls(items),
+              instructions: instructions,
+              ...(options?.effort
+                ? {
+                    reasoning: {
+                      effort: options.effort as OpenAI.Reasoning["effort"],
+                      summary: options.summary ?? "auto",
+                    },
+                  }
+                : {}),
+              ...(options?.verbosity
+                ? {
+                    text: { verbosity: options.verbosity },
+                  }
+                : {}),
+            })
+            .on("response.reasoning_summary_text.delta", (event) => {
+              const r = ensureReasoning(event.item_id);
+              r.summary = (r.summary ?? "") + event.delta;
               emit();
-            }
-          })
-          // Grow the arguments live as the model writes them (e.g. the Python script).
-          .on("response.function_call_arguments.delta", (event) => {
-            const part = toolCallsByIndex.get(event.output_index);
-            if (part) {
-              part.arguments += event.delta;
+            })
+            .on("response.reasoning_text.delta", (event) => {
+              ensureReasoning(event.item_id).text += event.delta;
               emit();
-            }
-          })
-          .on("response.output_item.done", (event) => {
-            if (event.item.type === "function_call") {
-              const existing = toolCallsByIndex.get(event.output_index);
-              if (existing) {
-                existing.arguments = event.item.arguments; // authoritative final value
+            })
+            .on("response.output_text.delta", (event) => {
+              const last = contentParts[contentParts.length - 1];
+              if (last?.type === "text") {
+                last.text += event.delta;
               } else {
-                contentParts.push({
+                contentParts.push({ type: "text", text: event.delta });
+              }
+              emit();
+            })
+            // Materialize the tool-call part as soon as the call starts, so its
+            // spinner appears right after the intro instead of only once the model
+            // has finished writing all the arguments.
+            .on("response.output_item.added", (event) => {
+              if (event.item.type === "function_call") {
+                const part: ToolCallContent = {
                   type: "tool_call",
                   id: event.item.call_id,
                   name: event.item.name,
-                  arguments: event.item.arguments,
-                });
+                  arguments: event.item.arguments ?? "",
+                };
+                toolCallsByIndex.set(event.output_index, part);
+                contentParts.push(part);
+                emit();
               }
-              emit();
-            }
-          });
+            })
+            // Grow the arguments live as the model writes them (e.g. the Python script).
+            .on("response.function_call_arguments.delta", (event) => {
+              const part = toolCallsByIndex.get(event.output_index);
+              if (part) {
+                part.arguments += event.delta;
+                emit();
+              }
+            })
+            .on("response.output_item.done", (event) => {
+              if (event.item.type === "function_call") {
+                const incomplete = event.item.status === "incomplete";
+                const existing = toolCallsByIndex.get(event.output_index);
+                if (existing) {
+                  existing.arguments = event.item.arguments; // authoritative final value
+                  if (incomplete) existing.incomplete = true;
+                } else {
+                  contentParts.push({
+                    type: "tool_call",
+                    id: event.item.call_id,
+                    name: event.item.name,
+                    arguments: event.item.arguments,
+                    ...(incomplete ? { incomplete: true } : {}),
+                  });
+                }
+                emit();
+              }
+            });
 
-        // Wire abort. Handle the already-aborted case explicitly —
-        // addEventListener on a signal that has already fired never invokes.
-        if (options?.signal) {
-          if (options.signal.aborted) {
-            runner.abort();
-          } else {
-            options.signal.addEventListener("abort", () => runner.abort(), { once: true });
+          // Wire abort. Handle the already-aborted case explicitly —
+          // addEventListener on a signal that has already fired never invokes.
+          const abortRunner = () => runner.abort();
+          if (options?.signal?.aborted) abortRunner();
+          else options?.signal?.addEventListener("abort", abortRunner, { once: true });
+
+          // Attach an error listener so mid-stream errors don't surface as
+          // unhandled EventEmitter errors. The same error rejects
+          // `finalResponse()`, where we actually handle it.
+          runner.on("error", () => {});
+
+          try {
+            return await runner.finalResponse();
+          } finally {
+            options?.signal?.removeEventListener("abort", abortRunner);
           }
-        }
-
-        // Attach an error listener so mid-stream errors don't surface as
-        // unhandled EventEmitter errors. The same error rejects
-        // `finalResponse()` below, where we actually handle it.
-        runner.on("error", () => {});
+        };
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
 
-        try {
-          const finalResponse = await runner.finalResponse();
-          assistant.usage = {
-            model: finalResponse.model,
-            inputTokens: finalResponse.usage?.input_tokens,
-            cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-            outputTokens: finalResponse.usage?.output_tokens,
-            reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-          };
-          return {
-            result: assistant,
-            response: { id: finalResponse.id, ...assistant.usage },
-          };
-        } catch (error) {
-          // On abort (our signal or runner.abort()), return partial content
-          // as a successful result.
-          if (options?.signal?.aborted || isAbortError(error)) {
-            return { result: assistant, response: { id: "", model } };
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const finalResponse = await attemptStream();
+            assistant.usage = {
+              model: finalResponse.model,
+              inputTokens: finalResponse.usage?.input_tokens,
+              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
+              outputTokens: finalResponse.usage?.output_tokens,
+              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+            };
+            return {
+              result: assistant,
+              response: { id: finalResponse.id, ...assistant.usage },
+            };
+          } catch (error) {
+            // Abort (our signal or runner.abort()) is terminal: return whatever
+            // streamed so far as a successful, partial result.
+            if (options?.signal?.aborted || isAbortError(error)) {
+              return { result: assistant, response: { id: "", model } };
+            }
+            // A stream that dropped mid-response is retryable — the SDK's own
+            // maxRetries only covers pre-stream failures. Re-send from scratch.
+            if (attempt < MAX_STREAM_RETRIES && isRecoverableStreamError(error)) {
+              await waitBeforeStreamRetry(attempt, error, options?.signal);
+              if (options?.signal?.aborted) {
+                return { result: assistant, response: { id: "", model } };
+              }
+              continue;
+            }
+            throw error;
           }
-          throw error;
         }
       },
       options?.parentContext,
@@ -452,6 +514,7 @@ export class Client {
     input: Message[],
     categories: Array<{ id: string; description: string }> = [],
     risks: Array<{ id: string; description: string }> = [],
+    options: ParseOptions = {},
   ): Promise<{
     title: string | null;
     categories: Array<{ id: string; confidence: number }>;
@@ -504,6 +567,7 @@ export class Client {
       JSON.stringify({ categories, risks, history }),
       schema,
       "classify_chat",
+      options,
     );
     return {
       title: result?.title ?? null,
@@ -517,7 +581,7 @@ export class Client {
    * Used to condense older messages when the context window fills up.
    * Returns plain text — caller wraps it into a SummaryContent part.
    */
-  async summarizeHistory(model: string, input: Message[]): Promise<string> {
+  async summarizeHistory(model: string, input: Message[], requestOptions: ClientRequestOptions = {}): Promise<string> {
     const history = input.map((m) => ({ role: m.role, content: m.content }));
     const result = await this.parse(
       model,
@@ -525,6 +589,7 @@ export class Client {
       JSON.stringify({ history }),
       z.object({ summary: z.string() }).strict(),
       "summarize_history",
+      requestOptions,
     );
     return result?.summary ?? "";
   }
@@ -591,12 +656,14 @@ export class Client {
     };
   }
 
-  async extractText(blob: Blob): Promise<string> {
-    return (await this.post("/api/v1/extract", { file: blob, format: "text" })).text();
+  async extractText(blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    return (await this.post("/api/v1/extract", { file: blob, format: "text" }, requestOptions)).text();
   }
 
-  async scrape(model: string, url: string): Promise<string> {
-    return (await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })).text();
+  async scrape(model: string, url: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    return (
+      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" }, requestOptions)
+    ).text();
   }
 
   async segmentText(text: string): Promise<string[]> {
@@ -615,7 +682,11 @@ export class Client {
     return embedding.data[0].embedding;
   }
 
-  async translate(lang: string, input: string | Blob): Promise<string | Blob> {
+  async translate(
+    lang: string,
+    input: string | Blob,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<string | Blob> {
     const data = new FormData();
     data.append("lang", lang);
     const headers: Record<string, string> = {};
@@ -627,7 +698,7 @@ export class Client {
       data.append("text", input);
     }
 
-    const resp = await this.postRaw("/api/v1/translate", data, headers);
+    const resp = await this.postRaw("/api/v1/translate", data, headers, 90_000, requestOptions);
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
 
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
@@ -679,20 +750,28 @@ export class Client {
     return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
   }
 
-  async generateAudio(model: string, input: string, voice?: string): Promise<Blob> {
+  async generateAudio(
+    model: string,
+    input: string,
+    voice?: string,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Blob> {
     if (!input.trim()) {
       throw new Error("Input text cannot be empty");
     }
 
-    const response = await this.oai.audio.speech.create({
-      model: model,
-      input: input,
+    const response = await this.oai.audio.speech.create(
+      {
+        model: model,
+        input: input,
 
-      instructions: "Speak in a clear and natural tone.",
+        instructions: "Speak in a clear and natural tone.",
 
-      voice: voice ?? "",
-      response_format: "wav",
-    });
+        voice: voice ?? "",
+        response_format: "wav",
+      },
+      requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+    );
 
     const audioBuffer = await response.arrayBuffer();
     return new Blob([audioBuffer], { type: "audio/wav" });
@@ -724,12 +803,14 @@ export class Client {
     });
   }
 
-  async transcribe(model: string, blob: Blob): Promise<string> {
+  async transcribe(model: string, blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
     // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
-    const result = await (await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })).json();
+    const result = await (
+      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) }, requestOptions)
+    ).json();
     return result.text || "";
   }
 
@@ -737,6 +818,7 @@ export class Client {
     model: string,
     query: string,
     options?: { domains?: string[]; limit?: number },
+    requestOptions: ClientRequestOptions = {},
   ): Promise<SearchResult[]> {
     const data = new FormData();
     if (model) data.append("model", model);
@@ -744,7 +826,7 @@ export class Client {
     data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
 
-    const resp = await this.postRaw("/api/v1/search", data);
+    const resp = await this.postRaw("/api/v1/search", data, undefined, 90_000, requestOptions);
     const results = await resp.json();
     if (!Array.isArray(results)) return [];
 
@@ -755,10 +837,16 @@ export class Client {
     });
   }
 
-  async guard(model: string, text: string): Promise<GuardResult> {
-    const resp = await this.postRaw("/api/v1/guard", JSON.stringify({ ...(model && { model }), text }), {
-      "Content-Type": "application/json",
-    });
+  async guard(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<GuardResult> {
+    const resp = await this.postRaw(
+      "/api/v1/guard",
+      JSON.stringify({ ...(model && { model }), text }),
+      {
+        "Content-Type": "application/json",
+      },
+      90_000,
+      requestOptions,
+    );
     const result = await resp.json();
     return {
       flagged: result?.flagged === true,
@@ -766,12 +854,20 @@ export class Client {
     };
   }
 
-  async research(model: string, instructions: string): Promise<string> {
-    const result = await (await this.post("/api/v1/research", { ...(model && { model }), instructions })).json();
+  async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    const result = await (
+      await this.post("/api/v1/research", { ...(model && { model }), instructions }, requestOptions)
+    ).json();
     return result.content || "";
   }
 
-  async generateImage(model: string, prompt: string, images?: Blob[], options?: ImageRenderOptions): Promise<Blob> {
+  async generateImage(
+    model: string,
+    prompt: string,
+    images?: Blob[],
+    options?: ImageRenderOptions,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
@@ -786,7 +882,7 @@ export class Client {
     const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
-    return (await this.postRaw("/api/v1/render", data, headers, 300_000)).blob();
+    return (await this.postRaw("/api/v1/render", data, headers, 300_000, requestOptions)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -794,13 +890,15 @@ export class Client {
       return undefined;
     }
 
-    return tools.map((tool) => ({
+    const registry = compileToolRegistry(tools);
+    const strictPlan = planStrictToolSchemas(registry.tools);
+    return registry.tools.map((tool, index) => ({
       type: "function",
 
       name: tool.name,
       description: tool.description,
 
-      strict: tool.strict ?? false,
+      strict: strictPlan.strict[index],
       parameters: tool.parameters,
     }));
   }
@@ -835,48 +933,74 @@ export class Client {
     input: string,
     schema: T,
     name: string,
-    parentContext?: AgentContext,
+    options: ParseOptions = {},
   ): Promise<z.infer<T> | null> {
     return traceGenAI(
       name,
       model,
       async () => {
         try {
-          const response = await this.oai.responses.parse({
-            model,
-            instructions,
-            input,
-            truncation: "auto",
-            text: { format: zodTextFormat(schema, name) },
-          });
-          return { result: response.output_parsed ?? null };
+          const response = await this.oai.responses.parse(
+            {
+              model,
+              store: false,
+              instructions,
+              input,
+              truncation: "auto",
+              text: { format: zodTextFormat(schema, name) },
+              ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
+            },
+            options.signal ? { signal: options.signal } : undefined,
+          );
+          return {
+            result: response.output_parsed ?? null,
+            response: {
+              id: response.id,
+              model: response.model,
+              inputTokens: response.usage?.input_tokens,
+              cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+              outputTokens: response.usage?.output_tokens,
+              reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+            },
+          };
         } catch (error) {
           if (isAbortError(error)) throw error;
           console.error(`Error in ${name}:`, error);
           return { result: null };
         }
       },
-      parentContext,
+      options.parentContext,
     );
   }
 
-  private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {
+  private async post(
+    path: string,
+    fields: Record<string, string | Blob>,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Response> {
     const data = new FormData();
     for (const [k, v] of Object.entries(fields)) data.append(k, v);
-    return this.postRaw(path, data);
+    return this.postRaw(path, data, undefined, 90_000, requestOptions);
   }
 
-  private async postRaw(path: string, data: BodyInit, headers?: HeadersInit, timeoutMs = 90_000): Promise<Response> {
+  private async postRaw(
+    path: string,
+    data: BodyInit,
+    headers?: HeadersInit,
+    timeoutMs = 90_000,
+    requestOptions: ClientRequestOptions = {},
+  ): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
     // generation can legitimately run for minutes, so its caller passes a larger
     // budget (see generateImage).
-    const controller = new AbortController();
+    const timeoutController = new AbortController();
+    const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      controller.abort();
+      timeoutController.abort();
     }, timeoutMs);
     let resp: Response;
     try {
@@ -884,7 +1008,7 @@ export class Client {
         method: "POST",
         headers,
         body: data,
-        signal: controller.signal,
+        signal: combinedSignal.signal,
       });
     } catch (error) {
       // Surface a readable timeout instead of the runtime's opaque abort message
@@ -893,6 +1017,7 @@ export class Client {
       throw error;
     } finally {
       clearTimeout(timer);
+      combinedSignal.cleanup();
     }
 
     if (!resp.ok) {

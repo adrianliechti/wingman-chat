@@ -1,6 +1,11 @@
-import type { ImageBackground, ImageQuality, ImageResolution, Model, ModelType } from "@/shared/types/chat";
-
-type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+import type {
+  ImageBackground,
+  ImageQuality,
+  ImageResolution,
+  Model,
+  ModelType,
+  ReasoningEffort,
+} from "@/shared/types/chat";
 
 /**
  * Model id a fresh selection should default to: the saved app default when it's
@@ -17,10 +22,9 @@ export function defaultModelId(models: Model[], savedId?: string | null): string
  * model's config omits `supportedEfforts`. Levels are derived from the models.dev
  * catalog (https://models.dev) and kept forgiving: `undefined` (no picker) is the
  * safe default for unknown ids, and config always wins, so an explicit
- * `supportedEfforts: []` still hides the picker. The catalog's separate "max" tier
- * is folded into our top `xhigh` (which the picker labels "Max").
+ * `supportedEfforts: []` still hides the picker.
  */
-export function supportedEfforts(id: string): Effort[] | undefined {
+export function supportedEfforts(id: string): ReasoningEffort[] | undefined {
   const lowerId = id.toLowerCase();
 
   // ── OpenAI ──
@@ -40,16 +44,18 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   if (/gpt-?[6-9]/.test(lowerId)) return ["none", "low", "medium", "high", "xhigh"]; // GPT-6+ (guess)
 
   // ── Anthropic ──
-  // Opus 4.6+, Sonnet 4.6+ and Fable add a top "Max" tier (folded into xhigh);
-  // Opus 4.5 and older Claude stop at high.
+  // Effort exists from Opus 4.5 on. `max` arrived with the 4.6 generation, but
+  // `xhigh` only with Opus 4.7 / Sonnet 5 — Opus 4.6 and Sonnet 4.6 have max
+  // without xhigh. Opus 4.5 and older Claude stop at high.
   if (
-    /opus-?4[.-][6-9]\b/.test(lowerId) ||
-    /sonnet-?4[.-][6-9]\b/.test(lowerId) ||
+    /opus-?4[.-][7-9]\b/.test(lowerId) ||
     /(opus|sonnet)-?[5-9]\b/.test(lowerId) ||
-    lowerId.includes("fable")
+    lowerId.includes("fable") ||
+    lowerId.includes("mythos")
   ) {
-    return ["low", "medium", "high", "xhigh"];
+    return ["low", "medium", "high", "xhigh", "max"];
   }
+  if (/(opus|sonnet)-?4[.-]6\b/.test(lowerId)) return ["low", "medium", "high", "max"];
   if (lowerId.includes("claude")) return ["low", "medium", "high"];
 
   // ── Google ──
@@ -68,7 +74,8 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   // GLM 5.2+ adds a top "Max" tier (folded into xhigh); earlier GLM stop at high.
   // Levels are host-dependent (many expose none, official z.ai only high/max); we
   // pick the common low/medium/high baseline.
-  if (/glm-?5[.-][2-9]/.test(lowerId) || /glm-?[6-9]/.test(lowerId)) return ["low", "medium", "high", "xhigh"];
+  if (/glm-?5[.-][2-9]/.test(lowerId) || /glm-?[6-9]/.test(lowerId))
+    return ["low", "medium", "high", "xhigh"];
   if (lowerId.includes("glm")) return ["low", "medium", "high"];
 
   // ── Moonshot Kimi ──
@@ -84,6 +91,43 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   if (lowerId.includes("qwen")) return ["low", "medium", "high"];
 
   return undefined;
+}
+
+/**
+ * The level a model reasons at when no effort is sent, so the picker can badge
+ * it "Default" the way the provider consoles do. Only claimed where the vendor
+ * documents it — a wrong badge is worse than none, and config's `effort` covers
+ * everything else (including aliased ids this can't read):
+ *
+ * - Anthropic documents `high` for every effort-capable Claude model, and that
+ *   passing `high` is identical to omitting the parameter.
+ * - OpenAI documents defaults as model-dependent, and names `medium` for both
+ *   gpt-5.5 and gpt-5.6 (the latter in the reasoning-mode section: omitting
+ *   `reasoning.effort` is `medium` in standard and pro alike). Earlier GPT-5
+ *   point releases and the o-series have no stated default, so they stay unset.
+ */
+export function defaultEffort(id: string): ReasoningEffort | undefined {
+  const lowerId = id.toLowerCase();
+
+  if (lowerId.includes("claude") || lowerId.includes("fable") || lowerId.includes("mythos")) {
+    return supportedEfforts(id)?.includes("high") ? "high" : undefined;
+  }
+
+  // The mini/nano/chat variants are separate models with no stated default.
+  if (/gpt-?5[.-][56]\b/.test(lowerId) && !/mini|nano|chat/.test(lowerId)) {
+    return "medium";
+  }
+
+  return undefined;
+}
+
+/** Lowest-cost reasoning effort known to be supported by a model. */
+export function minimalEffort(id: string): ReasoningEffort | undefined {
+  const supported = supportedEfforts(id);
+  if (!supported) return undefined;
+
+  const ordered: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  return ordered.find((effort) => supported.includes(effort));
 }
 
 /**
@@ -250,7 +294,11 @@ export function modelType(id: string): ModelType | undefined {
 }
 
 export function modelName(id: string): string {
-  const normalizedId = id.replace(/-(\d+)-(\d+)(?=(?:-|$))/g, "-$1.$2");
+  const normalizedId = id
+    // Provider-qualified ids use dots as namespace separators (for example,
+    // `anthropic.claude-…`). Keep decimal version dots such as `4.6` intact.
+    .replace(/([a-z])\.([a-z])/gi, "$1-$2")
+    .replace(/-(\d+)-(\d+)(?=(?:-|$))/g, "-$1.$2");
 
   return normalizedId
     .split("-")
@@ -290,6 +338,21 @@ export function modelName(id: string): string {
     .join(" ");
 }
 
+const REGION_QUALIFIED_MODEL_ID =
+  /^(?:[a-z]{2}|global)\.(?=(?:[a-z0-9-]+\.)?(?:claude|gpt|o[134]|gemini|imagen|dall-e|flux|llama|mistral|magistral|deepseek|glm|kimi|qwen|nemotron|nova|command|jamba|grok|phi|mai|fable)(?:[.-]|$))/i;
+const CHAT_MODEL_VENDOR_PREFIX = /^(?:anthropic|openai)[./:-]+/i;
+
 export function shortModelName(id: string): string {
-  return modelName(id.replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, ""));
+  const unqualifiedId = id
+    // Cross-region inference profiles prefix the real model id with a country
+    // code (for example `eu.` or `ch.`) or `global.`. Only strip it when the
+    // remainder starts with a known model family, avoiding clashes with real
+    // two-letter namespaces.
+    .replace(REGION_QUALIFIED_MODEL_ID, "")
+    // The chat footer already has limited space and the family identifies these
+    // models clearly enough. Keep full vendor names elsewhere, such as pickers.
+    .replace(CHAT_MODEL_VENDOR_PREFIX, "")
+    .replace(/-(\d{4}-\d{2}-\d{2}|\d{8})$/, "");
+
+  return modelName(unqualifiedId);
 }

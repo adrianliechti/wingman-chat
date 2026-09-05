@@ -1,5 +1,5 @@
 import { Client } from "./lib/client";
-import type { MCP, Model } from "./types/chat";
+import type { MCP, Model, ReasoningEffort } from "./types/chat";
 
 interface BackgroundConfig {
   url: string;
@@ -24,10 +24,11 @@ interface ToolConfig {
 interface ModelConfig {
   id: string;
   name: string;
+  caption?: string;
   description?: string;
   instructions?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
+  effort?: ReasoningEffort;
+  supportedEfforts?: ReasoningEffort[];
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
@@ -60,36 +61,6 @@ export type STTFormat = "opus" | "webm" | "wav" | "mp4";
 interface STTConfig {
   model?: string;
   format?: STTFormat;
-}
-
-interface NotebookStyleBase {
-  name: string;
-  /**
-   * Either inline prompt text, or a URL (absolute `https://…` or
-   * page-relative `/notebooks/…`) fetched on demand and cached.
-   * Use a URL for long templates so they don't bloat `config.json`.
-   */
-  prompt: string;
-}
-
-interface NotebookSlide extends NotebookStyleBase {}
-interface NotebookPodcast extends NotebookStyleBase {
-  voices?: string[];
-}
-interface NotebookReport extends NotebookStyleBase {}
-interface NotebookInfographic extends NotebookStyleBase {}
-interface NotebookProcess extends NotebookStyleBase {}
-interface NotebookArchitecture extends NotebookStyleBase {}
-
-interface NotebookConfig {
-  model?: string;
-  renderer?: string;
-  slides?: NotebookSlide[];
-  podcasts?: NotebookPodcast[];
-  reports?: NotebookReport[];
-  infographics?: NotebookInfographic[];
-  processes?: NotebookProcess[];
-  architectures?: NotebookArchitecture[];
 }
 
 interface VoiceConfig {
@@ -173,6 +144,8 @@ export interface RiskConfig {
 export interface ClassificationConfig {
   /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
   model?: string;
+  /** Override classification reasoning effort. Defaults to the model's lowest known supported effort. */
+  effort?: ReasoningEffort;
   /** Default threshold (0..1) applied when a category or risk does not set its own. */
   threshold?: number;
 }
@@ -226,8 +199,6 @@ interface ConfigSchema {
   tts?: TTSConfig;
   stt?: STTConfig;
 
-  notebook?: NotebookConfig;
-
   voice?: VoiceConfig;
   vision?: VisionConfig;
 
@@ -277,8 +248,6 @@ interface Config {
 
   tts: TTSConfig | null;
   stt: STTConfig | null;
-
-  notebook: NotebookConfig | null;
 
   voice: VoiceConfig | null;
   vision: VisionConfig | null;
@@ -339,8 +308,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,
-
-      notebook: cfg.notebook ?? null,
 
       voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
       vision: cfg.vision

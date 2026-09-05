@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
-import { parseToolArguments } from "@/shared/lib/toolArguments";
+import { parseToolArguments, toolArgumentHints } from "@/shared/lib/toolArguments";
+import { compileToolRegistry, type ToolRegistry } from "@/shared/lib/toolRegistry";
+import { captureRequestContext } from "@/shared/lib/requestContext";
 import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type {
   AudioContent,
@@ -16,6 +18,15 @@ import { getTextFromContent } from "@/shared/types/chat";
 
 export type ToolContextFactory = (toolCall: { id: string; name: string }) => ToolContext;
 
+/** Compare the actual static contract, not just tool names or a lossy hash. */
+export function voiceSessionSignature(instructions: string, tools: Tool[], model?: string): string {
+  return JSON.stringify([
+    model,
+    instructions,
+    tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+  ]);
+}
+
 interface DeferredToolCall {
   callId: string;
   toolName: string;
@@ -23,6 +34,7 @@ interface DeferredToolCall {
 }
 
 interface PendingResponse {
+  runId: string;
   callIds: Set<string>;
   done: boolean;
   hadToolCalls: boolean;
@@ -40,8 +52,10 @@ export function useVoiceWebSockets(
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
   ) => void,
   onClosed?: (reason?: { fatal: boolean; message: string }) => void,
+  getRuntimeContext?: () => string,
 ) {
   const wsRef = useRef<WebSocket | null>(null);
+  const sessionControllerRef = useRef<AbortController | null>(null);
   const wavPlayerRef = useRef<AudioStreamPlayer | null>(null);
   const wavRecorderRef = useRef<AudioRecorder | null>(null);
   const recordCallbackRef = useRef<((data: { mono: ArrayBuffer | null }) => void) | null>(null);
@@ -61,7 +75,33 @@ export function useVoiceWebSockets(
   const argAccumRef = useRef<Map<string, string>>(new Map());
   const pendingPostToolFireRef = useRef<boolean>(false);
   const toolsRef = useRef<Tool[] | undefined>(undefined);
+  const toolRegistryRef = useRef<ToolRegistry | undefined>(undefined);
   const toolContextFactoryRef = useRef<ToolContextFactory | undefined>(undefined);
+  const runtimeContextRef = useRef(getRuntimeContext);
+  runtimeContextRef.current = getRuntimeContext;
+  const contextItemIdRef = useRef<string | null>(null);
+  const voiceRunIdRef = useRef(crypto.randomUUID());
+
+  // A replaceable late conversation item, never part of session instructions or saved chat.
+  const refreshRequestContext = useCallback((ws: WebSocket) => {
+    if (contextItemIdRef.current) {
+      ws.send(JSON.stringify({ type: "conversation.item.delete", item_id: contextItemIdRef.current }));
+    }
+    const id = `ctx_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+    contextItemIdRef.current = id;
+    voiceRunIdRef.current = crypto.randomUUID();
+    ws.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          id,
+          type: "message",
+          role: "system",
+          content: [{ type: "input_text", text: captureRequestContext(runtimeContextRef.current?.()) }],
+        },
+      }),
+    );
+  }, []);
 
   const onUserRef = useRef(onUser);
   const onAssistantRef = useRef(onAssistant);
@@ -139,8 +179,8 @@ export function useVoiceWebSockets(
   );
 
   const start = async (
-    realtimeModel: string = "gpt-realtime-1.5",
-    transcribeModel: string = "gpt-4o-mini-transcribe",
+    realtimeModel: string = "gpt-realtime-2.1",
+    transcribeModel: string = "gpt-live-transcribe",
     instructions?: string,
     messages?: Message[],
     tools?: Tool[],
@@ -152,18 +192,27 @@ export function useVoiceWebSockets(
   ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
+    const sessionController = new AbortController();
+    sessionControllerRef.current = sessionController;
     lastErrorRef.current = null;
 
     toolsRef.current = tools;
     toolContextFactoryRef.current = toolContextFactory;
+    let pendingPlayer: AudioStreamPlayer | undefined;
+    let pendingRecorder: AudioRecorder | undefined;
 
     try {
+      toolRegistryRef.current = compileToolRegistry(tools ?? []);
       const player = new AudioStreamPlayer({ sampleRate: 24000, sinkId: outputDeviceId });
+      pendingPlayer = player;
       await player.connect();
+      sessionController.signal.throwIfAborted();
       wavPlayerRef.current = player;
 
       const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId });
+      pendingRecorder = recorder;
       await recorder.begin();
+      sessionController.signal.throwIfAborted();
       wavRecorderRef.current = recorder;
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -199,13 +248,14 @@ export function useVoiceWebSockets(
       };
 
       const startRecording = () => {
+        refreshRequestContext(ws);
         const cb = buildRecordCallback();
         recordCallbackRef.current = cb;
         recorder
           .record(cb)
           .then(() => {
             // Report ready only once the mic is actually capturing.
-            onReady?.();
+            if (!sessionController.signal.aborted) onReady?.();
           })
           .catch((error) => {
             console.error("Failed to start recording:", error);
@@ -219,6 +269,7 @@ export function useVoiceWebSockets(
       let sessionReadyTimeout: number | undefined;
 
       ws.addEventListener("open", () => {
+        if (sessionController.signal.aborted) return;
         console.log("WebSocket connected");
 
         // Fallback counts from connection open, not from connection attempt —
@@ -264,6 +315,7 @@ export function useVoiceWebSockets(
       });
 
       ws.addEventListener("message", async (e) => {
+        if (sessionController.signal.aborted) return;
         const msg = JSON.parse(e.data) as Record<string, unknown>;
         console.log("Received message:", msg.type);
         const eventWs = e.target as WebSocket;
@@ -281,6 +333,7 @@ export function useVoiceWebSockets(
             break;
 
           case "input_audio_buffer.speech_started": {
+            refreshRequestContext(eventWs);
             console.log("User started speaking, audio playback will be interrupted");
             const player = wavPlayerRef.current;
             if (player) {
@@ -311,6 +364,7 @@ export function useVoiceWebSockets(
             const createdResponseId = (msg.response as { id?: string })?.id;
             if (createdResponseId) {
               pendingResponsesRef.current.set(createdResponseId, {
+                runId: voiceRunIdRef.current,
                 callIds: new Set(),
                 done: false,
                 hadToolCalls: false,
@@ -425,7 +479,8 @@ export function useVoiceWebSockets(
                   if (deferredCalls.length > 0) {
                     for (const deferred of deferredCalls) {
                       void (async () => {
-                        const tool = toolsRef.current?.find((t) => t.name === deferred.toolName);
+                        const registry = toolRegistryRef.current;
+                        const tool = registry?.get(deferred.toolName);
                         const { callId, toolName, argsStr } = deferred;
 
                         onToolCallRef.current?.(toolName, callId);
@@ -434,7 +489,7 @@ export function useVoiceWebSockets(
 
                         let args: Record<string, unknown> | undefined;
                         try {
-                          args = parseToolArguments(argsStr);
+                          args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
                         } catch (parseError) {
                           console.error("Malformed tool arguments:", argsStr, parseError);
                         }
@@ -450,8 +505,14 @@ export function useVoiceWebSockets(
                           onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
                         } else {
                           try {
-                            const ctx = toolContextFactoryRef.current?.({ id: callId, name: toolName });
-                            const result = await tool.function(args, ctx);
+                            const ctx = {
+                              ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
+                              runId: entry.runId,
+                              signal: sessionController.signal,
+                            };
+                            ctx.signal.throwIfAborted();
+                            const result = await tool.function(registry!.parse(tool, args), ctx);
+                            if (ctx.signal.aborted) return;
                             const rawResult =
                               typeof result === "string"
                                 ? [{ type: "text" as const, text: result }]
@@ -460,6 +521,7 @@ export function useVoiceWebSockets(
                             output = serializeToolResultForApi(rawResult);
                             onToolResultRef.current?.(toolName, callId, rawResult);
                           } catch (error) {
+                            if (sessionController.signal.aborted) return;
                             console.error("Error executing tool:", error);
                             const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
                             output = JSON.stringify({ error: errorMessage });
@@ -532,6 +594,16 @@ export function useVoiceWebSockets(
 
       console.log("Voice session initialized, waiting for session ready...");
     } catch (error) {
+      if (sessionController.signal.aborted) {
+        // A stopped startup may finish its asynchronous device setup later.
+        // Clean up its own devices without stopping a newer session.
+        try {
+          await pendingRecorder?.end();
+        } finally {
+          pendingPlayer?.disconnect();
+        }
+        return;
+      }
       console.error("Failed to start voice session:", error);
       await stop();
       throw error;
@@ -540,7 +612,9 @@ export function useVoiceWebSockets(
 
   const updateSession = useCallback(
     (tools?: Tool[], instructions?: string, toolContextFactory?: ToolContextFactory) => {
+      const registry = compileToolRegistry(tools ?? []);
       toolsRef.current = tools;
+      toolRegistryRef.current = registry;
       if (toolContextFactory !== undefined) {
         toolContextFactoryRef.current = toolContextFactory;
       }
@@ -567,12 +641,15 @@ export function useVoiceWebSockets(
   // stop only reads/writes refs → stable with useCallback([])
   const stop = useCallback(async () => {
     isActiveRef.current = false;
+    sessionControllerRef.current?.abort();
+    sessionControllerRef.current = null;
     audioPausedRef.current = false;
 
     pendingResponsesRef.current.clear();
     audioItemByResponseRef.current.clear();
     argAccumRef.current.clear();
     pendingPostToolFireRef.current = false;
+    contextItemIdRef.current = null;
 
     // Stop recorder
     if (wavRecorderRef.current) {
@@ -631,6 +708,7 @@ export function useVoiceWebSockets(
       // calls, so a queued post-tool fire would just double-respond.
       pendingPostToolFireRef.current = false;
 
+      refreshRequestContext(ws);
       ws.send(
         JSON.stringify({
           type: "conversation.item.create",
@@ -644,7 +722,7 @@ export function useVoiceWebSockets(
 
       ws.send(JSON.stringify({ type: "response.create" }));
     },
-    [hasOtherActiveResponse],
+    [hasOtherActiveResponse, refreshRequestContext],
   );
 
   // Clean up all resources on unmount — stop is now stable so we can use it directly

@@ -26,8 +26,7 @@ type Config struct {
 	Artifacts  *Artifacts  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Repository *Repository `json:"repository,omitempty" yaml:"repository,omitempty"`
 
-	Memory   *Memory   `json:"memory,omitempty" yaml:"memory,omitempty"`
-	Notebook *Notebook `json:"notebook,omitempty" yaml:"notebook,omitempty"`
+	Memory *Memory `json:"memory,omitempty" yaml:"memory,omitempty"`
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
@@ -56,13 +55,14 @@ type ModelTools struct {
 type Model struct {
 	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
 	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Caption          string      `json:"caption,omitempty" yaml:"caption,omitempty"`
 	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
 	Instructions     string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
 	SupportedEfforts []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
 	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
 	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
-	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
+	CompactThreshold *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
 	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
@@ -115,17 +115,6 @@ type Repository struct {
 
 type Memory struct{}
 
-type Notebook struct {
-	Model         string                 `json:"model,omitempty" yaml:"model,omitempty"`
-	Renderer      string                 `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-	Slides        []NotebookSlide        `json:"slides,omitempty" yaml:"slides,omitempty"`
-	Podcasts      []NotebookPodcast      `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
-	Reports       []NotebookReport       `json:"reports,omitempty" yaml:"reports,omitempty"`
-	Infographics  []NotebookInfographic  `json:"infographics,omitempty" yaml:"infographics,omitempty"`
-	Processes     []NotebookProcess      `json:"processes,omitempty" yaml:"processes,omitempty"`
-	Architectures []NotebookArchitecture `json:"architectures,omitempty" yaml:"architectures,omitempty"`
-}
-
 type Chat struct {
 	Instructions  string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
@@ -172,37 +161,6 @@ type Telemetry struct{}
 
 type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
-}
-
-type NotebookSlide struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-}
-
-type NotebookPodcast struct {
-	Name   string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-	Voices []string `json:"voices,omitempty" yaml:"voices,omitempty"`
-}
-
-type NotebookReport struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-}
-
-type NotebookInfographic struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-}
-
-type NotebookProcess struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-}
-
-type NotebookArchitecture struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
 type Bridge struct {
