@@ -9,7 +9,7 @@
  *   read    { path }                  → the entry (frontmatter + body)
  *   search  { pattern }               → matching lines with their entry path
  *   write   { path, content }         → create or fully rewrite an entry
- *   patch   { path, find, replace }   → replace one unique passage in place
+ *   write   { path, find, content }   → replace one unique passage in place
  *   remove  { path }                  → delete an entry
  *
  * Ops in one call run in order and each reports its own result, so the model
@@ -45,7 +45,7 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_DESCRIPTION_LENGTH = 200;
 const DEFAULT_TYPE = "Reference";
 
-export const MEMORY_OPS = ["read", "search", "write", "patch", "remove"] as const;
+export const MEMORY_OPS = ["read", "search", "write", "remove"] as const;
 export type MemoryOpName = (typeof MEMORY_OPS)[number];
 
 export interface MemoryOp {
@@ -54,14 +54,12 @@ export interface MemoryOp {
   content?: string;
   pattern?: string;
   find?: string;
-  replace?: string;
 }
 
 export type MemoryOpResult =
   | { op: "read"; path: string; content: string }
   | { op: "search"; pattern: string; matches: { path: string; line: number; text: string }[]; total: number }
   | { op: "write"; path: string; action: "created" | "updated"; note?: string }
-  | { op: "patch"; path: string; action: "updated"; note?: string }
   | { op: "remove"; path: string; action: "removed" }
   | { op: MemoryOpName; error: string; path?: string };
 
@@ -167,7 +165,6 @@ function parseOps(args: Record<string, unknown>): MemoryOp[] | string {
       content: str("content"),
       pattern: str("pattern"),
       find: str("find"),
-      replace: str("replace"),
     });
   }
   return ops;
@@ -190,7 +187,7 @@ export function memoryCallLabel(
     if (kind === "read") return `Recalled ${subject}`;
     if (kind === "search") return "Searched memory";
     if (kind === "remove") return `Forgot ${subject}`;
-    if (kind === "write" || kind === "patch") return state.running ? "Remembering…" : `Remembered ${subject}`;
+    if (kind === "write") return state.running ? "Remembering…" : `Remembered ${subject}`;
   }
   return state.running ? "Updating memory…" : "Updated memory";
 }
@@ -243,49 +240,41 @@ export function createMemoryTools({ store, onChange }: MemoryToolsOptions): Tool
         const relative = normalized && normalized !== "/" ? normalized.slice(1) : (op.path ?? "");
         const pathError = getMemoryPathError(relative);
         if (pathError) return { op: "write", error: pathError, path: op.path };
-        const content = op.content ?? "";
-        if (!content.trim()) {
-          return { op: "write", path: `/${relative}`, error: "write requires non-empty content; use remove to delete" };
-        }
-        const sizeError = checkSize(content);
-        if (sizeError) return { op: "write", path: `/${relative}`, error: sizeError };
+        const virtual = `/${relative}`;
+        const existing = await store.read(relative);
 
-        const existed = !!(await store.read(relative));
-        const { note } = await saveEntry(relative, content);
-        return { op: "write", path: `/${relative}`, action: existed ? "updated" : "created", note };
-      }
-
-      case "patch": {
-        const path = toMemoryPath(op.path);
-        if (!path) return { op: "patch", error: `Invalid memory path: ${String(op.path)}` };
-        const doc = await store.read(path);
-        if (!doc) return { op: "patch", path: `/${path}`, error: `No memory entry at /${path}` };
-        const find = op.find ?? "";
-        if (!find) return { op: "patch", path: `/${path}`, error: "patch requires find (the exact text to replace)" };
-
-        const current = serializeMemoryDoc(doc);
-        const first = current.indexOf(find);
-        if (first < 0) {
-          return {
-            op: "patch",
-            path: `/${path}`,
-            error: `find text not found in /${path}; read the entry and retry with exact text`,
-          };
+        let next: string;
+        if (op.find) {
+          // Targeted edit: replace one unique passage of the existing entry.
+          if (!existing) return { op: "write", path: virtual, error: `No memory entry at ${virtual} to edit` };
+          const current = serializeMemoryDoc(existing);
+          const first = current.indexOf(op.find);
+          if (first < 0) {
+            return {
+              op: "write",
+              path: virtual,
+              error: `find text not found in ${virtual}; read the entry and retry with exact text`,
+            };
+          }
+          if (current.indexOf(op.find, first + op.find.length) >= 0) {
+            return {
+              op: "write",
+              path: virtual,
+              error: `find text occurs more than once in ${virtual}; include more surrounding text`,
+            };
+          }
+          next = current.slice(0, first) + (op.content ?? "") + current.slice(first + op.find.length);
+          if (!next.trim()) return { op: "write", path: virtual, error: "edit would empty the entry; use remove" };
+        } else {
+          next = op.content ?? "";
+          if (!next.trim())
+            return { op: "write", path: virtual, error: "write requires non-empty content; use remove to delete" };
         }
-        if (current.indexOf(find, first + find.length) >= 0) {
-          return {
-            op: "patch",
-            path: `/${path}`,
-            error: `find text occurs more than once in /${path}; include more surrounding text`,
-          };
-        }
-        const next = current.slice(0, first) + (op.replace ?? "") + current.slice(first + find.length);
-        if (!next.trim()) return { op: "patch", path: `/${path}`, error: "patch would empty the entry; use remove" };
+
         const sizeError = checkSize(next);
-        if (sizeError) return { op: "patch", path: `/${path}`, error: sizeError };
-
-        const { note } = await saveEntry(path, next);
-        return { op: "patch", path: `/${path}`, action: "updated", note };
+        if (sizeError) return { op: "write", path: virtual, error: sizeError };
+        const { note } = await saveEntry(relative, next);
+        return { op: "write", path: virtual, action: existing ? "updated" : "created", note };
       }
 
       case "remove": {
@@ -316,7 +305,7 @@ export function createMemoryTools({ store, onChange }: MemoryToolsOptions): Tool
     },
     description: [
       "Read, search, and update your persistent memory. Pass an ordered list of ops; each reports its own result.",
-      "read {path}: the entry's frontmatter + body. search {pattern}: case-insensitive regex over all entries, returns matching lines with their path. write {path, content}: create or fully rewrite one entry. patch {path, find, replace}: replace one unique passage in place. remove {path}: delete an entry.",
+      "read {path}: the entry's frontmatter + body. search {pattern}: case-insensitive regex over all entries, returns matching lines with their path. write {path, content}: create or fully rewrite one entry; add find to replace just that one unique passage with content instead. remove {path}: delete an entry.",
       `Paths are lowercase-hyphenated like /project-context.md. Content is markdown with YAML frontmatter (type, title, description, optional tags). Max ${MEMORY_ENTRY_MAX_BYTES / 1024}KB per entry; credentials are redacted on save.`,
     ].join("\n"),
     parameters: {
@@ -333,12 +322,19 @@ export function createMemoryTools({ store, onChange }: MemoryToolsOptions): Tool
               op: { type: "string", enum: [...MEMORY_OPS], description: "Operation kind." },
               path: {
                 type: "string",
-                description: "Entry path, e.g. /project-context.md (read, write, patch, remove).",
+                description: "Entry path, e.g. /project-context.md (read, write, remove).",
               },
-              content: { type: "string", description: "Full entry content: YAML frontmatter + markdown (write)." },
-              pattern: { type: "string", description: "Regex to look for across entries (search)." },
-              find: { type: "string", description: "Exact text to replace; must occur once (patch)." },
-              replace: { type: "string", description: "Replacement text; empty deletes the passage (patch)." },
+              content: {
+                type: "string",
+                description:
+                  "write: the full entry (YAML frontmatter + markdown), or, with find, the replacement text.",
+              },
+              pattern: { type: "string", description: "search: regex to look for across entries." },
+              find: {
+                type: "string",
+                description:
+                  "write: exact existing text to replace with content; must occur exactly once. Omit to rewrite the whole entry.",
+              },
             },
             required: ["op"],
             additionalProperties: false,

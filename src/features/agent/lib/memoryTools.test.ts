@@ -66,7 +66,7 @@ describe("memory tool surface", () => {
     expect(memoryCallLabel(read, {})).toBe("Recalled User Prefs");
     expect(memoryCallLabel({ ops: [{ op: "search", pattern: "x" }] }, {})).toBe("Searched memory");
     expect(memoryCallLabel({ ops: [{ op: "write", path: "/a.md" }] }, { running: true })).toBe("Remembering…");
-    expect(memoryCallLabel({ ops: [{ op: "patch", path: "/a.md" }] }, {})).toBe("Remembered A");
+    expect(memoryCallLabel({ ops: [{ op: "write", path: "/a.md", find: "x" }] }, {})).toBe("Remembered A");
     expect(
       memoryCallLabel(
         {
@@ -118,7 +118,7 @@ describe("memory tool surface", () => {
     const { call } = setup();
     expect(await call([])).toEqual({ error: "ops must be a non-empty array of operations" });
     expect(await call("nope")).toEqual({ error: "ops must be a non-empty array of operations" });
-    expect(await call([{ op: "list" }])).toMatchObject({ error: expect.stringMatching(/unknown op "list"/) });
+    expect(await call([{ op: "patch" }])).toMatchObject({ error: expect.stringMatching(/unknown op "patch"/) });
     expect(
       await call(Array.from({ length: MEMORY_MAX_OPS + 1 }, () => ({ op: "search", pattern: "x" }))),
     ).toMatchObject({
@@ -231,7 +231,7 @@ describe("write op", () => {
   });
 });
 
-describe("read, search, patch, remove ops", () => {
+describe("read, search, edit, remove ops", () => {
   it("reads the serialized entry", async () => {
     const { one } = setup(SEED);
     const result = await one({ op: "read", path: "/wingman.md" });
@@ -269,12 +269,12 @@ describe("read, search, patch, remove ops", () => {
     expect(result.total).toBe(40);
   });
 
-  it("patches one unique passage in place and re-normalizes the entry", async () => {
+  it("write with find replaces one unique passage in place and re-normalizes the entry", async () => {
     const { one, store, onChange } = setup(SEED);
     expect(
-      await one({ op: "patch", path: "/wingman.md", find: "Uses OPFS.", replace: "Uses OPFS for storage." }),
+      await one({ op: "write", path: "/wingman.md", find: "Uses OPFS.", content: "Uses OPFS for storage." }),
     ).toEqual({
-      op: "patch",
+      op: "write",
       path: "/wingman.md",
       action: "updated",
     });
@@ -285,25 +285,22 @@ describe("read, search, patch, remove ops", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
 
     expect(
-      await one({ op: "patch", path: "/wingman.md", find: "title: Wingman", replace: "title: Wingman Chat" }),
+      await one({ op: "write", path: "/wingman.md", find: "title: Wingman", content: "title: Wingman Chat" }),
     ).toMatchObject({
       action: "updated",
     });
     expect((await store.read("wingman.md"))?.frontmatter.title).toBe("Wingman Chat");
   });
 
-  it("refuses ambiguous, missing, or emptying patches", async () => {
+  it("refuses ambiguous, missing, or emptying edits", async () => {
     const { one, store } = setup(SEED);
-    expect(await one({ op: "patch", path: "/wingman.md", find: "nowhere", replace: "x" })).toMatchObject({
+    expect(await one({ op: "write", path: "/wingman.md", find: "nowhere", content: "x" })).toMatchObject({
       error: expect.stringMatching(/not found/),
     });
-    expect(await one({ op: "patch", path: "/wingman.md", find: "s", replace: "x" })).toMatchObject({
+    expect(await one({ op: "write", path: "/wingman.md", find: "s", content: "x" })).toMatchObject({
       error: expect.stringMatching(/more than once/),
     });
-    expect(await one({ op: "patch", path: "/wingman.md", find: "", replace: "x" })).toMatchObject({
-      error: expect.stringMatching(/requires find/),
-    });
-    expect(await one({ op: "patch", path: "/missing.md", find: "a", replace: "b" })).toMatchObject({
+    expect(await one({ op: "write", path: "/missing.md", find: "a", content: "b" })).toMatchObject({
       error: expect.stringMatching(/No memory entry/),
     });
     expect((await store.read("wingman.md"))?.body).toBe("Uses OPFS.\nTests via vitest.");

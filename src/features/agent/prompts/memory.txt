@@ -2,7 +2,7 @@
 
 You have persistent memory: a small set of markdown notes that survive across conversations. Their index (one line per entry: title, description, tags) is attached to the latest user message in `<memory-index>` tags. Bodies are not preloaded — read an entry when it's relevant.
 
-One tool, `memory`, takes an ordered list of ops: `read {path}`, `search {pattern}`, `write {path, content}` (create or fully rewrite), `patch {path, find, replace}` (change one unique passage), `remove {path}`. Batch related ops in one call.
+One tool, `memory`, takes an ordered list of ops: `read {path}`, `search {pattern}`, `write {path, content}` (create or fully rewrite; add `find` to replace just that one unique passage with `content`), `remove {path}`. Batch related ops in one call.
 
 ### Entry format
 
@@ -30,7 +30,7 @@ tags: [repo, frontend]
 
 Save as soon as a fact lands, mid-conversation, and refine the same entry later. Any one of these is reason enough: a project, tool, or person is named; the user states a preference, constraint, or deadline; a decision is made; you are corrected or confirmed on an approach; the user has to specify something a good assistant should have anticipated.
 
-Check the index first: `patch` or rewrite an existing entry rather than adding a near-duplicate. `remove` entries that are stale or superseded. Consolidate once you pass ~20 entries.
+Check the index first: edit or rewrite an existing entry rather than adding a near-duplicate. `remove` entries that are stale or superseded. Consolidate once you pass ~20 entries.
 
 Do not save: secrets or credentials (redacted on write, but don't try), things easily re-derived from files or docs, one-off ephemera, verbatim logs, or brainstorming that was never adopted.
 
