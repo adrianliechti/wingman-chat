@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Memory browser E2E</title>
+  </head>
+  <body>
+    <script type="module">
+      import * as opfs from "/src/shared/lib/opfs.ts";
+      import { createMemoryTools } from "/src/features/agent/lib/memoryTools.ts";
+      import { buildMemoryRuntimeContext } from "/src/features/agent/lib/memoryContext.ts";
+
+      // Real OPFS, real store, real tool: the same code path the agent provider wires up.
+      window.memoryE2E = {
+        async runFlow(agentId) {
+          const legacyPath = `agents/${agentId}/MEMORY.md`;
+          await opfs.writeText(
+            legacyPath,
+            "## User Preferences\n- Likes tables\n\n## Project Context\n- Vite app with OPFS\n",
+          );
+
+          const events = [];
+          window.addEventListener("memory-updated", (e) => events.push(e.detail));
+
+          await opfs.ensureMemoryMigrated(agentId);
+          const migrated = await opfs.listMemoryEntries(agentId);
+          const legacyGone = !(await opfs.fileExists(legacyPath));
+
+          const [tool] = createMemoryTools({
+            store: opfs.getMemoryStore(agentId),
+            onChange: () => window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } })),
+          });
+          const invoke = async (ops) => JSON.parse((await tool.function({ ops }, { runId: "browser-run" }))[0].text);
+
+          const batch = await invoke([
+            { op: "read", path: "/user-preferences.md" },
+            {
+              op: "write",
+              path: "/deploy.md",
+              content:
+                "---\ntype: Reference\ntitle: Deploy\ndescription: How we ship\n---\nRelease on Fridays. token: ghp_" +
+                "a1B2c3D4e5".repeat(4),
+            },
+            { op: "write", path: "/user-preferences.md", find: "Likes tables", content: "Likes tables and terse replies" },
+            { op: "search", pattern: "fridays|terse" },
+            { op: "remove", path: "/project-context.md" },
+            { op: "read", path: "/project-context.md" },
+          ]);
+
+          const entries = await opfs.listMemoryEntries(agentId);
+          const runtimeContext = buildMemoryRuntimeContext(await opfs.readMemoryIndex(agentId));
+          const onDisk = {
+            deploy: await opfs.readText(`agents/${agentId}/memory/deploy.md`),
+            index: await opfs.readText(`agents/${agentId}/memory/index.md`),
+            log: await opfs.readText(`agents/${agentId}/memory/log.md`),
+            files: await opfs.listFiles(`agents/${agentId}/memory`),
+          };
+
+          return { migrated, legacyGone, batch, entries, runtimeContext, onDisk, events };
+        },
+      };
+    </script>
+  </body>
+</html>
