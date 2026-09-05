@@ -26,6 +26,26 @@ export interface MemoryDoc {
 const FRONTMATTER_REGEX = /^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/;
 const KNOWN_KEYS = new Set(["type", "title", "description", "resource", "tags", "timestamp"]);
 
+/** Files in the bundle that are generated, never concept docs. */
+export const RESERVED_MEMORY_FILES = new Set(["index.md", "log.md"]);
+const MAX_MEMORY_PATH_LENGTH = 120;
+
+function unquote(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      // fall through to a plain strip
+    }
+    return value.slice(1, -1);
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/''/g, "'");
+  }
+  return value;
+}
+
 function parseRawFrontmatter(content: string): { fields: Record<string, string>; body: string } | null {
   const match = content.match(FRONTMATTER_REGEX);
   if (!match) return null;
@@ -35,10 +55,7 @@ function parseRawFrontmatter(content: string): { fields: Record<string, string>;
     const colonIndex = line.indexOf(":");
     if (colonIndex <= 0) continue;
     const key = line.slice(0, colonIndex).trim();
-    let value = line.slice(colonIndex + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
+    const value = unquote(line.slice(colonIndex + 1).trim());
     fields[key] = value;
   }
 
@@ -97,17 +114,40 @@ export function parseMemoryDoc(content: string, fallbackTitle?: string): MemoryD
   };
 }
 
+/**
+ * Render one scalar frontmatter value on a single line. Newlines are collapsed
+ * (a multi-line value would terminate the frontmatter block early), and values
+ * that YAML would otherwise misread — leading indicators, `: ` / ` #` sequences,
+ * surrounding whitespace, empty strings — are JSON-quoted, which `parseMemoryDoc`
+ * unquotes symmetrically.
+ */
+function formatYamlValue(value: string): string {
+  const flat = value.replace(/\s*\r?\n\s*/g, " ").trim();
+  const needsQuotes = flat === "" || /^[\s"'[\]{}#&*!|>%@`,?:-]/.test(flat) || /:\s|\s#/.test(flat);
+  return needsQuotes ? JSON.stringify(flat) : flat;
+}
+
+/** Tags live inside `[a, b]`, so strip the characters that would break that list. */
+function formatTag(tag: string): string {
+  return tag
+    .replace(/[[\],"'\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Serialize a memory concept doc back to frontmatter + markdown body. */
 export function serializeMemoryDoc(doc: MemoryDoc): string {
   const fm = doc.frontmatter;
-  const lines = ["---", `type: ${fm.type}`, `title: ${fm.title}`];
-  if (fm.description) lines.push(`description: ${fm.description}`);
-  if (fm.resource) lines.push(`resource: ${fm.resource}`);
-  if (fm.tags?.length) lines.push(`tags: [${fm.tags.join(", ")}]`);
+  const lines = ["---", `type: ${formatYamlValue(fm.type)}`, `title: ${formatYamlValue(fm.title)}`];
+  if (fm.description) lines.push(`description: ${formatYamlValue(fm.description)}`);
+  if (fm.resource) lines.push(`resource: ${formatYamlValue(fm.resource)}`);
+  const tags = fm.tags?.map(formatTag).filter(Boolean);
+  if (tags?.length) lines.push(`tags: [${tags.join(", ")}]`);
   lines.push(`timestamp: ${fm.timestamp}`);
   if (fm.extra) {
     for (const [key, value] of Object.entries(fm.extra)) {
-      lines.push(`${key}: ${value}`);
+      if (KNOWN_KEYS.has(key) || !/^[A-Za-z0-9_-]+$/.test(key)) continue;
+      lines.push(`${key}: ${formatYamlValue(value)}`);
     }
   }
   lines.push("---", "", doc.body);
@@ -127,4 +167,33 @@ export function slugifyMemoryPath(title: string): string {
       .replace(/^-+|-+$/g, "") || SLUG_FALLBACK;
 
   return slug === "index" || slug === "log" ? `${slug}-notes` : slug;
+}
+
+/**
+ * Is `path` a plain file name that stays inside the bundle directory? Rejects
+ * anything with separators, traversal, hidden-file prefixes, or a reserved
+ * (generated) file name. Lenient about casing so files imported from elsewhere
+ * remain readable; use {@link getMemoryPathError} for the strict rules applied
+ * to model-authored paths.
+ */
+export function isSafeMemoryPath(path: unknown): path is string {
+  if (typeof path !== "string" || !path || path.length > MAX_MEMORY_PATH_LENGTH) return false;
+  if (RESERVED_MEMORY_FILES.has(path)) return false;
+  if (!path.endsWith(".md")) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(path);
+}
+
+/**
+ * Strict validation for paths chosen by the model: lowercase, hyphen-separated
+ * slug ending in `.md`, not a reserved file. Returns a model-facing error
+ * message, or null when the path is acceptable.
+ */
+export function getMemoryPathError(path: unknown): string | null {
+  if (typeof path !== "string" || !path) return "path is required";
+  if (path.length > MAX_MEMORY_PATH_LENGTH) return `path must be at most ${MAX_MEMORY_PATH_LENGTH} characters`;
+  if (RESERVED_MEMORY_FILES.has(path)) return `"${path}" is a generated file and cannot be used as an entry path`;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*\.md$/.test(path)) {
+    return 'path must be a lowercase, hyphenated "*.md" filename, e.g. "project-context.md"';
+  }
+  return null;
 }
