@@ -114,6 +114,29 @@ describe("MemoryStore CRUD", () => {
     expect(parseLogGroups(files.get(`${DIR}/log.md`)?.content ?? "")[0].lines).toHaveLength(10);
   });
 
+  it("serves reads from the cache and refreshes it on ensureMigrated", async () => {
+    const { store, files } = makeStore();
+    await store.write("a.md", { type: "Reference", title: "A" }, "alpha");
+    expect((await store.list()).map((e) => e.path)).toEqual(["a.md"]);
+
+    // Something else writes to storage directly (e.g. a zip import): the cache doesn't see it…
+    files.set(`${DIR}/b.md`, {
+      content: "---\ntype: Reference\ntitle: B\ntimestamp: 2027-01-01T00:00:00.000Z\n---\nbeta",
+      lastModified: 1,
+    });
+    expect((await store.list()).map((e) => e.path)).toEqual(["a.md"]);
+
+    // …until the bundle is (re)opened.
+    await store.ensureMigrated();
+    expect((await store.list()).map((e) => e.path)).toEqual(["b.md", "a.md"]);
+  });
+
+  it("reports the serialized size of each entry", async () => {
+    const { store, files } = makeStore();
+    const entry = await store.write("a.md", { type: "Reference", title: "A" }, "alpha");
+    expect(entry.size).toBe(new TextEncoder().encode(files.get(`${DIR}/a.md`)?.content ?? "").length);
+  });
+
   it("readAll returns bodies for search", async () => {
     const { store } = makeStore();
     await store.write("a.md", { type: "Reference", title: "A" }, "alpha");

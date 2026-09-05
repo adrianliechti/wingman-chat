@@ -46,7 +46,9 @@ describe("memory runtime context", () => {
     expect(new TextEncoder().encode(truncated).length).toBeLessThan(400 + 120);
     expect(truncated.startsWith("# Memory\n\n* [Entry 0]")).toBe(true);
     const kept = truncated.split("\n").filter((l) => l.startsWith("* [Entry")).length;
-    expect(truncated).toContain(`* … ${50 - kept} more entries not shown — call list_memory or search_memory.`);
+    expect(truncated).toContain(
+      `* … ${50 - kept} more entries not shown — use the memory tool's search op to find one.`,
+    );
     expect(
       truncated.split("\n").every((l) => l.includes("Entry") || l === "# Memory" || l === "" || l.startsWith("* …")),
     ).toBe(true);

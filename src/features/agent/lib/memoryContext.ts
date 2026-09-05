@@ -44,8 +44,8 @@ export function truncateMemoryIndex(indexBody: string, maxBytes: number = MEMORY
 
   const note =
     droppedEntries > 0
-      ? `* … ${droppedEntries} more ${droppedEntries === 1 ? "entry" : "entries"} not shown — call list_memory or search_memory.`
-      : "* … index truncated — call list_memory or search_memory.";
+      ? `* … ${droppedEntries} more ${droppedEntries === 1 ? "entry" : "entries"} not shown — use the memory tool's search op to find one.`
+      : "* … index truncated — use the memory tool's search op to find an entry.";
   return `${kept.join("\n").trimEnd()}\n${note}`;
 }
 

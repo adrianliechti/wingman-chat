@@ -7,6 +7,12 @@
  * grouped by date per OKF §7. Everything here runs against the small
  * {@link MemoryFileSystem} surface so it can be exercised in tests with an
  * in-memory map and in the app with OPFS.
+ *
+ * Parsed entries are cached after the first listing so rebuilding the index
+ * and answering list/search calls doesn't re-read every file from storage.
+ * All writers in the app go through the same store instance (see
+ * getMemoryStore), which keeps the cache coherent; `ensureMigrated()` also
+ * drops it so a freshly opened agent always starts from disk.
  */
 
 import {
@@ -23,6 +29,8 @@ import {
 export interface MemoryEntry extends MemoryFrontmatter {
   /** Filename within the bundle, e.g. "project-context.md". */
   path: string;
+  /** Size of the serialized file in bytes. */
+  size: number;
 }
 
 /** The subset of a file API the store needs. Paths are POSIX-style, relative to the storage root. */
@@ -67,6 +75,13 @@ interface LogGroup {
   lines: string[];
 }
 
+interface CachedEntry {
+  entry: MemoryEntry;
+  doc: MemoryDoc;
+}
+
+const byteLength = (text: string) => new TextEncoder().encode(text).length;
+
 export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOptions): MemoryStore {
   const { dir, legacyPath } = options;
   const now = options.now ?? (() => new Date());
@@ -84,38 +99,46 @@ export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOpti
     if (!isSafeMemoryPath(path)) throw new MemoryPathError(`Invalid memory path: ${String(path)}`);
   };
 
-  async function list(): Promise<MemoryEntry[]> {
-    const files = await fs.listFiles(dir);
-    const entries: MemoryEntry[] = [];
+  let cache: Map<string, CachedEntry> | null = null;
 
-    for (const file of files) {
+  function toCached(path: string, content: string): CachedEntry | null {
+    const doc = parseMemoryDoc(content, deriveTitleFromPath(path));
+    if (!doc) return null;
+    return { doc, entry: { path, size: byteLength(content), ...doc.frontmatter } };
+  }
+
+  async function loadCache(): Promise<Map<string, CachedEntry>> {
+    if (cache) return cache;
+    const loaded = new Map<string, CachedEntry>();
+    for (const file of await fs.listFiles(dir)) {
       if (RESERVED_MEMORY_FILES.has(file) || !file.endsWith(".md")) continue;
       const content = await fs.readText(filePath(file));
       if (!content) continue;
-      const doc = parseMemoryDoc(content, deriveTitleFromPath(file));
-      if (!doc) continue;
-      entries.push({ path: file, ...doc.frontmatter });
+      const cached = toCached(file, content);
+      if (cached) loaded.set(file, cached);
     }
+    cache = loaded;
+    return loaded;
+  }
 
+  function sortEntries(entries: MemoryEntry[]): MemoryEntry[] {
     return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp) || a.path.localeCompare(b.path));
+  }
+
+  async function list(): Promise<MemoryEntry[]> {
+    const entries = [...(await loadCache()).values()].map((c) => c.entry);
+    return sortEntries(entries);
   }
 
   async function read(path: string): Promise<MemoryDoc | undefined> {
     if (!isSafeMemoryPath(path)) return undefined;
-    const content = await fs.readText(filePath(path));
-    if (!content) return undefined;
-    return parseMemoryDoc(content, deriveTitleFromPath(path)) ?? undefined;
+    return (await loadCache()).get(path)?.doc;
   }
 
   async function readAll(): Promise<{ path: string; doc: MemoryDoc }[]> {
-    const files = await fs.listFiles(dir);
-    const docs: { path: string; doc: MemoryDoc }[] = [];
-    for (const file of files) {
-      if (RESERVED_MEMORY_FILES.has(file)) continue;
-      const doc = await read(file);
-      if (doc) docs.push({ path: file, doc });
-    }
-    return docs;
+    return [...(await loadCache()).entries()]
+      .map(([path, { doc }]) => ({ path, doc }))
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async function readIndex(): Promise<string> {
@@ -158,7 +181,8 @@ export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOpti
   ): Promise<MemoryEntry> {
     assertPath(path);
     return serialized(async () => {
-      const existing = await read(path);
+      const entries = await loadCache();
+      const existing = entries.get(path)?.doc;
       const timestamp = now().toISOString();
 
       // Carry forward `resource` and unknown keys so partial updates don't clobber
@@ -170,24 +194,28 @@ export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOpti
         timestamp,
       };
 
-      await fs.writeText(filePath(path), serializeMemoryDoc({ frontmatter: merged, body }));
-      const entries = await rebuildIndex();
-      await appendLog(existing ? "Updated" : "Created", `[${merged.title}](${path})`);
+      const content = serializeMemoryDoc({ frontmatter: merged, body });
+      await fs.writeText(filePath(path), content);
+      const cached = toCached(path, content);
+      if (!cached) throw new Error(`Failed to write memory entry at ${path}`);
+      entries.set(path, cached);
 
-      const entry = entries.find((e) => e.path === path);
-      if (!entry) throw new Error(`Failed to write memory entry at ${path}`);
-      return entry;
+      await rebuildIndex();
+      await appendLog(existing ? "Updated" : "Created", `[${cached.entry.title}](${path})`);
+      return cached.entry;
     });
   }
 
   async function remove(path: string): Promise<boolean> {
     assertPath(path);
     return serialized(async () => {
-      const existing = await read(path);
+      const entries = await loadCache();
+      const existing = entries.get(path);
       if (!existing) return false;
       await fs.deleteFile(filePath(path));
+      entries.delete(path);
       await rebuildIndex();
-      await appendLog("Deleted", `${existing.frontmatter.title} (\`${path}\`)`);
+      await appendLog("Deleted", `${existing.entry.title} (\`${path}\`)`);
       return true;
     });
   }
@@ -195,10 +223,12 @@ export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOpti
   /**
    * One-time migration from the old single-file memory (organized by
    * `## Section` headers) into the bundle format. No-op once the bundle
-   * already has an index.md.
+   * already has an index.md. Always drops the cache so callers opening an
+   * agent see what's on disk.
    */
   function ensureMigrated(): Promise<void> {
     return serialized(async () => {
+      cache = null;
       if (await fs.fileExists(filePath("index.md"))) return;
 
       const legacy = legacyPath ? await fs.readText(legacyPath) : undefined;
@@ -230,6 +260,7 @@ export function createMemoryStore(fs: MemoryFileSystem, options: MemoryStoreOpti
       }
 
       await fs.deleteFile(legacyPath);
+      cache = null;
       await rebuildIndex();
       await appendLog(
         "Migration",
