@@ -13,19 +13,24 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
+import type { ToolContext } from "@/shared/types/chat";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
   signal?: AbortSignal;
   /** Override the compute-stall ceiling. */
   timeoutMs?: number;
+  /** Captured run context for model calls made by the interpreter. */
+  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext">;
 }
+
+export type BridgeRequestOptions = Pick<ExecuteCodeOptions, "signal" | "context">;
 
 export interface WorkerHostConfig {
   /** Spawn a fresh worker. Called on first use and after a crash/teardown. */
   createWorker(): Worker;
   /** Answer one worker→main RPC; the resolved value is posted back on the reply port. */
-  handleMessage(message: WorkerToMainMessage, options?: { signal?: AbortSignal }): Promise<unknown>;
+  handleMessage(message: WorkerToMainMessage, options?: BridgeRequestOptions): Promise<unknown>;
   /** Message used when the worker dies on an uncaught error. */
   crashMessage: string;
   /** Pure-compute stall ceiling before the run is treated as wedged. */
@@ -64,7 +69,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   // The in-flight execution's stall watchdog, paused while the worker is blocked
   // on a main-thread RPC (those round trips are bounded separately). Runs are
   // serialized, so a single slot suffices.
-  let activeBridge: { enter: () => void; leave: () => void; signal?: AbortSignal } | null = null;
+  let activeBridge: ({ enter: () => void; leave: () => void } & BridgeRequestOptions) | null = null;
 
   async function replyOnPort(
     port: MessagePort,
@@ -102,7 +107,10 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
         const bridge = activeBridge;
-        void replyOnPort(message.port, bridge, () => config.handleMessage(message, { signal: bridge?.signal }));
+        if (!bridge || worker !== created) return;
+        void replyOnPort(message.port, bridge, () =>
+          config.handleMessage(message, { signal: bridge.signal, context: bridge.context }),
+        );
       });
       created.addEventListener("error", (event) => {
         // Drop the dead worker so the next call spawns a fresh one.
@@ -194,6 +202,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       };
       const bridge = {
         signal,
+        context: options?.context,
         enter: () => {
           inFlight++;
           if (timer) {

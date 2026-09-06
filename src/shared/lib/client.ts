@@ -12,8 +12,6 @@ import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type {
   Content,
-  FileContent,
-  ImageContent,
   Message,
   Model,
   ModelType,
@@ -21,7 +19,6 @@ import type {
   ReasoningContent,
   Tool,
   ToolCallContent,
-  ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
@@ -29,14 +26,14 @@ import { combineAbortSignals } from "./abortSignals";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
-import { dropOrphanFunctionCalls } from "./recovery";
+import { responseContent, validateResponse, toResponseInput } from "./responses";
 import { planStrictToolSchemas } from "./toolSchemas";
 import { compileToolRegistry } from "./toolRegistry";
-import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
+import { simplifyMarkdown } from "./utils";
 
 /**
- * Extra application-level retries for stream failures the SDK's own maxRetries
- * does not cover — a connection dropped mid-response after streaming started.
+ * Streaming uses one retry budget for HTTP failures and interrupted streams.
+ * SDK retries are disabled on this path to avoid multiplying attempts.
  */
 const MAX_STREAM_RETRIES = 2;
 
@@ -150,7 +147,7 @@ export class Client {
       apiKey: apiKey,
       dangerouslyAllowBrowser: true,
       // Configure automatic retries for rate limits and server errors
-      // maxRetries is set to 3 attempts (default is 2)
+      // Three retries after the initial attempt for non-streaming requests.
       maxRetries: 3,
       // Uses SDK default timeout of 10 minutes for complex operations
     });
@@ -213,128 +210,9 @@ export class Client {
       "chat",
       model,
       async () => {
-        const items: OpenAI.Responses.ResponseInputItem[] = [];
-
-        for (const m of input) {
-          switch (m.role) {
-            case Role.User: {
-              const content: OpenAI.Responses.ResponseInputContent[] = [];
-
-              // Process all content parts
-              for (const part of m.content) {
-                if (part.type === "text") {
-                  content.push({ type: "input_text", text: part.text });
-                } else if (part.type === "runtime_feedback") {
-                  content.push({ type: "input_text", text: part.text });
-                } else if (part.type === "artifact_ref") {
-                  content.push({
-                    type: "input_text",
-                    text: `[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`,
-                  });
-                } else if (part.type === "image") {
-                  const imgPart = part as ImageContent;
-                  // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
-                  if (imgPart.data.startsWith("data:application/octet-stream")) continue;
-                  content.push({
-                    type: "input_image",
-                    image_url: imgPart.data,
-                    detail: "auto",
-                  });
-                } else if (part.type === "file") {
-                  const filePart = part as FileContent;
-                  if (filePart.data.startsWith("data:application/octet-stream")) continue;
-                  content.push({
-                    type: "input_file",
-                    file_data: filePart.data,
-                  });
-                } else if (part.type === "tool_result") {
-                  // Tool results in user messages go as function_call_output
-                  // Binary data (images, audio, files) is stripped and replaced with descriptions
-                  // since the model cannot process base64 data in text output
-                  const tr = part as ToolResultContent;
-                  const output = serializeToolResultForApi(tr.result);
-                  items.push({
-                    type: "function_call_output",
-                    call_id: tr.id,
-                    output: output,
-                  });
-                }
-                // Skip reasoning, tool_call in user messages
-              }
-
-              // Only add user message if there's content (not just tool results)
-              if (content.length > 0) {
-                items.push({
-                  type: "message",
-                  role: "user",
-                  content: content,
-                });
-              }
-
-              break;
-            }
-
-            case Role.Assistant: {
-              // Reasoning items are intentionally not replayed back to the API.
-              // encrypted_content is provider+key-specific and breaks on model
-              // swaps and across Azure deployments/subscriptions.
-
-              let bufferedText = "";
-
-              const flushAssistantText = () => {
-                if (!bufferedText) {
-                  return;
-                }
-
-                items.push({
-                  type: "message",
-                  role: "assistant",
-                  content: bufferedText,
-                });
-
-                bufferedText = "";
-              };
-
-              for (const part of m.content) {
-                if (part.type === "text") {
-                  bufferedText += part.text;
-                  continue;
-                }
-
-                if (part.type === "artifact_ref") {
-                  bufferedText += `\n[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`;
-                  continue;
-                }
-
-                if (part.type === "tool_call") {
-                  flushAssistantText();
-                  items.push({
-                    type: "function_call",
-                    call_id: part.id,
-                    name: part.name,
-                    arguments: part.arguments,
-                  });
-                }
-
-                if (part.type === "summary") {
-                  // Replay client-side summary as assistant text. The wrapper
-                  // tells the model the prior context was condensed and to
-                  // continue naturally without referencing the summary itself.
-                  flushAssistantText();
-                  items.push({
-                    type: "message",
-                    role: "assistant",
-                    content: `[Earlier conversation condensed to save context. Continue naturally without referencing this summary.]\n\n${part.text}`,
-                  });
-                }
-              }
-
-              flushAssistantText();
-
-              break;
-            }
-          }
-        }
+        options?.signal?.throwIfAborted();
+        const items = toResponseInput(input);
+        const requestTools = this.toTools(tools);
 
         const contentParts: Content[] = [];
 
@@ -348,7 +226,7 @@ export class Client {
           return part;
         };
 
-        const emit = () => handler?.([...contentParts]);
+        const emit = () => handler?.(contentParts.map((part) => ({ ...part })));
 
         // Track in-flight tool calls by their output index so we can grow their
         // arguments as deltas arrive. (output_index is present on every event;
@@ -369,27 +247,30 @@ export class Client {
           if (hadPartial) emit();
 
           const runner = this.oai.responses
-            .stream({
-              model: model,
-              store: false,
-              truncation: "auto",
-              tools: this.toTools(tools),
-              input: dropOrphanFunctionCalls(items),
-              instructions: instructions,
-              ...(options?.effort
-                ? {
-                    reasoning: {
-                      effort: options.effort as OpenAI.Reasoning["effort"],
-                      summary: options.summary ?? "auto",
-                    },
-                  }
-                : {}),
-              ...(options?.verbosity
-                ? {
-                    text: { verbosity: options.verbosity },
-                  }
-                : {}),
-            })
+            .stream(
+              {
+                model: model,
+                store: false,
+                truncation: "disabled",
+                tools: requestTools,
+                input: items,
+                instructions: instructions,
+                ...(options?.effort
+                  ? {
+                      reasoning: {
+                        effort: options.effort as OpenAI.Reasoning["effort"],
+                        summary: options.summary ?? "auto",
+                      },
+                    }
+                  : {}),
+                ...(options?.verbosity
+                  ? {
+                      text: { verbosity: options.verbosity },
+                    }
+                  : {}),
+              },
+              { signal: options?.signal, maxRetries: 0 },
+            )
             .on("response.reasoning_summary_text.delta", (event) => {
               const r = ensureReasoning(event.item_id);
               r.summary = (r.summary ?? "") + event.delta;
@@ -452,29 +333,23 @@ export class Client {
               }
             });
 
-          // Wire abort. Handle the already-aborted case explicitly —
-          // addEventListener on a signal that has already fired never invokes.
-          const abortRunner = () => runner.abort();
-          if (options?.signal?.aborted) abortRunner();
-          else options?.signal?.addEventListener("abort", abortRunner, { once: true });
-
-          // Attach an error listener so mid-stream errors don't surface as
-          // unhandled EventEmitter errors. The same error rejects
-          // `finalResponse()`, where we actually handle it.
-          runner.on("error", () => {});
-
-          try {
-            return await runner.finalResponse();
-          } finally {
-            options?.signal?.removeEventListener("abort", abortRunner);
-          }
+          // finalResponse observes SDK errors and cancellation. The SDK owns
+          // the signal listener and removes it when the request settles.
+          return runner.finalResponse();
         };
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
 
         for (let attempt = 0; ; attempt++) {
           try {
+            options?.signal?.throwIfAborted();
             const finalResponse = await attemptStream();
+            options?.signal?.throwIfAborted();
+            validateResponse(finalResponse, true);
+            // The terminal response is authoritative, including providers that
+            // omit text deltas or item.done events.
+            assistant.content = responseContent(finalResponse);
+            handler?.(assistant.content.map((part) => ({ ...part })));
             assistant.usage = {
               model: finalResponse.model,
               inputTokens: finalResponse.usage?.input_tokens,
@@ -487,18 +362,12 @@ export class Client {
               response: { id: finalResponse.id, ...assistant.usage },
             };
           } catch (error) {
-            // Abort (our signal or runner.abort()) is terminal: return whatever
-            // streamed so far as a successful, partial result.
-            if (options?.signal?.aborted || isAbortError(error)) {
-              return { result: assistant, response: { id: "", model } };
-            }
-            // A stream that dropped mid-response is retryable — the SDK's own
-            // maxRetries only covers pre-stream failures. Re-send from scratch.
+            options?.signal?.throwIfAborted();
+            if (isAbortError(error)) throw error;
+            // One retry layer covers both HTTP failures and interrupted streams.
+            // Tools run only after a validated terminal response is returned.
             if (attempt < MAX_STREAM_RETRIES && isRecoverableStreamError(error)) {
               await waitBeforeStreamRetry(attempt, error, options?.signal);
-              if (options?.signal?.aborted) {
-                return { result: assistant, response: { id: "", model } };
-              }
               continue;
             }
             throw error;
@@ -591,7 +460,8 @@ export class Client {
       "summarize_history",
       requestOptions,
     );
-    return result?.summary ?? "";
+    if (!result?.summary?.trim()) throw new Error("The summarizer returned no summary.");
+    return result.summary.trim();
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
@@ -939,35 +809,32 @@ export class Client {
       name,
       model,
       async () => {
-        try {
-          const response = await this.oai.responses.parse(
-            {
-              model,
-              store: false,
-              instructions,
-              input,
-              truncation: "auto",
-              text: { format: zodTextFormat(schema, name) },
-              ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
-            },
-            options.signal ? { signal: options.signal } : undefined,
-          );
-          return {
-            result: response.output_parsed ?? null,
-            response: {
-              id: response.id,
-              model: response.model,
-              inputTokens: response.usage?.input_tokens,
-              cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: response.usage?.output_tokens,
-              reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
-            },
-          };
-        } catch (error) {
-          if (isAbortError(error)) throw error;
-          console.error(`Error in ${name}:`, error);
-          return { result: null };
-        }
+        options.signal?.throwIfAborted();
+        const response = await this.oai.responses.parse(
+          {
+            model,
+            store: false,
+            instructions,
+            input,
+            truncation: "disabled",
+            text: { format: zodTextFormat(schema, name) },
+            ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+        options.signal?.throwIfAborted();
+        validateResponse(response);
+        return {
+          result: response.output_parsed ?? null,
+          response: {
+            id: response.id,
+            model: response.model,
+            inputTokens: response.usage?.input_tokens,
+            cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+            outputTokens: response.usage?.output_tokens,
+            reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+          },
+        };
       },
       options.parentContext,
     );

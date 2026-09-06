@@ -1,4 +1,5 @@
-import { type Content, Role, type Message, type TextContent, type ToolResultContent } from "../types/chat";
+import { type Content, type Message, type TextContent, type ToolResultContent } from "../types/chat";
+import { isUserMessage } from "./requestContext";
 
 const DEFAULT_RECENT_TURNS = 2;
 const DEFAULT_MAX_CHARS = 2000;
@@ -21,7 +22,7 @@ function findRecentTurnsBoundary(messages: Message[], recentTurns: number): numb
   let seen = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === Role.User && m.content.some((p) => p.type !== "tool_result")) {
+    if (isUserMessage(m)) {
       seen++;
       if (seen >= recentTurns) return i;
     }
@@ -43,10 +44,11 @@ export function trimBulkyToolHistory(
   messages: Message[],
   opts: { recentTurns?: number; maxChars?: number; previewChars?: number } = {},
 ): Message[] {
-  const recentTurns = Math.max(1, Math.floor(opts.recentTurns ?? DEFAULT_RECENT_TURNS));
+  // A summarizer may trim its entire selected prefix with recentTurns: 0.
+  const recentTurns = Math.max(0, Math.floor(opts.recentTurns ?? DEFAULT_RECENT_TURNS));
   const elision = normalizeElisionOptions(opts);
 
-  const boundary = findRecentTurnsBoundary(messages, recentTurns);
+  const boundary = recentTurns === 0 ? messages.length : findRecentTurnsBoundary(messages, recentTurns);
   if (boundary === 0) return messages;
 
   return messages.map((message, index) => {

@@ -8,19 +8,22 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { parseArtifactReference } from "@/features/chat/components/chatMessageUtils";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
+import {
+  compactIfNeeded,
+  historyForRetry,
+  prepareChatMessages,
+  sanitizeForClassification,
+} from "@/features/chat/lib/chatHistory";
 import { createChatCreationGate } from "@/features/chat/lib/chatCreation";
 import { mergeQueuedMessages, queuedSend, type QueuedSend } from "@/features/chat/lib/chatQueue";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug } from "@/shared/config";
 import { run as agentRun, type AgentRunEvent } from "@/shared/lib/agent";
-import type { Client } from "@/shared/lib/client";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
-import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
-import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
-import { serializeToolResultForApi } from "@/shared/lib/utils";
-import type { Content, Message, Model, TextContent, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import { captureRequestContext, isUserMessage } from "@/shared/lib/requestContext";
+import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role, withMessageIdentity } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -32,261 +35,6 @@ import type {
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
-
-/** Messages from the last summary marker onward — the window actually sent to the model. */
-function messagesSinceSummary(messages: Message[]): Message[] {
-  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
-  return idx > 0 ? messages.slice(idx) : messages;
-}
-
-function isUserMessage(message: Message): boolean {
-  return (
-    message.role === Role.User &&
-    message.content.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback")
-  );
-}
-
-/**
- * Skill instructions are durable behavioral guidance, so they must survive
- * pruning at the summary marker (agentskills.io "manage skill context over
- * time"). We carry the instructions across as plain assistant text rather than
- * replaying the original tool_call/tool_result pair: a skill read batched with
- * another tool call in the same turn would otherwise have its sibling result
- * pruned, leaving an orphaned function_call the Responses API rejects.
- */
-function preservedSkillMessages(messages: Message[]): Message[] {
-  const skills = new Map<string, string>();
-
-  for (const message of messages) {
-    for (const part of message.content) {
-      if (part.type !== "tool_result" || part.name !== "read_skill") continue;
-      const raw = part.result.find((item): item is TextContent => item.type === "text")?.text;
-      if (!raw) continue;
-
-      try {
-        const parsed = JSON.parse(raw) as { name?: unknown; instructions?: unknown };
-        if (typeof parsed.name !== "string" || typeof parsed.instructions !== "string") continue;
-        // Refresh insertion order when a skill was read more than once so the
-        // most recently loaded instructions win without duplicating them.
-        skills.delete(parsed.name);
-        skills.set(parsed.name, parsed.instructions);
-      } catch {
-        // Failed skill reads and legacy non-JSON results are not durable guidance.
-      }
-    }
-  }
-
-  return [...skills].map(([name, instructions]) => ({
-    role: Role.Assistant,
-    content: [{ type: "text", text: `[Active skill: ${name}]\n${instructions}` }],
-  }));
-}
-
-/** Drop messages before the last summary marker so API requests stay small,
- *  carrying skill instructions across as text so they survive compaction. */
-function pruneAtSummary(messages: Message[]): Message[] {
-  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
-  if (idx <= 0) return messages;
-
-  const preserved = preservedSkillMessages(messages.slice(0, idx));
-  const pruned = [...preserved, ...messages.slice(idx)];
-  if (pruned.length < messages.length) {
-    console.log(`[Summary] Pruning ${messages.length - pruned.length} messages before summary marker`);
-  }
-  return pruned;
-}
-
-/** Replace inline images before the latest user message with a placeholder.
- *  They're persisted as artifacts (see useFileAttachments) so the model can
- *  re-read them; dropping the base64 from earlier turns keeps requests small.
- *  Model-bound copy only — stored/displayed messages keep their images. */
-function stripHistoryImages(messages: Message[]): Message[] {
-  const lastUserIndex = messages.findLastIndex((m) => m.role === Role.User);
-  if (lastUserIndex <= 0) return messages; // nothing earlier to strip
-
-  let changed = false;
-  const result = messages.map((message, index) => {
-    if (index >= lastUserIndex || !message.content.some((p) => p.type === "image")) return message;
-    changed = true;
-    return {
-      ...message,
-      content: message.content.map((part) =>
-        part.type === "image"
-          ? ({
-              type: "text",
-              text: `[image "${part.name ?? "image"}" omitted to save context — read it from the artifacts workspace if you need it]`,
-            } satisfies TextContent)
-          : part,
-      ),
-    };
-  });
-  return changed ? result : messages;
-}
-
-/**
- * Rough token estimate (chars / 4) approximating the replay payload. Skips
- * reasoning (not replayed to the API) and binary content (images/files).
- */
-function estimateTokens(messages: Message[]): number {
-  let chars = 0;
-  for (const msg of messages) {
-    for (const part of msg.content) {
-      if (part.type === "text" || part.type === "summary") {
-        chars += part.text.length;
-      } else if (part.type === "runtime_feedback") {
-        chars += part.text.length;
-      } else if (part.type === "artifact_ref") {
-        chars += part.path.length + (part.displayName?.length ?? 0) + (part.revision?.length ?? 0) + 24;
-      } else if (part.type === "tool_call") {
-        chars += part.name.length + part.arguments.length;
-      } else if (part.type === "tool_result") {
-        for (const r of part.result) {
-          if (r.type === "text") chars += r.text.length;
-        }
-      }
-    }
-  }
-  return Math.ceil(chars / 4);
-}
-
-function mediaPlaceholder(part: { type: string; name?: string }): TextContent {
-  return {
-    type: "text",
-    text: `[${part.type}${part.name ? `: ${part.name}` : ""}]`,
-  };
-}
-
-/**
- * Wire-style view of messages for the summarizer: reasoning is dropped (never
- * replayed to the API either) and binary payloads become short placeholders —
- * JSON.stringifying megabytes of base64 into the helper-model prompt would
- * dwarf the history it's supposed to condense.
- */
-function sanitizeForSummary(messages: Message[]): Message[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content: m.content.flatMap((part): Content[] => {
-      switch (part.type) {
-        case "reasoning":
-          return [];
-        case "image":
-        case "audio":
-        case "file":
-          return [mediaPlaceholder(part)];
-        case "tool_result":
-          // arguments duplicate the paired tool_call and are only used by the
-          // UI. Results use the same compact representation as the API wire.
-          const output = serializeToolResultForApi(part.result);
-          return [
-            {
-              type: "tool_result",
-              id: part.id,
-              name: part.name,
-              arguments: "",
-              result: output ? [{ type: "text", text: output }] : [],
-            },
-          ];
-        default:
-          return [part];
-      }
-    }),
-  }));
-}
-
-/** Recent human/assistant prose for title, category, and risk classification. */
-function sanitizeForClassification(messages: Message[]): Message[] {
-  const recent: Message[] = [];
-
-  for (let i = messages.length - 1; i >= 0 && recent.length < 6; i--) {
-    const message = messages[i];
-    const content = message.content.flatMap((part): Content[] => {
-      if (part.type === "text" || part.type === "summary") return [part];
-      if (part.type === "image" || part.type === "audio" || part.type === "file") {
-        return [mediaPlaceholder(part)];
-      }
-      return [];
-    });
-    if (content.length > 0) recent.unshift({ role: message.role, content });
-  }
-
-  return recent;
-}
-
-function estimateWindowTokens(window: Message[]): number {
-  const trimmed = trimBulkyToolHistory(window);
-  for (let i = trimmed.length - 1; i >= 0; i--) {
-    const message = trimmed[i];
-    const usage = message.usage;
-    if (message.role === Role.Assistant && usage?.inputTokens) {
-      const anchor = usage.inputTokens + (usage.outputTokens ?? 0) - (usage.reasoningTokens ?? 0);
-      return anchor + estimateTokens(trimmed.slice(i + 1));
-    }
-  }
-  return estimateTokens(trimmed);
-}
-
-/**
- * Insert a summary marker before the current turn when the active context —
- * everything since the last summary marker, gauged as the wire sees it (after
- * bulky-tool trimming) — exceeds `threshold` estimated tokens. Original
- * user/assistant messages stay in storage (the UI still shows them); only the
- * API request gets pruned at the marker by `pruneAtSummary`. The summarizer
- * reads just the active window: the previous marker is that window's first
- * message, so summaries chain instead of re-reading the whole stored history
- * on every compaction. Any prior marker is dropped from storage so they don't
- * stack.
- */
-async function compactIfNeeded(
-  conversation: Message[],
-  threshold: number,
-  client: Client,
-  summarizerModel: string,
-  fallbackModel: string,
-  signal?: AbortSignal,
-): Promise<Message[]> {
-  if (signal?.aborted) return conversation;
-  if (!threshold || conversation.length < 2) return conversation;
-  // Gauge only the active window (since the last summary) — measuring full
-  // storage (kept intact for the UI) would never drop back under the threshold,
-  // so we'd re-summarize on every turn.
-  const window = messagesSinceSummary(conversation);
-  if (estimateWindowTokens(window) < threshold) return conversation;
-
-  // Last message is the user's just-sent turn — don't summarize it. Trim with
-  // recentTurns: 1 so only the current turn keeps full payloads: the summarizer
-  // doesn't need multi-KB tool dumps to condense what happened.
-  const currentTurn = conversation[conversation.length - 1];
-  const toSummarize = trimBulkyToolHistory(window, { recentTurns: 1 }).slice(0, -1);
-  if (toSummarize.length === 0) return conversation;
-
-  console.log(
-    `[Summary] Compacting ${toSummarize.length} messages (~${estimateTokens(toSummarize)} est. tokens, threshold ${threshold})`,
-  );
-
-  const payload = sanitizeForSummary(toSummarize);
-  let summary: string;
-  try {
-    summary = await client.summarizeHistory(summarizerModel, payload, { signal });
-  } catch (error) {
-    if (signal?.aborted) return conversation;
-    // A configured summarizer can be a small-window model that chokes on a
-    // large window. The chat model just handled this same content, so retry
-    // there rather than leaving the conversation permanently uncompactable.
-    if (summarizerModel === fallbackModel) throw error;
-    console.warn(`[Summary] summarizer ${summarizerModel} failed, retrying with ${fallbackModel}`, error);
-    summary = await client.summarizeHistory(fallbackModel, payload, { signal });
-  }
-  if (!summary) return conversation;
-
-  const summaryMsg: Message = {
-    role: Role.Assistant,
-    content: [{ type: "summary", text: summary }],
-  };
-  // Keep all original messages in storage; strip prior summary markers so
-  // multiple don't accumulate. pruneAtSummary slices at the latest one.
-  const preserved = conversation.slice(0, -1).filter((m) => !m.content.some((p) => p.type === "summary"));
-  return [...preserved, summaryMsg, currentTurn];
-}
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -340,6 +88,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Chat that owns the single in-flight turn, so navigating away can cancel it.
   const runningChatIdRef = useRef<string | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
+  const latestRunByChatRef = useRef(new Map<string, string>());
 
   const holdQueuedSends = useCallback(
     (targetChatId: string) => {
@@ -572,13 +321,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, []);
 
   const requestElicitation = useCallback(
-    (toolCallId: string, toolName: string, elicitation: Elicitation): Promise<ElicitationResult> => {
+    (
+      toolCallId: string,
+      toolName: string,
+      elicitation: Elicitation,
+      signal?: AbortSignal,
+    ): Promise<ElicitationResult> => {
+      if (signal?.aborted) return Promise.resolve({ action: "cancel" });
       return new Promise((resolve) => {
+        const finish = (result: ElicitationResult) => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve(result);
+        };
+        const onAbort = () => {
+          setPendingElicitation((pending) => (pending?.toolCallId === toolCallId ? null : pending));
+          finish({ action: "cancel" });
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
         setPendingElicitation({
           toolCallId,
           toolName,
           elicitation,
-          resolve,
+          resolve: finish,
         });
       });
     },
@@ -586,21 +350,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const runMessageInChat = useCallback(
-    async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
+    async function run(id: string, message: Message | null, historyOverride?: Message[], initialTitle?: string) {
       const currentModel = model;
       if (!currentModel) {
         throw new Error("no model selected");
       }
 
       const history = historyOverride ?? (chats.find((c) => c.id === id)?.messages || []);
-      const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
-      pendingModelContextRef.current.delete(id);
+      const pendingModelContext = message ? (pendingModelContextRef.current.get(id) ?? null) : null;
+      if (message) pendingModelContextRef.current.delete(id);
 
       const runId = crypto.randomUUID();
+      latestRunByChatRef.current.set(id, runId);
       const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
-      const outgoingMessage = withMessageIdentity(appendTextContent(message, pendingModelContext), runId);
+      const outgoingMessage = message
+        ? withMessageIdentity(appendTextContent(message, pendingModelContext), runId)
+        : history.findLast(isUserMessage);
 
-      let conversation = [...history, outgoingMessage];
+      let conversation = message && outgoingMessage ? [...history, outgoingMessage] : [...history];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -609,6 +376,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
       runningChatIdRef.current = id;
+      const ownsRun = () => abortControllerRef.current === abortController;
+      const isActive = () => ownsRun() && !abortController.signal.aborted;
+      let streamingAssistant = withMessageIdentity({ role: Role.Assistant, content: [] }, runId);
 
       // Kick off the combined title + classification call in parallel with the model turn so
       // the consent/risk overlay can appear as soon as the user hits send, without waiting for
@@ -623,7 +393,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const hasRisks = riskConfigs.length > 0;
       const userTurnCount = conversation.filter(isUserMessage).length;
       const needsTitle = !initialTitle || userTurnCount % 3 === 1;
-      if (needsTitle || hasCategories || hasRisks) {
+      if (message && (needsTitle || hasCategories || hasRisks)) {
         const classificationModel = classificationCfg?.model || config.chat?.summarizer || currentModel.id;
         const classificationEffort = classificationCfg?.effort ?? minimalEffort(classificationModel);
         client
@@ -637,7 +407,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             { effort: classificationEffort, signal: abortController.signal },
           )
           .then(({ title, categories: detectedCategories, risks: detectedRisks }) => {
-            if (abortController.signal.aborted) return;
+            if (abortController.signal.aborted || latestRunByChatRef.current.get(id) !== runId) return;
             if (title) {
               updateChat(id, () => ({ title }));
             }
@@ -700,7 +470,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               }
             }
 
-            if (next) {
+            if (next && chatIdRef.current === id) {
               setPendingConsent((prev) => prev ?? next);
             }
           })
@@ -716,19 +486,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
           chatId: id,
           signal: abortController.signal,
           content: () =>
-            outgoingMessage.content.filter(
+            (outgoingMessage?.content ?? []).filter(
               (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
             ) as Content[],
           sendMessage: async (appMessage: Message) => {
-            await run(id, appMessage, conversation, initialTitle);
+            if (runningChatIdRef.current === id) {
+              replaceQueue((items) => [...items, queuedSend(id, withMessageIdentity(appMessage))]);
+            } else {
+              await run(id, appMessage, undefined, initialTitle);
+            }
           },
           setContext: async (text: string | null) => {
             await updateModelContext(id, text);
           },
           elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-            return requestElicitation(currentToolCall.id, currentToolCall.name, elicitation);
+            return requestElicitation(currentToolCall.id, currentToolCall.name, elicitation, abortController.signal);
           },
           onElicitationComplete: (elicitationId: string) => {
+            if (!isActive()) return;
             const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
             if (cb) {
               elicitationCompleteCallbacksRef.current.delete(elicitationId);
@@ -741,51 +516,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
       try {
         // Get tools and instructions when needed
         const tools = await chatTools();
+        abortController.signal.throwIfAborted();
         const instructions = chatInstructions();
         const requestContext = captureRequestContext(chatRuntimeContext());
 
-        // Proactive compaction: condense older messages into a summary marker
-        // before the LLM call when the estimated token count exceeds the
-        // threshold. `chat.compaction` in config is the master switch — absent
-        // means no compaction at all. When enabled, the budget is the model's
-        // `compactThreshold` (0 opts a model out) — else the family heuristic
-        // (272k GPT-5-class input cap; see models.ts) — capped by
-        // chat.compaction.threshold, a deployment-wide ceiling: models compact
-        // earlier, never later. The summary survives provider/model swaps
-        // because it's plain text, unlike the prior server-side compaction
-        // blob. Compaction is an optimization: if the summarizer fails,
-        // proceed uncompacted rather than failing the turn.
+        // The model can opt out with 0; the deployment threshold is a ceiling.
         const compaction = config.chat?.compaction;
-        let threshold = 0;
-        if (compaction) {
-          threshold = currentModel.compactThreshold ?? compactThreshold(currentModel.id);
-          if (compaction.threshold && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        }
-        if (threshold > 0) {
-          const summarizerModel = config.chat?.summarizer || currentModel.id;
+        let threshold = compaction ? (currentModel.compactThreshold ?? compactThreshold(currentModel.id)) : 0;
+        if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
+        const compactMessages = async (messages: Message[], force = false) => {
+          if (!(threshold > 0)) return messages;
+          if (isActive()) setRunPhase("compacting");
           try {
-            updateStreamingMessage({
-              chatId: id,
-              message: withMessageIdentity({ role: Role.Assistant, content: [] }, runId),
-            });
-            setRunPhase("compacting");
-            const compacted = await compactIfNeeded(
-              conversation,
+            return await compactIfNeeded(messages, {
               threshold,
               client,
-              summarizerModel,
-              currentModel.id,
-              abortController.signal,
-            );
-            if (compacted !== conversation) {
-              conversation = compacted;
-              updateChat(id, () => ({ messages: conversation }));
-            }
-          } catch (error) {
-            if (!isAbortError(error)) console.error("[Summary] compaction failed, continuing uncompacted", error);
+              summarizerModel: config.chat?.summarizer || currentModel.id,
+              fallbackModel: currentModel.id,
+              signal: abortController.signal,
+              force,
+            });
           } finally {
-            if (!abortController.signal.aborted) setRunPhase("thinking");
+            if (isActive()) setRunPhase("thinking");
           }
+        };
+        try {
+          const compacted = await compactMessages(conversation);
+          abortController.signal.throwIfAborted();
+          if (compacted !== conversation) {
+            conversation = compacted;
+            updateChat(id, () => ({ messages: compacted }));
+          }
+        } catch (error) {
+          if (isAbortError(error) || abortController.signal.aborted) throw error;
+          console.error("[Summary] compaction failed, continuing uncompacted", error);
         }
 
         const runResult = await agentRun(client, currentModel.id, instructions, conversation, tools, {
@@ -797,25 +561,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
             verbosity: model?.verbosity,
             signal: abortController.signal,
           },
-          prepareMessages: (msgs) =>
-            injectRequestContext(stripHistoryImages(trimBulkyToolHistory(pruneAtSummary(msgs))), requestContext),
-          onContextOverflow: (msgs) =>
-            (async () => {
-              setRunPhase("compacting");
-              try {
-                return await compactIfNeeded(
-                  msgs,
-                  1,
-                  client,
-                  config.chat?.summarizer || currentModel.id,
-                  currentModel.id,
-                  abortController.signal,
-                );
-              } finally {
-                if (!abortController.signal.aborted) setRunPhase("thinking");
-              }
-            })(),
+          prepareMessages: (msgs) => prepareChatMessages(msgs, requestContext),
+          onContextOverflow: threshold > 0 ? (msgs) => compactMessages(msgs, true) : undefined,
+          onMessagesChange: (messages) => {
+            if (!isActive()) return;
+            conversation = messages;
+            updateChat(id, () => ({ messages }));
+          },
           onEvent: (event: AgentRunEvent) => {
+            if (!isActive()) return;
             if (event.type === "model.started") setRunPhase("thinking");
             else if (event.type === "model.streaming") setRunPhase("responding");
             else if (event.type === "tool.started" || event.type === "tool.updated") setRunPhase("running_tool");
@@ -824,25 +578,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
             else if (event.type === "verification.completed") setRunPhase("thinking");
           },
           onTurnStart: () => {
+            if (!isActive()) return;
+            streamingAssistant = withMessageIdentity({ role: Role.Assistant, content: [] }, runId);
             updateStreamingMessage({
               chatId: id,
-              message: withMessageIdentity({ role: Role.Assistant, content: [] }, runId),
+              message: streamingAssistant,
             });
           },
           onStream: (contentParts) => {
+            if (!isActive()) return;
             updateStreamingMessage({
               chatId: id,
-              message: withMessageIdentity({ role: Role.Assistant, content: contentParts }, runId),
+              message: { ...streamingAssistant, content: contentParts },
             });
           },
-          onTurnEnd: (assistant) => {
-            conversation = [...conversation, assistant];
-            updateChat(id, () => ({ messages: conversation }));
-            updateStreamingMessage(null);
+          onTurnEnd: () => {
+            if (isActive()) updateStreamingMessage(null);
           },
           createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
           onToolResult: (toolResult) => {
-            conversation = [...conversation, toolResult];
+            if (!isActive()) return;
             setPendingElicitation(null);
             // Drop live meta entries — data now lives on tool_result.meta.
             const completedIds = toolResult.content.filter((p) => p.type === "tool_result").map((p) => p.id);
@@ -859,7 +614,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 return changed ? next : prev;
               });
             }
-            updateChat(id, () => ({ messages: conversation }));
           },
           beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
             const studioEnabled = tools.some((tool) => tool.name === "declare_artifact");
@@ -872,12 +626,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
               signal,
             });
           },
-          onRuntimeFeedback: (feedback) => {
-            conversation = [...conversation, feedback];
-            updateChat(id, () => ({ messages: conversation }));
-          },
           onToolMeta: (toolCallId, meta) => {
-            updateToolMeta(toolCallId, meta);
+            if (abortController.signal.aborted) return;
+            if (isActive()) updateToolMeta(toolCallId, meta);
             // Late update after commit: also patch the persisted tool_result in place.
             updateChat(id, (prev) => ({
               messages: prev.messages.map((msg) => ({
@@ -892,18 +643,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }));
           },
         });
+        // A stopped run may settle after another run has already started.
+        // Its callbacks must not clear or overwrite the new run's state.
+        if (!ownsRun()) return;
         conversation = runResult.messages;
 
         const aborted = runResult.status === "aborted" || abortController.signal.aborted;
-        abortControllerRef.current = null;
-        runningChatIdRef.current = null;
-
         // Ensure streaming buffer is cleared after completion
         updateStreamingMessage(null);
 
         // If the stream was stopped by the user, don't run follow-up work
         // (title summarization etc.) on the partial conversation.
         if (aborted) {
+          abortControllerRef.current = null;
+          runningChatIdRef.current = null;
+          holdQueuedSends(id);
+          setPendingElicitation(null);
           setRunPhase("idle");
           setIsResponding(false);
           return;
@@ -915,12 +670,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
           throw error;
         }
 
+        const ready = takeQueuedSends(id);
+        if (ready.length > 0) {
+          await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
+          return;
+        }
         if (runResult.status === "max_turns") {
-          const ready = takeQueuedSends(id);
-          if (ready.length > 0) {
-            await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
-            return;
-          }
           conversation = [
             ...conversation,
             withMessageIdentity(
@@ -938,23 +693,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
           updateChat(id, () => ({ messages: conversation }));
         }
 
-        if (runResult.status === "completed") {
-          // Stop policies may append verification findings or artifact refs
-          // after the model turn was committed by onTurnEnd.
-          updateChat(id, () => ({ messages: conversation }));
-          const ready = takeQueuedSends(id);
-          if (ready.length > 0) {
-            await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
-            return;
-          }
-        }
-
+        abortControllerRef.current = null;
+        runningChatIdRef.current = null;
         setRunPhase("idle");
         setIsResponding(false);
       } catch (error) {
-        console.error(error);
+        if (!ownsRun()) return;
+        if (!isAbortError(error)) console.error(error);
         setIsResponding(false);
-        const aborted = abortController.signal.aborted;
+        const aborted = abortController.signal.aborted || isAbortError(error);
         abortControllerRef.current = null;
         runningChatIdRef.current = null;
         updateStreamingMessage(null);
@@ -1007,6 +754,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateToolMeta,
       takeQueuedSends,
       holdQueuedSends,
+      replaceQueue,
     ],
   );
 
@@ -1066,26 +814,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const retryMessage = useCallback(async () => {
-    if (!chat) return;
-    const msgs = chat.messages;
-    if (msgs.length === 0) return;
-
-    // Find the trailing error message (assistant with error, no content)
-    const lastMsg = msgs[msgs.length - 1];
-    if (lastMsg.role !== Role.Assistant || !lastMsg.error) return;
-
-    // Strip the error message and find the last user message to re-send
-    const withoutError = msgs.slice(0, -1);
-    const lastUserIndex = withoutError.findLastIndex((m) => m.role === Role.User);
-    if (lastUserIndex < 0) return;
-
-    const lastUserMessage = withoutError[lastUserIndex];
-    const historyBeforeUser = withoutError.slice(0, lastUserIndex);
-
-    // Persist the trimmed history, then re-run
-    updateChat(chat.id, () => ({ messages: historyBeforeUser }));
-    await runMessageInChat(chat.id, lastUserMessage, historyBeforeUser, chat.title);
-  }, [chat, updateChat, runMessageInChat]);
+    if (!chat || runningChatIdRef.current === chat.id) return;
+    const history = historyForRetry(chat.messages);
+    if (history) await runMessageInChat(chat.id, null, history, chat.title);
+  }, [chat, runMessageInChat]);
 
   const continueRun = useCallback(async () => {
     if (!chat || isResponding) return;
@@ -1232,6 +964,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsResponding(false);
     setRunPhase("idle");
     setPendingElicitation(null);
+    elicitationCompleteCallbacksRef.current.clear();
     setToolMeta({});
   }, [holdQueuedSends, updateChat, updateStreamingMessage]);
 

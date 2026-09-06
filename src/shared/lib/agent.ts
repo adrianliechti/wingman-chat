@@ -69,6 +69,9 @@ export interface RunHooks {
   /** Called after each LLM response is received with the new assistant message. */
   onTurnEnd?: (assistant: Message) => void;
 
+  /** Authoritative history after each commit, including compaction and stop policies. */
+  onMessagesChange?: (messages: Message[]) => void;
+
   /**
    * Build a ToolContext for a given tool call (chat uses this for elicitation,
    * render, etc.). The harness injects tracing and metadata helpers.
@@ -175,6 +178,10 @@ export async function runMessages(
     Object.assign(error, { code: result.error?.code ?? "AGENT_RUN_FAILED" });
     throw error;
   }
+  if (result.status === "aborted") throw new DOMException("Agent run was cancelled.", "AbortError");
+  if (result.status === "max_turns") {
+    throw Object.assign(new Error("Agent run reached its turn limit."), { code: "MAX_TURNS" });
+  }
   return result.messages;
 }
 
@@ -192,14 +199,20 @@ async function runLoop(
   const signal = controller.invocation.signal;
   const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
   let conversation = [...messages];
+  const commit = (next: Message[]) => {
+    conversation = next;
+    hooks.onMessagesChange?.(conversation);
+  };
 
   // Send one model request, recovering from a mid-run context overflow by
   // compacting and re-sending rather than failing the turn. Bounded so a
   // request that stays too large after compacting still surfaces the error.
   const sendTurn = async (turn: number): Promise<Message> => {
     for (let compactions = 0; ; compactions++) {
+      signal?.throwIfAborted();
       const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
       try {
+        signal?.throwIfAborted();
         if (!controller.invocation.tryConsumeModelCall()) throw new AgentBudgetExceededError();
         controller.emit({ type: "model.started", turn });
         let streamingStarted = false;
@@ -233,12 +246,14 @@ async function runLoop(
           try {
             controller.emit({ type: "compaction.started", turn });
             const compacted = await onContextOverflow(conversation);
+            signal?.throwIfAborted();
             controller.emit({ type: "compaction.completed", turn });
             if (compacted !== conversation) {
-              conversation = compacted;
+              commit(compacted);
               continue;
             }
           } catch (compactError) {
+            if (signal?.aborted || isAbortError(compactError)) throw compactError;
             // Compaction itself failed (e.g. the summarizer errored); surface the
             // original overflow, which is the more actionable error.
             console.warn("[agent] context-overflow recovery failed", compactError);
@@ -258,10 +273,22 @@ async function runLoop(
       const assistantMessage = withMessageIdentity(await sendTurn(turn), controller.runId);
       if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
 
-      conversation = [...conversation, assistantMessage];
-      onTurnEnd?.(assistantMessage);
-
       const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");
+      const callIds = new Set(
+        conversation.flatMap((message) =>
+          message.content.flatMap((part) => (part.type === "tool_call" ? [part.id] : [])),
+        ),
+      );
+      for (const call of toolCalls) {
+        if (!call.id.trim() || callIds.has(call.id)) {
+          throw Object.assign(new Error("The model returned a missing or duplicate tool call ID."), {
+            code: "INVALID_TOOL_CALL",
+          });
+        }
+        callIds.add(call.id);
+      }
+      commit([...conversation, assistantMessage]);
+      onTurnEnd?.(assistantMessage);
       if (toolCalls.length === 0) {
         if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
         if (hooks.beforeFinish) {
@@ -275,12 +302,12 @@ async function runLoop(
           controller.emit({ type: "verification.completed", turn });
           if (decision.action === "continue") {
             const feedback = withMessageIdentity(decision.feedback, controller.runId);
-            conversation = [...conversation, feedback];
+            commit([...conversation, feedback]);
             await hooks.onRuntimeFeedback?.(feedback);
             continue;
           }
           if (decision.appendContent?.length) {
-            conversation = appendToFinalAssistant(conversation, decision.appendContent);
+            commit(appendToFinalAssistant(conversation, decision.appendContent));
           }
         }
         return controller.finish("completed", "end_turn", conversation);
@@ -293,7 +320,7 @@ async function runLoop(
           await dispatchToolCall(toolCall, toolRegistry, hooks, invokeCtx, controller, turn),
           controller.runId,
         );
-        conversation = [...conversation, toolResult];
+        commit([...conversation, toolResult]);
         onToolResult?.(toolResult);
         controller.emit({ type: "tool.completed", turn, callId: toolCall.id, name: toolCall.name });
         if (signal?.aborted) return controller.finish("aborted", "abort", conversation);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import {
   GATEWAY_URL,
+  createResponseFaultInjector,
   lifecycleTypes,
   messageText,
   REQUEST_TIMEOUT_MS,
@@ -15,11 +16,12 @@ let run;
 let Role;
 let selectedModel;
 let availableModels;
+const faults = createResponseFaultInjector();
 
 void describe("Wingman gateway E2E", { concurrency: false }, () => {
   before(
     async () => {
-      harness = await startGatewayHarness();
+      harness = await startGatewayHarness({ plugins: [faults.plugin] });
       ({ client, run, Role, availableModels } = harness);
       const requestedModel = process.env.WINGMAN_E2E_MODEL;
       if (requestedModel) {
@@ -44,6 +46,75 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.length > 0);
     assert(availableModels.some((model) => model.id === selectedModel));
   });
+
+  void test(
+    "recovers from a dropped real response stream without duplicating its partial answer",
+    async () => {
+      const marker = "WINGMAN_RECOVERY_OK";
+      const before = faults.snapshot();
+      const snapshots = [];
+      faults.dropNext();
+      const result = await run(
+        client,
+        selectedModel,
+        `Reply with exactly ${marker}.`,
+        [{ role: Role.User, content: [{ type: "text", text: "Run the recovery fixture." }] }],
+        [],
+        {
+          maxTurns: 1,
+          onStream: (content) => snapshots.push(content),
+          options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+        },
+      );
+      assert.equal(result.status, "completed", resultDetail(result));
+      assert.equal(messageText(result.messages.slice(-1)).trim(), marker);
+      assert.equal(faults.snapshot().droppedCount - before.droppedCount, 1);
+      assert.equal(faults.snapshot().requestCount - before.requestCount, 2);
+      assert(
+        snapshots.some((content) => content.length === 0),
+        "Retry did not clear the partial answer",
+      );
+    },
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+
+  void test(
+    "compacts history with a real summarizer and continues from the summary",
+    async () => {
+      const { compactIfNeeded, prepareChatMessages } = await harness.vite.ssrLoadModule(
+        "/src/features/chat/lib/chatHistory.ts",
+      );
+      const marker = "WINGMAN_COMPACT_91B7";
+      const messages = [
+        { role: Role.User, content: [{ type: "text", text: `Remember this exact marker for later: ${marker}` }] },
+        {
+          role: Role.Assistant,
+          content: [{ type: "text", text: "The marker is saved. Redundant background material. ".repeat(200) }],
+        },
+        { role: Role.User, content: [{ type: "text", text: "Return the exact marker from earlier. Nothing else." }] },
+      ];
+      const compacted = await compactIfNeeded(messages, {
+        threshold: 1,
+        client,
+        summarizerModel: selectedModel,
+        fallbackModel: selectedModel,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      assert.notEqual(compacted, messages, "The real summary did not reduce the context");
+      assert.equal(compacted.length, messages.length + 1, "Original history must be retained");
+      const prepared = prepareChatMessages(compacted);
+      assert(prepared[0].content.some((part) => part.type === "summary"));
+      assert(!JSON.stringify(prepared).includes("Redundant background material. The marker"));
+      const result = await run(client, selectedModel, "Follow the user's instructions.", compacted, [], {
+        prepareMessages: prepareChatMessages,
+        maxTurns: 1,
+        options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+      });
+      assert.equal(result.status, "completed", resultDetail(result));
+      assert.match(messageText(result.messages.slice(-1)), new RegExp(marker));
+    },
+    { timeout: REQUEST_TIMEOUT_MS * 2 },
+  );
 
   void test(
     "streams a complete agent turn with ordered lifecycle events",

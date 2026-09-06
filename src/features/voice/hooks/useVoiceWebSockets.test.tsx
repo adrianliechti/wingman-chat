@@ -148,6 +148,52 @@ describe("voice request context and tool lifecycle", () => {
     await hook.stop();
   });
 
+  it.each(["failed", "incomplete", "cancelled"])(
+    "never executes deferred tools after a %s response",
+    async (status) => {
+      const handler = vi.fn(async () => []);
+      const { start, hook } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+      const socket = await start();
+      socket.message({ type: "response.created", response: { id: "response" } });
+      socket.message({
+        type: "response.output_item.done",
+        response_id: "response",
+        item: { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: "{}" },
+      });
+      socket.message({ type: "response.done", response: { id: "response", status, output: [] } });
+      await Promise.resolve();
+      expect(handler).not.toHaveBeenCalled();
+      expect(
+        socket.sent.some(
+          (event) => event.item?.type === "function_call_output" && event.item.output.includes("not executed"),
+        ),
+      ).toBe(true);
+      await hook.stop();
+    },
+  );
+
+  it("uses authoritative final arguments and ignores duplicate call events", async () => {
+    const handler = vi.fn<Tool["function"]>(async () => []);
+    const { start, hook, onResult } = createHarness([
+      { name: "edit", parameters: { type: "object" }, function: handler },
+    ]);
+    const socket = await start();
+    socket.message({ type: "response.created", response: { id: "response" } });
+    socket.message({ type: "response.function_call_arguments.delta", item_id: "item", delta: '{"value":"stale"}' });
+    const event = {
+      type: "response.output_item.done",
+      response_id: "response",
+      item: { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: '{"value":"final"}' },
+    };
+    socket.message(event);
+    socket.message(event);
+    socket.message({ type: "response.done", response: { id: "response", status: "completed", output: [] } });
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalled());
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0]).toEqual({ value: "final" });
+    await hook.stop();
+  });
+
   it("aborts in-flight tools and ignores late results and socket messages after stop", async () => {
     let context: ToolContext | undefined;
     let release!: () => void;

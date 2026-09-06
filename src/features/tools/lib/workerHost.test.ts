@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExecuteMessage } from "./interpreterProtocol";
 import { createWorkerHost } from "./workerHost";
+import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 
 class TestWorker extends EventTarget {
   requests: ExecuteMessage[] = [];
@@ -16,6 +17,30 @@ class TestWorker extends EventTarget {
 }
 
 describe("interpreter host coordination", () => {
+  it("passes the owning run's model and budget to RPCs and ignores messages after completion", async () => {
+    const worker = new TestWorker();
+    const handleMessage = vi.fn(async () => "Answer");
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage,
+      crashMessage: "crashed",
+    });
+    const context = { model: "run-model", invocationContext: new AgentInvocationContext({ maxModelCalls: 3 }) };
+    const run = host.execute({ code: "llm('Question')", files: {} }, { context });
+    const rpc = () => {
+      const port = { postMessage: vi.fn(), close: vi.fn() };
+      worker.dispatchEvent(new MessageEvent("message", { data: { type: "llm-request", prompt: "Question", port } }));
+    };
+    rpc();
+    expect(handleMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "llm-request" }), {
+      signal: undefined,
+      context,
+    });
+    worker.finish(0, "done");
+    await run;
+    rpc();
+    expect(handleMessage).toHaveBeenCalledTimes(1);
+  });
   it("serializes callers independently of the artifact workspace they use", async () => {
     const worker = new TestWorker();
     const host = createWorkerHost({

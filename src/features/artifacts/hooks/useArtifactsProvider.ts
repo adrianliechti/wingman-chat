@@ -159,7 +159,7 @@ async function runArtifactCode(options: {
 
     const result = await executor(
       { code: script, files: artifactFiles, limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES } },
-      { signal: context?.signal },
+      { signal: context?.signal, context },
     );
     if (!result.success) {
       return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);

@@ -13,11 +13,9 @@ import { runSynthesize } from "./synthesizeCommand";
 import { runTranscribe } from "./transcribeCommand";
 import { runTranslateFile, runTranslateText } from "./translateCommand";
 import { runVision } from "./visionCommand";
+import type { BridgeRequestOptions } from "./workerHost";
 
-export function dispatchBridgeRpc(
-  message: WorkerToMainMessage,
-  options: { signal?: AbortSignal } = {},
-): Promise<unknown> {
+export function dispatchBridgeRpc(message: WorkerToMainMessage, options: BridgeRequestOptions = {}): Promise<unknown> {
   switch (message.type) {
     case "llm-request":
       return runLlm(message.prompt, message.options, options);

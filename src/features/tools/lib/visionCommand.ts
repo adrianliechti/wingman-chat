@@ -3,7 +3,8 @@ import { bytesToDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 import { getTextFromContent, Role } from "@/shared/types/chat";
-import { getModel } from "./llmCommand";
+import { consumeLlmBudget, getModel } from "./llmCommand";
+import type { BridgeRequestOptions } from "./workerHost";
 
 const DEFAULT_PROMPT =
   "Transcribe all text in this image verbatim, preserving the layout where possible. " +
@@ -13,14 +14,14 @@ export async function runVision(
   bytes: Uint8Array,
   path: string,
   prompt?: string,
-  requestOptions: { signal?: AbortSignal } = {},
+  requestOptions: BridgeRequestOptions = {},
 ): Promise<string> {
   const config = getConfig();
   if (!config.vision) {
     throw new Error("vision: no vision service configured");
   }
   // Configured vision model, or whatever model the chat currently uses.
-  const model = config.vision.model || getModel();
+  const model = config.vision.model || requestOptions.context?.model || getModel();
   if (!model) {
     throw new Error("vision: no model");
   }
@@ -37,6 +38,7 @@ export async function runVision(
     throw new Error(`vision: unsupported image type ${type} — supported: ${config.vision.files.join(", ")}`);
   }
 
+  consumeLlmBudget(requestOptions);
   const result = await config.client.complete(
     model,
     "",
@@ -51,7 +53,7 @@ export async function runVision(
     ],
     [],
     undefined,
-    { signal: requestOptions.signal },
+    { signal: requestOptions.signal, parentContext: requestOptions.context?.agentContext },
   );
   const text = getTextFromContent(result.content);
   console.debug(`vision: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);

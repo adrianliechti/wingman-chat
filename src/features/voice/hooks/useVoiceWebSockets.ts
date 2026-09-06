@@ -419,11 +419,12 @@ export function useVoiceWebSockets(
 
               const accumulatedArgs = argAccumRef.current.get(itemId);
               argAccumRef.current.delete(itemId);
-              const argsStr = accumulatedArgs ?? (item.arguments as string) ?? "";
+              const argsStr = typeof item.arguments === "string" ? item.arguments : (accumulatedArgs ?? "");
 
               if (responseId && toolsRef.current) {
                 const entry = pendingResponsesRef.current.get(responseId);
                 if (entry) {
+                  if (!callId || entry.callIds.has(callId)) break;
                   entry.hadToolCalls = true;
                   entry.callIds.add(callId);
                   entry.deferredToolCalls.push({ callId, toolName: item.name as string, argsStr });
@@ -440,7 +441,7 @@ export function useVoiceWebSockets(
             const responseObj = msg.response as Record<string, unknown>;
             const responseStatus = responseObj?.status as string | undefined;
 
-            if (responseStatus !== "cancelled") {
+            if (responseStatus === "completed") {
               // The message item is not necessarily output[0] — tool-call responses
               // put function_call items alongside (or before) the message.
               const output = responseObj?.output as Record<string, unknown>[] | undefined;
@@ -460,7 +461,7 @@ export function useVoiceWebSockets(
                 const deferredCalls = entry.deferredToolCalls;
                 entry.deferredToolCalls = [];
 
-                if (responseStatus === "cancelled" && deferredCalls.length > 0) {
+                if (responseStatus !== "completed") {
                   for (const deferred of deferredCalls) {
                     onToolCallDoneRef.current?.(deferred.callId);
                     // The function_call item is already committed to the conversation —
@@ -468,7 +469,9 @@ export function useVoiceWebSockets(
                     sendFunctionOutput(
                       eventWs,
                       deferred.callId,
-                      JSON.stringify({ error: "Cancelled: the user interrupted before the tool ran." }),
+                      JSON.stringify({
+                        error: `The response ${responseStatus ?? "did not complete"}; the tool was not executed.`,
+                      }),
                     );
                     entry.callIds.delete(deferred.callId);
                   }
