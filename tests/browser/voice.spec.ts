@@ -386,3 +386,60 @@ test("realtime transcription does not inherit the file STT model", async ({ page
   await page.evaluate(() => window.voiceE2E.stopVoice());
   await stopped(page);
 });
+
+test("a tool from a stopped session cannot pause or open an elicitation in its replacement", async ({ page }) => {
+  const { sockets, errors } = await open(page);
+  await page.goto("/tests/browser/fixtures/voice.html?late-tool");
+  await page.waitForFunction(() => !!window.voiceE2E);
+  await page.evaluate(() => window.voiceE2E.startVoice());
+  await page.waitForFunction(() => window.voiceE2E.state().listening);
+  sockets[0].route.send(JSON.stringify({ type: "response.created", response: { id: "old" } }));
+  sockets[0].route.send(
+    JSON.stringify({
+      type: "response.done",
+      response: {
+        id: "old",
+        status: "completed",
+        output: [{ type: "function_call", call_id: "call", name: "late_elicitation", arguments: "{}" }],
+      },
+    }),
+  );
+  await page.waitForFunction(() => window.voiceE2E.toolState().started);
+  await page.evaluate(() => window.voiceE2E.stopVoice());
+  await page.evaluate(() => window.voiceE2E.startVoice());
+  await page.waitForFunction(() => window.voiceE2E.state().listening);
+  await page.evaluate(() => window.voiceE2E.releaseTool());
+  await expect
+    .poll(() => sockets[1]?.frames.filter((frame) => frame.type === "input_audio_buffer.append").length)
+    .toBeGreaterThan(4);
+  expect(await page.evaluate(() => window.voiceE2E.toolState().elicitations)).toBe(0);
+  await page.evaluate(() => window.voiceE2E.stopVoice());
+  await stopped(page);
+  expect(errors).toEqual([]);
+});
+
+test("typed input truncates audible playback before requesting its follow-up", async ({ page }) => {
+  const { sockets, errors } = await open(page);
+  await page.evaluate(() => window.voiceE2E.startVoice());
+  await page.waitForFunction(() => window.voiceE2E.state().listening);
+  const audio = Buffer.from(new Int16Array(24000).fill(300).buffer).toString("base64");
+  sockets[0].route.send(JSON.stringify({ type: "response.created", response: { id: "answer" } }));
+  sockets[0].route.send(
+    JSON.stringify({ type: "response.output_audio.delta", response_id: "answer", item_id: "item", delta: audio }),
+  );
+  sockets[0].route.send(
+    JSON.stringify({ type: "response.done", response: { id: "answer", status: "completed", output: [] } }),
+  );
+  const startTime = await page.evaluate(() => window.voiceE2E.diagnostics().playbackTime);
+  await page.waitForFunction((time) => window.voiceE2E.diagnostics().playbackTime > time + 0.1, startTime);
+  await page.evaluate(() => window.voiceE2E.sendText("Follow up"));
+  await expect.poll(() => sockets[0].frames.some((frame) => frame.type === "response.create")).toBe(true);
+  expect(
+    sockets[0].frames
+      .filter((frame) => frame.type === "response.create" || frame.type === "conversation.item.truncate")
+      .map((frame) => frame.type),
+  ).toEqual(["conversation.item.truncate", "response.create"]);
+  await page.evaluate(() => window.voiceE2E.stopVoice());
+  await stopped(page);
+  expect(errors).toEqual([]);
+});

@@ -28,7 +28,7 @@ import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
-import { modelName, modelType } from "./models";
+import { modelFromAPI } from "./models";
 import { traceGenAI } from "./otel";
 import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
 import { planStrictToolSchemas } from "./toolSchemas";
@@ -158,17 +158,12 @@ export class Client {
   }
 
   async listModels(type?: ModelType): Promise<Model[]> {
-    const models = await this.oai.models.list();
-    const mappedModels = models.data.map((model) => {
-      const type = modelType(model.id);
-      const name = modelName(model.id);
-
-      return {
-        id: model.id,
-        name: name,
-        type: type,
-      };
+    const models = await this.oai.models.list({
+      timeout: 15_000,
+      maxRetries: 0,
+      headers: { "Cache-Control": "no-cache" },
     });
+    const mappedModels = models.data.map(modelFromAPI);
 
     if (type) {
       return mappedModels.filter((model) => model.type === type);

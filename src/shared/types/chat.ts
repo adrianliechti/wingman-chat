@@ -4,7 +4,7 @@ import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "realtime" | "synthesizer" | "transcriber";
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 

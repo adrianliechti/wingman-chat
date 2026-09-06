@@ -415,7 +415,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const needsTitle = !initialTitle || userTurnCount % 3 === 1;
       if (message && (needsTitle || hasCategories || hasRisks)) {
         const classificationModel = classificationCfg?.model || config.chat?.summarizer || currentModel.id;
-        const classificationEffort = classificationCfg?.effort ?? minimalEffort(classificationModel);
+        const classificationEffort =
+          classificationCfg?.effort ??
+          minimalEffort(models.find((model) => model.id === classificationModel) ?? classificationModel);
         client
           .classifyChat(
             classificationModel,

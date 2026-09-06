@@ -74,6 +74,7 @@ export function useVoiceWebSockets(
   // only cleared on stop).
   const audioItemByResponseRef = useRef<Map<string, string>>(new Map());
   const pendingPostToolFireRef = useRef<boolean>(false);
+  const pendingTextRef = useRef<{ texts: string[]; done: Promise<void> } | null>(null);
   const toolRegistryRef = useRef<ToolRegistry | undefined>(undefined);
   const toolContextFactoryRef = useRef<ToolContextFactory | undefined>(undefined);
   const runtimeContextRef = useRef(getRuntimeContext);
@@ -118,28 +119,51 @@ export function useVoiceWebSockets(
     onClosedRef.current = onClosed;
   }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult, onClosed]);
 
+  // Keep the server's conversation aligned with what was actually heard,
+  // including interruptions before the first sample and playback after response.done.
+  const interruptPlayback = useCallback(async () => {
+    const controller = sessionControllerRef.current;
+    const ws = wsRef.current;
+    const result = await wavPlayerRef.current?.interrupt();
+    if (!controller || controller.signal.aborted || sessionControllerRef.current !== controller) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !result?.wasPlaying || !result.trackId) return;
+    const itemId = audioItemByResponseRef.current.get(result.trackId);
+    if (!itemId) return;
+    ws.send(
+      JSON.stringify({
+        type: "conversation.item.truncate",
+        item_id: itemId,
+        content_index: 0,
+        audio_end_ms: Math.floor((result.offsetSamples / 24000) * 1000),
+      }),
+    );
+  }, []);
+
   const pauseCountRef = useRef(0);
   // Return a resume function bound to this session, so a late tool/elicitation
   // cannot resume a replacement session. Concurrent elicitations share the pause.
-  const pauseAudio = useCallback(async (interruptPlayback = true) => {
-    const controller = sessionControllerRef.current;
-    const recorder = wavRecorderRef.current;
-    const player = wavPlayerRef.current;
-    const first = pauseCountRef.current++ === 0;
-    audioPausedRef.current = true;
-    if (first) {
-      await recorder?.pause();
-      if (interruptPlayback && controller === sessionControllerRef.current) void player?.interrupt();
-    }
-    let resumed = false;
-    return async () => {
-      if (resumed || !controller || controller.signal.aborted || controller !== sessionControllerRef.current) return;
-      resumed = true;
-      if (--pauseCountRef.current > 0) return;
-      audioPausedRef.current = false;
-      if (recorder && recordCallbackRef.current) await recorder.record(recordCallbackRef.current);
-    };
-  }, []);
+  const pauseAudio = useCallback(
+    async (flushPlayback = true) => {
+      const controller = sessionControllerRef.current;
+      if (!controller) return async () => {};
+      const recorder = wavRecorderRef.current;
+      const first = pauseCountRef.current++ === 0;
+      audioPausedRef.current = true;
+      if (first) {
+        await recorder?.pause();
+        if (flushPlayback && controller === sessionControllerRef.current) await interruptPlayback();
+      }
+      let resumed = false;
+      return async () => {
+        if (resumed || !controller || controller.signal.aborted || controller !== sessionControllerRef.current) return;
+        resumed = true;
+        if (--pauseCountRef.current > 0) return;
+        audioPausedRef.current = false;
+        if (recorder && recordCallbackRef.current) await recorder.record(recordCallbackRef.current);
+      };
+    },
+    [interruptPlayback],
+  );
 
   const stop = useCallback(async () => {
     isActiveRef.current = false;
@@ -158,6 +182,7 @@ export function useVoiceWebSockets(
     pendingResponsesRef.current.clear();
     audioItemByResponseRef.current.clear();
     pendingPostToolFireRef.current = false;
+    pendingTextRef.current = null;
     contextItemIdRef.current = null;
     controller?.abort();
     try {
@@ -192,7 +217,7 @@ export function useVoiceWebSockets(
       if (entry.done && entry.callIds.size === 0 && entry.hadToolCalls) {
         pendingResponsesRef.current.delete(responseId);
         if (ws.readyState !== WebSocket.OPEN) return;
-        if (hasOtherActiveResponse()) {
+        if (pendingTextRef.current || hasOtherActiveResponse()) {
           pendingPostToolFireRef.current = true;
           return;
         }
@@ -205,7 +230,7 @@ export function useVoiceWebSockets(
   const drainPendingPostToolFires = useCallback(
     (ws: WebSocket) => {
       if (!pendingPostToolFireRef.current) return;
-      if (hasOtherActiveResponse()) return;
+      if (pendingTextRef.current || hasOtherActiveResponse()) return;
       if (ws.readyState !== WebSocket.OPEN) return;
       pendingPostToolFireRef.current = false;
       ws.send(JSON.stringify({ type: "response.create" }));
@@ -375,24 +400,10 @@ export function useVoiceWebSockets(
               case "input_audio_buffer.speech_started": {
                 refreshRequestContext(eventWs);
                 console.log("User started speaking, audio playback will be interrupted");
-                const player = wavPlayerRef.current;
-                if (player) {
-                  void player.interrupt().then(({ trackId, offsetSamples, wasPlaying }) => {
-                    // Tell the server how much the user actually heard, otherwise the
-                    // conversation history keeps the full answer the model never delivered.
-                    if (!isCurrent() || !wasPlaying || !trackId || offsetSamples <= 0) return;
-                    const itemId = audioItemByResponseRef.current.get(trackId);
-                    if (!itemId || eventWs.readyState !== WebSocket.OPEN) return;
-                    eventWs.send(
-                      JSON.stringify({
-                        type: "conversation.item.truncate",
-                        item_id: itemId,
-                        content_index: 0,
-                        audio_end_ms: Math.floor((offsetSamples / 24000) * 1000),
-                      }),
-                    );
-                  });
-                }
+                void interruptPlayback().catch((error: unknown) => {
+                  if (isCurrent())
+                    audioFailed(error instanceof Error ? error : new Error("Couldn't interrupt audio playback."));
+                });
                 break;
               }
 
@@ -620,7 +631,7 @@ export function useVoiceWebSockets(
         throw error;
       }
     },
-    [stop, refreshRequestContext, checkAndFireResponseCreate, drainPendingPostToolFires],
+    [stop, interruptPlayback, refreshRequestContext, checkAndFireResponseCreate, drainPendingPostToolFires],
   );
 
   const updateSession = useCallback(
@@ -650,37 +661,58 @@ export function useVoiceWebSockets(
     [],
   );
 
-  // sendText only reads refs → stable deps
   const sendText = useCallback(
-    (text: string) => {
+    (text: string): Promise<void> => {
       const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-      // response.create while another response is active is rejected by the
-      // server — cancel the active one first (mirrors a spoken interruption).
-      if (hasOtherActiveResponse()) {
-        ws.send(JSON.stringify({ type: "response.cancel" }));
-        void wavPlayerRef.current?.interrupt();
+      const controller = sessionControllerRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN || !controller) return Promise.resolve();
+      // Multiple submissions while the worklet answers share one interruption and
+      // one response.create; every submitted text item still reaches the conversation.
+      if (pendingTextRef.current) {
+        pendingTextRef.current.texts.push(text);
+        return pendingTextRef.current.done;
       }
-      // The explicit response.create below also answers any finished tool
-      // calls, so a queued post-tool fire would just double-respond.
+      if (hasOtherActiveResponse()) ws.send(JSON.stringify({ type: "response.cancel" }));
+      const pending = { texts: [text], done: Promise.resolve() };
+      pendingTextRef.current = pending;
       pendingPostToolFireRef.current = false;
-
-      refreshRequestContext(ws);
-      ws.send(
-        JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "message",
-            role: "user",
-            content: [{ type: "input_text", text }],
-          },
-        }),
-      );
-
-      ws.send(JSON.stringify({ type: "response.create" }));
+      pending.done = (async () => {
+        try {
+          await interruptPlayback();
+          if (
+            controller.signal.aborted ||
+            sessionControllerRef.current !== controller ||
+            ws.readyState !== WebSocket.OPEN
+          )
+            return;
+          pendingPostToolFireRef.current = false;
+          refreshRequestContext(ws);
+          for (const text of pending.texts) {
+            ws.send(
+              JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "message",
+                  role: "user",
+                  content: [{ type: "input_text", text }],
+                },
+              }),
+            );
+          }
+          ws.send(JSON.stringify({ type: "response.create" }));
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            console.error("Couldn't send voice text:", error);
+            void stop();
+            onClosedRef.current?.({ fatal: true, message: "Couldn't send text to the voice service." });
+          }
+        } finally {
+          if (pendingTextRef.current === pending) pendingTextRef.current = null;
+        }
+      })();
+      return pending.done;
     },
-    [hasOtherActiveResponse, refreshRequestContext],
+    [hasOtherActiveResponse, interruptPlayback, refreshRequestContext, stop],
   );
 
   // Clean up all resources on unmount — stop is now stable so we can use it directly

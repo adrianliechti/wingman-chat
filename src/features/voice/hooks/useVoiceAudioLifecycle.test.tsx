@@ -84,6 +84,61 @@ function harness() {
 }
 
 describe("voice sessions using the actual recorder and player", () => {
+  it.each(["speech", "text"])(
+    "%s interrupts queued but unheard playback, including after response.done",
+    async (mode) => {
+      const { hook, start } = harness();
+      const socket = await start();
+      socket.message({ type: "response.created", response: { id: "answer" } });
+      socket.message({
+        type: "response.output_audio.delta",
+        response_id: "answer",
+        item_id: "audio-item",
+        delta: btoa("\0\0"),
+      });
+      socket.message({ type: "response.done", response: { id: "answer", status: "completed", output: [] } });
+      const player = FakeWorklet.instances.find((node) => node.name === "stream-processor")!;
+      let sending: Promise<void> | undefined;
+      if (mode === "speech") socket.message({ type: "input_audio_buffer.speech_started" });
+      else {
+        sending = hook.sendText("Follow up");
+        expect(hook.sendText("More detail")).toBe(sending);
+        expect(socket.sent.some((frame) => frame.type === "response.create")).toBe(false);
+      }
+      player.receive({ event: "interrupted", requestId: 1, trackId: "answer", offset: 0, wasPlaying: true });
+      await sending;
+      await Promise.resolve();
+      expect(socket.sent).toContainEqual({
+        type: "conversation.item.truncate",
+        item_id: "audio-item",
+        content_index: 0,
+        audio_end_ms: 0,
+      });
+      if (mode === "text") {
+        const relevant = socket.sent.filter(
+          (frame) => frame.type === "conversation.item.truncate" || frame.type === "response.create",
+        );
+        expect(relevant.map((frame) => frame.type)).toEqual(["conversation.item.truncate", "response.create"]);
+        expect(JSON.stringify(socket.sent)).toContain("Follow up");
+        expect(JSON.stringify(socket.sent)).toContain("More detail");
+      }
+      await hook.stop();
+    },
+  );
+
+  it("stopping while typed input waits for playback cannot send into a replacement session", async () => {
+    const { hook, start } = harness();
+    const old = await start();
+    const sending = hook.sendText("Cancelled submission");
+    await hook.stop();
+    audio.getUserMedia.mockResolvedValueOnce(fakeStream());
+    const next = await start();
+    await sending;
+    expect(old.sent.some((frame) => frame.type === "response.create")).toBe(false);
+    expect(next.sent.some((frame) => frame.type === "response.create")).toBe(false);
+    await hook.stop();
+  });
+
   it("stops permission-pending startup immediately and releases a late stream", async () => {
     const permission = deferred<ReturnType<typeof fakeStream>>();
     audio.getUserMedia.mockReturnValueOnce(permission.promise);
@@ -110,7 +165,10 @@ describe("voice sessions using the actual recorder and player", () => {
     const next = await start();
     closing.resolve();
     await stopping;
-    hook.sendText("Still connected");
+    const sent = hook.sendText("Still connected");
+    const player = FakeWorklet.instances.filter((node) => node.name === "stream-processor").at(-1)!;
+    player.receive({ event: "interrupted", requestId: 1, wasPlaying: false });
+    await sent;
     expect(next.sent.at(-1)).toEqual({ type: "response.create" });
     expect(next.close).not.toHaveBeenCalled();
     expect(replacement.track.stop).not.toHaveBeenCalled();

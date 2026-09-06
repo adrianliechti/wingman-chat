@@ -249,7 +249,7 @@ describe("voice request context and tool lifecycle", () => {
     const socket = await start();
     const first = socket.sent.find((event) => event.item?.role === "system")!;
     file = "/second.txt";
-    hook.sendText("Edit this");
+    await hook.sendText("Edit this");
     const contexts = socket.sent.filter((event) => event.item?.role === "system");
     expect(contexts).toHaveLength(2);
     expect(contexts[1].item.content[0].text).toContain("/second.txt");

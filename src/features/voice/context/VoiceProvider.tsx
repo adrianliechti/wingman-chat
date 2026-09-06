@@ -151,8 +151,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }
 
   const buildToolContextFactory = useCallback(
-    (currentModel: string | undefined, chatId: string): ToolContextFactory =>
-      (toolCall: { id: string; name: string }): ToolContext => {
+    (currentModel: string | undefined, chatId: string): ToolContextFactory => {
+      const owner = sessionRef.current;
+      const requireOwner = () => {
+        if (!owner || sessionRef.current !== owner) throw new DOMException("Voice session stopped", "AbortError");
+      };
+      return (toolCall: { id: string; name: string }): ToolContext => {
         let resultMeta: Record<string, unknown> = {};
         return {
           model: currentModel,
@@ -166,17 +170,20 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             updateToolMetaRef.current(toolCall.id, { ...resultMeta });
           },
           elicit: async (elicitation: Elicitation) => {
+            requireOwner();
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
             // Pause the mic during the elicitation, but let buffered playback finish naturally.
             const resume = await pauseAudioRef.current(false);
             try {
+              requireOwner();
               return await requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
             } finally {
               await resume();
             }
           },
         };
-      },
+      };
+    },
     [],
   );
 
@@ -324,7 +331,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const sendVoiceText = useCallback(
     (text: string) => {
       void addMessage({ role: Role.User, content: [{ type: "text", text }] });
-      sendText(text);
+      void sendText(text);
     },
     [addMessage, sendText],
   );

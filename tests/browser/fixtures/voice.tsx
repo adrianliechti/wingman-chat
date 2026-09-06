@@ -13,7 +13,7 @@ import { ToolsContext, type ToolsContextValue } from "../../../src/features/tool
 import { ArtifactsContext, type ArtifactsContextType } from "../../../src/features/artifacts/context/ArtifactsContext";
 import { PlayButton } from "../../../src/shared/ui/PlayButton";
 import { loadConfig } from "../../../src/shared/config";
-import type { Chat, Model } from "../../../src/shared/types/chat";
+import { ProviderState, type Chat, type Model, type Tool } from "../../../src/shared/types/chat";
 
 await loadConfig();
 
@@ -96,7 +96,23 @@ const models: Model[] = [
   { id: "text", name: "Text" },
 ];
 const agents = { currentAgent: null } as AgentContextType;
-const tools = { providers: [] } as unknown as ToolsContextValue;
+const toolGate = gate();
+let toolStarted = false;
+let elicitationCount = 0;
+const delayedTool: Tool = {
+  name: "late_elicitation",
+  parameters: { type: "object", properties: {} },
+  function: async (_args, context) => {
+    toolStarted = true;
+    await toolGate.promise;
+    await context!.elicit!({ message: "Continue?" });
+    return [];
+  },
+};
+const tools = {
+  providers: new URLSearchParams(location.search).has("late-tool") ? [{ id: "test", tools: [delayedTool] }] : [],
+  getProviderState: () => ProviderState.Connected,
+} as unknown as ToolsContextValue;
 const profile = { generateInstructions: () => "Test instructions" } as NonNullable<
   React.ContextType<typeof ProfileContext>
 >;
@@ -116,6 +132,9 @@ function Consumer({ chatId, realtime, showPlay }: { chatId: string; realtime: bo
       input: devices.inputDeviceId,
       output: devices.outputDeviceId,
     }),
+    releaseTool: toolGate.release,
+    toolState: () => ({ started: toolStarted, elicitations: elicitationCount }),
+    sendText: voice.sendText,
     startVoice: () => {
       starting = voice.startVoice().catch((error: unknown) => {
         errors.push(String(error));
@@ -223,6 +242,10 @@ function Owner() {
       return { chat };
     },
     addMessage: async () => {},
+    requestElicitation: async () => {
+      elicitationCount++;
+      return { action: "cancel" };
+    },
     setVoiceToolCall: noop,
     updateToolMeta: noop,
   } as unknown as ChatContextType;
@@ -263,6 +286,9 @@ declare global {
         output?: string;
       };
       startVoice: () => void;
+      releaseTool: () => void;
+      toolState: () => { started: boolean; elicitations: number };
+      sendText: (text: string) => void;
       stopVoice: () => Promise<void>;
       startDictation: () => void;
       stopDictation: () => Promise<string>;

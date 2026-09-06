@@ -21,10 +21,12 @@ waiting, and any stream granted later is immediately stopped.
   owner. A selected output that cannot be opened raises an error. Browsers
   without output-device selection continue using their system output.
 - Elicitation pauses nest. Each resume belongs to its originating session, so
-  an old tool finishing cannot resume a replacement microphone.
+  an old tool cannot open an elicitation or resume a replacement microphone.
 - Recorder chunks carry a recording generation, excluding queued chunks from
-  before a pause. Playback interrupts correlate replies with requests, discard
-  every queued interrupted track, and report samples actually played. An
+  before a pause. Spoken and typed interruptions correlate replies with requests,
+  discard every queued interrupted track, and report samples actually played,
+  including zero. Typed follow-ups wait for history truncation before requesting
+  another response; concurrent submissions share that wait. An
   unanswered interrupt stops playback after two seconds.
 
 ## Dictation and speech helpers
@@ -51,10 +53,8 @@ default when absent. File STT and realtime transcribers are different API
 contracts. For example, the local backend smoke test accepted
 `gpt-live-transcribe` in realtime configuration but rejected it at
 `/v1/audio/transcriptions`; `gpt-transcribe` successfully transcribed the
-synthetic WAV there. That backend's unspecified STT default also returned 404.
-For that deployment, configure `stt.model: "gpt-transcribe"` (or another file STT
-model), independently of `voice.transcriber`. Portable client defaults do not
-override the server's selected model.
+synthetic WAV there. File STT needs a backend default that supports that upload endpoint, or an
+explicit `stt.model` override. Portable client defaults do not infer or substitute a different model.
 
 ## Read-aloud
 
