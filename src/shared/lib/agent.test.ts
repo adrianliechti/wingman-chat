@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "./client";
 import { run } from "./agent";
-import { AgentInvocationContext } from "./agent-run-controller";
+import { AgentInvocationContext, AgentRunController } from "./agent-run-controller";
 import { APIError, BadRequestError } from "openai/error";
 import type { Message, Tool } from "../types/chat";
 
@@ -12,6 +12,30 @@ function fakeClient(complete: Client["complete"]): Client {
 }
 
 describe("agent run controller", () => {
+  it("does not let lifecycle observers turn committed work into a failed run", async () => {
+    const observer = vi.fn(() => {
+      throw new Error("Observer failed");
+    });
+    const complete = vi.fn().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+    const result = await run(fakeClient(complete), "model", "", prompt, [], { onEvent: observer });
+    expect(result.status).toBe("completed");
+    expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("finalizes before publishing its terminal event, including reentrant observers", () => {
+    const nested = vi.fn();
+    const controller = new AgentRunController({
+      onEvent: (event) => {
+        if (event.type === "run.completed") nested(controller.finish("failed", "error", []));
+      },
+    });
+    const result = controller.finish("completed", "end_turn", prompt);
+    expect(nested).toHaveBeenCalledExactlyOnceWith(result);
+    expect(result.status).toBe("completed");
+    expect(result.messages).toBe(prompt);
+  });
+
   it("returns max_turns with ordered events and invocation-wide model usage", async () => {
     const complete = vi.fn(async () => ({
       role: "assistant" as const,

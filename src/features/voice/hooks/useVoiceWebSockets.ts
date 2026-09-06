@@ -4,6 +4,7 @@ import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
 import { parseToolArguments, toolArgumentHints } from "@/shared/lib/toolArguments";
 import { compileToolRegistry, type ToolRegistry } from "@/shared/lib/toolRegistry";
 import { captureRequestContext } from "@/shared/lib/requestContext";
+import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type {
   AudioContent,
@@ -31,6 +32,7 @@ interface DeferredToolCall {
   callId: string;
   toolName: string;
   argsStr: string;
+  incomplete: boolean;
 }
 
 interface PendingResponse {
@@ -38,7 +40,6 @@ interface PendingResponse {
   callIds: Set<string>;
   done: boolean;
   hadToolCalls: boolean;
-  deferredToolCalls: DeferredToolCall[];
 }
 
 export function useVoiceWebSockets(
@@ -72,7 +73,6 @@ export function useVoiceWebSockets(
   // when the user interrupts (playback outlives response.done, so entries are
   // only cleared on stop).
   const audioItemByResponseRef = useRef<Map<string, string>>(new Map());
-  const argAccumRef = useRef<Map<string, string>>(new Map());
   const pendingPostToolFireRef = useRef<boolean>(false);
   const toolsRef = useRef<Tool[] | undefined>(undefined);
   const toolRegistryRef = useRef<ToolRegistry | undefined>(undefined);
@@ -286,13 +286,12 @@ export function useVoiceWebSockets(
         ws.send(JSON.stringify(sessionUpdate));
 
         if (messages && messages.length > 0) {
-          const seedMessages = messages.filter((message) => {
-            if (message.role !== "user" && message.role !== "assistant") return false;
-            return getTextFromContent(message.content).trim().length > 0;
-          });
-
-          seedMessages.forEach((message) => {
-            const messageText = getTextFromContent(message.content);
+          for (const message of messages) {
+            const messageText =
+              message.role === "assistant"
+                ? getFinalTextFromContent(message.content)
+                : getTextFromContent(message.content);
+            if (!messageText.trim()) continue;
             ws.send(
               JSON.stringify({
                 type: "conversation.item.create",
@@ -308,7 +307,7 @@ export function useVoiceWebSockets(
                 },
               }),
             );
-          });
+          }
 
           console.log("Chat history added to conversation");
         }
@@ -368,17 +367,7 @@ export function useVoiceWebSockets(
                 callIds: new Set(),
                 done: false,
                 hadToolCalls: false,
-                deferredToolCalls: [],
               });
-            }
-            break;
-          }
-
-          case "response.function_call_arguments.delta": {
-            const deltaItemId = msg.item_id as string | undefined;
-            const deltaChunk = msg.delta as string | undefined;
-            if (deltaItemId && deltaChunk) {
-              argAccumRef.current.set(deltaItemId, (argAccumRef.current.get(deltaItemId) ?? "") + deltaChunk);
             }
             break;
           }
@@ -409,44 +398,37 @@ export function useVoiceWebSockets(
             break;
           }
 
-          case "response.output_item.done": {
-            const item = msg.item as Record<string, unknown>;
-            const responseId = (msg as Record<string, unknown>).response_id as string | undefined;
-
-            if (item?.type === "function_call") {
-              const callId = item.call_id as string;
-              const itemId = item.id as string;
-
-              const accumulatedArgs = argAccumRef.current.get(itemId);
-              argAccumRef.current.delete(itemId);
-              const argsStr = typeof item.arguments === "string" ? item.arguments : (accumulatedArgs ?? "");
-
-              if (responseId && toolsRef.current) {
-                const entry = pendingResponsesRef.current.get(responseId);
-                if (entry) {
-                  if (!callId || entry.callIds.has(callId)) break;
-                  entry.hadToolCalls = true;
-                  entry.callIds.add(callId);
-                  entry.deferredToolCalls.push({ callId, toolName: item.name as string, argsStr });
-                } else {
-                  console.warn(`[voice:tool] no pending entry for response ${responseId} — cannot defer tool call`);
-                }
-              }
-            }
-            break;
-          }
-
           case "response.done": {
             console.log("Response complete:", msg.response);
             const responseObj = msg.response as Record<string, unknown>;
             const responseStatus = responseObj?.status as string | undefined;
+            const doneResponseId = responseObj?.id as string | undefined;
+            const entry = doneResponseId ? pendingResponsesRef.current.get(doneResponseId) : undefined;
+            if (!doneResponseId || !entry || entry.done) break;
+            entry.done = true;
+            // response.done includes every output item, including final arguments.
+            // Use that snapshot for execution; no parallel delta history is needed.
+            const output = (responseObj?.output as Record<string, unknown>[] | undefined) ?? [];
+            const deferredCalls: DeferredToolCall[] = [];
+            for (const item of output) {
+              if (item.type !== "function_call" || typeof item.call_id !== "string" || !item.call_id.trim()) continue;
+              if (entry.callIds.has(item.call_id)) continue;
+              entry.callIds.add(item.call_id);
+              deferredCalls.push({
+                callId: item.call_id,
+                toolName: typeof item.name === "string" ? item.name : "",
+                argsStr: typeof item.arguments === "string" ? item.arguments : "",
+                incomplete: item.status === "incomplete" || item.status === "in_progress",
+              });
+            }
+            entry.hadToolCalls = deferredCalls.length > 0;
 
             if (responseStatus === "completed") {
               // The message item is not necessarily output[0] — tool-call responses
               // put function_call items alongside (or before) the message.
-              const output = responseObj?.output as Record<string, unknown>[] | undefined;
-              const messageItem = output?.find((item) => item?.type === "message");
-              const parts = (messageItem?.content as Record<string, unknown>[] | undefined) ?? [];
+              const parts = output.flatMap((item) =>
+                item.type === "message" ? ((item.content as Record<string, unknown>[] | undefined) ?? []) : [],
+              );
               const text = parts
                 .map((part) => (part?.transcript ?? part?.text) as string | undefined)
                 .filter((part): part is string => !!part)
@@ -454,106 +436,94 @@ export function useVoiceWebSockets(
               if (text) onAssistantRef.current(text);
             }
 
-            const doneResponseId = responseObj?.id as string | undefined;
-            if (doneResponseId) {
-              const entry = pendingResponsesRef.current.get(doneResponseId);
-              if (entry) {
-                const deferredCalls = entry.deferredToolCalls;
-                entry.deferredToolCalls = [];
+            if (responseStatus !== "completed") {
+              for (const deferred of deferredCalls) {
+                onToolCallDoneRef.current?.(deferred.callId);
+                // The function_call item is already committed to the conversation —
+                // give it an output so the next turn doesn't see a dangling call.
+                sendFunctionOutput(
+                  eventWs,
+                  deferred.callId,
+                  JSON.stringify({
+                    error: `The response ${responseStatus ?? "did not complete"}; the tool was not executed.`,
+                  }),
+                );
+                entry.callIds.delete(deferred.callId);
+              }
+              pendingResponsesRef.current.delete(doneResponseId);
+            } else {
+              if (deferredCalls.length > 0) {
+                for (const deferred of deferredCalls) {
+                  void (async () => {
+                    const registry = toolRegistryRef.current;
+                    const tool = registry?.get(deferred.toolName);
+                    const { callId, toolName, argsStr } = deferred;
 
-                if (responseStatus !== "completed") {
-                  for (const deferred of deferredCalls) {
-                    onToolCallDoneRef.current?.(deferred.callId);
-                    // The function_call item is already committed to the conversation —
-                    // give it an output so the next turn doesn't see a dangling call.
-                    sendFunctionOutput(
-                      eventWs,
-                      deferred.callId,
-                      JSON.stringify({
-                        error: `The response ${responseStatus ?? "did not complete"}; the tool was not executed.`,
-                      }),
-                    );
-                    entry.callIds.delete(deferred.callId);
-                  }
-                  pendingResponsesRef.current.delete(doneResponseId);
-                } else {
-                  entry.done = true;
+                    onToolCallRef.current?.(toolName, callId);
 
-                  if (deferredCalls.length > 0) {
-                    for (const deferred of deferredCalls) {
-                      void (async () => {
-                        const registry = toolRegistryRef.current;
-                        const tool = registry?.get(deferred.toolName);
-                        const { callId, toolName, argsStr } = deferred;
+                    let output = "";
 
-                        onToolCallRef.current?.(toolName, callId);
-
-                        let output = "";
-
-                        let args: Record<string, unknown> | undefined;
-                        try {
-                          args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
-                        } catch (parseError) {
-                          console.error("Malformed tool arguments:", argsStr, parseError);
-                        }
-
-                        if (args === undefined) {
-                          output = JSON.stringify({
-                            error: "Malformed arguments: could not parse JSON. Please retry with valid arguments.",
-                          });
-                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                        } else if (!tool) {
-                          console.error(`Tool not found: ${toolName}`);
-                          output = JSON.stringify({ error: `Tool "${toolName}" is not available.` });
-                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                        } else {
-                          try {
-                            const ctx = {
-                              ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
-                              runId: entry.runId,
-                              signal: sessionController.signal,
-                            };
-                            ctx.signal.throwIfAborted();
-                            const result = await tool.function(registry!.parse(tool, args), ctx);
-                            if (ctx.signal.aborted) return;
-                            const rawResult =
-                              typeof result === "string"
-                                ? [{ type: "text" as const, text: result }]
-                                : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
-
-                            output = serializeToolResultForApi(rawResult);
-                            onToolResultRef.current?.(toolName, callId, rawResult);
-                          } catch (error) {
-                            if (sessionController.signal.aborted) return;
-                            console.error("Error executing tool:", error);
-                            const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
-                            output = JSON.stringify({ error: errorMessage });
-                            onToolResultRef.current?.(toolName, callId, [{ type: "text", text: errorMessage }]);
-                          }
-                        }
-
-                        onToolCallDoneRef.current?.(callId);
-                        sendFunctionOutput(eventWs, callId, output);
-
-                        const e = pendingResponsesRef.current.get(doneResponseId);
-                        if (e) {
-                          e.callIds.delete(callId);
-                          checkAndFireResponseCreate(doneResponseId, eventWs);
-                        } else {
-                          console.warn(
-                            `[voice:tool] response entry for ${doneResponseId} missing after tool completion — sending response.create directly`,
-                          );
-                          if (eventWs.readyState === WebSocket.OPEN) {
-                            eventWs.send(JSON.stringify({ type: "response.create" }));
-                          }
-                        }
-                      })();
+                    let args: Record<string, unknown> | undefined;
+                    try {
+                      args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
+                    } catch (parseError) {
+                      console.error("Malformed tool arguments:", argsStr, parseError);
                     }
-                  } else {
-                    checkAndFireResponseCreate(doneResponseId, eventWs);
-                    pendingResponsesRef.current.delete(doneResponseId);
-                  }
+
+                    if (deferred.incomplete) {
+                      output = JSON.stringify({
+                        error:
+                          "Tool arguments are incomplete; the tool was not executed. Retry with a smaller payload.",
+                      });
+                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                    } else if (args === undefined) {
+                      output = JSON.stringify({
+                        error: "Malformed arguments: could not parse JSON. Please retry with valid arguments.",
+                      });
+                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                    } else if (!tool) {
+                      console.error(`Tool not found: ${toolName}`);
+                      output = JSON.stringify({ error: `Tool "${toolName}" is not available.` });
+                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                    } else {
+                      try {
+                        const ctx = {
+                          ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
+                          runId: entry.runId,
+                          signal: sessionController.signal,
+                        };
+                        ctx.signal.throwIfAborted();
+                        const result = await tool.function(registry!.parse(tool, args), ctx);
+                        if (ctx.signal.aborted) return;
+                        const rawResult =
+                          typeof result === "string"
+                            ? [{ type: "text" as const, text: result }]
+                            : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
+
+                        output = serializeToolResultForApi(rawResult);
+                        onToolResultRef.current?.(toolName, callId, rawResult);
+                      } catch (error) {
+                        if (sessionController.signal.aborted) return;
+                        console.error("Error executing tool:", error);
+                        const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
+                        output = JSON.stringify({ error: errorMessage });
+                        onToolResultRef.current?.(toolName, callId, [{ type: "text", text: errorMessage }]);
+                      }
+                    }
+
+                    onToolCallDoneRef.current?.(callId);
+                    sendFunctionOutput(eventWs, callId, output);
+
+                    const e = pendingResponsesRef.current.get(doneResponseId);
+                    if (e === entry) {
+                      e.callIds.delete(callId);
+                      checkAndFireResponseCreate(doneResponseId, eventWs);
+                    }
+                  })();
                 }
+              } else {
+                checkAndFireResponseCreate(doneResponseId, eventWs);
+                pendingResponsesRef.current.delete(doneResponseId);
               }
             }
             drainPendingPostToolFires(eventWs);
@@ -650,7 +620,6 @@ export function useVoiceWebSockets(
 
     pendingResponsesRef.current.clear();
     audioItemByResponseRef.current.clear();
-    argAccumRef.current.clear();
     pendingPostToolFireRef.current = false;
     contextItemIdRef.current = null;
 

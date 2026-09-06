@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
 import {
   artifactKind,
   artifactLanguage,
@@ -26,7 +27,6 @@ import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
-import type { File, FileEntry } from "@/shared/types/file";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
@@ -66,8 +66,15 @@ export function ArtifactsDrawer() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
-  const [isRunning, setIsRunning] = useState(false);
-  const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
+  const [runner, setRunner] = useState<{
+    fs: FileSystemManager | null;
+    path: string | null;
+    run: () => Promise<void>;
+    isRunning: boolean;
+  } | null>(null);
+  const currentRunner = runner?.fs === fs && runner?.path === activeFile ? runner : null;
+  const runHandler = currentRunner?.run;
+  const isRunning = currentRunner?.isRunning ?? false;
   const [showFilePicker, setShowFilePicker] = useState(false);
   const filePickerRef = useRef<HTMLDivElement>(null);
   const [showFilesBrowser, setShowFilesBrowser] = useState(false);
@@ -76,14 +83,12 @@ export function ArtifactsDrawer() {
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // State for files list (loaded from async fs.listFiles)
-  const [files, setFiles] = useState<FileEntry[]>([]);
-
-  // State for active file content (loaded from async fs.getFile)
-  const [activeFileData, setActiveFileData] = useState<File | null>(null);
+  const files = useArtifactEntries(fs);
+  const activeFileData = useArtifactFile(fs, activeFile);
 
   // Processing state for file uploads
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const isProcessing = pendingUploads > 0;
 
   // Ensure a chat exists and return its `FileSystemManager`. Delegates to the
   // chat feature so artifacts has no chat-creation logic of its own. Using
@@ -96,17 +101,19 @@ export function ArtifactsDrawer() {
   }, [fs, ensureChat]);
 
   const uploadFiles = useCallback(
-    async (fileList: globalThis.File[]) => {
-      const activeFs = await ensureFs();
-      setIsProcessing(true);
+    async (source: globalThis.File[] | (() => Promise<globalThis.File[]>)) => {
+      if (Array.isArray(source) && source.length === 0) return;
+      setPendingUploads((count) => count + 1);
       try {
+        const activeFs = await ensureFs();
+        const fileList = typeof source === "function" ? await source() : source;
         const batch: ProcessedFile[] = [];
         for (const file of fileList) {
           batch.push(...(await processUploadedFile(file)));
         }
         const ingestion = await activeFs.ingestFiles(batch);
         const lastPath = ingestion.paths.at(-1);
-        if (lastPath) openFile(lastPath);
+        if (lastPath) openFile(lastPath, activeFs);
       } catch (error) {
         console.error("Error uploading files:", error);
         notify.error(
@@ -114,32 +121,45 @@ export function ArtifactsDrawer() {
           error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
         );
       } finally {
-        setIsProcessing(false);
+        setPendingUploads((count) => count - 1);
       }
     },
     [ensureFs, openFile],
   );
 
   const handleDriveFiles = useCallback(
-    async (selected: SelectedFile[]) => {
-      setIsProcessing(true);
-      try {
+    (selected: SelectedFile[]) => {
+      // Bind the upload's workspace before downloads can outlast navigation.
+      return uploadFiles(async () => {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
           fetched.push(await downloadDriveFile(f, config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
         }
-        await uploadFiles(fetched);
-      } finally {
-        setIsProcessing(false);
-      }
+        return fetched;
+      });
     },
     [config.artifacts?.maxFileSize, uploadFiles],
   );
 
   // Callback for editors to register their run handler
-  const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
-    setRunHandler(() => handler);
-  }, []);
+  const onRunReady = useCallback(
+    (handler: (() => Promise<void>) | null) => {
+      setRunner((current) => {
+        const ownsRunner = current?.fs === fs && current?.path === activeFile;
+        if (!handler) return ownsRunner ? null : current;
+        return { fs, path: activeFile, run: handler, isRunning: ownsRunner && current.isRunning };
+      });
+    },
+    [fs, activeFile],
+  );
+  const onRunningChange = useCallback(
+    (isRunning: boolean) => {
+      setRunner((current) =>
+        current?.fs === fs && current?.path === activeFile ? { ...current, isRunning } : current,
+      );
+    },
+    [fs, activeFile],
+  );
 
   // Download a single artifact by path, logging (not surfacing) failures.
   const downloadFile = useCallback(
@@ -153,102 +173,6 @@ export function ArtifactsDrawer() {
     },
     [fs],
   );
-
-  // Subscribe to filesystem events and load data
-  useEffect(() => {
-    if (!fs) {
-      setFiles([]);
-      setActiveFileData(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    // Helper to load files list
-    const loadFiles = async () => {
-      try {
-        const fileList = await fs.listEntries();
-        if (!cancelled) {
-          setFiles(fileList);
-        }
-      } catch (error) {
-        console.error("Error loading files:", error);
-        if (!cancelled) {
-          setFiles([]);
-        }
-      }
-    };
-
-    // Helper to load active file content
-    const loadActiveFile = async () => {
-      if (!activeFile) {
-        if (!cancelled) {
-          setActiveFileData(null);
-        }
-        return;
-      }
-
-      try {
-        const file = await fs.getFile(activeFile);
-        if (!cancelled) {
-          setActiveFileData(file ?? null);
-        }
-      } catch (error) {
-        console.error("Error loading active file:", error);
-        if (!cancelled) {
-          setActiveFileData(null);
-        }
-      }
-    };
-
-    // Load initial data
-    void loadFiles();
-    void loadActiveFile();
-
-    // Subscribe to events for subsequent updates.
-    // Reload the sidebar list for every filesystem change, but only refresh
-    // the active editor content when that specific file is affected.
-    const handleFileCreated = () => {
-      void loadFiles();
-    };
-
-    const handleFileDeleted = (path: string) => {
-      void loadFiles();
-
-      if (path === activeFile && !cancelled) {
-        setActiveFileData(null);
-      }
-    };
-
-    const handleFileRenamed = (oldPath: string, newPath: string) => {
-      void loadFiles();
-
-      if (activeFile === oldPath || activeFile === newPath) {
-        void loadActiveFile();
-      }
-    };
-
-    const handleFileUpdated = (path: string) => {
-      void loadFiles();
-
-      if (path === activeFile) {
-        void loadActiveFile();
-      }
-    };
-
-    const unsubscribeCreated = fs.subscribe("fileCreated", handleFileCreated);
-    const unsubscribeDeleted = fs.subscribe("fileDeleted", handleFileDeleted);
-    const unsubscribeRenamed = fs.subscribe("fileRenamed", handleFileRenamed);
-    const unsubscribeUpdated = fs.subscribe("fileUpdated", handleFileUpdated);
-
-    return () => {
-      cancelled = true;
-      unsubscribeCreated();
-      unsubscribeDeleted();
-      unsubscribeRenamed();
-      unsubscribeUpdated();
-    };
-  }, [fs, activeFile]);
 
   // Handle auto-opening a file when none is active but files are available.
   // Prefers the most recently modified file; falls back to alphabetical first.
@@ -266,9 +190,9 @@ export function ArtifactsDrawer() {
         if (currTime !== prevTime) return currTime > prevTime ? curr : prev;
         return curr.path < prev.path ? curr : prev;
       });
-      openFile(best.path);
+      if (fs) openFile(best.path, fs);
     }
-  }, [files, openFile]);
+  }, [files, fs, openFile]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
@@ -361,7 +285,7 @@ export function ArtifactsDrawer() {
       return null;
     }
 
-    const editorKey = activeFileData.path;
+    const editorKey = JSON.stringify([fs?.chatId, activeFileData.path]);
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
 
     switch (kind) {
@@ -499,7 +423,7 @@ export function ArtifactsDrawer() {
               key={editorKey}
               content={activeFileData.content}
               onRunReady={onRunReady}
-              onRunningChange={setIsRunning}
+              onRunningChange={onRunningChange}
             />
           );
         }
@@ -509,7 +433,7 @@ export function ArtifactsDrawer() {
               key={editorKey}
               content={activeFileData.content}
               onRunReady={onRunReady}
-              onRunningChange={setIsRunning}
+              onRunningChange={onRunningChange}
             />
           );
         }
@@ -880,6 +804,7 @@ export function ArtifactsDrawer() {
           <ResizablePanel defaultSize={25} minSize={120}>
             <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
               <ArtifactsBrowser
+                key={fs.chatId}
                 fs={fs}
                 files={files}
                 openTabs={activeFile ? [activeFile] : []}

@@ -77,13 +77,14 @@ function createHarness(tools: Tool[] = [], getContext = () => "active_file: /fir
 }
 
 function toolCall(socket: Socket, args: Record<string, unknown>) {
+  const item = { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: JSON.stringify(args) };
   socket.message({ type: "response.created", response: { id: "response" } });
   socket.message({
     type: "response.output_item.done",
     response_id: "response",
-    item: { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: JSON.stringify(args) },
+    item,
   });
-  socket.message({ type: "response.done", response: { id: "response", status: "completed", output: [] } });
+  socket.message({ type: "response.done", response: { id: "response", status: "completed", output: [item] } });
 }
 
 describe("voice request context and tool lifecycle", () => {
@@ -95,6 +96,137 @@ describe("voice request context and tool lifecycle", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("seeds voice with final assistant answers and all user text", async () => {
+    const { hook } = createHarness();
+    await hook.start(
+      "test",
+      "test",
+      "Instructions",
+      [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hello " },
+            { type: "text", text: "there" },
+          ],
+        },
+        { role: "assistant", content: [{ type: "text", text: "Still working", phase: "commentary" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Progress", phase: "commentary" },
+            { type: "text", text: "Final answer", phase: "final_answer" },
+          ],
+        },
+      ],
+      [],
+    );
+    const socket = Socket.instances.at(-1)!;
+    socket.open();
+    socket.message({ type: "session.updated" });
+    expect(
+      socket.sent
+        .filter((event) => event.type === "conversation.item.create" && event.item.role !== "system")
+        .map((event) => event.item.content),
+    ).toEqual([[{ type: "input_text", text: "Hello there" }], [{ type: "output_text", text: "Final answer" }]]);
+    await hook.stop();
+  });
+
+  it("executes calls from the final response even when item events are missing", async () => {
+    const handler = vi.fn<Tool["function"]>(async () => []);
+    const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+    const socket = await start();
+    socket.message({ type: "response.created", response: { id: "response" } });
+    socket.message({
+      type: "response.done",
+      response: {
+        id: "response",
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            call_id: "call",
+            name: "edit",
+            arguments: '{"value":"final"}',
+            status: "completed",
+          },
+        ],
+      },
+    });
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledExactlyOnceWith({ value: "final" }, expect.anything());
+    await hook.stop();
+  });
+
+  it.each(["completed", "incomplete"])(
+    "uses the final tool arguments and %s status instead of earlier item events",
+    async (status) => {
+      const handler = vi.fn<Tool["function"]>(async () => []);
+      const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+      const socket = await start();
+      socket.message({ type: "response.created", response: { id: "response" } });
+      socket.message({
+        type: "response.output_item.done",
+        response_id: "response",
+        item: {
+          type: "function_call",
+          call_id: "call",
+          name: "edit",
+          arguments: '{"value":"stale"}',
+        },
+      });
+      socket.message({
+        type: "response.done",
+        response: {
+          id: "response",
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              call_id: "call",
+              name: "edit",
+              arguments: '{"value":"final"}',
+              status,
+            },
+          ],
+        },
+      });
+      await Promise.resolve();
+      if (status === "completed")
+        expect(handler).toHaveBeenCalledExactlyOnceWith({ value: "final" }, expect.anything());
+      else {
+        expect(handler).not.toHaveBeenCalled();
+        expect(socket.sent.some((event) => event.item?.output?.includes("incomplete"))).toBe(true);
+      }
+      await hook.stop();
+    },
+  );
+
+  it("ignores duplicate terminal events while tools are still running", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = vi.fn<Tool["function"]>(async () => {
+      await gate;
+      return [];
+    });
+    const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+    const socket = await start();
+    socket.message({ type: "response.created", response: { id: "response" } });
+    const output = ["a", "b"].map((call_id) => ({ type: "function_call", call_id, name: "edit", arguments: "{}" }));
+    output.forEach((item) => socket.message({ type: "response.output_item.done", response_id: "response", item }));
+    const done = { type: "response.done", response: { id: "response", status: "completed", output } };
+    socket.message(done);
+    socket.message(done);
+    release();
+    await gate;
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(socket.sent.filter((event) => event.type === "response.create")).toHaveLength(1);
+    await hook.stop();
   });
 
   it("updates the static session when schemas or the helper model change, but not callback identity", () => {
@@ -160,7 +292,14 @@ describe("voice request context and tool lifecycle", () => {
         response_id: "response",
         item: { id: "item", type: "function_call", name: "edit", call_id: "call", arguments: "{}" },
       });
-      socket.message({ type: "response.done", response: { id: "response", status, output: [] } });
+      socket.message({
+        type: "response.done",
+        response: {
+          id: "response",
+          status,
+          output: [{ id: "item", type: "function_call", name: "edit", call_id: "call", arguments: "{}" }],
+        },
+      });
       await Promise.resolve();
       expect(handler).not.toHaveBeenCalled();
       expect(
@@ -187,7 +326,10 @@ describe("voice request context and tool lifecycle", () => {
     };
     socket.message(event);
     socket.message(event);
-    socket.message({ type: "response.done", response: { id: "response", status: "completed", output: [] } });
+    socket.message({
+      type: "response.done",
+      response: { id: "response", status: "completed", output: [event.item, event.item] },
+    });
     await vi.waitFor(() => expect(onResult).toHaveBeenCalled());
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler.mock.calls[0][0]).toEqual({ value: "final" });

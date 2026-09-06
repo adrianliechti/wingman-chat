@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
@@ -24,7 +24,7 @@ import { compactThreshold, minimalEffort } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { captureRequestContext, isUserMessage } from "@/shared/lib/requestContext";
 import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
-import { Role, withMessageIdentity } from "@/shared/types/chat";
+import { Role, updateToolResultMeta, withMessageIdentity } from "@/shared/types/chat";
 import type {
   ConsentResult,
   Elicitation,
@@ -56,6 +56,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { closeApp } = useApp();
   const { currentAgent } = useAgents();
   const [chatId, setChatId] = useState<string | null>(null);
+  const selectionVersionRef = useRef(0);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
   const [queuedSends, setQueuedSends] = useState<QueuedSend[]>([]);
@@ -192,13 +193,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return next;
   }, [artifactsEnabled, chat?.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setArtifactsFileSystem(fs);
   }, [fs, setArtifactsFileSystem]);
 
   const createChat = useCallback(async () => {
+    const version = ++selectionVersionRef.current;
     const newChat = await createChatHook();
-    setChatId(newChat.id);
+    if (version === selectionVersionRef.current) {
+      chatRef.current = newChat;
+      chatIdRef.current = newChat.id;
+      setChatId(newChat.id);
+    }
     return newChat;
   }, [createChatHook]);
 
@@ -209,6 +215,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (id: string | null) => {
       if (id === chatIdRef.current) return;
 
+      selectionVersionRef.current++;
+      chatIdRef.current = id;
       setChatId(id);
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       setPendingConsent(null);
@@ -228,6 +236,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (id: string) => {
       deleteChatHook(id);
       if (chatId === id) {
+        selectionVersionRef.current++;
+        chatIdRef.current = null;
         setChatId(null);
       }
     },
@@ -272,6 +282,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     const existingId = chatIdRef.current;
+    const selectionVersion = selectionVersionRef.current;
     let chatItem = existingId
       ? chatRef.current?.id === existingId
         ? chatRef.current
@@ -280,17 +291,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (!chatItem) {
       chatItem = await createChatOnce(createChatHook);
       chatItem.model = model;
-      chatRef.current = chatItem;
-      chatIdRef.current = chatItem.id;
-      setChatId(chatItem.id);
+      // Saving a new chat can outlast navigation. The caller still owns its
+      // new workspace, but must not replace the user's newer selection.
+      if (selectionVersion === selectionVersionRef.current) {
+        chatRef.current = chatItem;
+        chatIdRef.current = chatItem.id;
+        setChatId(chatItem.id);
+      }
       updateChat(chatItem.id, () => ({ model }));
     }
 
     const fsForChat = fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
-    fsRef.current = fsForChat;
+    if (chatIdRef.current === chatItem.id) {
+      fsRef.current = fsForChat;
+      // Uploads can finish before React renders the newly created chat.
+      // Bind eagerly so selecting their result uses this same workspace.
+      if (artifactsEnabled) setArtifactsFileSystem(fsForChat);
+    }
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
-  }, [model, createChatHook, createChatOnce, updateChat, chats]);
+  }, [model, createChatHook, createChatOnce, updateChat, chats, artifactsEnabled, setArtifactsFileSystem]);
 
   // Public alias for features (drawer, terminal, attachment sends) that need a
   // filesystem before the user's first message — same creation path as sending.
@@ -629,17 +649,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           onToolMeta: (toolCallId, meta) => {
             if (abortController.signal.aborted) return;
             if (isActive()) updateToolMeta(toolCallId, meta);
-            // Late update after commit: also patch the persisted tool_result in place.
+            // Also support updates after the loop has finished, patching only
+            // this result in the latest stored history.
             updateChat(id, (prev) => ({
-              messages: prev.messages.map((msg) => ({
-                ...msg,
-                content: msg.content.map((part) => {
-                  if (part.type === "tool_result" && part.id === toolCallId) {
-                    return { ...part, meta: { ...part.meta, ...meta } };
-                  }
-                  return part;
-                }),
-              })),
+              messages: updateToolResultMeta(prev.messages, toolCallId, meta),
             }));
           },
         });

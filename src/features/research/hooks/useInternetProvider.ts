@@ -4,9 +4,10 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import type { SearchResult } from "@/features/research/types/search";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
+import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent, Role, type Tool, type ToolContext, type ToolProvider } from "@/shared/types/chat";
+import { Role, type Tool, type ToolContext, type ToolProvider } from "@/shared/types/chat";
 
 // Caps prevent a few full-page web_fetch results from blowing past the
 // inner agent's input limit on the next turn.
@@ -307,7 +308,7 @@ export function useInternetProvider(): ToolProvider | null {
           }
           const conversation = runResult.messages;
           const last = conversation[conversation.length - 1];
-          const text = last ? getTextFromContent(last.content).trim() : "";
+          const text = last ? getFinalTextFromContent(last.content).trim() : "";
           const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
           return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
         } catch (error) {

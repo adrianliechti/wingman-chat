@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecuteMessage } from "./interpreterProtocol";
 import { createWorkerHost } from "./workerHost";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
@@ -17,6 +17,129 @@ class TestWorker extends EventTarget {
 }
 
 describe("interpreter host coordination", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("honors parent invocation cancellation without a separate execution signal", async () => {
+    const worker = new TestWorker();
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage: async () => undefined,
+      crashMessage: "crashed",
+    });
+    const parent = new AbortController();
+    const context = { invocationContext: new AgentInvocationContext({ signal: parent.signal }) };
+    const first = host.execute({ code: "while True: pass" }, { context });
+    parent.abort();
+    expect((await first).error).toBe("Code execution aborted");
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect((await host.execute({ code: "must not start" }, { context })).error).toBe("Execution cancelled");
+    expect(worker.requests).toHaveLength(1);
+  });
+
+  it("settles a failed execution post and recovers with a new worker", async () => {
+    const broken = new TestWorker();
+    vi.spyOn(broken, "postMessage").mockImplementation(() => {
+      throw new Error("Cannot clone input");
+    });
+    const fresh = new TestWorker();
+    const host = createWorkerHost({
+      createWorker: vi.fn().mockReturnValueOnce(broken).mockReturnValueOnce(fresh),
+      handleMessage: async () => undefined,
+      crashMessage: "crashed",
+    });
+    expect((await host.execute({ code: "broken" })).error).toBe("Cannot clone input");
+    const next = host.execute({ code: "next" });
+    fresh.finish(0, "recovered");
+    expect((await next).output).toBe("recovered");
+    expect(broken.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the compute watchdog paused if started arrives while an RPC is pending", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const worker = new TestWorker();
+    let release!: () => void;
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage: () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      crashMessage: "crashed",
+      computeStallMs: 100,
+    });
+    const run = host.execute({ code: "await llm('Question')" });
+    worker.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "llm-request",
+          prompt: "Question",
+          port: { postMessage: vi.fn(), close: vi.fn() },
+        },
+      }),
+    );
+    worker.requests[0].port.postMessage({ type: "started" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(worker.terminate).not.toHaveBeenCalled();
+    release();
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await run).error).toContain("Code execution stalled");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("aborts unfinished RPCs when their execution ends, without aborting the parent run", async () => {
+    const worker = new TestWorker();
+    let signal: AbortSignal | undefined;
+    const handleMessage = vi.fn((_message, options) => {
+      signal = options?.signal;
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve("cancelled"), { once: true }));
+    });
+    const parent = new AbortController();
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage,
+      crashMessage: "crashed",
+    });
+    const run = host.execute({ code: "void llm('Question')" }, { signal: parent.signal });
+    const port = { postMessage: vi.fn(), close: vi.fn() };
+    worker.dispatchEvent(new MessageEvent("message", { data: { type: "llm-request", prompt: "Question", port } }));
+    worker.finish(0, "done");
+    await run;
+    expect(signal?.aborted).toBe(true);
+    expect(parent.signal.aborted).toBe(false);
+  });
+
+  it("cancels RPCs on a crash and ignores a retired worker crashing during the next run", async () => {
+    const old = new TestWorker();
+    const current = new TestWorker();
+    const createWorker = vi.fn().mockReturnValueOnce(old).mockReturnValueOnce(current);
+    let signal: AbortSignal | undefined;
+    const handleMessage = vi.fn((_message, options) => {
+      signal = options?.signal;
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve("cancelled"), { once: true }));
+    });
+    const host = createWorkerHost({ createWorker, handleMessage, crashMessage: "crashed" });
+    const first = host.execute({ code: "llm('Question')" });
+    old.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "llm-request",
+          prompt: "Question",
+          port: { postMessage: vi.fn(), close: vi.fn() },
+        },
+      }),
+    );
+    old.dispatchEvent(new Event("error"));
+    expect((await first).success).toBe(false);
+    const firstSignal = signal;
+    const second = host.execute({ code: "second" });
+    old.dispatchEvent(new Event("error"));
+    current.finish(0, "second finished");
+    expect((await second).output).toBe("second finished");
+    expect(current.terminate).not.toHaveBeenCalled();
+    expect(firstSignal?.aborted).toBe(true);
+  });
+
   it("passes the owning run's model and budget to RPCs and ignores messages after completion", async () => {
     const worker = new TestWorker();
     const handleMessage = vi.fn(async () => "Answer");
@@ -33,7 +156,7 @@ describe("interpreter host coordination", () => {
     };
     rpc();
     expect(handleMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "llm-request" }), {
-      signal: undefined,
+      signal: expect.any(AbortSignal),
       context,
     });
     worker.finish(0, "done");

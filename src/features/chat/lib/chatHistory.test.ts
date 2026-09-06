@@ -56,6 +56,32 @@ describe("chat history and compaction", () => {
     expect(JSON.stringify(opts.client.summarizeHistory.mock.calls[0][1]).length).toBeLessThan(2000);
   });
 
+  it("bounds structured tool arguments in the summarizer even when no individual string is large", async () => {
+    const args = JSON.stringify({ path: "/matrix.json", values: Array.from({ length: 10_000 }, (_, i) => i) });
+    const messages = [user("Analyze the matrix"), call("a", args), output("a", "Matrix loaded")];
+    const original = structuredClone(messages);
+    const opts = { ...options(), force: true };
+    const compacted = await compactIfNeeded(messages, opts);
+    expect(JSON.stringify(opts.client.summarizeHistory.mock.calls[0][1]).length).toBeLessThan(2000);
+    expect(compacted).not.toBe(messages);
+    expect(messages).toEqual(original);
+    expect(prepareChatMessages(compacted)[1]).toEqual(messages[0]);
+  });
+
+  it("keeps the exact request and feedback through repeated overflow compactions in one turn", async () => {
+    const request = user("Do not change these exact constraints.");
+    let messages = [request, call("a"), output("a", "First evidence ".repeat(1000)), feedback];
+    messages = await compactIfNeeded(messages, { ...options(), force: true });
+    messages.push(call("b"), output("b", "Second evidence ".repeat(1000)));
+    const summarize = vi.fn().mockResolvedValue("Both evidence sources were inspected.");
+    const compacted = await compactIfNeeded(messages, { ...options(summarize), force: true });
+    expect(compacted).not.toBe(messages);
+    expect(prepareChatMessages(compacted).slice(1)).toEqual([request, feedback]);
+    expect(JSON.stringify(summarize.mock.calls[0][1])).toContain("Earlier work is done.");
+    expect(JSON.stringify(summarize.mock.calls[0][1])).not.toContain("First evidence");
+    expect(compacted.flatMap((message) => message.content).filter((part) => part.type === "summary")).toHaveLength(1);
+  });
+
   it("retries from the full committed history, including a summary after the last tool result", async () => {
     const original = [user("Work"), call("a"), output("a", "Large result ".repeat(1000))];
     const compacted = await compactIfNeeded(original, { ...options(), force: true });

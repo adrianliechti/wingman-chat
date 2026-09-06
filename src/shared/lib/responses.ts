@@ -7,6 +7,7 @@ import {
   LengthFinishReasonError,
 } from "openai/error";
 import { Role, type Content, type Message, type ReasoningContent } from "../types/chat";
+import { selectFinalAssistantMessage } from "./assistantText";
 import { dropOrphanFunctionCalls } from "./recovery";
 import { serializeToolResultForApi } from "./utils";
 
@@ -97,6 +98,11 @@ export function toResponseInput(input: Message[]): ResponseInputItem[] {
 
         for (const part of m.content) {
           if (part.type === "text") {
+            if (part.phase) {
+              flushAssistantText();
+              items.push({ type: "message", role: "assistant", content: part.text, phase: part.phase });
+              continue;
+            }
             bufferedText += part.text;
             continue;
           }
@@ -171,16 +177,33 @@ export function validateResponse(response: Response, allowTruncatedTools = false
   }
 }
 
-/** Use the final output as the source of truth, rather than accumulated UI deltas. */
+/** Extract only the final message before JSON parsing; SDK output_text joins messages and output_parsed picks the first. */
+export function finalResponseText(response: Response): string | null {
+  validateResponse(response);
+  const message = selectFinalAssistantMessage(response.output.filter((item) => item.type === "message"));
+  if (!message) return null;
+  if (message.status && message.status !== "completed") {
+    throw new APIError(
+      undefined,
+      { code: "response_incomplete", message: "The model's final answer was incomplete." },
+      undefined,
+      undefined,
+    );
+  }
+  if (message.content.some((part) => part.type === "refusal")) return null;
+  return message.content.map((part) => (part.type === "output_text" ? part.text : "")).join("") || null;
+}
+
+/** Use the final output as the source of truth, keeping one text part per assistant message. */
 export function responseContent(response: Response): Content[] {
   const parts: Content[] = [];
   let reasoning: ReasoningContent | undefined;
   for (const item of response.output) {
     if (item.type === "message") {
-      for (const part of item.content) {
-        if (part.type === "output_text") parts.push({ type: "text", text: part.text });
-        else if (part.type === "refusal") parts.push({ type: "text", text: part.refusal });
-      }
+      const text = item.content
+        .map((part) => (part.type === "output_text" ? part.text : part.type === "refusal" ? part.refusal : ""))
+        .join("");
+      parts.push({ type: "text", text, ...(item.phase ? { phase: item.phase } : {}) });
     } else if (item.type === "function_call") {
       parts.push({
         type: "tool_call",

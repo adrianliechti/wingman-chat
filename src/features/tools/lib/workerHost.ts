@@ -14,6 +14,7 @@ import type {
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 import type { ToolContext } from "@/shared/types/chat";
+import { combineAbortSignals } from "@/shared/lib/abortSignals";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
@@ -107,15 +108,19 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
         const bridge = activeBridge;
-        if (!bridge || worker !== created) return;
+        if (!bridge || worker !== created) {
+          message.port.close();
+          return;
+        }
         void replyOnPort(message.port, bridge, () =>
           config.handleMessage(message, { signal: bridge.signal, context: bridge.context }),
         );
       });
       created.addEventListener("error", (event) => {
+        if (worker !== created) return;
         // Drop the dead worker so the next call spawns a fresh one.
         console.error("Interpreter worker error:", event.message || event);
-        if (worker === created) worker = null;
+        worker = null;
         created.terminate();
         for (const onCrash of pendingFailures) onCrash();
         pendingFailures.clear();
@@ -126,12 +131,14 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
-    const run = () => executeNow(request, options);
+    const combined = combineAbortSignals(options?.signal, options?.context?.invocationContext?.signal);
+    const run = () => executeNow(request, { ...options, signal: combined.signal });
     // Runtime state and bridge replies belong to exactly one execution at a time.
     // This also covers UI runs and different chats, independently of workspace locks.
     const result = executionTail ? executionTail.then(run, run) : run();
     executionTail = result;
     const clear = () => {
+      combined.cleanup();
       if (executionTail === result) executionTail = null;
     };
     void result.then(clear, clear);
@@ -175,6 +182,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       let inFlight = 0;
       let settled = false;
       let started = false;
+      const executionController = new AbortController();
+      const bridgeSignal = combineAbortSignals(signal, executionController.signal);
 
       // A wedged run can't be interrupted cooperatively — tear the worker down
       // (next call respawns) and settle so the caller's sandbox lock releases.
@@ -201,7 +210,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         );
       };
       const bridge = {
-        signal,
+        signal: bridgeSignal.signal,
         context: options?.context,
         enter: () => {
           inFlight++;
@@ -224,6 +233,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         if (activeBridge === bridge) activeBridge = null; // only the owner clears the shared slot
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
+        executionController.abort();
+        bridgeSignal.cleanup();
         port1.close();
         if (config.reuseWorker === false && worker === target) {
           worker = null;
@@ -236,7 +247,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         const reply = event.data;
         if (reply.type === "started") {
           started = true;
-          arm();
+          if (inFlight === 0) arm();
           return;
         }
         settle(reply.result);
@@ -251,7 +262,12 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       }
       activeBridge = bridge;
       arm();
-      target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
+      try {
+        target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
+      } catch (error) {
+        port2.close();
+        fail(error instanceof Error ? error.message : "Unable to start code execution");
+      }
     });
   }
 

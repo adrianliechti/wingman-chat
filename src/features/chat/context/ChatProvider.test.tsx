@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { BadRequestError } from "openai/error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@/shared/lib/client";
-import type { Chat, Message, Tool } from "@/shared/types/chat";
+import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
 
@@ -128,6 +128,32 @@ afterEach(() => {
 });
 
 describe("chat run integration", () => {
+  it("retains late tool metadata across later history commits", async () => {
+    let toolContext: ToolContext | undefined;
+    fixture.tools = [
+      {
+        name: "work",
+        parameters: { type: "object" },
+        function: async (_args, context) => {
+          toolContext = context;
+          context?.setMeta?.({ progress: "running", obsolete: true });
+          return [{ type: "text", text: "Done" }];
+        },
+      },
+    ];
+    fixture.complete.mockResolvedValueOnce(call).mockImplementationOnce(async () => {
+      toolContext?.setMeta?.({ progress: "finished" });
+      toolContext?.updateMeta?.({ link: "/result" });
+      return assistant("Final answer");
+    });
+    await harness().sendMessage(user("Work"));
+    const result = fixture.chats[0].messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result");
+    expect(result).toMatchObject({ meta: { progress: "finished", link: "/result" } });
+    expect(result && "meta" in result && result.meta).not.toHaveProperty("obsolete");
+  });
+
   it("ignores a late classification from an older run", async () => {
     const old = deferred();
     fixture.classify

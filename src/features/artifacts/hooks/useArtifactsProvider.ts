@@ -1,11 +1,11 @@
 import { Braces, Shapes, SquareCode } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
-import { ARTIFACT_VALIDATORS, validateArtifactFile } from "@/features/artifacts/lib/artifactValidators";
+import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
 import {
   JAVASCRIPT_EXECUTION_PARAMETERS,
   PYTHON_EXECUTION_PARAMETERS,
 } from "@/features/artifacts/lib/executionToolSchemas";
-import type { ArtifactWorkspaceAccess, FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
@@ -21,11 +21,8 @@ import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw"
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
-import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
-import { formatArtifactValidationIssue } from "@/shared/lib/artifact-validation";
-import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import { artifactDelta } from "@/shared/types/artifact";
+import { executeArtifactCode } from "../lib/executeArtifactCode";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 
@@ -62,133 +59,6 @@ function runningCodeLabel(code: unknown): string {
   return `${RUNNING_CODE_WORDS[Math.abs(hash) % RUNNING_CODE_WORDS.length]}…`;
 }
 
-type SandboxFiles = Record<string, { content: string; contentType?: string }>;
-
-/**
- * Merge a skill's mounted resources into the sandbox file map, returning the
- * keys actually injected (skipping any that would shadow a real artifact). The
- * caller strips these from the post-run snapshot so read-only skill resources
- * never persist as artifacts.
- */
-function mergeSkillFiles(base: SandboxFiles, skillFiles: SandboxFiles): Set<string> {
-  const injected = new Set<string>();
-  for (const [path, file] of Object.entries(skillFiles)) {
-    if (path in base) continue;
-    base[path] = file;
-    injected.add(path);
-  }
-  return injected;
-}
-
-interface SnapshotValidation {
-  errors: string[];
-  warnings: string[];
-}
-
-/** Validate changed artifacts after an executor snapshot is committed. */
-async function validateChangedArtifactFiles(before: SandboxFiles, after: SandboxFiles): Promise<SnapshotValidation> {
-  const report: SnapshotValidation = { errors: [], warnings: [] };
-  for (const [path, file] of Object.entries(after)) {
-    const previous = before[path];
-    if (previous?.content === file.content && previous.contentType === file.contentType) continue;
-    const validation = await validateArtifactFile({ path, content: file.content, contentType: file.contentType });
-    report.errors.push(...validation.errors.map((issue) => `${path}: ${formatArtifactValidationIssue(issue)}`));
-    report.warnings.push(...validation.warnings.map((issue) => `${path}: ${formatArtifactValidationIssue(issue)}`));
-  }
-  return report;
-}
-
-function formatSnapshotValidation(report: SnapshotValidation): string {
-  const sections: string[] = [];
-  if (report.errors.length) {
-    sections.push(
-      `Validation errors (files were saved; continue editing and fix before finishing):\n${report.errors
-        .map((error) => `- ${error}`)
-        .join("\n")}`,
-    );
-  }
-  if (report.warnings.length) {
-    sections.push(`Validation warnings:\n${report.warnings.map((warning) => `- ${warning}`).join("\n")}`);
-  }
-  return sections.length ? `\n${sections.join("\n")}` : "";
-}
-
-type SandboxExecutor = (
-  request: Parameters<typeof executeCode>[0],
-  options?: Parameters<typeof executeCode>[1],
-) => ReturnType<typeof executeCode>;
-
-/** Shared snapshot → execute → commit pipeline for both interpreter tools. */
-async function runArtifactCode(options: {
-  args: Record<string, unknown>;
-  context?: ToolContext;
-  executor: SandboxExecutor;
-  extension: "py" | "js";
-  fs: ArtifactWorkspaceAccess | null;
-  onCommit?: (mutations: import("@/shared/types/artifact").ArtifactMutation[]) => Promise<void>;
-  mountSkills?: boolean;
-}) {
-  const { args, context, executor, extension, fs, mountSkills = false } = options;
-  const inlineCode = typeof args.code === "string" ? args.code : "";
-  const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-
-  try {
-    context?.signal?.throwIfAborted();
-    const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
-    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
-    const hasCode = inlineCode.trim().length > 0;
-    const hasPath = Boolean(path);
-
-    if (!hasCode && !hasPath) {
-      return executionFailure(
-        context,
-        "Error executing code: no `code` was received. If inline code failed to parse, escape quotes and " +
-          `backslashes or write it to a \`.${extension}\` artifact and run it with \`path\`.`,
-      );
-    }
-
-    // Prefer inline code: providers sometimes append `path` as if it were a
-    // working-directory hint even though the schema describes a selector.
-    let script = inlineCode;
-    if (!hasCode && path) {
-      if (!fs) return executionFailure(context, "Error executing code: file system not available.");
-      const file = await fs.getFile(path);
-      if (!file) return executionFailure(context, `Error executing code: file not found: ${path}`);
-      script = file.content;
-    }
-
-    const result = await executor(
-      { code: script, files: artifactFiles, limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES } },
-      { signal: context?.signal, context },
-    );
-    if (!result.success) {
-      return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
-    }
-
-    let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
-    if (fs && result.files) {
-      context?.signal?.throwIfAborted();
-      for (const key of skillKeys) delete result.files[key];
-      const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
-      await options.onCommit?.(summary.mutations);
-      if (summary.mutations.length > 0) {
-        context?.setMeta?.({
-          artifactFiles: [...summary.createdPaths, ...summary.updatedPaths],
-          artifactDelta: artifactDelta(summary.mutations),
-        });
-      }
-      artifactValidation = await validateChangedArtifactFiles(artifactFiles, result.files);
-    }
-
-    return [{ type: "text" as const, text: result.output + formatSnapshotValidation(artifactValidation) }];
-  } catch (error) {
-    return executionFailure(
-      context,
-      `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-}
-
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
 
@@ -205,16 +75,17 @@ export function useArtifactsProvider(): ToolProvider | null {
         validators: ARTIFACT_VALIDATORS,
       },
     );
-    const runCode = (options: Omit<Parameters<typeof runArtifactCode>[0], "fs">) => {
+    const runCode = async (options: Omit<Parameters<typeof executeArtifactCode>[0], "fs">) => {
       const workspace = resolveArtifactFileSystem(fsRef.current, options.context?.chatId);
-      if (!workspace) return runArtifactCode({ ...options, fs: null });
-      return workspace.withExclusiveAccess((access) =>
-        runArtifactCode({
-          ...options,
-          fs: access,
-          onCommit: (mutations) => readWriteManager.record(access, workspace.chatId, options.context, mutations),
-        }),
-      );
+      const result = await executeArtifactCode({
+        ...options,
+        fs: workspace,
+        limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES },
+        onCommit: (access, mutations) => readWriteManager.record(access, workspace!.chatId, options.context, mutations),
+      });
+      return result.success
+        ? [{ type: "text" as const, text: result.output }]
+        : executionFailure(options.context, result.error || "Unknown execution error");
     };
 
     const executionTools: Tool[] = [

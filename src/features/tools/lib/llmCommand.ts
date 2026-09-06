@@ -1,5 +1,7 @@
 import { getConfig } from "@/shared/config";
-import { getTextFromContent, Role } from "@/shared/types/chat";
+import { combineAbortSignals } from "@/shared/lib/abortSignals";
+import { getFinalTextFromContent } from "@/shared/lib/assistantText";
+import { Role, type ImageContent, type TextContent } from "@/shared/types/chat";
 import type { LlmCallOptions } from "./interpreterProtocol";
 import type { BridgeRequestOptions } from "./workerHost";
 
@@ -15,11 +17,36 @@ export function getModel(): string | null {
   return defaultModel;
 }
 
-export function consumeLlmBudget(options: BridgeRequestOptions): void {
-  options.signal?.throwIfAborted();
-  const invocation = options.context?.invocationContext;
-  if (invocation && !invocation.tryConsumeModelCall()) {
-    throw Object.assign(new Error("The invocation-wide model-call budget was exhausted."), { code: "MAX_TURNS" });
+/** A fresh request: no chat history, previous helper output, or parent tools. */
+export async function completeIsolated(
+  model: string,
+  content: Array<TextContent | ImageContent>,
+  options: Pick<LlmCallOptions, "system" | "effort">,
+  requestOptions: BridgeRequestOptions,
+): Promise<string> {
+  const invocation = requestOptions.context?.invocationContext;
+  const combined = combineAbortSignals(requestOptions.signal, invocation?.signal);
+  try {
+    combined.signal?.throwIfAborted();
+    if (invocation && !invocation.tryConsumeModelCall()) {
+      throw Object.assign(new Error("The invocation-wide model-call budget was exhausted."), { code: "MAX_TURNS" });
+    }
+    const result = await getConfig().client.complete(
+      model,
+      options.system ?? "",
+      [{ role: Role.User, content }],
+      [],
+      undefined,
+      {
+        ...(options.effort ? { effort: options.effort } : {}),
+        signal: combined.signal,
+        parentContext: requestOptions.context?.agentContext,
+      },
+    );
+    combined.signal?.throwIfAborted();
+    return getFinalTextFromContent(result.content);
+  } finally {
+    combined.cleanup();
   }
 }
 
@@ -33,18 +60,5 @@ export async function runLlm(
     throw new Error("llm: no model");
   }
 
-  consumeLlmBudget(requestOptions);
-  const result = await getConfig().client.complete(
-    model,
-    options.system ?? "",
-    [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
-    [],
-    undefined,
-    {
-      ...(options.effort ? { effort: options.effort } : {}),
-      signal: requestOptions.signal,
-      parentContext: requestOptions.context?.agentContext,
-    },
-  );
-  return getTextFromContent(result.content);
+  return completeIsolated(model, [{ type: "text", text: prompt }], options, requestOptions);
 }

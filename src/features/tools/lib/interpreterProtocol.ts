@@ -45,7 +45,7 @@ export interface RenderInput {
   path: string;
 }
 
-/** Per-call options for the `llm` helper; `model` falls back to the chat's currently selected model. */
+/** Each `llm` call starts with no history; `model` defaults to the owning run's model. */
 export interface LlmCallOptions {
   model?: string;
   system?: string;

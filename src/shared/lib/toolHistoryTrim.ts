@@ -125,22 +125,26 @@ function elideJsonStrings(
   return { value, changed: false };
 }
 
-/** Replace oversized strings anywhere in a tool-call arguments JSON. */
+/** Keep useful JSON fields where possible, then bound any remaining bulky structure. */
 export function elideToolArguments(raw: string, opts: ToolArgumentElisionOptions = {}): string {
   const { maxChars, previewChars } = normalizeElisionOptions(opts);
   if (raw.length <= maxChars) return raw;
 
+  let candidate = raw;
   try {
     const args = JSON.parse(raw) as unknown;
-    if (typeof args !== "object" || args === null || Array.isArray(args)) return raw;
-    const elided = elideJsonStrings(args, maxChars, previewChars);
-    return elided.changed ? JSON.stringify(elided.value) : raw;
+    if (typeof args === "object" && args !== null && !Array.isArray(args)) {
+      const elided = elideJsonStrings(args, maxChars, previewChars);
+      if (elided.changed) candidate = JSON.stringify(elided.value);
+    }
   } catch {
-    // Keep recent malformed calls intact for self-correction; once a caller
-    // chooses to compact them, wrap a preview in valid JSON for safe replay.
-    const candidate = JSON.stringify({ elidedArguments: elideText(raw, maxChars, previewChars) });
-    return candidate.length < raw.length ? candidate : raw;
+    // Malformed historical arguments can still be summarized as a JSON preview.
   }
+  if (candidate.length <= maxChars) return candidate;
+  // A matrix or a large collection of short values has no long strings to
+  // shorten. It must not carry the original overflow into the summarizer.
+  const preview = JSON.stringify({ elidedArguments: elideText(candidate, maxChars, previewChars) });
+  return preview.length < candidate.length ? preview : candidate;
 }
 
 /**

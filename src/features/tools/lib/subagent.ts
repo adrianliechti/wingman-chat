@@ -3,8 +3,9 @@ import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
-import { getTextFromContent, Role, type Tool } from "@/shared/types/chat";
+import { Role, type Tool } from "@/shared/types/chat";
 
 export function createSubagentTool(
   model: string,
@@ -64,7 +65,7 @@ export function createSubagentTool(
 
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
-        const text = last ? getTextFromContent(last.content).trim() : "";
+        const text = last ? getFinalTextFromContent(last.content).trim() : "";
         const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
         return [{ type: "text", text: `${text || "Subagent completed but produced no output."}${suffix}` }];
       } catch (error) {

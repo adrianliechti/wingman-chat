@@ -249,6 +249,9 @@ export type Content =
 export type TextContent = {
   type: "text";
 
+  /** Assistant output message phase; each response message stays a separate text part. */
+  phase?: "commentary" | "final_answer";
+
   text: string;
 };
 
@@ -333,7 +336,22 @@ export type Chat = {
   messages: Array<Message>;
 };
 
-// Helper function to extract text from content parts
+/** Replace one tool's metadata without mutating earlier history snapshots. */
+export function updateToolResultMeta(messages: Message[], callId: string, meta: Record<string, unknown>): Message[] {
+  let changed = false;
+  const updated = messages.map((message) => {
+    if (!message.content.some((part) => part.type === "tool_result" && part.id === callId)) return message;
+    changed = true;
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        part.type === "tool_result" && part.id === callId ? { ...part, meta: { ...meta } } : part,
+      ),
+    };
+  });
+  return changed ? updated : messages;
+}
+
 export function getTextFromContent(content: Content[]): string {
   return content
     .filter((p): p is TextContent => p.type === "text")

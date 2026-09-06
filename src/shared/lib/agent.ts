@@ -1,4 +1,5 @@
 import {
+  updateToolResultMeta,
   withMessageIdentity,
   type Content,
   type Message,
@@ -199,9 +200,20 @@ async function runLoop(
   const signal = controller.invocation.signal;
   const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
   let conversation = [...messages];
+  let settled = false;
   const commit = (next: Message[]) => {
     conversation = next;
     hooks.onMessagesChange?.(conversation);
+  };
+  const toolHooks: RunHooks = {
+    ...hooks,
+    onToolMeta: (callId, meta) => {
+      if (!settled && !signal?.aborted) {
+        const updated = updateToolResultMeta(conversation, callId, meta);
+        if (updated !== conversation) commit(updated);
+      }
+      hooks.onToolMeta?.(callId, meta);
+    },
   };
 
   // Send one model request, recovering from a mid-run context overflow by
@@ -317,7 +329,7 @@ async function runLoop(
         if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
         controller.emit({ type: "tool.started", turn, callId: toolCall.id, name: toolCall.name });
         const toolResult = withMessageIdentity(
-          await dispatchToolCall(toolCall, toolRegistry, hooks, invokeCtx, controller, turn),
+          await dispatchToolCall(toolCall, toolRegistry, toolHooks, invokeCtx, controller, turn),
           controller.runId,
         );
         commit([...conversation, toolResult]);
@@ -335,6 +347,8 @@ async function runLoop(
     }
     const detail = getErrorInfo(error);
     return controller.finish("failed", "error", conversation, detail);
+  } finally {
+    settled = true;
   }
 }
 
@@ -417,7 +431,7 @@ async function dispatchToolCall(
           invocationContext: controller.invocation,
           signal: controller.invocation.signal ?? baseContext?.signal,
           setMeta: (meta) => {
-            resultMeta = meta;
+            resultMeta = { ...meta };
             hooks.onToolMeta?.(toolCall.id, { ...meta });
             controller.emit({ type: "tool.updated", turn, callId: toolCall.id, name: toolCall.name });
           },

@@ -1,5 +1,6 @@
 import mime from "mime";
 import OpenAI from "openai";
+import { APIConnectionTimeoutError } from "openai/error";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod/v3";
 import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
@@ -19,6 +20,7 @@ import type {
   ReasoningContent,
   Tool,
   ToolCallContent,
+  TextContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
@@ -26,7 +28,7 @@ import { combineAbortSignals } from "./abortSignals";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
-import { responseContent, validateResponse, toResponseInput } from "./responses";
+import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
 import { planStrictToolSchemas } from "./toolSchemas";
 import { compileToolRegistry } from "./toolRegistry";
 import { simplifyMarkdown } from "./utils";
@@ -232,6 +234,8 @@ export class Client {
         // arguments as deltas arrive. (output_index is present on every event;
         // the item id is optional and the call id isn't on the delta events.)
         const toolCallsByIndex = new Map<number, ToolCallContent>();
+        const textByIndex = new Map<number, TextContent>();
+        const phasesByIndex = new Map<number, TextContent["phase"]>();
 
         // Build and run one streaming attempt. Resets the accumulators so a
         // retry re-streams from empty and the UI overwrites the partial render
@@ -244,6 +248,8 @@ export class Client {
           const hadPartial = contentParts.length > 0;
           contentParts.length = 0;
           toolCallsByIndex.clear();
+          textByIndex.clear();
+          phasesByIndex.clear();
           if (hadPartial) emit();
 
           const runner = this.oai.responses
@@ -281,19 +287,23 @@ export class Client {
               emit();
             })
             .on("response.output_text.delta", (event) => {
-              const last = contentParts[contentParts.length - 1];
-              if (last?.type === "text") {
-                last.text += event.delta;
-              } else {
-                contentParts.push({ type: "text", text: event.delta });
+              let part = textByIndex.get(event.output_index);
+              if (!part) {
+                const phase = phasesByIndex.get(event.output_index);
+                part = { type: "text", text: "", ...(phase ? { phase } : {}) };
+                textByIndex.set(event.output_index, part);
+                contentParts.push(part);
               }
+              part.text += event.delta;
               emit();
             })
             // Materialize the tool-call part as soon as the call starts, so its
             // spinner appears right after the intro instead of only once the model
             // has finished writing all the arguments.
             .on("response.output_item.added", (event) => {
-              if (event.item.type === "function_call") {
+              if (event.item.type === "message") {
+                phasesByIndex.set(event.output_index, event.item.phase ?? undefined);
+              } else if (event.item.type === "function_call") {
                 const part: ToolCallContent = {
                   type: "tool_call",
                   id: event.item.call_id,
@@ -333,9 +343,23 @@ export class Client {
               }
             });
 
-          // finalResponse observes SDK errors and cancellation. The SDK owns
-          // the signal listener and removes it when the request settles.
-          return runner.finalResponse();
+          // The SDK's fetch timeout ends at the response headers for streams.
+          // Apply the same deadline through the terminal event so a stalled
+          // body cannot hold the chat or an interpreter bridge indefinitely.
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            runner.abort();
+          }, this.oai.timeout);
+          try {
+            return await runner.finalResponse();
+          } catch (error) {
+            options?.signal?.throwIfAborted();
+            if (timedOut) throw new APIConnectionTimeoutError();
+            throw error;
+          } finally {
+            clearTimeout(timer);
+          }
         };
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
@@ -527,17 +551,20 @@ export class Client {
   }
 
   async extractText(blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    return (await this.post("/api/v1/extract", { file: blob, format: "text" }, requestOptions)).text();
+    return this.post("/api/v1/extract", { file: blob, format: "text" }, (resp) => resp.text(), requestOptions);
   }
 
   async scrape(model: string, url: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    return (
-      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" }, requestOptions)
-    ).text();
+    return this.post(
+      "/api/v1/extract",
+      { ...(model && { model }), url, format: "text" },
+      (resp) => resp.text(),
+      requestOptions,
+    );
   }
 
   async segmentText(text: string): Promise<string[]> {
-    const result = await (await this.post("/api/v1/segment", { text })).json();
+    const result = await this.post("/api/v1/segment", { text }, (resp) => resp.json());
     if (!Array.isArray(result)) return [];
     return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
   }
@@ -568,14 +595,20 @@ export class Client {
       data.append("text", input);
     }
 
-    const resp = await this.postRaw("/api/v1/translate", data, headers, 90_000, requestOptions);
-    const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
-
-    if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
-      return (await resp.text()).replace(/ß/g, "ss");
-    }
-
-    return resp.blob();
+    return this.postRaw<string | Blob>(
+      "/api/v1/translate",
+      data,
+      async (resp) => {
+        const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
+        if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
+          return (await resp.text()).replace(/ß/g, "ss");
+        }
+        return resp.blob();
+      },
+      headers,
+      90_000,
+      requestOptions,
+    );
   }
 
   async rewriteText(
@@ -678,9 +711,12 @@ export class Client {
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
-    const result = await (
-      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) }, requestOptions)
-    ).json();
+    const result = await this.post(
+      "/api/v1/audio/transcriptions",
+      { file, ...(model && { model }) },
+      (resp) => resp.json(),
+      requestOptions,
+    );
     return result.text || "";
   }
 
@@ -696,8 +732,14 @@ export class Client {
     data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
 
-    const resp = await this.postRaw("/api/v1/search", data, undefined, 90_000, requestOptions);
-    const results = await resp.json();
+    const results = await this.postRaw(
+      "/api/v1/search",
+      data,
+      (resp) => resp.json(),
+      undefined,
+      90_000,
+      requestOptions,
+    );
     if (!Array.isArray(results)) return [];
 
     return results.map((result: SearchResult) => {
@@ -708,16 +750,16 @@ export class Client {
   }
 
   async guard(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<GuardResult> {
-    const resp = await this.postRaw(
+    const result = await this.postRaw(
       "/api/v1/guard",
       JSON.stringify({ ...(model && { model }), text }),
+      (resp) => resp.json(),
       {
         "Content-Type": "application/json",
       },
       90_000,
       requestOptions,
     );
-    const result = await resp.json();
     return {
       flagged: result?.flagged === true,
       categories: Array.isArray(result?.categories) ? result.categories : [],
@@ -725,9 +767,12 @@ export class Client {
   }
 
   async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    const result = await (
-      await this.post("/api/v1/research", { ...(model && { model }), instructions }, requestOptions)
-    ).json();
+    const result = await this.post(
+      "/api/v1/research",
+      { ...(model && { model }), instructions },
+      (resp) => resp.json(),
+      requestOptions,
+    );
     return result.content || "";
   }
 
@@ -752,7 +797,7 @@ export class Client {
     const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
-    return (await this.postRaw("/api/v1/render", data, headers, 300_000, requestOptions)).blob();
+    return this.postRaw("/api/v1/render", data, (resp) => resp.blob(), headers, 300_000, requestOptions);
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -810,7 +855,9 @@ export class Client {
       model,
       async () => {
         options.signal?.throwIfAborted();
-        const response = await this.oai.responses.parse(
+        // Select the final message before parsing: the SDK parser also parses
+        // commentary and its output_parsed getter returns the first result.
+        const response = await this.oai.responses.create(
           {
             model,
             store: false,
@@ -823,9 +870,9 @@ export class Client {
           options.signal ? { signal: options.signal } : undefined,
         );
         options.signal?.throwIfAborted();
-        validateResponse(response);
+        const text = finalResponseText(response);
         return {
-          result: response.output_parsed ?? null,
+          result: text === null ? null : schema.parse(JSON.parse(text)),
           response: {
             id: response.id,
             model: response.model,
@@ -840,28 +887,31 @@ export class Client {
     );
   }
 
-  private async post(
+  private async post<T>(
     path: string,
     fields: Record<string, string | Blob>,
+    read: (resp: Response) => Promise<T>,
     requestOptions: ClientRequestOptions = {},
-  ): Promise<Response> {
+  ): Promise<T> {
     const data = new FormData();
     for (const [k, v] of Object.entries(fields)) data.append(k, v);
-    return this.postRaw(path, data, undefined, 90_000, requestOptions);
+    return this.postRaw(path, data, read, undefined, 90_000, requestOptions);
   }
 
-  private async postRaw(
+  private async postRaw<T>(
     path: string,
     data: BodyInit,
+    read: (resp: Response) => Promise<T>,
     headers?: HeadersInit,
     timeoutMs = 90_000,
     requestOptions: ClientRequestOptions = {},
-  ): Promise<Response> {
+  ): Promise<T> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
     // generation can legitimately run for minutes, so its caller passes a larger
     // budget (see generateImage).
+    requestOptions.signal?.throwIfAborted();
     const timeoutController = new AbortController();
     const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
     let timedOut = false;
@@ -869,15 +919,25 @@ export class Client {
       timedOut = true;
       timeoutController.abort();
     }, timeoutMs);
-    let resp: Response;
     try {
-      resp = await fetch(new URL(path, window.location.origin), {
+      const resp = await fetch(new URL(path, window.location.origin), {
         method: "POST",
         headers,
         body: data,
         signal: combinedSignal.signal,
       });
+      if (!resp.ok) {
+        const detail = await readErrorBody(resp);
+        combinedSignal.signal?.throwIfAborted();
+        throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+      }
+      // Fetch resolves at headers. Keep cancellation and the deadline connected
+      // until the body has finished, including failed response bodies.
+      const result = await read(resp);
+      combinedSignal.signal?.throwIfAborted();
+      return result;
     } catch (error) {
+      requestOptions.signal?.throwIfAborted();
       // Surface a readable timeout instead of the runtime's opaque abort message
       // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
       if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
@@ -886,11 +946,5 @@ export class Client {
       clearTimeout(timer);
       combinedSignal.cleanup();
     }
-
-    if (!resp.ok) {
-      const detail = await readErrorBody(resp);
-      throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
-    }
-    return resp;
   }
 }

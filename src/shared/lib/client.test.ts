@@ -68,11 +68,133 @@ beforeEach(() => {
   vi.spyOn(errors, "waitBeforeStreamRetry").mockResolvedValue();
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
+describe("raw request lifetime", () => {
+  it("reads text, JSON, and binary results and releases each deadline", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
+    expect(await new Client().translate("de", "Greetings")).toBe("Grüsse");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ flagged: true, categories: [] })));
+    expect(await new Client().guard("model", "Text")).toEqual({ flagged: true, categories: [] });
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { headers: { "content-type": "image/png" } }));
+    const rendered = await new Client().generateImage("model", "Image");
+    expect(rendered.type).toBe("image/png");
+    expect(new Uint8Array(await rendered.arrayBuffer())).toEqual(new Uint8Array([1, 2]));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  function stalledBody(status = 200) {
+    fetchMock.mockImplementationOnce(
+      async (_url: URL, options: RequestInit) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              options.signal?.addEventListener("abort", () => controller.error(options.signal?.reason), { once: true });
+            },
+          }),
+          { status },
+        ),
+    );
+  }
+
+  it.each([200, 503])("keeps the timeout active while reading a stalled %s response body", async (status) => {
+    vi.useFakeTimers();
+    stalledBody(status);
+    const request = new Client().scrape("model", "https://example.com");
+    const settled = vi.fn();
+    void request.then(settled, settled);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(settled).toHaveBeenCalledOnce();
+    await expect(request).rejects.toThrow("/api/v1/extract timed out after 90s");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retains caller cancellation until the body is consumed in the signal fallback", async () => {
+    vi.spyOn(AbortSignal, "any").mockImplementation(() => {
+      throw new Error("Unavailable");
+    });
+    stalledBody();
+    const controller = new AbortController();
+    const request = new Client().scrape("model", "https://example.com", { signal: controller.signal });
+    const settled = vi.fn();
+    void request.then(settled, settled);
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(settled).toHaveBeenCalledOnce();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("does not fetch an already cancelled raw request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      new Client().scrape("model", "https://example.com", { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("Responses transport (real SDK, synthetic HTTP/SSE)", () => {
+  const stalledStream = (_url: URL, options: RequestInit) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          const created = { type: "response.created", response: response([], { status: "in_progress" }) };
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(created)}\n\n`));
+          options.signal?.addEventListener("abort", () => controller.error(options.signal?.reason), { once: true });
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+
+  it("times out a stalled stream body and recovers within the existing retry bound", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementationOnce(stalledStream);
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered after timeout")])));
+    const request = new Client().complete("model", "", prompt, []);
+    const settled = vi.fn();
+    void request.then(settled, settled);
+    await vi.advanceTimersByTimeAsync(600_001);
+    expect(settled).toHaveBeenCalledOnce();
+    expect((await request).content).toEqual([{ type: "text", text: "Recovered after timeout" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reports a timeout after three stalled attempts without leaving timers behind", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(stalledStream);
+    const request = new Client().complete("model", "", prompt, []);
+    const settled = vi.fn();
+    void request.then(settled, settled);
+    await vi.advanceTimersByTimeAsync(1_800_010);
+    expect(settled).toHaveBeenCalledOnce();
+    await expect(request).rejects.toSatisfy((error: unknown) =>
+      errors.getErrorInfo(error).message.includes("timed out"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels a stalled stream immediately and clears its deadline without retrying", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(stalledStream);
+    const controller = new AbortController();
+    const request = new Client().complete("model", "", prompt, [], undefined, { signal: controller.signal });
+    const outcome = expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await outcome;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("replays portable history with named files, summaries, and only paired tool calls", async () => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
     const history: Message[] = [

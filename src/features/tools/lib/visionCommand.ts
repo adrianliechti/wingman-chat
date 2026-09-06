@@ -2,8 +2,7 @@ import { getConfig } from "@/shared/config";
 import { bytesToDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { getTextFromContent, Role } from "@/shared/types/chat";
-import { consumeLlmBudget, getModel } from "./llmCommand";
+import { completeIsolated, getModel } from "./llmCommand";
 import type { BridgeRequestOptions } from "./workerHost";
 
 const DEFAULT_PROMPT =
@@ -38,24 +37,15 @@ export async function runVision(
     throw new Error(`vision: unsupported image type ${type} — supported: ${config.vision.files.join(", ")}`);
   }
 
-  consumeLlmBudget(requestOptions);
-  const result = await config.client.complete(
+  const text = await completeIsolated(
     model,
-    "",
     [
-      {
-        role: Role.User,
-        content: [
-          { type: "image", name, data: bytesToDataUrl(bytes, type) },
-          { type: "text", text: prompt?.trim() || DEFAULT_PROMPT },
-        ],
-      },
+      { type: "image", name, data: bytesToDataUrl(bytes, type) },
+      { type: "text", text: prompt?.trim() || DEFAULT_PROMPT },
     ],
-    [],
-    undefined,
-    { signal: requestOptions.signal, parentContext: requestOptions.context?.agentContext },
+    {},
+    requestOptions,
   );
-  const text = getTextFromContent(result.content);
   console.debug(`vision: ${path} (${type}, ${bytes.length} bytes) → ${text.length} chars`);
   return text;
 }
