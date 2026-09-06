@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "./client";
 import { run } from "./agent";
-import { AgentInvocationContext } from "./agent-run-controller";
+import { AgentInvocationContext, AgentRunController } from "./agent-run-controller";
+import { APIError, BadRequestError } from "openai/error";
 import type { Message, Tool } from "../types/chat";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
@@ -11,6 +12,30 @@ function fakeClient(complete: Client["complete"]): Client {
 }
 
 describe("agent run controller", () => {
+  it("does not let lifecycle observers turn committed work into a failed run", async () => {
+    const observer = vi.fn(() => {
+      throw new Error("Observer failed");
+    });
+    const complete = vi.fn().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+    const result = await run(fakeClient(complete), "model", "", prompt, [], { onEvent: observer });
+    expect(result.status).toBe("completed");
+    expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("finalizes before publishing its terminal event, including reentrant observers", () => {
+    const nested = vi.fn();
+    const controller = new AgentRunController({
+      onEvent: (event) => {
+        if (event.type === "run.completed") nested(controller.finish("failed", "error", []));
+      },
+    });
+    const result = controller.finish("completed", "end_turn", prompt);
+    expect(nested).toHaveBeenCalledExactlyOnceWith(result);
+    expect(result.status).toBe("completed");
+    expect(result.messages).toBe(prompt);
+  });
+
   it("returns max_turns with ordered events and invocation-wide model usage", async () => {
     const complete = vi.fn(async () => ({
       role: "assistant" as const,
@@ -175,6 +200,129 @@ describe("agent run controller", () => {
     expect(toolResult && "result" in toolResult ? toolResult.result : []).toEqual(
       expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("must be integer") })]),
     );
+  });
+});
+
+describe("agent recovery", () => {
+  const overflow = () =>
+    new BadRequestError(400, { code: "context_length_exceeded" }, "Too much context", new Headers());
+  const done: Message = { role: "assistant", content: [{ type: "text", text: "Done" }] };
+
+  it("retries with compacted history and publishes the same history to observers", async () => {
+    const compacted: Message[] = [
+      { role: "assistant", content: [{ type: "summary", text: "Previous work" }] },
+      ...prompt,
+    ];
+    const complete = vi.fn().mockRejectedValueOnce(overflow()).mockResolvedValueOnce(done);
+    const changes: Message[][] = [];
+    const result = await run(fakeClient(complete), "model", "", prompt, [], {
+      onContextOverflow: async () => compacted,
+      onMessagesChange: (messages) => changes.push(messages),
+    });
+    expect(result.status).toBe("completed");
+    expect(complete.mock.calls[1][2]).toBe(compacted);
+    expect(changes[0]).toBe(compacted);
+    expect(changes.at(-1)).toBe(result.messages);
+    expect(result.modelCalls.used).toBe(2);
+  });
+
+  it("bounds repeated overflows and reports the original error if compaction cannot help", async () => {
+    const error = overflow();
+    const complete = vi.fn().mockRejectedValue(error);
+    const compact = vi.fn(async (messages: Message[]) => [...messages]);
+    const result = await run(fakeClient(complete), "model", "", prompt, [], { onContextOverflow: compact });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("CONTEXT_EXHAUSTED");
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(compact).toHaveBeenCalledTimes(2);
+
+    complete.mockClear();
+    const unchanged = await run(fakeClient(complete), "model", "", prompt, [], {
+      onContextOverflow: (messages) => messages,
+    });
+    expect(unchanged.status).toBe("failed");
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a summarizer AbortError as cancellation even without an aborted signal", async () => {
+    const complete = vi.fn().mockRejectedValue(overflow());
+    const result = await run(fakeClient(complete), "model", "", prompt, [], {
+      onContextOverflow: async () => {
+        throw new DOMException("Cancelled", "AbortError");
+      },
+    });
+    expect(result.status).toBe("aborted");
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spend another model call after aborting during compaction", async () => {
+    const controller = new AbortController();
+    const complete = vi.fn().mockRejectedValue(overflow());
+    const result = await run(fakeClient(complete), "model", "", prompt, [], {
+      options: { signal: controller.signal },
+      onContextOverflow: async (messages) => {
+        controller.abort();
+        return [...messages];
+      },
+    });
+    expect(result.status).toBe("aborted");
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result.modelCalls.used).toBe(1);
+  });
+
+  it("keeps completed tools after a later model failure so recovery need not rerun them", async () => {
+    const execute = vi.fn(async () => [{ type: "text" as const, text: "Written" }]);
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "once", name: "write", arguments: "{}" }],
+      })
+      .mockRejectedValueOnce(new APIError(500, {}, "Unavailable", undefined));
+    const result = await run(fakeClient(complete), "model", "", prompt, [
+      { name: "write", parameters: { type: "object" }, function: execute },
+    ]);
+    expect(result.status).toBe("failed");
+    expect(result.messages.at(-1)?.content[0]).toMatchObject({ type: "tool_result", id: "once" });
+    const resumed = await run(fakeClient(vi.fn().mockResolvedValue(done)), "model", "", result.messages, []);
+    expect(resumed.status).toBe("completed");
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("rejects duplicate call IDs before any tool side effects", async () => {
+    const execute = vi.fn();
+    const call = { type: "tool_call", id: "duplicate", name: "write", arguments: "{}" };
+    const complete = vi.fn().mockResolvedValue({ role: "assistant", content: [call, call] });
+    const result = await run(fakeClient(complete), "model", "", prompt, [
+      { name: "write", parameters: { type: "object" }, function: execute },
+    ]);
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INVALID_TOOL_CALL");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("shares the model budget with nested agents and stops without another request", async () => {
+    const child = vi.fn().mockResolvedValue(done);
+    const parent = vi.fn().mockResolvedValue({
+      role: "assistant",
+      content: [{ type: "tool_call", id: "child", name: "agent", arguments: "{}" }],
+    });
+    const tool: Tool = {
+      name: "agent",
+      parameters: { type: "object" },
+      function: async (_args, context) => {
+        const nested = await run(fakeClient(child), "model", "", prompt, [], {
+          invocationContext: context?.invocationContext?.fork("child"),
+        });
+        expect(nested.status).toBe("completed");
+        return [{ type: "text", text: "Child done" }];
+      },
+    };
+    const result = await run(fakeClient(parent), "model", "", prompt, [tool], { maxModelCalls: 2 });
+    expect(result.status).toBe("max_turns");
+    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
+    expect(parent).toHaveBeenCalledOnce();
+    expect(child).toHaveBeenCalledOnce();
   });
 });
 

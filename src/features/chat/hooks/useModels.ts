@@ -1,27 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
-import { defaultEffort, supportedEfforts } from "@/shared/lib/models";
+import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
+import { defaultModelId } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
 
 type Effort = NonNullable<Model["effort"]>;
 const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
-// Fill in heuristic reasoning-effort levels when config didn't specify them.
-// An explicit `supportedEfforts` (including `[]` to hide the picker) is kept.
-// `defaultEffort` is captured here, before any per-chat override lands on
-// `effort`, so the picker can still badge the deployment's baseline level.
-function withEffortFallback(model: Model): Model {
-  const supported = model.supportedEfforts ?? supportedEfforts(model.id);
-  const baseline = model.effort ?? defaultEffort(model.id);
-  if (!supported && !baseline) return model;
-  return {
-    ...model,
-    ...(supported && { supportedEfforts: supported }),
-    ...(baseline && { defaultEffort: baseline }),
-  };
-}
 
 // The default model is persisted as "id" or "id@effort". Parse from the right and
 // validate the suffix against the known efforts so legacy values (plain id) and
@@ -44,54 +30,44 @@ export function getSavedModelId(): string | null {
 
 export function useModels() {
   const config = getConfig();
-  const [models, setModels] = useState<Model[]>([]);
-  const [selectedModel, setSelectedModelState] = useState<Model | null>(null);
+  const available = useModelCatalog("completer");
+  // undefined means no choice has been made yet; an explicit null is a choice too.
+  const [selectedModel, setSelectedModelState] = useState<Model | null | undefined>(undefined);
+  const models = useMemo(() => {
+    const byId = new Map(available.map((model) => [model.id, model]));
+    const configured = config.models.flatMap((model) => {
+      const resolved = byId.get(model.id);
+      byId.delete(model.id);
+      return resolved ? [resolved] : [];
+    });
+    // Only configured chat models curate the chat picker. A renderer-only config
+    // must not hide every chat model. Unconfigured chat models stay reachable via
+    // Option-click when there is a curated list.
+    return configured.length
+      ? [...configured, ...Array.from(byId.values(), (model) => ({ ...model, hidden: true }))]
+      : available;
+  }, [available, config.models]);
 
-  // Load models from API, filtering config models to only those that exist
+  // Restore once, without overwriting a choice made while loading (including
+  // realtime), or changing an active chat's model/effort on background refresh.
   useEffect(() => {
-    const loadModels = async () => {
+    if (!models.length) return;
+    setSelectedModelState((current) => {
+      if (current !== undefined) return current;
+      let saved: { id: string; effort?: Effort } | null = null;
       try {
-        const apiModels = await config.client.listModels("completer");
-        const apiModelIds = new Set(apiModels.map((m) => m.id));
-
-        let resolvedModels: Model[];
-
-        if (config.models.length > 0) {
-          // Configured models drive the visible list; everything else the API
-          // exposes is appended as hidden so it can still be reached via the
-          // Option-click escape hatch in the model selector.
-          const configured = config.models.filter((m) => apiModelIds.has(m.id));
-          const configuredIds = new Set(configured.map((m) => m.id));
-          const extras = apiModels.filter((m) => !configuredIds.has(m.id)).map((m) => ({ ...m, hidden: true }));
-          resolvedModels = [...configured, ...extras].map(withEffortFallback);
-        } else {
-          resolvedModels = apiModels.map(withEffortFallback);
-        }
-
-        setModels(resolvedModels);
-
-        // Restore selected model (and its saved effort) from localStorage, or default to first
-        if (resolvedModels.length > 0) {
-          let saved: { id: string; effort?: Effort } | null = null;
-          try {
-            saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
-          } catch {
-            // ignore localStorage errors
-          }
-          const savedModel = saved ? resolvedModels.find((model) => model.id === saved.id) : undefined;
-          if (savedModel) {
-            setSelectedModelState(saved?.effort ? { ...savedModel, effort: saved.effort } : savedModel);
-            return;
-          }
-          setSelectedModelState(resolvedModels[0]);
-        }
-      } catch (error) {
-        console.error("error loading models", error);
+        saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
+      } catch {
+        // Ignore localStorage errors.
       }
-    };
-
-    void loadModels();
-  }, [config.client, config.models]);
+      const model = models.find((model) => model.id === saved?.id);
+      if (!model) return models.find((model) => model.id === defaultModelId(models)) ?? models[0];
+      const effort = saved?.effort;
+      return effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort))
+        ? { ...model, effort }
+        : model;
+    });
+  }, [models]);
 
   // Function to update selected model and save to localStorage
   const setSelectedModel = useCallback((model: Model | null) => {
@@ -112,7 +88,7 @@ export function useModels() {
 
   return {
     models,
-    selectedModel,
+    selectedModel: selectedModel ?? null,
     setSelectedModel,
     getSavedModelId,
   };

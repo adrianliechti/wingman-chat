@@ -1,3 +1,11 @@
+import {
+  AudioResources,
+  loadAudioWorklet,
+  ownAudioNode,
+  ownAudioWorklet,
+  stopAudioTracks,
+} from "@/shared/lib/audioResources";
+
 /**
  * AudioRecorder - Records microphone audio as PCM16 using AudioWorklet
  * Replacement for wavtools WavRecorder
@@ -12,9 +20,10 @@ class AudioProcessor extends AudioWorkletProcessor {
     this.foundAudio = false;
     
     this.port.onmessage = (e) => {
-      const { event } = e.data;
+      const { event, recordingId } = e.data;
       if (event === 'start') {
         this.recording = true;
+        this.recordingId = recordingId;
         this.foundAudio = false;
       } else if (event === 'stop') {
         this.recording = false;
@@ -51,6 +60,7 @@ class AudioProcessor extends AudioWorkletProcessor {
     // Send chunk to main thread
     this.port.postMessage({
       event: 'chunk',
+      recordingId: this.recordingId,
       mono: pcm16.buffer
     }, [pcm16.buffer]);
     
@@ -64,6 +74,7 @@ registerProcessor('audio-processor', AudioProcessor);
 export interface AudioRecorderOptions {
   sampleRate?: number;
   deviceId?: string;
+  onError?: (error: Error) => void;
 }
 
 export interface AudioChunk {
@@ -72,137 +83,119 @@ export interface AudioChunk {
 
 export type ChunkCallback = (chunk: AudioChunk) => void;
 
+interface RecordingSession {
+  scope: AudioResources;
+  ready: Promise<void>;
+  node?: AudioWorkletNode;
+  callback?: ChunkCallback;
+  recording: boolean;
+  recordingId: number;
+}
+
 export class AudioRecorder {
-  private sampleRate: number;
-  private deviceId: string | undefined;
-  private context: AudioContext | null = null;
-  private stream: MediaStream | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  private workletNode: AudioWorkletNode | null = null;
-  private chunkCallback: ChunkCallback | null = null;
-  private recording = false;
+  private session?: RecordingSession;
 
+  private options: AudioRecorderOptions;
   constructor(options: AudioRecorderOptions = {}) {
-    this.sampleRate = options.sampleRate ?? 24000;
-    this.deviceId = options.deviceId;
+    this.options = options;
   }
 
-  /**
-   * Initialize microphone access and AudioWorklet
-   */
-  async begin(): Promise<void> {
-    try {
-      await this.beginInternal();
-    } catch (error) {
-      // Release anything partially acquired (mic stream, context) — a failed
-      // begin() must not leave the microphone indicator on.
-      await this.end().catch(() => {});
+  /** Repeated begin calls share setup; end invalidates it even during a permission prompt. */
+  begin(): Promise<void> {
+    if (this.session) return this.session.ready;
+    const session: RecordingSession = {
+      scope: new AudioResources(),
+      ready: Promise.resolve(),
+      recording: false,
+      recordingId: 0,
+    };
+    this.session = session;
+    session.ready = this.initialize(session).catch(async (error: unknown) => {
+      if (this.session === session) this.session = undefined;
+      await session.scope.close();
       throw error;
-    }
+    });
+    return session.ready;
   }
 
-  private async beginInternal(): Promise<void> {
-    // Get microphone access
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        ...(this.deviceId && { deviceId: { exact: this.deviceId } }),
-        sampleRate: this.sampleRate,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-
-    // Create AudioContext
-    this.context = new AudioContext({ sampleRate: this.sampleRate });
-
-    if (this.context.state === "suspended") {
-      await this.context.resume();
+  private async initialize(session: RecordingSession): Promise<void> {
+    const { scope } = session;
+    const sampleRate = this.options.sampleRate ?? 24000;
+    const fail = (error: Error) => {
+      if (this.session !== session) return;
+      void this.end();
+      this.options.onError?.(error);
+    };
+    const stream = await scope.wait(
+      navigator.mediaDevices
+        .getUserMedia({
+          audio: {
+            ...(this.options.deviceId && { deviceId: { exact: this.options.deviceId } }),
+            sampleRate,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        })
+        .then((stream) => scope.own(stream, stopAudioTracks)),
+    );
+    scope.signal.throwIfAborted();
+    const tracks = stream.getAudioTracks();
+    if (!tracks.length || tracks.some((track) => track.readyState === "ended")) {
+      throw new Error("The microphone is disconnected.");
     }
-
-    // Create Blob URL for worklet code
-    const blob = new Blob([audioProcessorCode], { type: "application/javascript" });
-    const workletUrl = URL.createObjectURL(blob);
-
-    try {
-      await this.context.audioWorklet.addModule(workletUrl);
-    } finally {
-      URL.revokeObjectURL(workletUrl);
+    for (const track of tracks) {
+      scope.listen(track, "ended", () =>
+        fail(new Error("The microphone was disconnected. Please select a microphone and restart.")),
+      );
     }
-
-    // Create source from microphone stream
-    this.source = this.context.createMediaStreamSource(this.stream);
-
-    // Create worklet node
-    this.workletNode = new AudioWorkletNode(this.context, "audio-processor");
-
-    // Handle chunks from worklet
-    this.workletNode.port.onmessage = (e) => {
-      const { event, mono } = e.data;
-      if (event === "chunk" && this.chunkCallback && this.recording) {
-        this.chunkCallback({ mono });
+    const context = scope.own(new AudioContext({ sampleRate }), (context) => context.close());
+    if (context.state === "suspended") await scope.wait(context.resume());
+    scope.signal.throwIfAborted();
+    await loadAudioWorklet(scope, context, audioProcessorCode);
+    scope.signal.throwIfAborted();
+    const source = ownAudioNode(scope, context.createMediaStreamSource(stream));
+    const node = ownAudioWorklet(scope, new AudioWorkletNode(context, "audio-processor"));
+    scope.listen(node, "processorerror", () => fail(new Error("The microphone audio processor failed.")));
+    node.port.onmessage = (event) => {
+      if (
+        this.session === session &&
+        session.recording &&
+        event.data?.event === "chunk" &&
+        event.data.recordingId === session.recordingId
+      ) {
+        session.callback?.({ mono: event.data.mono });
       }
     };
-
-    // Connect: source -> processor (no output to speakers)
-    this.source.connect(this.workletNode);
+    // The processor writes silence to its output; keep the graph running without microphone monitoring.
+    source.connect(node);
+    node.connect(context.destination);
+    session.node = node;
   }
 
-  /**
-   * Start recording and delivering chunks via callback
-   */
   async record(callback: ChunkCallback): Promise<void> {
-    if (!this.workletNode) {
-      throw new Error("AudioRecorder not initialized. Call begin() first.");
-    }
-
-    this.chunkCallback = callback;
-    this.recording = true;
-    this.workletNode.port.postMessage({ event: "start" });
+    const session = this.session;
+    if (!session?.node) throw new Error("AudioRecorder not initialized. Call begin() first.");
+    session.callback = callback;
+    session.node.port.postMessage({ event: "start", recordingId: ++session.recordingId });
+    session.recording = true;
   }
 
-  /**
-   * Pause recording but keep microphone open
-   */
+  /** Pause discards subsequent chunks but keeps the microphone available. */
   async pause(): Promise<void> {
-    if (this.workletNode && this.recording) {
-      this.recording = false;
-      this.workletNode.port.postMessage({ event: "stop" });
-    }
+    const session = this.session;
+    if (!session) return;
+    session.recording = false;
+    session.callback = undefined;
+    session.node?.port.postMessage({ event: "stop" });
   }
 
-  /**
-   * End recording session and release resources
-   */
-  async end(): Promise<void> {
-    this.recording = false;
-    this.chunkCallback = null;
-
-    // Stop worklet
-    if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: "stop" });
-      this.workletNode.disconnect();
-      this.workletNode = null;
-    }
-
-    // Disconnect source
-    if (this.source) {
-      this.source.disconnect();
-      this.source = null;
-    }
-
-    // Stop all tracks
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => {
-        track.stop();
-      });
-      this.stream = null;
-    }
-
-    // Close context
-    if (this.context) {
-      await this.context.close();
-      this.context = null;
-    }
+  end(): Promise<void> {
+    const session = this.session;
+    this.session = undefined;
+    if (!session) return Promise.resolve();
+    session.recording = false;
+    session.callback = undefined;
+    return session.scope.close();
   }
 }

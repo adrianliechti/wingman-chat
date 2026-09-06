@@ -2,684 +2,208 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
-import { reconcileRepositoryFilePaths } from "@/features/repository/lib/repository-paths";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
-import * as opfs from "@/shared/lib/opfs";
-import type { AgentContextType } from "./AgentContext";
+import { usePersistentCollection } from "@/shared/hooks/usePersistentCollection";
+import { getConfig } from "@/shared/config";
+import { convertFileToText } from "@/shared/lib/convert";
+import { FileIngestion } from "@/features/repository/lib/file-ingestion";
+import { loadAgents, storeAgent, removeAgent } from "../lib/agentStorage";
 import { AgentContext } from "./AgentContext";
 
-const COLLECTION = "agents";
 const AGENT_STORAGE_KEY = "app_agent";
-
-// Stored file metadata (without text/vectors - they're stored separately)
-interface StoredFileMeta {
-  id: string;
-  name: string;
-  path?: string;
-  status: "pending" | "processing" | "completed" | "error";
-  progress: number;
-  error?: string;
-  uploadedAt: string;
-}
-
-// Agent-specific OPFS operations using folder structure:
-// /agents/{id}/AGENTS.md - YAML frontmatter (metadata) + markdown body (instructions)
-// /agents/{id}/servers.json - BridgeServer[] (complex nested data)
-// /agents/{id}/files/{fileId}/metadata.json - file metadata
-// /agents/{id}/files/{fileId}/content.txt - extracted text
-// /agents/{id}/files/{fileId}/embeddings.bin - embedding vectors as Float32Array
-// /agents/{id}/files/{fileId}/segments.json - segment texts
-
-// --- AGENTS.md serialization / parsing ---
-
-function serializeAgentMd(agent: Agent): string {
-  const lines: string[] = ["---"];
-  lines.push(`name: ${agent.name}`);
-  if (agent.model) lines.push(`model: ${agent.model}`);
-  if (agent.skills.length > 0) lines.push(`skills: [${agent.skills.map((s) => `'${s}'`).join(", ")}]`);
-  if (agent.tools.length > 0) lines.push(`tools: [${agent.tools.map((t) => `'${t}'`).join(", ")}]`);
-  if (agent.memory) lines.push("memory: true");
-  lines.push("---");
-  if (agent.instructions) {
-    lines.push("");
-    lines.push(agent.instructions);
-  }
-  return lines.join("\n");
-}
-
-function parseAgentMd(content: string):
-  | {
-      name: string;
-      model?: string;
-      skills: string[];
-      tools: string[];
-      memory?: boolean;
-      instructions?: string;
-    }
-  | undefined {
-  const match = content.match(/^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/);
-  if (!match) return undefined;
-
-  const frontmatter = match[1];
-  const body = match[2]?.trim() || undefined;
-
-  const fields: Record<string, string> = {};
-  for (const line of frontmatter.split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    const value = line.slice(idx + 1).trim();
-    fields[key] = value;
-  }
-
-  // Parse YAML list values — supports bracket arrays ['a', 'b'], or comma-separated a, b
-  const parseList = (val?: string): string[] => {
-    if (!val) return [];
-    // Bracket array: ['a', 'b'] or [a, b]
-    const bracketMatch = val.match(/^\[(.*)\]$/);
-    if (bracketMatch) {
-      return bracketMatch[1]
-        .split(",")
-        .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
-        .filter(Boolean);
-    }
-    // Comma-separated (legacy)
-    return val
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  };
-
-  return {
-    name: fields.name || "Untitled",
-    skills: parseList(fields.skills),
-    tools: parseList(fields.tools),
-    model: fields.model || undefined,
-    memory: fields.memory === "true",
-    instructions: body,
-  };
-}
-
-async function storeAgent(agent: Agent): Promise<void> {
-  const agentPath = `${COLLECTION}/${agent.id}`;
-
-  // Write AGENTS.md (frontmatter + instructions body)
-  await opfs.writeText(`${agentPath}/AGENTS.md`, serializeAgentMd(agent));
-
-  // Write servers separately (complex nested data)
-  if (agent.servers.length > 0) {
-    await opfs.writeJson(`${agentPath}/servers.json`, agent.servers);
-  } else {
-    await opfs.deleteFile(`${agentPath}/servers.json`).catch(() => {});
-  }
-
-  // Store each file separately
-  if (agent.files) {
-    for (const file of agent.files) {
-      await storeAgentFile(agent.id, file);
-    }
-  }
-
-  await opfs.upsertIndexEntry(COLLECTION, {
-    id: agent.id,
-    title: agent.name,
-    updated: new Date().toISOString(),
-  });
-}
-
-async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<void> {
-  const filePath = `${COLLECTION}/${agentId}/files/${file.id}`;
-
-  await storeAgentFileMetadata(agentId, file);
-
-  if (file.text) {
-    await opfs.writeText(`${filePath}/content.txt`, file.text);
-  }
-
-  if (file.segments && file.segments.length > 0) {
-    const segmentTexts = file.segments.map((s) => s.text);
-    await opfs.writeJson(`${filePath}/segments.json`, segmentTexts);
-
-    const vectorDim = file.segments[0].vector.length;
-    const totalFloats = 1 + file.segments.length * vectorDim;
-    const buffer = new Float32Array(totalFloats);
-    buffer[0] = vectorDim;
-
-    let offset = 1;
-    for (const segment of file.segments) {
-      buffer.set(segment.vector, offset);
-      offset += vectorDim;
-    }
-
-    const blob = new Blob([buffer.buffer], {
-      type: "application/octet-stream",
-    });
-    await opfs.writeBlob(`${filePath}/embeddings.bin`, blob);
-  }
-}
-
-async function storeAgentFileMetadata(agentId: string, file: RepositoryFile): Promise<void> {
-  const filePath = `${COLLECTION}/${agentId}/files/${file.id}`;
-
-  const meta: StoredFileMeta = {
-    id: file.id,
-    name: file.name,
-    path: file.path,
-    status: file.status,
-    progress: file.progress,
-    error: file.error,
-    uploadedAt:
-      file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : (file.uploadedAt as unknown as string),
-  };
-
-  await opfs.writeJson(`${filePath}/metadata.json`, meta);
-}
-
-async function loadAgent(id: string): Promise<Agent | undefined> {
-  const agentPath = `${COLLECTION}/${id}`;
-
-  // Try AGENTS.md first, then legacy AGENT.md, then agent.json
-  let name = "Untitled";
-  let instructions: string | undefined;
-  let skills: string[] = [];
-  let tools: string[] = [];
-  let servers: BridgeServer[] = [];
-  let model: string | undefined;
-  let memory: boolean | undefined;
-
-  const mdContent = (await opfs.readText(`${agentPath}/AGENTS.md`)) || (await opfs.readText(`${agentPath}/AGENT.md`));
-  if (mdContent) {
-    const parsed = parseAgentMd(mdContent);
-    if (parsed) {
-      name = parsed.name;
-      instructions = parsed.instructions;
-      skills = parsed.skills;
-      tools = parsed.tools;
-      model = parsed.model;
-      memory = parsed.memory || undefined;
-    }
-  } else {
-    // Legacy: read agent.json
-    const meta = await opfs.readJson<{
-      id: string;
-      name: string;
-      instructions?: string;
-      repositoryEnabled?: boolean;
-      embedder: string;
-      skills: string[];
-      servers: BridgeServer[];
-      tools: string[];
-      createdAt: string;
-      updatedAt: string;
-    }>(`${agentPath}/agent.json`);
-    if (!meta) return undefined;
-
-    name = meta.name;
-    instructions = meta.instructions;
-    skills = meta.skills || [];
-    tools = meta.tools || [];
-    servers = meta.servers || [];
-  }
-
-  // Load servers from servers.json (new format; legacy agents have them inline in agent.json)
-  if (servers.length === 0) {
-    const loadedServers = await opfs.readJson<BridgeServer[]>(`${agentPath}/servers.json`);
-    if (loadedServers && Array.isArray(loadedServers)) {
-      servers = loadedServers;
-    }
-  }
-
-  // Load files from subfolders
-  const files: RepositoryFile[] = [];
-  const fileIds = await opfs.listDirectories(`${agentPath}/files`);
-
-  for (const fileId of fileIds) {
-    const file = await loadAgentFile(id, fileId);
-    if (file) {
-      files.push(file);
-    }
-  }
-
-  // Legacy repository records stored only the display name. Resolve a stable
-  // model-facing path before exposing files, and persist metadata-only updates
-  // so subsequent loads, exports, and imports keep the same allocation.
-  const reconciled = reconcileRepositoryFilePaths(files);
-  if (reconciled.changedIds.length > 0) {
-    const changed = new Set(reconciled.changedIds);
-    const writes = await Promise.allSettled(
-      reconciled.files.filter((file) => changed.has(file.id)).map((file) => storeAgentFileMetadata(id, file)),
-    );
-    for (const result of writes) {
-      if (result.status === "rejected")
-        console.warn("Failed to persist a migrated repository file path", result.reason);
-    }
-  }
-
-  return {
-    id,
-    name,
-    instructions,
-    skills,
-    servers,
-    tools,
-    model,
-    memory,
-    files: reconciled.files.length > 0 ? reconciled.files : undefined,
-  };
-}
-
-async function loadAgentFile(agentId: string, fileId: string): Promise<RepositoryFile | undefined> {
-  const filePath = `${COLLECTION}/${agentId}/files/${fileId}`;
-
-  const meta = await opfs.readJson<StoredFileMeta>(`${filePath}/metadata.json`);
-  if (!meta) return undefined;
-
-  // Prefer actual content.txt presence over metadata flags, which can be stale
-  // in some migrated/imported data sets.
-  const text = await opfs.readText(`${filePath}/content.txt`);
-
-  let segments: Array<{ text: string; vector: number[] }> | undefined;
-  const segmentTexts = await opfs.readJson<string[]>(`${filePath}/segments.json`);
-  const vectorsBlob = await opfs.readBlob(`${filePath}/embeddings.bin`);
-
-  if (segmentTexts && vectorsBlob) {
-    const buffer = await vectorsBlob.arrayBuffer();
-    const floats = new Float32Array(buffer);
-    const vectorDim = floats[0];
-
-    segments = [];
-    for (let i = 0; i < segmentTexts.length; i++) {
-      const start = 1 + i * vectorDim;
-      const vector = Array.from(floats.slice(start, start + vectorDim));
-      segments.push({
-        text: segmentTexts[i] || "",
-        vector,
-      });
-    }
-  }
-
-  return {
-    id: meta.id,
-    name: meta.name,
-    path: meta.path,
-    status: meta.status,
-    progress: meta.progress,
-    error: meta.error,
-    uploadedAt: new Date(meta.uploadedAt),
-    text,
-    segments,
-  };
-}
-
-async function removeAgent(id: string): Promise<void> {
-  await opfs.deleteDirectory(`${COLLECTION}/${id}`);
-  await opfs.removeIndexEntry(COLLECTION, id);
-}
-
-async function removeAgentFile(agentId: string, fileId: string): Promise<void> {
-  await opfs.deleteDirectory(`${COLLECTION}/${agentId}/files/${fileId}`);
-}
-
-async function loadAgentIndex(): Promise<opfs.IndexEntry[]> {
-  return opfs.readIndex(COLLECTION);
-}
+const storage = { load: loadAgents, store: storeAgent, remove: removeAgent };
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
+  const { items: agents, isLoaded, create, update, remove, getItems, flush } = usePersistentCollection(storage);
+  const ownerActive = useRef(true);
+  const [currentId, setCurrentId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(AGENT_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  // Selection stores identity only; files, tools and servers always come from
+  // the same authoritative agent snapshot that is being persisted.
+  const currentAgent = agents.find((agent) => agent.id === currentId) ?? null;
   const [showAgentDrawer, setShowAgentDrawer] = useState(false);
   const [agentDrawerView, setAgentDrawerView] = useState<"list" | "details">("list");
-  const [isLoaded, setIsLoaded] = useState(false);
 
-  const pendingSaves = useRef<Set<string>>(new Set());
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const agentsRef = useRef<Agent[]>(agents);
-  agentsRef.current = agents;
-
-  // Load agents from OPFS on mount
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const index = await loadAgentIndex();
-        const loadedAgents: Agent[] = [];
-
-        for (const entry of index) {
-          const agent = await loadAgent(entry.id);
-          if (agent) {
-            loadedAgents.push(agent);
-          }
-        }
-
-        setAgents(loadedAgents);
-
-        // Restore current agent from localStorage
-        const savedCurrentAgentId = localStorage.getItem(AGENT_STORAGE_KEY);
-        if (savedCurrentAgentId) {
-          const foundAgent = loadedAgents.find((a) => a.id === savedCurrentAgentId);
-          if (foundAgent) {
-            setCurrentAgent(foundAgent);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load agents:", error);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-
-    void loadData();
-  }, []);
-
-  // Debounced save function
-  const scheduleSave = useCallback((agentId: string) => {
-    pendingSaves.current.add(agentId);
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      const idsToSave = Array.from(pendingSaves.current);
-      pendingSaves.current.clear();
-
-      for (const id of idsToSave) {
-        const agent = agentsRef.current.find((a) => a.id === id);
-        if (agent) {
-          try {
-            await storeAgent(agent);
-          } catch (error) {
-            console.error(`Error saving agent ${id}:`, error);
-          }
-        }
-      }
-    }, 100);
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    const pending = pendingSaves;
-    const refs = agentsRef;
-    const timeout = saveTimeoutRef;
-
-    return () => {
-      if (timeout.current) {
-        clearTimeout(timeout.current);
-      }
-
-      const idsToSave = Array.from(pending.current);
-      pending.current.clear();
-
-      for (const id of idsToSave) {
-        const agent = refs.current.find((a) => a.id === id);
-        if (agent) {
-          storeAgent(agent).catch(console.warn);
-        }
-      }
-    };
-  }, []);
-
-  // Persist current agent selection
   useEffect(() => {
     if (!isLoaded) return;
-
-    if (currentAgent) {
-      localStorage.setItem(AGENT_STORAGE_KEY, currentAgent.id);
-    } else {
-      localStorage.removeItem(AGENT_STORAGE_KEY);
+    try {
+      if (currentId) localStorage.setItem(AGENT_STORAGE_KEY, currentId);
+      else localStorage.removeItem(AGENT_STORAGE_KEY);
+    } catch (error) {
+      console.warn("Could not save agent selection:", error);
     }
-  }, [currentAgent, isLoaded]);
+  }, [currentId, isLoaded]);
 
+  const setCurrentAgent = useCallback((agent: Agent | null) => setCurrentId(agent?.id ?? null), []);
   const createAgent = useCallback(
-    async (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>): Promise<Agent> => {
-      const newAgent: Agent = {
+    (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>): Promise<Agent> => {
+      const agent: Agent = {
+        ...initialData,
         id: crypto.randomUUID(),
         name,
-        // Fall back to the user's saved default model so new agents start on it.
         model: initialData?.model ?? getSavedModelId() ?? undefined,
-        instructions: initialData?.instructions,
         skills: initialData?.skills ?? [],
         servers: initialData?.servers ?? [],
         tools: initialData?.tools ?? [],
-        memory: initialData?.memory,
       };
-
-      setAgents((prev) => [...prev, newAgent]);
-      setCurrentAgent(newAgent);
-
-      try {
-        await storeAgent(newAgent);
-      } catch (error) {
-        console.error("Error saving new agent:", error);
-      }
-
-      return newAgent;
+      setCurrentId(agent.id);
+      return create(agent);
     },
-    [],
+    [create],
   );
 
   const updateAgent = useCallback(
     (id: string, updates: Partial<Omit<Agent, "id">>) => {
-      setAgents((prev) => {
-        const updated = prev.map((agent) => (agent.id === id ? { ...agent, ...updates } : agent));
-
-        setTimeout(() => scheduleSave(id), 0);
-
-        return updated;
-      });
-
-      if (currentAgent?.id === id) {
-        setCurrentAgent((prev) => (prev ? { ...prev, ...updates } : null));
-      }
+      update(id, (agent) => ({ ...agent, ...updates }));
     },
-    [currentAgent, scheduleSave],
+    [update],
   );
 
+  const upsertFile = useCallback(
+    (id: string, file: RepositoryFile) => {
+      update(id, (agent) => {
+        const files = [...(agent.files ?? [])];
+        const index = files.findIndex((current) => current.id === file.id);
+        if (index < 0) files.push(file);
+        else files[index] = { ...files[index], ...file };
+        return { ...agent, files };
+      });
+    },
+    [update],
+  );
+
+  const getAgent = useCallback(
+    (id: string) => (ownerActive.current ? getItems().find((agent) => agent.id === id) : undefined),
+    [getItems],
+  );
+  const [ingestion] = useState(
+    () =>
+      new FileIngestion({
+        getFiles: (id) => {
+          const agent = getAgent(id);
+          return agent ? (agent.files ?? []) : undefined;
+        },
+        insertFile: upsertFile,
+        updateFile: (agentId, fileId, changes) =>
+          update(agentId, (agent) => ({
+            ...agent,
+            files: agent.files?.map((file) => (file.id === fileId ? { ...file, ...changes, id: fileId } : file)),
+          })),
+        flush,
+        getModel: () => getConfig().repository?.embedder ?? "",
+        convert: (file, signal) => convertFileToText(file, { signal }),
+        segment: (text, signal) => getConfig().client.segmentText(text, { signal }),
+        embed: (model, text, signal) => getConfig().client.embedText(model, text, { signal }),
+      }),
+  );
+  useEffect(() => {
+    ownerActive.current = true;
+    return () => {
+      ownerActive.current = false;
+      ingestion.cancelAll();
+    };
+  }, [ingestion]);
+
+  const addFile = useCallback((agentId: string, file: File) => ingestion.addFile(agentId, file), [ingestion]);
+  const reindexFile = useCallback(
+    (agentId: string, fileId: string) => ingestion.reindexFile(agentId, fileId),
+    [ingestion],
+  );
   const deleteAgent = useCallback(
     async (id: string) => {
-      setAgents((prev) => prev.filter((agent) => agent.id !== id));
-
-      if (currentAgent?.id === id) {
-        setCurrentAgent(null);
-      }
-
-      try {
-        await removeAgent(id);
-      } catch (error) {
-        console.error(`Error deleting agent ${id}:`, error);
-      }
+      ingestion.cancelRepository(id);
+      setCurrentId((current) => (current === id ? null : current));
+      await remove(id);
     },
-    [currentAgent],
-  );
-
-  // File operations (repository files within an agent)
-  const upsertFile = useCallback(
-    (agentId: string, file: RepositoryFile) => {
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          const files = agent.files ? [...agent.files] : [];
-          const existingIdx = files.findIndex((f) => f.id === file.id);
-          if (existingIdx !== -1) {
-            // Processing updates are intentionally partial snapshots. Preserve
-            // stable identity metadata such as the allocated repository path.
-            files[existingIdx] = { ...files[existingIdx], ...file };
-          } else {
-            files.push(file);
-          }
-          return { ...agent, files };
-        });
-
-        setTimeout(() => scheduleSave(agentId), 0);
-
-        return updated;
-      });
-    },
-    [scheduleSave],
+    [ingestion, remove],
   );
 
   const removeFile = useCallback(
-    (agentId: string, fileId: string) => {
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          const files = agent.files ? agent.files.filter((f) => f.id !== fileId) : [];
-          return { ...agent, files };
-        });
-
-        removeAgentFile(agentId, fileId).catch((error) => {
-          console.error(`Error deleting agent file ${fileId}:`, error);
-        });
-
-        setTimeout(() => scheduleSave(agentId), 0);
-
-        return updated;
-      });
+    (id: string, fileId: string) => {
+      ingestion.cancelFile(id, fileId);
+      update(id, (agent) => ({ ...agent, files: agent.files?.filter((file) => file.id !== fileId) }));
     },
-    [scheduleSave],
+    [ingestion, update],
   );
 
-  // Bridge server operations within an agent
   const addServer = useCallback(
-    (agentId: string, serverData: Omit<BridgeServer, "id">): BridgeServer => {
-      const newServer: BridgeServer = {
-        ...serverData,
-        id: crypto.randomUUID(),
-      };
-
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          return { ...agent, servers: [...agent.servers, newServer] };
-        });
-        setTimeout(() => scheduleSave(agentId), 0);
-        return updated;
-      });
-
-      if (currentAgent?.id === agentId) {
-        setCurrentAgent((prev) => (prev ? { ...prev, servers: [...prev.servers, newServer] } : null));
-      }
-
-      return newServer;
+    (id: string, data: Omit<BridgeServer, "id">): BridgeServer => {
+      const server = { ...data, id: crypto.randomUUID() };
+      update(id, (agent) => ({ ...agent, servers: [...agent.servers, server] }));
+      return server;
     },
-    [currentAgent, scheduleSave],
+    [update],
   );
 
   const updateServer = useCallback(
-    (agentId: string, serverId: string, updates: Partial<Omit<BridgeServer, "id">>) => {
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          return {
-            ...agent,
-            servers: agent.servers.map((s) => (s.id === serverId ? { ...s, ...updates } : s)),
-          };
-        });
-        setTimeout(() => scheduleSave(agentId), 0);
-        return updated;
-      });
-
-      if (currentAgent?.id === agentId) {
-        setCurrentAgent((prev) =>
-          prev
-            ? {
-                ...prev,
-                servers: prev.servers.map((s) => (s.id === serverId ? { ...s, ...updates } : s)),
-              }
-            : null,
-        );
-      }
+    (id: string, serverId: string, changes: Partial<Omit<BridgeServer, "id">>) => {
+      update(id, (agent) => ({
+        ...agent,
+        servers: agent.servers.map((server) =>
+          server.id === serverId ? { ...server, ...changes, id: serverId } : server,
+        ),
+      }));
     },
-    [currentAgent, scheduleSave],
+    [update],
   );
 
   const removeServer = useCallback(
-    (agentId: string, serverId: string) => {
-      const server = agents.find((a) => a.id === agentId)?.servers.find((s) => s.id === serverId);
-      if (server) {
-        clearMcpOAuthStorage(server.id);
-      }
-
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          return {
-            ...agent,
-            servers: agent.servers.filter((s) => s.id !== serverId),
-          };
-        });
-        setTimeout(() => scheduleSave(agentId), 0);
-        return updated;
-      });
-
-      if (currentAgent?.id === agentId) {
-        setCurrentAgent((prev) =>
-          prev
-            ? {
-                ...prev,
-                servers: prev.servers.filter((s) => s.id !== serverId),
-              }
-            : null,
-        );
-      }
+    (id: string, serverId: string) => {
+      clearMcpOAuthStorage(serverId);
+      update(id, (agent) => ({ ...agent, servers: agent.servers.filter((server) => server.id !== serverId) }));
     },
-    [agents, currentAgent, scheduleSave],
+    [update],
   );
 
   const toggleServer = useCallback(
-    (agentId: string, serverId: string) => {
-      setAgents((prev) => {
-        const updated = prev.map((agent) => {
-          if (agent.id !== agentId) return agent;
-          return {
-            ...agent,
-            servers: agent.servers.map((s) => (s.id === serverId ? { ...s, enabled: !s.enabled } : s)),
-          };
-        });
-        setTimeout(() => scheduleSave(agentId), 0);
-        return updated;
-      });
-
-      if (currentAgent?.id === agentId) {
-        setCurrentAgent((prev) =>
-          prev
-            ? {
-                ...prev,
-                servers: prev.servers.map((s) => (s.id === serverId ? { ...s, enabled: !s.enabled } : s)),
-              }
-            : null,
-        );
-      }
+    (id: string, serverId: string) => {
+      update(id, (agent) => ({
+        ...agent,
+        servers: agent.servers.map((server) =>
+          server.id === serverId ? { ...server, enabled: !server.enabled } : server,
+        ),
+      }));
     },
-    [currentAgent, scheduleSave],
+    [update],
   );
 
   const toggleAgentDrawer = useCallback(() => {
-    setShowAgentDrawer((prev) => {
-      if (!prev) setAgentDrawerView("list");
-      return !prev;
-    });
-  }, []);
+    if (!showAgentDrawer) setAgentDrawerView("list");
+    setShowAgentDrawer(!showAgentDrawer);
+  }, [showAgentDrawer]);
 
-  const value: AgentContextType = {
-    agents,
-    currentAgent,
-    createAgent,
-    updateAgent,
-    deleteAgent,
-    setCurrentAgent,
-    showAgentDrawer,
-    setShowAgentDrawer,
-    toggleAgentDrawer,
-    agentDrawerView,
-    setAgentDrawerView,
-    upsertFile,
-    removeFile,
-    addServer,
-    updateServer,
-    removeServer,
-    toggleServer,
-  };
-
-  return <AgentContext value={value}>{children}</AgentContext>;
+  return (
+    <AgentContext
+      value={{
+        agents,
+        currentAgent,
+        createAgent,
+        updateAgent,
+        deleteAgent,
+        setCurrentAgent,
+        showAgentDrawer,
+        setShowAgentDrawer,
+        toggleAgentDrawer,
+        agentDrawerView,
+        setAgentDrawerView,
+        upsertFile,
+        removeFile,
+        getAgent,
+        addFile,
+        reindexFile,
+        addServer,
+        updateServer,
+        removeServer,
+        toggleServer,
+      }}
+    >
+      {children}
+    </AgentContext>
+  );
 }

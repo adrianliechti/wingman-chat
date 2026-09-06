@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
@@ -33,13 +33,7 @@ import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/li
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
-import type {
-  Content,
-  ImageContent,
-  Message,
-  TextContent,
-  ToolProvider,
-} from "@/shared/types/chat";
+import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -53,21 +47,10 @@ import { formatArtifactReference } from "./chatMessageUtils";
 export function ChatInput() {
   const config = getConfig();
 
-  const {
-    sendMessage,
-    models,
-    model,
-    setModel: onModelChange,
-    effort,
-    setEffort,
-    messages,
-    isResponding,
-    stopStreaming,
-    queuedSends,
-    removeQueuedMessage,
-    sendHeldMessage,
-    chat,
-  } = useChat();
+  const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
+  const { models, model, setModel: onModelChange, effort, setEffort } = useChatModel();
+  const { isResponding, queuedSends } = useChatRunState();
+  const { chatId, hasMessages, chatLoading, chatError } = useChatList();
   const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
@@ -96,27 +79,9 @@ export function ChatInput() {
     stopVoice,
     sendText: sendVoiceText,
   } = useVoice();
-  const {
-    inputDeviceId,
-    inputDevices,
-    setInputDevice,
-    requestPermission: requestAudioPermission,
-  } = useAudioDevices();
+  const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
 
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
-
-  // Request mic permission once per voice-mode entry so the device selector shows real names.
-  const permissionRequestedRef = useRef(false);
-  useEffect(() => {
-    if (!isRealtimeSelected || !voiceAvailable) {
-      permissionRequestedRef.current = false;
-      return;
-    }
-    if (inputDevices.length === 0 && !permissionRequestedRef.current) {
-      permissionRequestedRef.current = true;
-      void requestAudioPermission();
-    }
-  }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
 
   // Auto-start voice when entering via the mode toggle (not via a realtime agent).
   // Attempt once per entry to avoid a retry loop if startVoice() fails.
@@ -143,9 +108,7 @@ export function ChatInput() {
     if (!artifactsFs) return new Set<string>();
     const entries = await artifactsFs.listEntries();
     // Root-level entries only — uploads land at `/${name}`, so nested files can't collide.
-    return new Set(
-      entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)),
-    );
+    return new Set(entries.filter((e) => !e.path.slice(1).includes("/")).map((e) => e.path.slice(1)));
   }, [artifactsFs]);
 
   const {
@@ -193,12 +156,10 @@ export function ChatInput() {
     const variations = profileName ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
 
-    return profileName
-      ? variations[randomIndex].replace("[Name]", profileName)
-      : variations[randomIndex];
+    return profileName ? variations[randomIndex].replace("[Name]", profileName) : variations[randomIndex];
   }, [profileName]);
 
-  const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
+  const placeholderText = !hasMessages ? randomPlaceholder : "Ask anything";
 
   // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
   const acceptString = useMemo(
@@ -208,8 +169,10 @@ export function ChatInput() {
 
   const shouldShowPlaceholder = !content.trim();
 
-  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } =
-    useTranscription();
+  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription(
+    chatId ?? undefined,
+    !isRealtimeSelected,
+  );
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
@@ -250,9 +213,7 @@ export function ChatInput() {
   // Providers whose OAuth flow needs an explicit user gesture to retry.
   const unauthorizedProviders = useMemo(
     () =>
-      visibleProviders.filter(
-        (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized,
-      ),
+      visibleProviders.filter((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Unauthorized),
     [visibleProviders, getProviderState],
   );
 
@@ -294,11 +255,12 @@ export function ChatInput() {
     if (window.matchMedia("(pointer: coarse)").matches) return;
     const raf = requestAnimationFrame(() => contentInputRef.current?.focus());
     return () => cancelAnimationFrame(raf);
-  }, [chat?.id]);
+  }, [chatId]);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
+      if (chatLoading || chatError) return;
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
@@ -342,9 +304,7 @@ export function ChatInput() {
 
         const fileArtifacts = await toArtifacts(pendingFiles);
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
-        const screenCaptureArtifacts = screenCaptureFile
-          ? await toArtifacts([screenCaptureFile])
-          : [];
+        const screenCaptureArtifacts = screenCaptureFile ? await toArtifacts([screenCaptureFile]) : [];
         const artifacts = [...fileArtifacts, ...imageArtifacts, ...screenCaptureArtifacts];
 
         // Reference every persisted attachment by its workspace path so the
@@ -380,6 +340,8 @@ export function ChatInput() {
       captureFrame,
       artifactsAvailable,
       sendMessage,
+      chatLoading,
+      chatError,
       clearAttachments,
     ],
   );
@@ -493,17 +455,12 @@ export function ChatInput() {
       try {
         const text = await stopTranscription();
         if (text.trim()) {
-          setContent((previous) =>
-            previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text,
-          );
+          setContent((previous) => (previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text));
           contentInputRef.current?.focus();
         }
       } catch (error) {
         console.error("Transcription failed:", error);
-        notify.error(
-          "Transcription failed",
-          "The recording couldn't be transcribed. Please try again.",
-        );
+        notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
       } finally {
         setTranscribingContent(false);
       }
@@ -522,9 +479,7 @@ export function ChatInput() {
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
-            const label =
-              item.message.content.find((part) => part.type === "text")?.text.trim() ||
-              "Attachment";
+            const label = item.message.content.find((part) => part.type === "text")?.text.trim() || "Attachment";
             return (
               <div
                 key={item.id}
@@ -535,9 +490,7 @@ export function ChatInput() {
                     : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
                 )}
               >
-                <span className="max-w-56 truncate">
-                  {item.status === "held" ? `Held: ${label}` : label}
-                </span>
+                <span className="max-w-56 truncate">{item.status === "held" ? `Held: ${label}` : label}</span>
                 {item.status === "held" && (
                   <button
                     type="button"
@@ -549,9 +502,7 @@ export function ChatInput() {
                 )}
                 <button
                   type="button"
-                  aria-label={
-                    item.status === "held" ? "Discard held message" : "Remove queued message"
-                  }
+                  aria-label={item.status === "held" ? "Discard held message" : "Remove queued message"}
                   className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => removeQueuedMessage(item.id)}
                 >
@@ -591,9 +542,7 @@ export function ChatInput() {
             </div>
           )}
 
-          {(attachments.length > 0 ||
-            pendingFiles.length > 0 ||
-            extractingAttachments.size > 0) && (
+          {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
             <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
@@ -605,9 +554,7 @@ export function ChatInput() {
             </div>
           )}
 
-          <div
-            className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}
-          >
+          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
                 className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto scrollbar-thin min-h-10 field-sizing-content whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
@@ -679,10 +626,10 @@ export function ChatInput() {
                   <div
                     className={cn(
                       "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
-                      messages.length === 0 && "typewriter-text",
+                      !hasMessages && "typewriter-text",
                     )}
                     style={
-                      messages.length === 0
+                      !hasMessages
                         ? ({
                             "--text-length": placeholderText.length,
                             "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
@@ -746,10 +693,7 @@ export function ChatInput() {
             )}
             <div className="flex items-center gap-2">
               {isRealtimeSelected && isListening && !voiceTextInput && (
-                <div
-                  className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400"
-                  aria-live="polite"
-                >
+                <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400" aria-live="polite">
                   <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
@@ -758,10 +702,7 @@ export function ChatInput() {
                     <span className="font-medium text-neutral-700 dark:text-neutral-300">
                       {currentAgent?.name ?? "Listening"}
                     </span>
-                    <span className="text-neutral-500 dark:text-neutral-400">
-                      {" "}
-                      — speak or type a message
-                    </span>
+                    <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
                   </span>
                 </div>
               )}
@@ -809,15 +750,9 @@ export function ChatInput() {
                       {...getProps()}
                       className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
                     >
-                      <Tooltip
-                        content="Switch model"
-                        side="bottom"
-                        className="flex items-center gap-1.5 min-w-0"
-                      >
+                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">
-                          {model?.name ?? model?.id ?? "Select Model"}
-                        </span>
+                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                       </Tooltip>
                     </button>
                   )}
@@ -867,8 +802,7 @@ export function ChatInput() {
                           </button>
                         )}
                       >
-                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}
-                        )
+                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
@@ -997,9 +931,7 @@ export function ChatInput() {
                             </span>
                             <span className="hidden @md:inline truncate min-w-0">
                               {(() => {
-                                const selected = inputDevices.find(
-                                  (d) => d.deviceId === inputDeviceId,
-                                );
+                                const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
                                 if (selected) return selected.label || "Microphone";
                                 return "Default Mic";
                               })()}
@@ -1022,10 +954,7 @@ export function ChatInput() {
                               System Default
                             </DropdownMenuItem>
                             {inputDevices.map((device) => (
-                              <DropdownMenuItem
-                                key={device.deviceId}
-                                onClick={() => setInputDevice(device.deviceId)}
-                              >
+                              <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
                                 {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
                               </DropdownMenuItem>
                             ))}
@@ -1042,8 +971,7 @@ export function ChatInput() {
                       onClick={async () => {
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored =
-                          (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >
@@ -1061,8 +989,7 @@ export function ChatInput() {
                         }
                         await stopVoice();
                         const savedId = getSavedModelId();
-                        const restored =
-                          (savedId && models.find((m) => m.id === savedId)) || models[0];
+                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
                         onModelChange(restored ?? null);
                       }}
                     >

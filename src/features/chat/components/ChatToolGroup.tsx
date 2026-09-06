@@ -4,6 +4,8 @@ import { cn } from "@/shared/lib/cn";
 import type { Message } from "@/shared/types/chat";
 import { summarizeToolGroup } from "./chatMessageUtils";
 import { ChatToolMessage } from "./ChatToolMessage";
+import { ChatMessageAttachments } from "./ChatMessageAttachments";
+import { hasStoredAttachments } from "../lib/chatAttachments";
 
 type ChatToolGroupProps = {
   messages: Message[];
@@ -50,7 +52,13 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
             // Key by the stable tool-call id, not the array index — stop/restart
             // shifts indices, and index keys would reconcile the wrong rows.
             const key = result && "id" in result ? result.id : idx;
-            return <ChatToolMessage key={key} message={messages[idx]} index={idx} />;
+            return hasStoredAttachments(messages[idx].content) ? (
+              <ChatMessageAttachments key={key} message={messages[idx]}>
+                {(message) => <ChatToolMessage message={message} index={idx} />}
+              </ChatMessageAttachments>
+            ) : (
+              <ChatToolMessage key={key} message={messages[idx]} index={idx} />
+            );
           })}
         </div>
       )}

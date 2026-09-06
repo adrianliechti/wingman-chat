@@ -10,10 +10,16 @@
       import { ArtifactReadWriteManager } from "/src/features/artifacts/lib/artifactFileTools.ts";
       import { executeCode } from "/src/features/tools/lib/interpreter.ts";
       import { executeJavaScript } from "/src/features/tools/lib/javascript.ts";
+      import { loadConfig } from "/src/shared/config.ts";
+      import { setModel } from "/src/features/tools/lib/llmCommand.ts";
 
       window.interpreterE2E = {
         executePython: executeCode,
         executeJavaScript,
+        async initializeLlm() {
+          await loadConfig();
+          setModel("ui-model");
+        },
         async runToolFlow(chatId) {
           const fs = new FileSystemManager(chatId);
           const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });

@@ -71,7 +71,7 @@ export function getRetryAfterMs(error: unknown): number | undefined {
   const retryAfterMs = error.headers?.get("retry-after-ms")?.trim();
   if (retryAfterMs) {
     const ms = Number.parseFloat(retryAfterMs);
-    if (!Number.isNaN(ms) && Number.isFinite(ms)) {
+    if (Number.isFinite(ms) && /^-?\d+(\.\d+)?$/.test(retryAfterMs)) {
       return Math.max(0, Math.round(ms));
     }
   }
@@ -93,21 +93,25 @@ export function isRecoverableStreamError(error: unknown): boolean {
   if (error instanceof LengthFinishReasonError) return false;
 
   if (isOpenAIError(error)) {
+    if (error.code === "insufficient_quota") return false;
     // Network-level failures (no or partial HTTP response) — this is the
     // mid-stream connection drop. APIConnectionTimeoutError extends this.
     if (error instanceof APIConnectionError) return true;
     if (error instanceof RateLimitError) return true;
     if (error instanceof InternalServerError) return true;
+    if (["server_error", "rate_limit_exceeded", "overloaded_error"].includes(error.code ?? "")) return true;
     const status = error.status;
     return typeof status === "number" && (status === 408 || status === 409 || status === 429 || status >= 500);
   }
 
   // Native fetch failure in the browser (e.g. connection reset mid-stream).
-  if (error instanceof TypeError) return true;
-
   const s = errorText(error).toLowerCase();
   return (
-    s.includes("terminated") || s.includes("econnreset") || s.includes("network error") || s.includes("connection")
+    /terminated|econnreset|network error|connection (?:reset|closed|error)|failed to fetch|fetch failed|load failed|networkerror/.test(
+      s,
+    ) ||
+    s === "request ended without sending any events" ||
+    s === "stream ended without producing a response"
   );
 }
 
@@ -118,7 +122,9 @@ export function isRecoverableStreamError(error: unknown): boolean {
  */
 export function waitBeforeStreamRetry(attempt: number, error: unknown, signal?: AbortSignal): Promise<void> {
   const base = Math.min(500 * 2 ** attempt, 8000);
-  const delay = getRetryAfterMs(error) ?? base + Math.floor(Math.random() * 250);
+  // Bound provider delays as well as our backoff. Oversized setTimeout values
+  // overflow to an immediate retry in browsers and Node.
+  const delay = Math.min(getRetryAfterMs(error) ?? base + Math.floor(Math.random() * 250), 60_000);
   return new Promise<void>((resolve) => {
     if (signal?.aborted) return resolve();
     const onAbort = () => {
@@ -141,16 +147,17 @@ export function waitBeforeStreamRetry(attempt: number, error: unknown, signal?: 
  * to message markers for providers that don't set one.
  */
 export function isContextOverflowError(error: unknown): boolean {
-  if (!(error instanceof BadRequestError)) return false;
+  if (!isOpenAIError(error)) return false;
   const code = error.code ?? "";
   if (code === "context_length_exceeded" || code === "string_above_max_length") return true;
+  if (error.status !== undefined && error.status !== 400 && error.status !== 413) return false;
   const msg = (getServerMessage(error) ?? "").toLowerCase();
   return (
     msg.includes("context length") ||
     msg.includes("context window") ||
     msg.includes("maximum context") ||
     msg.includes("too many tokens") ||
-    msg.includes("too long")
+    /(?:prompt|input|request) (?:is )?too long/.test(msg)
   );
 }
 
@@ -206,13 +213,19 @@ export function getErrorInfo(error: unknown): ErrorInfo {
   }
   if (error instanceof LengthFinishReasonError) {
     return {
-      code: "CONTEXT_EXHAUSTED",
+      code: "OUTPUT_TRUNCATED",
       message: "The response was truncated because the maximum token limit was reached.",
     };
   }
 
   // OpenAI SDK errors
   if (isOpenAIError(error)) {
+    if (isContextOverflowError(error)) {
+      return {
+        code: "CONTEXT_EXHAUSTED",
+        message: getServerMessage(error) || "The conversation is too long for the model's context window.",
+      };
+    }
     // Network-level failures (no HTTP response received)
     if (error instanceof APIConnectionTimeoutError) {
       return {
@@ -227,7 +240,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
       };
     }
 
-    if (error instanceof RateLimitError) {
+    if (error instanceof RateLimitError || error.code === "rate_limit_exceeded") {
       const retryAfterMs = getRetryAfterMs(error);
       const retryAfterMsg = retryAfterMs
         ? ` Please wait ${Math.ceil(retryAfterMs / 1000)} seconds before trying again.`
@@ -238,7 +251,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
       };
     }
 
-    if (error instanceof InternalServerError) {
+    if (error instanceof InternalServerError || error.code === "server_error" || error.code === "overloaded_error") {
       return {
         code: "SERVER_ERROR",
         message: `Server error (${error.status ?? "5xx"}). Please try again in a moment.`,
@@ -298,8 +311,13 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     };
   }
 
+  // Preserve typed terminal results forwarded by the agent or another caller.
+  if (error instanceof Error && "code" in error && typeof error.code === "string") {
+    return { code: error.code, message: error.message };
+  }
+
   // Non-SDK errors: native network failures from fetch()
-  if (error instanceof TypeError) {
+  if (error instanceof TypeError && isRecoverableStreamError(error)) {
     return {
       code: "NETWORK_ERROR",
       message: "Network connection failed. Please check your internet connection and try again.",

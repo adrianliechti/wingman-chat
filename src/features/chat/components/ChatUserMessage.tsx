@@ -1,7 +1,7 @@
 import { Pencil } from "lucide-react";
 import { memo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
 import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
@@ -74,7 +74,8 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
       p.type === "image" || p.type === "audio" || p.type === "file",
   );
   const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
-  const { sendMessage, chat } = useChat();
+  const { sendMessage } = useChatActions();
+  const { chat } = useChatConversation();
 
   // Check for images and files in content
   const mediaParts = message.content.filter(

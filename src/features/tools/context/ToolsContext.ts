@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { DisplayMode, DisplayModeOptions } from "@/features/settings/lib/mcp";
+import type { McpAppOptions, McpAppSession } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
 import type {
   AudioContent,
@@ -7,7 +7,6 @@ import type {
   ImageContent,
   ProviderState,
   TextContent,
-  ToolContext,
   ToolProvider,
 } from "@/shared/types/chat";
 
@@ -31,11 +30,8 @@ export interface ToolsContextValue {
     args: Record<string, unknown>,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
     content: Record<string, unknown> | undefined,
-    context: ToolContext,
-    displayModeOptions?: DisplayModeOptions,
-  ) => Promise<void>;
-  /** Push a host-initiated display-mode change to a provider's active app. */
-  setDisplayMode: (providerId: string, mode: DisplayMode) => void;
+    options: McpAppOptions,
+  ) => Promise<McpAppSession>;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);

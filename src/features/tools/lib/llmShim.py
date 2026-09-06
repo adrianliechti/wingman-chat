@@ -6,7 +6,10 @@ import json as _json
 
 
 async def llm(prompt, *, model=None, system=None, effort=None):
-    """Call a language model and return its text response.
+    """Call a language model with fresh context and return its text response.
+
+    Chat history and previous llm/vision calls are not included. Supply all
+    necessary context in prompt and system.
 
     Args:
         prompt: The user prompt to send.

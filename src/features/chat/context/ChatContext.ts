@@ -1,7 +1,7 @@
 import { createContext } from "react";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { Chat, Message, Model } from "@/shared/types/chat";
+import type { Chat, ChatEntry, Message, Model } from "@/shared/types/chat";
 import type {
   ConsentResult,
   Elicitation,
@@ -23,8 +23,14 @@ export interface ChatContextType {
   setEffort: (effort: Model["effort"] | null) => void;
 
   // Chats
-  chats: Chat[];
+  chats: ChatEntry[];
   chatsLoaded: boolean;
+  chatId: string | null;
+  chatLoading: boolean;
+  chatError: string | null;
+  hasMessages: boolean;
+  loadChat: (id: string) => Promise<Chat>;
+  searchChats: (query: string, signal: AbortSignal) => Promise<Set<string>>;
   chat: Chat | null;
   messages: Message[];
   isResponding: boolean;
@@ -74,3 +80,45 @@ export interface ChatContextType {
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);
+
+export type ChatListContextType = Pick<
+  ChatContextType,
+  "chats" | "chatsLoaded" | "chatId" | "chatLoading" | "chatError" | "hasMessages"
+>;
+export const ChatListContext = createContext<ChatListContextType | undefined>(undefined);
+
+export type ChatModelContextType = Pick<ChatContextType, "models" | "model" | "effort" | "setModel" | "setEffort">;
+export const ChatModelContext = createContext<ChatModelContextType | undefined>(undefined);
+
+export type ChatConversationContextType = Pick<ChatContextType, "chat" | "messages" | "toolMeta">;
+export const ChatConversationContext = createContext<ChatConversationContextType | undefined>(undefined);
+
+export type ChatRunStateContextType = Pick<
+  ChatContextType,
+  "isResponding" | "status" | "queuedSends" | "pendingElicitation" | "pendingConsent"
+>;
+export const ChatRunStateContext = createContext<ChatRunStateContextType | undefined>(undefined);
+
+export type ChatActionsContextType = Pick<
+  ChatContextType,
+  | "stopStreaming"
+  | "createChat"
+  | "selectChat"
+  | "deleteChat"
+  | "updateChat"
+  | "loadChat"
+  | "searchChats"
+  | "ensureChat"
+  | "addMessage"
+  | "sendMessage"
+  | "retryMessage"
+  | "continueRun"
+  | "removeQueuedMessage"
+  | "sendHeldMessage"
+  | "setVoiceToolCall"
+  | "resolveElicitation"
+  | "requestElicitation"
+  | "updateToolMeta"
+  | "resolveConsent"
+>;
+export const ChatActionsContext = createContext<ChatActionsContextType | undefined>(undefined);

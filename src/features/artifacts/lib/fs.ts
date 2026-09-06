@@ -5,6 +5,13 @@ import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry, FileSystem } from "@/shared/types/file";
 import { artifactChecksum, artifactRevision, type ArtifactMutation } from "@/shared/types/artifact";
 import { withArtifactWorkspaceLock } from "./workspaceCoordinator";
+import {
+  publishArtifactEvent,
+  subscribeArtifactEvent,
+  unsubscribeArtifactEvent,
+  type FileEventType,
+  type FileEventHandler,
+} from "./artifactEvents";
 
 export function resolveArtifactFileSystem(
   current: FileSystemManager | null,
@@ -12,18 +19,6 @@ export function resolveArtifactFileSystem(
 ): FileSystemManager | null {
   return chatId && current?.chatId !== chatId ? new FileSystemManager(chatId) : current;
 }
-
-type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
-
-type FileEventHandler<T extends FileEventType> = T extends "fileCreated"
-  ? (path: string) => void
-  : T extends "fileDeleted"
-    ? (path: string) => void
-    : T extends "fileRenamed"
-      ? (oldPath: string, newPath: string) => void
-      : T extends "fileUpdated"
-        ? (path: string) => void
-        : never;
 
 export interface OverlayFile {
   content: string;
@@ -87,8 +82,8 @@ function hasFileTreeConflict(path: string, existingPaths: readonly string[]): bo
  * All operations go directly to OPFS. Events are emitted synchronously
  * after OPFS operations complete to notify UI of changes.
  */
-class ArtifactWorkspace implements FileSystem, ArtifactWorkspaceAccess {
-  private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
+class ArtifactWorkspace implements ArtifactWorkspaceAccess {
+  private pendingEvents: Array<{ type: FileEventType; paths: string[] }> | null = null;
   readonly chatId: string;
 
   constructor(chatId: string) {
@@ -96,42 +91,11 @@ class ArtifactWorkspace implements FileSystem, ArtifactWorkspaceAccess {
       throw new Error("FileSystemManager requires a non-empty chatId");
     }
     this.chatId = chatId;
-    // Initialize event handler sets
-    this.eventHandlers.set("fileCreated", new Set());
-    this.eventHandlers.set("fileDeleted", new Set());
-    this.eventHandlers.set("fileRenamed", new Set());
-    this.eventHandlers.set("fileUpdated", new Set());
   }
 
-  // Event subscription methods
-  subscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): () => void {
-    const handlers = this.eventHandlers.get(eventType);
-    if (handlers) {
-      handlers.add(handler as (...args: unknown[]) => void);
-    }
-
-    // Return unsubscribe function
-    return () => this.unsubscribe(eventType, handler);
-  }
-
-  unsubscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): void {
-    const handlers = this.eventHandlers.get(eventType);
-    if (handlers) {
-      handlers.delete(handler as (...args: unknown[]) => void);
-    }
-  }
-
-  private emit(eventType: FileEventType, ...args: unknown[]): void {
-    const handlers = this.eventHandlers.get(eventType);
-    if (handlers) {
-      handlers.forEach((handler) => {
-        try {
-          handler(...args);
-        } catch (error) {
-          console.error(`Error in ${eventType} handler:`, error);
-        }
-      });
-    }
+  private emit(type: FileEventType, ...paths: string[]): void {
+    if (this.pendingEvents) this.pendingEvents.push({ type, paths });
+    else publishArtifactEvent(this.chatId, type, ...paths);
   }
 
   private normalizePath(path: string): string {
@@ -497,8 +461,16 @@ class ArtifactWorkspace implements FileSystem, ArtifactWorkspaceAccess {
     const before = new Map<string, OverlayFile | undefined>();
     for (const path of touched) before.set(path, await opfs.readArtifact(this.chatId, path));
 
+    // Publish only the committed batch. A rolled-back delete must not clear
+    // an editor selection, and a failed create must never open a phantom file.
+    const previousEvents = this.pendingEvents;
+    this.pendingEvents = [];
     try {
-      return await this.applyOverlayDeltaUnsafe(normalizedDelta);
+      const summary = await this.applyOverlayDeltaUnsafe(normalizedDelta);
+      const events = this.pendingEvents;
+      this.pendingEvents = previousEvents;
+      for (const { type, paths } of events) this.emit(type, ...paths);
+      return summary;
     } catch (commitError) {
       try {
         await this.restoreTouchedFiles(before);
@@ -509,6 +481,8 @@ class ArtifactWorkspace implements FileSystem, ArtifactWorkspaceAccess {
         );
       }
       throw commitError;
+    } finally {
+      this.pendingEvents = previousEvents;
     }
   }
 
@@ -693,11 +667,11 @@ export class FileSystemManager implements FileSystem {
   }
 
   subscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): () => void {
-    return this.workspace.subscribe(eventType, handler);
+    return subscribeArtifactEvent(this.chatId, eventType, handler);
   }
 
   unsubscribe<T extends FileEventType>(eventType: T, handler: FileEventHandler<T>): void {
-    this.workspace.unsubscribe(eventType, handler);
+    unsubscribeArtifactEvent(this.chatId, eventType, handler);
   }
 
   createFile(path: string, content: string, contentType?: string) {

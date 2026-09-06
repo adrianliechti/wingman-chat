@@ -1,10 +1,12 @@
 import { Loader2, Maximize2 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import type { McpAppSession } from "@/features/settings/lib/mcpAppSession";
+import { isAbortError } from "@/shared/lib/errors";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { parseToolArguments } from "@/shared/lib/toolArguments";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";
-import type { ToolContext, ToolResultContent } from "@/shared/types/chat";
+import type { ToolResultContent } from "@/shared/types/chat";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
 import { useApp } from "@/shell/hooks/useApp";
 
@@ -37,12 +39,13 @@ function getAppDisplayModes(toolResult: ToolResultContent): AppDisplayMode[] {
  */
 export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const cleanupRef = useRef<(() => Promise<void> | void) | null>(null);
+  const sessionRef = useRef<McpAppSession | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [inlineHeight, setInlineHeight] = useState(0);
   const [bridgeReady, setBridgeReady] = useState(false);
   const { renderAppInto, showAppDrawer, closeApp, showDrawer, activeAppKey, setActiveAppKey, drawerTarget } = useApp();
-  const { setProviderEnabled, restoreToolUI, setDisplayMode: setBridgeDisplayMode } = useToolsContext();
+  const { setProviderEnabled, restoreToolUI } = useToolsContext();
 
   const providerId = toolResult.meta?.toolProvider as string;
   const resourceUri = toolResult.meta?.toolResource as string;
@@ -55,14 +58,21 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   const isInlineOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "inline";
   const isFullscreenOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "fullscreen";
 
-  const getInitialDisplayMode = (): AppDisplayMode => {
-    if (appDisplayModes.length === 1 && appDisplayModes[0] === "fullscreen" && isLastFullscreenApp) return "fullscreen";
-    if (showAppDrawer && activeAppKey === appKey) return "fullscreen";
-    return "inline";
+  // The drawer owns fullscreen selection. Deriving it here avoids competing
+  // app effects repeatedly claiming the same panel from one another.
+  const isFullscreen = showAppDrawer && activeAppKey === appKey;
+  const openInPanel = () => {
+    setActiveAppKey(appKey);
+    showDrawer();
   };
-
-  const [displayMode, setDisplayMode] = useState<AppDisplayMode>(getInitialDisplayMode);
-  const isFullscreen = displayMode === "fullscreen";
+  const requestDisplayMode = useEffectEvent((mode: string) => {
+    if (mode === "fullscreen") {
+      // Older fullscreen-only apps initialize in the background.
+      if (sessionRef.current || isLastFullscreenApp) openInPanel();
+    } else if (activeAppKey === appKey) {
+      void closeApp();
+    }
+  });
 
   // Fullscreen: track the drawer's content rect so the fixed iframe overlays it.
   const overlay = useOverlayRect(isFullscreen ? drawerTarget : null);
@@ -74,68 +84,66 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   // Render the bridge once on mount. An Effect Event so it always reads the latest
   // props/state without forcing the mount Effect below to re-run — the bridge is
   // persistent across mode changes.
-  const renderApp = useEffectEvent(async () => {
+  const renderApp = useEffectEvent(async (signal: AbortSignal) => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     setIsLoading(true);
+    setError(null);
     try {
       const args = parseToolArguments(toolResult.arguments);
       await setProviderEnabled(providerId, true);
-      await renderAppInto(iframe);
+      signal.throwIfAborted();
+      await renderAppInto(iframe, signal);
 
-      const context: ToolContext = {
-        render: async () => ({
-          iframe,
-          registerCleanup: (cleanup) => {
-            cleanupRef.current = cleanup;
+      const session = await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, content, {
+        iframe,
+        signal,
+        context: {
+          updateMeta: (meta) => {
+            const modes = meta.appDisplayModes as AppDisplayMode[] | undefined;
+            if (modes?.length) setBridgeDisplayModes(modes);
           },
-        }),
-        updateMeta: (meta) => {
-          const modes = meta.appDisplayModes as AppDisplayMode[] | undefined;
-          if (modes && modes.length > 0) setBridgeDisplayModes(modes);
         },
-      };
-
-      await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, content, context, {
-        displayMode: "inline",
-        onDisplayModeRequested: (mode) => setDisplayMode(mode as AppDisplayMode),
+        displayMode: isFullscreen || isFullscreenOnly ? "fullscreen" : "inline",
+        onDisplayModeRequested: requestDisplayMode,
         // Host owns the iframe height; only relevant inline (fullscreen fills the drawer).
         onSizeChange: (height) => {
           if (!isFullscreenRef.current) setInlineHeight(Math.min(height, INLINE_MAX_HEIGHT));
         },
       });
 
+      if (signal.aborted) {
+        await session.close();
+        return;
+      }
+      sessionRef.current = session;
       setIsLoading(false);
       setBridgeReady(true);
     } catch (error) {
+      if (signal.aborted || isAbortError(error)) return;
+      setError(error instanceof Error ? error.message : "Could not open this app");
       console.error("Failed to render MCP app:", error);
       setIsLoading(false);
     }
   });
 
   useEffect(() => {
-    void renderApp();
+    const controller = new AbortController();
+    void renderApp(controller.signal);
     return () => {
-      if (cleanupRef.current) {
-        const cleanup = cleanupRef.current;
-        cleanupRef.current = null;
-        Promise.resolve(cleanup()).catch(console.error);
-      }
+      controller.abort();
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      if (session) void session.close().catch(console.error);
     };
   }, []);
 
-  // Open/close the drawer + claim active when the mode changes.
   useEffect(() => {
-    if (!bridgeReady) return;
-    if (isFullscreen) {
+    if (bridgeReady && isFullscreenOnly && isLastFullscreenApp) {
       setActiveAppKey(appKey);
-      showDrawer(); // sets showAppDrawer + hasAppContent (nav toggle)
-    } else if (activeAppKey === appKey) {
-      // Back inline → fully release the drawer so the nav toggle disappears
-      // (it's effectively a "close drawer" button; an empty drawer must not reopen).
-      void closeApp();
+      showDrawer();
     }
-  }, [bridgeReady, isFullscreen, appKey, activeAppKey, setActiveAppKey, closeApp, showDrawer]);
+  }, [bridgeReady, isFullscreenOnly, isLastFullscreenApp, appKey, setActiveAppKey, showDrawer]);
 
   // Push the host-context (display mode + container dimensions) to the live bridge.
   // For fullscreen we wait until the iframe is positioned over the drawer so the
@@ -147,47 +155,30 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   useEffect(() => {
     if (!bridgeReady) return;
     if (isFullscreen && overlayWidth === undefined) return;
-    setBridgeDisplayMode(providerId, isFullscreen ? "fullscreen" : "inline");
-  }, [bridgeReady, isFullscreen, overlayWidth, providerId, setBridgeDisplayMode]);
+    sessionRef.current?.setDisplayMode(isFullscreen || isFullscreenOnly ? "fullscreen" : "inline");
+  }, [bridgeReady, isFullscreen, isFullscreenOnly, overlayWidth]);
 
-  // Closing the drawer (externally) returns this app inline.
-  const [prevShowAppDrawer, setPrevShowAppDrawer] = useState(showAppDrawer);
-  if (showAppDrawer !== prevShowAppDrawer) {
-    setPrevShowAppDrawer(showAppDrawer);
-    if (!showAppDrawer && isFullscreen && activeAppKey === appKey && !isFullscreenOnly) {
-      setDisplayMode("inline");
-    }
-  }
-
-  // Another app taking over the drawer drops this one out of fullscreen.
-  const [prevActiveAppKey, setPrevActiveAppKey] = useState(activeAppKey);
-  if (activeAppKey !== prevActiveAppKey) {
-    setPrevActiveAppKey(activeAppKey);
-    if (activeAppKey !== appKey && isFullscreen && !isFullscreenOnly) {
-      setDisplayMode("inline");
-    }
-  }
-
-  const iframeStyle: CSSProperties = isFullscreen
-    ? overlay
-      ? {
-          position: "fixed",
-          top: overlay.top,
-          left: overlay.left,
-          width: overlay.width,
-          height: overlay.height,
-          zIndex: 21,
-          border: "none",
-        }
-      : { position: "fixed", width: 0, height: 0, opacity: 0, pointerEvents: "none", border: "none" }
-    : { width: "100%", height: inlineHeight || 0, border: "none" };
+  const iframeStyle: CSSProperties =
+    isFullscreen || isFullscreenOnly
+      ? isFullscreen && overlay
+        ? {
+            position: "fixed",
+            top: overlay.top,
+            left: overlay.left,
+            width: overlay.width,
+            height: overlay.height,
+            zIndex: 21,
+            border: "none",
+          }
+        : { position: "fixed", width: 0, height: 0, opacity: 0, pointerEvents: "none", border: "none" }
+      : { width: "100%", height: inlineHeight || 0, border: "none" };
 
   return (
     <div className="mt-2 mb-2">
-      {isFullscreen ? (
+      {isFullscreen || isFullscreenOnly ? (
         <button
           type="button"
-          onClick={() => showDrawer()}
+          onClick={openInPanel}
           className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors py-1.5 px-2 rounded-md bg-neutral-100 dark:bg-neutral-900/40"
         >
           <Maximize2 size={12} />
@@ -196,17 +187,18 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
       ) : (
         !isInlineOnly && (
           <div className="flex justify-end mb-1">
-            <button
-              type="button"
-              onClick={() => setDisplayMode("fullscreen")}
-              className={actionButtonClassName}
-              title="Expand to panel"
-            >
+            <button type="button" onClick={openInPanel} className={actionButtonClassName} title="Expand to panel">
               <Maximize2 size={ACTION_ICON_SIZE} />
               <span>Open in panel</span>
             </button>
           </div>
         )
+      )}
+
+      {error && (
+        <p role="alert" className="p-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
       )}
 
       {/* Stable wrapper — the iframe never changes DOM parent, so the bridge survives.

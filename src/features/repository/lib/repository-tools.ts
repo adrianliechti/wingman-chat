@@ -15,7 +15,7 @@ export interface FileChunk {
   endLine?: number;
 }
 
-type QueryChunksFunction = (query: string, topK?: number) => Promise<FileChunk[]>;
+type QueryChunksFunction = (query: string, topK?: number, signal?: AbortSignal) => Promise<FileChunk[]>;
 
 interface RepositoryToolsOptions {
   /** Results for semantic search (default: 10, maximum: 20). */
@@ -112,7 +112,7 @@ function createSearchTool(
       required: ["query"],
       additionalProperties: false,
     },
-    function: async (args: Record<string, unknown>) => {
+    function: async (args, context) => {
       const query = typeof args.query === "string" ? args.query.trim() : "";
       if (!query) return errorResult("query is required");
 
@@ -126,7 +126,9 @@ function createSearchTool(
       const limit = (rawLimit as number | undefined) ?? defaultResults;
 
       try {
-        const results = await queryChunks(query, limit);
+        context?.signal?.throwIfAborted();
+        const results = await queryChunks(query, limit, context?.signal);
+        context?.signal?.throwIfAborted();
         if (results.length === 0) return textResult(`No repository results for ${JSON.stringify(query)}`);
 
         const rows = results.slice(0, limit).flatMap((result, index) => {
@@ -147,6 +149,7 @@ function createSearchTool(
           ? textResult(rows.join("\n"))
           : textResult(`No repository results for ${JSON.stringify(query)}`);
       } catch (cause) {
+        context?.signal?.throwIfAborted();
         const message = cause instanceof Error ? cause.message : String(cause);
         return errorResult(`Repository search failed: ${message}`);
       }

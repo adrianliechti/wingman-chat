@@ -123,70 +123,54 @@ function migrateToolResultPart(part: LegacyContentPart): ToolResultItem {
  * blobs whose encrypted content can't be replayed).
  */
 function migrateContentPart(part: LegacyContentPart): Content | null {
-  if (part.type === "image" && part.mimeType && part.data) {
-    return { type: "image", name: part.name, data: toDataUrl(part.mimeType, part.data) };
+  if (!part || typeof part !== "object") throw new Error("Invalid message content in backup");
+  // Normalize only the fields that changed. Spreading each part retains current
+  // phases, tool metadata, incomplete flags, and future optional metadata.
+  switch (part.type) {
+    case "text": {
+      const { data, ...rest } = part;
+      return { ...rest, type: "text", text: part.text ?? data ?? "" } as TextContent;
+    }
+    case "image":
+    case "audio":
+    case "file": {
+      const { mimeType, ...rest } = part;
+      return {
+        ...rest,
+        name: part.name ?? (part.type === "file" ? "file" : undefined),
+        data: mimeType ? toDataUrl(mimeType, part.data ?? "") : (part.data ?? ""),
+      } as ImageContent | AudioContent | FileContent;
+    }
+    case "reasoning":
+      return { ...part, type: "reasoning", id: part.id ?? crypto.randomUUID(), text: part.text ?? "" };
+    case "tool_call":
+      return {
+        ...part,
+        type: "tool_call",
+        id: part.id ?? crypto.randomUUID(),
+        name: part.name ?? "tool",
+        arguments: part.arguments ?? "",
+      };
+    case "tool_result":
+      return {
+        ...part,
+        type: "tool_result",
+        id: part.id ?? crypto.randomUUID(),
+        name: part.name ?? "tool",
+        arguments: part.arguments ?? "",
+        result: Array.isArray(part.result) ? part.result.map(migrateToolResultPart) : [],
+      };
+    case "summary":
+    case "artifact_ref":
+    case "runtime_feedback":
+      return part as Content;
+    case "compaction":
+      // Provider-encrypted blobs from the removed server compaction API cannot
+      // be replayed; surrounding messages remain available after import.
+      return null;
+    default:
+      return { type: "text", text: part.text ?? part.data ?? "" };
   }
-
-  if (part.type === "audio" && part.mimeType && part.data) {
-    return { type: "audio", name: part.name, data: toDataUrl(part.mimeType, part.data) };
-  }
-
-  if (part.type === "file" && part.mimeType && part.data) {
-    return { type: "file", name: part.name ?? "file", data: toDataUrl(part.mimeType, part.data) };
-  }
-
-  if (part.type === "text") {
-    return { type: "text", text: part.text ?? part.data ?? "" };
-  }
-
-  if (part.type === "reasoning") {
-    return {
-      type: "reasoning",
-      id: part.id ?? crypto.randomUUID(),
-      text: part.text ?? "",
-      summary: part.summary,
-    };
-  }
-
-  if (part.type === "tool_call") {
-    return {
-      type: "tool_call",
-      id: part.id ?? crypto.randomUUID(),
-      name: part.name ?? "tool",
-      arguments: part.arguments ?? "",
-    };
-  }
-
-  if (part.type === "tool_result") {
-    return {
-      type: "tool_result",
-      id: part.id ?? crypto.randomUUID(),
-      name: part.name ?? "tool",
-      arguments: part.arguments ?? "",
-      result: Array.isArray(part.result) ? part.result.map(migrateToolResultPart) : [],
-    };
-  }
-
-  if (part.type === "compaction") {
-    // Legacy server-side compaction blob — encrypted with provider keys we
-    // can no longer verify. Drop on import; the surrounding messages still
-    // carry the user-visible context.
-    return null;
-  }
-
-  if (part.type === "image" && part.data) {
-    return { type: "image", name: part.name, data: part.data };
-  }
-
-  if (part.type === "audio" && part.data) {
-    return { type: "audio", name: part.name, data: part.data };
-  }
-
-  if (part.type === "file" && part.data) {
-    return { type: "file", name: part.name ?? "file", data: part.data };
-  }
-
-  return { type: "text", text: part.text ?? part.data ?? "" };
 }
 
 /**
@@ -205,13 +189,6 @@ function migrateContentPart(part: LegacyContentPart): Content | null {
 function migrateMessage(msg: LegacyMessage): Message {
   const role: Message["role"] = msg.role === "assistant" ? "assistant" : "user";
   const error = migrateMessageError(msg.error);
-
-  // Check if already in new format (content is array with no attachments and no separate mimeType fields)
-  if (Array.isArray(msg.content) && !msg.attachments?.length) {
-    // Migrate existing content parts to use data URLs (handle old mimeType+data format)
-    const migratedContent: Content[] = msg.content.map(migrateContentPart).filter((p): p is Content => p !== null);
-    return { role, content: migratedContent, error };
-  }
 
   // Full migration for very old formats
   const content: Content[] = [];
@@ -274,7 +251,7 @@ function migrateMessage(msg: LegacyMessage): Message {
     });
   }
 
-  return { role, content, error };
+  return { ...msg, role, content, error } as Message;
 }
 
 /**
@@ -285,6 +262,7 @@ function migrateMessage(msg: LegacyMessage): Message {
  * This function is idempotent - already migrated chats pass through unchanged.
  */
 export function migrateChat(chat: LegacyChat): Chat {
+  if (!chat || !Array.isArray(chat.messages)) throw new Error("Invalid chat: expected messages");
   // Ensure dates are Date objects (handle string dates from JSON)
   const created = chat.created ? (chat.created instanceof Date ? chat.created : new Date(chat.created)) : null;
   const updated = chat.updated ? (chat.updated instanceof Date ? chat.updated : new Date(chat.updated)) : null;

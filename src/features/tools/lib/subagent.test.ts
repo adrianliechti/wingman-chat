@@ -52,6 +52,18 @@ describe("subagent invocation identity", () => {
     expect(child.invocationContext?.branch).toBe("subagent");
   });
 
+  it("returns the final answer without the child agent's commentary", async () => {
+    state.complete.mockReset().mockResolvedValueOnce({
+      role: "assistant",
+      content: [
+        { type: "text", text: "Working", phase: "commentary" },
+        { type: "text", text: "Done", phase: "final_answer" },
+      ],
+    });
+    const tool = createSubagentTool("model", "Instructions", []);
+    expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", text: "Done" }]);
+  });
+
   it("retains the parent's invocation budget but gives the child its own branch and run ID", async () => {
     const invocationContext = new AgentInvocationContext({ maxModelCalls: 5 });
     const child = await invoke({ runId: "chat-parent", invocationContext });

@@ -1,292 +1,37 @@
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getConfig } from "@/shared/config";
-import { downloadFromUrl, formatBytes } from "@/shared/lib/utils";
-import type { TranslateContextType } from "./TranslateContext";
+import { TranslationSession } from "../lib/translationSession";
 import { styleOptions, supportedFiles, supportedLanguages, TranslateContext, toneOptions } from "./TranslateContext";
 
-interface TranslateProviderProps {
-  children: ReactNode;
-}
+export function TranslateProvider({ children }: { children: ReactNode }) {
+  const [session] = useState(() => {
+    const config = getConfig();
+    return new TranslationSession(config.client, config.translator ?? undefined);
+  });
+  const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+  useEffect(() => () => session.dispose(), [session]);
+  const languages = supportedLanguages();
 
-export function TranslateProvider({ children }: TranslateProviderProps) {
-  const config = getConfig();
-  const client = config.client;
-
-  // State
-  const [sourceText, setSourceText] = useState("");
-  const [translatedText, setTranslatedText] = useState("");
-  const [targetLang, setTargetLang] = useState("en");
-  const [tone, setTone] = useState("");
-  const [style, setStyle] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [translatedFileUrl, setTranslatedFileUrl] = useState<string | null>(null);
-  const [translatedFileName, setTranslatedFileName] = useState<string | null>(null);
-  const [lastTranslatedText, setLastTranslatedText] = useState(""); // Track what was last translated
-  const [error, setError] = useState<string | null>(null);
-
-  // Track previous tone/style for detecting changes (using state for adjust-during-render pattern)
-  const [prevTone, setPrevTone] = useState(tone);
-  const [prevStyle, setPrevStyle] = useState(style);
-  const [shouldRetranslate, setShouldRetranslate] = useState(false);
-
-  // Derived state
-  const selectedLanguage = supportedLanguages().find((l) => l.code === targetLang);
-
-  // Translation action
-  const performTranslate = useCallback(
-    async (langCode?: string, textToTranslate?: string, toneToUse?: string, styleToUse?: string) => {
-      const langToUse = langCode ?? targetLang;
-      const toneValue = toneToUse ?? tone;
-      const styleValue = styleToUse ?? style;
-
-      // Clear any previous errors
-      setError(null);
-
-      // Handle file translation if a file is selected
-      if (selectedFile) {
-        const maxFileSize = config.translator?.maxFileSize;
-        if (maxFileSize != null && selectedFile.size > maxFileSize) {
-          setError(
-            `"${selectedFile.name}" is ${formatBytes(selectedFile.size)}, over the ${formatBytes(maxFileSize)} limit.`,
-          );
-          return;
-        }
-        setIsLoading(true);
-        try {
-          const result = await client.translate(langToUse, selectedFile);
-
-          // Check the return type and handle accordingly
-          if (typeof result === "string") {
-            // If string, render the output directly in the translated content
-            setTranslatedText(result);
-            // Clear any previous file download state
-            setTranslatedFileUrl(null);
-            setTranslatedFileName(null);
-          } else if (result instanceof Blob) {
-            // If blob, allow to download like currently
-            // Create download URL
-            const url = URL.createObjectURL(result);
-
-            // Generate filename with language suffix
-            const originalName = selectedFile.name;
-            const lastDotIndex = originalName.lastIndexOf(".");
-            const nameWithoutExt = lastDotIndex !== -1 ? originalName.substring(0, lastDotIndex) : originalName;
-            const extension = lastDotIndex !== -1 ? originalName.substring(lastDotIndex) : "";
-            const translatedFileName = `${nameWithoutExt}_${langToUse}${extension}`;
-
-            // Set download URL and filename for display
-            setTranslatedFileUrl(url);
-            setTranslatedFileName(translatedFileName);
-            // Clear any previous text translation
-            setTranslatedText("");
-
-            // Auto-download the file
-            downloadFromUrl(url, translatedFileName);
-          }
-        } catch (err) {
-          console.error("File translation failed:", err);
-          const errorMessage =
-            err instanceof Error ? err.message : "An unknown error occurred during file translation.";
-          setError(errorMessage);
-        } finally {
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      // Handle text translation
-      const textToUse = textToTranslate ?? sourceText;
-
-      if (!textToUse.trim()) {
-        setTranslatedText("");
-        return;
-      }
-
-      const maxTextLength = config.translator?.maxTextLength;
-      if (maxTextLength != null && textToUse.length > maxTextLength) {
-        setError(
-          `Text is ${textToUse.length.toLocaleString()} characters, over the ${maxTextLength.toLocaleString()} limit.`,
-        );
-        return;
-      }
-
-      setIsLoading(true);
-      setTranslatedText("");
-
-      try {
-        const result = await client.translate(langToUse, textToUse);
-        if (typeof result === "string") {
-          // Apply tone/style rewriting if either is not empty
-          if (toneValue || styleValue) {
-            const rewrittenResult = await client.rewriteText(
-              config.translator?.model || "",
-              result,
-              langToUse,
-              toneValue,
-              styleValue,
-            );
-            setTranslatedText(rewrittenResult);
-          } else {
-            setTranslatedText(result);
-          }
-          setLastTranslatedText(textToUse); // Track what text was translated
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during translation.";
-        setError(errorMessage);
-        setTranslatedText("");
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [
-      client,
-      selectedFile,
-      tone,
-      style,
-      config.translator?.model,
-      config.translator?.maxFileSize,
-      config.translator?.maxTextLength,
-      targetLang,
-      sourceText,
-    ],
+  return (
+    <TranslateContext
+      value={{
+        ...state,
+        supportedLanguages: languages,
+        selectedLanguage: languages.find((language) => language.code === state.targetLang),
+        supportedFiles: supportedFiles(),
+        toneOptions: toneOptions(),
+        styleOptions: styleOptions(),
+        setSourceText: (sourceText) => session.update({ sourceText }),
+        setTargetLang: (targetLang) => session.update({ targetLang }),
+        setTone: (tone) => session.update({ tone }),
+        setStyle: (style) => session.update({ style }),
+        selectFile: (selectedFile) => session.update({ selectedFile }),
+        clearFile: () => session.update({ selectedFile: null }),
+        performTranslate: session.translate,
+        handleReset: session.reset,
+      }}
+    >
+      {children}
+    </TranslateContext>
   );
-
-  const handleReset = useCallback(() => {
-    setSourceText("");
-    setTranslatedText("");
-    setSelectedFile(null);
-    setTranslatedFileUrl(null);
-    setTranslatedFileName(null);
-    setLastTranslatedText(""); // Reset tracking when clearing everything
-    setError(null); // Clear any errors
-  }, []);
-
-  const handleSetTargetLang = useCallback(
-    async (newLangCode: string) => {
-      setTargetLang(newLangCode);
-      setError(null); // Clear any errors when changing language
-
-      // If there's a selected file, clear translation results to show candidate state
-      if (selectedFile) {
-        setTranslatedFileUrl(null);
-        setTranslatedFileName(null);
-        setTranslatedText(""); // Also clear text translation for files
-      }
-
-      // Clear the tracking when language changes to allow re-translation
-      setLastTranslatedText("");
-
-      // Automatically translate with new language if there's source text (but not if file is selected)
-      if (sourceText.trim() && !selectedFile) {
-        await performTranslate(newLangCode, sourceText, tone, style);
-      }
-    },
-    [performTranslate, selectedFile, tone, style, sourceText],
-  );
-
-  // Auto-translate effect (1 second delay) - only if text hasn't been translated yet
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (sourceText.trim() && !selectedFile && sourceText !== lastTranslatedText) {
-        void performTranslate(targetLang, sourceText, tone, style);
-      }
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [sourceText, targetLang, performTranslate, selectedFile, lastTranslatedText, tone, style]);
-
-  // Detect tone/style changes during render and schedule re-translation
-  // Using "adjust state during render" pattern
-  if (tone !== prevTone || style !== prevStyle) {
-    setPrevTone(tone);
-    setPrevStyle(style);
-    // Schedule re-translation if we have translated text
-    if (lastTranslatedText && !selectedFile && !isLoading) {
-      setShouldRetranslate(true);
-    }
-  }
-
-  // Handle the re-translation in a separate effect (triggered by state flag)
-  useEffect(() => {
-    if (shouldRetranslate) {
-      setShouldRetranslate(false);
-      void performTranslate(targetLang, sourceText, tone, style);
-    }
-  }, [shouldRetranslate, performTranslate, targetLang, sourceText, tone, style]);
-
-  const selectFile = useCallback((file: File) => {
-    setSelectedFile(file);
-    // Clear any previous file translation results
-    setTranslatedFileUrl(null);
-    setTranslatedFileName(null);
-    // Clear text translation output
-    setTranslatedText("");
-    // Clear any errors
-    setError(null);
-  }, []);
-
-  const clearFile = useCallback(() => {
-    setSelectedFile(null);
-    setTranslatedFileUrl(null);
-    setTranslatedFileName(null);
-    setTranslatedText(""); // Clear translated text when clearing file
-    setError(null); // Clear any errors
-  }, []);
-
-  // Custom setSourceText that clears the translation tracking
-  const handleSetSourceText = useCallback(
-    (text: string) => {
-      setSourceText(text);
-      setError(null); // Clear any errors when changing source text
-
-      // If source text is cleared, also clear the translated text
-      if (!text.trim()) {
-        setTranslatedText("");
-        setLastTranslatedText("");
-        return;
-      }
-
-      // If user is changing the source text, clear the tracking so auto-translate can work
-      if (text !== lastTranslatedText) {
-        setLastTranslatedText("");
-      }
-    },
-    [lastTranslatedText],
-  );
-
-  const contextValue: TranslateContextType = {
-    // State
-    sourceText,
-    translatedText,
-    targetLang,
-    tone,
-    style,
-    isLoading,
-    selectedFile,
-    translatedFileUrl,
-    translatedFileName,
-    error,
-
-    // Data
-    supportedLanguages: supportedLanguages(),
-    selectedLanguage,
-    supportedFiles: supportedFiles(),
-    toneOptions: toneOptions(),
-    styleOptions: styleOptions(),
-
-    // Actions
-    setSourceText: handleSetSourceText,
-    setTargetLang: handleSetTargetLang,
-    setTone,
-    setStyle,
-    performTranslate,
-    handleReset,
-    selectFile,
-    clearFile,
-  };
-
-  return <TranslateContext value={contextValue}>{children}</TranslateContext>;
 }

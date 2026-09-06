@@ -1,5 +1,13 @@
 import { Role, type Message } from "../types/chat";
 
+/** A human turn, excluding tool outputs and internal continuation feedback. */
+export function isUserMessage(message: Message): boolean {
+  return (
+    message.role === Role.User &&
+    message.content.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback")
+  );
+}
+
 /** Capture once per run so tool-loop requests keep the same prefix. */
 export function captureRequestContext(providerContext = "", now = new Date()): string {
   const details = [
@@ -19,11 +27,7 @@ export function captureRequestContext(providerContext = "", now = new Date()): s
 
 /** Wire-only metadata on the latest human turn, never a tool result or saved history. */
 export function injectRequestContext(messages: Message[], context: string): Message[] {
-  const index = messages.findLastIndex(
-    (message) =>
-      message.role === Role.User &&
-      message.content.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback"),
-  );
+  const index = messages.findLastIndex(isUserMessage);
   if (index < 0 || !context.trim()) return messages;
   return messages.map((message, i) =>
     i === index ? { ...message, content: [...message.content, { type: "text", text: context }] } : message,

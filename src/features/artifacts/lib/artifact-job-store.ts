@@ -1,4 +1,5 @@
 import { readJson, writeJson } from "@/shared/lib/opfs";
+import { withPersistenceLock } from "@/shared/lib/persistence";
 import {
   ArtifactJobSchema,
   ArtifactManifestSchema,
@@ -35,16 +36,27 @@ export async function loadArtifactJobs(chatId: string): Promise<StoredArtifactJo
 
 export async function upsertArtifactJob(chatId: string, job: ArtifactJob): Promise<void> {
   const parsed = ArtifactJobSchema.parse(job);
-  const stored = await loadArtifactJobs(chatId);
-  const jobs = [...stored.jobs.filter((candidate) => candidate.id !== parsed.id), parsed];
-  await writeJson(storePath(chatId), { ...stored, jobs });
+  await updateStoredJobs(chatId, (stored) => ({
+    ...stored,
+    jobs: [...stored.jobs.filter((candidate) => candidate.id !== parsed.id), parsed],
+  }));
 }
 
 export async function upsertArtifactManifest(chatId: string, manifest: ArtifactManifest): Promise<void> {
   const parsed = ArtifactManifestSchema.parse(manifest);
-  const stored = await loadArtifactJobs(chatId);
-  const manifests = [...stored.manifests.filter((candidate) => candidate.jobId !== parsed.jobId), parsed];
-  await writeJson(storePath(chatId), { ...stored, manifests });
+  await updateStoredJobs(chatId, (stored) => ({
+    ...stored,
+    manifests: [...stored.manifests.filter((candidate) => candidate.jobId !== parsed.jobId), parsed],
+  }));
+}
+
+async function updateStoredJobs(
+  chatId: string,
+  update: (stored: StoredArtifactJobs) => StoredArtifactJobs,
+): Promise<void> {
+  await withPersistenceLock(`artifact-jobs:${chatId}`, async () => {
+    await writeJson(storePath(chatId), update(await loadArtifactJobs(chatId)));
+  });
 }
 
 export async function findArtifactJobForRun(chatId: string, runId: string): Promise<ArtifactJob | undefined> {

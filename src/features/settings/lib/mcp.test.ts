@@ -12,6 +12,7 @@ describe("MCP tool execution", () => {
     });
     const sdkClient = {
       getInstructions: () => undefined,
+      getServerCapabilities: () => ({ tools: {} }),
       listTools: async () => ({
         tools: [{ name: "cancel_me", description: "Cancellation fixture", inputSchema: { type: "object" } }],
       }),

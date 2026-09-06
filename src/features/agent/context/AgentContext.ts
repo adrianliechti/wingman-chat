@@ -17,6 +17,9 @@ export interface AgentContextType {
   // File operations (repository files within an agent)
   upsertFile: (agentId: string, file: RepositoryFile) => void;
   removeFile: (agentId: string, fileId: string) => void;
+  getAgent: (agentId: string) => Agent | undefined;
+  addFile: (agentId: string, file: File) => Promise<void>;
+  reindexFile: (agentId: string, fileId: string) => Promise<void>;
   // Bridge server operations within an agent
   addServer: (agentId: string, server: Omit<BridgeServer, "id">) => BridgeServer;
   updateServer: (agentId: string, serverId: string, updates: Partial<Omit<BridgeServer, "id">>) => void;

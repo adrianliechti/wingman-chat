@@ -92,6 +92,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
   private messageListener: ((event: MessageEvent) => void) | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private authCodePromise: Promise<string> | null = null;
+  private popup: Window | null = null;
 
   constructor(serverKey: string) {
     this.serverKey = serverKey;
@@ -165,6 +166,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
 
     if (!armed && (isAuthBlocked(key) || sessionAutoAuthAttempted.has(key))) {
       this.authCodePromise = Promise.reject(new McpAuthRequiredError(key, "failed"));
+      void this.authCodePromise.catch(() => {});
       return Promise.resolve();
     }
 
@@ -173,7 +175,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     return new Promise<void>((resolve) => {
       const popup = window.open(
         authorizationUrl.toString(),
-        "mcp_oauth",
+        `mcp_oauth_${crypto.randomUUID()}`,
         "popup,width=600,height=700,left=200,top=100",
       );
 
@@ -186,19 +188,23 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
             "Popup was blocked. Please allow popups for this site and try again.",
           ),
         );
+        void this.authCodePromise.catch(() => {});
         resolve();
         return;
       }
+      this.popup = popup;
 
       // Set up the auth code promise so waitForAuthCode() can await it
       this.authCodePromise = new Promise<string>((res, rej) => {
         this.pendingAuthResolve = res;
         this.pendingAuthReject = rej;
       });
+      // A popup can fail before the transport starts awaiting the code.
+      void this.authCodePromise.catch(() => {});
 
       // Attach postMessage listener to receive the auth code from /oauth/callback
       const listener = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
+        if (event.origin !== window.location.origin || event.source !== popup) return;
         if (event.data?.type !== "mcp_oauth_callback") return;
 
         if (event.data.error) {
@@ -239,6 +245,12 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     return this.authCodePromise;
   }
 
+  cancelAuthorization(): void {
+    if (this.pendingAuthReject) sessionAutoAuthAttempted.delete(this.serverKey);
+    this._cleanup();
+    this.authCodePromise = null;
+  }
+
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
     if (scope === "all" || scope === "tokens") {
       removeKey(storageKey(this.serverKey, "tokens"));
@@ -260,6 +272,8 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
   }
 
   private _cleanup(): void {
+    this.popup?.close();
+    this.popup = null;
     if (this.messageListener) {
       window.removeEventListener("message", this.messageListener);
       this.messageListener = null;

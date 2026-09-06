@@ -14,6 +14,7 @@ declare global {
     interpreterE2E: {
       executePython(request: unknown, options?: unknown): Promise<ExecutionResult>;
       executeJavaScript(request: unknown, options?: unknown): Promise<ExecutionResult>;
+      initializeLlm(): Promise<void>;
       runToolFlow(chatId: string): Promise<{
         created: TextToolResult;
         edited: TextToolResult;
@@ -34,6 +35,142 @@ async function openFixture(page: Page): Promise<void> {
   await page.goto("/tests/browser/fixtures/interpreter.html");
   await page.waitForFunction(() => Boolean(window.interpreterE2E));
 }
+
+for (const runtime of ["executeJavaScript", "executePython"] as const) {
+  test(`${runtime} gives every LLM and vision call a fresh context`, async ({ page }) => {
+    const requests: Array<{
+      model: string;
+      instructions: string;
+      input: Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+      tools?: unknown[];
+      previous_response_id?: string;
+      conversation?: unknown;
+    }> = [];
+    await page.route("**/config.json", (route) => route.fulfill({ json: { vision: {} } }));
+    await page.route("**/api/v1/responses", async (route) => {
+      requests.push(route.request().postDataJSON());
+      const response = {
+        id: `response_${requests.length}`,
+        object: "response",
+        created_at: 0,
+        model: "fixture",
+        status: "completed",
+        error: null,
+        incomplete_details: null,
+        output: [
+          {
+            id: "message",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "PRIVATE_PREVIOUS_HELPER_OUTPUT", annotations: [] }],
+          },
+        ],
+      };
+      const events = [
+        { type: "response.created", response: { ...response, status: "in_progress", output: [] } },
+        { type: "response.completed", response },
+      ];
+      await route.fulfill({
+        contentType: "text/event-stream",
+        body: events
+          .map((event, sequence_number) => `data: ${JSON.stringify({ ...event, sequence_number })}\n\n`)
+          .join(""),
+      });
+    });
+    await openFixture(page);
+    const results = await page.evaluate(async (engine) => {
+      await window.interpreterE2E.initializeLlm();
+      const execute = window.interpreterE2E[engine];
+      const files = { "/image.png": { content: "data:image/png;base64,AQ==", contentType: "image/png" } };
+      const first = await execute(
+        {
+          code:
+            engine === "executePython"
+              ? 'await llm("First question", model="specialist", system="First instructions")\nawait vision("/home/user/image.png", "First image")'
+              : 'await llm("First question", { model: "specialist", system: "First instructions" }); await vision("/image.png", "First image");',
+          files,
+        },
+        { context: { model: "first-run-model" } },
+      );
+      const second = await execute(
+        {
+          code:
+            engine === "executePython"
+              ? 'await llm("Independent question")\nawait vision("/home/user/image.png", "Independent image")'
+              : 'await llm("Independent question"); await vision("/image.png", "Independent image");',
+          files,
+        },
+        { context: { model: "next-run-model" } },
+      );
+      return [first, second];
+    }, runtime);
+    expect(results.map((result) => ({ success: result.success, error: result.error }))).toEqual([
+      { success: true, error: undefined },
+      { success: true, error: undefined },
+    ]);
+    expect(requests.map((request) => request.model)).toEqual([
+      "specialist",
+      "first-run-model",
+      "next-run-model",
+      "next-run-model",
+    ]);
+    expect(requests.map((request) => request.instructions)).toEqual(["First instructions", "", "", ""]);
+    expect(
+      requests.map((request) =>
+        request.input.flatMap((item) =>
+          item.content.filter((part) => part.type === "input_text").map((part) => part.text),
+        ),
+      ),
+    ).toEqual([["First question"], ["First image"], ["Independent question"], ["Independent image"]]);
+    for (const request of requests) {
+      expect(request.input).toHaveLength(1);
+      expect(request.input[0].role).toBe("user");
+      expect(request.tools ?? []).toEqual([]);
+      expect(request.previous_response_id).toBeUndefined();
+      expect(request.conversation).toBeUndefined();
+      expect(JSON.stringify(request)).not.toContain("PRIVATE_PREVIOUS_HELPER_OUTPUT");
+    }
+  });
+}
+
+test("finished Python executions cannot make delayed LLM calls during the next execution", async ({ page }) => {
+  const requests: string[] = [];
+  await page.route("**/config.json", (route) => route.fulfill({ json: { vision: {} } }));
+  await page.route("**/api/v1/responses", async (route) => {
+    requests.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 400, json: { error: { message: "Unexpected stale request" } } });
+  });
+  await openFixture(page);
+  const results = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    const first = await window.interpreterE2E.executePython(
+      {
+        code: `import asyncio
+async def background():
+    await asyncio.sleep(0.2)
+    try:
+        await llm("Expired execution")
+    except Exception:
+        pass
+pending = asyncio.create_task(background())
+print("scheduled")`,
+      },
+      { context: { model: "first-model" } },
+    );
+    const second = await window.interpreterE2E.executePython(
+      {
+        code: `import asyncio
+await asyncio.sleep(0.5)
+print("next run")`,
+      },
+      { context: { model: "next-model" } },
+    );
+    return [first, second];
+  });
+  expect(results.map((result) => result.success)).toEqual([true, true]);
+  expect(requests).toEqual([]);
+});
 
 test("production file tools preserve BOM/CRLF through OPFS and accept their own writes", async ({ page }) => {
   await openFixture(page);

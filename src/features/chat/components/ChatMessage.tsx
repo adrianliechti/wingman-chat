@@ -4,6 +4,8 @@ import { Role } from "@/shared/types/chat";
 import { ChatAssistantMessage } from "./ChatAssistantMessage";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { ChatUserMessage } from "./ChatUserMessage";
+import { ChatMessageAttachments } from "./ChatMessageAttachments";
+import { hasStoredAttachments } from "../lib/chatAttachments";
 
 type ChatMessageProps = {
   index: number;
@@ -12,7 +14,17 @@ type ChatMessageProps = {
   isResponding?: boolean;
 };
 
-export const ChatMessage = memo(function ChatMessage({ message, index, isResponding, isLast }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage(props: ChatMessageProps) {
+  return hasStoredAttachments(props.message.content) ? (
+    <ChatMessageAttachments message={props.message}>
+      {(message) => <ChatMessageBody {...props} message={message} />}
+    </ChatMessageAttachments>
+  ) : (
+    <ChatMessageBody {...props} />
+  );
+});
+
+function ChatMessageBody({ message, index, isResponding, isLast }: ChatMessageProps) {
   if (message.content.length > 0 && message.content.every((part) => part.type === "runtime_feedback")) return null;
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -46,4 +58,4 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   }
 
   return null;
-});
+}

@@ -1,4 +1,5 @@
 import { getConfig } from "@/shared/config";
+import type { ClientRequestOptions } from "./client";
 import { fileMatchesTypeList, inferContentTypeFromPath, isTextContentType } from "./fileTypes";
 import { formatBytes } from "./utils";
 
@@ -133,19 +134,8 @@ export const SUPPORTED_TYPES = [
   ".pdf",
   "application/pdf",
 
-  // Images — stored verbatim as binary sources (not converted to text).
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
+  // SVG is text. Other images require a configured backend extractor.
   ".svg",
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/bmp",
   "image/svg+xml",
 ];
 
@@ -160,13 +150,15 @@ function converterKind(file: File, textTypes?: string[], extraTypes?: string[]):
   if (name.endsWith(".pptx") || type === MIME_PPTX) return "builtin";
   if (name.endsWith(".pdf") || type === "application/pdf") return "builtin";
 
-  if (isTextContentType(type || inferContentTypeFromPath(name))) return "text";
+  const inferredType = inferContentTypeFromPath(name);
+  if ((type && isTextContentType(type)) || (inferredType && isTextContentType(inferredType))) return "text";
 
   if (textTypes && fileMatchesTypeList(name, type, textTypes)) return "text";
 
   if (extraTypes && fileMatchesTypeList(name, type, extraTypes)) return "backend";
 
-  return null;
+  // Unknown untyped files (for example README) retain the plain-text fallback.
+  return !type && !inferredType ? "text" : null;
 }
 
 /** All accepted file types (SUPPORTED_TYPES + text files + extractor files from config). */
@@ -184,9 +176,17 @@ export function acceptTypes(): string[] {
  * fallback. For extra types configured in `extractor.files` (e.g. .msg, .eml)
  * the backend is the only path.
  */
-export async function convertFileToText(file: File): Promise<string> {
+export async function convertFileToText(file: File, requestOptions: ClientRequestOptions = {}): Promise<string> {
+  requestOptions.signal?.throwIfAborted();
+  const result = await convert(file, requestOptions);
+  requestOptions.signal?.throwIfAborted();
+  return result;
+}
+
+async function convert(file: File, requestOptions: ClientRequestOptions): Promise<string> {
   const config = getConfig();
   const kind = converterKind(file, config.text?.files, config.extractor?.files);
+  if (kind === null) throw new Error(`No text extractor is configured for ${file.name}`);
 
   // Optional extractor size cap. For builtin types the backend is only a quality
   // boost over the client-side converters, so an oversized file simply skips it;
@@ -197,9 +197,11 @@ export async function convertFileToText(file: File): Promise<string> {
   // Try API extraction first for non-text builtin types
   if (config.extractor && kind === "builtin" && !overExtractLimit) {
     try {
-      const text = await config.client.extractText(file);
+      const text = await config.client.extractText(file, requestOptions);
+      requestOptions.signal?.throwIfAborted();
       if (text?.trim()) return text;
     } catch {
+      requestOptions.signal?.throwIfAborted();
       // fall through to client-side converter
     }
   }
@@ -211,7 +213,7 @@ export async function convertFileToText(file: File): Promise<string> {
         `${file.name} is ${formatBytes(file.size)}, over the ${formatBytes(extractLimit as number)} extract limit`,
       );
     }
-    return config.client.extractText(file);
+    return config.client.extractText(file, requestOptions);
   }
 
   // Built-in converters
@@ -219,6 +221,7 @@ export async function convertFileToText(file: File): Promise<string> {
 
   if (name.endsWith(".xlsx") || file.type === MIME_XLSX) {
     const { csvToMarkdownTable, xlsxToCsv } = await import("./xlsx");
+    requestOptions.signal?.throwIfAborted();
     const results = await xlsxToCsv(file);
     if (results.length === 0) return "";
     if (results.length === 1) return csvToMarkdownTable(results[0].csv);
@@ -227,16 +230,19 @@ export async function convertFileToText(file: File): Promise<string> {
 
   if (name.endsWith(".docx") || file.type === MIME_DOCX) {
     const { docxToMarkdown } = await import("./docx");
+    requestOptions.signal?.throwIfAborted();
     return docxToMarkdown(file);
   }
 
   if (name.endsWith(".pptx") || file.type === MIME_PPTX) {
     const { pptxToMarkdown } = await import("./pptx");
+    requestOptions.signal?.throwIfAborted();
     return pptxToMarkdown(file);
   }
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
     const { pdfToMarkdown } = await import("./pdf");
+    requestOptions.signal?.throwIfAborted();
     return pdfToMarkdown(file);
   }
 

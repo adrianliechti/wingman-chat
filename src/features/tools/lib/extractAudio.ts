@@ -1,3 +1,4 @@
+import { AudioResources } from "@/shared/lib/audioResources";
 import type { OutputFormat } from "mediabunny";
 import type { STTFormat } from "@/shared/config";
 
@@ -38,62 +39,83 @@ export async function extractAudioForTranscription(
   bytes: Uint8Array,
   sourceType: string,
   format: STTFormat = "opus",
+  signal?: AbortSignal,
 ): Promise<Blob> {
-  const {
-    Input,
-    Output,
-    Conversion,
-    ALL_FORMATS,
-    BlobSource,
-    BufferTarget,
-    OggOutputFormat,
-    WebMOutputFormat,
-    Mp4OutputFormat,
-    WavOutputFormat,
-    canEncodeAudio,
-  } = await import("mediabunny");
+  signal?.throwIfAborted();
+  const scope = new AudioResources();
+  if (signal)
+    scope.listen(signal, "abort", () => {
+      void scope.close(signal.reason);
+    });
+  try {
+    const {
+      Input,
+      Output,
+      Conversion,
+      ALL_FORMATS,
+      BlobSource,
+      BufferTarget,
+      OggOutputFormat,
+      WebMOutputFormat,
+      Mp4OutputFormat,
+      WavOutputFormat,
+      canEncodeAudio,
+    } = await scope.wait(import("mediabunny"));
 
-  type Spec = { Format: new () => OutputFormat; codec?: "opus" | "aac"; mime: string };
-  const specs: Record<STTFormat, Spec> = {
-    opus: { Format: OggOutputFormat, codec: "opus", mime: "audio/ogg" },
-    webm: { Format: WebMOutputFormat, codec: "opus", mime: "audio/webm" },
-    mp4: { Format: Mp4OutputFormat, codec: "aac", mime: "audio/mp4" },
-    wav: { Format: WavOutputFormat, mime: "audio/wav" },
-  };
+    type Spec = { Format: new () => OutputFormat; codec?: "opus" | "aac"; mime: string };
+    const specs: Record<STTFormat, Spec> = {
+      opus: { Format: OggOutputFormat, codec: "opus", mime: "audio/ogg" },
+      webm: { Format: WebMOutputFormat, codec: "opus", mime: "audio/webm" },
+      mp4: { Format: Mp4OutputFormat, codec: "aac", mime: "audio/mp4" },
+      wav: { Format: WavOutputFormat, mime: "audio/wav" },
+    };
 
-  let spec = specs[format] ?? specs.opus;
-  if (spec.codec && !(await canEncodeAudio(spec.codec))) {
-    spec = specs.wav;
+    let spec = specs[format] ?? specs.opus;
+    if (spec.codec && !(await scope.wait(canEncodeAudio(spec.codec)))) {
+      spec = specs.wav;
+    }
+
+    scope.signal.throwIfAborted();
+    const input = scope.own(
+      new Input({
+        source: new BlobSource(new Blob([bytes as BlobPart], { type: sourceType })),
+        formats: ALL_FORMATS,
+      }),
+      (input) => input.dispose(),
+    );
+    const output = scope.own(new Output({ format: new spec.Format(), target: new BufferTarget() }), async (output) => {
+      if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
+    });
+
+    const conversion = await scope.wait(
+      Conversion.init({
+        input,
+        output,
+        video: { discard: true },
+        audio: {
+          numberOfChannels: TARGET_CHANNELS,
+          sampleRate: TARGET_SAMPLE_RATE,
+          ...(spec.codec ? { codec: spec.codec, bitrate: COMPRESSED_BITRATE } : {}),
+        },
+      }).then((conversion) => scope.own(conversion, (conversion) => conversion.cancel())),
+    );
+    scope.signal.throwIfAborted();
+
+    if (!conversion.isValid) {
+      const reason = conversion.discardedTracks.map((t) => t.reason).join(", ") || "no decodable audio track";
+      throw new Error(`could not extract audio (${reason})`);
+    }
+
+    await scope.wait(conversion.execute());
+    scope.signal.throwIfAborted();
+
+    const buffer = output.target.buffer;
+    if (!buffer?.byteLength) {
+      throw new Error("audio extraction produced no output");
+    }
+
+    return new Blob([buffer], { type: spec.mime });
+  } finally {
+    await scope.close();
   }
-
-  const input = new Input({
-    source: new BlobSource(new Blob([bytes as BlobPart], { type: sourceType })),
-    formats: ALL_FORMATS,
-  });
-  const output = new Output({ format: new spec.Format(), target: new BufferTarget() });
-
-  const conversion = await Conversion.init({
-    input,
-    output,
-    video: { discard: true },
-    audio: {
-      numberOfChannels: TARGET_CHANNELS,
-      sampleRate: TARGET_SAMPLE_RATE,
-      ...(spec.codec ? { codec: spec.codec, bitrate: COMPRESSED_BITRATE } : {}),
-    },
-  });
-
-  if (!conversion.isValid) {
-    const reason = conversion.discardedTracks.map((t) => t.reason).join(", ") || "no decodable audio track";
-    throw new Error(`could not extract audio (${reason})`);
-  }
-
-  await conversion.execute();
-
-  const buffer = output.target.buffer;
-  if (!buffer) {
-    throw new Error("audio extraction produced no output");
-  }
-
-  return new Blob([buffer], { type: spec.mime });
 }

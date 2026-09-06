@@ -19,16 +19,25 @@ import type { ResponseInputItem } from "openai/resources/responses/responses";
  * pairs only loses the orphaned ones.
  */
 export function dropOrphanFunctionCalls(items: ResponseInputItem[]): ResponseInputItem[] {
-  const outputs = new Set<string>();
-  const calls = new Set<string>();
-  for (const item of items) {
-    if (item.type === "function_call_output" && item.call_id != null) outputs.add(item.call_id);
-    else if (item.type === "function_call") calls.add(item.call_id);
+  const pending = new Map<string, number>();
+  const seen = new Set<string>();
+  const keep = new Set<number>();
+  for (const [index, item] of items.entries()) {
+    if (item.type === "function_call") {
+      if (item.call_id && !seen.has(item.call_id)) {
+        seen.add(item.call_id);
+        pending.set(item.call_id, index);
+      }
+    } else if (item.type === "function_call_output") {
+      const call = item.call_id ? pending.get(item.call_id) : undefined;
+      if (call !== undefined) {
+        keep.add(call);
+        keep.add(index);
+        pending.delete(item.call_id!);
+      }
+    } else {
+      keep.add(index);
+    }
   }
-
-  return items.filter((item) => {
-    if (item.type === "function_call") return outputs.has(item.call_id);
-    if (item.type === "function_call_output") return item.call_id != null && calls.has(item.call_id);
-    return true;
-  });
+  return items.filter((_, index) => keep.has(index));
 }

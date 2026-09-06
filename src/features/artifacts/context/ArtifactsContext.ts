@@ -16,7 +16,8 @@ export interface ArtifactsContextType {
   readWriteManager: ArtifactReadWriteManager;
   activeFile: string | null;
   showArtifactsDrawer: boolean;
-  openFile: (path: string) => void;
+  /** Async callers pass their workspace so a late completion cannot select a file in another chat. */
+  openFile: (path: string, origin?: FileSystemManager) => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
   /**

@@ -16,7 +16,7 @@ const filterEmptySettings = (settings: ProfileSettings): ProfileSettings | undef
   Object.keys(settings).forEach((key) => {
     const value = settings[key as keyof ProfileSettings];
     if (Array.isArray(value)) {
-      const nonEmptyValues = value.filter((item) => item?.trim());
+      const nonEmptyValues = value.filter((item) => typeof item === "string" && item.trim());
       if (nonEmptyValues.length > 0) {
         filtered[key] = nonEmptyValues;
       }

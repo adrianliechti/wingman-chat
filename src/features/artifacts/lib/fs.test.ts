@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const opfs = vi.hoisted(() => ({
   archiveArtifactRevision: vi.fn(),
@@ -15,6 +15,8 @@ vi.mock("@/shared/lib/opfs", () => opfs);
 import { FileSystemManager, resolveArtifactFileSystem } from "./fs";
 import { ArtifactReadWriteManager } from "./artifactFileTools";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import { executeArtifactCode, type SandboxExecutor } from "./executeArtifactCode";
+import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 
 describe("FileSystemManager.renameFile", () => {
   beforeEach(() => {
@@ -163,6 +165,158 @@ describe("coordinated artifact tools", () => {
     opfs.deleteArtifact.mockImplementation(async (_chatId: string, path: string) => {
       files.delete(path);
     });
+  });
+
+  afterEach(() => setSkillResourceResolver(null));
+
+  it("notifies subscribers through other managers for the same chat and cleans up subscriptions", async () => {
+    const viewer = new FileSystemManager("events");
+    const writer = new FileSystemManager("events");
+    const changed = vi.fn();
+    const unrelated = vi.fn();
+    const stop = viewer.subscribe("fileUpdated", changed);
+    const stopOther = new FileSystemManager("unrelated").subscribe("fileUpdated", unrelated);
+    try {
+      await writer.createFile("a.txt", "updated");
+      expect(changed).toHaveBeenCalledExactlyOnceWith("/a.txt");
+      expect(unrelated).not.toHaveBeenCalled();
+      stop();
+      await writer.createFile("a.txt", "again");
+      expect(changed).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      stopOther();
+    }
+  });
+
+  it("does not publish phantom creates or deletes from a rolled-back batch", async () => {
+    const fs = new FileSystemManager("rollback-events");
+    const changed = vi.fn();
+    const subscriptions = [fs.subscribe("fileCreated", changed), fs.subscribe("fileDeleted", changed)];
+    const remove = opfs.deleteArtifact.getMockImplementation()!;
+    opfs.deleteArtifact.mockImplementation(async (chatId, path) => {
+      if (path === "/b.txt") throw new Error("delete failed");
+      await remove(chatId, path);
+    });
+    try {
+      await expect(
+        fs.applyOverlayDelta({
+          upserts: { "/new.txt": { content: "temporary" } },
+          deletes: ["/a.txt", "/b.txt"],
+        }),
+      ).rejects.toThrow("delete failed");
+      expect(files.get("/a.txt")?.content).toBe("alpha");
+      expect(files.has("/new.txt")).toBe(false);
+      expect(changed).not.toHaveBeenCalled();
+    } finally {
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+    }
+  });
+
+  it("keeps a cancelled interpreter snapshot out of storage and releases queued writes", async () => {
+    const fs = new FileSystemManager("cancel-code");
+    const controller = new AbortController();
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const executor = vi.fn<SandboxExecutor>(async () => {
+      await gate;
+      return { success: true, output: "late", files: { "/late.txt": { content: "discard" } } };
+    });
+    const run = executeArtifactCode({
+      fs,
+      executor,
+      args: { code: "run" },
+      extension: "js",
+      context: { signal: controller.signal },
+    });
+    await vi.waitFor(() => expect(executor).toHaveBeenCalled());
+    const queued = new FileSystemManager(fs.chatId).createFile("/queued.txt", "keep");
+    controller.abort();
+    expect((await run).success).toBe(false);
+    await queued;
+    finish();
+    await Promise.resolve();
+    expect([...files.keys()].sort()).toEqual(["/a.txt", "/b.txt", "/queued.txt"]);
+  });
+
+  it("never commits files returned by a failed interpreter", async () => {
+    const result = await executeArtifactCode({
+      fs: new FileSystemManager("failed-code"),
+      executor: async () => ({ success: false, output: "", error: "script failed", files: {} }),
+      args: { code: "run" },
+      extension: "py",
+    });
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("script failed") });
+    expect([...files.keys()]).toEqual(["/a.txt", "/b.txt"]);
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
+    expect(opfs.deleteArtifact).not.toHaveBeenCalled();
+  });
+
+  it("reports missing or invalid scripts as execution failures and preserves the workspace", async () => {
+    const fs = new FileSystemManager("invalid-script");
+    const executor = vi.fn<SandboxExecutor>();
+    for (const args of [{}, { path: "/missing.py" }, { path: "../outside.py" }]) {
+      const result = await executeArtifactCode({ fs, executor, args, extension: "py" });
+      expect(result.success).toBe(false);
+    }
+    expect(executor).not.toHaveBeenCalled();
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
+    expect(opfs.deleteArtifact).not.toHaveBeenCalled();
+  });
+
+  it("serializes complete interpreter runs so each sees the previous run's committed files", async () => {
+    const fs = new FileSystemManager("two-engines");
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const first = vi.fn<SandboxExecutor>(async ({ files }) => {
+      await gate;
+      return { success: true, output: "first", files: { ...files, "/generated.txt": { content: "generated" } } };
+    });
+    const second = vi.fn<SandboxExecutor>(async ({ files }) => {
+      expect(files?.["/generated.txt"].content).toBe("generated");
+      return { success: true, output: "second", files: { ...files, "/generated.txt": { content: "updated" } } };
+    });
+    const run = executeArtifactCode({ fs, executor: first, args: { code: "first" }, extension: "py" });
+    await vi.waitFor(() => expect(first).toHaveBeenCalled());
+    const next = executeArtifactCode({
+      fs: new FileSystemManager(fs.chatId),
+      executor: second,
+      args: { code: "second" },
+      extension: "js",
+    });
+    expect(second).not.toHaveBeenCalled();
+    finish();
+    expect((await run).success).toBe(true);
+    expect((await next).success).toBe(true);
+    expect(files.get("/generated.txt")?.content).toBe("updated");
+  });
+
+  it("strips mounted skill resources without discarding a real artifact at the same path", async () => {
+    const path = "/skills/test/existing.txt";
+    files.set(path, { content: "real artifact" });
+    setSkillResourceResolver(async () => ({
+      [path]: { content: "skill version" },
+      "/skills/test/resource.txt": { content: "resource" },
+    }));
+    const result = await executeArtifactCode({
+      fs: new FileSystemManager("skills-code"),
+      executor: async ({ files }) => {
+        expect(files?.[path].content).toBe("real artifact");
+        expect(files?.["/skills/test/resource.txt"].content).toBe("resource");
+        return { success: true, output: "ok", files: structuredClone(files) };
+      },
+      args: { code: "run" },
+      extension: "py",
+      mountSkills: true,
+    });
+    expect(result.success).toBe(true);
+    expect(files.get(path)?.content).toBe("real artifact");
+    expect(files.has("/skills/test/resource.txt")).toBe(false);
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
   });
 
   it("rejects a stale batch without changing any target, then accepts a reread and own subsequent edits", async () => {
