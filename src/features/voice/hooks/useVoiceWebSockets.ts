@@ -74,7 +74,6 @@ export function useVoiceWebSockets(
   // only cleared on stop).
   const audioItemByResponseRef = useRef<Map<string, string>>(new Map());
   const pendingPostToolFireRef = useRef<boolean>(false);
-  const toolsRef = useRef<Tool[] | undefined>(undefined);
   const toolRegistryRef = useRef<ToolRegistry | undefined>(undefined);
   const toolContextFactoryRef = useRef<ToolContextFactory | undefined>(undefined);
   const runtimeContextRef = useRef(getRuntimeContext);
@@ -119,27 +118,63 @@ export function useVoiceWebSockets(
     onClosedRef.current = onClosed;
   }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult, onClosed]);
 
+  const pauseCountRef = useRef(0);
+  // Return a resume function bound to this session, so a late tool/elicitation
+  // cannot resume a replacement session. Concurrent elicitations share the pause.
   const pauseAudio = useCallback(async (interruptPlayback = true) => {
-    if (!audioPausedRef.current) {
-      audioPausedRef.current = true;
-      await wavRecorderRef.current?.pause();
-      // Only flush buffered playback when requested, else the assistant is cut off mid-sentence.
-      if (interruptPlayback) {
-        void wavPlayerRef.current?.interrupt();
-      }
+    const controller = sessionControllerRef.current;
+    const recorder = wavRecorderRef.current;
+    const player = wavPlayerRef.current;
+    const first = pauseCountRef.current++ === 0;
+    audioPausedRef.current = true;
+    if (first) {
+      await recorder?.pause();
+      if (interruptPlayback && controller === sessionControllerRef.current) void player?.interrupt();
     }
+    let resumed = false;
+    return async () => {
+      if (resumed || !controller || controller.signal.aborted || controller !== sessionControllerRef.current) return;
+      resumed = true;
+      if (--pauseCountRef.current > 0) return;
+      audioPausedRef.current = false;
+      if (recorder && recordCallbackRef.current) await recorder.record(recordCallbackRef.current);
+    };
   }, []);
 
-  const resumeAudio = useCallback(async () => {
-    if (!audioPausedRef.current) return;
+  const stop = useCallback(async () => {
+    isActiveRef.current = false;
+    const controller = sessionControllerRef.current;
+    sessionControllerRef.current = null;
+    // Detach every owned resource before awaiting any browser cleanup.
+    const recorder = wavRecorderRef.current;
+    wavRecorderRef.current = null;
+    const player = wavPlayerRef.current;
+    wavPlayerRef.current = null;
+    const ws = wsRef.current;
+    wsRef.current = null;
+    recordCallbackRef.current = null;
     audioPausedRef.current = false;
-    if (wavRecorderRef.current && recordCallbackRef.current) {
-      try {
-        await wavRecorderRef.current.record(recordCallbackRef.current);
-      } catch {
-        /* best effort */
+    pauseCountRef.current = 0;
+    pendingResponsesRef.current.clear();
+    audioItemByResponseRef.current.clear();
+    pendingPostToolFireRef.current = false;
+    contextItemIdRef.current = null;
+    controller?.abort();
+    try {
+      if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+        ws.close(1000, "User stopped session");
       }
+    } catch {
+      /* A closing socket still must release its audio. */
     }
+    await Promise.allSettled([
+      (async () => {
+        await recorder?.end();
+      })(),
+      (async () => {
+        await player?.disconnect();
+      })(),
+    ]);
   }, []);
 
   const hasOtherActiveResponse = useCallback((excludeId?: string) => {
@@ -178,415 +213,419 @@ export function useVoiceWebSockets(
     [hasOtherActiveResponse],
   );
 
-  const start = async (
-    realtimeModel: string = "gpt-realtime-2.1",
-    transcribeModel: string = "gpt-live-transcribe",
-    instructions?: string,
-    messages?: Message[],
-    tools?: Tool[],
-    inputDeviceId?: string,
-    outputDeviceId?: string,
-    onAudioLevel?: (level: number) => void,
-    toolContextFactory?: ToolContextFactory,
-    onReady?: () => void,
-  ) => {
-    if (isActiveRef.current) return;
-    isActiveRef.current = true;
-    const sessionController = new AbortController();
-    sessionControllerRef.current = sessionController;
-    lastErrorRef.current = null;
+  const start = useCallback(
+    async (
+      realtimeModel: string = "gpt-realtime-2.1",
+      transcribeModel: string = "gpt-live-transcribe",
+      instructions?: string,
+      messages?: Message[],
+      tools?: Tool[],
+      inputDeviceId?: string,
+      outputDeviceId?: string,
+      onAudioLevel?: (level: number) => void,
+      toolContextFactory?: ToolContextFactory,
+      onReady?: () => void,
+    ) => {
+      if (isActiveRef.current) return;
+      isActiveRef.current = true;
+      const sessionController = new AbortController();
+      sessionControllerRef.current = sessionController;
+      lastErrorRef.current = null;
 
-    toolsRef.current = tools;
-    toolContextFactoryRef.current = toolContextFactory;
-    let pendingPlayer: AudioStreamPlayer | undefined;
-    let pendingRecorder: AudioRecorder | undefined;
-
-    try {
-      toolRegistryRef.current = compileToolRegistry(tools ?? []);
-      const player = new AudioStreamPlayer({ sampleRate: 24000, sinkId: outputDeviceId });
-      pendingPlayer = player;
-      await player.connect();
-      sessionController.signal.throwIfAborted();
-      wavPlayerRef.current = player;
-
-      const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId });
-      pendingRecorder = recorder;
-      await recorder.begin();
-      sessionController.signal.throwIfAborted();
-      wavRecorderRef.current = recorder;
-
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const baseUrl = `${protocol}//${window.location.host}/api/v1/realtime?model=${realtimeModel}`;
-
-      const ws = new WebSocket(baseUrl);
-      wsRef.current = ws;
-
-      const buildRecordCallback = () => (data: { mono: ArrayBuffer | null }) => {
-        if (!isActiveRef.current || audioPausedRef.current || !data.mono) return;
-        if (ws.readyState !== WebSocket.OPEN) return;
-
-        if (onAudioLevel) {
-          const samples = new Int16Array(data.mono);
-          let sum = 0;
-          for (let i = 0; i < samples.length; i++) {
-            const normalized = samples[i] / 32768;
-            sum += normalized * normalized;
-          }
-          onAudioLevel(Math.sqrt(sum / samples.length));
-        }
-
-        try {
-          ws.send(
-            JSON.stringify({
-              type: "input_audio_buffer.append",
-              audio: base64EncodePcm16(new Int16Array(data.mono)),
-            }),
-          );
-        } catch (error) {
-          console.error("Error processing audio data:", error);
-        }
+      toolContextFactoryRef.current = toolContextFactory;
+      const isCurrent = () => !sessionController.signal.aborted && sessionControllerRef.current === sessionController;
+      const closeSession = (reason?: { fatal: boolean; message: string }) => {
+        if (!isCurrent()) return;
+        void stop();
+        // Notify synchronously; a delayed close must not reset the UI of a newer session.
+        onClosedRef.current?.(reason);
       };
+      const audioFailed = (error: Error) => closeSession({ fatal: true, message: error.message });
 
-      const startRecording = () => {
-        refreshRequestContext(ws);
-        const cb = buildRecordCallback();
-        recordCallbackRef.current = cb;
-        recorder
-          .record(cb)
-          .then(() => {
-            // Report ready only once the mic is actually capturing.
-            if (!sessionController.signal.aborted) onReady?.();
-          })
-          .catch((error) => {
-            console.error("Failed to start recording:", error);
-            void stop().finally(() =>
-              onClosedRef.current?.({ fatal: true, message: "Couldn't access the microphone." }),
-            );
-          });
-      };
+      try {
+        toolRegistryRef.current = compileToolRegistry(tools ?? []);
+        const player = new AudioStreamPlayer({ sampleRate: 24000, sinkId: outputDeviceId, onError: audioFailed });
+        wavPlayerRef.current = player;
+        await player.connect();
+        sessionController.signal.throwIfAborted();
 
-      let sessionReady = false;
-      let sessionReadyTimeout: number | undefined;
+        const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId, onError: audioFailed });
+        wavRecorderRef.current = recorder;
+        await recorder.begin();
+        sessionController.signal.throwIfAborted();
 
-      ws.addEventListener("open", () => {
-        if (sessionController.signal.aborted) return;
-        console.log("WebSocket connected");
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const baseUrl = `${protocol}//${window.location.host}/api/v1/realtime?model=${encodeURIComponent(realtimeModel)}`;
 
-        // Fallback counts from connection open, not from connection attempt —
-        // a slow connect must not start the mic against a non-open socket.
-        sessionReadyTimeout = window.setTimeout(() => {
-          if (!sessionReady && isActiveRef.current) {
-            sessionReady = true;
-            console.warn("session.updated not received within 3 s — starting recording anyway");
-            startRecording();
+        const ws = new WebSocket(baseUrl);
+        wsRef.current = ws;
+
+        const buildRecordCallback = () => (data: { mono: ArrayBuffer | null }) => {
+          if (!isCurrent() || audioPausedRef.current || !data.mono?.byteLength) return;
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          if (onAudioLevel) {
+            const samples = new Int16Array(data.mono);
+            let sum = 0;
+            for (let i = 0; i < samples.length; i++) {
+              const normalized = samples[i] / 32768;
+              sum += normalized * normalized;
+            }
+            onAudioLevel(Math.sqrt(sum / samples.length));
           }
-        }, 3000);
 
-        const sessionUpdate = buildSessionUpdate(transcribeModel, instructions, tools);
-        ws.send(JSON.stringify(sessionUpdate));
-
-        if (messages && messages.length > 0) {
-          for (const message of messages) {
-            const messageText =
-              message.role === "assistant"
-                ? getFinalTextFromContent(message.content)
-                : getTextFromContent(message.content);
-            if (!messageText.trim()) continue;
+          try {
             ws.send(
               JSON.stringify({
-                type: "conversation.item.create",
-                item: {
-                  type: "message",
-                  role: message.role,
-                  content: [
-                    {
-                      type: message.role === "user" ? "input_text" : "output_text",
-                      text: messageText,
-                    },
-                  ],
-                },
+                type: "input_audio_buffer.append",
+                audio: base64EncodePcm16(new Int16Array(data.mono)),
               }),
             );
+          } catch (error) {
+            console.error("Error processing audio data:", error);
           }
+        };
 
-          console.log("Chat history added to conversation");
-        }
-      });
-
-      ws.addEventListener("message", async (e) => {
-        if (sessionController.signal.aborted) return;
-        const msg = JSON.parse(e.data) as Record<string, unknown>;
-        console.log("Received message:", msg.type);
-        const eventWs = e.target as WebSocket;
-
-        switch (msg.type) {
-          // Only session.updated (the ack of our session.update) means the VAD/
-          // transcription config is live — session.created arrives before the
-          // update is applied. The 3 s fallback covers a rejected update.
-          case "session.updated":
-            if (!sessionReady) {
-              sessionReady = true;
-              clearTimeout(sessionReadyTimeout);
-              startRecording();
-            }
-            break;
-
-          case "input_audio_buffer.speech_started": {
-            refreshRequestContext(eventWs);
-            console.log("User started speaking, audio playback will be interrupted");
-            const player = wavPlayerRef.current;
-            if (player) {
-              void player.interrupt().then(({ trackId, offsetSamples, wasPlaying }) => {
-                // Tell the server how much the user actually heard, otherwise the
-                // conversation history keeps the full answer the model never delivered.
-                if (!wasPlaying || !trackId || offsetSamples <= 0) return;
-                const itemId = audioItemByResponseRef.current.get(trackId);
-                if (!itemId || eventWs.readyState !== WebSocket.OPEN) return;
-                eventWs.send(
-                  JSON.stringify({
-                    type: "conversation.item.truncate",
-                    item_id: itemId,
-                    content_index: 0,
-                    audio_end_ms: Math.floor((offsetSamples / 24000) * 1000),
-                  }),
-                );
-              });
-            }
-            break;
+        const startRecording = async () => {
+          if (!isCurrent() || ws.readyState !== WebSocket.OPEN) return;
+          try {
+            refreshRequestContext(ws);
+            const callback = buildRecordCallback();
+            recordCallbackRef.current = callback;
+            await recorder.record(callback);
+            if (isCurrent()) onReady?.();
+          } catch (error) {
+            console.error("Failed to start recording:", error);
+            closeSession({ fatal: true, message: "Couldn't start microphone recording." });
           }
+        };
 
-          case "response.created": {
-            // Fallback track id for deltas that carry no response_id. Interrupted
-            // track ids stay blocked so late chunks of a cancelled response never
-            // splice into the next answer.
-            trackIdRef.current = crypto.randomUUID();
-            const createdResponseId = (msg.response as { id?: string })?.id;
-            if (createdResponseId) {
-              pendingResponsesRef.current.set(createdResponseId, {
-                runId: voiceRunIdRef.current,
-                callIds: new Set(),
-                done: false,
-                hadToolCalls: false,
-              });
-            }
-            break;
-          }
+        let sessionReady = false;
+        let sessionReadyTimeout = window.setTimeout(() => {
+          closeSession({ fatal: true, message: "The voice service did not connect. Please try again." });
+        }, 15_000);
+        sessionController.signal.addEventListener("abort", () => clearTimeout(sessionReadyTimeout), { once: true });
 
-          case "conversation.item.input_audio_transcription.completed":
-            console.log("Transcription completed:", msg.transcript);
+        ws.addEventListener("open", () => {
+          if (sessionController.signal.aborted) return;
+          console.log("WebSocket connected");
 
-            if ((msg.transcript as string)?.trim()) {
-              onUserRef.current(msg.transcript as string);
-            }
-            break;
+          clearTimeout(sessionReadyTimeout);
+          sessionReadyTimeout = window.setTimeout(() => {
+            closeSession({ fatal: true, message: "The voice service did not confirm its audio configuration." });
+          }, 15_000);
 
-          case "conversation.item.input_audio_transcription.failed":
-            console.error("Transcription failed:", msg.error);
-            break;
+          const sessionUpdate = buildSessionUpdate(transcribeModel, instructions, tools);
+          ws.send(JSON.stringify(sessionUpdate));
 
-          case "response.output_audio.delta": {
-            if (msg.delta) {
-              // Key playback by the delta's own response so chunks of an already
-              // interrupted response can't be tagged with the new response's track.
-              const deltaResponseId = msg.response_id as string | undefined;
-              const deltaItemId = msg.item_id as string | undefined;
-              if (deltaResponseId && deltaItemId) {
-                audioItemByResponseRef.current.set(deltaResponseId, deltaItemId);
-              }
-              playAudioChunk(msg.delta as string, wavPlayerRef.current, deltaResponseId ?? trackIdRef.current);
-            }
-            break;
-          }
-
-          case "response.done": {
-            console.log("Response complete:", msg.response);
-            const responseObj = msg.response as Record<string, unknown>;
-            const responseStatus = responseObj?.status as string | undefined;
-            const doneResponseId = responseObj?.id as string | undefined;
-            const entry = doneResponseId ? pendingResponsesRef.current.get(doneResponseId) : undefined;
-            if (!doneResponseId || !entry || entry.done) break;
-            entry.done = true;
-            // response.done includes every output item, including final arguments.
-            // Use that snapshot for execution; no parallel delta history is needed.
-            const output = (responseObj?.output as Record<string, unknown>[] | undefined) ?? [];
-            const deferredCalls: DeferredToolCall[] = [];
-            for (const item of output) {
-              if (item.type !== "function_call" || typeof item.call_id !== "string" || !item.call_id.trim()) continue;
-              if (entry.callIds.has(item.call_id)) continue;
-              entry.callIds.add(item.call_id);
-              deferredCalls.push({
-                callId: item.call_id,
-                toolName: typeof item.name === "string" ? item.name : "",
-                argsStr: typeof item.arguments === "string" ? item.arguments : "",
-                incomplete: item.status === "incomplete" || item.status === "in_progress",
-              });
-            }
-            entry.hadToolCalls = deferredCalls.length > 0;
-
-            if (responseStatus === "completed") {
-              // The message item is not necessarily output[0] — tool-call responses
-              // put function_call items alongside (or before) the message.
-              const parts = output.flatMap((item) =>
-                item.type === "message" ? ((item.content as Record<string, unknown>[] | undefined) ?? []) : [],
+          if (messages && messages.length > 0) {
+            for (const message of messages) {
+              const messageText =
+                message.role === "assistant"
+                  ? getFinalTextFromContent(message.content)
+                  : getTextFromContent(message.content);
+              if (!messageText.trim()) continue;
+              ws.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "message",
+                    role: message.role,
+                    content: [
+                      {
+                        type: message.role === "user" ? "input_text" : "output_text",
+                        text: messageText,
+                      },
+                    ],
+                  },
+                }),
               );
-              const text = parts
-                .map((part) => (part?.transcript ?? part?.text) as string | undefined)
-                .filter((part): part is string => !!part)
-                .join("");
-              if (text) onAssistantRef.current(text);
             }
 
-            if (responseStatus !== "completed") {
-              for (const deferred of deferredCalls) {
-                onToolCallDoneRef.current?.(deferred.callId);
-                // The function_call item is already committed to the conversation —
-                // give it an output so the next turn doesn't see a dangling call.
-                sendFunctionOutput(
-                  eventWs,
-                  deferred.callId,
-                  JSON.stringify({
-                    error: `The response ${responseStatus ?? "did not complete"}; the tool was not executed.`,
-                  }),
-                );
-                entry.callIds.delete(deferred.callId);
-              }
-              pendingResponsesRef.current.delete(doneResponseId);
-            } else {
-              if (deferredCalls.length > 0) {
-                for (const deferred of deferredCalls) {
-                  void (async () => {
-                    const registry = toolRegistryRef.current;
-                    const tool = registry?.get(deferred.toolName);
-                    const { callId, toolName, argsStr } = deferred;
+            console.log("Chat history added to conversation");
+          }
+        });
 
-                    onToolCallRef.current?.(toolName, callId);
+        ws.addEventListener("message", (e) => {
+          if (!isCurrent()) return;
+          let msg: Record<string, unknown>;
+          try {
+            msg = JSON.parse(e.data) as Record<string, unknown>;
+            if (!msg || typeof msg !== "object") throw new Error("Invalid message");
+          } catch {
+            closeSession({ fatal: true, message: "The voice service sent an invalid message." });
+            return;
+          }
+          console.log("Received message:", msg.type);
+          const eventWs = e.target as WebSocket;
 
-                    let output = "";
-
-                    let args: Record<string, unknown> | undefined;
-                    try {
-                      args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
-                    } catch (parseError) {
-                      console.error("Malformed tool arguments:", argsStr, parseError);
-                    }
-
-                    if (deferred.incomplete) {
-                      output = JSON.stringify({
-                        error:
-                          "Tool arguments are incomplete; the tool was not executed. Retry with a smaller payload.",
-                      });
-                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                    } else if (args === undefined) {
-                      output = JSON.stringify({
-                        error: "Malformed arguments: could not parse JSON. Please retry with valid arguments.",
-                      });
-                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                    } else if (!tool) {
-                      console.error(`Tool not found: ${toolName}`);
-                      output = JSON.stringify({ error: `Tool "${toolName}" is not available.` });
-                      onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                    } else {
-                      try {
-                        const ctx = {
-                          ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
-                          runId: entry.runId,
-                          signal: sessionController.signal,
-                        };
-                        ctx.signal.throwIfAborted();
-                        const result = await tool.function(registry!.parse(tool, args), ctx);
-                        if (ctx.signal.aborted) return;
-                        const rawResult =
-                          typeof result === "string"
-                            ? [{ type: "text" as const, text: result }]
-                            : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
-
-                        output = serializeToolResultForApi(rawResult);
-                        onToolResultRef.current?.(toolName, callId, rawResult);
-                      } catch (error) {
-                        if (sessionController.signal.aborted) return;
-                        console.error("Error executing tool:", error);
-                        const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
-                        output = JSON.stringify({ error: errorMessage });
-                        onToolResultRef.current?.(toolName, callId, [{ type: "text", text: errorMessage }]);
-                      }
-                    }
-
-                    onToolCallDoneRef.current?.(callId);
-                    sendFunctionOutput(eventWs, callId, output);
-
-                    const e = pendingResponsesRef.current.get(doneResponseId);
-                    if (e === entry) {
-                      e.callIds.delete(callId);
-                      checkAndFireResponseCreate(doneResponseId, eventWs);
-                    }
-                  })();
+          try {
+            switch (msg.type) {
+              // Only session.updated (the ack of our session.update) means the VAD/
+              // transcription config is live — session.created arrives before the
+              // update is applied. A missing/rejected update must not start capture.
+              case "session.updated":
+                if (!sessionReady) {
+                  sessionReady = true;
+                  clearTimeout(sessionReadyTimeout);
+                  void startRecording();
                 }
-              } else {
-                checkAndFireResponseCreate(doneResponseId, eventWs);
-                pendingResponsesRef.current.delete(doneResponseId);
+                break;
+
+              case "input_audio_buffer.speech_started": {
+                refreshRequestContext(eventWs);
+                console.log("User started speaking, audio playback will be interrupted");
+                const player = wavPlayerRef.current;
+                if (player) {
+                  void player.interrupt().then(({ trackId, offsetSamples, wasPlaying }) => {
+                    // Tell the server how much the user actually heard, otherwise the
+                    // conversation history keeps the full answer the model never delivered.
+                    if (!isCurrent() || !wasPlaying || !trackId || offsetSamples <= 0) return;
+                    const itemId = audioItemByResponseRef.current.get(trackId);
+                    if (!itemId || eventWs.readyState !== WebSocket.OPEN) return;
+                    eventWs.send(
+                      JSON.stringify({
+                        type: "conversation.item.truncate",
+                        item_id: itemId,
+                        content_index: 0,
+                        audio_end_ms: Math.floor((offsetSamples / 24000) * 1000),
+                      }),
+                    );
+                  });
+                }
+                break;
+              }
+
+              case "response.created": {
+                // Fallback track id for deltas that carry no response_id. Interrupted
+                // track ids stay blocked so late chunks of a cancelled response never
+                // splice into the next answer.
+                trackIdRef.current = crypto.randomUUID();
+                const createdResponseId = (msg.response as { id?: string })?.id;
+                if (createdResponseId) {
+                  pendingResponsesRef.current.set(createdResponseId, {
+                    runId: voiceRunIdRef.current,
+                    callIds: new Set(),
+                    done: false,
+                    hadToolCalls: false,
+                  });
+                }
+                break;
+              }
+
+              case "conversation.item.input_audio_transcription.completed":
+                console.log("Transcription completed:", msg.transcript);
+
+                if ((msg.transcript as string)?.trim()) {
+                  onUserRef.current(msg.transcript as string);
+                }
+                break;
+
+              case "conversation.item.input_audio_transcription.failed":
+                console.error("Transcription failed:", msg.error);
+                break;
+
+              case "response.output_audio.delta": {
+                if (msg.delta) {
+                  // Key playback by the delta's own response so chunks of an already
+                  // interrupted response can't be tagged with the new response's track.
+                  const deltaResponseId = msg.response_id as string | undefined;
+                  const deltaItemId = msg.item_id as string | undefined;
+                  if (deltaResponseId && deltaItemId) {
+                    audioItemByResponseRef.current.set(deltaResponseId, deltaItemId);
+                  }
+                  playAudioChunk(msg.delta as string, wavPlayerRef.current, deltaResponseId ?? trackIdRef.current);
+                }
+                break;
+              }
+
+              case "response.done": {
+                console.log("Response complete:", msg.response);
+                const responseObj = msg.response as Record<string, unknown>;
+                const responseStatus = responseObj?.status as string | undefined;
+                const doneResponseId = responseObj?.id as string | undefined;
+                const entry = doneResponseId ? pendingResponsesRef.current.get(doneResponseId) : undefined;
+                if (!doneResponseId || !entry || entry.done) break;
+                entry.done = true;
+                // response.done includes every output item, including final arguments.
+                // Use that snapshot for execution; no parallel delta history is needed.
+                const output = (responseObj?.output as Record<string, unknown>[] | undefined) ?? [];
+                const deferredCalls: DeferredToolCall[] = [];
+                for (const item of output) {
+                  if (item.type !== "function_call" || typeof item.call_id !== "string" || !item.call_id.trim())
+                    continue;
+                  if (entry.callIds.has(item.call_id)) continue;
+                  entry.callIds.add(item.call_id);
+                  deferredCalls.push({
+                    callId: item.call_id,
+                    toolName: typeof item.name === "string" ? item.name : "",
+                    argsStr: typeof item.arguments === "string" ? item.arguments : "",
+                    incomplete: item.status === "incomplete" || item.status === "in_progress",
+                  });
+                }
+                entry.hadToolCalls = deferredCalls.length > 0;
+
+                if (responseStatus === "completed") {
+                  // The message item is not necessarily output[0] — tool-call responses
+                  // put function_call items alongside (or before) the message.
+                  const parts = output.flatMap((item) =>
+                    item.type === "message" ? ((item.content as Record<string, unknown>[] | undefined) ?? []) : [],
+                  );
+                  const text = parts
+                    .map((part) => (part?.transcript ?? part?.text) as string | undefined)
+                    .filter((part): part is string => !!part)
+                    .join("");
+                  if (text) onAssistantRef.current(text);
+                }
+
+                if (responseStatus !== "completed") {
+                  for (const deferred of deferredCalls) {
+                    onToolCallDoneRef.current?.(deferred.callId);
+                    // The function_call item is already committed to the conversation —
+                    // give it an output so the next turn doesn't see a dangling call.
+                    sendFunctionOutput(
+                      eventWs,
+                      deferred.callId,
+                      JSON.stringify({
+                        error: `The response ${responseStatus ?? "did not complete"}; the tool was not executed.`,
+                      }),
+                    );
+                    entry.callIds.delete(deferred.callId);
+                  }
+                  pendingResponsesRef.current.delete(doneResponseId);
+                } else {
+                  if (deferredCalls.length > 0) {
+                    for (const deferred of deferredCalls) {
+                      void (async () => {
+                        const registry = toolRegistryRef.current;
+                        const tool = registry?.get(deferred.toolName);
+                        const { callId, toolName, argsStr } = deferred;
+
+                        onToolCallRef.current?.(toolName, callId);
+
+                        let output = "";
+
+                        let args: Record<string, unknown> | undefined;
+                        try {
+                          args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
+                        } catch (parseError) {
+                          console.error("Malformed tool arguments:", argsStr, parseError);
+                        }
+
+                        if (deferred.incomplete) {
+                          output = JSON.stringify({
+                            error:
+                              "Tool arguments are incomplete; the tool was not executed. Retry with a smaller payload.",
+                          });
+                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                        } else if (args === undefined) {
+                          output = JSON.stringify({
+                            error: "Malformed arguments: could not parse JSON. Please retry with valid arguments.",
+                          });
+                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                        } else if (!tool) {
+                          console.error(`Tool not found: ${toolName}`);
+                          output = JSON.stringify({ error: `Tool "${toolName}" is not available.` });
+                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
+                        } else {
+                          try {
+                            const ctx = {
+                              ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
+                              runId: entry.runId,
+                              signal: sessionController.signal,
+                            };
+                            ctx.signal.throwIfAborted();
+                            const result = await tool.function(registry!.parse(tool, args), ctx);
+                            if (ctx.signal.aborted) return;
+                            const rawResult =
+                              typeof result === "string"
+                                ? [{ type: "text" as const, text: result }]
+                                : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
+
+                            output = serializeToolResultForApi(rawResult);
+                            onToolResultRef.current?.(toolName, callId, rawResult);
+                          } catch (error) {
+                            if (sessionController.signal.aborted) return;
+                            console.error("Error executing tool:", error);
+                            const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
+                            output = JSON.stringify({ error: errorMessage });
+                            onToolResultRef.current?.(toolName, callId, [{ type: "text", text: errorMessage }]);
+                          }
+                        }
+
+                        onToolCallDoneRef.current?.(callId);
+                        sendFunctionOutput(eventWs, callId, output);
+
+                        const e = pendingResponsesRef.current.get(doneResponseId);
+                        if (e === entry) {
+                          e.callIds.delete(callId);
+                          checkAndFireResponseCreate(doneResponseId, eventWs);
+                        }
+                      })();
+                    }
+                  } else {
+                    checkAndFireResponseCreate(doneResponseId, eventWs);
+                    pendingResponsesRef.current.delete(doneResponseId);
+                  }
+                }
+                drainPendingPostToolFires(eventWs);
+                break;
+              }
+
+              case "error": {
+                const apiError = (msg.error as Record<string, unknown>) ?? msg;
+                console.error("[voice] API error:", apiError ?? msg.type);
+                // Record API error so the close handler can surface it and prevent auto-restart loops.
+                const code = typeof apiError?.code === "string" ? apiError.code : "";
+                const message = typeof apiError?.message === "string" ? apiError.message : "";
+                lastErrorRef.current = {
+                  message: message || code || "The voice service reported an error.",
+                  at: Date.now(),
+                };
+                if (!sessionReady) closeSession({ fatal: true, message: lastErrorRef.current.message });
+                break;
               }
             }
-            drainPendingPostToolFires(eventWs);
-            break;
+          } catch (error) {
+            console.error("Invalid voice service event:", error);
+            closeSession({ fatal: true, message: "Couldn't process a voice service event." });
           }
+        });
 
-          case "error": {
-            const apiError = (msg.error as Record<string, unknown>) ?? msg;
-            console.error("[voice] API error:", apiError ?? msg.type);
-            // Record API error so the close handler can surface it and prevent auto-restart loops.
-            const code = typeof apiError?.code === "string" ? apiError.code : "";
-            const message = typeof apiError?.message === "string" ? apiError.message : "";
-            lastErrorRef.current = {
-              message: message || code || "The voice service reported an error.",
-              at: Date.now(),
-            };
-            break;
+        ws.addEventListener("error", () => {
+          closeSession({ fatal: true, message: "Couldn't connect to the voice service." });
+        });
+
+        ws.addEventListener("close", (event) => {
+          console.log("WebSocket closed:", event.code, event.reason);
+          clearTimeout(sessionReadyTimeout);
+          // Unexpected close (user-initiated stop() flips isActiveRef first):
+          // release mic/player and let the owner reset its UI state.
+          if (isActiveRef.current && wsRef.current === ws) {
+            console.warn("[voice] connection closed unexpectedly — stopping session");
+            // A recent API error before this close means it's fatal; surface it
+            // so the owner can exit realtime mode instead of auto-reconnecting.
+            const recentError =
+              lastErrorRef.current && Date.now() - lastErrorRef.current.at < 5000 ? lastErrorRef.current.message : null;
+            const reason = recentError ? { fatal: true, message: recentError } : undefined;
+            closeSession(reason);
           }
-        }
-      });
+        });
 
-      ws.addEventListener("error", (error) => {
-        console.error("WebSocket error:", error);
-      });
-
-      ws.addEventListener("close", (event) => {
-        console.log("WebSocket closed:", event.code, event.reason);
-        clearTimeout(sessionReadyTimeout);
-        // Unexpected close (user-initiated stop() flips isActiveRef first):
-        // release mic/player and let the owner reset its UI state.
-        if (isActiveRef.current && wsRef.current === ws) {
-          console.warn("[voice] connection closed unexpectedly — stopping session");
-          // A recent API error before this close means it's fatal; surface it
-          // so the owner can exit realtime mode instead of auto-reconnecting.
-          const recentError =
-            lastErrorRef.current && Date.now() - lastErrorRef.current.at < 5000 ? lastErrorRef.current.message : null;
-          const reason = recentError ? { fatal: true, message: recentError } : undefined;
-          void stop().finally(() => onClosedRef.current?.(reason));
-        }
-      });
-
-      console.log("Voice session initialized, waiting for session ready...");
-    } catch (error) {
-      if (sessionController.signal.aborted) {
-        // A stopped startup may finish its asynchronous device setup later.
-        // Clean up its own devices without stopping a newer session.
-        try {
-          await pendingRecorder?.end();
-        } finally {
-          pendingPlayer?.disconnect();
-        }
-        return;
+        console.log("Voice session initialized, waiting for session ready...");
+      } catch (error) {
+        if (!isCurrent()) return;
+        console.error("Failed to start voice session:", error);
+        await stop();
+        throw error;
       }
-      console.error("Failed to start voice session:", error);
-      await stop();
-      throw error;
-    }
-  };
+    },
+    [stop, refreshRequestContext, checkAndFireResponseCreate, drainPendingPostToolFires],
+  );
 
   const updateSession = useCallback(
     (tools?: Tool[], instructions?: string, toolContextFactory?: ToolContextFactory) => {
       const registry = compileToolRegistry(tools ?? []);
-      toolsRef.current = tools;
       toolRegistryRef.current = registry;
       if (toolContextFactory !== undefined) {
         toolContextFactoryRef.current = toolContextFactory;
@@ -610,59 +649,6 @@ export function useVoiceWebSockets(
     },
     [],
   );
-
-  // stop only reads/writes refs → stable with useCallback([])
-  const stop = useCallback(async () => {
-    isActiveRef.current = false;
-    sessionControllerRef.current?.abort();
-    sessionControllerRef.current = null;
-    audioPausedRef.current = false;
-
-    pendingResponsesRef.current.clear();
-    audioItemByResponseRef.current.clear();
-    pendingPostToolFireRef.current = false;
-    contextItemIdRef.current = null;
-
-    // Stop recorder
-    if (wavRecorderRef.current) {
-      try {
-        await wavRecorderRef.current.end();
-      } catch {
-        try {
-          await wavRecorderRef.current?.pause();
-        } catch {
-          /* best effort */
-        }
-      }
-      wavRecorderRef.current = null;
-    }
-    recordCallbackRef.current = null;
-
-    // Close WebSocket
-    const ws = wsRef.current;
-    if (ws) {
-      try {
-        // Also close while CONNECTING — otherwise the socket finishes the
-        // handshake later and lives on as a zombie session.
-        if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
-          ws.close(1000, "User stopped session");
-        }
-      } catch {
-        /* best effort */
-      }
-      wsRef.current = null;
-    }
-
-    // Stop audio player
-    if (wavPlayerRef.current) {
-      try {
-        wavPlayerRef.current.disconnect();
-      } catch {
-        /* best effort */
-      }
-      wavPlayerRef.current = null;
-    }
-  }, []); // all state accessed via refs — no deps needed
 
   // sendText only reads refs → stable deps
   const sendText = useCallback(
@@ -704,7 +690,7 @@ export function useVoiceWebSockets(
     };
   }, [stop]);
 
-  return { start, stop, sendText, updateSession, pauseAudio, resumeAudio };
+  return { start, stop, sendText, updateSession, pauseAudio };
 }
 
 function base64EncodePcm16(samples: Int16Array): string {

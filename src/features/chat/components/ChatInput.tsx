@@ -105,19 +105,6 @@ export function ChatInput() {
 
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
-  // Request mic permission once per voice-mode entry so the device selector shows real names.
-  const permissionRequestedRef = useRef(false);
-  useEffect(() => {
-    if (!isRealtimeSelected || !voiceAvailable) {
-      permissionRequestedRef.current = false;
-      return;
-    }
-    if (inputDevices.length === 0 && !permissionRequestedRef.current) {
-      permissionRequestedRef.current = true;
-      void requestAudioPermission();
-    }
-  }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
-
   // Auto-start voice when entering via the mode toggle (not via a realtime agent).
   // Attempt once per entry to avoid a retry loop if startVoice() fails.
   const isRealtimeViaToggle = model?.id === "realtime" && currentAgent?.model !== "realtime";
@@ -209,7 +196,7 @@ export function ChatInput() {
   const shouldShowPlaceholder = !content.trim();
 
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } =
-    useTranscription();
+    useTranscription(chat?.id, !isRealtimeSelected);
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();

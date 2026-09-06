@@ -21,8 +21,11 @@ interface VoiceProviderProps {
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const [isListening, setIsListening] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  // Synchronous re-entrancy guard for startVoice() (state updates can be batched/stale).
-  const sessionBusyRef = useRef(false);
+  const sessionRef = useRef<{
+    chatId: string | null;
+    inputDeviceId?: string;
+    outputDeviceId?: string;
+  } | null>(null);
   const voiceChatIdRef = useRef<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const lastLevelUpdateRef = useRef(0);
@@ -58,7 +61,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   } = useChatContext("voice", model, models);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
-  const { start, stop, sendText, updateSession, pauseAudio, resumeAudio } = useVoiceWebSockets(
+  const { start, stop, sendText, updateSession, pauseAudio } = useVoiceWebSockets(
     onUserTranscriptCallback,
     onAssistantTranscriptCallback,
     onToolCallCallback,
@@ -76,8 +79,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   updateToolMetaRef.current = updateToolMeta;
   const pauseAudioRef = useRef(pauseAudio);
   pauseAudioRef.current = pauseAudio;
-  const resumeAudioRef = useRef(resumeAudio);
-  resumeAudioRef.current = resumeAudio;
   const setModelRef = useRef(setModel);
   setModelRef.current = setModel;
   const modelsRef = useRef(models);
@@ -108,7 +109,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   function onClosedCallback(reason?: { fatal: boolean; message: string }) {
     setIsListening(false);
     setIsConnecting(false);
-    sessionBusyRef.current = false;
+    sessionRef.current = null;
+    voiceChatIdRef.current = null;
     setAudioLevel(0);
     setVoiceToolCallRef.current(null);
 
@@ -166,11 +168,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           elicit: async (elicitation: Elicitation) => {
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
             // Pause the mic during the elicitation, but let buffered playback finish naturally.
-            await pauseAudioRef.current(false);
+            const resume = await pauseAudioRef.current(false);
             try {
               return await requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
             } finally {
-              await resumeAudioRef.current();
+              await resume();
             }
           },
         };
@@ -179,9 +181,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   );
 
   const lastSessionSignatureRef = useRef<string>("");
-
-  // Device the live session started with; used to detect mid-session mic switches.
-  const activeInputDeviceRef = useRef<string | undefined>(undefined);
 
   // The realtime model can't run completions for subagents/tool context, so we
   // resolve the first non-realtime completer model to back those operations.
@@ -192,9 +191,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   useEffect(() => {
     if (!isListening) return;
+    const session = sessionRef.current;
+    let cancelled = false;
     const instructions = chatInstructions();
     chatTools()
       .then((tools) => {
+        if (cancelled || sessionRef.current !== session) return;
         const signature = voiceSessionSignature(instructions, tools, underlyingModelId);
         if (signature === lastSessionSignatureRef.current) return;
         lastSessionSignatureRef.current = signature;
@@ -204,36 +206,47 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         updateSession(tools, instructions, factory);
       })
       .catch((err) => console.error("updateSession failed:", err));
+    return () => {
+      cancelled = true;
+    };
   }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, underlyingModelId]);
 
   const stopVoice = useCallback(async () => {
-    await stop();
+    sessionRef.current = null;
     voiceChatIdRef.current = null;
     setIsListening(false);
     setIsConnecting(false);
-    sessionBusyRef.current = false;
     setAudioLevel(0);
     setVoiceToolCall(null);
+    await stop();
   }, [stop, setVoiceToolCall]);
 
-  // Stop voice whenever the user leaves realtime mode (mode toggle, new chat, chat switch).
-  useEffect(() => {
-    if (isListening && (!isRealtimeSelected || chat?.id !== voiceChatIdRef.current)) {
-      void stopVoice();
-    }
-  }, [isRealtimeSelected, isListening, chat?.id, stopVoice]);
+  useEffect(
+    () => () => {
+      sessionRef.current = null;
+      voiceChatIdRef.current = null;
+    },
+    [],
+  );
 
   const startVoice = useCallback(async () => {
     // Guard against re-entrancy from auto-start, Start-audio button, and mic-switch effect.
-    if (sessionBusyRef.current) return;
-    sessionBusyRef.current = true;
+    if (sessionRef.current) return;
+    const session = { chatId: chat?.id ?? null, inputDeviceId, outputDeviceId };
+    sessionRef.current = session;
+    const isCurrent = () => sessionRef.current === session;
     try {
       setIsConnecting(true);
       const { chat: sessionChat } = await ensureChat();
+      if (!isCurrent()) return;
+      session.chatId = sessionChat.id;
       voiceChatIdRef.current = sessionChat.id;
       const realtimeModel = config.voice?.model;
-      const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
+      // Realtime transcription has its own model contract; file STT models
+      // (including non-OpenAI providers) are not interchangeable with it.
+      const transcribeModel = config.voice?.transcriber;
       const tools = await chatTools();
+      if (!isCurrent()) return;
       const instructions = chatInstructions();
       const toolContextFactory = buildToolContextFactory(underlyingModelId, sessionChat.id);
 
@@ -248,6 +261,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         inputDeviceId,
         outputDeviceId,
         (level) => {
+          if (!isCurrent()) return;
           const now = Date.now();
           if (now - lastLevelUpdateRef.current > 80) {
             lastLevelUpdateRef.current = now;
@@ -257,23 +271,28 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         toolContextFactory,
         // Flip to "listening" only once recording has actually started.
         () => {
+          if (!isCurrent()) return;
           setIsConnecting(false);
           setIsListening(true);
         },
       );
-      activeInputDeviceRef.current = inputDeviceId;
     } catch (error) {
+      if (!isCurrent()) return;
+      void stopVoice();
       console.error("Failed to start voice mode:", error);
       const errorMessage = error?.toString() || "";
       if (errorMessage.includes("API key") || errorMessage.includes("401")) {
         notify.error("Voice mode unavailable", "An OpenAI API key must be configured to use voice mode.");
       } else {
-        notify.error("Couldn't start voice mode", "Check your microphone permissions and try again.");
+        notify.error(
+          "Couldn't start voice mode",
+          error instanceof Error ? error.message : "Check your audio devices and permissions, then try again.",
+        );
       }
-      setIsConnecting(false);
-      sessionBusyRef.current = false;
     }
   }, [
+    chat?.id,
+    stopVoice,
     ensureChat,
     buildToolContextFactory,
     chatInstructions,
@@ -283,25 +302,24 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     messages,
     config.voice?.model,
     config.voice?.transcriber,
-    config.stt?.model,
     inputDeviceId,
     outputDeviceId,
   ]);
 
-  // Restart when the user picks a different mic while listening (recorder is bound at start()).
+  // Both devices are fixed for a session. Cancel pending setup as well as live
+  // capture, and start the newest selection without waiting for old contexts to close.
   useEffect(() => {
-    if (!isListening) return;
-    if (activeInputDeviceRef.current === inputDeviceId) return;
-    // Record target up front so this effect doesn't re-fire during restart.
-    activeInputDeviceRef.current = inputDeviceId;
-    void (async () => {
-      await stop();
-      setIsListening(false);
-      // Clear busy guard so the restart isn't blocked by re-entrancy protection.
-      sessionBusyRef.current = false;
-      await startVoice();
-    })();
-  }, [inputDeviceId, isListening, stop, startVoice]);
+    const session = sessionRef.current;
+    if (!session) return;
+    if (!isRealtimeSelected || (session.chatId !== null && chat?.id !== session.chatId)) {
+      void stopVoice();
+      return;
+    }
+    if (session.inputDeviceId !== inputDeviceId || session.outputDeviceId !== outputDeviceId) {
+      void stopVoice();
+      void startVoice();
+    }
+  }, [isRealtimeSelected, chat?.id, inputDeviceId, outputDeviceId, isListening, isConnecting, stopVoice, startVoice]);
 
   const sendVoiceText = useCallback(
     (text: string) => {

@@ -1,3 +1,4 @@
+import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
 import OpenAI from "openai";
 import { APIConnectionTimeoutError } from "openai/error";
@@ -678,54 +679,49 @@ export class Client {
     voice?: string,
     requestOptions: ClientRequestOptions = {},
   ): Promise<Blob> {
+    requestOptions.signal?.throwIfAborted();
     if (!input.trim()) {
       throw new Error("Input text cannot be empty");
     }
 
-    const response = await this.oai.audio.speech.create(
-      {
-        model: model,
-        input: input,
+    try {
+      const response = await this.oai.audio.speech.create(
+        {
+          model: model,
+          input: input,
 
-        instructions: "Speak in a clear and natural tone.",
+          instructions: "Speak in a clear and natural tone.",
 
-        voice: voice ?? "",
-        response_format: "wav",
-      },
-      requestOptions.signal ? { signal: requestOptions.signal } : undefined,
-    );
+          voice: voice ?? "",
+          response_format: "wav",
+        },
+        requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+      );
 
-    const audioBuffer = await response.arrayBuffer();
-    return new Blob([audioBuffer], { type: "audio/wav" });
+      const audioBuffer = await response.arrayBuffer();
+      requestOptions.signal?.throwIfAborted();
+      if (!audioBuffer.byteLength) throw new Error("The speech service returned empty audio");
+      return new Blob([audioBuffer], { type: "audio/wav" });
+    } catch (error) {
+      requestOptions.signal?.throwIfAborted();
+      throw error;
+    }
   }
 
-  async speakText(model: string, input: string, voice?: string, sinkId?: string): Promise<void> {
-    const audioBlob = await this.generateAudio(model, input, voice);
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    const audio = new Audio(audioUrl);
-
-    // Route to selected output device if supported
-    if (sinkId && "setSinkId" in audio) {
-      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
-    }
-
-    return new Promise((resolve, reject) => {
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        resolve();
-      };
-
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        reject(new Error("Audio playback failed"));
-      };
-
-      audio.play().catch(reject);
-    });
+  async speakText(
+    model: string,
+    input: string,
+    voice?: string,
+    sinkId?: string,
+    options: ClientRequestOptions & { onPlaying?: () => void } = {},
+  ): Promise<void> {
+    const audioBlob = await this.generateAudio(model, input, voice, options);
+    await playAudioBlob(audioBlob, { ...options, sinkId });
   }
 
   async transcribe(model: string, blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    requestOptions.signal?.throwIfAborted();
+    if (!blob.size) throw new Error("No audio to transcribe");
     // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
@@ -736,7 +732,8 @@ export class Client {
       (resp) => resp.json(),
       requestOptions,
     );
-    return result.text || "";
+    if (typeof result?.text !== "string") throw new Error("The transcription service returned an invalid response");
+    return result.text;
   }
 
   async search(
