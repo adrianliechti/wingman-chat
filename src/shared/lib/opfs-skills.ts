@@ -3,14 +3,16 @@
  */
 
 import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
-import { parseSkillFile } from "@/features/skills/lib/skillParser";
+import { parseSkillFile, serializeSkill, validateSkillName } from "@/features/skills/lib/skillParser";
+import { withPersistenceLock } from "./persistence";
+import { writeFileChanges } from "./opfs-transaction";
 import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
 import type { IndexEntry } from "./opfs-core";
 import {
   blobToDataUrl,
   dataUrlToBlob,
   deleteDirectory,
-  deleteFile,
+  fileExists,
   isDataUrl,
   listDirectories,
   listFiles,
@@ -18,9 +20,6 @@ import {
   readIndex,
   readText,
   removeIndexEntry,
-  upsertIndexEntry,
-  writeBlob,
-  writeText,
 } from "./opfs-core";
 
 export interface StoredSkill {
@@ -33,16 +32,61 @@ export interface StoredSkill {
  * Save a skill as SKILL.md in /skills/{name}/ folder.
  */
 export async function saveSkill(skill: Skill): Promise<void> {
-  const skillDir = `skills/${skill.name}`;
-  await writeText(`${skillDir}/SKILL.md`, serializeSkillToMd(skill));
-  await saveSkillResources(skillDir, skill.resources ?? []);
+  await withPersistenceLock("collection:skills", () => writeSkill(skill));
+}
 
-  // Update index
-  await upsertIndexEntry("skills", {
-    id: skill.id,
-    title: skill.name,
-    updated: new Date().toISOString(),
+async function writeSkill(skill: Skill): Promise<void> {
+  if (!validateSkillName(skill.name).valid) throw new Error(`Invalid skill name: ${skill.name}`);
+  const definition = serializeSkill(skill);
+  if (!parseSkillFile(definition).success) throw new Error(`Invalid skill definition: ${skill.name}`);
+  const skillDir = `skills/${skill.name}`;
+  const changes = new Map<string, Blob | undefined>();
+  for (const resource of skill.resources ?? []) {
+    const path = resource.path;
+    if (
+      !path ||
+      path === "SKILL.md" ||
+      /[\\\0]/.test(path) ||
+      path.startsWith("/") ||
+      path.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      throw new Error(`Invalid skill resource path: ${path}`);
+    changes.set(
+      `${skillDir}/${path}`,
+      isDataUrl(resource.content) ? dataUrlToBlob(resource.content) : new Blob([resource.content]),
+    );
+  }
+  for (const path of await walkSkillResourcePaths(skillDir)) {
+    if (!changes.has(`${skillDir}/${path}`)) changes.set(`${skillDir}/${path}`, undefined);
+  }
+  changes.set(`${skillDir}/SKILL.md`, new Blob([definition]));
+  let oldName: string | undefined;
+  await withPersistenceLock("index:skills", async () => {
+    const index = await readIndex("skills");
+    oldName = index.find((entry) => entry.id === skill.id)?.title;
+    if (index.some((entry) => entry.title === skill.name && entry.id !== skill.id))
+      throw new Error(`A skill named ${skill.name} already exists`);
+    if (oldName && oldName !== skill.name) {
+      for (const path of ["SKILL.md", ...(await walkSkillResourcePaths(`skills/${oldName}`))])
+        changes.set(`skills/${oldName}/${path}`, undefined);
+    }
+    changes.set(
+      "skills/index.json",
+      new Blob([
+        JSON.stringify([
+          ...index.filter((entry) => entry.id !== skill.id),
+          {
+            id: skill.id,
+            title: skill.name,
+            updated: new Date().toISOString(),
+          },
+        ]),
+      ]),
+    );
+    await writeFileChanges(changes);
   });
+  if (oldName && oldName !== skill.name)
+    await deleteDirectory(`skills/${oldName}`).catch((error) => console.warn("Skill folder cleanup failed:", error));
 }
 
 /**
@@ -67,7 +111,7 @@ export async function loadSkill(name: string): Promise<Skill | undefined> {
   const resources = await loadSkillResources(`skills/${name}`);
 
   return {
-    id: entry?.id || crypto.randomUUID(),
+    id: entry?.id || name,
     ...result.skill,
     resources: resources.length ? resources : undefined,
   };
@@ -77,6 +121,10 @@ export async function loadSkill(name: string): Promise<Skill | undefined> {
  * Delete a skill and its folder.
  */
 export async function deleteSkill(name: string): Promise<void> {
+  return withPersistenceLock("collection:skills", () => removeSkillFiles(name));
+}
+
+async function removeSkillFiles(name: string): Promise<void> {
   // Find ID from index for removal
   const index = await readIndex("skills");
   const entry = index.find((e: IndexEntry) => e.title === name);
@@ -101,7 +149,13 @@ export async function listSkillNames(): Promise<string[]> {
  * Load all skills.
  */
 export async function loadAllSkills(): Promise<Skill[]> {
-  const names = await listSkillNames();
+  return withPersistenceLock("collection:skills", readAllSkills);
+}
+
+async function readAllSkills(): Promise<Skill[]> {
+  const names = (await fileExists("skills/index.json"))
+    ? (await readIndex("skills")).flatMap((entry) => (entry.title ? [entry.title] : []))
+    : await listSkillNames();
   const skills: Skill[] = [];
 
   for (const name of names) {
@@ -156,33 +210,4 @@ async function loadSkillResources(skillDir: string): Promise<SkillResource[]> {
   }
 
   return resources;
-}
-
-/** Persist a skill's resources, removing any files that are no longer present. */
-async function saveSkillResources(skillDir: string, resources: SkillResource[]): Promise<void> {
-  const desired = new Set(resources.map((r) => r.path));
-
-  for (const existing of await walkSkillResourcePaths(skillDir)) {
-    if (!desired.has(existing)) await deleteFile(`${skillDir}/${existing}`);
-  }
-
-  for (const r of resources) {
-    const full = `${skillDir}/${r.path}`;
-    if (isDataUrl(r.content)) {
-      await writeBlob(full, dataUrlToBlob(r.content));
-    } else {
-      await writeText(full, r.content, r.contentType || "text/plain;charset=utf-8");
-    }
-  }
-}
-
-/**
- * Serialize a skill to SKILL.md format.
- */
-function serializeSkillToMd(skill: Skill): string {
-  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`];
-  if (skill.compatibility) lines.push(`compatibility: ${skill.compatibility}`);
-  lines.push("---", "", skill.content);
-
-  return lines.join("\n");
 }

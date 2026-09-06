@@ -1,6 +1,5 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-// @ts-expect-error The stylesheet is loaded by the browser's Vite dev server.
 import "../../../src/index.css";
 import { AgentContext, type AgentContextType } from "../../../src/features/agent/context/AgentContext";
 import { ArtifactsDrawer } from "../../../src/features/artifacts/components/ArtifactsDrawer";

@@ -70,7 +70,6 @@ export {
   readJson,
   readText,
   rebuildFolderIndex,
-  rebuildIndex,
   rehydrateChatBlobs,
   rehydrateMessageBlobsForChat,
   removeIndexEntry,

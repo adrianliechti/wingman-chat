@@ -1,5 +1,6 @@
 import { contentToBlob } from "./fileContent";
 import { inferContentTypeFromPath } from "./fileTypes";
+import { stopPersistence, withPersistenceLock } from "./persistence";
 import { decodeDataURL, readAsDataURL } from "./utils";
 
 /**
@@ -42,6 +43,8 @@ import { decodeDataURL, readAsDataURL } from "./utils";
 // ============================================================================
 
 let rootHandle: FileSystemDirectoryHandle | null = null;
+let storageReset = false;
+const activeWrites = new Set<Promise<void>>();
 
 /**
  * Get the OPFS root directory handle.
@@ -80,6 +83,7 @@ export async function getDirectory(
  */
 export async function writeJson<T>(path: string, data: T): Promise<void> {
   const json = JSON.stringify(data);
+  if (json === undefined) throw new TypeError(`Cannot write undefined JSON to ${path}`);
   await writeText(path, json, "application/json");
 }
 
@@ -99,15 +103,40 @@ export async function writeText(
  * Uses FileSystemWritableFileStream for Safari compatibility.
  */
 export async function writeBlob(path: string, blob: Blob): Promise<void> {
+  if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
   const { dir, name } = parsePath(path);
-  const directory = await getDirectory(dir, { create: true });
-  const fileHandle = await directory.getFileHandle(name, { create: true });
-
-  const writable = await fileHandle.createWritable();
+  const result = withPersistenceLock(`file:${dir}/${name}`, async () => {
+    if (storageReset) throw new Error("Storage was reset. Reload before saving changes.");
+    const directory = await getDirectory(dir, { create: true });
+    let fileHandle: FileSystemFileHandle;
+    let created = false;
+    try {
+      fileHandle = await directory.getFileHandle(name);
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
+      fileHandle = await directory.getFileHandle(name, { create: true });
+      created = true;
+    }
+    let writable: FileSystemWritableFileStream | undefined;
+    try {
+      writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (error) {
+      // Closing after a failed write can commit truncated data over the last
+      // good file. Abort the staging stream and preserve the original error.
+      await writable?.abort().catch(() => {});
+      // create:true makes an empty file before the write starts. Leaving it
+      // behind poisons JSON loads and can masquerade as a stored hash blob.
+      if (created) await directory.removeEntry(name).catch(() => {});
+      throw error;
+    }
+  });
+  activeWrites.add(result);
   try {
-    await writable.write(blob);
+    await result;
   } finally {
-    await writable.close();
+    activeWrites.delete(result);
   }
 }
 
@@ -123,8 +152,7 @@ export async function readJson<T>(path: string): Promise<T | undefined> {
   try {
     return JSON.parse(text) as T;
   } catch (error) {
-    console.error(`Error parsing JSON from ${path}:`, error);
-    return undefined;
+    throw new Error(`Invalid JSON in ${path}`, { cause: error });
   }
 }
 
@@ -297,6 +325,9 @@ export async function deleteDirectory(path: string): Promise<void> {
  * Clear all OPFS storage.
  */
 export async function clearAll(): Promise<void> {
+  storageReset = true;
+  await stopPersistence();
+  await Promise.allSettled(activeWrites);
   const root = await getRoot();
 
   for await (const [name] of root.entries()) {
@@ -322,60 +353,39 @@ export interface IndexEntry {
  */
 export async function readIndex(collection: string): Promise<IndexEntry[]> {
   const index = await readJson<IndexEntry[]>(`${collection}/index.json`);
-  return index || [];
+  if (index === undefined) return [];
+  if (!Array.isArray(index) || index.some((entry) => !entry || typeof entry.id !== "string" || !entry.id)) {
+    throw new Error(`Invalid index in ${collection}/index.json`);
+  }
+  return index;
 }
 
 /**
  * Write the index for a collection.
  */
 export async function writeIndex(collection: string, entries: IndexEntry[]): Promise<void> {
-  await writeJson(`${collection}/index.json`, entries);
+  await withPersistenceLock(`index:${collection}`, () => writeJson(`${collection}/index.json`, entries));
+}
+
+/** Lock the complete read/modify/write, including updates from other tabs. */
+export async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
+  await withPersistenceLock(`index:${collection}`, async () => {
+    await writeJson(`${collection}/index.json`, update(await readIndex(collection)));
+  });
 }
 
 /**
  * Add or update an entry in the collection index.
  */
 export async function upsertIndexEntry(collection: string, entry: IndexEntry): Promise<void> {
-  const index = await readIndex(collection);
-  const existingIdx = index.findIndex((e) => e.id === entry.id);
-
-  if (existingIdx >= 0) {
-    index[existingIdx] = entry;
-  } else {
-    index.push(entry);
-  }
-
-  await writeIndex(collection, index);
+  await updateIndex(collection, (index) => [...index.filter((item) => item.id !== entry.id), entry]);
 }
 
 /**
  * Remove an entry from the collection index.
  */
 export async function removeIndexEntry(collection: string, id: string): Promise<void> {
-  const index = await readIndex(collection);
-  const filtered = index.filter((e) => e.id !== id);
-  await writeIndex(collection, filtered);
-}
-
-/**
- * Rebuild an index by scanning all files in the collection.
- * The extractMeta function should extract id, title, and updated from the data.
- */
-export async function rebuildIndex<T>(collection: string, extractMeta: (data: T) => IndexEntry): Promise<IndexEntry[]> {
-  const files = await listFiles(collection);
-  const entries: IndexEntry[] = [];
-
-  for (const file of files) {
-    if (file === "index.json") continue;
-
-    const data = await readJson<T>(`${collection}/${file}`);
-    if (data) {
-      entries.push(extractMeta(data));
-    }
-  }
-
-  await writeIndex(collection, entries);
-  return entries;
+  await updateIndex(collection, (index) => index.filter((entry) => entry.id !== id));
 }
 
 // ============================================================================

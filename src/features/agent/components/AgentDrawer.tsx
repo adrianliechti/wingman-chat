@@ -504,7 +504,7 @@ export function AgentDrawer() {
                                   )
                                     return;
                                   if (isActive) setCurrentAgent(null);
-                                  void deleteAgent(agent.id);
+                                  void deleteAgent(agent.id).catch(() => {});
                                 }}
                               >
                                 Delete
@@ -534,7 +534,7 @@ export function AgentDrawer() {
               }))
             )
               return;
-            void deleteAgent(currentAgent.id);
+            void deleteAgent(currentAgent.id).catch(() => {});
             handleAgentSelect(null);
           }}
         />
