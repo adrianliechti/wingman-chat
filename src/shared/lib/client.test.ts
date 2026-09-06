@@ -74,6 +74,63 @@ afterEach(() => {
 });
 
 describe("raw request lifetime", () => {
+  it("forwards cancellation through segmentation and embedding requests", async () => {
+    for (const operation of ["segment", "embed"]) {
+      const controller = new AbortController();
+      let signal: AbortSignal | undefined;
+      fetchMock.mockImplementationOnce((_url, options: RequestInit) => {
+        signal = options.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) =>
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }),
+        );
+      });
+      const client = new Client();
+      const request =
+        operation === "segment"
+          ? client.segmentText("Source", { signal: controller.signal })
+          : client.embedText("model", "Source", { signal: controller.signal });
+      const rejection = expect(request).rejects.toMatchObject({ name: expect.stringMatching(/Abort/) });
+      await vi.waitFor(() => expect(signal).toBeDefined());
+      controller.abort();
+      await rejection;
+      expect(signal!.aborted).toBe(true);
+    }
+  });
+
+  it("returns the resolved embedding model so default-model changes can be detected", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ model: "resolved", data: [{ embedding: [0.5, 1] }] }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(await new Client().embedText("", "Source")).toEqual({ model: "resolved", vector: [0.5, 1] });
+  });
+
+  it.each([
+    { data: [] },
+    { model: "resolved", data: [{ embedding: [] }] },
+    { model: "resolved", data: [{ embedding: [1e100] }] },
+    { model: "resolved", data: [{ embedding: ["1"] }] },
+    { data: [{ embedding: [1, 2] }] },
+  ])("rejects malformed or unidentified embeddings: %j", async (body) => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } }),
+    );
+    await expect(new Client().embedText("", "Source")).rejects.toThrow(/embedding service/);
+  });
+
+  it.each([{}, [null], [42], [{ text: 5 }], [], ["  "]].map((body) => ({ body })))(
+    "rejects unusable segmentation responses: $body",
+    async ({ body }) => {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body)));
+      await expect(new Client().segmentText("Source")).rejects.toThrow(/segmentation service/);
+    },
+  );
+
+  it("accepts string and object segments while preserving passage whitespace", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([" First ", { text: "Second\nline" }, " "])));
+    expect(await new Client().segmentText("Source")).toEqual([" First ", "Second\nline"]);
+  });
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));

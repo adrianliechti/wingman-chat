@@ -28,6 +28,27 @@ async function resultText(tool: Tool, args: Record<string, unknown>): Promise<st
 }
 
 describe("repository tools", () => {
+  it("forwards run cancellation to semantic search and discards late query results", async () => {
+    const controller = new AbortController();
+    const query = vi.fn().mockImplementation(async (_query: string, _limit?: number, signal?: AbortSignal) => {
+      expect(signal).toBe(controller.signal);
+      controller.abort();
+      return [];
+    });
+    const search = byName(
+      createRepositoryTools([repositoryFile({ id: "file", name: "notes.txt" })], query),
+      "repository_search",
+    );
+    await expect(search.function({ query: "Query" }, { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(query).toHaveBeenCalledOnce();
+    await expect(search.function({ query: "Query" }, { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(query).toHaveBeenCalledOnce();
+  });
+
   it("uses the exact shared read/grep/glob schemas with a repository namespace", () => {
     const files = [repositoryFile({ id: "aaaaaaaa-0000", name: "notes.txt", path: "/notes.txt" })];
     const tools = createRepositoryTools(files, async () => []);
@@ -143,7 +164,7 @@ describe("repository tools", () => {
 
     const output = await resultText(search, { query: "ending", limit: 3 });
 
-    expect(query).toHaveBeenCalledWith("ending", 3);
+    expect(query).toHaveBeenCalledWith("ending", 3, undefined);
     expect(output).toBe("[91%] /notes.txt:2-3: needle last");
     expect(JSON.parse(await resultText(search, { query: "ending", limit: 0 })).error).toContain("limit must be");
   });

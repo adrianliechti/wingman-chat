@@ -2,9 +2,10 @@ import { Dialog, Transition } from "@headlessui/react";
 import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import type { BridgeServer } from "@/features/agent/types/agent";
 import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
+import { notify } from "@/shared/lib/notify";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
 import { ReviewStep } from "./steps/ReviewStep";
@@ -147,11 +148,10 @@ function getSteps(): StepDef[] {
 interface AgentWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (agent: Agent, pendingFiles: File[]) => void;
 }
 
-export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
-  const { createAgent, addServer } = useAgents();
+export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
+  const { createAgent, addServer, addFile } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
   const stateRef = useRef(state);
@@ -202,7 +202,10 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
         addServer(agent.id, server);
       }
 
-      onCreated(agent, s.pendingFiles);
+      // Bind the entire batch to the created agent before closing the wizard.
+      void (async () => {
+        for (const file of s.pendingFiles) await addFile(agent.id, file);
+      })().catch((error) => notify.error("Couldn't add files", error));
       dispatch({ type: "RESET" });
       onClose();
     } catch (error) {
@@ -210,7 +213,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
     } finally {
       setIsCreating(false);
     }
-  }, [createAgent, addServer, onCreated, onClose]);
+  }, [createAgent, addServer, addFile, onClose]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });

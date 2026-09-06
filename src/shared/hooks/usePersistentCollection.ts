@@ -102,5 +102,16 @@ export function usePersistentCollection<T extends { id: string }>(storage: Colle
   );
 
   const getItems = useCallback(() => itemsRef.current, []);
-  return { items, isLoaded, create, put, update, remove, getItems };
+  const flush = useCallback(
+    async (id: string) => {
+      try {
+        await queue.flushRecord(id);
+      } catch (error) {
+        reportPersistenceError(error);
+        throw error;
+      }
+    },
+    [queue],
+  );
+  return { items, isLoaded, create, put, update, remove, getItems, flush };
 }

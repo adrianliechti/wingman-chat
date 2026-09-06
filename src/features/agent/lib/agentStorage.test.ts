@@ -11,6 +11,67 @@ beforeEach(() => {
 });
 
 describe("agent storage", () => {
+  it("persists requested and resolved embedding models with the file's vectors", async () => {
+    const value = {
+      ...agent(),
+      files: [
+        {
+          id: "file",
+          name: "notes.txt",
+          uploadedAt: new Date(),
+          status: "completed" as const,
+          progress: 100,
+          text: "Source",
+          segments: [{ text: "Source", vector: [1, 2] }],
+          embeddingRequestModel: "",
+          embeddingModel: "backend-default-a",
+        },
+      ],
+    };
+    await storeAgent(value);
+    expect((await loadAgent(value.id))!.files![0]).toMatchObject({
+      embeddingRequestModel: "",
+      embeddingModel: "backend-default-a",
+      segments: [{ text: "Source", vector: [1, 2] }],
+    });
+  });
+
+  it.each(["processing", "pending"] as const)(
+    "loads interrupted %s files as retryable errors without changing stored bytes",
+    async (status) => {
+      await storeAgent({
+        ...agent(),
+        files: [{ id: "file", name: "notes.txt", status, progress: 40, text: "Extracted", uploadedAt: new Date() }],
+      });
+      const writes = memory.closed.length;
+      expect((await loadAgent("agent"))!.files![0]).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("interrupted"),
+        text: "Extracted",
+        progress: 0,
+      });
+      expect(memory.closed).toHaveLength(writes);
+    },
+  );
+
+  it("rejects finite numbers that overflow the persisted Float32 representation before writing any files", async () => {
+    await expect(
+      storeAgent({
+        ...agent(),
+        files: [
+          {
+            id: "file",
+            name: "notes.txt",
+            status: "completed",
+            progress: 100,
+            uploadedAt: new Date(),
+            segments: [{ text: "Source", vector: [1e100] }],
+          },
+        ],
+      }),
+    ).rejects.toThrow("Invalid embedding");
+    expect(memory.closed).toEqual([]);
+  });
   it("round-trips quoted names, model IDs, and lists containing punctuation", () => {
     const value = {
       ...agent(),

@@ -17,8 +17,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import { useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
@@ -98,29 +97,6 @@ export function AgentDrawer() {
   const [editingName, setEditingName] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const inlineEditInputRef = useRef<HTMLInputElement>(null);
-
-  // Pending file uploads after wizard creation
-  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
-  const { addFile } = useAgentFiles(currentAgent?.id || "");
-
-  // Process pending file uploads when agent becomes current
-  useEffect(() => {
-    if (!currentAgent || !pendingWizardFiles) return;
-
-    setPendingWizardFiles(null);
-
-    void (async () => {
-      for (const file of pendingWizardFiles) {
-        await addFile(file);
-      }
-    })();
-  }, [currentAgent, addFile, pendingWizardFiles]);
-
-  const handleWizardCreated = useCallback((_agent: Agent, pendingFiles: File[]) => {
-    if (pendingFiles.length > 0) {
-      setPendingWizardFiles(pendingFiles);
-    }
-  }, []);
 
   useEffect(() => {
     if (!inlineEditingId) return;
@@ -540,7 +516,7 @@ export function AgentDrawer() {
         />
       ) : null}
 
-      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
     </div>
   );
 }

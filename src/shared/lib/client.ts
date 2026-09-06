@@ -25,6 +25,7 @@ import type {
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
+import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
@@ -563,20 +564,38 @@ export class Client {
     );
   }
 
-  async segmentText(text: string): Promise<string[]> {
-    const result = await this.post("/api/v1/segment", { text }, (resp) => resp.json());
-    if (!Array.isArray(result)) return [];
-    return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
+  async segmentText(text: string, requestOptions: ClientRequestOptions = {}): Promise<string[]> {
+    const result = await this.post("/api/v1/segment", { text }, (resp) => resp.json(), requestOptions);
+    if (!Array.isArray(result)) throw new Error("The segmentation service returned an invalid result");
+    const segments = result.map((item: unknown) =>
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object"
+          ? (item as { text?: unknown }).text
+          : undefined,
+    );
+    if (segments.some((segment) => typeof segment !== "string"))
+      throw new Error("The segmentation service returned an invalid segment");
+    const nonEmpty = (segments as string[]).filter((segment) => segment.trim());
+    if (text.trim() && !nonEmpty.length) throw new Error("The segmentation service returned no text segments");
+    return nonEmpty;
   }
 
-  async embedText(model: string, text: string): Promise<number[]> {
-    const embedding = await this.oai.embeddings.create({
-      model: model,
-      input: text,
-      encoding_format: "float",
-    });
-
-    return embedding.data[0].embedding;
+  async embedText(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<Embedding> {
+    requestOptions.signal?.throwIfAborted();
+    const embedding = await this.oai.embeddings
+      .create({ model, input: text, encoding_format: "float" }, { signal: requestOptions.signal })
+      .catch((error) => {
+        requestOptions.signal?.throwIfAborted();
+        throw error;
+      });
+    requestOptions.signal?.throwIfAborted();
+    const vector = embedding.data?.[0]?.embedding;
+    validateEmbeddingVector(vector);
+    const resolvedModel = embedding.model || model;
+    if (typeof resolvedModel !== "string" || !resolvedModel.trim())
+      throw new Error("The embedding service did not identify its model; configure an embedding model explicitly");
+    return { vector, model: resolvedModel };
   }
 
   async translate(

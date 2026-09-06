@@ -47,9 +47,7 @@ import {
 } from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
-import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent } from "@/features/agent/types/agent";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
@@ -377,22 +375,6 @@ export function ChatInputAddMenu({
 
   // Agent wizard
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
-  const { addFile } = useAgentFiles(currentAgent?.id ?? "");
-
-  useEffect(() => {
-    if (!currentAgent || !pendingWizardFiles) return;
-    setPendingWizardFiles(null);
-    void (async () => {
-      for (const file of pendingWizardFiles) {
-        await addFile(file);
-      }
-    })();
-  }, [currentAgent, addFile, pendingWizardFiles]);
-
-  const handleWizardCreated = useCallback((_agent: Agent, files: File[]) => {
-    if (files.length > 0) setPendingWizardFiles(files);
-  }, []);
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
@@ -689,7 +671,7 @@ export function ChatInputAddMenu({
         </AddMenu>
       </div>
 
-      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
 
       {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
       <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">

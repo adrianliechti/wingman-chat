@@ -15,6 +15,8 @@ interface StoredFileMeta {
   progress: number;
   error?: string;
   uploadedAt: string;
+  embeddingRequestModel?: string;
+  embeddingModel?: string;
 }
 
 // Agent-specific OPFS operations using folder structure:
@@ -42,13 +44,13 @@ async function writeAgent(agent: Agent): Promise<void> {
     changes.set(`${path}/content.txt`, file.text === undefined ? undefined : new Blob([file.text]));
     if (file.segments?.length) {
       const dimension = file.segments[0].vector.length;
-      if (
-        !dimension ||
-        file.segments.some(
-          (segment) => segment.vector.length !== dimension || segment.vector.some((value) => !Number.isFinite(value)),
-        )
-      ) {
-        throw new Error(`Invalid embedding vectors for ${file.name}`);
+      for (const segment of file.segments) {
+        if (!dimension || segment.vector.length !== dimension)
+          throw new Error(`Invalid embedding vectors for ${file.name}`);
+        for (const value of segment.vector) {
+          if (typeof value !== "number" || !Number.isFinite(Math.fround(value)))
+            throw new Error(`Invalid embedding vectors for ${file.name}`);
+        }
       }
       const buffer = new Float32Array(1 + file.segments.length * dimension);
       buffer[0] = dimension;
@@ -67,6 +69,8 @@ async function writeAgent(agent: Agent): Promise<void> {
       progress: file.progress,
       error: file.error,
       uploadedAt: new Date(file.uploadedAt).toISOString(),
+      embeddingRequestModel: file.embeddingRequestModel,
+      embeddingModel: file.embeddingModel,
     };
     changes.set(`${path}/metadata.json`, json(meta));
   }
@@ -229,9 +233,15 @@ async function loadAgentFile(agentId: string, fileId: string): Promise<Repositor
     id: fileId,
     name: meta.name,
     path: meta.path,
-    status: meta.status,
-    progress: meta.progress,
-    error: meta.error,
+    // No ingestion job survives a page reload. Keep recovered text available for retry.
+    status: meta.status === "processing" || meta.status === "pending" ? "error" : meta.status,
+    progress: meta.status === "processing" || meta.status === "pending" ? 0 : meta.progress,
+    error:
+      meta.status === "processing" || meta.status === "pending"
+        ? "File processing was interrupted. Retry indexing or upload the file again."
+        : meta.error,
+    embeddingRequestModel: meta.embeddingRequestModel,
+    embeddingModel: meta.embeddingModel,
     uploadedAt: new Date(meta.uploadedAt),
     text,
     segments,
