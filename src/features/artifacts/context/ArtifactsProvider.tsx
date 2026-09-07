@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
 import { getConfig } from "@/shared/config";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { ArtifactsContext } from "./ArtifactsContext";
@@ -10,57 +11,25 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [activeFile, setActiveFile] = useState<string | null>(null);
+  const [{ fs, activeFile }, setWorkspace] = useState<{
+    fs: FileSystemManager | null;
+    activeFile: string | null;
+  }>({ fs: null, activeFile: null });
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
-  const [fs, setFs] = useState<FileSystemManager | null>(null);
-  const config = getConfig();
-  const [isAvailable] = useState(() => {
-    try {
-      return !!config.artifacts;
-    } catch (error) {
-      console.warn("Failed to get artifacts config:", error);
-      return false;
-    }
-  });
+  const [readWriteManager] = useState(() => new ArtifactReadWriteManager());
+  const isAvailable = !!getConfig().artifacts;
 
   // Externally-injected filesystem setter. The chat feature calls this
   // whenever the active chat changes; artifacts owns no chat knowledge.
   const setFileSystem = useCallback((next: FileSystemManager | null) => {
-    setFs(next);
+    // A path belongs to its workspace, even when another chat has the same path.
+    // Change both together so no render can pair new storage with old selection.
+    setWorkspace((current) =>
+      current.fs === next
+        ? current
+        : { fs: next, activeFile: next && current.fs?.chatId === next.chatId ? current.activeFile : null },
+    );
   }, []);
-
-  // When the active filesystem changes, reconcile the active file:
-  //  - Draft chat (fs === null): clear the active file.
-  //  - Chat with files: clear the active file if it no longer exists in the
-  //    new chat.
-  // Artifacts itself is always active when available, so there is no enabled
-  // state to toggle here. The drawer is never auto-opened — created files
-  // surface as inline chips in the conversation; the user opens the panel on
-  // demand.
-  useEffect(() => {
-    if (!fs) {
-      setActiveFile(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    // Clear active file if it doesn't exist in the new filesystem
-    setActiveFile((current) => {
-      if (!current) return current;
-      // Kick off async existence check; updates state when resolved.
-      void fs.fileExists(current).then((exists) => {
-        if (!cancelled && !exists) {
-          setActiveFile((prev) => (prev === current ? null : prev));
-        }
-      });
-      return current;
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fs]);
 
   // Subscribe to filesystem events for UI state changes
   useEffect(() => {
@@ -68,11 +37,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
     const unsubscribeDeleted = fs.subscribe("fileDeleted", (path: string) => {
       // Clear active file if it was the deleted one.
-      setActiveFile((currentActive) => (currentActive === path ? null : currentActive));
+      setWorkspace((current) =>
+        current.fs === fs && current.activeFile === path ? { ...current, activeFile: null } : current,
+      );
     });
 
     const unsubscribeRenamed = fs.subscribe("fileRenamed", (oldPath: string, newPath: string) => {
-      setActiveFile((prev) => (prev === oldPath ? newPath : prev));
+      setWorkspace((current) =>
+        current.fs === fs && current.activeFile === oldPath ? { ...current, activeFile: newPath } : current,
+      );
     });
 
     // Cleanup function
@@ -82,11 +55,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     };
   }, [fs]);
 
-  const openFile = useCallback((path: string) => {
+  const openFile = useCallback((path: string, origin?: FileSystemManager) => {
     // Normalize so `activeFile` is always canonical and matches paths emitted
     // by the filesystem (see FileSystemManager.createFile/deleteFile/renameFile).
     const normalized = normalizeArtifactPath(path);
-    if (normalized) setActiveFile(normalized);
+    if (!normalized) return;
+    setWorkspace((current) => {
+      if (!current.fs || (origin && origin.chatId !== current.fs.chatId)) return current;
+      return current.activeFile === normalized ? current : { ...current, activeFile: normalized };
+    });
   }, []);
 
   const toggleArtifactsDrawer = useCallback(() => {
@@ -96,6 +73,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const value = {
     isAvailable,
     fs,
+    readWriteManager,
     activeFile,
     showArtifactsDrawer,
     openFile,

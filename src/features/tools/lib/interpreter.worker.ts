@@ -322,23 +322,35 @@ const USER_SHIMS = [
   PDF_RASTERIZE_SHIM,
 ];
 
-async function createExecutionGlobals(pyodide: PyodideInterface): Promise<PyodideInterface["globals"]> {
+async function createExecutionGlobals(
+  pyodide: PyodideInterface,
+  signal: AbortSignal,
+): Promise<PyodideInterface["globals"]> {
   const globals = pyodide.runPython("dict()") as PyodideInterface["globals"];
-  globals.set("_wingman_llm", requestLlm);
-  globals.set("_wingman_ocr", (path: string) => requestOcr(pyodide, path));
-  globals.set("_wingman_vision", (path: string, prompt: string | null) => requestVision(pyodide, path, prompt));
-  globals.set("_wingman_render", (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
+  // Python tasks can retain their globals after runPythonAsync returns. Bind
+  // bridges to this execution so delayed work cannot borrow the next run's
+  // model, budget, or workspace through the reused worker's active RPC slot.
+  const setBridge = <Args extends unknown[], Result>(name: string, fn: (...args: Args) => Result) => {
+    globals.set(name, (...args: Args) => {
+      signal.throwIfAborted();
+      return fn(...args);
+    });
+  };
+  setBridge("_wingman_llm", requestLlm);
+  setBridge("_wingman_ocr", (path: string) => requestOcr(pyodide, path));
+  setBridge("_wingman_vision", (path: string, prompt: string | null) => requestVision(pyodide, path, prompt));
+  setBridge("_wingman_render", (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
     requestRenderImage(pyodide, prompt, output, inputsJson, optionsJson),
   );
-  globals.set("_wingman_synthesize", (text: string, output: string, voice: string | null) =>
+  setBridge("_wingman_synthesize", (text: string, output: string, voice: string | null) =>
     requestSynthesize(pyodide, text, output, voice),
   );
-  globals.set("_wingman_transcribe", (path: string) => requestTranscribe(pyodide, path));
-  globals.set("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
-  globals.set("_wingman_translate_file", (lang: string, output: string, input: string) =>
+  setBridge("_wingman_transcribe", (path: string) => requestTranscribe(pyodide, path));
+  setBridge("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
+  setBridge("_wingman_translate_file", (lang: string, output: string, input: string) =>
     requestTranslateFile(pyodide, lang, output, input),
   );
-  globals.set("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
+  setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
     requestRasterizePdf(pyodide, path, optionsJson),
   );
   for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
@@ -397,7 +409,8 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     syncFilesToPyodide(pyodide, files);
     await ensurePackagesLoaded(pyodide, code);
 
-    const globals = await createExecutionGlobals(pyodide);
+    const executionController = new AbortController();
+    const globals = await createExecutionGlobals(pyodide, executionController.signal);
 
     try {
       onStarted?.();
@@ -416,6 +429,7 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
         files: resultFiles,
       };
     } finally {
+      executionController.abort();
       globals.destroy();
       lockDownUserNetwork();
     }

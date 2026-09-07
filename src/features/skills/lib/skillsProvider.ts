@@ -201,6 +201,7 @@ export function createSkillsProvider(
             : {}),
         },
         required: ["name"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;
@@ -299,6 +300,7 @@ export function createSkillsProvider(
             : {}),
         },
         required: ["name", "path"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;

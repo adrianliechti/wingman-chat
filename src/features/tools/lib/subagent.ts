@@ -2,9 +2,17 @@ import subagentDescription from "@/features/tools/prompts/subagent-description.t
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
-import { getTextFromContent, Role, type Tool } from "@/shared/types/chat";
+import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import { getFinalTextFromContent } from "@/shared/lib/assistantText";
+import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
+import { Role, type Tool } from "@/shared/types/chat";
 
-export function createSubagentTool(model: string, providerInstructions: string, baseTools: Tool[]): Tool {
+export function createSubagentTool(
+  model: string,
+  providerInstructions: string,
+  baseTools: Tool[],
+  runtimeContext = "",
+): Tool {
   const baseInstructions = subagentSystem.trim();
   const extra = providerInstructions.trim();
   const instructions = extra ? `${baseInstructions}\n\n${extra}` : baseInstructions;
@@ -22,6 +30,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
         },
       },
       required: ["prompt"],
+      additionalProperties: false,
     },
     function: async (args, ctx) => {
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
@@ -30,6 +39,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
       }
 
       try {
+        const requestContext = captureRequestContext(runtimeContext);
         const runResult = await agentRun(
           getConfig().client,
           model,
@@ -39,9 +49,10 @@ export function createSubagentTool(model: string, providerInstructions: string, 
           {
             agentName: "subagent",
             parentContext: ctx?.agentContext,
-            invocationContext: ctx?.invocationContext?.fork("subagent"),
+            invocationContext: (ctx?.invocationContext ?? new AgentInvocationContext()).fork("subagent"),
             options: { signal: ctx?.signal },
-            createToolContext: () => ({ model }),
+            createToolContext: () => ({ model, chatId: ctx?.chatId }),
+            prepareMessages: (messages) => injectRequestContext(messages, requestContext),
           },
         );
 
@@ -54,7 +65,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
 
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
-        const text = last ? getTextFromContent(last.content).trim() : "";
+        const text = last ? getFinalTextFromContent(last.content).trim() : "";
         const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
         return [{ type: "text", text: `${text || "Subagent completed but produced no output."}${suffix}` }];
       } catch (error) {

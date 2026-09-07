@@ -2,7 +2,7 @@ import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatConversation, useChatRunState } from "@/features/chat/hooks/useChat";
 import { SkillChip } from "@/features/skills/components/SkillChip";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
@@ -240,7 +240,9 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { messages, pendingElicitation, resolveElicitation, retryMessage, continueRun, status, toolMeta } = useChat();
+  const { messages, toolMeta } = useChatConversation();
+  const { pendingElicitation, status } = useChatRunState();
+  const { resolveElicitation, retryMessage, continueRun } = useChatActions();
   const { providers } = useToolsContext();
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
 
@@ -256,7 +258,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // sticky after trackpad taps, so the buttons wouldn't reliably hide.
   const [hovered, setHovered] = useState(false);
 
-  // Files written during this turn (create_file + python/javascript), surfaced as
+  // Files written during this turn (create + python/javascript), surfaced as
   // clickable chips on the turn's completion message rather than auto-opening
   // the artifacts drawer.
   const turnArtifactPaths = useMemo(

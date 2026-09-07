@@ -1,15 +1,18 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { createAttachmentLoader } from "../lib/chatAttachments";
+import { notify } from "@/shared/lib/notify";
 import { cn } from "@/shared/lib/cn";
-import { type Chat, getTextFromContent } from "@/shared/types/chat";
+import { type ChatEntry } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
 export function ChatSidebar() {
-  const { chats, chat, deleteChat, createChat, updateChat } = useChat();
+  const { chats, chatId } = useChatList();
+  const { deleteChat, createChat, updateChat, loadChat, searchChats } = useChatActions();
   const { setShowSidebar } = useSidebar();
   const { newChat, openChat } = useChatNavigate();
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,7 +37,7 @@ export function ChatSidebar() {
     }
   }, [renamingChatId]);
 
-  const startRename = useCallback((chatItem: Chat) => {
+  const startRename = useCallback((chatItem: ChatEntry) => {
     setRenamingChatId(chatItem.id);
     setRenameValue(chatItem.customTitle ?? chatItem.title ?? "");
   }, []);
@@ -54,7 +57,7 @@ export function ChatSidebar() {
   }, []);
 
   const pinChat = useCallback(
-    (chatItem: Chat) => {
+    (chatItem: ChatEntry) => {
       const maxPin = chats.reduce((max, c) => Math.max(max, c.customIndex ?? 0), 0);
       updateChat(chatItem.id, () => ({ customIndex: maxPin + 1 }));
     },
@@ -62,7 +65,7 @@ export function ChatSidebar() {
   );
 
   const unpinChat = useCallback(
-    (chatItem: Chat) => {
+    (chatItem: ChatEntry) => {
       updateChat(chatItem.id, () => ({ customIndex: undefined }));
     },
     [updateChat],
@@ -77,27 +80,35 @@ export function ChatSidebar() {
     [chats],
   );
 
-  // Filter chats based on search query
+  const [searchResult, setSearchResult] = useState<{ query: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void searchChats(searchQuery, controller.signal)
+        .then((ids) => {
+          if (!controller.signal.aborted) setSearchResult({ query: searchQuery, ids });
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) notify.error("Couldn't search saved chats", error);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, chats, searchChats]);
+
   const filteredChats = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return sortedChats;
-    }
-
+    if (!searchQuery.trim()) return sortedChats;
     const query = searchQuery.toLowerCase();
-
-    return sortedChats.filter((chatItem) => {
-      // Search in custom title and auto-generated title
-      if (chatItem.customTitle?.toLowerCase().includes(query)) {
-        return true;
-      }
-      if (chatItem.title?.toLowerCase().includes(query)) {
-        return true;
-      }
-
-      // Search in message content
-      return chatItem.messages.some((message) => getTextFromContent(message.content).toLowerCase().includes(query));
-    });
-  }, [sortedChats, searchQuery]);
+    return sortedChats.filter(
+      (entry) =>
+        entry.customTitle?.toLowerCase().includes(query) ||
+        entry.title?.toLowerCase().includes(query) ||
+        (searchResult?.query === searchQuery && searchResult.ids.has(entry.id)),
+    );
+  }, [sortedChats, searchQuery, searchResult]);
 
   // Helper function to get date category
   const getDateCategory = useCallback((date: Date): string => {
@@ -190,7 +201,7 @@ export function ChatSidebar() {
   // Flatten grouped chats into a single list for virtualization (unpinned only)
   type FlatSidebarItem =
     | { type: "header"; group: (typeof groupedChats)[0]; groupIndex: number }
-    | { type: "item"; chat: Chat };
+    | { type: "item"; chat: ChatEntry };
 
   const flatSidebarItems = useMemo<FlatSidebarItem[]>(() => {
     const items: FlatSidebarItem[] = [];
@@ -216,7 +227,9 @@ export function ChatSidebar() {
 
   // Function to fork a chat (create a new chat with copied messages)
   const forkChat = useCallback(
-    async (chatToFork: Chat) => {
+    async (entry: ChatEntry) => {
+      const chatToFork = await loadChat(entry.id);
+      const messages = await createAttachmentLoader(entry.id)(chatToFork.messages);
       const newChat = await createChat();
 
       // Copy all the properties from the original chat
@@ -225,7 +238,7 @@ export function ChatSidebar() {
         title: chatToFork.title ? `${chatToFork.title}${forkSuffix}` : "Forked Chat",
         customTitle: chatToFork.customTitle ? `${chatToFork.customTitle}${forkSuffix}` : undefined,
         model: chatToFork.model,
-        messages: [...chatToFork.messages],
+        messages,
       }));
 
       // Navigate to the new forked chat
@@ -237,7 +250,7 @@ export function ChatSidebar() {
         }
       });
     },
-    [createChat, updateChat, openChat, setShowSidebar],
+    [createChat, loadChat, updateChat, openChat, setShowSidebar],
   );
 
   // Drag-and-drop handlers for pinned chats
@@ -288,9 +301,9 @@ export function ChatSidebar() {
   );
 
   // Shared chat item row renderer
-  const renderChatItem = (chatItem: Chat, options?: { draggable?: boolean }) => {
+  const renderChatItem = (chatItem: ChatEntry, options?: { draggable?: boolean }) => {
     const displayTitle = chatItem.customTitle ?? chatItem.title ?? "Untitled";
-    const isActive = chatItem.id === chat?.id;
+    const isActive = chatItem.id === chatId;
     const dragBorder =
       dragOver?.id === chatItem.id
         ? dragOver.position === "before"
@@ -362,14 +375,19 @@ export function ChatSidebar() {
             >
               {chatItem.customIndex != null ? "Unpin" : "Pin"}
             </DropdownMenuItem>
-            <DropdownMenuItem icon={<GitBranch size={14} />} onClick={() => forkChat(chatItem)}>
+            <DropdownMenuItem
+              icon={<GitBranch size={14} />}
+              onClick={() => {
+                void forkChat(chatItem).catch((error) => notify.error("Couldn't fork chat", error));
+              }}
+            >
               Fork
             </DropdownMenuItem>
             <DropdownMenuItem
               icon={<Trash size={14} />}
               destructive
               onClick={() => {
-                const wasActive = chatItem.id === chat?.id;
+                const wasActive = chatItem.id === chatId;
                 deleteChat(chatItem.id);
                 if (wasActive) newChat();
               }}
@@ -511,7 +529,7 @@ export function ChatSidebar() {
                           icon={<Trash size={14} />}
                           destructive
                           onClick={() => {
-                            const hasActive = group.chats.some((c) => c.id === chat?.id);
+                            const hasActive = group.chats.some((c) => c.id === chatId);
                             group.chats.forEach((chatItem) => {
                               deleteChat(chatItem.id);
                             });

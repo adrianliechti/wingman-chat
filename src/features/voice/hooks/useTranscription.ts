@@ -1,99 +1,120 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { mergePcm16Chunks, pcm16ToWav } from "@/features/voice/lib/audio";
+import { AudioResources } from "@/shared/lib/audioResources";
+import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 
 export interface UseTranscriptionReturn {
   canTranscribe: boolean;
+  /** Includes microphone permission/setup, so the same button can cancel a delayed start. */
   isTranscribing: boolean;
   startTranscription: () => Promise<void>;
   stopTranscription: () => Promise<string>;
 }
 
-export function useTranscription(): UseTranscriptionReturn {
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const pcmChunksRef = useRef<Int16Array[]>([]);
-  const { inputDeviceId } = useAudioDevices();
+interface Dictation {
+  scope: AudioResources;
+  recorder: AudioRecorder;
+  chunks: Int16Array[];
+  recording: boolean;
+  stopping?: Promise<string>;
+}
 
-  // Check if transcription is available
+export function useTranscription(ownerKey?: string, enabled = true): UseTranscriptionReturn {
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const current = useRef<Dictation | null>(null);
+  const { inputDeviceId } = useAudioDevices();
   const config = getConfig();
-  const canTranscribe =
-    !!config.stt &&
+  const canTranscribe = !!(
+    enabled &&
+    config.stt &&
     typeof navigator !== "undefined" &&
-    navigator.mediaDevices &&
-    typeof navigator.mediaDevices.getUserMedia === "function";
+    navigator.mediaDevices?.getUserMedia
+  );
+
+  const cancel = useCallback(() => {
+    const session = current.current;
+    current.current = null;
+    if (session) void session.scope.close();
+  }, []);
+
+  // A recording/upload belongs to this composer and device, including while permission is pending.
+  useEffect(() => {
+    setIsTranscribing(false);
+    return cancel;
+  }, [cancel, ownerKey, inputDeviceId, enabled]);
 
   const startTranscription = useCallback(async () => {
-    if (!canTranscribe) {
-      throw new Error("Transcription is not available");
-    }
-
+    if (!canTranscribe) throw new Error("Transcription is not available");
+    if (current.current) return;
+    const scope = new AudioResources();
+    const recorder = new AudioRecorder({
+      sampleRate: 24000,
+      deviceId: inputDeviceId,
+      onError: (error) => {
+        if (current.current?.scope !== scope) return;
+        cancel();
+        setIsTranscribing(false);
+        notify.error("Recording stopped", error.message);
+      },
+    });
+    const session: Dictation = { scope, recorder, chunks: [], recording: false };
+    scope.own(recorder, (recorder) => recorder.end());
+    current.current = session;
+    setIsTranscribing(true);
     try {
-      // Clear previous audio chunks
-      pcmChunksRef.current = [];
-
-      // Create and start AudioRecorder
-      const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId });
-      await recorder.begin();
+      await scope.wait(recorder.begin());
+      scope.signal.throwIfAborted();
       await recorder.record((chunk) => {
-        pcmChunksRef.current.push(new Int16Array(chunk.mono));
+        if (current.current === session && !session.stopping) session.chunks.push(new Int16Array(chunk.mono));
       });
-
-      audioRecorderRef.current = recorder;
-      setIsTranscribing(true);
-    } catch (err) {
-      console.error("Failed to start transcription:", err);
-    }
-  }, [canTranscribe, inputDeviceId]);
-
-  const stopTranscription = useCallback(async (): Promise<string> => {
-    const recorder = audioRecorderRef.current;
-
-    if (!recorder) {
-      throw new Error("No active recording to stop");
-    }
-
-    try {
-      // Stop recording
-      await recorder.end();
-      audioRecorderRef.current = null;
-      setIsTranscribing(false);
-
-      // Convert PCM chunks to WAV
-      const chunks = pcmChunksRef.current;
-      if (chunks.length === 0) {
-        throw new Error("No audio recorded");
+      scope.signal.throwIfAborted();
+      session.recording = true;
+    } catch (error) {
+      const cancelled = scope.signal.aborted;
+      if (current.current === session) {
+        current.current = null;
+        setIsTranscribing(false);
       }
-
-      const merged = mergePcm16Chunks(chunks);
-      const audioBlob = pcm16ToWav(merged, 24000);
-      pcmChunksRef.current = [];
-
-      // Send to transcription API with model from config
-      const config = getConfig();
-      const model = config.stt?.model ?? "";
-      const transcribedText = await config.client.transcribe(model, audioBlob);
-
-      return transcribedText;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to transcribe audio";
-      throw new Error(errorMessage);
+      await scope.close();
+      if (!cancelled) throw error;
     }
-  }, []);
+  }, [canTranscribe, inputDeviceId, cancel]);
 
-  // Clean up recorder on unmount
-  useEffect(() => {
-    return () => {
-      audioRecorderRef.current?.end().catch(() => {});
-    };
-  }, []);
+  const stopTranscription = useCallback((): Promise<string> => {
+    const session = current.current;
+    if (!session) return Promise.resolve("");
+    if (session.stopping) return session.stopping;
+    setIsTranscribing(false);
+    if (!session.recording) {
+      cancel();
+      return Promise.resolve("");
+    }
+    session.stopping = (async () => {
+      try {
+        await session.recorder.end();
+        session.scope.signal.throwIfAborted();
+        if (!session.chunks.length) throw new Error("No audio recorded");
+        const audio = pcm16ToWav(mergePcm16Chunks(session.chunks), 24000);
+        session.chunks = [];
+        const config = getConfig();
+        const text = await session.scope.wait(
+          config.client.transcribe(config.stt?.model ?? "", audio, { signal: session.scope.signal }),
+        );
+        session.scope.signal.throwIfAborted();
+        return text;
+      } catch (error) {
+        if (session.scope.signal.aborted) return "";
+        throw error;
+      } finally {
+        if (current.current === session) current.current = null;
+        await session.scope.close();
+      }
+    })();
+    return session.stopping;
+  }, [cancel]);
 
-  return {
-    canTranscribe,
-    isTranscribing,
-    startTranscription,
-    stopTranscription,
-  };
+  return { canTranscribe, isTranscribing, startTranscription, stopTranscription };
 }

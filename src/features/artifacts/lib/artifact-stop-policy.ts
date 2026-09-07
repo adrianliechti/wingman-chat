@@ -1,6 +1,7 @@
 import type { AgentBeforeFinishDecision } from "@/shared/lib/agent";
 import { artifactDeltaFromMeta, ArtifactJobSchema, type ArtifactJob } from "@/shared/types/artifact";
 import { Role, type Content, type Message } from "@/shared/types/chat";
+import { fileExtension } from "@/shared/lib/utils";
 import { findArtifactJobForRun, upsertArtifactJob, upsertArtifactManifest } from "./artifact-job-store";
 import { verifyArtifactJob } from "./artifact-verifier";
 import type { FileSystemManager } from "./fs";
@@ -14,7 +15,7 @@ interface ArtifactStopPolicyInput {
 }
 
 function artifactKind(path: string): ArtifactJob["kind"] {
-  const extension = path.split(".").pop()?.toLowerCase();
+  const extension = fileExtension(path);
   if (extension === "html" || extension === "htm") return "html";
   if (extension === "pptx") return "slides";
   if (extension === "docx") return "docx";

@@ -77,6 +77,7 @@ const ASK_QUESTIONS_TOOL: Tool = {
                 type: "object",
                 properties: { value: { type: "string" }, label: { type: "string" } },
                 required: ["value", "label"],
+                additionalProperties: false,
               },
               description: 'Required for "select"/"multi_select" — the choices offered.',
             },
@@ -87,11 +88,13 @@ const ASK_QUESTIONS_TOOL: Tool = {
             },
           },
           required: ["id", "label", "type"],
+          additionalProperties: false,
         },
         description: "The questions to ask, rendered together as one form the user fills out and submits at once.",
       },
     },
     required: ["questions"],
+    additionalProperties: false,
   },
   function: async (args: Record<string, unknown>, context?: ToolContext) => {
     if (!context?.elicit) {

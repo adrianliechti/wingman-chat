@@ -19,7 +19,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npx vp dev --host 127.0.0.1 --port ${port}`,
+    command: `npx vp dev --config tests/browser/vite.config.ts --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}/tests/browser/fixtures/interpreter.html`,
     reuseExistingServer: true,
     timeout: 120_000,

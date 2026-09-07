@@ -1,6 +1,6 @@
 import { AlertCircle, ChevronRight, Wrench } from "lucide-react";
 import { memo, useMemo, useState } from "react";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatConversation } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { cn } from "@/shared/lib/cn";
@@ -18,7 +18,7 @@ type ChatToolMessageProps = {
 
 export const ChatToolMessage = memo(function ChatToolMessage({ message, index }: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
-  const { chat, messages } = useChat();
+  const { chat, messages } = useChatConversation();
   const { providers } = useToolsContext();
   const toolResultParts = message.content.filter((p) => p.type === "tool_result") as ToolResultContent[];
   const isLastFullscreenApp = useLastFullscreenApp(messages, index, toolResultParts);

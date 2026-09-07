@@ -1,4 +1,5 @@
-import { type Content, Role, type Message, type TextContent, type ToolResultContent } from "../types/chat";
+import { type Content, type Message, type TextContent, type ToolResultContent } from "../types/chat";
+import { isUserMessage } from "./requestContext";
 
 const DEFAULT_RECENT_TURNS = 2;
 const DEFAULT_MAX_CHARS = 2000;
@@ -21,7 +22,7 @@ function findRecentTurnsBoundary(messages: Message[], recentTurns: number): numb
   let seen = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === Role.User && m.content.some((p) => p.type !== "tool_result")) {
+    if (isUserMessage(m)) {
       seen++;
       if (seen >= recentTurns) return i;
     }
@@ -43,10 +44,11 @@ export function trimBulkyToolHistory(
   messages: Message[],
   opts: { recentTurns?: number; maxChars?: number; previewChars?: number } = {},
 ): Message[] {
-  const recentTurns = Math.max(1, Math.floor(opts.recentTurns ?? DEFAULT_RECENT_TURNS));
+  // A summarizer may trim its entire selected prefix with recentTurns: 0.
+  const recentTurns = Math.max(0, Math.floor(opts.recentTurns ?? DEFAULT_RECENT_TURNS));
   const elision = normalizeElisionOptions(opts);
 
-  const boundary = findRecentTurnsBoundary(messages, recentTurns);
+  const boundary = recentTurns === 0 ? messages.length : findRecentTurnsBoundary(messages, recentTurns);
   if (boundary === 0) return messages;
 
   return messages.map((message, index) => {
@@ -123,22 +125,26 @@ function elideJsonStrings(
   return { value, changed: false };
 }
 
-/** Replace oversized strings anywhere in a tool-call arguments JSON. */
+/** Keep useful JSON fields where possible, then bound any remaining bulky structure. */
 export function elideToolArguments(raw: string, opts: ToolArgumentElisionOptions = {}): string {
   const { maxChars, previewChars } = normalizeElisionOptions(opts);
   if (raw.length <= maxChars) return raw;
 
+  let candidate = raw;
   try {
     const args = JSON.parse(raw) as unknown;
-    if (typeof args !== "object" || args === null || Array.isArray(args)) return raw;
-    const elided = elideJsonStrings(args, maxChars, previewChars);
-    return elided.changed ? JSON.stringify(elided.value) : raw;
+    if (typeof args === "object" && args !== null && !Array.isArray(args)) {
+      const elided = elideJsonStrings(args, maxChars, previewChars);
+      if (elided.changed) candidate = JSON.stringify(elided.value);
+    }
   } catch {
-    // Keep recent malformed calls intact for self-correction; once a caller
-    // chooses to compact them, wrap a preview in valid JSON for safe replay.
-    const candidate = JSON.stringify({ elidedArguments: elideText(raw, maxChars, previewChars) });
-    return candidate.length < raw.length ? candidate : raw;
+    // Malformed historical arguments can still be summarized as a JSON preview.
   }
+  if (candidate.length <= maxChars) return candidate;
+  // A matrix or a large collection of short values has no long strings to
+  // shorten. It must not carry the original overflow into the summarizer.
+  const preview = JSON.stringify({ elidedArguments: elideText(candidate, maxChars, previewChars) });
+  return preview.length < candidate.length ? preview : candidate;
 }
 
 /**

@@ -55,9 +55,7 @@ import {
   useState,
 } from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
-import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent } from "@/features/agent/types/agent";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { pluginProviderId, PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -403,22 +401,6 @@ export function ChatInputAddMenu({
 
   // Agent wizard
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
-  const { addFile } = useAgentFiles(currentAgent?.id ?? "");
-
-  useEffect(() => {
-    if (!currentAgent || !pendingWizardFiles) return;
-    setPendingWizardFiles(null);
-    void (async () => {
-      for (const file of pendingWizardFiles) {
-        await addFile(file);
-      }
-    })();
-  }, [currentAgent, addFile, pendingWizardFiles]);
-
-  const handleWizardCreated = useCallback((_agent: Agent, files: File[]) => {
-    if (files.length > 0) setPendingWizardFiles(files);
-  }, []);
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
@@ -814,11 +796,7 @@ export function ChatInputAddMenu({
         </AddMenu>
       </div>
 
-      <AgentWizard
-        isOpen={wizardOpen}
-        onClose={() => setWizardOpen(false)}
-        onCreated={handleWizardCreated}
-      />
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
 
       {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
       <Dialog

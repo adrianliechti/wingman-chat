@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { exportAgentsAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import {
@@ -32,8 +32,8 @@ import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
-import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
-import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
+import { clearAll, getStorageUsage } from "@/shared/lib/opfs";
+import { downloadFolderAsZip, importFolderFromZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
@@ -153,6 +153,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const {
     theme,
     setTheme,
@@ -166,8 +167,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     profile,
     updateProfile,
   } = useSettings();
-  const { chats, deleteChat } = useChat();
-  const { agents } = useAgents();
+  const { chats } = useChatList();
+  const { deleteChat, stopStreaming } = useChatActions();
+  const { agents, deleteAgent } = useAgents();
   const {
     inputDeviceId,
     outputDeviceId,
@@ -256,20 +258,49 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     }
 
     try {
+      stopStreaming();
       await clearAll();
-      notify.success("Data deleted", "Everything was removed. Reloading…");
-      setTimeout(() => window.location.reload(), 1200);
+      window.location.reload();
     } catch (error) {
       console.error("Delete all failed:", error);
-      notify.error("Couldn't delete data", "Something went wrong. Please try again.");
+      notify.error("Couldn't delete all data", "Some data may remain. Reload before continuing.");
     }
+  };
+
+  const restoreBackup = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (
+        !file ||
+        !(await confirm({
+          title: "Restore backup?",
+          message:
+            "Files from this backup will be merged with saved data. Matching files will be replaced; other files will be kept.",
+        }))
+      )
+        return;
+      setIsRestoring(true);
+      stopStreaming();
+      try {
+        await importFolderFromZip("/", file);
+        window.location.reload();
+      } catch (error) {
+        notify.error("Couldn't restore backup", error);
+      } finally {
+        setIsRestoring(false);
+      }
+    };
+    input.click();
   };
 
   const rebuildIndexes = async () => {
     if (
       !(await confirm({
         title: "Rebuild indexes?",
-        message: "This rescans chats, agents, images, skills, and repositories. It may take a moment.",
+        message: "This rescans chats, agents, images, and skills. It may take a moment.",
       }))
     ) {
       return;
@@ -280,7 +311,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const result = await rebuildAllIndexes();
       notify.success(
         "Indexes rebuilt",
-        `${result.chats} chats, ${result.agents} agents, ${result.images} images, ${result.skills} skills, ${result.repositories} repositories.`,
+        `${result.chats} chats, ${result.agents} agents, ${result.images} images, ${result.skills} skills.`,
       );
       await loadStorageInfo();
     } catch (error) {
@@ -301,7 +332,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      const isZip = file.name.endsWith(".zip");
+      const isZip = file.name.toLowerCase().endsWith(".zip");
 
       if (isZip) {
         if (
@@ -312,9 +343,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
         )
           return;
         try {
+          stopStreaming();
           await importChatsFromZip(file);
-          notify.success("Chats imported", "Reloading to show them…");
-          setTimeout(() => window.location.reload(), 1200);
+          window.location.reload();
         } catch (error) {
           console.error("Failed to import chats:", error);
           notify.error("Couldn't import chats", "Check the file and try again.");
@@ -337,6 +368,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
             return;
 
           const result = await importChatsFromLegacyJson(jsonData);
+          if (result.failed) {
+            notify.error("Some chats could not be imported", `${result.imported} imported; ${result.failed} failed.`);
+            if (!result.imported) return;
+          }
           notify.success(
             "Chats imported",
             `${result.imported} chat${result.imported === 1 ? "" : "s"} added. Reloading…`,
@@ -383,8 +418,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
     try {
       for (const agent of agents) {
-        await deleteDirectory(`agents/${agent.id}`);
-        await removeIndexEntry("agents", agent.id);
+        await deleteAgent(agent.id);
       }
       notify.success("Agents deleted", "Reloading to apply changes…");
       setTimeout(() => window.location.reload(), 1200);
@@ -835,7 +869,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               setIsExporting(false);
                             }
                           }}
-                          disabled={isExporting}
+                          disabled={isExporting || isRestoring}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Upload
@@ -848,7 +882,21 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           <div className="min-w-0">
                             <div className="font-medium">{isExporting ? "Exporting..." : "Export All Data"}</div>
                             <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
-                              Download chats, agents, skills, and settings as ZIP
+                              Download chats, agents, images, skills, and profile as ZIP
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={restoreBackup}
+                          disabled={isExporting || isRestoring}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left disabled:opacity-50"
+                        >
+                          <Download size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                          <div>
+                            <div className="font-medium">{isRestoring ? "Restoring..." : "Restore Backup"}</div>
+                            <div className="text-xs text-neutral-500 dark:text-neutral-500">
+                              Restore all or part of a backup ZIP
                             </div>
                           </div>
                         </button>

@@ -1,5 +1,7 @@
+import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
 import OpenAI from "openai";
+import { APIConnectionTimeoutError } from "openai/error";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod/v3";
 import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
@@ -12,8 +14,6 @@ import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type {
   Content,
-  FileContent,
-  ImageContent,
   Message,
   Model,
   ModelType,
@@ -21,22 +21,23 @@ import type {
   ReasoningContent,
   Tool,
   ToolCallContent,
-  ToolResultContent,
+  TextContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
+import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
-import { modelName, modelType } from "./models";
+import { modelFromAPI } from "./models";
 import { traceGenAI } from "./otel";
-import { dropOrphanFunctionCalls } from "./recovery";
+import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
 import { planStrictToolSchemas } from "./toolSchemas";
 import { compileToolRegistry } from "./toolRegistry";
-import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
+import { simplifyMarkdown } from "./utils";
 
 /**
- * Extra application-level retries for stream failures the SDK's own maxRetries
- * does not cover — a connection dropped mid-response after streaming started.
+ * Streaming uses one retry budget for HTTP failures and interrupted streams.
+ * SDK retries are disabled on this path to avoid multiplying attempts.
  */
 const MAX_STREAM_RETRIES = 2;
 
@@ -150,24 +151,19 @@ export class Client {
       apiKey: apiKey,
       dangerouslyAllowBrowser: true,
       // Configure automatic retries for rate limits and server errors
-      // maxRetries is set to 3 attempts (default is 2)
+      // Three retries after the initial attempt for non-streaming requests.
       maxRetries: 3,
       // Uses SDK default timeout of 10 minutes for complex operations
     });
   }
 
   async listModels(type?: ModelType): Promise<Model[]> {
-    const models = await this.oai.models.list();
-    const mappedModels = models.data.map((model) => {
-      const type = modelType(model.id);
-      const name = modelName(model.id);
-
-      return {
-        id: model.id,
-        name: name,
-        type: type,
-      };
+    const models = await this.oai.models.list({
+      timeout: 15_000,
+      maxRetries: 0,
+      headers: { "Cache-Control": "no-cache" },
     });
+    const mappedModels = models.data.map(modelFromAPI);
 
     if (type) {
       return mappedModels.filter((model) => model.type === type);
@@ -213,128 +209,9 @@ export class Client {
       "chat",
       model,
       async () => {
-        const items: OpenAI.Responses.ResponseInputItem[] = [];
-
-        for (const m of input) {
-          switch (m.role) {
-            case Role.User: {
-              const content: OpenAI.Responses.ResponseInputContent[] = [];
-
-              // Process all content parts
-              for (const part of m.content) {
-                if (part.type === "text") {
-                  content.push({ type: "input_text", text: part.text });
-                } else if (part.type === "runtime_feedback") {
-                  content.push({ type: "input_text", text: part.text });
-                } else if (part.type === "artifact_ref") {
-                  content.push({
-                    type: "input_text",
-                    text: `[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`,
-                  });
-                } else if (part.type === "image") {
-                  const imgPart = part as ImageContent;
-                  // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
-                  if (imgPart.data.startsWith("data:application/octet-stream")) continue;
-                  content.push({
-                    type: "input_image",
-                    image_url: imgPart.data,
-                    detail: "auto",
-                  });
-                } else if (part.type === "file") {
-                  const filePart = part as FileContent;
-                  if (filePart.data.startsWith("data:application/octet-stream")) continue;
-                  content.push({
-                    type: "input_file",
-                    file_data: filePart.data,
-                  });
-                } else if (part.type === "tool_result") {
-                  // Tool results in user messages go as function_call_output
-                  // Binary data (images, audio, files) is stripped and replaced with descriptions
-                  // since the model cannot process base64 data in text output
-                  const tr = part as ToolResultContent;
-                  const output = serializeToolResultForApi(tr.result);
-                  items.push({
-                    type: "function_call_output",
-                    call_id: tr.id,
-                    output: output,
-                  });
-                }
-                // Skip reasoning, tool_call in user messages
-              }
-
-              // Only add user message if there's content (not just tool results)
-              if (content.length > 0) {
-                items.push({
-                  type: "message",
-                  role: "user",
-                  content: content,
-                });
-              }
-
-              break;
-            }
-
-            case Role.Assistant: {
-              // Reasoning items are intentionally not replayed back to the API.
-              // encrypted_content is provider+key-specific and breaks on model
-              // swaps and across Azure deployments/subscriptions.
-
-              let bufferedText = "";
-
-              const flushAssistantText = () => {
-                if (!bufferedText) {
-                  return;
-                }
-
-                items.push({
-                  type: "message",
-                  role: "assistant",
-                  content: bufferedText,
-                });
-
-                bufferedText = "";
-              };
-
-              for (const part of m.content) {
-                if (part.type === "text") {
-                  bufferedText += part.text;
-                  continue;
-                }
-
-                if (part.type === "artifact_ref") {
-                  bufferedText += `\n[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`;
-                  continue;
-                }
-
-                if (part.type === "tool_call") {
-                  flushAssistantText();
-                  items.push({
-                    type: "function_call",
-                    call_id: part.id,
-                    name: part.name,
-                    arguments: part.arguments,
-                  });
-                }
-
-                if (part.type === "summary") {
-                  // Replay client-side summary as assistant text. The wrapper
-                  // tells the model the prior context was condensed and to
-                  // continue naturally without referencing the summary itself.
-                  flushAssistantText();
-                  items.push({
-                    type: "message",
-                    role: "assistant",
-                    content: `[Earlier conversation condensed to save context. Continue naturally without referencing this summary.]\n\n${part.text}`,
-                  });
-                }
-              }
-
-              flushAssistantText();
-
-              break;
-            }
-          }
-        }
+        options?.signal?.throwIfAborted();
+        const items = toResponseInput(input);
+        const requestTools = this.toTools(tools);
 
         const contentParts: Content[] = [];
 
@@ -348,12 +225,14 @@ export class Client {
           return part;
         };
 
-        const emit = () => handler?.([...contentParts]);
+        const emit = () => handler?.(contentParts.map((part) => ({ ...part })));
 
         // Track in-flight tool calls by their output index so we can grow their
         // arguments as deltas arrive. (output_index is present on every event;
         // the item id is optional and the call id isn't on the delta events.)
         const toolCallsByIndex = new Map<number, ToolCallContent>();
+        const textByIndex = new Map<number, TextContent>();
+        const phasesByIndex = new Map<number, TextContent["phase"]>();
 
         // Build and run one streaming attempt. Resets the accumulators so a
         // retry re-streams from empty and the UI overwrites the partial render
@@ -366,30 +245,35 @@ export class Client {
           const hadPartial = contentParts.length > 0;
           contentParts.length = 0;
           toolCallsByIndex.clear();
+          textByIndex.clear();
+          phasesByIndex.clear();
           if (hadPartial) emit();
 
           const runner = this.oai.responses
-            .stream({
-              model: model,
-              store: false,
-              truncation: "auto",
-              tools: this.toTools(tools),
-              input: dropOrphanFunctionCalls(items),
-              instructions: instructions,
-              ...(options?.effort
-                ? {
-                    reasoning: {
-                      effort: options.effort as OpenAI.Reasoning["effort"],
-                      summary: options.summary ?? "auto",
-                    },
-                  }
-                : {}),
-              ...(options?.verbosity
-                ? {
-                    text: { verbosity: options.verbosity },
-                  }
-                : {}),
-            })
+            .stream(
+              {
+                model: model,
+                store: false,
+                truncation: "disabled",
+                tools: requestTools,
+                input: items,
+                instructions: instructions,
+                ...(options?.effort
+                  ? {
+                      reasoning: {
+                        effort: options.effort as OpenAI.Reasoning["effort"],
+                        summary: options.summary ?? "auto",
+                      },
+                    }
+                  : {}),
+                ...(options?.verbosity
+                  ? {
+                      text: { verbosity: options.verbosity },
+                    }
+                  : {}),
+              },
+              { signal: options?.signal, maxRetries: 0 },
+            )
             .on("response.reasoning_summary_text.delta", (event) => {
               const r = ensureReasoning(event.item_id);
               r.summary = (r.summary ?? "") + event.delta;
@@ -400,19 +284,23 @@ export class Client {
               emit();
             })
             .on("response.output_text.delta", (event) => {
-              const last = contentParts[contentParts.length - 1];
-              if (last?.type === "text") {
-                last.text += event.delta;
-              } else {
-                contentParts.push({ type: "text", text: event.delta });
+              let part = textByIndex.get(event.output_index);
+              if (!part) {
+                const phase = phasesByIndex.get(event.output_index);
+                part = { type: "text", text: "", ...(phase ? { phase } : {}) };
+                textByIndex.set(event.output_index, part);
+                contentParts.push(part);
               }
+              part.text += event.delta;
               emit();
             })
             // Materialize the tool-call part as soon as the call starts, so its
             // spinner appears right after the intro instead of only once the model
             // has finished writing all the arguments.
             .on("response.output_item.added", (event) => {
-              if (event.item.type === "function_call") {
+              if (event.item.type === "message") {
+                phasesByIndex.set(event.output_index, event.item.phase ?? undefined);
+              } else if (event.item.type === "function_call") {
                 const part: ToolCallContent = {
                   type: "tool_call",
                   id: event.item.call_id,
@@ -452,21 +340,22 @@ export class Client {
               }
             });
 
-          // Wire abort. Handle the already-aborted case explicitly —
-          // addEventListener on a signal that has already fired never invokes.
-          const abortRunner = () => runner.abort();
-          if (options?.signal?.aborted) abortRunner();
-          else options?.signal?.addEventListener("abort", abortRunner, { once: true });
-
-          // Attach an error listener so mid-stream errors don't surface as
-          // unhandled EventEmitter errors. The same error rejects
-          // `finalResponse()`, where we actually handle it.
-          runner.on("error", () => {});
-
+          // The SDK's fetch timeout ends at the response headers for streams.
+          // Apply the same deadline through the terminal event so a stalled
+          // body cannot hold the chat or an interpreter bridge indefinitely.
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            runner.abort();
+          }, this.oai.timeout);
           try {
             return await runner.finalResponse();
+          } catch (error) {
+            options?.signal?.throwIfAborted();
+            if (timedOut) throw new APIConnectionTimeoutError();
+            throw error;
           } finally {
-            options?.signal?.removeEventListener("abort", abortRunner);
+            clearTimeout(timer);
           }
         };
 
@@ -474,7 +363,14 @@ export class Client {
 
         for (let attempt = 0; ; attempt++) {
           try {
+            options?.signal?.throwIfAborted();
             const finalResponse = await attemptStream();
+            options?.signal?.throwIfAborted();
+            validateResponse(finalResponse, true);
+            // The terminal response is authoritative, including providers that
+            // omit text deltas or item.done events.
+            assistant.content = responseContent(finalResponse);
+            handler?.(assistant.content.map((part) => ({ ...part })));
             assistant.usage = {
               model: finalResponse.model,
               inputTokens: finalResponse.usage?.input_tokens,
@@ -487,18 +383,12 @@ export class Client {
               response: { id: finalResponse.id, ...assistant.usage },
             };
           } catch (error) {
-            // Abort (our signal or runner.abort()) is terminal: return whatever
-            // streamed so far as a successful, partial result.
-            if (options?.signal?.aborted || isAbortError(error)) {
-              return { result: assistant, response: { id: "", model } };
-            }
-            // A stream that dropped mid-response is retryable — the SDK's own
-            // maxRetries only covers pre-stream failures. Re-send from scratch.
+            options?.signal?.throwIfAborted();
+            if (isAbortError(error)) throw error;
+            // One retry layer covers both HTTP failures and interrupted streams.
+            // Tools run only after a validated terminal response is returned.
             if (attempt < MAX_STREAM_RETRIES && isRecoverableStreamError(error)) {
               await waitBeforeStreamRetry(attempt, error, options?.signal);
-              if (options?.signal?.aborted) {
-                return { result: assistant, response: { id: "", model } };
-              }
               continue;
             }
             throw error;
@@ -591,7 +481,8 @@ export class Client {
       "summarize_history",
       requestOptions,
     );
-    return result?.summary ?? "";
+    if (!result?.summary?.trim()) throw new Error("The summarizer returned no summary.");
+    return result.summary.trim();
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
@@ -657,29 +548,50 @@ export class Client {
   }
 
   async extractText(blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    return (await this.post("/api/v1/extract", { file: blob, format: "text" }, requestOptions)).text();
+    return this.post("/api/v1/extract", { file: blob, format: "text" }, (resp) => resp.text(), requestOptions);
   }
 
   async scrape(model: string, url: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    return (
-      await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" }, requestOptions)
-    ).text();
+    return this.post(
+      "/api/v1/extract",
+      { ...(model && { model }), url, format: "text" },
+      (resp) => resp.text(),
+      requestOptions,
+    );
   }
 
-  async segmentText(text: string): Promise<string[]> {
-    const result = await (await this.post("/api/v1/segment", { text })).json();
-    if (!Array.isArray(result)) return [];
-    return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
+  async segmentText(text: string, requestOptions: ClientRequestOptions = {}): Promise<string[]> {
+    const result = await this.post("/api/v1/segment", { text }, (resp) => resp.json(), requestOptions);
+    if (!Array.isArray(result)) throw new Error("The segmentation service returned an invalid result");
+    const segments = result.map((item: unknown) =>
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object"
+          ? (item as { text?: unknown }).text
+          : undefined,
+    );
+    if (segments.some((segment) => typeof segment !== "string"))
+      throw new Error("The segmentation service returned an invalid segment");
+    const nonEmpty = (segments as string[]).filter((segment) => segment.trim());
+    if (text.trim() && !nonEmpty.length) throw new Error("The segmentation service returned no text segments");
+    return nonEmpty;
   }
 
-  async embedText(model: string, text: string): Promise<number[]> {
-    const embedding = await this.oai.embeddings.create({
-      model: model,
-      input: text,
-      encoding_format: "float",
-    });
-
-    return embedding.data[0].embedding;
+  async embedText(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<Embedding> {
+    requestOptions.signal?.throwIfAborted();
+    const embedding = await this.oai.embeddings
+      .create({ model, input: text, encoding_format: "float" }, { signal: requestOptions.signal })
+      .catch((error) => {
+        requestOptions.signal?.throwIfAborted();
+        throw error;
+      });
+    requestOptions.signal?.throwIfAborted();
+    const vector = embedding.data?.[0]?.embedding;
+    validateEmbeddingVector(vector);
+    const resolvedModel = embedding.model || model;
+    if (typeof resolvedModel !== "string" || !resolvedModel.trim())
+      throw new Error("The embedding service did not identify its model; configure an embedding model explicitly");
+    return { vector, model: resolvedModel };
   }
 
   async translate(
@@ -698,14 +610,20 @@ export class Client {
       data.append("text", input);
     }
 
-    const resp = await this.postRaw("/api/v1/translate", data, headers, 90_000, requestOptions);
-    const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
-
-    if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
-      return (await resp.text()).replace(/ß/g, "ss");
-    }
-
-    return resp.blob();
+    return this.postRaw<string | Blob>(
+      "/api/v1/translate",
+      data,
+      async (resp) => {
+        const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
+        if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
+          return (await resp.text()).replace(/ß/g, "ss");
+        }
+        return resp.blob();
+      },
+      headers,
+      90_000,
+      requestOptions,
+    );
   }
 
   async rewriteText(
@@ -715,7 +633,9 @@ export class Client {
     tone?: string,
     style?: string,
     userPrompt?: string,
+    requestOptions: ClientRequestOptions = {},
   ): Promise<string> {
+    requestOptions.signal?.throwIfAborted();
     if (!text.trim()) return text;
 
     const tones: Record<string, string> = {
@@ -746,6 +666,7 @@ export class Client {
       text,
       z.object({ rewrittenText: z.string() }).strict(),
       "rewrite_text",
+      requestOptions,
     );
     return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
   }
@@ -756,62 +677,61 @@ export class Client {
     voice?: string,
     requestOptions: ClientRequestOptions = {},
   ): Promise<Blob> {
+    requestOptions.signal?.throwIfAborted();
     if (!input.trim()) {
       throw new Error("Input text cannot be empty");
     }
 
-    const response = await this.oai.audio.speech.create(
-      {
-        model: model,
-        input: input,
+    try {
+      const response = await this.oai.audio.speech.create(
+        {
+          model: model,
+          input: input,
 
-        instructions: "Speak in a clear and natural tone.",
+          instructions: "Speak in a clear and natural tone.",
 
-        voice: voice ?? "",
-        response_format: "wav",
-      },
-      requestOptions.signal ? { signal: requestOptions.signal } : undefined,
-    );
+          voice: voice ?? "",
+          response_format: "wav",
+        },
+        requestOptions.signal ? { signal: requestOptions.signal } : undefined,
+      );
 
-    const audioBuffer = await response.arrayBuffer();
-    return new Blob([audioBuffer], { type: "audio/wav" });
+      const audioBuffer = await response.arrayBuffer();
+      requestOptions.signal?.throwIfAborted();
+      if (!audioBuffer.byteLength) throw new Error("The speech service returned empty audio");
+      return new Blob([audioBuffer], { type: "audio/wav" });
+    } catch (error) {
+      requestOptions.signal?.throwIfAborted();
+      throw error;
+    }
   }
 
-  async speakText(model: string, input: string, voice?: string, sinkId?: string): Promise<void> {
-    const audioBlob = await this.generateAudio(model, input, voice);
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    const audio = new Audio(audioUrl);
-
-    // Route to selected output device if supported
-    if (sinkId && "setSinkId" in audio) {
-      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
-    }
-
-    return new Promise((resolve, reject) => {
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        resolve();
-      };
-
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        reject(new Error("Audio playback failed"));
-      };
-
-      audio.play().catch(reject);
-    });
+  async speakText(
+    model: string,
+    input: string,
+    voice?: string,
+    sinkId?: string,
+    options: ClientRequestOptions & { onPlaying?: () => void } = {},
+  ): Promise<void> {
+    const audioBlob = await this.generateAudio(model, input, voice, options);
+    await playAudioBlob(audioBlob, { ...options, sinkId });
   }
 
   async transcribe(model: string, blob: Blob, requestOptions: ClientRequestOptions = {}): Promise<string> {
+    requestOptions.signal?.throwIfAborted();
+    if (!blob.size) throw new Error("No audio to transcribe");
     // Strip any ";codecs=…" parameter (MediaRecorder emits "audio/webm;codecs=opus").
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
-    const result = await (
-      await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) }, requestOptions)
-    ).json();
-    return result.text || "";
+    const result = await this.post(
+      "/api/v1/audio/transcriptions",
+      { file, ...(model && { model }) },
+      (resp) => resp.json(),
+      requestOptions,
+    );
+    if (typeof result?.text !== "string") throw new Error("The transcription service returned an invalid response");
+    return result.text;
   }
 
   async search(
@@ -826,8 +746,14 @@ export class Client {
     data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
 
-    const resp = await this.postRaw("/api/v1/search", data, undefined, 90_000, requestOptions);
-    const results = await resp.json();
+    const results = await this.postRaw(
+      "/api/v1/search",
+      data,
+      (resp) => resp.json(),
+      undefined,
+      90_000,
+      requestOptions,
+    );
     if (!Array.isArray(results)) return [];
 
     return results.map((result: SearchResult) => {
@@ -838,16 +764,16 @@ export class Client {
   }
 
   async guard(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<GuardResult> {
-    const resp = await this.postRaw(
+    const result = await this.postRaw(
       "/api/v1/guard",
       JSON.stringify({ ...(model && { model }), text }),
+      (resp) => resp.json(),
       {
         "Content-Type": "application/json",
       },
       90_000,
       requestOptions,
     );
-    const result = await resp.json();
     return {
       flagged: result?.flagged === true,
       categories: Array.isArray(result?.categories) ? result.categories : [],
@@ -855,9 +781,12 @@ export class Client {
   }
 
   async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    const result = await (
-      await this.post("/api/v1/research", { ...(model && { model }), instructions }, requestOptions)
-    ).json();
+    const result = await this.post(
+      "/api/v1/research",
+      { ...(model && { model }), instructions },
+      (resp) => resp.json(),
+      requestOptions,
+    );
     return result.content || "";
   }
 
@@ -882,7 +811,7 @@ export class Client {
     const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
-    return (await this.postRaw("/api/v1/render", data, headers, 300_000, requestOptions)).blob();
+    return this.postRaw("/api/v1/render", data, (resp) => resp.blob(), headers, 300_000, requestOptions);
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -939,62 +868,64 @@ export class Client {
       name,
       model,
       async () => {
-        try {
-          const response = await this.oai.responses.parse(
-            {
-              model,
-              store: false,
-              instructions,
-              input,
-              truncation: "auto",
-              text: { format: zodTextFormat(schema, name) },
-              ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
-            },
-            options.signal ? { signal: options.signal } : undefined,
-          );
-          return {
-            result: response.output_parsed ?? null,
-            response: {
-              id: response.id,
-              model: response.model,
-              inputTokens: response.usage?.input_tokens,
-              cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: response.usage?.output_tokens,
-              reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
-            },
-          };
-        } catch (error) {
-          if (isAbortError(error)) throw error;
-          console.error(`Error in ${name}:`, error);
-          return { result: null };
-        }
+        options.signal?.throwIfAborted();
+        // Select the final message before parsing: the SDK parser also parses
+        // commentary and its output_parsed getter returns the first result.
+        const response = await this.oai.responses.create(
+          {
+            model,
+            store: false,
+            instructions,
+            input,
+            truncation: "disabled",
+            text: { format: zodTextFormat(schema, name) },
+            ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
+          },
+          options.signal ? { signal: options.signal } : undefined,
+        );
+        options.signal?.throwIfAborted();
+        const text = finalResponseText(response);
+        return {
+          result: text === null ? null : schema.parse(JSON.parse(text)),
+          response: {
+            id: response.id,
+            model: response.model,
+            inputTokens: response.usage?.input_tokens,
+            cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+            outputTokens: response.usage?.output_tokens,
+            reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+          },
+        };
       },
       options.parentContext,
     );
   }
 
-  private async post(
+  private async post<T>(
     path: string,
     fields: Record<string, string | Blob>,
+    read: (resp: Response) => Promise<T>,
     requestOptions: ClientRequestOptions = {},
-  ): Promise<Response> {
+  ): Promise<T> {
     const data = new FormData();
     for (const [k, v] of Object.entries(fields)) data.append(k, v);
-    return this.postRaw(path, data, undefined, 90_000, requestOptions);
+    return this.postRaw(path, data, read, undefined, 90_000, requestOptions);
   }
 
-  private async postRaw(
+  private async postRaw<T>(
     path: string,
     data: BodyInit,
+    read: (resp: Response) => Promise<T>,
     headers?: HeadersInit,
     timeoutMs = 90_000,
     requestOptions: ClientRequestOptions = {},
-  ): Promise<Response> {
+  ): Promise<T> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
     // wedges the single interpreter worker and every queued sandbox call. Image
     // generation can legitimately run for minutes, so its caller passes a larger
     // budget (see generateImage).
+    requestOptions.signal?.throwIfAborted();
     const timeoutController = new AbortController();
     const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
     let timedOut = false;
@@ -1002,15 +933,25 @@ export class Client {
       timedOut = true;
       timeoutController.abort();
     }, timeoutMs);
-    let resp: Response;
     try {
-      resp = await fetch(new URL(path, window.location.origin), {
+      const resp = await fetch(new URL(path, window.location.origin), {
         method: "POST",
         headers,
         body: data,
         signal: combinedSignal.signal,
       });
+      if (!resp.ok) {
+        const detail = await readErrorBody(resp);
+        combinedSignal.signal?.throwIfAborted();
+        throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+      }
+      // Fetch resolves at headers. Keep cancellation and the deadline connected
+      // until the body has finished, including failed response bodies.
+      const result = await read(resp);
+      combinedSignal.signal?.throwIfAborted();
+      return result;
     } catch (error) {
+      requestOptions.signal?.throwIfAborted();
       // Surface a readable timeout instead of the runtime's opaque abort message
       // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
       if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
@@ -1019,11 +960,5 @@ export class Client {
       clearTimeout(timer);
       combinedSignal.cleanup();
     }
-
-    if (!resp.ok) {
-      const detail = await readErrorBody(resp);
-      throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
-    }
-    return resp;
   }
 }

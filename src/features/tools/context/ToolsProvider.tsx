@@ -5,7 +5,8 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
-import { armInteractiveAuth, McpAuthRequiredError } from "@/features/settings/lib/mcpAuth";
+import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
+import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
@@ -24,14 +25,10 @@ import type {
   FileContent,
   ImageContent,
   TextContent,
-  ToolContext,
   ToolProvider,
 } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
-
-const MCP_CONNECT_MAX_RETRIES = 2;
-const MCP_CONNECT_RETRY_DELAY_MS = 500;
 
 // Persisted source selection for the Skills tool: "personal" exposes the user's
 // own skills, "catalog" the shipped templates. Either, both, or neither may be on.
@@ -117,9 +114,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // MCP connection lifecycle (only MCP clients need Initializing/Failed states)
   const [mcpStates, setMcpStates] = useState<Map<string, ProviderState>>(new Map());
   const mcpStatesRef = useRef(mcpStates);
-  useEffect(() => {
-    mcpStatesRef.current = mcpStates;
-  }, [mcpStates]);
+  const updateMcpState = useCallback((id: string, state?: ProviderState) => {
+    const next = new Map(mcpStatesRef.current);
+    if (state === undefined) next.delete(id);
+    else next.set(id, state);
+    mcpStatesRef.current = next;
+    setMcpStates(next);
+  }, []);
 
   // Incremented whenever any MCP client reloads its tool list (e.g. tools/list_changed)
   const [toolsVersion, setToolsVersion] = useState(0);
@@ -386,117 +387,81 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [mcpIds, mcpStates, desiredTools, companionEnabled],
   );
 
-  // Track in-flight connection promises so callers can await an already-running connect
-  const connectPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const attemptsRef = useRef(
+    new Map<MCPClient, { controller: AbortController; promise: Promise<void> }>(),
+  );
+  const managedClientsRef = useRef(new Set<MCPClient>());
+  const releaseMcp = useCallback((client: MCPClient) => {
+    attemptsRef.current.get(client)?.controller.abort();
+    attemptsRef.current.delete(client);
+    client.onDisconnected = null;
+    client.onAuthenticating = null;
+    client.onAuthComplete = null;
+    client.onToolsChanged = null;
+    void client.disconnect().catch(console.error);
+  }, []);
 
-  // Connect/disconnect an MCP client (idempotent — skips no-ops via state ref)
   const connectMcp = useCallback(
     async (id: string, enabled: boolean) => {
-      const client = allMcpClients.find((c) => c.id === id);
+      const client = allMcpClients.find((value) => value.id === id);
       if (!client) return;
-
-      const current = mcpStatesRef.current.get(id);
-
-      if (enabled && current === ProviderState.Connected) return;
-      // If already initializing/authenticating, wait for the in-flight connection
-      // instead of returning immediately so callers get a connected client.
-      if (
-        enabled &&
-        (current === ProviderState.Initializing || current === ProviderState.Authenticating)
-      ) {
-        const pending = connectPromisesRef.current.get(id);
-        if (pending) await pending;
-        return;
-      }
-      // A prior auth attempt failed; the persisted flag survives a recreated client.
-      if (enabled && (current === ProviderState.Unauthorized || client.isAuthBlocked())) {
-        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Unauthorized));
-        return;
-      }
-      if (!enabled && (!current || current === ProviderState.Disconnected)) return;
-
-      if (enabled) {
-        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Initializing));
-        const promise = (async () => {
-          try {
-            let lastError: unknown;
-            for (let attempt = 0; attempt <= MCP_CONNECT_MAX_RETRIES; attempt++) {
-              try {
-                await client.connect();
-                setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
-                return;
-              } catch (error) {
-                if (error instanceof McpAuthRequiredError) {
-                  console.warn(`MCP ${id} requires sign-in:`, error);
-                  setMcpStates((prev) => new Map(prev).set(id, ProviderState.Unauthorized));
-                  return;
-                }
-                lastError = error;
-                if (attempt < MCP_CONNECT_MAX_RETRIES) {
-                  console.warn(
-                    `MCP ${id} connect attempt ${attempt + 1} failed, retrying...`,
-                    error,
-                  );
-                  await new Promise<void>((r) =>
-                    window.setTimeout(r, MCP_CONNECT_RETRY_DELAY_MS * (attempt + 1)),
-                  );
-                }
-              }
-            }
-            console.error(`Failed to connect MCP ${id}:`, lastError);
-            setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
-          } finally {
-            connectPromisesRef.current.delete(id);
-          }
-        })();
-        connectPromisesRef.current.set(id, promise);
-        await promise;
-      } else {
+      const pending = attemptsRef.current.get(client);
+      if (!enabled) {
+        pending?.controller.abort();
+        attemptsRef.current.delete(client);
+        updateMcpState(id, ProviderState.Disconnected);
         await client.disconnect();
-        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Disconnected));
+        return;
       }
+      if (pending) return pending.promise;
+      if (client.isConnected()) return;
+      if (mcpStatesRef.current.get(id) === ProviderState.Unauthorized || client.isAuthBlocked()) {
+        updateMcpState(id, ProviderState.Unauthorized);
+        return;
+      }
+      const controller = new AbortController();
+      updateMcpState(id, ProviderState.Initializing);
+      const promise = connectMcpWithRetry(client, controller.signal, (state) =>
+        updateMcpState(id, state),
+      ).finally(() => {
+        if (attemptsRef.current.get(client)?.controller === controller)
+          attemptsRef.current.delete(client);
+      });
+      attemptsRef.current.set(client, { controller, promise });
+      return promise;
     },
-    [allMcpClients],
+    [allMcpClients, updateMcpState],
   );
 
   // Wire up onDisconnected callbacks so ping failures update state
   // Also wire up auth lifecycle callbacks so the UI reflects Authenticating state
   useEffect(() => {
+    const next = new Set(allMcpClients);
+    for (const client of managedClientsRef.current) {
+      if (!next.has(client)) {
+        releaseMcp(client);
+        updateMcpState(client.id);
+      }
+    }
+    managedClientsRef.current = next;
     for (const client of allMcpClients) {
       // Mutating these external MCP client objects is the purpose of this effect.
       client.onDisconnected = () => {
         const state = client.isAuthBlocked() ? ProviderState.Unauthorized : ProviderState.Failed;
-        setMcpStates((prev) => new Map(prev).set(client.id, state));
+        updateMcpState(client.id, state);
       };
       client.onAuthenticating = () => {
-        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Authenticating));
+        updateMcpState(client.id, ProviderState.Authenticating);
       };
       client.onAuthComplete = () => {
         // Transition back to Initializing while the reconnection is in flight
-        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Initializing));
+        updateMcpState(client.id, ProviderState.Initializing);
       };
       client.onToolsChanged = () => {
         setToolsVersion((v) => v + 1);
       };
-      client.onElicitationComplete = null; // handled via activeToolContext; clear any stale reference
     }
-  }, [allMcpClients]);
-
-  // When a client is removed from allMcpClients, clear its stale state so
-  // re-adding it (toggle off → on) doesn't get blocked by the Connected guard.
-  useEffect(() => {
-    setMcpStates((prev) => {
-      let changed = false;
-      const next = new Map(prev);
-      for (const id of next.keys()) {
-        if (!mcpIds.has(id)) {
-          next.delete(id);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [mcpIds]);
+  }, [allMcpClients, releaseMcp, updateMcpState]);
 
   // Reconcile MCP connections with desired state (idempotent — safe to re-run)
   useEffect(() => {
@@ -504,7 +469,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       for (const id of mcpIds) {
         // Skip failed/unauthorized providers; they must be retried explicitly by the user.
         const state = mcpStatesRef.current.get(id);
-        if (state === ProviderState.Failed || state === ProviderState.Unauthorized) continue;
+        if (
+          mcpConnectionDesired.has(id) &&
+          (state === ProviderState.Failed || state === ProviderState.Unauthorized)
+        )
+          continue;
+        if (!mcpConnectionDesired.has(id) && (!state || state === ProviderState.Disconnected))
+          continue;
         connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
       }
     }, 0);
@@ -523,8 +494,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         mcpStatesRef.current.get(id) === ProviderState.Unauthorized
       ) {
         armInteractiveAuth(id);
-        mcpStatesRef.current = new Map(mcpStatesRef.current).set(id, ProviderState.Disconnected);
-        setMcpStates(mcpStatesRef.current);
+        updateMcpState(id, ProviderState.Disconnected);
       }
 
       // Companion has its own enable flag that gates desiredTools; toggling
@@ -553,7 +523,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       });
       if (mcpIds.has(id)) await connectMcp(id, enabled);
     },
-    [mcpIds, connectMcp, currentAgent, agentRequired],
+    [mcpIds, connectMcp, currentAgent, agentRequired, updateMcpState],
   );
 
   // Tool policy for the active agent: "required" = locked on (the agent's tools +
@@ -574,8 +544,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       args: Record<string, unknown>,
       result: (TextContent | ImageContent | AudioContent | FileContent)[],
       content: Record<string, unknown> | undefined,
-      context: ToolContext,
-      displayModeOptions?: import("@/features/settings/lib/mcp").DisplayModeOptions,
+      options: import("@/features/settings/lib/mcpAppSession").McpAppOptions,
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
       if (!client) {
@@ -592,24 +561,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Cannot restore tool UI: MCP client ${providerId} not connected`);
       }
 
-      await client.restoreToolUI(
-        toolName,
-        resourceUri,
-        args,
-        result,
-        content,
-        context,
-        displayModeOptions,
-      );
+      options.signal?.throwIfAborted();
+      return client.restoreToolUI(toolName, resourceUri, args, result, content, options);
     },
     [allMcpClients, connectMcp],
-  );
-
-  const setDisplayMode = useCallback(
-    (providerId: string, mode: import("@/features/settings/lib/mcp").DisplayMode) => {
-      allMcpClients.find((c) => c.id === providerId)?.applyAppDisplayMode(mode);
-    },
-    [allMcpClients],
   );
 
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
@@ -619,11 +574,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Cleanup on unmount
   useEffect(() => {
-    const clients = configMcpClients;
+    const clients = managedClientsRef;
     return () => {
-      for (const c of clients) c.disconnect().catch(console.error);
+      for (const client of clients.current) releaseMcp(client);
+      clients.current.clear();
+      mcpStatesRef.current = new Map();
     };
-  }, [configMcpClients]);
+  }, [releaseMcp]);
 
   return (
     <ToolsContext
@@ -639,7 +596,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         companionEnabled: companionEnabled,
         toggleCompanion: toggleCompanion,
         restoreToolUI,
-        setDisplayMode,
       }}
     >
       {children}

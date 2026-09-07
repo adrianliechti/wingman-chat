@@ -4,13 +4,7 @@ import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType =
-  | "completer"
-  | "embedder"
-  | "renderer"
-  | "reranker"
-  | "synthesizer"
-  | "transcriber";
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "realtime" | "synthesizer" | "transcriber";
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -100,6 +94,8 @@ export interface ToolProvider {
   readonly description?: string;
 
   readonly instructions?: string;
+  /** Request-only metadata appended to the latest human message, outside static instructions. */
+  readonly runtimeContext?: string;
 
   readonly tools: Tool[];
 }
@@ -165,20 +161,15 @@ export type ToolDisplay = {
   output?: (result: Content[]) => ToolDisplayBlock | null;
 };
 
-export interface RenderedAppHandle {
-  iframe: HTMLIFrameElement;
-  registerCleanup(cleanup: () => Promise<void> | void): void;
-}
-
 export interface ToolContext {
   model?: string;
+  chatId?: string;
   runId?: string;
   invocationContext?: AgentInvocationContext;
   signal?: AbortSignal;
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
-  render?(): Promise<RenderedAppHandle>;
   sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;
   updateMeta?(meta: Record<string, unknown>): void;
@@ -251,6 +242,9 @@ export type Content =
 
 export type TextContent = {
   type: "text";
+
+  /** Assistant output message phase; each response message stays a separate text part. */
+  phase?: "commentary" | "final_answer";
 
   text: string;
 };
@@ -336,7 +330,25 @@ export type Chat = {
   messages: Array<Message>;
 };
 
-// Helper function to extract text from content parts
+/** Sidebar metadata; conversation bodies and attachments are loaded separately. */
+export type ChatEntry = Pick<Chat, "id" | "title" | "customTitle" | "customIndex" | "created" | "updated">;
+
+/** Replace one tool's metadata without mutating earlier history snapshots. */
+export function updateToolResultMeta(messages: Message[], callId: string, meta: Record<string, unknown>): Message[] {
+  let changed = false;
+  const updated = messages.map((message) => {
+    if (!message.content.some((part) => part.type === "tool_result" && part.id === callId)) return message;
+    changed = true;
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        part.type === "tool_result" && part.id === callId ? { ...part, meta: { ...meta } } : part,
+      ),
+    };
+  });
+  return changed ? updated : messages;
+}
+
 export function getTextFromContent(content: Content[]): string {
   return content
     .filter((p): p is TextContent => p.type === "text")

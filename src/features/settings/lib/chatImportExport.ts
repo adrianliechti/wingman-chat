@@ -1,4 +1,6 @@
 import * as opfs from "@/shared/lib/opfs";
+import { storeChat, removeChat } from "@/features/chat/lib/chatStorage";
+import { readZipFiles, restoreFiles } from "@/shared/lib/opfs-restore";
 import { migrateChat } from "./v1Migration";
 
 /**
@@ -9,16 +11,22 @@ import { migrateChat } from "./v1Migration";
  * collection would pollute chats/ with folders the index rebuild then surfaces
  * as phantom chats.
  */
-export async function importChatsFromZip(file: File): Promise<void> {
-  const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(file);
-  const paths = Object.keys(zip.files).filter((p) => !opfs.isJunkZipEntry(p));
-  const looksLikeChats = paths.some((p) => /(^|\/)chat\.json$/.test(p) || p === "index.json");
-  if (!looksLikeChats) {
+export async function importChatsFromZip(file: Blob): Promise<void> {
+  const files = await readZipFiles(file);
+  const paths = [...files.keys()];
+  const prefixed = paths.some((path) => path.startsWith("chats/"));
+  const flat = files.has("chat.json");
+  const flatId = flat ? JSON.parse(await files.get("chat.json")!.text()).id || crypto.randomUUID() : undefined;
+  if (!prefixed && !paths.some((path) => /(^|\/)chat\.json$/.test(path))) {
     throw new Error("Unrecognized archive: expected a chats export.");
   }
 
-  await opfs.importFolderFromZip("chats", file);
+  const mapped = new Map<string, Blob>();
+  for (const [path, blob] of files) {
+    if (prefixed && !path.startsWith("chats/")) continue;
+    mapped.set(prefixed ? path : flat ? `chats/${flatId}/${path}` : `chats/${path}`, blob);
+  }
+  await restoreFiles(mapped);
 }
 
 /**
@@ -40,30 +48,20 @@ export async function importChatsFromLegacyJson(
   let imported = 0;
 
   for (const chatData of importData.chats) {
+    const newChatId = crypto.randomUUID();
     try {
       const migratedChat = migrateChat(chatData);
-      const newChatId = crypto.randomUUID();
-
-      const stored = await opfs.extractChatBlobs({
-        ...migratedChat,
-        id: newChatId,
-      });
-
-      await opfs.writeJson(`chats/${stored.id}/chat.json`, stored);
 
       if (chatData.artifacts && typeof chatData.artifacts === "object") {
         await opfs.saveArtifacts(newChatId, chatData.artifacts);
       }
 
-      await opfs.upsertIndexEntry("chats", {
-        id: stored.id,
-        title: stored.title,
-        updated: stored.updated || new Date().toISOString(),
-      });
+      await storeChat({ ...migratedChat, id: newChatId });
 
       imported++;
     } catch (error) {
-      console.error("Failed to import chat:", chatData, error);
+      await removeChat(newChatId).catch((cleanupError) => console.error("Import cleanup failed:", cleanupError));
+      console.error("Failed to import chat:", error);
     }
   }
 

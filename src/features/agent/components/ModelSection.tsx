@@ -2,7 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { useEffect } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatModel } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { cn } from "@/shared/lib/cn";
 import { defaultModelId } from "@/shared/lib/models";
@@ -15,7 +15,7 @@ interface ModelSectionProps {
 
 export function ModelSection({ agent }: ModelSectionProps) {
   const { updateAgent } = useAgents();
-  const { models } = useChat();
+  const { models } = useChatModel();
 
   const isRealtimeAgent = agent.model === "realtime";
 
@@ -41,14 +41,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
       : (models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel);
 
   return (
-    <Section
-      title="Model"
-      isOpen={true}
-      collapsible={false}
-      overflowVisible
-      headerClassName="pt-2"
-      key={agent.id}
-    >
+    <Section title="Model" isOpen={true} collapsible={false} overflowVisible headerClassName="pt-2" key={agent.id}>
       <ModelDropdown
         models={models}
         value={effectiveModel}

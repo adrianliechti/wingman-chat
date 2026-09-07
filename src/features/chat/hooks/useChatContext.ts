@@ -15,6 +15,7 @@ import { ProviderState } from "@/shared/types/chat";
 export interface ChatContext {
   tools: () => Promise<Tool[]>;
   instructions: () => string;
+  runtimeContext: () => string;
 }
 
 export function useChatContext(
@@ -96,8 +97,15 @@ export function useChatContext(
           .map((p: ToolProvider) => p.instructions?.trim())
           .filter((s): s is string => !!s)
           .join("\n\n");
+        const providerRuntimeContext = filteredProviders
+          .map((p: ToolProvider) => p.runtimeContext?.trim())
+          .filter((s): s is string => !!s)
+          .join("\n\n");
 
-        return [...baseTools, createSubagentTool(subagentModel, providerInstructions, baseTools)];
+        return [
+          ...baseTools,
+          createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext),
+        ];
       },
 
       instructions: () => {
@@ -144,6 +152,11 @@ export function useChatContext(
 
         return instructionsList.join("\n\n");
       },
+      runtimeContext: () =>
+        getFilteredProviders()
+          .map((provider) => provider.runtimeContext?.trim())
+          .filter(Boolean)
+          .join("\n\n"),
     };
   }, [mode, model, models, generateInstructions, providers, getProviderState, artifactsProvider, currentAgent]);
 

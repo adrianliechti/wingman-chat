@@ -1,11 +1,9 @@
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020";
 import type { Tool } from "../types/chat";
 
-function describeIssue(error: ErrorObject): string {
+function describeIssue(error: ErrorObject, tool: Tool): string {
   const missing =
-    error.keyword === "required"
-      ? (error.params as { missingProperty?: string }).missingProperty
-      : undefined;
+    error.keyword === "required" ? (error.params as { missingProperty?: string }).missingProperty : undefined;
   const extra =
     error.keyword === "additionalProperties"
       ? (error.params as { additionalProperty?: string }).additionalProperty
@@ -15,7 +13,20 @@ function describeIssue(error: ErrorObject): string {
     : extra
       ? `${error.instancePath}/${extra}`
       : error.instancePath;
-  return `$args${suffix} ${error.message ?? "is invalid"}`;
+  let hint = "";
+  if (extra && error.instancePath === "") {
+    const properties = tool.parameters.properties as Record<string, { default?: unknown }> | undefined;
+    const flag = `-${extra}`;
+    // Suggest only a declared flag with a missing hyphen. Never rewrite args or
+    // guess aliases; the caller still has to send a valid, intentional call.
+    if (properties && Object.hasOwn(properties, flag)) {
+      hint = `. Use the declared parameter ${JSON.stringify(flag)}, including the leading hyphen`;
+      if (Object.hasOwn(properties[flag], "default")) {
+        hint += `, or omit it to use its default (${JSON.stringify(properties[flag].default)})`;
+      }
+    }
+  }
+  return `$args${suffix} ${error.message ?? "is invalid"}${hint}`;
 }
 
 export class ToolRegistryError extends Error {
@@ -77,7 +88,10 @@ export class ToolRegistry {
     const validator = this.validators.get(tool);
     if (!validator) throw new ToolRegistryError(`Tool is not registered: ${tool.name}`);
     if (!validator(args)) {
-      throw new ToolArgumentValidationError(tool.name, (validator.errors ?? []).map(describeIssue));
+      throw new ToolArgumentValidationError(
+        tool.name,
+        (validator.errors ?? []).map((issue) => describeIssue(issue, tool)),
+      );
     }
     return args;
   }

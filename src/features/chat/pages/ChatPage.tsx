@@ -67,7 +67,11 @@ export function ChatPage() {
   const {
     messages,
     selectChat,
+    loadChat,
     chat,
+    chatId: selectedChatId,
+    chatLoading,
+    chatError,
     chats,
     chatsLoaded,
     isResponding,
@@ -99,7 +103,7 @@ export function ChatPage() {
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
   useEffect(() => {
-    const activeChatId = chat?.id ?? null;
+    const activeChatId = selectedChatId;
 
     if (routeChatId && routeChatId !== activeChatId) {
       // Only select the chat once chats have loaded from storage — otherwise we might
@@ -122,7 +126,7 @@ export function ChatPage() {
     }
 
     previousRouteChatIdRef.current = routeChatId;
-  }, [routeChatId, chat?.id, selectChat, chats, chatsLoaded, navigate]);
+  }, [routeChatId, selectedChatId, selectChat, chats, chatsLoaded, navigate]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
@@ -540,7 +544,25 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {messages.length === 0 ? (
+          {chatLoading || chatError ? (
+            <div
+              className="m-auto p-6 text-sm text-neutral-500"
+              role={chatError ? "alert" : "status"}
+            >
+              {chatError ?? "Loading conversation…"}
+              {chatError && selectedChatId && (
+                <button
+                  type="button"
+                  className="ml-3 underline"
+                  onClick={() => {
+                    void loadChat(selectedChatId).catch(console.error);
+                  }}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ) : messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center pt-16 relative">
               <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-16 md:mb-32">
                 {/* Logo - only show if no background image is available */}

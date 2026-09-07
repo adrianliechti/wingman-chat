@@ -109,9 +109,13 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
       const key = line.substring(0, colonIndex).trim();
       let value = line.substring(colonIndex + 1).trim();
       // Remove quotes if present
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
+      if (value.startsWith('"') && value.endsWith('"')) {
+        try {
+          value = JSON.parse(value);
+        } catch {
+          value = value.slice(1, -1);
+        }
+      } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/''/g, "'");
       frontmatter[key] = value;
     }
   }
@@ -185,8 +189,8 @@ export function parseSkillFile(content: string): SkillParseResult {
  * Serialize a skill to SKILL.md format with YAML frontmatter
  */
 export function serializeSkill(skill: Skill): string {
-  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`];
-  if (skill.compatibility) lines.push(`compatibility: ${skill.compatibility}`);
+  const lines = ["---", `name: ${skill.name}`, `description: ${JSON.stringify(skill.description)}`];
+  if (skill.compatibility) lines.push(`compatibility: ${JSON.stringify(skill.compatibility)}`);
   lines.push("---", "", skill.content);
 
   return lines.join("\n");

@@ -13,19 +13,25 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
+import type { ToolContext } from "@/shared/types/chat";
+import { combineAbortSignals } from "@/shared/lib/abortSignals";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
   signal?: AbortSignal;
   /** Override the compute-stall ceiling. */
   timeoutMs?: number;
+  /** Captured run context for model calls made by the interpreter. */
+  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext">;
 }
+
+export type BridgeRequestOptions = Pick<ExecuteCodeOptions, "signal" | "context">;
 
 export interface WorkerHostConfig {
   /** Spawn a fresh worker. Called on first use and after a crash/teardown. */
   createWorker(): Worker;
   /** Answer one worker→main RPC; the resolved value is posted back on the reply port. */
-  handleMessage(message: WorkerToMainMessage, options?: { signal?: AbortSignal }): Promise<unknown>;
+  handleMessage(message: WorkerToMainMessage, options?: BridgeRequestOptions): Promise<unknown>;
   /** Message used when the worker dies on an uncaught error. */
   crashMessage: string;
   /** Pure-compute stall ceiling before the run is treated as wedged. */
@@ -55,6 +61,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   const startupStallMs = config.startupStallMs ?? DEFAULT_STARTUP_STALL_MS;
 
   let worker: Worker | null = null;
+  let executionTail: Promise<CodeExecutionResult> | null = null;
 
   // Each in-flight execution registers a "worker died" callback so it settles
   // with an error instead of hanging on a reply port that will never arrive.
@@ -63,7 +70,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   // The in-flight execution's stall watchdog, paused while the worker is blocked
   // on a main-thread RPC (those round trips are bounded separately). Runs are
   // serialized, so a single slot suffices.
-  let activeBridge: { enter: () => void; leave: () => void; signal?: AbortSignal } | null = null;
+  let activeBridge: ({ enter: () => void; leave: () => void } & BridgeRequestOptions) | null = null;
 
   async function replyOnPort(
     port: MessagePort,
@@ -101,12 +108,19 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
         const bridge = activeBridge;
-        void replyOnPort(message.port, bridge, () => config.handleMessage(message, { signal: bridge?.signal }));
+        if (!bridge || worker !== created) {
+          message.port.close();
+          return;
+        }
+        void replyOnPort(message.port, bridge, () =>
+          config.handleMessage(message, { signal: bridge.signal, context: bridge.context }),
+        );
       });
       created.addEventListener("error", (event) => {
+        if (worker !== created) return;
         // Drop the dead worker so the next call spawns a fresh one.
         console.error("Interpreter worker error:", event.message || event);
-        if (worker === created) worker = null;
+        worker = null;
         created.terminate();
         for (const onCrash of pendingFailures) onCrash();
         pendingFailures.clear();
@@ -117,6 +131,22 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    const combined = combineAbortSignals(options?.signal, options?.context?.invocationContext?.signal);
+    const run = () => executeNow(request, { ...options, signal: combined.signal });
+    // Runtime state and bridge replies belong to exactly one execution at a time.
+    // This also covers UI runs and different chats, independently of workspace locks.
+    const result = executionTail ? executionTail.then(run, run) : run();
+    executionTail = result;
+    const clear = () => {
+      combined.cleanup();
+      if (executionTail === result) executionTail = null;
+    };
+    void result.then(clear, clear);
+    return result;
+  }
+
+  function executeNow(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
+    if (options?.signal?.aborted) return Promise.resolve({ success: false, output: "", error: "Execution cancelled" });
     const stallMs = options?.timeoutMs ?? computeStallDefault;
     const signal = options?.signal;
 
@@ -152,6 +182,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       let inFlight = 0;
       let settled = false;
       let started = false;
+      const executionController = new AbortController();
+      const bridgeSignal = combineAbortSignals(signal, executionController.signal);
 
       // A wedged run can't be interrupted cooperatively — tear the worker down
       // (next call respawns) and settle so the caller's sandbox lock releases.
@@ -178,6 +210,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         );
       };
       const bridge = {
+        signal: bridgeSignal.signal,
+        context: options?.context,
         enter: () => {
           inFlight++;
           if (timer) {
@@ -199,6 +233,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         if (activeBridge === bridge) activeBridge = null; // only the owner clears the shared slot
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
+        executionController.abort();
+        bridgeSignal.cleanup();
         port1.close();
         if (config.reuseWorker === false && worker === target) {
           worker = null;
@@ -211,7 +247,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         const reply = event.data;
         if (reply.type === "started") {
           started = true;
-          arm();
+          if (inFlight === 0) arm();
           return;
         }
         settle(reply.result);
@@ -224,9 +260,14 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         }
         signal.addEventListener("abort", onAbort, { once: true });
       }
-      activeBridge = { ...bridge, signal };
+      activeBridge = bridge;
       arm();
-      target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
+      try {
+        target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
+      } catch (error) {
+        port2.close();
+        fail(error instanceof Error ? error.message : "Unable to start code execution");
+      }
     });
   }
 

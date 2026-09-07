@@ -6,15 +6,20 @@
  */
 
 import type JSZip from "jszip";
-import { getDirectory, getRoot, type IndexEntry, readJson, readText, writeBlob, writeJson } from "./opfs-core";
+import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
+import { getDirectory, getRoot } from "./opfs-core";
 import { downloadBlob } from "./utils";
+import { flushPersistence, withPersistenceLock } from "./persistence";
+import { STORAGE_COLLECTIONS } from "./opfs-index";
+import { readZipFiles, restoreFiles } from "./opfs-restore";
+export { rebuildFolderIndex } from "./opfs-index";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
 /** Recursively add a directory handle's contents to a JSZip folder. */
-export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFolder: JSZip): Promise<void> {
+export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFolder: JSZip, path = ""): Promise<void> {
   for await (const [name, entryHandle] of handle.entries()) {
     if (entryHandle.kind === "file") {
       const file = await (entryHandle as FileSystemFileHandle).getFile();
@@ -24,7 +29,10 @@ export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFo
       if (!subFolder) {
         throw new Error(`Failed to add folder to zip: ${name}`);
       }
-      await addDirectoryToZip(entryHandle as FileSystemDirectoryHandle, subFolder);
+      const childPath = path ? `${path}/${name}` : name;
+      const copy = () => addDirectoryToZip(entryHandle as FileSystemDirectoryHandle, subFolder, childPath);
+      if (path === "chats") await withArtifactWorkspaceLock(name, copy);
+      else await copy();
     }
   }
 }
@@ -45,17 +53,7 @@ export function getZipFolder(parent: JSZip, name: string): JSZip {
  */
 export function isJunkZipEntry(path: string): boolean {
   const name = path.replace(/\/$/, "").split("/").pop();
-  return path.startsWith("__MACOSX/") || name === ".DS_Store" || name === "Thumbs.db";
-}
-
-/** Extract a single ZIP entry (directory or file) to an OPFS path. */
-export async function extractZipEntry(entry: JSZip.JSZipObject, targetPath: string): Promise<void> {
-  if (entry.dir) {
-    await getDirectory(targetPath.replace(/\/$/, ""), { create: true });
-  } else {
-    const content = await entry.async("arraybuffer");
-    await writeBlob(targetPath, new Blob([content]));
-  }
+  return path.split("/").includes("__MACOSX") || name === ".DS_Store" || name === "Thumbs.db";
 }
 
 // ============================================================================
@@ -70,13 +68,24 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
-  try {
+  await flushPersistence();
+  const collection = folderPath.split("/").filter(Boolean)[0];
+  const keys = collection ? [collection] : [...STORAGE_COLLECTIONS, "profile"];
+  const snapshot = async () => {
     const isRoot = !folderPath || folderPath === "/";
-    const folderHandle = isRoot ? await getRoot() : await getDirectory(folderPath);
-    await addDirectoryToZip(folderHandle, zip);
-  } catch {
-    // Folder doesn't exist, return empty zip
-  }
+    let folderHandle: FileSystemDirectoryHandle;
+    try {
+      folderHandle = isRoot ? await getRoot() : await getDirectory(folderPath);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") return;
+      throw error;
+    }
+    // Read failures must fail the backup, never produce a silent partial ZIP.
+    await addDirectoryToZip(folderHandle, zip, folderPath.split("/").filter(Boolean).join("/"));
+  };
+  const locked = (index: number): Promise<void> =>
+    index === keys.length ? snapshot() : withPersistenceLock(`collection:${keys[index]}`, () => locked(index + 1));
+  await locked(0);
 
   return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }
@@ -87,17 +96,15 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
  * Rebuilds the folder index automatically after import.
  */
 export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Promise<void> {
-  const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(zipBlob);
-
-  await getDirectory(folderPath, { create: true });
-
-  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-    if (isJunkZipEntry(relativePath)) continue;
-    await extractZipEntry(zipEntry, `${folderPath}/${relativePath}`);
+  const files = await readZipFiles(zipBlob);
+  const folder = folderPath.split("/").filter(Boolean).join("/");
+  const prefixed = [...files.keys()].some((path) => path.startsWith(`${folder}/`));
+  const mapped = new Map<string, Blob>();
+  for (const [path, blob] of files) {
+    if (folder && prefixed && !path.startsWith(`${folder}/`)) continue;
+    mapped.set(folder && !prefixed ? `${folder}/${path}` : path, blob);
   }
-
-  await rebuildFolderIndex(folderPath);
+  await restoreFiles(mapped);
 }
 
 /**
@@ -106,84 +113,4 @@ export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Pr
 export async function downloadFolderAsZip(folderPath: string, filename: string): Promise<void> {
   const blob = await exportFolderAsZip(folderPath);
   downloadBlob(blob, filename);
-}
-
-// ============================================================================
-// Folder Index Rebuild
-// ============================================================================
-
-/**
- * Rebuild the index for a folder-based collection by scanning its
- * subdirectories and probing for known metadata formats.
- *
- * Probe order per subfolder:
- *  1. AGENTS.md / AGENT.md  (agent collection)
- *  2. chat.json  (chat collection)
- *  3. agent.json / repository.json / metadata.json  (legacy formats)
- */
-export async function rebuildFolderIndex(collection: string): Promise<void> {
-  const entries: IndexEntry[] = [];
-
-  try {
-    const folderHandle = await getDirectory(collection);
-
-    for await (const [name, entryHandle] of folderHandle.entries()) {
-      if (name === "index.json") continue;
-
-      if (entryHandle.kind === "directory") {
-        const id = name;
-        let title = name;
-        let updated = new Date().toISOString();
-
-        // Try AGENTS.md / AGENT.md
-        try {
-          const agentMd =
-            (await readText(`${collection}/${id}/AGENTS.md`)) || (await readText(`${collection}/${id}/AGENT.md`));
-          if (agentMd) {
-            const nameMatch = agentMd.match(/^name:\s*(.+)$/m);
-            if (nameMatch) title = nameMatch[1].trim();
-            entries.push({ id, title, updated });
-            continue;
-          }
-        } catch {
-          /* not an agent folder */
-        }
-
-        // Try JSON metadata files
-        const metadataFiles = [
-          `${collection}/${id}/chat.json`,
-          `${collection}/${id}/agent.json`,
-          `${collection}/${id}/repository.json`,
-          `${collection}/${id}/metadata.json`,
-        ];
-
-        let customTitle: string | undefined;
-        for (const metaPath of metadataFiles) {
-          try {
-            const meta = await readJson<{
-              title?: string;
-              name?: string;
-              customTitle?: string;
-              updated?: string;
-              updatedAt?: string;
-            }>(metaPath);
-            if (meta) {
-              title = meta.title || meta.name || title;
-              customTitle = meta.customTitle;
-              updated = meta.updated || meta.updatedAt || updated;
-              break;
-            }
-          } catch {
-            /* try next */
-          }
-        }
-
-        entries.push({ id, title, ...(customTitle && { customTitle }), updated });
-      }
-    }
-
-    await writeJson(`${collection}/index.json`, entries);
-  } catch {
-    // Folder doesn't exist, nothing to rebuild
-  }
 }

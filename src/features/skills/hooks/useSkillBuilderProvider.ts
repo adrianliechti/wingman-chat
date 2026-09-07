@@ -22,6 +22,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         parameters: {
           type: "object",
           properties: {},
+          additionalProperties: false,
         },
         function: async () => {
           const list = skills.map((s) => ({ name: s.name, description: s.description }));
@@ -62,6 +63,7 @@ export function useSkillBuilderProvider(): ToolProvider {
             },
           },
           required: ["name", "description", "content"],
+          additionalProperties: false,
         },
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
@@ -150,6 +152,7 @@ export function useSkillBuilderProvider(): ToolProvider {
             },
           },
           required: ["name"],
+          additionalProperties: false,
         },
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
@@ -202,6 +205,7 @@ export function useSkillBuilderProvider(): ToolProvider {
             },
           },
           required: ["name"],
+          additionalProperties: false,
         },
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();

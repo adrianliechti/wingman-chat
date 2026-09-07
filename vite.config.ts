@@ -184,6 +184,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": src,
+      stream: path.resolve(src, "shared/lib/saxStreamBrowser.ts"),
     },
   },
   optimizeDeps: {

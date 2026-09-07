@@ -110,6 +110,38 @@ export async function createArtifactWorkspace(artifactModule, initial = {}) {
     return [mutation];
   };
 
+  const writeBatch = async (files) => {
+    const staged = files.map((file) => ({ ...file, path: virtualPath(file.path) }));
+    if (new Set(staged.map((file) => file.path)).size !== staged.length) {
+      throw new Error("Artifact batch contains duplicate paths");
+    }
+
+    const before = await Promise.all(staged.map(async (file) => ({ path: file.path, file: await read(file.path) })));
+    const mutationStart = mutations.length;
+    try {
+      const batchMutations = [];
+      for (const file of staged) {
+        batchMutations.push(...(await write(file.path, file.content, file.contentType)));
+      }
+      return batchMutations;
+    } catch (commitError) {
+      try {
+        for (const snapshot of before) {
+          if (snapshot.file) {
+            await writeRaw(snapshot.path, snapshot.file.content, snapshot.file.contentType);
+          } else {
+            await fs.rm(localPath(snapshot.path).absolute, { force: true });
+            contentTypes.delete(snapshot.path);
+          }
+        }
+        mutations.splice(mutationStart);
+      } catch (rollbackError) {
+        throw new AggregateError([commitError, rollbackError], "Artifact batch commit and rollback failed");
+      }
+      throw commitError;
+    }
+  };
+
   const remove = async (filePath) => {
     const normalized = virtualPath(filePath);
     const direct = await read(normalized);
@@ -157,7 +189,7 @@ export async function createArtifactWorkspace(artifactModule, initial = {}) {
     await writeRaw(filePath, content, contentType);
   }
 
-  const source = { list, read, write, remove, move };
+  const source = { list, read, write, writeBatch, remove, move };
   const artifactFs = {
     async listFiles() {
       return Promise.all((await list()).map((entry) => read(entry.path)));

@@ -2,11 +2,11 @@ import { Image } from "lucide-react";
 import mime from "mime";
 import { useCallback, useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { resolveArtifactFileSystem, type FileSystemManager } from "@/features/artifacts/lib/fs";
 import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
-import { rendererCapabilities } from "@/shared/lib/models";
+import { withRendererFallback } from "@/shared/lib/models";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
@@ -27,18 +27,6 @@ function slugify(prompt: string): string {
     .slice(0, 50)
     .replace(/-+$/g, "");
   return slug || "image";
-}
-
-/** Find an unused `/<slug>[-N].<ext>` path so generations never overwrite. */
-async function uniqueImagePath(fs: FileSystemManager, slug: string, ext: string): Promise<string> {
-  const base = `/${slug}`;
-  let path = `${base}.${ext}`;
-  let n = 1;
-  while (await fs.fileExists(path)) {
-    path = `${base}-${n}.${ext}`;
-    n += 1;
-  }
-  return path;
 }
 
 async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
@@ -76,7 +64,7 @@ export function useImageTool(): Tool | null {
   const buildTool = useCallback((): Tool => {
     const elicitation = config.renderer?.elicitation;
     const model = config.renderer?.model || "";
-    const caps = rendererCapabilities(model);
+    const caps = withRendererFallback(config.models.find((entry) => entry.id === model) ?? { id: model, name: model });
 
     // Advertise only the controls this renderer honors — the same capability
     // mapping the Canvas pickers use — so the model isn't offered aspect ratios,
@@ -93,33 +81,35 @@ export function useImageTool(): Tool | null {
         description:
           'Optional paths to image artifacts to use as references, e.g. ["/a-red-fox.png"]. Images attached to the current message are used automatically.',
       },
-      aspect_ratio: {
+    };
+    if (caps.supportedAspectRatios?.length) {
+      properties.aspect_ratio = {
         type: "string",
-        enum: caps.aspectRatios,
+        enum: caps.supportedAspectRatios,
         description:
           'Optional aspect ratio, e.g. "16:9" for widescreen or "9:16" for portrait. Snapped to the nearest the model supports. Omit for the model default (usually square).',
-      },
-    };
-    if (caps.qualities?.length) {
-      properties.quality = {
-        type: "string",
-        enum: caps.qualities,
-        description:
-          'Quality tier. Start with "low" (the default) — fast, cheap, and genuinely capable, ideal for casual requests, drafts, and iteration. Step up to "medium" for polished production assets: social/marketing graphics, logos and brand work, UI mockups, product compositing, and normal-size embedded text. Use "high" only when precision is non-negotiable — small or dense text and detailed infographics, close-up faces or identity-sensitive edits, transparent backgrounds, or large-format/print output. Higher tiers are slower and cost more.',
       };
     }
-    if (caps.resolutions?.length) {
+    if (caps.supportedQualities?.length) {
+      properties.quality = {
+        type: "string",
+        enum: caps.supportedQualities,
+        description:
+          'Quality tier. The first supported tier is the default. When available, use "low" for drafts, "medium" for polished assets, and "high" for fine detail. Higher tiers are slower and cost more.',
+      };
+    }
+    if (caps.supportedResolutions?.length) {
       properties.resolution = {
         type: "string",
-        enum: caps.resolutions,
+        enum: caps.supportedResolutions,
         description:
           'Output resolution. Leave at the default (1K) for most work; step up to "2K" or "4K" only when the deliverable is large-format or print, since higher resolutions are slower.',
       };
     }
-    if (caps.backgrounds?.length) {
+    if (caps.supportedBackgrounds?.length) {
       properties.background = {
         type: "string",
-        enum: caps.backgrounds,
+        enum: caps.supportedBackgrounds,
         description:
           'Set "transparent" for a cut-out subject with no background; "opaque" forces a solid fill. Omit for the model default.',
       };
@@ -139,8 +129,10 @@ export function useImageTool(): Tool | null {
         type: "object",
         properties,
         required: ["prompt"],
+        additionalProperties: false,
       },
       function: async (args: Record<string, unknown>, context?: ToolContext) => {
+        const activeFs = resolveArtifactFileSystem(fsRef.current, context?.chatId);
         const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
         if (!prompt) return errorResult("`prompt` is required.");
 
@@ -156,7 +148,7 @@ export function useImageTool(): Tool | null {
           const references: Blob[] = [];
           const paths = Array.isArray(args.images) ? args.images.filter((p): p is string => typeof p === "string") : [];
           for (const path of paths) {
-            const file = fsRef.current ? await fsRef.current.getFile(path) : undefined;
+            const file = activeFs ? await activeFs.getFile(path) : undefined;
             if (!file || !isDataUrl(file.content)) return errorResult(`No image artifact found at ${path}.`);
             references.push(await blobFromDataUrl(file.content));
           }
@@ -166,12 +158,10 @@ export function useImageTool(): Tool | null {
 
           const options: ImageRenderOptions = {};
           if (typeof args.aspect_ratio === "string") options.aspectRatio = args.aspect_ratio;
-          // Start low on models with quality tiers: low is fast, cheap, and capable,
-          // and the API's "auto" generation otherwise trends toward the slow, pricey
-          // "high" tier. The model steps up to medium/high explicitly (see the param
-          // doc) when the request warrants it.
-          if (caps.qualities?.length) {
-            options.quality = args.quality === "medium" || args.quality === "high" ? args.quality : "low";
+          // Default to a supported tier, including deployments that exclude low.
+          if (caps.supportedQualities?.length) {
+            options.quality =
+              caps.supportedQualities.find((quality) => quality === args.quality) ?? caps.supportedQualities[0];
           }
           if (
             args.resolution === "512" ||
@@ -194,16 +184,20 @@ export function useImageTool(): Tool | null {
           // by path, and usable by the Python tool. Best-effort — a save
           // failure must not discard a successfully generated image.
           let name: string | undefined;
-          const activeFs = fsRef.current;
           if (activeFs) {
             try {
               const ext = mime.getExtension(imageBlob.type) || "png";
-              const path = await uniqueImagePath(activeFs, slugify(prompt), ext);
-              const mutation = await activeFs.createFile(path, dataUrl, imageBlob.type || `image/${ext}`);
-              if (mutation) {
-                context?.setMeta?.({ artifactFiles: [path], artifactDelta: artifactDelta([mutation]) });
+              const saved = await activeFs.ingestFiles([
+                {
+                  path: `/${slugify(prompt)}.${ext}`,
+                  content: dataUrl,
+                  contentType: imageBlob.type || `image/${ext}`,
+                },
+              ]);
+              if (saved.mutations.length) {
+                context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });
               }
-              name = path;
+              name = saved.paths[0];
             } catch (error) {
               console.warn("Failed to save generated image to artifacts:", error);
             }
@@ -221,7 +215,7 @@ export function useImageTool(): Tool | null {
         }
       },
     };
-  }, [client, config.renderer?.elicitation, config.renderer?.model]);
+  }, [client, config.models, config.renderer?.elicitation, config.renderer?.model]);
 
   return useMemo<Tool | null>(() => (isAvailable ? buildTool() : null), [isAvailable, buildTool]);
 }

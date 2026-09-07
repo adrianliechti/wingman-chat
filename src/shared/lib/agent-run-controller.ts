@@ -134,14 +134,24 @@ export class AgentRunController {
 
   emit(event: EventInput): void {
     if (this.result) return;
-    this.onEvent?.({
-      ...event,
-      runId: this.runId,
-      invocationId: this.invocation.invocationId,
-      sequence: this.sequence++,
-      at: new Date().toISOString(),
-      ...(this.invocation.branch ? { branch: this.invocation.branch } : {}),
-    } as AgentRunEvent);
+    this.publish(event);
+  }
+
+  private publish(event: EventInput): void {
+    try {
+      this.onEvent?.({
+        ...event,
+        runId: this.runId,
+        invocationId: this.invocation.invocationId,
+        sequence: this.sequence++,
+        at: new Date().toISOString(),
+        ...(this.invocation.branch ? { branch: this.invocation.branch } : {}),
+      } as AgentRunEvent);
+    } catch (error) {
+      // Observers report progress; their failures must not change execution or
+      // turn successful tool side effects into retryable failures.
+      console.error("Agent event observer failed", error);
+    }
   }
 
   finish(
@@ -151,7 +161,6 @@ export class AgentRunController {
     error?: AgentRunError,
   ): AgentRunResult {
     if (this.result) return this.result;
-    this.emit({ type: "run.completed", status, reason: stopReason });
     const endedAt = new Date().toISOString();
     this.result = {
       runId: this.runId,
@@ -163,6 +172,7 @@ export class AgentRunController {
       modelCalls: this.invocation.budgetSnapshot(),
       ...(error ? { error } : {}),
     };
+    this.publish({ type: "run.completed", status, reason: stopReason });
     return this.result;
   }
 }

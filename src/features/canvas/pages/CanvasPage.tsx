@@ -7,7 +7,7 @@ import { useRendererModels } from "@/features/canvas/hooks/useRendererModels";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
@@ -175,10 +175,7 @@ export function CanvasPage() {
       try {
         const fetched = await Promise.all(
           files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.id);
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            return new File([blob], f.name, { type: f.mime || blob.type });
+            return downloadDriveFile(f, config.vision?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
           }),
         );
         await handleImageUpload(fetched);
@@ -186,7 +183,7 @@ export function CanvasPage() {
         setIsFetchingDrive(false);
       }
     },
-    [handleImageUpload],
+    [config.vision?.maxFileSize, handleImageUpload],
   );
 
   const removeReferenceImage = useCallback((index: number) => {

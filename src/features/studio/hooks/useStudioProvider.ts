@@ -3,6 +3,7 @@ import { useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { ArtifactJobSchema } from "@/shared/types/artifact";
 import { upsertArtifactJob } from "@/features/artifacts/lib/artifact-job-store";
+import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { useImageTool } from "@/features/studio/hooks/useImageTool";
 import { useQuestionsTool } from "@/features/studio/hooks/useQuestionsTool";
 import { ARTIFACT_DECLARATION_PARAMETERS } from "@/features/studio/lib/artifactDeclarationSchema";
@@ -44,7 +45,8 @@ export function useStudioProvider(): ToolProvider {
       strict: false,
       parameters: ARTIFACT_DECLARATION_PARAMETERS,
       function: async (args, context) => {
-        const activeFs = fsRef.current;
+        context?.signal?.throwIfAborted();
+        const activeFs = resolveArtifactFileSystem(fsRef.current, context?.chatId);
         if (!activeFs) {
           return [{ type: "text", text: JSON.stringify({ error: "Artifact workspace unavailable" }) }];
         }

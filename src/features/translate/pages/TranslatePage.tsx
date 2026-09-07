@@ -21,7 +21,7 @@ import { useTranslate } from "@/features/translate/hooks/useTranslate";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -52,6 +52,7 @@ export function TranslatePage() {
   const [promptText, setPromptText] = useState("");
   const [isPromptLoading, setIsPromptLoading] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
+  const rewriteController = useRef<AbortController | null>(null);
 
   const config = getConfig();
   const enableTTS = !!config.tts;
@@ -90,16 +91,12 @@ export function TranslatePage() {
       if (!f) return;
       setIsFetchingDrive(true);
       try {
-        const url = getDriveContentUrl(f.driveId, f.id);
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.mime || blob.type });
-        selectFile(file);
+        selectFile(await downloadDriveFile(f, config.translator?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
       } finally {
         setIsFetchingDrive(false);
       }
     },
-    [selectFile],
+    [config.translator?.maxFileSize, selectFile],
   );
 
   // Local state for editable translated text (to allow rewriting)
@@ -114,6 +111,18 @@ export function TranslatePage() {
   useEffect(() => {
     setCurrentText(translatedText);
   }, [translatedText]);
+
+  useEffect(() => {
+    rewriteController.current?.abort();
+    rewriteController.current = null;
+    setIsPromptLoading(false);
+    setPromptError(null);
+    setRewriteMenu(null);
+    setPreviewText(null);
+    return () => {
+      rewriteController.current?.abort();
+    };
+  }, [translatedText, sourceText, tone, style, selectedLanguage?.code, selectedFile]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -208,6 +217,8 @@ export function TranslatePage() {
 
     setIsPromptLoading(true);
     setPromptError(null);
+    const controller = new AbortController();
+    rewriteController.current = controller;
 
     try {
       const result = await config.client.rewriteText(
@@ -217,17 +228,23 @@ export function TranslatePage() {
         undefined, // tone
         undefined, // style
         promptText.trim(), // userPrompt
+        { signal: controller.signal },
       );
 
+      controller.signal.throwIfAborted();
       if (result) {
         setCurrentText(result);
         setPromptText(""); // Clear the prompt input after successful rewrite
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       const errorMessage = err instanceof Error ? err.message : "Failed to rewrite text";
       setPromptError(errorMessage);
     } finally {
-      setIsPromptLoading(false);
+      if (rewriteController.current === controller) {
+        rewriteController.current = null;
+        setIsPromptLoading(false);
+      }
     }
   };
 

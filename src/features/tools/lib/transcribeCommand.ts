@@ -1,7 +1,6 @@
 import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { resolveModel } from "./commandUtils";
 import { extractAudioForTranscription } from "./extractAudio";
 
 export async function runTranscribe(
@@ -9,6 +8,7 @@ export async function runTranscribe(
   path: string,
   requestOptions: { signal?: AbortSignal } = {},
 ): Promise<string> {
+  requestOptions.signal?.throwIfAborted();
   const config = getConfig();
   if (!config.stt) {
     throw new Error("transcribe: no transcription service configured");
@@ -25,7 +25,9 @@ export async function runTranscribe(
     throw new Error(`transcribe: not an audio file: ${name} — use a known audio extension like .mp3 or .wav`);
   }
 
-  const model = await resolveModel(config.stt.model, "transcriber");
+  const model = config.stt.model ?? "";
+
+  requestOptions.signal?.throwIfAborted();
 
   // Video containers carry a large video track around a small audio one. Strip
   // the video and re-encode the audio to a compact file in the browser so long
@@ -33,8 +35,9 @@ export async function runTranscribe(
   let audio: Blob;
   if (type.startsWith("video/")) {
     try {
-      audio = await extractAudioForTranscription(bytes, type, config.stt.format);
+      audio = await extractAudioForTranscription(bytes, type, config.stt.format, requestOptions.signal);
     } catch (error) {
+      requestOptions.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`transcribe: ${message}: ${name}`);
     }
@@ -42,7 +45,9 @@ export async function runTranscribe(
     audio = new Blob([bytes as BlobPart], { type });
   }
 
+  requestOptions.signal?.throwIfAborted();
   const text = await config.client.transcribe(model, audio, requestOptions);
+  requestOptions.signal?.throwIfAborted();
   console.debug(
     `transcribe: ${path} (${type}, ${bytes.length} bytes → ${audio.type}, ${audio.size} bytes) → ${text.length} chars`,
   );

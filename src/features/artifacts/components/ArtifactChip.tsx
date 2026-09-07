@@ -1,6 +1,7 @@
 import { Download, File, PanelRightOpen } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { fileExtension } from "@/shared/lib/utils";
 import { useArtifacts } from "../hooks/useArtifacts";
 
 /**
@@ -38,7 +39,7 @@ export const ArtifactChip = memo(function ArtifactChip({ path, className }: { pa
   }, [fs, path]);
 
   const name = path.split("/").pop() || path;
-  const ext = (name.includes(".") ? name.split(".").pop() : "")?.toUpperCase() ?? "";
+  const ext = fileExtension(name).toUpperCase();
 
   const handleOpen = () => {
     openFile(path);

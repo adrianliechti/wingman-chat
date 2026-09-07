@@ -1,5 +1,6 @@
 import { Loader2, Play, Square } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 
@@ -10,27 +11,50 @@ type PlayButtonProps = {
 };
 
 export function PlayButton({ text, voice, className }: PlayButtonProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
+  const controllerRef = useRef<AbortController | null>(null);
+  const isPlaying = status === "playing";
+  const isLoading = status === "loading";
   const { outputDeviceId } = useAudioDevices();
 
+  useEffect(() => {
+    setStatus("idle");
+    return () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, [text, voice, outputDeviceId]);
+
   const handlePlay = async () => {
-    if (isPlaying || isLoading) {
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+      controllerRef.current = null;
+      setStatus("idle");
       return;
     }
-
-    setIsLoading(true);
-    setIsPlaying(true);
-
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setStatus("loading");
     try {
       const config = getConfig();
       const model = config.tts?.model ?? "";
-      await config.client.speakText(model, text, voice, outputDeviceId);
+      const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
+      await config.client.speakText(model, text, resolvedVoice, outputDeviceId, {
+        signal: controller.signal,
+        onPlaying: () => {
+          if (controllerRef.current === controller) setStatus("playing");
+        },
+      });
     } catch (error) {
-      console.error("Failed to play text:", error);
+      if (!controller.signal.aborted) {
+        console.error("Failed to play text:", error);
+        notify.error("Couldn't play message", "Check your audio output and try again.");
+      }
     } finally {
-      setIsLoading(false);
-      setIsPlaying(false);
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        setStatus("idle");
+      }
     }
   };
 
@@ -41,9 +65,8 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     <button
       type="button"
       onClick={handlePlay}
-      disabled={isLoading || isPlaying}
       className={buttonClasses}
-      title={isLoading ? "Generating audio..." : isPlaying ? "Playing audio..." : "Play message"}
+      title={isLoading ? "Cancel audio generation" : isPlaying ? "Stop playback" : "Play message"}
     >
       {isLoading ? (
         <Loader2 className={`${className || "h-3 w-3"} animate-spin`} />

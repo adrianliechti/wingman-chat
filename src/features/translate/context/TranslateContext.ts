@@ -50,7 +50,7 @@ export interface TranslateContextType {
   setTargetLang: (langCode: string) => void;
   setTone: (tone: string) => void;
   setStyle: (style: string) => void;
-  performTranslate: (langCode?: string, textToTranslate?: string, tone?: string, style?: string) => Promise<void>;
+  performTranslate: () => Promise<void>;
   handleReset: () => void;
   selectFile: (file: File) => void;
   clearFile: () => void;

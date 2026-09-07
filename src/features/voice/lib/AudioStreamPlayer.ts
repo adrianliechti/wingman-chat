@@ -1,3 +1,11 @@
+import {
+  AudioResources,
+  loadAudioWorklet,
+  ownAudioNode,
+  ownAudioWorklet,
+  stopAudioTracks,
+} from "@/shared/lib/audioResources";
+
 /**
  * AudioStreamPlayer - Plays streaming PCM16 audio using AudioWorklet
  * Replacement for wavtools WavStreamPlayer
@@ -15,10 +23,10 @@ class StreamProcessor extends AudioWorkletProcessor {
     this.interruptedTrackIds = new Set();
     this.currentTrackId = null;
     this.lastPlayedTrackId = null;
-    this.playedSamples = {};
+    this.playedSamples = Object.create(null);
 
     this.port.onmessage = (e) => {
-      const { event, buffer, trackId } = e.data;
+      const { event, buffer, trackId, requestId } = e.data;
       if (event === 'write') {
         // If this track was interrupted, ignore new data for it
         if (this.interruptedTrackIds.has(trackId)) {
@@ -27,21 +35,21 @@ class StreamProcessor extends AudioWorkletProcessor {
         this.currentTrackId = trackId;
         this.buffers.push({ samples: buffer, trackId });
       } else if (event === 'interrupt') {
-        const playingTrackId = this.currentBufferTrackId || this.lastPlayedTrackId || this.currentTrackId;
+        const playingTrackId = this.currentBufferTrackId || this.buffers[0]?.trackId || this.lastPlayedTrackId;
         const wasPlaying = !!this.currentBuffer || this.buffers.length > 0;
         // Mark both the playing and the last written track as interrupted
         if (playingTrackId) {
           this.interruptedTrackIds.add(playingTrackId);
         }
-        if (this.currentTrackId) {
-          this.interruptedTrackIds.add(this.currentTrackId);
-        }
+        for (const queued of this.buffers) this.interruptedTrackIds.add(queued.trackId);
+        if (this.currentTrackId) this.interruptedTrackIds.add(this.currentTrackId);
         this.buffers = [];
         this.currentBuffer = null;
         this.currentBufferTrackId = null;
         this.currentOffset = 0;
         this.port.postMessage({
           event: 'interrupted',
+          requestId,
           trackId: playingTrackId,
           offset: playingTrackId ? (this.playedSamples[playingTrackId] || 0) : 0,
           wasPlaying,
@@ -111,6 +119,7 @@ registerProcessor('stream-processor', StreamProcessor);
 export interface AudioStreamPlayerOptions {
   sampleRate?: number;
   sinkId?: string;
+  onError?: (error: Error) => void;
 }
 
 export interface InterruptResult {
@@ -124,131 +133,133 @@ export interface InterruptResult {
 
 const NOOP_INTERRUPT: InterruptResult = { trackId: null, offsetSamples: 0, wasPlaying: false };
 
-export class AudioStreamPlayer {
-  private sampleRate: number;
-  private sinkId: string | undefined;
-  private context: AudioContext | null = null;
-  private workletNode: AudioWorkletNode | null = null;
-  private audioEl: HTMLAudioElement | null = null;
-  private pendingInterrupts: Array<(result: InterruptResult) => void> = [];
+interface PlaybackSession {
+  scope: AudioResources;
+  ready: Promise<void>;
+  node?: AudioWorkletNode;
+  interrupts: Map<number, (result: InterruptResult) => void>;
+  nextInterrupt: number;
+}
 
+export class AudioStreamPlayer {
+  private session?: PlaybackSession;
+
+  private options: AudioStreamPlayerOptions;
   constructor(options: AudioStreamPlayerOptions = {}) {
-    this.sampleRate = options.sampleRate ?? 24000;
-    this.sinkId = options.sinkId;
+    this.options = options;
   }
 
-  /**
-   * Connect to audio output and initialize AudioWorklet
-   */
-  async connect(): Promise<void> {
-    // Create AudioContext with specified sample rate
-    this.context = new AudioContext({ sampleRate: this.sampleRate });
+  connect(): Promise<void> {
+    if (this.session) return this.session.ready;
+    const session: PlaybackSession = {
+      scope: new AudioResources(),
+      ready: Promise.resolve(),
+      interrupts: new Map(),
+      nextInterrupt: 0,
+    };
+    this.session = session;
+    session.scope.own(session.interrupts, (interrupts) => {
+      for (const resolve of interrupts.values()) resolve(NOOP_INTERRUPT);
+      interrupts.clear();
+    });
+    session.ready = this.initialize(session).catch(async (error: unknown) => {
+      if (this.session === session) this.session = undefined;
+      await session.scope.close();
+      throw error;
+    });
+    return session.ready;
+  }
 
-    // Resume context if suspended (browser autoplay policy)
-    if (this.context.state === "suspended") {
-      await this.context.resume();
-    }
+  private fail(session: PlaybackSession, error: Error) {
+    if (this.session !== session) return;
+    void this.disconnect();
+    this.options.onError?.(error);
+  }
 
-    // Create Blob URL for worklet code
-    const blob = new Blob([streamProcessorCode], { type: "application/javascript" });
-    const workletUrl = URL.createObjectURL(blob);
-
-    try {
-      // Load the worklet module
-      await this.context.audioWorklet.addModule(workletUrl);
-    } finally {
-      // Clean up blob URL
-      URL.revokeObjectURL(workletUrl);
-    }
-
-    // Create and connect the worklet node
-    this.workletNode = new AudioWorkletNode(this.context, "stream-processor");
-
-    this.workletNode.port.onmessage = (e) => {
-      if (e.data?.event === "interrupted") {
-        const resolve = this.pendingInterrupts.shift();
-        resolve?.({
-          trackId: (e.data.trackId as string | undefined) ?? null,
-          offsetSamples: (e.data.offset as number | undefined) ?? 0,
-          wasPlaying: !!e.data.wasPlaying,
-        });
-      }
+  private async initialize(session: PlaybackSession): Promise<void> {
+    const { scope } = session;
+    const context = scope.own(new AudioContext({ sampleRate: this.options.sampleRate ?? 24000 }), (context) =>
+      context.close(),
+    );
+    if (context.state === "suspended") await scope.wait(context.resume());
+    scope.signal.throwIfAborted();
+    await loadAudioWorklet(scope, context, streamProcessorCode);
+    scope.signal.throwIfAborted();
+    const node = ownAudioWorklet(
+      scope,
+      new AudioWorkletNode(context, "stream-processor", { numberOfInputs: 0, outputChannelCount: [1] }),
+    );
+    scope.listen(node, "processorerror", () => this.fail(session, new Error("The playback audio processor failed.")));
+    node.port.onmessage = (event) => {
+      if (scope.signal.aborted || event.data?.event !== "interrupted") return;
+      session.interrupts.get(event.data.requestId)?.({
+        trackId: event.data.trackId ?? null,
+        offsetSamples: event.data.offset ?? 0,
+        wasPlaying: !!event.data.wasPlaying,
+      });
     };
 
-    // Route to a specific output device via MediaStream + HTMLAudioElement,
-    // which has broader setSinkId support than AudioContext.setSinkId.
-    if (this.sinkId) {
-      const dest = this.context.createMediaStreamDestination();
-      this.workletNode.connect(dest);
-
+    if (this.options.sinkId) {
+      const destination = ownAudioNode(scope, context.createMediaStreamDestination());
+      scope.own(destination.stream, stopAudioTracks);
       const audio = new Audio();
-      audio.srcObject = dest.stream;
-
+      scope.own(audio, (audio) => {
+        audio.srcObject = null;
+      });
+      scope.own(audio, (audio) => audio.pause());
+      scope.listen(audio, "error", () =>
+        this.fail(session, new Error("Audio output failed. Please select an output device and restart.")),
+      );
+      audio.srcObject = destination.stream;
+      node.connect(destination);
       if ("setSinkId" in audio) {
-        try {
-          await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(this.sinkId);
-        } catch (err) {
-          console.warn("Failed to set output device, falling back to default:", err);
-        }
+        // Surface a missing/denied output device instead of silently playing somewhere else.
+        await scope.wait(audio.setSinkId(this.options.sinkId));
       }
-
-      audio.play().catch(console.warn);
-      this.audioEl = audio;
+      scope.signal.throwIfAborted();
+      await scope.wait(audio.play());
     } else {
-      this.workletNode.connect(this.context.destination);
+      node.connect(context.destination);
     }
+    scope.signal.throwIfAborted();
+    session.node = node;
   }
 
-  /**
-   * Add PCM16 audio data for playback
-   */
   add16BitPCM(samples: Int16Array, trackId: string): void {
-    if (!this.workletNode) {
-      return;
+    const session = this.session;
+    if (!session?.node || samples.length === 0) return;
+    try {
+      session.node.port.postMessage({ event: "write", buffer: samples, trackId });
+    } catch {
+      this.fail(session, new Error("Couldn't send audio to the playback processor."));
     }
-
-    this.workletNode.port.postMessage({
-      event: "write",
-      buffer: samples,
-      trackId,
-    });
   }
 
-  /**
-   * Interrupt current playback. Resolves with the playback position of the
-   * interrupted track so callers can truncate server-side conversation state.
-   */
   interrupt(): Promise<InterruptResult> {
-    const node = this.workletNode;
-    if (!node) {
-      return Promise.resolve(NOOP_INTERRUPT);
-    }
+    const session = this.session;
+    if (!session?.node) return Promise.resolve(NOOP_INTERRUPT);
     return new Promise((resolve) => {
-      this.pendingInterrupts.push(resolve);
-      node.port.postMessage({ event: "interrupt" });
+      const requestId = ++session.nextInterrupt;
+      const timeout = setTimeout(
+        () => this.fail(session, new Error("The audio playback processor stopped responding.")),
+        2000,
+      );
+      session.interrupts.set(requestId, (result) => {
+        clearTimeout(timeout);
+        session.interrupts.delete(requestId);
+        resolve(result);
+      });
+      try {
+        session.node!.port.postMessage({ event: "interrupt", requestId });
+      } catch {
+        this.fail(session, new Error("Couldn't interrupt audio playback."));
+      }
     });
   }
 
-  /**
-   * Disconnect and clean up resources
-   */
-  disconnect(): void {
-    // Settle outstanding interrupts — the worklet will never answer them.
-    for (const resolve of this.pendingInterrupts.splice(0)) {
-      resolve(NOOP_INTERRUPT);
-    }
-    if (this.audioEl) {
-      this.audioEl.pause();
-      this.audioEl.srcObject = null;
-      this.audioEl = null;
-    }
-    if (this.workletNode) {
-      this.workletNode.disconnect();
-      this.workletNode = null;
-    }
-    if (this.context) {
-      void this.context.close();
-      this.context = null;
-    }
+  disconnect(): Promise<void> {
+    const session = this.session;
+    this.session = undefined;
+    return session?.scope.close() ?? Promise.resolve();
   }
 }

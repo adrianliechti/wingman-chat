@@ -27,7 +27,7 @@ function unescapeSeq(body: string, escChar: string, replacement: string): string
 }
 
 describe("tool argument recovery", () => {
-  it("identifies create_file content instead of its path as the payload", () => {
+  it("identifies create content instead of its path as the payload", () => {
     expect(toolArgumentHints(createFileParameters)).toEqual({
       payloadKey: "content",
       otherKeys: ["path"],
@@ -542,18 +542,18 @@ describe("tool argument recovery", () => {
     }
   });
 
-  it("does not misidentify edit_file's path as its dominant text payload", () => {
+  it("does not misidentify edit's path as its dominant text payload", () => {
     const parameters = {
       type: "object",
       properties: {
-        path: { type: "string" },
         edits: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              find: { type: "string" },
-              replace: { type: "string" },
+              file_path: { type: "string" },
+              old_string: { type: "string" },
+              new_string: { type: "string" },
               replace_all: { type: ["boolean", "null"] },
             },
           },
@@ -561,16 +561,16 @@ describe("tool argument recovery", () => {
       },
     };
     const malformed =
-      `{"path":"/index.html","edits":[` +
-      `{"find":"<h1 class="old">Hi</h1>","replace":"<h1 class="new">Hello</h1>","replace_all":false}]}`;
+      `{"edits":[{"file_path":"/index.html",` +
+      `"old_string":"<h1 class="old">Hi</h1>","new_string":"<h1 class="new">Hello</h1>","replace_all":false}]}`;
 
-    expect(toolArgumentHints(parameters)).toEqual({ declaredKeys: ["path", "edits"] });
+    expect(toolArgumentHints(parameters)).toEqual({ declaredKeys: ["edits"] });
     expect(parseToolArguments(malformed, toolArgumentHints(parameters))).toEqual({
-      path: "/index.html",
       edits: [
         {
-          find: `<h1 class="old">Hi</h1>`,
-          replace: `<h1 class="new">Hello</h1>`,
+          file_path: "/index.html",
+          old_string: `<h1 class="old">Hi</h1>`,
+          new_string: `<h1 class="new">Hello</h1>`,
           replace_all: false,
         },
       ],

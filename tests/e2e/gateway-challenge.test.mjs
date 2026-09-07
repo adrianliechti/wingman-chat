@@ -85,6 +85,7 @@ function artifactJob(kind, primaryPath, runId, sourceRefs = []) {
 
 function productionFileTools(workspace) {
   return fileToolsModule.createFileTools(workspace.source, {
+    namespace: "artifacts",
     validators: validatorsModule.ARTIFACT_VALIDATORS,
   });
 }
@@ -514,10 +515,10 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               `Complete this exact artifact workflow with the file tools:
 1. Read /brief.txt and use its token.
 2. Create /result.json with the intentionally invalid content {"token":"ORBIT-731",}.
-3. Observe the JSON validation error, read /result.json to get its revision, then repair it with edit_file so its final JSON is exactly {"token":"ORBIT-731","status":"ready","value":42}.
+3. Observe the JSON validation error, inspect /result.json, then repair it with artifacts_edit so its final JSON is exactly {"token":"ORBIT-731","status":"ready","value":42}.
 4. Create /assets/note.txt containing exactly source=ORBIT-731, then move it to /sources/note.txt.
-5. List all files and only then reply with exactly ARTIFACT_WORKFLOW_OK.
-Do not skip the intentional invalid write or its edit_file repair.`,
+5. List all files with artifacts_glob using the pattern **/* and only then reply with exactly ARTIFACT_WORKFLOW_OK.
+Do not skip the intentional invalid write or its edit repair.`,
               [user("Build and validate the artifact fixture.")],
               tools,
               {
@@ -538,11 +539,17 @@ Do not skip the intentional invalid write or its edit_file repair.`,
             assert.equal(await workspace.read("/assets/note.txt"), undefined);
 
             const names = contentParts(result.messages, "tool_call").map((part) => part.name);
-            for (const required of ["read_file", "create_file", "edit_file", "move_file", "list_files"]) {
+            for (const required of [
+              "artifacts_read",
+              "artifacts_create",
+              "artifacts_edit",
+              "artifacts_move",
+              "artifacts_glob",
+            ]) {
               assert(names.includes(required), `The workflow never called ${required}`);
             }
             assert(
-              resultTexts(result.messages, "create_file").some((text) => text.includes("validation errors")),
+              resultTexts(result.messages, "artifacts_create").some((text) => text.includes("validation errors")),
               "The intentionally invalid JSON did not surface validation feedback",
             );
             assert(
