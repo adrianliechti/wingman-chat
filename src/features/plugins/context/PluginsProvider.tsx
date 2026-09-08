@@ -22,28 +22,25 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
       .finally(() => setIsLoaded(true));
   }, []);
 
-  const installPlugin = useCallback(
-    async (hubUrl: string, plugin: HubPlugin): Promise<InstalledPlugin> => {
-      const { skills, mcpServers } = await downloadHubPlugin(hubUrl, plugin);
-      const installed: InstalledPlugin = {
-        id: plugin.id,
-        title: plugin.title,
-        version: plugin.version,
-        description: plugin.description,
-        keywords: plugin.keywords,
-        mcpServers: mcpServers.length ? mcpServers : undefined,
-        hubUrl,
-        installedAt: new Date().toISOString(),
-        skills,
-      };
+  const installPlugin = useCallback(async (hubUrl: string, plugin: HubPlugin): Promise<InstalledPlugin> => {
+    const { skills, mcpServers } = await downloadHubPlugin(hubUrl, plugin);
+    const installed: InstalledPlugin = {
+      id: plugin.id,
+      title: plugin.title,
+      version: plugin.version,
+      description: plugin.description,
+      keywords: plugin.keywords,
+      mcpServers: mcpServers.length ? mcpServers : undefined,
+      hubUrl,
+      installedAt: new Date().toISOString(),
+      skills,
+    };
 
-      const iconDataUrl = await savePlugin(installed, plugin.icon);
-      const saved = iconDataUrl ? { ...installed, icon: iconDataUrl } : installed;
-      setPlugins((prev) => [...prev.filter((p) => p.id !== saved.id), saved]);
-      return saved;
-    },
-    [],
-  );
+    const iconDataUrl = await savePlugin(installed, plugin.icon);
+    const saved = iconDataUrl ? { ...installed, icon: iconDataUrl } : installed;
+    setPlugins((prev) => [...prev.filter((p) => p.id !== saved.id), saved]);
+    return saved;
+  }, []);
 
   const uninstallPlugin = useCallback(
     async (id: string): Promise<void> => {
@@ -62,9 +59,7 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
   const getPlugin = useCallback((id: string) => plugins.find((p) => p.id === id), [plugins]);
 
   return (
-    <PluginsContext.Provider
-      value={{ plugins, isLoaded, installPlugin, uninstallPlugin, getPlugin }}
-    >
+    <PluginsContext.Provider value={{ plugins, isLoaded, installPlugin, uninstallPlugin, getPlugin }}>
       {children}
     </PluginsContext.Provider>
   );

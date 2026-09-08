@@ -105,9 +105,7 @@ async function loadResources(skillDir: string): Promise<SkillResource[]> {
     const blob = await readBlob(`${skillDir}/${path}`);
     if (!blob) continue;
     const contentType = inferContentTypeFromPath(path) || blob.type || undefined;
-    const content = isTextContentType(contentType)
-      ? await blob.text()
-      : await blobToDataUrl(blob, contentType);
+    const content = isTextContentType(contentType) ? await blob.text() : await blobToDataUrl(blob, contentType);
     resources.push({ path, content, contentType });
   }
   return resources;
@@ -137,8 +135,7 @@ export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Pro
       const raw = await resp.blob();
       const ext = EXT_BY_MIME[contentType ?? ""] ?? "png";
       iconFile = `icon.${ext}`;
-      const blob =
-        contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
+      const blob = contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
       await writeBlob(`${pluginDir}/${iconFile}`, blob);
       iconDataUrl = await blobToDataUrl(blob, contentType ?? blob.type);
     } catch {
@@ -195,8 +192,7 @@ export async function loadPlugin(id: string): Promise<InstalledPlugin | undefine
   let iconDataUrl: string | undefined;
   if (manifest.icon) {
     const blob = await readBlob(`${pluginDir}/${manifest.icon}`);
-    if (blob)
-      iconDataUrl = await blobToDataUrl(blob, inferContentTypeFromPath(manifest.icon) ?? blob.type);
+    if (blob) iconDataUrl = await blobToDataUrl(blob, inferContentTypeFromPath(manifest.icon) ?? blob.type);
   }
 
   return {

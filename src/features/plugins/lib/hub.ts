@@ -42,7 +42,6 @@ interface PluginSummary {
   icon?: string;
 }
 
-/** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
 function normalizeHubUrl(hubUrl: string): string {
   const u = new URL(hubUrl);
   u.hash = "";
@@ -62,6 +61,7 @@ function resolveHubUrl(path: string, hubUrl: string): URL {
   return resolved;
 }
 
+/** Fetch and cache a hub's plugin catalog. Failed/empty results aren't cached, so a later call retries. */
 export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
   hubUrl = normalizeHubUrl(hubUrl);
   const cached = catalogCache.get(hubUrl);

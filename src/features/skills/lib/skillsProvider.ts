@@ -122,10 +122,7 @@ export interface SkillsProviderMeta {
  *
  * Returns null when there are no entries to expose.
  */
-export function createSkillsProvider(
-  entries: SkillEntry[],
-  meta: SkillsProviderMeta,
-): ToolProvider | null {
+export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): ToolProvider | null {
   if (entries.length === 0) return null;
 
   const byName = new Map(entries.map((e) => [entryKey(e.plugin, e.name), e]));
@@ -194,8 +191,7 @@ export function createSkillsProvider(
                 plugin: {
                   type: "string",
                   enum: pluginIds,
-                  description:
-                    "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
                 },
               }
             : {}),
@@ -207,9 +203,7 @@ export function createSkillsProvider(
         const skillName = args.name as string;
         const pluginId = typeof args.plugin === "string" && args.plugin ? args.plugin : undefined;
         if (!skillName) {
-          return [
-            { type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) },
-          ];
+          return [{ type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) }];
         }
         const entry = byName.get(entryKey(pluginId, skillName));
         if (!entry) {
@@ -249,9 +243,7 @@ export function createSkillsProvider(
           icon: FileCode2,
           label: state.error ? "Resource unavailable" : "Read skill resource",
           preview:
-            typeof args?.name === "string" && typeof args?.path === "string"
-              ? `${args.name}/${args.path}`
-              : undefined,
+            typeof args?.name === "string" && typeof args?.path === "string" ? `${args.name}/${args.path}` : undefined,
         }),
         input: () => [],
         output: (result) => {
@@ -279,9 +271,7 @@ export function createSkillsProvider(
         properties: {
           name: {
             type: "string",
-            enum: entries
-              .filter((entry) => entry.resources?.length && entry.loadResource)
-              .map((entry) => entry.name),
+            enum: entries.filter((entry) => entry.resources?.length && entry.loadResource).map((entry) => entry.name),
             description: "The name of the skill that owns the resource.",
           },
           path: {
@@ -293,8 +283,7 @@ export function createSkillsProvider(
                 plugin: {
                   type: "string",
                   enum: pluginIds,
-                  description:
-                    "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
                 },
               }
             : {}),
@@ -383,9 +372,7 @@ export function createSkillsProvider(
     description: meta.description,
     icon: Sparkles,
     instructions:
-      skillsPrompt
-        .replace("{resourcesGuidance}", resourcesGuidance)
-        .replace("{skillsXml}", skillsXml) || undefined,
+      skillsPrompt.replace("{resourcesGuidance}", resourcesGuidance).replace("{skillsXml}", skillsXml) || undefined,
     tools,
   };
 }

@@ -1,14 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import {
-  Funnel,
-  Puzzle,
-  Search,
-  Settings2,
-  Sparkles,
-  ToggleLeft,
-  ToggleRight,
-  X,
-} from "lucide-react";
+import { Funnel, Puzzle, Search, Settings2, Sparkles, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
@@ -35,9 +26,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
   const filteredSkills = useMemo(() => {
     const q = filterSearch.trim().toLowerCase();
     if (!q) return allSkills;
-    return allSkills.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-    );
+    return allSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [allSkills, filterSearch]);
 
   const skillsEnabled = agentSkillIds.size > 0;
@@ -52,9 +41,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
 
   const togglePlugin = (pluginId: string) => {
     const current = agent.plugins || [];
-    const next = current.includes(pluginId)
-      ? current.filter((id) => id !== pluginId)
-      : [...current, pluginId];
+    const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
     updateAgent(agent.id, { plugins: next });
   };
 
@@ -229,18 +216,14 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                   <ul className="flex-1 overflow-y-auto">
                     {filteredSkills.length === 0 && (
                       <li className="px-5 py-6 text-xs text-center text-neutral-400 dark:text-neutral-500">
-                        {allSkills.length === 0
-                          ? "No skills available"
-                          : "No skills match your search"}
+                        {allSkills.length === 0 ? "No skills available" : "No skills match your search"}
                       </li>
                     )}
                     {filteredSkills.map((skill) => {
                       const active = agentSkillIds.has(skill.name);
                       const toggle = () => {
                         const current = agent.skills || [];
-                        const next = active
-                          ? current.filter((n) => n !== skill.name)
-                          : [...current, skill.name];
+                        const next = active ? current.filter((n) => n !== skill.name) : [...current, skill.name];
                         updateAgent(agent.id, { skills: next });
                       };
                       return (
@@ -250,10 +233,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                         >
                           <div className="flex w-full items-center gap-3 pl-5 pr-3 py-3">
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                              <Sparkles
-                                size={16}
-                                className="text-neutral-400 dark:text-neutral-500"
-                              />
+                              <Sparkles size={16} className="text-neutral-400 dark:text-neutral-500" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">

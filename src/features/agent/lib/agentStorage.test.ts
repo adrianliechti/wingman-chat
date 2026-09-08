@@ -207,9 +207,7 @@ describe("agent storage", () => {
     };
     await storeAgent(value);
     const before = new Map(
-      await Promise.all(
-        [...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const),
-      ),
+      await Promise.all([...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const)),
     );
     let failed = false;
     memory.beforeWrite = async (path) => {
@@ -222,15 +220,11 @@ describe("agent storage", () => {
       storeAgent({
         ...value,
         name: "After",
-        files: [
-          { ...value.files[0], text: "after", segments: [{ text: "new chunk", vector: [3, 4] }] },
-        ],
+        files: [{ ...value.files[0], text: "after", segments: [{ text: "new chunk", vector: [3, 4] }] }],
       }),
     ).rejects.toThrow("quota");
     const after = new Map(
-      await Promise.all(
-        [...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const),
-      ),
+      await Promise.all([...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const)),
     );
     expect(after).toEqual(before);
     expect((await loadAgent("agent"))!.files![0].text).toBe("before");

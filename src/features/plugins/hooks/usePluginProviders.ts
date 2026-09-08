@@ -37,8 +37,7 @@ export function usePluginProviders(agent: Agent | null): PluginProviders {
 
     const existingIds = new Set(clientsRef.current.map((c) => c.id));
     const desiredIds = new Set(desired.keys());
-    const needsUpdate =
-      existingIds.size !== desiredIds.size || clientsRef.current.some((c) => !desiredIds.has(c.id));
+    const needsUpdate = existingIds.size !== desiredIds.size || clientsRef.current.some((c) => !desiredIds.has(c.id));
 
     if (!needsUpdate) return;
 
@@ -69,9 +68,7 @@ export function usePluginProviders(agent: Agent | null): PluginProviders {
 
     const mcpClientsByProvider = new Map<string, string[]>();
     for (const plugin of plugins) {
-      const clientIds = (plugin.mcpServers ?? [])
-        .filter((s) => s.url)
-        .map((s) => pluginMcpClientId(plugin.id, s.name));
+      const clientIds = (plugin.mcpServers ?? []).filter((s) => s.url).map((s) => pluginMcpClientId(plugin.id, s.name));
       if (clientIds.length) mcpClientsByProvider.set(pluginProviderId(plugin.id), clientIds);
     }
 

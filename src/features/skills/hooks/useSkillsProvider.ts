@@ -48,20 +48,14 @@ export function useSkillsProvider(
 
     // 1. General catalog — no-agent only.
     if (!agent && sources.catalog) {
-      entries.push(
-        ...templateEntries(templates, loadTemplate, (t) => !isStudioSkillCategory(t.category)),
-      );
+      entries.push(...templateEntries(templates, loadTemplate, (t) => !isStudioSkillCategory(t.category)));
     }
     // 2. Studio skill pack — whenever the capability is on, in either mode.
     if (studioEnabled) {
       entries.push(...studioTemplateEntries(templates, loadTemplate));
     }
     // 3. Personal library — an agent's curated subset, or the full library.
-    const personal = agent
-      ? skills.filter((s) => agent.skills.includes(s.name))
-      : sources.personal
-        ? skills
-        : [];
+    const personal = agent ? skills.filter((s) => agent.skills.includes(s.name)) : sources.personal ? skills : [];
     entries.push(...libraryEntries(personal));
 
     // Single dedup: last push wins, so precedence is exactly the order above.
@@ -75,14 +69,5 @@ export function useSkillsProvider(
       name: "Skills",
       description: agent ? "Specialized agent skills" : "Available skills",
     });
-  }, [
-    agent,
-    skills,
-    templates,
-    loadTemplate,
-    sources.personal,
-    sources.catalog,
-    studioEnabled,
-    activePlugins,
-  ]);
+  }, [agent, skills, templates, loadTemplate, sources.personal, sources.catalog, studioEnabled, activePlugins]);
 }

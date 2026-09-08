@@ -418,9 +418,7 @@ export function LibraryDialog({
                     <div
                       className={cn(
                         "relative flex min-h-0 flex-1 flex-col",
-                        showPlugins
-                          ? "order-2 border-t border-neutral-200/60 dark:border-neutral-800/60"
-                          : "order-1",
+                        showPlugins ? "order-2 border-t border-neutral-200/60 dark:border-neutral-800/60" : "order-1",
                         showPlugins && !isPluginListScrollable && "mt-6",
                       )}
                     >
@@ -712,7 +710,9 @@ export function LibraryDialog({
                                   <div className="flex flex-col items-center gap-3 text-center">
                                     <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
                                     <div>
-                                      <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">No skills yet</p>
+                                      <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                                        No skills yet
+                                      </p>
                                       <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
                                         Skills extend what your agents can do
                                       </p>

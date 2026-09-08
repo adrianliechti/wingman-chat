@@ -114,9 +114,7 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
   let model: string | undefined;
   let memory: boolean | undefined;
 
-  const mdContent =
-    (await opfs.readText(`${agentPath}/AGENTS.md`)) ||
-    (await opfs.readText(`${agentPath}/AGENT.md`));
+  const mdContent = (await opfs.readText(`${agentPath}/AGENTS.md`)) || (await opfs.readText(`${agentPath}/AGENT.md`));
   if (mdContent) {
     const parsed = parseAgentMd(mdContent);
     if (!parsed) throw new Error(`Invalid agent definition in ${agentPath}/AGENTS.md`);
@@ -209,8 +207,7 @@ async function loadAgentFile(agentId: string, fileId: string): Promise<Repositor
 
   if (segmentTexts && vectorsBlob) {
     const buffer = await vectorsBlob.arrayBuffer();
-    if (buffer.byteLength % 4 !== 0 || buffer.byteLength < 4)
-      throw new Error(`Invalid embeddings in ${filePath}`);
+    if (buffer.byteLength % 4 !== 0 || buffer.byteLength < 4) throw new Error(`Invalid embeddings in ${filePath}`);
     const floats = new Float32Array(buffer);
     const vectorDim = floats[0];
     if (

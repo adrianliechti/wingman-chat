@@ -30,9 +30,7 @@ export function PluginsSection({ agent }: PluginsSectionProps) {
 
   const togglePlugin = (pluginId: string) => {
     const current = agent.plugins || [];
-    const next = current.includes(pluginId)
-      ? current.filter((id) => id !== pluginId)
-      : [...current, pluginId];
+    const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
     updateAgent(agent.id, { plugins: next });
   };
 

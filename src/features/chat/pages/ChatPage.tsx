@@ -7,10 +7,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { AgentButton } from "@/features/chat/components/AgentButton";
-import {
-  ChatConsentBackdrop,
-  ChatConsentBanner,
-} from "@/features/chat/components/ChatConsentOverlay";
+import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
@@ -149,13 +146,8 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const {
-    showSkillCatalog,
-    skillCatalogTarget,
-    skillCatalogSection,
-    skillCatalogReadOnly,
-    closeSkillCatalog,
-  } = useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
+    useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
 
@@ -163,9 +155,7 @@ export function ChatPage() {
     (skillName: string) => {
       if (!currentAgent) return;
       const current = currentAgent.skills ?? [];
-      const next = current.includes(skillName)
-        ? current.filter((n) => n !== skillName)
-        : [...current, skillName];
+      const next = current.includes(skillName) ? current.filter((n) => n !== skillName) : [...current, skillName];
       updateAgent(currentAgent.id, { skills: next });
     },
     [currentAgent, updateAgent],
@@ -213,8 +203,7 @@ export function ChatPage() {
     useDrawerAnimation(showAgentDrawer);
   const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } =
     useDrawerAnimation(showArtifactsDrawer);
-  const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } =
-    useDrawerAnimation(showAppDrawer);
+  const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } = useDrawerAnimation(showAppDrawer);
 
   // Track if we're on mobile for drawer positioning
   const isMobile = !useMediaQuery("(min-width: 768px)");
@@ -241,11 +230,7 @@ export function ChatPage() {
           ? (appWidthVw / 100) * window.innerWidth
           : 0,
     setSiblingWidthVw: (widthVw) =>
-      showArtifactsDrawer
-        ? setArtifactsWidthVw(widthVw)
-        : showAppDrawer
-          ? setAppWidthVw(widthVw)
-          : undefined,
+      showArtifactsDrawer ? setArtifactsWidthVw(widthVw) : showAppDrawer ? setAppWidthVw(widthVw) : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
     setShow: setShowAgentDrawer,
   });
@@ -331,11 +316,7 @@ export function ChatPage() {
   // Right-edge offset for content (chat column + footer) that must clear the open
   // right-side drawer(s). Both the main margin and the fixed footer use this, so it
   // lives in one place to stay in sync. `null` when nothing needs offsetting.
-  const drawerSiblingVw = showAppDrawer
-    ? appWidthVw
-    : showArtifactsDrawer
-      ? artifactsWidthVw
-      : null;
+  const drawerSiblingVw = showAppDrawer ? appWidthVw : showArtifactsDrawer ? artifactsWidthVw : null;
   const contentRightOffset = isMobile
     ? undefined
     : drawerSiblingVw !== null
@@ -345,9 +326,7 @@ export function ChatPage() {
         : undefined;
   // Whether the drawer driving that offset is mid-drag (so the footer tracks instantly).
   const isContentOffsetResizing =
-    isAgentResizing ||
-    (showAppDrawer && isAppResizing) ||
-    (showArtifactsDrawer && isArtifactsResizing);
+    isAgentResizing || (showAppDrawer && isAppResizing) || (showArtifactsDrawer && isArtifactsResizing);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar, sidebarWidth, isSidebarResizing } = useSidebar();
@@ -545,10 +524,7 @@ export function ChatPage() {
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {chatLoading || chatError ? (
-            <div
-              className="m-auto p-6 text-sm text-neutral-500"
-              role={chatError ? "alert" : "status"}
-            >
+            <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (
                 <button
@@ -568,16 +544,8 @@ export function ChatPage() {
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
-                    <img
-                      src="/logo_light.svg"
-                      alt="Wingman Chat"
-                      className="h-24 w-24 opacity-70 dark:hidden"
-                    />
-                    <img
-                      src="/logo_dark.svg"
-                      alt="Wingman Chat"
-                      className="h-24 w-24 opacity-70 hidden dark:block"
-                    />
+                    <img src="/logo_light.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 dark:hidden" />
+                    <img src="/logo_dark.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 hidden dark:block" />
                   </div>
                 )}
               </div>
@@ -595,9 +563,7 @@ export function ChatPage() {
               <div
                 className={cn(
                   "px-3 pt-18 transition-[max-width] duration-150 ease-out",
-                  layoutMode === "wide"
-                    ? "max-w-full md:max-w-[80vw] mx-auto"
-                    : "max-content-width",
+                  layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
               >
@@ -607,13 +573,9 @@ export function ChatPage() {
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].content.find(
-                        (p) => p.type === "tool_result",
-                      );
+                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
                       const groupKey =
-                        first && "id" in first
-                          ? `group:${first.id}`
-                          : `group:${messageRenderKeys[unit.indices[0]]}`;
+                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
                           <ChatToolGroup messages={messages} indices={unit.indices} />
@@ -625,11 +587,7 @@ export function ChatPage() {
                     // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
                     const dataRole = isToolResultMessage(message) ? "tool" : message.role;
                     return (
-                      <div
-                        key={messageRenderKeys[index]}
-                        className="flow-root"
-                        data-role={dataRole}
-                      >
+                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
                         <ChatMessage
                           index={index}
                           message={message}
@@ -669,12 +627,7 @@ export function ChatPage() {
         )}
         style={{
           // Offset past the (resizable) sidebar so the input never sits under it.
-          ...(!isMobile &&
-          showSidebar &&
-          chats.length > 0 &&
-          !showAgentDrawer &&
-          !showAppDrawer &&
-          !showArtifactsDrawer
+          ...(!isMobile && showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
             ? { left: sidebarWidth + 12 }
             : {}),
           // Offset past the open right-side drawer(s); track the edge instantly while dragging.

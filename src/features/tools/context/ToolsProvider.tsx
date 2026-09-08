@@ -7,29 +7,16 @@ import { useInternetProvider } from "@/features/research/hooks/useInternetProvid
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
 import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
-import {
-  SKILL_BUILDER_ID,
-  useSkillBuilderProvider,
-} from "@/features/skills/hooks/useSkillBuilderProvider";
+import { SKILL_BUILDER_ID, useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import {
-  PLUGIN_PROVIDER_PREFIX,
-  pluginMcpClientId,
-  pluginProviderId,
-} from "@/features/plugins/lib/pluginProvider";
+import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
-import type {
-  AudioContent,
-  FileContent,
-  ImageContent,
-  TextContent,
-  ToolProvider,
-} from "@/shared/types/chat";
+import type { AudioContent, FileContent, ImageContent, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
 
@@ -68,9 +55,7 @@ function loadSavedTools(): Set<string> {
     const raw = localStorage.getItem(TOOLS_STORAGE_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? new Set(parsed.filter((id): id is string => typeof id === "string"))
-      : new Set();
+    return Array.isArray(parsed) ? new Set(parsed.filter((id): id is string => typeof id === "string")) : new Set();
   } catch {
     return new Set();
   }
@@ -101,9 +86,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Source selection for the global Skills tool (persisted). The tool is enabled
   // whenever at least one source is on — see mcpConnectionDesired below.
-  const [skillSources, setSkillSourcesState] = useState<SkillSources>(() =>
-    loadSavedSkillSources(),
-  );
+  const [skillSources, setSkillSourcesState] = useState<SkillSources>(() => loadSavedSkillSources());
   const setSkillSources = useCallback((sources: SkillSources) => {
     setSkillSourcesState(sources);
     try {
@@ -130,9 +113,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Config MCP clients (created once)
   const [configMcpClients] = useState<MCPClient[]>(() =>
-    (config.mcps || []).map(
-      (mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon),
-    ),
+    (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
   );
 
   // Relative MCPs are proxied through `/api/v1/mcp/{id}` and gated by backend
@@ -140,9 +121,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // explicit url point elsewhere and are always shown.
   const relativeMcpIds = useMemo(() => {
     const base = new URL("/api/v1/mcp/", window.location.origin).toString();
-    return new Set(
-      (config.mcps || []).filter((mcp) => mcp.url.startsWith(base)).map((mcp) => mcp.id),
-    );
+    return new Set((config.mcps || []).filter((mcp) => mcp.url.startsWith(base)).map((mcp) => mcp.id));
   }, [config.mcps]);
 
   // MCP ids the backend reports as available (RBAC-filtered), mirroring how
@@ -167,8 +146,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const visibleConfigMcpClients = useMemo(
     () =>
       configMcpClients.filter(
-        (client) =>
-          !relativeMcpIds.has(client.id) || !availableMcpIds || availableMcpIds.has(client.id),
+        (client) => !relativeMcpIds.has(client.id) || !availableMcpIds || availableMcpIds.has(client.id),
       ),
     [configMcpClients, relativeMcpIds, availableMcpIds],
   );
@@ -207,8 +185,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Studio's skill pack must surface when the capability is on — a required tool
   // (currentAgent.tools), a session addition, or the global userTools selection.
-  const studioEnabled =
-    activeSelection.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
+  const studioEnabled = activeSelection.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
 
   const {
     providers: agentProviders,
@@ -239,12 +216,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [installedPlugins, pluginRequiredIds, activeSelection],
   );
 
-  const skillsProvider = useSkillsProvider(
-    currentAgent,
-    skillSources,
-    studioEnabled,
-    activePlugins,
-  );
+  const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled, activePlugins);
 
   // Drop selections for plugins that are no longer installed, so an uninstalled
   // plugin's provider and MCP server ids don't linger in persisted storage.
@@ -259,9 +231,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }
     }
     const prune = (prev: Set<string>) => {
-      const stale = [...prev].filter(
-        (id) => id.startsWith(PLUGIN_PROVIDER_PREFIX) && !liveIds.has(id),
-      );
+      const stale = [...prev].filter((id) => id.startsWith(PLUGIN_PROVIDER_PREFIX) && !liveIds.has(id));
       if (stale.length === 0) return prev;
       const next = new Set(prev);
       for (const id of stale) next.delete(id);
@@ -279,13 +249,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       ...agentMcpClients,
       ...pluginMcpClients,
     ],
-    [
-      visibleConfigMcpClients,
-      companionAvailable,
-      companionClient,
-      agentMcpClients,
-      pluginMcpClients,
-    ],
+    [visibleConfigMcpClients, companionAvailable, companionClient, agentMcpClients, pluginMcpClients],
   );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
@@ -395,9 +359,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [mcpIds, mcpStates, desiredTools, companionEnabled],
   );
 
-  const attemptsRef = useRef(
-    new Map<MCPClient, { controller: AbortController; promise: Promise<void> }>(),
-  );
+  const attemptsRef = useRef(new Map<MCPClient, { controller: AbortController; promise: Promise<void> }>());
   const managedClientsRef = useRef(new Set<MCPClient>());
   const releaseMcp = useCallback((client: MCPClient) => {
     attemptsRef.current.get(client)?.controller.abort();
@@ -429,12 +391,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }
       const controller = new AbortController();
       updateMcpState(id, ProviderState.Initializing);
-      const promise = connectMcpWithRetry(client, controller.signal, (state) =>
-        updateMcpState(id, state),
-      ).finally(() => {
-        if (attemptsRef.current.get(client)?.controller === controller)
-          attemptsRef.current.delete(client);
-      });
+      const promise = connectMcpWithRetry(client, controller.signal, (state) => updateMcpState(id, state)).finally(
+        () => {
+          if (attemptsRef.current.get(client)?.controller === controller) attemptsRef.current.delete(client);
+        },
+      );
       attemptsRef.current.set(client, { controller, promise });
       return promise;
     },
@@ -477,13 +438,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       for (const id of mcpIds) {
         // Skip failed/unauthorized providers; they must be retried explicitly by the user.
         const state = mcpStatesRef.current.get(id);
-        if (
-          mcpConnectionDesired.has(id) &&
-          (state === ProviderState.Failed || state === ProviderState.Unauthorized)
-        )
+        if (mcpConnectionDesired.has(id) && (state === ProviderState.Failed || state === ProviderState.Unauthorized))
           continue;
-        if (!mcpConnectionDesired.has(id) && (!state || state === ProviderState.Disconnected))
-          continue;
+        if (!mcpConnectionDesired.has(id) && (!state || state === ProviderState.Disconnected)) continue;
         connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
       }
     }, 0);
@@ -500,11 +457,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
       // Re-enabling after a failed auth reopens the popup; update the ref synchronously
       // since connectMcp below reads it before the setMcpStates re-render lands.
-      if (
-        enabled &&
-        mcpIds.has(id) &&
-        mcpStatesRef.current.get(id) === ProviderState.Unauthorized
-      ) {
+      if (enabled && mcpIds.has(id) && mcpStatesRef.current.get(id) === ProviderState.Unauthorized) {
         armInteractiveAuth(id);
         updateMcpState(id, ProviderState.Disconnected);
       }
