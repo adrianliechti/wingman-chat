@@ -2,7 +2,7 @@ import { useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
-import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
+import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
@@ -146,9 +146,21 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogReadOnly, closeSkillCatalog } = useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
+    useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
+  const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
+
+  const handlePluginToggle = useCallback(
+    (pluginId: string) => {
+      if (!currentAgent) return;
+      const current = currentAgent.plugins ?? [];
+      const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
+      updateAgent(currentAgent.id, { plugins: next });
+    },
+    [currentAgent, updateAgent],
+  );
 
   const handleSkillToggle = useCallback(
     (skillName: string) => {
@@ -795,14 +807,17 @@ export function ChatPage() {
           </div>
         </div>
       </div>
-      <SkillCatalog
+      <LibraryDialog
         isOpen={showSkillCatalog}
         onClose={closeSkillCatalog}
         enabledSkillNames={agentSkillIds}
         onToggle={currentAgent && !skillCatalogReadOnly ? handleSkillToggle : undefined}
+        enabledPluginIds={agentPluginIds}
+        onTogglePlugin={currentAgent && !skillCatalogReadOnly ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}
+        initialSection={skillCatalogSection}
       />
     </div>
   );

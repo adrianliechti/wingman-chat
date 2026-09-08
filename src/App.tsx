@@ -3,6 +3,7 @@ import { AgentProvider } from "./features/agent/context/AgentProvider";
 import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
 import { ChatProvider } from "./features/chat/context/ChatProvider";
 import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
+import { PluginsProvider } from "./features/plugins/context/PluginsProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
 import { SkillsProvider } from "./features/skills/context/SkillsProvider";
 import { ToolsProvider } from "./features/tools/context/ToolsProvider";
@@ -29,6 +30,7 @@ const providers = [
   { key: "BackgroundProvider", Provider: BackgroundProvider },
   { key: "ProfileProvider", Provider: ProfileProvider },
   { key: "SkillsProvider", Provider: SkillsProvider },
+  { key: "PluginsProvider", Provider: PluginsProvider },
   { key: "SidebarProvider", Provider: SidebarProvider },
   { key: "NavigationProvider", Provider: NavigationProvider },
   { key: "ArtifactsProvider", Provider: ArtifactsProvider },

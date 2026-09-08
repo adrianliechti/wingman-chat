@@ -77,7 +77,7 @@ export async function exportSingleAgentAsZip(
 function importedAgent(value: unknown, id: string): Agent {
   if (!value || typeof value !== "object") throw new Error("Invalid agent record");
   const data = value as Partial<Agent>;
-  for (const list of [data.skills, data.tools, data.servers, data.files]) {
+  for (const list of [data.skills, data.plugins, data.tools, data.servers, data.files]) {
     if (list !== undefined && !Array.isArray(list)) throw new Error("Invalid agent list in backup");
   }
   return {
@@ -85,6 +85,7 @@ function importedAgent(value: unknown, id: string): Agent {
     id,
     name: typeof data.name === "string" ? data.name : "Imported Agent",
     skills: data.skills ?? [],
+    plugins: data.plugins ?? [],
     tools: data.tools ?? [],
     servers: data.servers ?? [],
     files: data.files?.map((file) => ({

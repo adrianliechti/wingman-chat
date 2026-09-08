@@ -7,6 +7,7 @@ export function serializeAgentMd(agent: Agent): string {
   lines.push(`name: ${JSON.stringify(agent.name)}`);
   if (agent.model) lines.push(`model: ${JSON.stringify(agent.model)}`);
   if (agent.skills.length > 0) lines.push(`skills: ${JSON.stringify(agent.skills)}`);
+  if (agent.plugins.length > 0) lines.push(`plugins: ${JSON.stringify(agent.plugins)}`);
   if (agent.tools.length > 0) lines.push(`tools: ${JSON.stringify(agent.tools)}`);
   if (agent.memory) lines.push("memory: true");
   lines.push("---");
@@ -22,6 +23,7 @@ export function parseAgentMd(content: string):
       name: string;
       model?: string;
       skills: string[];
+      plugins: string[];
       tools: string[];
       memory?: boolean;
       instructions?: string;
@@ -79,6 +81,7 @@ export function parseAgentMd(content: string):
   return {
     name: parseString(fields.name) || "Untitled",
     skills: parseList(fields.skills),
+    plugins: parseList(fields.plugins),
     tools: parseList(fields.tools),
     model: parseString(fields.model),
     memory: fields.memory === "true",

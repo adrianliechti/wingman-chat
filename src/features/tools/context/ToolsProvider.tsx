@@ -7,9 +7,12 @@ import { useInternetProvider } from "@/features/research/hooks/useInternetProvid
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
 import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
-import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
+import { SKILL_BUILDER_ID, useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
+import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
@@ -193,9 +196,50 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Built-in providers
   const internetProvider = useInternetProvider();
   const artifactsProvider = useArtifactsProvider();
-  const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled);
   const studioProvider = useStudioProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
+  const {
+    plugins: installedPlugins,
+    requiredIds: pluginRequiredIds,
+    mcpClients: pluginMcpClients,
+    mcpClientsByProvider: pluginMcpClientsByProvider,
+  } = usePluginProviders(currentAgent);
+
+  // A plugin's skills surface through read_skill once it's enabled: required by the
+  // agent, or turned on in the active selection.
+  const activePlugins = useMemo(
+    () =>
+      installedPlugins.filter((p) => {
+        const id = pluginProviderId(p.id);
+        return pluginRequiredIds.has(id) || activeSelection.has(id);
+      }),
+    [installedPlugins, pluginRequiredIds, activeSelection],
+  );
+
+  const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled, activePlugins);
+
+  // Drop selections for plugins that are no longer installed, so an uninstalled
+  // plugin's provider and MCP server ids don't linger in persisted storage.
+  const { isLoaded: pluginsLoaded } = usePlugins();
+  useEffect(() => {
+    if (!pluginsLoaded) return;
+    const liveIds = new Set<string>();
+    for (const plugin of installedPlugins) {
+      liveIds.add(pluginProviderId(plugin.id));
+      for (const server of plugin.mcpServers ?? []) {
+        liveIds.add(pluginMcpClientId(plugin.id, server.name));
+      }
+    }
+    const prune = (prev: Set<string>) => {
+      const stale = [...prev].filter((id) => id.startsWith(PLUGIN_PROVIDER_PREFIX) && !liveIds.has(id));
+      if (stale.length === 0) return prev;
+      const next = new Set(prev);
+      for (const id of stale) next.delete(id);
+      return next;
+    };
+    setUserTools(prune);
+    setSessionTools(prune);
+  }, [pluginsLoaded, installedPlugins]);
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(
@@ -203,8 +247,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       ...visibleConfigMcpClients,
       ...(companionAvailable && companionClient ? [companionClient] : []),
       ...agentMcpClients,
+      ...pluginMcpClients,
     ],
-    [visibleConfigMcpClients, companionAvailable, companionClient, agentMcpClients],
+    [visibleConfigMcpClients, companionAvailable, companionClient, agentMcpClients, pluginMcpClients],
   );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
@@ -213,12 +258,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     saveTools(userTools);
   }, [userTools]);
 
-  // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges)
+  // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges, plugins)
   const agentRequired = useMemo(() => {
     const ids = new Set(agentTools);
     for (const p of agentProviders) ids.add(p.id);
+    for (const id of pluginRequiredIds) ids.add(id);
     return ids;
-  }, [agentTools, agentProviders]);
+  }, [agentTools, agentProviders, pluginRequiredIds]);
 
   // What the user + agent + companion want connected (ignores model overrides intentionally).
   // Used by the reconciliation effect to control MCP lifecycle — model-level tool filtering
@@ -231,6 +277,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // on agent select — the global selection does not carry in). The agent's own
     // tools are then unioned via agentRequired as the enforced floor.
     const merged = new Set<string>(activeSelection);
+    // Skill Builder is a core capability: it is available in every chat and is
+    // deliberately not part of the user's or agent's mutable tool selection.
+    merged.add(SKILL_BUILDER_ID);
     // The Skills tool's connection tracks the assembled provider: it's non-null
     // exactly when some source, the Studio pack, or an agent's curated set has
     // skills to expose — so no source/agent branching is needed here.
@@ -238,14 +287,30 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
+    // Connect plugin MCP servers whenever their plugin provider is desired.
+    for (const [providerId, clientIds] of pluginMcpClientsByProvider) {
+      if (merged.has(providerId)) {
+        for (const clientId of clientIds) merged.add(clientId);
+      }
+    }
     return merged;
-  }, [activeSelection, skillsProvider, agentRequired, modelEnabledTools, companionAvailable, companionEnabled]);
+  }, [
+    activeSelection,
+    skillsProvider,
+    agentRequired,
+    modelEnabledTools,
+    companionAvailable,
+    companionEnabled,
+    pluginMcpClientsByProvider,
+  ]);
 
   // Full desired set including model overrides — used by getProviderState for non-MCP
   // built-in providers (internet, canvas, …) which have no lifecycle to manage.
   const desiredTools = useMemo(() => {
     const merged = new Set(mcpConnectionDesired);
     for (const id of modelDisabledTools) merged.delete(id);
+    // Model tool allow/deny lists do not suppress this core capability.
+    merged.add(SKILL_BUILDER_ID);
     return merged;
   }, [mcpConnectionDesired, modelDisabledTools]);
 
@@ -262,12 +327,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (artifactsProvider) list.push(artifactsProvider);
     // The single Skills tool (one read_skill surface): an agent's curated subset
     // under an agent, the selected global sources otherwise, plus the Studio pack
-    // when the capability is on. Assembled by useSkillsProvider; null when empty.
+    // when the capability is on, plus enabled plugins' bundled skills.
     if (skillsProvider) list.push(skillsProvider);
     list.push(skillBuilderProvider);
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
+    list.push(...pluginMcpClients);
     return list;
   }, [
     internetProvider,
@@ -279,6 +345,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     companionAvailable,
     companionClient,
     agentProviders,
+    pluginMcpClients,
     toolsVersion,
   ]);
 
@@ -384,6 +451,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
+      // Skill Builder is always enabled and intentionally has no user-facing
+      // toggle. Keep this guard for callers outside the chat-input menu.
+      if (id === SKILL_BUILDER_ID && !enabled) return;
+
       // Re-enabling after a failed auth reopens the popup; update the ref synchronously
       // since connectMcp below reads it before the setMcpStates re-render lands.
       if (enabled && mcpIds.has(id) && mcpStatesRef.current.get(id) === ProviderState.Unauthorized) {
@@ -424,7 +495,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // its always-on providers); "optional" = the user toggles it freely. Everything
   // is "optional" with no agent.
   const getProviderPolicy = useCallback(
-    (id: string): "required" | "optional" => (currentAgent && agentRequired.has(id) ? "required" : "optional"),
+    (id: string): "required" | "optional" =>
+      id === SKILL_BUILDER_ID || (currentAgent && agentRequired.has(id)) ? "required" : "optional",
     [currentAgent, agentRequired],
   );
 

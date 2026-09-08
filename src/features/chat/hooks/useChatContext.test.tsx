@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
 import { useChatContext, type ChatContext } from "./useChatContext";
 
-const state = vi.hoisted(() => ({ activeFile: "/first.md" }));
+const state = vi.hoisted(() => ({ activeFile: "/first.md", providers: [] as ToolProvider[] }));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
 vi.mock("@/features/settings/hooks/useProfile", () => ({
   useProfile: () => ({ generateInstructions: () => "Profile instructions" }),
@@ -11,7 +11,7 @@ vi.mock("@/features/settings/hooks/useProfile", () => ({
 vi.mock("@/features/tools/lib/llmCommand", () => ({ setModel: vi.fn() }));
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ chat: {} }) }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({
-  useToolsContext: () => ({ providers: [], getProviderState: () => "connected" }),
+  useToolsContext: () => ({ providers: state.providers, getProviderState: () => "connected" }),
 }));
 vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({
   useArtifactsProvider: (): ToolProvider => ({
@@ -36,6 +36,7 @@ function context(model: Model = { id: "test", name: "Test" }): ChatContext {
 describe("chat prompt context", () => {
   beforeEach(() => {
     state.activeFile = "/first.md";
+    state.providers = [];
   });
 
   it("changing the active file leaves the complete static system instructions unchanged", () => {
@@ -55,5 +56,27 @@ describe("chat prompt context", () => {
     const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["artifacts"] } });
     expect(disabled.instructions()).not.toContain("Static artifact instructions");
     expect(disabled.runtimeContext()).toBe("");
+  });
+
+  it("keeps Skill Builder available when the model excludes it", async () => {
+    state.providers = [
+      {
+        id: "skill-builder",
+        name: "Skill Builder",
+        instructions: "Skill Builder instructions",
+        tools: [
+          {
+            name: "list_skills",
+            description: "List skills",
+            parameters: { type: "object", properties: {} },
+            function: async () => [],
+          },
+        ],
+      },
+    ];
+
+    const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["skill-builder"] } });
+    expect(disabled.instructions()).toContain("Skill Builder instructions");
+    expect(await disabled.tools()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "list_skills" })]));
   });
 });

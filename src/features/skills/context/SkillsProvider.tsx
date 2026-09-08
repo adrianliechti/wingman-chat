@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 import * as opfs from "@/shared/lib/opfs";
+import type { LibrarySection } from "@/features/agent/components/LibraryDialog";
 import { usePersistentCollection } from "@/shared/hooks/usePersistentCollection";
 import type { Skill } from "./SkillsContext";
 import { SkillsContext } from "./SkillsContext";
@@ -40,11 +41,13 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
 
   const [showSkillCatalog, setShowSkillCatalog] = useState(false);
   const [skillCatalogTarget, setSkillCatalogTarget] = useState<string | null>(null);
+  const [skillCatalogSection, setSkillCatalogSection] = useState<LibrarySection>("skills");
   const [skillCatalogReadOnly, setSkillCatalogReadOnly] = useState(false);
 
-  const openSkillCatalog = useCallback((name?: string, readOnly?: boolean) => {
+  const openSkillCatalog = useCallback((name?: string, readOnly?: boolean, section?: LibrarySection) => {
     setSkillCatalogTarget(name ?? null);
     setSkillCatalogReadOnly(readOnly ?? false);
+    setSkillCatalogSection(section ?? "skills");
     setShowSkillCatalog(true);
   }, []);
 
@@ -52,6 +55,7 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
     setShowSkillCatalog(false);
     setSkillCatalogTarget(null);
     setSkillCatalogReadOnly(false);
+    setSkillCatalogSection("skills");
   }, []);
 
   return (
@@ -64,6 +68,7 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
         getSkill,
         showSkillCatalog,
         skillCatalogTarget,
+        skillCatalogSection,
         skillCatalogReadOnly,
         openSkillCatalog,
         closeSkillCatalog,

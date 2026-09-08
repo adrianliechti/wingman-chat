@@ -108,6 +108,7 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
   let name = "Untitled";
   let instructions: string | undefined;
   let skills: string[] = [];
+  let plugins: string[] = [];
   let tools: string[] = [];
   let servers: BridgeServer[] = [];
   let model: string | undefined;
@@ -121,6 +122,7 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
       name = parsed.name;
       instructions = parsed.instructions;
       skills = parsed.skills;
+      plugins = parsed.plugins;
       tools = parsed.tools;
       model = parsed.model;
       memory = parsed.memory || undefined;
@@ -180,6 +182,7 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
     name,
     instructions,
     skills,
+    plugins,
     servers,
     tools,
     model,

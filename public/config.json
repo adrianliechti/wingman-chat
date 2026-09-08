@@ -1,5 +1,8 @@
 {
   "navigation": true,
+  "plugins": {
+    "url": "http://localhost:8080"
+  },
   "vision": {},
   "stt": {},
   "tts": {},

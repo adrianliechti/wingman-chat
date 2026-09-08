@@ -4,7 +4,14 @@ import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { loadAgent, storeAgent, parseAgentMd, serializeAgentMd } from "./agentStorage";
 
 const memory = new MemoryOpfs();
-const agent = (): Agent => ({ id: "agent", name: "Agent", skills: [], tools: [], servers: [] });
+const agent = (): Agent => ({
+  id: "agent",
+  name: "Agent",
+  skills: [],
+  plugins: [],
+  tools: [],
+  servers: [],
+});
 beforeEach(() => {
   memory.reset();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
@@ -41,7 +48,16 @@ describe("agent storage", () => {
     async (status) => {
       await storeAgent({
         ...agent(),
-        files: [{ id: "file", name: "notes.txt", status, progress: 40, text: "Extracted", uploadedAt: new Date() }],
+        files: [
+          {
+            id: "file",
+            name: "notes.txt",
+            status,
+            progress: 40,
+            text: "Extracted",
+            uploadedAt: new Date(),
+          },
+        ],
       });
       const writes = memory.closed.length;
       expect((await loadAgent("agent"))!.files![0]).toMatchObject({
@@ -86,6 +102,7 @@ describe("agent storage", () => {
       name: value.name,
       model: value.model,
       skills: value.skills,
+      plugins: [],
       tools: value.tools,
       memory: true,
       instructions: value.instructions,
@@ -121,7 +138,14 @@ describe("agent storage", () => {
   it("removes files from authoritative membership before cleanup and preserves unrelated memory", async () => {
     const value = agent();
     value.files = [
-      { id: "file", name: "x.txt", status: "completed", progress: 100, uploadedAt: new Date(), text: "old" },
+      {
+        id: "file",
+        name: "x.txt",
+        status: "completed",
+        progress: 100,
+        uploadedAt: new Date(),
+        text: "old",
+      },
     ];
     await storeAgent(value);
     memory.put("agents/agent/MEMORY.md", "Remember");
@@ -136,7 +160,13 @@ describe("agent storage", () => {
     memory.put("agents/agent/AGENTS.md", serializeAgentMd(agent()));
     memory.put(
       "agents/agent/files/file/metadata.json",
-      JSON.stringify({ id: "file", name: "a.txt", status: "completed", progress: 100, uploadedAt: "2026-01-01" }),
+      JSON.stringify({
+        id: "file",
+        name: "a.txt",
+        status: "completed",
+        progress: 100,
+        uploadedAt: "2026-01-01",
+      }),
     );
     const value = await loadAgent("agent");
     expect(value!.files![0].path).toBeTruthy();

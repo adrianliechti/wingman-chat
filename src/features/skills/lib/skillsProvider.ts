@@ -41,12 +41,19 @@ export const isStudioSkillCategory = (category: string): boolean => category ===
 export interface SkillEntry {
   name: string;
   description: string;
+  /** Owning plugin id, when the skill comes from an installed plugin. */
+  plugin?: string;
   /** Optional environment requirements (agentskills `compatibility` frontmatter). */
   compatibility?: string;
   /** Bundled resource paths relative to the skill folder, e.g. "scripts/extract.py". */
   resources?: string[];
   loadContent: () => string | Promise<string>;
   loadResource?: (path: string) => string | null | Promise<string | null>;
+}
+
+/** Lookup key so a plugin skill never shadows a personal skill of the same name. */
+function entryKey(plugin: string | undefined, name: string): string {
+  return `${plugin ?? ""}\u0000${name}`;
 }
 
 /**
@@ -118,24 +125,25 @@ export interface SkillsProviderMeta {
 export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): ToolProvider | null {
   if (entries.length === 0) return null;
 
-  const byName = new Map(entries.map((e) => [e.name, e]));
+  const byName = new Map(entries.map((e) => [entryKey(e.plugin, e.name), e]));
   const hasResources = entries.some((e) => e.resources?.length && e.loadResource);
+  const pluginIds = [...new Set(entries.map((e) => e.plugin).filter((p): p is string => !!p))];
 
   // Let the interpreter mount resources from this provider's resolved skill
   // set. The user/session owns that selection (for an agent this is its curated
   // agent.skills list); the model only chooses which mounted script to run.
-  // Safe to set here because only one skills provider is active at a time.
   setSkillResourceResolver(
+    meta.id,
     hasResources
       ? async () => {
           const files: ArtifactFiles = {};
-          for (const [name, entry] of byName) {
+          for (const entry of byName.values()) {
             if (!entry?.resources?.length || !entry.loadResource) continue;
             for (const path of entry.resources) {
               const content = await entry.loadResource(path);
               // Leading slash matches the artifact/overlay key convention so the
               // interpreter mounts and strips these consistently.
-              if (content != null) files[`/skills/${name}/${path}`] = { content };
+              if (content != null) files[`/skills/${entry.name}/${path}`] = { content };
             }
           }
           return files;
@@ -178,24 +186,44 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
             enum: entries.map((entry) => entry.name),
             description: "The name of the skill to read.",
           },
+          ...(pluginIds.length
+            ? {
+                plugin: {
+                  type: "string",
+                  enum: pluginIds,
+                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                },
+              }
+            : {}),
         },
         required: ["name"],
         additionalProperties: false,
       },
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;
+        const pluginId = typeof args.plugin === "string" && args.plugin ? args.plugin : undefined;
         if (!skillName) {
           return [{ type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) }];
         }
-        const entry = byName.get(skillName);
+        const entry = byName.get(entryKey(pluginId, skillName));
         if (!entry) {
-          return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Skill "${skillName}" not found` }),
+            },
+          ];
         }
         let content: string;
         try {
           content = await entry.loadContent();
         } catch {
-          return [{ type: "text" as const, text: JSON.stringify({ error: `Failed to load skill "${skillName}"` }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Failed to load skill "${skillName}"` }),
+            },
+          ];
         }
         return [
           {
@@ -225,7 +253,11 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           try {
             const parsed = JSON.parse(raw) as { path?: unknown; content?: unknown };
             return typeof parsed.content === "string" && typeof parsed.path === "string"
-              ? { code: parsed.content, language: artifactLanguage(parsed.path) || "text", name: parsed.path }
+              ? {
+                  code: parsed.content,
+                  language: artifactLanguage(parsed.path) || "text",
+                  name: parsed.path,
+                }
               : null;
           } catch {
             return null;
@@ -246,6 +278,15 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
             type: "string",
             description: "The exact resource path relative to the skill folder.",
           },
+          ...(pluginIds.length
+            ? {
+                plugin: {
+                  type: "string",
+                  enum: pluginIds,
+                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                },
+              }
+            : {}),
         },
         required: ["name", "path"],
         additionalProperties: false,
@@ -253,13 +294,24 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
       function: async (args: Record<string, unknown>) => {
         const skillName = args.name as string;
         const resourcePath = args.path as string;
+        const pluginId = typeof args.plugin === "string" && args.plugin ? args.plugin : undefined;
         if (!skillName || !resourcePath) {
-          return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name and resource path required" }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Skill name and resource path required" }),
+            },
+          ];
         }
 
-        const entry = byName.get(skillName);
+        const entry = byName.get(entryKey(pluginId, skillName));
         if (!entry) {
-          return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Skill "${skillName}" not found` }),
+            },
+          ];
         }
 
         if (!entry.resources?.includes(resourcePath) || !entry.loadResource) {
@@ -284,7 +336,9 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           return [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: `Failed to load resource "${resourcePath}" for skill "${skillName}"` }),
+              text: JSON.stringify({
+                error: `Failed to load resource "${resourcePath}" for skill "${skillName}"`,
+              }),
             },
           ];
         }
@@ -302,7 +356,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   const skillsXml = entries
     .map(
       (entry) =>
-        `  <skill>\n    <name>${escapeXml(entry.name)}</name>\n    <description>${escapeXml(entry.description)}</description>\n  </skill>`,
+        `  <skill${entry.plugin ? ` plugin="${escapeXml(entry.plugin)}"` : ""}>\n    <name>${escapeXml(entry.name)}</name>\n    <description>${escapeXml(entry.description)}</description>\n  </skill>`,
     )
     .join("\n");
 

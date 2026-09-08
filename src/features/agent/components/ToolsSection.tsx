@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
+import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
@@ -30,7 +32,13 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
   // Global tools: built-in providers + config MCPs (everything not agent-internal)
   const availableTools = useMemo(() => {
     return providers
-      .filter((p) => !agentInternalIds.has(p.id) && p.id !== "artifacts")
+      .filter(
+        (p) =>
+          !agentInternalIds.has(p.id) &&
+          p.id !== "artifacts" &&
+          p.id !== SKILL_BUILDER_ID &&
+          !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
+      )
       .map((p) => ({
         id: p.id,
         label: p.name,

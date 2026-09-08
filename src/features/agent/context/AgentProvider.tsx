@@ -15,7 +15,15 @@ const AGENT_STORAGE_KEY = "app_agent";
 const storage = { load: loadAgents, store: storeAgent, remove: removeAgent };
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const { items: agents, isLoaded, create, update, remove, getItems, flush } = usePersistentCollection(storage);
+  const {
+    items: agents,
+    isLoaded,
+    create,
+    update,
+    remove,
+    getItems,
+    flush,
+  } = usePersistentCollection(storage);
   const ownerActive = useRef(true);
   const [currentId, setCurrentId] = useState<string | null>(() => {
     try {
@@ -49,6 +57,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         name,
         model: initialData?.model ?? getSavedModelId() ?? undefined,
         skills: initialData?.skills ?? [],
+        plugins: initialData?.plugins ?? [],
         servers: initialData?.servers ?? [],
         tools: initialData?.tools ?? [],
       };
@@ -93,7 +102,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         updateFile: (agentId, fileId, changes) =>
           update(agentId, (agent) => ({
             ...agent,
-            files: agent.files?.map((file) => (file.id === fileId ? { ...file, ...changes, id: fileId } : file)),
+            files: agent.files?.map((file) =>
+              file.id === fileId ? { ...file, ...changes, id: fileId } : file,
+            ),
           })),
         flush,
         getModel: () => getConfig().repository?.embedder ?? "",
@@ -110,7 +121,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
   }, [ingestion]);
 
-  const addFile = useCallback((agentId: string, file: File) => ingestion.addFile(agentId, file), [ingestion]);
+  const addFile = useCallback(
+    (agentId: string, file: File) => ingestion.addFile(agentId, file),
+    [ingestion],
+  );
   const reindexFile = useCallback(
     (agentId: string, fileId: string) => ingestion.reindexFile(agentId, fileId),
     [ingestion],
@@ -127,7 +141,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const removeFile = useCallback(
     (id: string, fileId: string) => {
       ingestion.cancelFile(id, fileId);
-      update(id, (agent) => ({ ...agent, files: agent.files?.filter((file) => file.id !== fileId) }));
+      update(id, (agent) => ({
+        ...agent,
+        files: agent.files?.filter((file) => file.id !== fileId),
+      }));
     },
     [ingestion, update],
   );
@@ -156,7 +173,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const removeServer = useCallback(
     (id: string, serverId: string) => {
       clearMcpOAuthStorage(serverId);
-      update(id, (agent) => ({ ...agent, servers: agent.servers.filter((server) => server.id !== serverId) }));
+      update(id, (agent) => ({
+        ...agent,
+        servers: agent.servers.filter((server) => server.id !== serverId),
+      }));
     },
     [update],
   );
