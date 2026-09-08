@@ -167,7 +167,7 @@ describe("coordinated artifact tools", () => {
     });
   });
 
-  afterEach(() => setSkillResourceResolver(null));
+  afterEach(() => setSkillResourceResolver("fs-test-skills", null));
 
   it("notifies subscribers through other managers for the same chat and cleans up subscriptions", async () => {
     const viewer = new FileSystemManager("events");
@@ -298,7 +298,7 @@ describe("coordinated artifact tools", () => {
   it("strips mounted skill resources without discarding a real artifact at the same path", async () => {
     const path = "/skills/test/existing.txt";
     files.set(path, { content: "real artifact" });
-    setSkillResourceResolver(async () => ({
+    setSkillResourceResolver("fs-test-skills", async () => ({
       [path]: { content: "skill version" },
       "/skills/test/resource.txt": { content: "resource" },
     }));

@@ -44,15 +44,16 @@ describe("Responses API history recovery", () => {
       call_id: "call_1",
       output: "done",
     };
-    const missingId: ResponseInputItem = {
+    // Simulate malformed persisted history, which can bypass the SDK type boundary.
+    const missingId = {
       type: "function_call_output",
       output: "invalid",
-    };
-    const nullId: ResponseInputItem = {
+    } as unknown as ResponseInputItem;
+    const nullId = {
       type: "function_call_output",
       call_id: null,
       output: "invalid",
-    };
+    } as unknown as ResponseInputItem;
 
     expect(dropOrphanFunctionCalls([call, output, missingId, nullId])).toEqual([call, output]);
   });
