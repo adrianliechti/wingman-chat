@@ -42,6 +42,7 @@ export async function downloadPluginsAsZip(
           title: plugin.title,
           version: plugin.version,
           description: plugin.description,
+          author: plugin.author,
           keywords: plugin.keywords,
           hubUrl: plugin.hubUrl,
           installedAt: plugin.installedAt,
@@ -58,7 +59,9 @@ export async function downloadPluginsAsZip(
         "mcp.json",
         JSON.stringify(
           {
-            mcpServers: Object.fromEntries(plugin.mcpServers.map(({ name, ...server }) => [name, server])),
+            mcpServers: Object.fromEntries(
+              plugin.mcpServers.map(({ name, ...server }) => [name, server]),
+            ),
           },
           null,
           2,

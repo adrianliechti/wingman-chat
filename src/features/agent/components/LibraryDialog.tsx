@@ -1,5 +1,16 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { ArrowLeft, Check, ChevronDown, Download, Plus, Puzzle, Search, Sparkles, Upload, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Download,
+  Plus,
+  Puzzle,
+  Search,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { downloadPluginsAsZip } from "@/features/plugins/lib/pluginExport";
@@ -59,7 +70,8 @@ export function LibraryDialog({
 
   useEffect(() => {
     if (isOpen) {
-      const openAvailablePlugins = initialSection === "plugins" && plugins.length === 0 && Boolean(hubUrl);
+      const openAvailablePlugins =
+        initialSection === "plugins" && plugins.length === 0 && Boolean(hubUrl);
       setSection(initialSection === "plugins" ? "plugins" : "skills");
       setSearch("");
       // Open directly into the requested list. An explicitly requested skill
@@ -83,14 +95,17 @@ export function LibraryDialog({
     if (!list) return;
     const isScrollable = list.scrollHeight > list.clientHeight;
     setIsPluginListScrollable(isScrollable);
-    setHasMorePluginsBelow(isScrollable && list.scrollTop + list.clientHeight < list.scrollHeight - 2);
+    setHasMorePluginsBelow(
+      isScrollable && list.scrollTop + list.clientHeight < list.scrollHeight - 2,
+    );
   }, []);
 
   const updateSkillScrollHint = useCallback(() => {
     const list = skillListRef.current;
     if (!list) return;
     setHasMoreSkillsBelow(
-      list.scrollHeight > list.clientHeight && list.scrollTop + list.clientHeight < list.scrollHeight - 2,
+      list.scrollHeight > list.clientHeight &&
+        list.scrollTop + list.clientHeight < list.scrollHeight - 2,
     );
   }, []);
 
@@ -123,19 +138,26 @@ export function LibraryDialog({
   const skillsSectionActive = section === "skills";
   const pluginsSectionActive = section === "plugins";
 
-  const sortedSkills = useMemo(() => [...skills].sort((a, b) => a.name.localeCompare(b.name)), [skills]);
+  const sortedSkills = useMemo(
+    () => [...skills].sort((a, b) => a.name.localeCompare(b.name)),
+    [skills],
+  );
   const sortedPlugins = useMemo(
     () => [...plugins].sort((a, b) => (a.title ?? a.id).localeCompare(b.title ?? b.id)),
     [plugins],
   );
   const filteredSkills = useMemo(() => {
     if (!q) return sortedSkills;
-    return sortedSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+    return sortedSkills.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
+    );
   }, [sortedSkills, q]);
   const filteredPlugins = useMemo(() => {
     if (!q) return sortedPlugins;
     return sortedPlugins.filter(
-      (p) => (p.title ?? p.id).toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q),
+      (p) =>
+        (p.title ?? p.id).toLowerCase().includes(q) ||
+        (p.description ?? "").toLowerCase().includes(q),
     );
   }, [sortedPlugins, q]);
 
@@ -178,6 +200,23 @@ export function LibraryDialog({
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
+      return;
+    }
+    // Escape/backdrop navigate detail views before closing the dialog.
+    const viewKind = section === "skills" ? skillViewKind : pluginViewKind;
+    const backFn = section === "skills" ? skillBackRef.current : pluginBackRef.current;
+    // These views return directly to the section overview; editors defer to their own back handler.
+    const oneStepFromList =
+      viewKind === "skill-detail" || viewKind === "installed-detail" || viewKind === "store";
+    if (isDrilledIn) {
+      if (oneStepFromList) {
+        backFn?.();
+        setRequestedSkillName(undefined);
+        setRequestedPluginId(undefined);
+        setOverview(true);
+      } else {
+        backFn?.();
+      }
       return;
     }
     if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
@@ -268,7 +307,9 @@ export function LibraryDialog({
       notify.error("No plugins to export");
       return;
     }
-    void downloadPluginsAsZip(plugins).catch((error) => notify.error("Failed to export plugins", error));
+    void downloadPluginsAsZip(plugins).catch((error) =>
+      notify.error("Failed to export plugins", error),
+    );
   }, [plugins]);
 
   return (
@@ -418,7 +459,9 @@ export function LibraryDialog({
                     <div
                       className={cn(
                         "relative flex min-h-0 flex-1 flex-col",
-                        showPlugins ? "order-2 border-t border-neutral-200/60 dark:border-neutral-800/60" : "order-1",
+                        showPlugins
+                          ? "order-2 border-t border-neutral-200/60 dark:border-neutral-800/60"
+                          : "order-1",
                         showPlugins && !isPluginListScrollable && "mt-6",
                       )}
                     >
@@ -452,7 +495,11 @@ export function LibraryDialog({
                           <DropdownMenuItem
                             icon={<Upload size={13} />}
                             onClick={async () => {
-                              if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
+                              if (
+                                confirmSkillDiscardRef.current &&
+                                !(await confirmSkillDiscardRef.current())
+                              )
+                                return;
                               skillActions?.onImport();
                             }}
                           >
@@ -471,7 +518,10 @@ export function LibraryDialog({
                           </li>
                         )}
                         {sortedSkills.map((skill) => {
-                          const active = !showOverview && section === "skills" && requestedSkillName === skill.name;
+                          const active =
+                            !showOverview &&
+                            section === "skills" &&
+                            requestedSkillName === skill.name;
                           const enabled = enabledSkillNames?.has(skill.name) ?? false;
                           return (
                             <li key={skill.id} className="group/row relative">
@@ -588,7 +638,10 @@ export function LibraryDialog({
                             </li>
                           )}
                           {sortedPlugins.map((plugin) => {
-                            const active = !showOverview && section === "plugins" && requestedPluginId === plugin.id;
+                            const active =
+                              !showOverview &&
+                              section === "plugins" &&
+                              requestedPluginId === plugin.id;
                             return (
                               <li key={plugin.id}>
                                 <button
@@ -687,7 +740,10 @@ export function LibraryDialog({
                                       onClick={() => openSkill(skill.name)}
                                       className="flex w-full items-center gap-3 px-5 py-3 sm:py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                                     >
-                                      <Sparkles size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                                      <Sparkles
+                                        size={15}
+                                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                      />
                                       <span className="min-w-0 flex-1">
                                         <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
                                           {skill.name}
@@ -705,10 +761,15 @@ export function LibraryDialog({
                             ) : (
                               <div className="flex min-h-full items-center justify-center px-5">
                                 {q ? (
-                                  <p className="text-xs text-neutral-400 dark:text-neutral-500">No matching skills</p>
+                                  <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                                    No matching skills
+                                  </p>
                                 ) : (
                                   <div className="flex flex-col items-center gap-3 text-center">
-                                    <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
+                                    <Sparkles
+                                      size={28}
+                                      className="text-neutral-300 dark:text-neutral-600"
+                                    />
                                     <div>
                                       <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                                         No skills yet
@@ -745,7 +806,10 @@ export function LibraryDialog({
                                         className="h-4 w-4 shrink-0 rounded object-contain"
                                       />
                                     ) : (
-                                      <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                                      <Puzzle
+                                        size={15}
+                                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                      />
                                     )}
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">

@@ -17,7 +17,9 @@ export interface PluginsManagerPanelProps {
   requestedPluginId?: string;
   /** Search query managed by the Library dialog. */
   search?: string;
-  onViewKindChange?: (kind: "list" | "installed-detail" | "installed-skill" | "store" | "store-detail") => void;
+  onViewKindChange?: (
+    kind: "list" | "installed-detail" | "installed-skill" | "store" | "store-detail",
+  ) => void;
   onNavigateBackChange?: (fn: (() => void) | null) => void;
   /** Registers a function the parent can call to open the store view. */
   onOpenStoreChange?: (fn: (() => void) | null) => void;
@@ -63,7 +65,10 @@ export function PluginsManagerPanel({
   const [installError, setInstallError] = useState<string | null>(null);
 
   const installedIds = useMemo(() => new Set(plugins.map((p) => p.id)), [plugins]);
-  const installedPluginsById = useMemo(() => new Map(plugins.map((plugin) => [plugin.id, plugin])), [plugins]);
+  const installedPluginsById = useMemo(
+    () => new Map(plugins.map((plugin) => [plugin.id, plugin])),
+    [plugins],
+  );
   const availableStorePlugins = useMemo(
     () =>
       storePlugins.filter((plugin) => {
@@ -178,7 +183,8 @@ export function PluginsManagerPanel({
   const handleUninstall = async (plugin: InstalledPlugin) => {
     const serverCount = plugin.mcpServers?.length ?? 0;
     const removed = [
-      plugin.skills.length > 0 && `${plugin.skills.length} bundled skill${plugin.skills.length === 1 ? "" : "s"}`,
+      plugin.skills.length > 0 &&
+        `${plugin.skills.length} bundled skill${plugin.skills.length === 1 ? "" : "s"}`,
       serverCount > 0 && `${serverCount} MCP server${serverCount === 1 ? "" : "s"}`,
     ].filter((part): part is string => Boolean(part));
     if (
@@ -207,7 +213,9 @@ export function PluginsManagerPanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
-          <span className="flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">Available Plugins</span>
+          <span className="flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            Available Plugins
+          </span>
         </div>
         {storeLoading && storePlugins.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
@@ -235,7 +243,9 @@ export function PluginsManagerPanel({
           <ul className="min-h-0 flex-1 overflow-y-auto">
             {filteredStorePlugins.map((plugin) => {
               const installed = installedPluginsById.get(plugin.id);
-              const updateAvailable = Boolean(installed && plugin.version && installed.version !== plugin.version);
+              const updateAvailable = Boolean(
+                installed && plugin.version && installed.version !== plugin.version,
+              );
               return (
                 <li key={plugin.id} className="relative">
                   <button
@@ -244,9 +254,16 @@ export function PluginsManagerPanel({
                     className="flex w-full items-center gap-3 px-5 py-2.5 pr-12 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                   >
                     {plugin.icon ? (
-                      <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
+                      <img
+                        src={plugin.icon}
+                        alt=""
+                        className="h-4 w-4 shrink-0 rounded object-contain"
+                      />
                     ) : (
-                      <Puzzle size={14} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                      <Puzzle
+                        size={14}
+                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                      />
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
@@ -298,7 +315,9 @@ export function PluginsManagerPanel({
         {plugins.length === 0 ? (
           <p className="text-xs text-neutral-400 dark:text-neutral-500">No plugins installed</p>
         ) : (
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">Select a plugin from the sidebar</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">
+            Select a plugin from the sidebar
+          </p>
         )}
       </div>
     );
@@ -313,7 +332,11 @@ export function PluginsManagerPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
           {plugin.icon ? (
-            <img src={plugin.icon} alt="" className="ml-1 h-5 w-5 shrink-0 rounded object-contain" />
+            <img
+              src={plugin.icon}
+              alt=""
+              className="ml-1 h-5 w-5 shrink-0 rounded object-contain"
+            />
           ) : (
             <Puzzle size={15} className="ml-1 shrink-0 text-neutral-400 dark:text-neutral-500" />
           )}
@@ -328,7 +351,11 @@ export function PluginsManagerPanel({
               title="Update"
               className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 disabled:opacity-40 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             >
-              {installingId === plugin.id ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+              {installingId === plugin.id ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <RefreshCw size={15} />
+              )}
             </button>
           )}
           {!updateAvailable && storePlugins.some((p) => p.id === plugin.id) && (
@@ -339,7 +366,11 @@ export function PluginsManagerPanel({
               title="Reinstall"
               className="rounded-md p-1.5 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600 disabled:opacity-40 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             >
-              {installingId === plugin.id ? <Loader2 size={15} className="animate-spin" /> : <Replace size={15} />}
+              {installingId === plugin.id ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <Replace size={15} />
+              )}
             </button>
           )}
           <button
@@ -354,7 +385,9 @@ export function PluginsManagerPanel({
         <div className="flex-1 overflow-y-auto">
           <div className="space-y-6 px-5 py-5">
             {plugin.description && (
-              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">{plugin.description}</p>
+              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                {plugin.description}
+              </p>
             )}
             {plugin.skills.length > 0 && (
               <div>
@@ -369,7 +402,9 @@ export function PluginsManagerPanel({
                       onClick={() => setView({ kind: "installed-skill", plugin, skill })}
                       className="col-span-2 grid grid-cols-subgrid items-baseline py-2 text-left transition-colors hover:opacity-70"
                     >
-                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{skill.name}</span>
+                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        {skill.name}
+                      </span>
                       {skill.description && (
                         <span className="min-w-0 truncate text-xs text-neutral-400 dark:text-neutral-500">
                           {skill.description}
@@ -391,7 +426,10 @@ export function PluginsManagerPanel({
                       key={server.name}
                       className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
                     >
-                      <Server size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                      <Server
+                        size={13}
+                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                      />
                       <div className="min-w-0 flex-1">
                         <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
                           {server.name}
@@ -430,9 +468,19 @@ export function PluginsManagerPanel({
                     </span>
                   </div>
                 )}
+                {plugin.author && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Author</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.author}
+                    </span>
+                  </div>
+                )}
                 <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                   <span className="text-neutral-400 dark:text-neutral-500">Source</span>
-                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">{plugin.hubUrl}</span>
+                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">
+                    {plugin.hubUrl}
+                  </span>
                 </div>
                 <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                   <span className="text-neutral-400 dark:text-neutral-500">Installed</span>
@@ -443,7 +491,9 @@ export function PluginsManagerPanel({
                 {plugin.keywords && plugin.keywords.length > 0 && (
                   <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                     <span className="text-neutral-400 dark:text-neutral-500">Keywords</span>
-                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">{plugin.keywords.join(", ")}</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.keywords.join(", ")}
+                    </span>
                   </div>
                 )}
               </div>
@@ -461,7 +511,11 @@ export function PluginsManagerPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
           {plugin.icon ? (
-            <img src={plugin.icon} alt="" className="ml-1 h-5 w-5 shrink-0 rounded object-contain" />
+            <img
+              src={plugin.icon}
+              alt=""
+              className="ml-1 h-5 w-5 shrink-0 rounded object-contain"
+            />
           ) : (
             <Puzzle size={15} className="ml-1 shrink-0 text-neutral-400 dark:text-neutral-500" />
           )}
@@ -474,7 +528,9 @@ export function PluginsManagerPanel({
               {plugin.title || plugin.id}
             </button>
             <span className="shrink-0 text-neutral-300 dark:text-neutral-600">/</span>
-            <span className="min-w-0 truncate font-semibold text-neutral-900 dark:text-neutral-100">{skill.name}</span>
+            <span className="min-w-0 truncate font-semibold text-neutral-900 dark:text-neutral-100">
+              {skill.name}
+            </span>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -521,7 +577,11 @@ export function PluginsManagerPanel({
               title="Reinstall"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-50 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
             >
-              {installingId === plugin.id ? <Loader2 size={13} className="animate-spin" /> : <Replace size={13} />}
+              {installingId === plugin.id ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Replace size={13} />
+              )}
               {installingId === plugin.id ? "Installing…" : "Reinstall"}
             </button>
           ) : (
@@ -531,7 +591,11 @@ export function PluginsManagerPanel({
               disabled={installingId === plugin.id}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
             >
-              {installingId === plugin.id ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              {installingId === plugin.id ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Plus size={13} />
+              )}
               {installingId === plugin.id ? "Installing…" : "Install"}
             </button>
           )}
@@ -539,7 +603,9 @@ export function PluginsManagerPanel({
         <div className="flex-1 overflow-y-auto">
           <div className="space-y-6 px-5 py-5">
             {plugin.description && (
-              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">{plugin.description}</p>
+              <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                {plugin.description}
+              </p>
             )}
             {(plugin.skills ?? []).length > 0 && (
               <div>
@@ -548,8 +614,13 @@ export function PluginsManagerPanel({
                 </p>
                 <div className="grid grid-cols-[auto_1fr] gap-x-10 divide-y divide-neutral-200/60 dark:divide-neutral-800/60">
                   {(plugin.skills ?? []).map((skill) => (
-                    <div key={skill.name} className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
-                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{skill.name}</span>
+                    <div
+                      key={skill.name}
+                      className="col-span-2 grid grid-cols-subgrid items-baseline py-2"
+                    >
+                      <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        {skill.name}
+                      </span>
                       {skill.description && (
                         <span className="min-w-0 truncate text-xs text-neutral-400 dark:text-neutral-500">
                           {skill.description}
@@ -571,7 +642,10 @@ export function PluginsManagerPanel({
                       key={name}
                       className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50"
                     >
-                      <Server size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                      <Server
+                        size={13}
+                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                      />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
                         {name}
                       </span>
@@ -588,18 +662,32 @@ export function PluginsManagerPanel({
                 {plugin.version && (
                   <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                     <span className="text-neutral-400 dark:text-neutral-500">Version</span>
-                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">{plugin.version}</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.version}
+                    </span>
+                  </div>
+                )}
+                {plugin.author && (
+                  <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
+                    <span className="text-neutral-400 dark:text-neutral-500">Author</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.author}
+                    </span>
                   </div>
                 )}
                 {plugin.keywords && plugin.keywords.length > 0 && (
                   <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                     <span className="text-neutral-400 dark:text-neutral-500">Keywords</span>
-                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">{plugin.keywords.join(", ")}</span>
+                    <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
+                      {plugin.keywords.join(", ")}
+                    </span>
                   </div>
                 )}
                 <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                   <span className="text-neutral-400 dark:text-neutral-500">Source</span>
-                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">{plugin.source}</span>
+                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">
+                    {plugin.source}
+                  </span>
                 </div>
               </div>
             </div>

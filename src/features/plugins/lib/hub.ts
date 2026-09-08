@@ -36,10 +36,18 @@ interface PluginSummary {
   name: string;
   version?: string;
   description?: string;
+  author?: string | { name?: string };
   source: string;
   skills?: { name: string; description?: string }[] | string[];
   mcpServers?: string[];
   icon?: string;
+}
+
+/** Hubs may report author as a bare string or an npm-style `{ name }` object. */
+function normalizeAuthor(author: PluginSummary["author"]): string | undefined {
+  if (typeof author === "string") return author || undefined;
+  if (author && typeof author === "object") return author.name || undefined;
+  return undefined;
 }
 
 function normalizeHubUrl(hubUrl: string): string {
@@ -78,6 +86,7 @@ export function loadHubPlugins(hubUrl: string): Promise<HubPlugin[]> {
         id: p.name,
         version: p.version,
         description: p.description,
+        author: normalizeAuthor(p.author),
         source: p.source,
         skills: p.skills?.map((s) => (typeof s === "string" ? { name: s } : s)),
         mcpServers: p.mcpServers,
