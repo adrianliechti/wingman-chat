@@ -35,7 +35,6 @@ import {
   Lock,
   Mic,
   Paperclip,
-  PenTool,
   Plus,
   Puzzle,
   ScreenShare,
@@ -373,7 +372,7 @@ export function ChatInputAddMenu({
     useAgents();
   const { skills, openSkillCatalog } = useSkills();
   const { plugins } = usePlugins();
-  const openPluginsManager = () => openSkillCatalog();
+  const openPluginsManager = () => openSkillCatalog(undefined, false, "plugins");
   // Show the Plugins entry whenever there's something installed or a hub to
   // browse — otherwise there'd be no way to discover/install the first plugin.
   const showPluginsMenu = !currentAgent && (plugins.length > 0 || Boolean(config.plugins?.url));
@@ -386,7 +385,6 @@ export function ChatInputAddMenu({
       p.id !== "memory" &&
       !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
   );
-  const skillBuilder = visibleProviders.find((p) => p.id === SKILL_BUILDER_ID);
   const showSkillsMenu = !currentAgent;
   const showSkillsPluginsMenu = showSkillsMenu || showPluginsMenu;
 
@@ -537,7 +535,7 @@ export function ChatInputAddMenu({
                         >
                           <User size={16} className="shrink-0" />
                           <span className="font-medium text-sm flex-1 text-left">
-                            My Skills{" "}
+                            All my skills{" "}
                             <span className="text-neutral-400 dark:text-neutral-500">
                               ({skills.length})
                             </span>
@@ -549,32 +547,6 @@ export function ChatInputAddMenu({
                           </span>
                         </button>
                       </Tooltip>
-                      {skillBuilder && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await setProviderEnabled(
-                                SKILL_BUILDER_ID,
-                                getProviderState(SKILL_BUILDER_ID) !== ProviderState.Connected,
-                              );
-                            } catch (error) {
-                              console.error("Failed to toggle Skill Builder:", error);
-                            }
-                          }}
-                          className={ROW_CLASS}
-                        >
-                          <PenTool size={16} className="shrink-0" />
-                          <span className="font-medium text-sm flex-1 text-left">
-                            Skill Builder
-                          </span>
-                          <span className="shrink-0 w-4 flex justify-center">
-                            {getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected && (
-                              <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
-                            )}
-                          </span>
-                        </button>
-                      )}
                     </>
                   )}
                   {showPluginsMenu && (
@@ -1031,7 +1003,7 @@ export function ChatInputAddMenu({
                         >
                           <User size={16} className="shrink-0" />
                           <span className="font-medium text-sm flex-1 text-left">
-                            My Skills{" "}
+                            All my skills{" "}
                             <span className="text-neutral-400 dark:text-neutral-500">
                               ({skills.length})
                             </span>
@@ -1043,38 +1015,6 @@ export function ChatInputAddMenu({
                             />
                           )}
                         </button>
-                        {skillBuilder && (
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await setProviderEnabled(
-                                  SKILL_BUILDER_ID,
-                                  getProviderState(SKILL_BUILDER_ID) !== ProviderState.Connected,
-                                );
-                              } catch (error) {
-                                console.error("Failed to toggle Skill Builder:", error);
-                              }
-                            }}
-                            className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                              getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected
-                                ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                                : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                            }`}
-                          >
-                            <PenTool size={16} className="shrink-0" />
-                            <span className="font-medium text-sm flex-1 text-left">
-                              Skill Builder
-                            </span>
-                            {getProviderState(SKILL_BUILDER_ID) === ProviderState.Connected && (
-                              <Check
-                                size={16}
-                                className="shrink-0 text-neutral-600 dark:text-neutral-400"
-                              />
-                            )}
-                          </button>
-                        )}
                       </>
                     )}
                     {showPluginsMenu && plugins.length > 0 && (

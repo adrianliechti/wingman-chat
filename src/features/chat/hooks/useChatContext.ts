@@ -5,6 +5,7 @@ import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
+import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
@@ -58,6 +59,10 @@ export function useChatContext(
 
         filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
           const matchId = provider.id;
+
+          // Skill Builder is a core capability and remains available even when
+          // a model has an allowlist or denylist for other tools.
+          if (matchId === SKILL_BUILDER_ID) return true;
 
           if (enabledTools.size > 0) {
             return enabledTools.has(matchId);

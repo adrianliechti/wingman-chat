@@ -1,15 +1,4 @@
-import {
-  ArrowLeft,
-  Code,
-  Download,
-  Eye,
-  Loader2,
-  MoreVertical,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
+import { Code, Download, Eye, Loader2, MoreVertical, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
@@ -21,6 +10,7 @@ import {
   validateSkillName,
 } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
@@ -49,18 +39,30 @@ export interface SkillCatalogPanelProps {
   enabledSkillNames?: ReadonlySet<string>;
   onSkillSaved: (skill: Skill, isNew: boolean, oldName?: string) => void;
   onImported: (names: string[]) => void;
+  /** Called after a skill has been deleted. */
+  onDeleted?: () => void;
   initialView?: "list" | "new";
   /** When set, pre-selects this skill in preview (read-only) mode on open. */
   initialSkillName?: string;
   /** Search query managed by the parent (dialog top bar). */
   search?: string;
+  /** When set, navigates to this skill's detail view. Changes to this value (even same name) trigger navigation. */
+  requestedSkillName?: string;
   /** Notifies the parent of the current view kind so it can hide the search bar when drilled in. */
   onViewKindChange?: (kind: "list" | "skill-detail" | "skill-edit") => void;
   /** Publishes the list-view actions so the parent can render them in its top bar. */
   onActionsChange?: (actions: SkillCatalogActions | null) => void;
+  /** Expose the current back-navigation handler so the parent can invoke it on Escape. */
+  onNavigateBackChange?: (fn: (() => void) | null) => void;
+  /** Registers a guard the parent must call before navigating away. Resolves true = safe to proceed. */
+  onConfirmDiscardChange?: (fn: (() => Promise<boolean>) | null) => void;
 }
 
 const NO_ENABLED_SKILLS: ReadonlySet<string> = new Set();
+
+const RESOURCES_WIDTH_DEFAULT = 224;
+const RESOURCES_WIDTH_MIN = 180;
+const RESOURCES_WIDTH_MAX = 480;
 
 /** Order-independent fingerprint of a resource set, for change detection. */
 function resourcesKey(resources: SkillResource[] = []): string {
@@ -85,20 +87,24 @@ export function SkillCatalogPanel({
   enabledSkillNames = NO_ENABLED_SKILLS,
   onSkillSaved,
   onImported,
+  onDeleted,
   initialView = "list",
   initialSkillName,
-  search = "",
+  search: _search = "",
+  requestedSkillName,
   onViewKindChange,
   onActionsChange,
+  onNavigateBackChange,
+  onConfirmDiscardChange,
 }: SkillCatalogPanelProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
+  const isDesktop = useMediaQuery("(min-width: 640px)");
   const editorNameInputId = useId();
   const editorDescriptionInputId = useId();
   const editorContentInputId = useId();
   const editorNameInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [stableOrder, setStableOrder] = useState<string[]>([]);
 
   // Two-panel state
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
@@ -113,6 +119,34 @@ export function SkillCatalogPanel({
   const [edContent, setEdContent] = useState("");
   const [edResources, setEdResources] = useState<SkillResource[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
+
+  // Resources sidebar width — shared by the edit and detail panels, resizable via drag handle.
+  const [resourcesWidth, setResourcesWidth] = useState(RESOURCES_WIDTH_DEFAULT);
+  const [isResizingResources, setIsResizingResources] = useState(false);
+
+  const handleResourcesResizeStart = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = resourcesWidth;
+      setIsResizingResources(true);
+      document.body.classList.add("resizing");
+
+      const onMove = (ev: PointerEvent) => {
+        const next = startWidth + (startX - ev.clientX);
+        setResourcesWidth(Math.min(RESOURCES_WIDTH_MAX, Math.max(RESOURCES_WIDTH_MIN, next)));
+      };
+      const onUp = () => {
+        setIsResizingResources(false);
+        document.body.classList.remove("resizing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [resourcesWidth],
+  );
 
   useEffect(() => {
     return () => {
@@ -154,39 +188,42 @@ export function SkillCatalogPanel({
     setEditMode(true);
   }, []);
 
-  // Capture order only on open so toggling doesn't re-sort.
   useEffect(() => {
     if (!isOpen) return;
-    setStableOrder(
-      [...allSkills]
-        .sort((a, b) => {
-          const aEnabled = enabledSkillNames.has(a.name) ? 0 : 1;
-          const bEnabled = enabledSkillNames.has(b.name) ? 0 : 1;
-          if (aEnabled !== bEnabled) return aEnabled - bEnabled;
-          return a.name.localeCompare(b.name);
-        })
-        .map((s) => s.id),
-    );
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      if (initialView === "new") {
-        openEditor("new");
-      } else if (initialSkillName) {
-        const target = allSkills.find((s) => s.name === initialSkillName);
-        setSelectedSkill(target ?? null);
-        setEditMode(false);
-      } else {
-        setSelectedSkill(null);
-        setEditMode(false);
-      }
+    if (initialView === "new") {
+      openEditor("new");
+    } else if (initialSkillName) {
+      const target = allSkills.find((s) => s.name === initialSkillName);
+      setSelectedSkill(target ?? null);
+      setEditMode(false);
     } else {
       setSelectedSkill(null);
       setEditMode(false);
     }
-    // setters are stable and intentionally omitted from the deps
-  }, [isOpen, initialView, initialSkillName, openEditor, allSkills]);
+    // Runs once per dialog open (and when the requested initial view/skill
+    // changes) — allSkills is read only to resolve initialSkillName at that
+    // moment, not to keep re-syncing while the dialog stays open and skills
+    // are edited/saved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialView, initialSkillName]);
+
+  // Sidebar navigation: jump to a skill detail without closing/reopening the dialog.
+  useEffect(() => {
+    if (!requestedSkillName || !isOpen) return;
+    const target = allSkills.find((s) => s.name === requestedSkillName);
+    if (target) {
+      setSelectedSkill(target);
+      setEditMode(false);
+    }
+    // allSkills intentionally omitted — resolves at the moment the request changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSkillName, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setSelectedSkill(null);
+    setEditMode(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -207,12 +244,7 @@ export function SkillCatalogPanel({
     if (!editMode) return false;
     const resourcesChanged = resourcesKey(edResources) !== resourcesKey(selectedSkill?.resources);
     if (!selectedSkill)
-      return (
-        edName.trim() !== "" ||
-        edDescription.trim() !== "" ||
-        edContent.trim() !== "" ||
-        resourcesChanged
-      );
+      return edName.trim() !== "" || edDescription.trim() !== "" || edContent.trim() !== "" || resourcesChanged;
     return (
       edName !== selectedSkill.name ||
       edDescription.trim() !== selectedSkill.description.trim() ||
@@ -235,16 +267,6 @@ export function SkillCatalogPanel({
       action();
     },
     [hasUnsavedChanges],
-  );
-
-  const openPreview = useCallback(
-    (skill: Skill) => {
-      void discardAndRun(() => {
-        setSelectedSkill(skill);
-        setEditMode(false);
-      });
-    },
-    [discardAndRun],
   );
 
   const handleEditorSave = () => {
@@ -277,12 +299,7 @@ export function SkillCatalogPanel({
     setIsOptimizing(true);
     try {
       const config = getConfig();
-      const result = await config.client.optimizeSkill(
-        config.chat?.optimizer || "",
-        edName,
-        edDescription,
-        edContent,
-      );
+      const result = await config.client.optimizeSkill(config.chat?.optimizer || "", edName, edDescription, edContent);
       if (!selectedSkill) {
         setEdName(result.name);
       }
@@ -295,25 +312,7 @@ export function SkillCatalogPanel({
     }
   };
 
-  const canOptimize =
-    (edDescription.trim().length > 0 || edContent.trim().length > 0) && !isOptimizing;
-
-  const filteredSkills = useMemo(() => {
-    const sorted = [...allSkills].sort((a, b) => {
-      const ai = stableOrder.indexOf(a.id);
-      const bi = stableOrder.indexOf(b.id);
-      // Known skills keep stable order; newly added skills go to the end
-      const aPos = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-      const bPos = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-      if (aPos !== bPos) return aPos - bPos;
-      return a.name.localeCompare(b.name);
-    });
-    if (!search.trim()) return sorted;
-    const q = search.toLowerCase();
-    return sorted.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-    );
-  }, [allSkills, search, stableOrder]);
+  const canOptimize = (edDescription.trim().length > 0 || edContent.trim().length > 0) && !isOptimizing;
 
   const handleDeleteConfirm = (skill: Skill) => {
     removeSkill(skill.id);
@@ -322,6 +321,7 @@ export function SkillCatalogPanel({
     }
     setSelectedSkill(null);
     setEditMode(false);
+    onDeleted?.();
   };
 
   const importSkillFiles = useCallback(
@@ -369,9 +369,7 @@ export function SkillCatalogPanel({
   }, [importSkillFiles]);
 
   const handleExportAll = useCallback(() => {
-    void downloadSkillsAsZip(allSkills).catch((error) =>
-      notify.error("Failed to export skills", error),
-    );
+    void downloadSkillsAsZip(allSkills).catch((error) => notify.error("Failed to export skills", error));
   }, [allSkills]);
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -413,10 +411,6 @@ export function SkillCatalogPanel({
 
   useEffect(() => {
     if (!onActionsChange) return;
-    if (viewKind !== "list") {
-      onActionsChange(null);
-      return;
-    }
     onActionsChange({
       onNew: () => openEditor("new"),
       onImport: handleImport,
@@ -429,19 +423,51 @@ export function SkillCatalogPanel({
     return () => onActionsChange?.(null);
   }, [onActionsChange]);
 
+  // Publish the back-navigation function for the parent's Escape handler.
+  useEffect(() => {
+    if (!onNavigateBackChange) return;
+    if (viewKind === "skill-edit") {
+      // When editing an existing skill go to detail; when creating new go to list.
+      onNavigateBackChange(() => void discardAndRun(() => setEditMode(false)));
+    } else if (viewKind === "skill-detail") {
+      onNavigateBackChange(() => {
+        setSelectedSkill(null);
+        setEditMode(false);
+      });
+    } else {
+      onNavigateBackChange(null);
+    }
+  }, [viewKind, onNavigateBackChange, discardAndRun]);
+
+  useEffect(() => {
+    return () => onNavigateBackChange?.(null);
+  }, [onNavigateBackChange]);
+
+  useEffect(() => {
+    if (!onConfirmDiscardChange) return;
+    if (!hasUnsavedChanges) {
+      onConfirmDiscardChange(null);
+      return;
+    }
+    onConfirmDiscardChange(() =>
+      confirm({
+        title: "Discard changes?",
+        message: "Your unsaved edits to this skill will be lost.",
+        danger: true,
+      }),
+    );
+  }, [hasUnsavedChanges, onConfirmDiscardChange]);
+
+  useEffect(() => {
+    return () => onConfirmDiscardChange?.(null);
+  }, [onConfirmDiscardChange]);
+
   if (viewKind === "skill-edit") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {/* ── Editor header ── */}
-        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
-          <button
-            type="button"
-            onClick={() => void discardAndRun(() => setEditMode(false))}
-            className="-ml-1 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <span className="flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
+          <span className="ml-1 flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             {selectedSkill ? selectedSkill.name : "New Skill"}
           </span>
         </div>
@@ -561,9 +587,7 @@ export function SkillCatalogPanel({
                   {edContent.trim() ? (
                     <Markdown>{edContent}</Markdown>
                   ) : (
-                    <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
-                      Nothing to preview yet.
-                    </p>
+                    <p className="text-xs italic text-neutral-400 dark:text-neutral-500">Nothing to preview yet.</p>
                   )}
                 </div>
               )}
@@ -571,7 +595,28 @@ export function SkillCatalogPanel({
           </div>
 
           {/* Resources sidebar */}
-          <div className="flex w-full sm:w-72 shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
+          <div
+            className="relative flex w-full sm:w-auto shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60"
+            style={isDesktop ? { width: resourcesWidth } : undefined}
+          >
+            {isDesktop && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize resources panel"
+                onPointerDown={handleResourcesResizeStart}
+                className={cn("absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize touch-none z-10 group/handle")}
+              >
+                <div
+                  className={cn(
+                    "absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors",
+                    isResizingResources
+                      ? "bg-neutral-950 dark:bg-neutral-100"
+                      : "bg-transparent group-hover/handle:bg-neutral-800 dark:group-hover/handle:bg-neutral-300",
+                  )}
+                />
+              </div>
+            )}
             <SkillResourcesEditor resources={edResources} onChange={setEdResources} />
           </div>
         </div>
@@ -612,18 +657,8 @@ export function SkillCatalogPanel({
   if (viewKind === "skill-detail" && selectedSkill) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-4 py-3 dark:border-neutral-800/60">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedSkill(null);
-              setEditMode(false);
-            }}
-            className="-ml-1 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
+          <div className="ml-1 flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               {selectedSkill.name}
             </span>
@@ -647,9 +682,7 @@ export function SkillCatalogPanel({
             <DropdownMenuItem
               icon={<Download size={13} />}
               onClick={() => {
-                void downloadSkill(selectedSkill).catch((error) =>
-                  notify.error("Failed to export skill", error),
-                );
+                void downloadSkill(selectedSkill).catch((error) => notify.error("Failed to export skill", error));
               }}
             >
               Export
@@ -674,166 +707,91 @@ export function SkillCatalogPanel({
           </DropdownMenu>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {selectedSkill.description && (
-            <div className="mb-4">
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                Description
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row overflow-y-auto sm:overflow-y-visible">
+          <div className="flex-1 min-w-0 sm:overflow-y-auto px-5 py-4">
+            {selectedSkill.description && (
+              <div className="mb-4">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                  Description
+                </p>
+                <p className="text-sm text-neutral-700 dark:text-neutral-300">{selectedSkill.description}</p>
+              </div>
+            )}
+            <div>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                Instructions
               </p>
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                {selectedSkill.description}
-              </p>
-            </div>
-          )}
-          <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              Instructions
-            </p>
-            <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
-              <Markdown>{selectedSkill.content}</Markdown>
+              <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
+                <Markdown>{selectedSkill.content}</Markdown>
+              </div>
             </div>
           </div>
-          {selectedSkill.resources && selectedSkill.resources.length > 0 && (
-            <div className="mt-4">
-              <SkillResourcesEditor resources={selectedSkill.resources} />
-            </div>
-          )}
+
+          {/* Resources sidebar */}
+          <div
+            className="relative flex w-full sm:w-auto shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60"
+            style={isDesktop ? { width: resourcesWidth } : undefined}
+          >
+            {isDesktop && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize resources panel"
+                onPointerDown={handleResourcesResizeStart}
+                className="absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize touch-none z-10 group/handle"
+              >
+                <div
+                  className={cn(
+                    "absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors",
+                    isResizingResources
+                      ? "bg-neutral-950 dark:bg-neutral-100"
+                      : "bg-transparent group-hover/handle:bg-neutral-800 dark:group-hover/handle:bg-neutral-300",
+                  )}
+                />
+              </div>
+            )}
+            <SkillResourcesEditor resources={selectedSkill.resources ?? []} />
+          </div>
         </div>
       </div>
     );
   }
 
-  // ── List view ──────────────────────────────────────────────────────────────
-  const isEmpty = allSkills.length === 0;
-  const noSkillsMatch = allSkills.length > 0 && filteredSkills.length === 0;
-
+  // ── Empty state (sidebar owns the list) ──────────────────────────────────
   return (
     <div
-      className="relative flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 flex-1 flex-col items-center justify-center"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {isDragOver && (
+      {isDragOver ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-slate-400 bg-slate-100/80 backdrop-blur-sm dark:border-slate-500 dark:bg-slate-800/80">
           <div className="text-center">
             <Plus size={24} className="mx-auto mb-1 text-neutral-600 dark:text-neutral-400" />
-            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-              Drop skills to import
-            </p>
+            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Drop skills to import</p>
           </div>
         </div>
-      )}
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex-1 overflow-y-auto py-1">
-          {isEmpty && !search ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-              <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
-              <div>
-                <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                  No skills yet
-                </p>
-                <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                  Skills extend what your agents can do
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => openEditor("new")}
-                className="inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
-              >
-                <Plus size={11} />
-                Create your first skill
-              </button>
-            </div>
-          ) : (
-            <ul>
-              {noSkillsMatch && (
-                <li className="px-5 py-2 text-xs text-neutral-400 dark:text-neutral-500">
-                  No skills match your search.
-                </li>
-              )}
-              {filteredSkills.map((skill) => {
-                const isSelected = selectedSkill?.id === skill.id;
-                return (
-                  <li
-                    key={skill.id}
-                    className={`group border-t border-neutral-200/40 first:border-t-0 dark:border-neutral-800/40 ${
-                      isSelected ? "bg-neutral-100 dark:bg-neutral-800/70" : ""
-                    }`}
-                  >
-                    <div className="flex w-full items-center gap-3 pl-5 pr-2 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openPreview(skill)}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:opacity-80"
-                      >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800">
-                          <Sparkles size={16} className="text-neutral-400 dark:text-neutral-500" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                              {skill.name}
-                            </span>
-                          </div>
-                          {skill.description && (
-                            <span className="mt-0.5 block truncate text-xs text-neutral-400 dark:text-neutral-500">
-                              {skill.description}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                      <DropdownMenu
-                        anchor="bottom end"
-                        trigger={
-                          <MenuButton className="shrink-0 rounded p-1.5 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
-                            <MoreVertical size={14} />
-                          </MenuButton>
-                        }
-                      >
-                        <DropdownMenuItem
-                          icon={<Pencil size={13} />}
-                          onClick={() => openEditor(skill)}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          icon={<Download size={13} />}
-                          onClick={() => {
-                            void downloadSkill(skill).catch((error) =>
-                              notify.error("Failed to export skill", error),
-                            );
-                          }}
-                        >
-                          Export
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          icon={<Trash2 size={13} />}
-                          destructive
-                          onClick={async () => {
-                            if (
-                              await confirm({
-                                title: "Delete skill?",
-                                message: `"${skill.name}" will be permanently removed. This can't be undone.`,
-                                danger: true,
-                              })
-                            ) {
-                              handleDeleteConfirm(skill);
-                            }
-                          }}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenu>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+      ) : allSkills.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 px-5 text-center">
+          <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
+          <div>
+            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">No skills yet</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+              Skills extend what your agents can do
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openEditor("new")}
+            className="inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
+          >
+            <Plus size={11} />
+            Create your first skill
+          </button>
         </div>
-      </div>
+      ) : (
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">Select a skill from the sidebar</p>
+      )}
     </div>
   );
 }

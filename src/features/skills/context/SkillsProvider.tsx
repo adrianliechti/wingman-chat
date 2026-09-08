@@ -37,31 +37,25 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
     },
     [remove],
   );
-  const getSkill = useCallback(
-    (name: string) => skills.find((skill) => skill.name === name),
-    [skills],
-  );
+  const getSkill = useCallback((name: string) => skills.find((skill) => skill.name === name), [skills]);
 
   const [showSkillCatalog, setShowSkillCatalog] = useState(false);
   const [skillCatalogTarget, setSkillCatalogTarget] = useState<string | null>(null);
-  const [skillCatalogSection, setSkillCatalogSection] = useState<LibrarySection>("home");
+  const [skillCatalogSection, setSkillCatalogSection] = useState<LibrarySection>("skills");
   const [skillCatalogReadOnly, setSkillCatalogReadOnly] = useState(false);
 
-  const openSkillCatalog = useCallback(
-    (name?: string, readOnly?: boolean, section?: LibrarySection) => {
-      setSkillCatalogTarget(name ?? null);
-      setSkillCatalogReadOnly(readOnly ?? false);
-      setSkillCatalogSection(section ?? "home");
-      setShowSkillCatalog(true);
-    },
-    [],
-  );
+  const openSkillCatalog = useCallback((name?: string, readOnly?: boolean, section?: LibrarySection) => {
+    setSkillCatalogTarget(name ?? null);
+    setSkillCatalogReadOnly(readOnly ?? false);
+    setSkillCatalogSection(section ?? "skills");
+    setShowSkillCatalog(true);
+  }, []);
 
   const closeSkillCatalog = useCallback(() => {
     setShowSkillCatalog(false);
     setSkillCatalogTarget(null);
     setSkillCatalogReadOnly(false);
-    setSkillCatalogSection("home");
+    setSkillCatalogSection("skills");
   }, []);
 
   return (
