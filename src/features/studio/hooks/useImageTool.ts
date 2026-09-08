@@ -95,7 +95,7 @@ export function useImageTool(): Tool | null {
         type: "string",
         enum: caps.supportedQualities,
         description:
-          'Quality tier. The first supported tier is the default. When available, use "low" for drafts, "medium" for polished assets, and "high" for fine detail. Higher tiers are slower and cost more.',
+          'Quality tier. The first supported tier is the default. When available, use "low" for drafts, "medium" for polished assets, and "high" for fine detail. Reserve "xhigh" or "max" for demanding final assets when supported. Higher tiers are slower and cost more.',
       };
     }
     if (caps.supportedResolutions?.length) {

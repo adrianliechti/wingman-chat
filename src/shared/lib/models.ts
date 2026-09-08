@@ -129,8 +129,19 @@ const GENERIC_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
 export function rendererCapabilities(id: string): RendererCapabilities {
   const lowerId = id.toLowerCase();
 
-  // Match the gateway's /render controls. GPT Image 2 has upstream transparent
-  // output in preview, but the gateway currently only forwards it for Image 1.
+  // Image 2.5 adds higher quality tiers, custom sizes, and transparent output
+  // through the gateway for both Sunburst and Flare.
+  if (/\bgpt-?image-?2[.-]5-(?:sunburst|flare)(?=$|[/:]|-\d{4})/.test(lowerId)) {
+    return {
+      qualities: ["low", "medium", "high", "xhigh", "max"],
+      aspectRatios: GENERIC_ASPECTS,
+      resolutions: ["1K", "2K", "4K"],
+      backgrounds: ["opaque", "transparent"],
+    };
+  }
+
+  // GPT Image 2 has upstream transparent output in preview, but the gateway
+  // does not forward it for that version.
   if (/\bgpt-?image-?2\b/.test(lowerId)) {
     return { qualities: ["low", "medium", "high"], aspectRatios: ["1:1", "3:2", "2:3", "16:9", "9:16"] };
   }

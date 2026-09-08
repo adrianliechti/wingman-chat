@@ -37,11 +37,13 @@ const ASPECT_OPTIONS = [
 const QUALITY_OPTIONS: { value: ImageQuality; label: string; description: string }[] = [
   { value: "low", label: "Low", description: "Fastest, lower detail" },
   { value: "medium", label: "Medium", description: "Balanced" },
-  { value: "high", label: "High", description: "Slowest, best detail" },
+  { value: "high", label: "High", description: "More detail, slower" },
+  { value: "xhigh", label: "Extra high", description: "Extra detail, higher cost" },
+  { value: "max", label: "Max", description: "Maximum quality, highest cost" },
 ];
 
 const RESOLUTION_OPTIONS: { value: ImageResolution; label: string; description: string }[] = [
-  { value: "1K", label: "1K", description: "1024px (default)" },
+  { value: "1K", label: "1K", description: "Standard size" },
   { value: "2K", label: "2K", description: "Sharper, slower" },
   { value: "4K", label: "4K", description: "Highest, slowest" },
 ];

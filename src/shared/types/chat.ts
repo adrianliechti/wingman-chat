@@ -9,7 +9,7 @@ export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "re
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Image-generation quality tier (renderer models). */
-export type ImageQuality = "low" | "medium" | "high";
+export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 /** Image-generation output resolution (e.g. Gemini's 1K/2K/4K lever). */
 export type ImageResolution = "512" | "1K" | "2K" | "4K";
 /** Image-generation background mode beyond the default "auto" (which is omitted). */

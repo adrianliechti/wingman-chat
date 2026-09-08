@@ -14,6 +14,7 @@ import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type {
   Content,
+  ImageQuality,
   Message,
   Model,
   ModelType,
@@ -89,7 +90,7 @@ export interface ImageRenderOptions {
   /** Aspect ratio like "1:1" or "16:9"; snapped to the nearest the model supports. */
   aspectRatio?: string;
   /** Quality tier; higher is slower and may cost more. */
-  quality?: "low" | "medium" | "high";
+  quality?: ImageQuality;
   /** Output resolution. */
   resolution?: "512" | "1K" | "2K" | "4K";
   /** Background handling (only honored by models that support it). */

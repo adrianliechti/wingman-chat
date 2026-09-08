@@ -86,7 +86,14 @@ own supported efforts instead of inheriting a vendor profile.
   Hosted providers can differ; use config overrides for their supported levels.
 
 Image profiles reflect the gateway's `/render` implementation as well as vendor
-capabilities. GPT Image 2 supports 16:9 and 9:16 through this gateway. Upstream
+capabilities. [GPT Image 2.5 Sunburst and Flare](https://developers.openai.com/api/docs/guides/image-generation#size-and-quality-options)
+support low, medium, high, xhigh, and max image quality (reviewed September 8,
+2026). These are `quality` values, separate from chat reasoning effort. Their
+gateway profile also exposes common aspect ratios, 1K/2K/4K resolution controls,
+and opaque/transparent backgrounds. The gateway must include Image 2.5 support
+and expose the model IDs in its inventory; the frontend does not add models.
+
+GPT Image 2 supports 16:9 and 9:16 through this gateway. Upstream
 [transparent output is now in preview](https://developers.openai.com/api/docs/guides/image-generation#customize-image-output),
 but the current gateway does not forward it for Image 2, so it is not advertised
 by default. A deployment that adds support can override `supportedBackgrounds`.
