@@ -150,6 +150,17 @@ export function ChatPage() {
     useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
+  const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
+
+  const handlePluginToggle = useCallback(
+    (pluginId: string) => {
+      if (!currentAgent) return;
+      const current = currentAgent.plugins ?? [];
+      const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
+      updateAgent(currentAgent.id, { plugins: next });
+    },
+    [currentAgent, updateAgent],
+  );
 
   const handleSkillToggle = useCallback(
     (skillName: string) => {
@@ -801,6 +812,8 @@ export function ChatPage() {
         onClose={closeSkillCatalog}
         enabledSkillNames={agentSkillIds}
         onToggle={currentAgent && !skillCatalogReadOnly ? handleSkillToggle : undefined}
+        enabledPluginIds={agentPluginIds}
+        onTogglePlugin={currentAgent && !skillCatalogReadOnly ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}

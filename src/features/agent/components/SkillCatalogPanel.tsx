@@ -16,6 +16,7 @@ import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
+import { CatalogBreadcrumb } from "./CatalogBreadcrumb";
 import { SkillResourcesEditor } from "./SkillResourcesEditor";
 
 export interface SkillCatalogActions {
@@ -83,6 +84,7 @@ const FIELD_ERROR = "border-red-400/60 focus:border-red-400 focus:ring-red-500/1
 export function SkillCatalogPanel({
   isOpen,
   onClose: _onClose,
+  onShowOverview,
   onToggle,
   enabledSkillNames = NO_ENABLED_SKILLS,
   onSkillSaved,
@@ -96,7 +98,7 @@ export function SkillCatalogPanel({
   onActionsChange,
   onNavigateBackChange,
   onConfirmDiscardChange,
-}: SkillCatalogPanelProps) {
+}: SkillCatalogPanelProps & { onShowOverview: () => void }) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
   const isDesktop = useMediaQuery("(min-width: 640px)");
   const editorNameInputId = useId();
@@ -658,11 +660,7 @@ export function SkillCatalogPanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
-          <div className="ml-1 flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              {selectedSkill.name}
-            </span>
-          </div>
+          <CatalogBreadcrumb parents={[{ label: "Skills", onClick: onShowOverview }]} title={selectedSkill.name} />
           <button
             type="button"
             onClick={() => openEditor(selectedSkill)}

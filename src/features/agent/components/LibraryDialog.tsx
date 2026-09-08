@@ -1,6 +1,7 @@
 import { Dialog, Transition } from "@headlessui/react";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   ChevronDown,
   Download,
@@ -29,6 +30,8 @@ export interface LibraryDialogProps extends SkillCatalogPanelProps {
   isOpen: boolean;
   onClose: () => void;
   initialSection?: LibrarySection;
+  enabledPluginIds?: ReadonlySet<string>;
+  onTogglePlugin?: (pluginId: string) => void;
 }
 
 export function LibraryDialog({
@@ -37,6 +40,8 @@ export function LibraryDialog({
   initialSection = "skills",
   onToggle,
   enabledSkillNames,
+  enabledPluginIds,
+  onTogglePlugin,
   onSkillSaved,
   onImported,
   initialView,
@@ -57,27 +62,21 @@ export function LibraryDialog({
   const [requestedPluginId, setRequestedPluginId] = useState<string | undefined>(undefined);
   const [hasMoreSkillsBelow, setHasMoreSkillsBelow] = useState(false);
   const [hasMorePluginsBelow, setHasMorePluginsBelow] = useState(false);
-  const [isPluginListScrollable, setIsPluginListScrollable] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const skillListRef = useRef<HTMLUListElement>(null);
   const pluginListRef = useRef<HTMLUListElement>(null);
   const skillBackRef = useRef<(() => void) | null>(null);
-  const pluginBackRef = useRef<(() => void) | null>(null);
+  const pluginBackRef = useRef<((destination?: "parent" | "overview") => void) | null>(null);
   const pendingNewSkillRef = useRef(false);
   const confirmSkillDiscardRef = useRef<(() => Promise<boolean>) | null>(null);
-  const openPluginStoreRef = useRef<(() => void) | null>(null);
-  const pendingOpenStoreRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
-      const openAvailablePlugins =
-        initialSection === "plugins" && plugins.length === 0 && Boolean(hubUrl);
       setSection(initialSection === "plugins" ? "plugins" : "skills");
       setSearch("");
       // Open directly into the requested list. An explicitly requested skill
       // or editor still opens straight into its detail view.
-      setOverview(openAvailablePlugins ? false : !initialSkillName && initialView !== "new");
-      if (openAvailablePlugins) pendingOpenStoreRef.current = true;
+      setOverview(initialSection === "plugins" ? false : !initialSkillName && initialView !== "new");
     } else {
       setSearch("");
       setOverview(true);
@@ -86,26 +85,21 @@ export function LibraryDialog({
       setRequestedSkillName(undefined);
       setRequestedPluginId(undefined);
       pendingNewSkillRef.current = false;
-      pendingOpenStoreRef.current = false;
     }
-  }, [isOpen, initialSection, initialSkillName, initialView, plugins.length, hubUrl]);
+  }, [isOpen, initialSection, initialSkillName, initialView]);
 
   const updatePluginScrollHint = useCallback(() => {
     const list = pluginListRef.current;
     if (!list) return;
     const isScrollable = list.scrollHeight > list.clientHeight;
-    setIsPluginListScrollable(isScrollable);
-    setHasMorePluginsBelow(
-      isScrollable && list.scrollTop + list.clientHeight < list.scrollHeight - 2,
-    );
+    setHasMorePluginsBelow(isScrollable && list.scrollTop + list.clientHeight < list.scrollHeight - 2);
   }, []);
 
   const updateSkillScrollHint = useCallback(() => {
     const list = skillListRef.current;
     if (!list) return;
     setHasMoreSkillsBelow(
-      list.scrollHeight > list.clientHeight &&
-        list.scrollTop + list.clientHeight < list.scrollHeight - 2,
+      list.scrollHeight > list.clientHeight && list.scrollTop + list.clientHeight < list.scrollHeight - 2,
     );
   }, []);
 
@@ -129,35 +123,30 @@ export function LibraryDialog({
   const skillIsDrilledIn = skillViewKind !== "list";
   const pluginIsDrilledIn = pluginViewKind !== "list";
   const isDrilledIn = section === "skills" ? skillIsDrilledIn : pluginIsDrilledIn;
-  const isAvailablePluginsView = section === "plugins" && pluginViewKind === "store";
-
   const q = search.trim().toLowerCase();
-  // Searching shows the matching main list, except while browsing available
-  // plugins: that catalog owns its own hub-backed search results.
-  const showOverview = overview || (q !== "" && !isAvailablePluginsView);
-  const skillsSectionActive = section === "skills";
-  const pluginsSectionActive = section === "plugins";
+  const showOverview = section === "skills" && (overview || q !== "");
+  const skillsSectionActive = showOverview;
+  const pluginsSectionActive = section === "plugins" && pluginViewKind === "list";
+  const hasDetailBreadcrumb =
+    section === "skills"
+      ? !showOverview && skillViewKind === "skill-detail"
+      : pluginViewKind === "installed-detail" ||
+        pluginViewKind === "installed-skill" ||
+        pluginViewKind === "store-detail";
 
-  const sortedSkills = useMemo(
-    () => [...skills].sort((a, b) => a.name.localeCompare(b.name)),
-    [skills],
-  );
+  const sortedSkills = useMemo(() => [...skills].sort((a, b) => a.name.localeCompare(b.name)), [skills]);
   const sortedPlugins = useMemo(
     () => [...plugins].sort((a, b) => (a.title ?? a.id).localeCompare(b.title ?? b.id)),
     [plugins],
   );
   const filteredSkills = useMemo(() => {
     if (!q) return sortedSkills;
-    return sortedSkills.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-    );
+    return sortedSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [sortedSkills, q]);
   const filteredPlugins = useMemo(() => {
     if (!q) return sortedPlugins;
     return sortedPlugins.filter(
-      (p) =>
-        (p.title ?? p.id).toLowerCase().includes(q) ||
-        (p.description ?? "").toLowerCase().includes(q),
+      (p) => (p.title ?? p.id).toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q),
     );
   }, [sortedPlugins, q]);
 
@@ -181,7 +170,6 @@ export function LibraryDialog({
   useEffect(() => {
     if (!isOpen || !showPlugins) {
       setHasMorePluginsBelow(false);
-      setIsPluginListScrollable(false);
       return;
     }
     const list = pluginListRef.current;
@@ -197,6 +185,11 @@ export function LibraryDialog({
   }, [isOpen, showPlugins, sortedPlugins.length, updatePluginScrollHint]);
 
   const handleClose = async () => {
+    if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
+    onClose();
+  };
+
+  const handleDismiss = async () => {
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
@@ -206,8 +199,7 @@ export function LibraryDialog({
     const viewKind = section === "skills" ? skillViewKind : pluginViewKind;
     const backFn = section === "skills" ? skillBackRef.current : pluginBackRef.current;
     // These views return directly to the section overview; editors defer to their own back handler.
-    const oneStepFromList =
-      viewKind === "skill-detail" || viewKind === "installed-detail" || viewKind === "store";
+    const oneStepFromList = viewKind === "skill-detail" || viewKind === "installed-detail";
     if (isDrilledIn) {
       if (oneStepFromList) {
         backFn?.();
@@ -219,8 +211,7 @@ export function LibraryDialog({
       }
       return;
     }
-    if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
-    onClose();
+    await handleClose();
   };
 
   const showSkillsList = useCallback(async () => {
@@ -235,18 +226,9 @@ export function LibraryDialog({
     if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
     setSection("plugins");
     setRequestedPluginId(undefined);
-    if (plugins.length === 0 && hubUrl) {
-      setOverview(false);
-      if (openPluginStoreRef.current) {
-        openPluginStoreRef.current();
-      } else {
-        pendingOpenStoreRef.current = true;
-      }
-      return;
-    }
-    setOverview(true);
-    pluginBackRef.current?.();
-  }, [plugins.length, hubUrl]);
+    setOverview(false);
+    pluginBackRef.current?.("overview");
+  }, []);
 
   const openSkill = useCallback(async (name: string) => {
     if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
@@ -277,20 +259,7 @@ export function LibraryDialog({
     }
   }, [skillActions]);
 
-  const openPluginStore = useCallback(() => {
-    setSection("plugins");
-    setOverview(false);
-    setRequestedPluginId(undefined);
-    if (openPluginStoreRef.current) {
-      openPluginStoreRef.current();
-    } else {
-      pendingOpenStoreRef.current = true;
-    }
-  }, []);
-
   const handleMobileBack = useCallback(() => {
-    // Store detail has a meaningful intermediate destination: the available
-    // plugin list. All other mobile detail views return to their section list.
     if (section === "plugins" && pluginViewKind === "store-detail") {
       pluginBackRef.current?.();
       return;
@@ -307,14 +276,12 @@ export function LibraryDialog({
       notify.error("No plugins to export");
       return;
     }
-    void downloadPluginsAsZip(plugins).catch((error) =>
-      notify.error("Failed to export plugins", error),
-    );
+    void downloadPluginsAsZip(plugins).catch((error) => notify.error("Failed to export plugins", error));
   }, [plugins]);
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-80" onClose={handleClose}>
+      <Dialog as="div" className="relative z-80" onClose={handleDismiss}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -341,7 +308,7 @@ export function LibraryDialog({
               <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
                 {/* ── Top bar ── */}
                 <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-3 sm:pl-4 sm:pr-2 sm:py-2 dark:border-neutral-800/60">
-                  {isDrilledIn && (
+                  {isDrilledIn && !hasDetailBreadcrumb && (
                     <button
                       type="button"
                       onClick={handleMobileBack}
@@ -357,7 +324,7 @@ export function LibraryDialog({
                   </Dialog.Title>
                   <div
                     className={cn(
-                      "flex min-w-0 flex-1 items-center sm:absolute sm:left-1/2 sm:top-1/2 sm:w-64 sm:-translate-x-1/2 sm:-translate-y-1/2",
+                      "flex min-w-0 flex-1 items-center md:absolute md:left-1/2 md:top-1/2 md:w-64 md:-translate-x-1/2 md:-translate-y-1/2",
                       isDrilledIn && "max-sm:hidden",
                     )}
                   >
@@ -369,7 +336,7 @@ export function LibraryDialog({
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder={section === "plugins" ? "Search plugins…" : "Search skills…"}
-                        className="flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
+                        className="min-w-0 flex-1 bg-transparent text-xs text-neutral-900 outline-none placeholder:text-neutral-400 dark:text-neutral-100"
                       />
                       {search && (
                         <button
@@ -383,6 +350,34 @@ export function LibraryDialog({
                     </div>
                   </div>
                   <div className="ml-auto flex shrink-0 items-center gap-1">
+                    {section === "skills" && !isDrilledIn && (
+                      <DropdownMenu
+                        anchor="bottom end"
+                        trigger={
+                          <MenuButton
+                            type="button"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                          >
+                            <Plus size={13} aria-hidden="true" />
+                            Add skill
+                          </MenuButton>
+                        }
+                      >
+                        <DropdownMenuItem icon={<Plus size={13} />} onClick={createNewSkill}>
+                          New skill
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          icon={<Upload size={13} />}
+                          onClick={async () => {
+                            if (confirmSkillDiscardRef.current && !(await confirmSkillDiscardRef.current())) return;
+                            skillActions?.onImport();
+                          }}
+                          disabled={!skillActions}
+                        >
+                          Import
+                        </DropdownMenuItem>
+                      </DropdownMenu>
+                    )}
                     {section === "skills" && skillActions && !isDrilledIn && (
                       <button
                         type="button"
@@ -408,6 +403,7 @@ export function LibraryDialog({
                     <button
                       type="button"
                       onClick={() => void handleClose()}
+                      aria-label="Close catalog"
                       className="shrink-0 rounded-md p-2 sm:p-1.5 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
                     >
                       <X size={15} />
@@ -454,95 +450,58 @@ export function LibraryDialog({
                 {/* ── Body ── */}
                 <div className="flex min-h-0 flex-1 overflow-hidden">
                   {/* ── Left nav sidebar ── */}
-                  <nav className="hidden sm:flex w-56 shrink-0 flex-col overflow-hidden border-r border-neutral-200/60 py-2 dark:border-neutral-800/60">
+                  <nav
+                    aria-label="Catalog navigation"
+                    className="hidden w-56 shrink-0 flex-col gap-3 overflow-hidden border-r border-neutral-200/60 bg-neutral-50/80 px-2 py-2 sm:flex dark:border-neutral-800/60 dark:bg-neutral-950/20"
+                  >
                     {/* Skills section */}
-                    <div
-                      className={cn(
-                        "relative flex min-h-0 flex-1 flex-col",
-                        showPlugins
-                          ? "order-2 border-t border-neutral-200/60 dark:border-neutral-800/60"
-                          : "order-1",
-                        showPlugins && !isPluginListScrollable && "mt-6",
-                      )}
-                    >
-                      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 pt-2.5">
+                    <div className={cn("relative flex min-h-0 flex-1 flex-col", showPlugins ? "order-2" : "order-1")}>
+                      <div className="mb-1 flex shrink-0">
                         <button
                           type="button"
                           onClick={showSkillsList}
+                          title="Show all skills"
+                          aria-label="Show all skills"
+                          aria-current={skillsSectionActive ? "page" : undefined}
                           className={cn(
-                            "flex-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors",
+                            "group flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
                             skillsSectionActive
-                              ? "text-neutral-900 dark:text-neutral-100"
-                              : "text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300",
+                              ? "bg-neutral-200/40 text-neutral-900 dark:bg-neutral-800/60 dark:text-neutral-100"
+                              : "text-neutral-500 hover:bg-neutral-200/40 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
                           )}
                         >
-                          Skills
+                          <span className="flex-1">Skills</span>
+                          <ArrowRight
+                            size={14}
+                            className="shrink-0 text-neutral-400 group-hover:text-current dark:text-neutral-500"
+                            aria-hidden="true"
+                          />
                         </button>
-                        <DropdownMenu
-                          anchor="bottom end"
-                          trigger={
-                            <MenuButton
-                              title="Add skill"
-                              className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                            >
-                              <Plus size={13} />
-                            </MenuButton>
-                          }
-                        >
-                          <DropdownMenuItem icon={<Plus size={13} />} onClick={createNewSkill}>
-                            New
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            icon={<Upload size={13} />}
-                            onClick={async () => {
-                              if (
-                                confirmSkillDiscardRef.current &&
-                                !(await confirmSkillDiscardRef.current())
-                              )
-                                return;
-                              skillActions?.onImport();
-                            }}
-                          >
-                            Import
-                          </DropdownMenuItem>
-                        </DropdownMenu>
                       </div>
                       <ul
                         ref={skillListRef}
                         onScroll={updateSkillScrollHint}
-                        className="min-h-0 flex-1 overflow-y-auto"
+                        className="ml-2 min-h-0 overflow-y-auto border-l border-neutral-200/80 pl-2 dark:border-neutral-800"
                       >
                         {sortedSkills.length === 0 && (
-                          <li className="px-3 py-1 text-xs italic text-neutral-400 dark:text-neutral-600">
-                            No skills yet
-                          </li>
+                          <li className="px-2 py-2 text-xs text-neutral-400 dark:text-neutral-600">No skills yet</li>
                         )}
                         {sortedSkills.map((skill) => {
-                          const active =
-                            !showOverview &&
-                            section === "skills" &&
-                            requestedSkillName === skill.name;
+                          const active = !showOverview && section === "skills" && requestedSkillName === skill.name;
                           const enabled = enabledSkillNames?.has(skill.name) ?? false;
                           return (
                             <li key={skill.id} className="group/row relative">
                               <button
                                 type="button"
                                 onClick={() => openSkill(skill.name)}
-                                className={cn(
-                                  "flex w-full items-start gap-2 px-3 py-1.5 text-left transition-colors",
-                                  active
-                                    ? "bg-neutral-100 dark:bg-neutral-800"
-                                    : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40",
-                                )}
+                                aria-current={active ? "page" : undefined}
+                                className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 hover:bg-neutral-200/40 aria-[current=page]:bg-neutral-200/40 dark:hover:bg-neutral-800/50 dark:aria-[current=page]:bg-neutral-800/50"
                               >
-                                <Sparkles
-                                  size={13}
-                                  className="mt-0.5 shrink-0 text-neutral-400 dark:text-neutral-500"
-                                />
+                                <Sparkles size={14} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                                 <span className="min-w-0 flex-1">
                                   <span
                                     className={cn(
-                                      "block truncate text-xs",
+                                      "block truncate text-[13px] leading-5",
                                       active || enabled
                                         ? "font-medium text-neutral-900 dark:text-neutral-100"
                                         : "text-neutral-600 dark:text-neutral-300",
@@ -569,10 +528,10 @@ export function LibraryDialog({
                                       }
                                     }}
                                     className={cn(
-                                      "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+                                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors",
                                       enabled
                                         ? "border-transparent bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                                        : "border-neutral-300 text-transparent opacity-0 group-hover/row:opacity-100 hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500",
+                                        : "border-neutral-300 text-transparent opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500",
                                     )}
                                   >
                                     <Check size={10} strokeWidth={3} />
@@ -601,76 +560,62 @@ export function LibraryDialog({
                     {/* Plugins section */}
                     {showPlugins && (
                       <div className="relative order-1 flex min-h-0 max-h-1/2 flex-col">
-                        <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 pt-1">
+                        <div className="mb-1 flex shrink-0">
                           <button
                             type="button"
                             onClick={showPluginsList}
+                            title="Show all plugins"
+                            aria-label="Show all plugins"
+                            aria-current={pluginsSectionActive ? "page" : undefined}
                             className={cn(
-                              "flex-1 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors",
+                              "group flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
                               pluginsSectionActive
-                                ? "text-neutral-900 dark:text-neutral-100"
-                                : "text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-300",
+                                ? "bg-neutral-200/40 text-neutral-900 dark:bg-neutral-800/60 dark:text-neutral-100"
+                                : "text-neutral-500 hover:bg-neutral-200/40 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
                             )}
                           >
-                            Plugins
+                            <span className="flex-1">Plugins</span>
+                            <ArrowRight
+                              size={14}
+                              className="shrink-0 text-neutral-400 group-hover:text-current dark:text-neutral-500"
+                              aria-hidden="true"
+                            />
                           </button>
-                          {hubUrl && (
-                            <button
-                              type="button"
-                              title="Add plugin"
-                              onClick={openPluginStore}
-                              className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                            >
-                              <Plus size={13} />
-                            </button>
-                          )}
                         </div>
                         <ul
                           ref={pluginListRef}
                           onScroll={updatePluginScrollHint}
-                          className="min-h-0 flex-1 overflow-y-auto"
+                          className="ml-2 min-h-0 overflow-y-auto border-l border-neutral-200/80 pl-2 dark:border-neutral-800"
                         >
                           {sortedPlugins.length === 0 && (
-                            <li className="px-3 py-1">
-                              <p className="text-xs italic text-neutral-400 dark:text-neutral-600">
-                                No plugins installed
-                              </p>
+                            <li className="px-2 py-2">
+                              <p className="text-xs text-neutral-400 dark:text-neutral-600">No plugins installed</p>
                             </li>
                           )}
                           {sortedPlugins.map((plugin) => {
-                            const active =
-                              !showOverview &&
-                              section === "plugins" &&
-                              requestedPluginId === plugin.id;
+                            const active = !showOverview && section === "plugins" && requestedPluginId === plugin.id;
+                            const enabled = enabledPluginIds?.has(plugin.id) ?? false;
                             return (
-                              <li key={plugin.id}>
+                              <li key={plugin.id} className="group/row relative">
                                 <button
                                   type="button"
                                   onClick={() => openPlugin(plugin.id)}
+                                  aria-current={active ? "page" : undefined}
                                   className={cn(
-                                    "flex w-full items-start gap-2 px-3 py-1.5 text-left transition-colors",
-                                    active
-                                      ? "bg-neutral-100 dark:bg-neutral-800"
-                                      : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40",
+                                    "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 hover:bg-neutral-200/40 aria-[current=page]:bg-neutral-200/40 dark:hover:bg-neutral-800/50 dark:aria-[current=page]:bg-neutral-800/50",
+                                    onTogglePlugin && "pr-8",
                                   )}
                                 >
                                   {plugin.icon ? (
-                                    <img
-                                      src={plugin.icon}
-                                      alt=""
-                                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded object-contain"
-                                    />
+                                    <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
                                   ) : (
-                                    <Puzzle
-                                      size={13}
-                                      className="mt-0.5 shrink-0 text-neutral-400 dark:text-neutral-500"
-                                    />
+                                    <Puzzle size={14} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                                   )}
                                   <span className="min-w-0 flex-1">
                                     <span
                                       className={cn(
-                                        "block truncate text-xs",
-                                        active
+                                        "block truncate text-[13px] leading-5",
+                                        active || enabled
                                           ? "font-medium text-neutral-900 dark:text-neutral-100"
                                           : "text-neutral-600 dark:text-neutral-300",
                                       )}
@@ -679,6 +624,31 @@ export function LibraryDialog({
                                     </span>
                                   </span>
                                 </button>
+                                {onTogglePlugin && (
+                                  <button
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={enabled}
+                                    aria-label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title ?? plugin.id}`}
+                                    onClick={() => onTogglePlugin(plugin.id)}
+                                    className={cn(
+                                      "absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md transition-opacity focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
+                                      !enabled &&
+                                        "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
+                                        enabled
+                                          ? "border-transparent bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
+                                          : "border-neutral-300 text-transparent hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500",
+                                      )}
+                                    >
+                                      <Check size={10} strokeWidth={3} aria-hidden="true" />
+                                    </span>
+                                  </button>
+                                )}
                               </li>
                             );
                           })}
@@ -704,32 +674,10 @@ export function LibraryDialog({
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                     {showOverview ? (
                       <div className="flex min-h-0 flex-1 flex-col">
-                        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
-                          <span className="flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                            {section === "skills" ? "Skills" : "Installed Plugins"}
-                          </span>
-                          {section === "skills" && (
-                            <button
-                              type="button"
-                              title="New skill"
-                              onClick={createNewSkill}
-                              className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                            >
-                              <Plus size={15} />
-                            </button>
-                          )}
-                          {section === "plugins" && hubUrl && (
-                            <button
-                              type="button"
-                              onClick={openPluginStore}
-                              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                            >
-                              <Puzzle size={12} />
-                              Add Plugin
-                            </button>
-                          )}
-                        </div>
                         <div className="min-h-0 flex-1 overflow-y-auto py-2">
+                          <h3 className="px-5 py-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                            Skills
+                          </h3>
                           {section === "skills" ? (
                             filteredSkills.length > 0 ? (
                               <ul>
@@ -740,10 +688,7 @@ export function LibraryDialog({
                                       onClick={() => openSkill(skill.name)}
                                       className="flex w-full items-center gap-3 px-5 py-3 sm:py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                                     >
-                                      <Sparkles
-                                        size={15}
-                                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                                      />
+                                      <Sparkles size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                                       <span className="min-w-0 flex-1">
                                         <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
                                           {skill.name}
@@ -761,15 +706,10 @@ export function LibraryDialog({
                             ) : (
                               <div className="flex min-h-full items-center justify-center px-5">
                                 {q ? (
-                                  <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                                    No matching skills
-                                  </p>
+                                  <p className="text-xs text-neutral-400 dark:text-neutral-500">No matching skills</p>
                                 ) : (
                                   <div className="flex flex-col items-center gap-3 text-center">
-                                    <Sparkles
-                                      size={28}
-                                      className="text-neutral-300 dark:text-neutral-600"
-                                    />
+                                    <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
                                     <div>
                                       <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                                         No skills yet
@@ -778,14 +718,6 @@ export function LibraryDialog({
                                         Skills extend what your agents can do
                                       </p>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={createNewSkill}
-                                      className="inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 dark:bg-neutral-200 dark:text-neutral-900"
-                                    >
-                                      <Plus size={11} />
-                                      Create your first skill
-                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -806,10 +738,7 @@ export function LibraryDialog({
                                         className="h-4 w-4 shrink-0 rounded object-contain"
                                       />
                                     ) : (
-                                      <Puzzle
-                                        size={15}
-                                        className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                                      />
+                                      <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                                     )}
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
@@ -830,16 +759,6 @@ export function LibraryDialog({
                               <p className="text-xs text-neutral-400 dark:text-neutral-500">
                                 {q ? "No matching plugins" : "No plugins installed"}
                               </p>
-                              {!q && hubUrl && (
-                                <button
-                                  type="button"
-                                  onClick={openPluginStore}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-50 hover:text-neutral-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
-                                >
-                                  <Plus size={13} />
-                                  Add Plugin
-                                </button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -848,6 +767,7 @@ export function LibraryDialog({
                     <div className={cn("flex min-h-0 flex-1 flex-col", showOverview && "hidden")}>
                       {section === "skills" ? (
                         <SkillCatalogPanel
+                          onShowOverview={showSkillsList}
                           isOpen={isOpen}
                           onClose={onClose}
                           onToggle={onToggle}
@@ -874,6 +794,7 @@ export function LibraryDialog({
                         />
                       ) : (
                         <PluginsManagerPanel
+                          onShowOverview={showPluginsList}
                           isOpen={isOpen}
                           requestedPluginId={requestedPluginId}
                           search={search}
@@ -885,13 +806,6 @@ export function LibraryDialog({
                             setSection("plugins");
                             setRequestedPluginId(undefined);
                             setOverview(true);
-                          }}
-                          onOpenStoreChange={(fn) => {
-                            openPluginStoreRef.current = fn;
-                            if (fn && pendingOpenStoreRef.current) {
-                              pendingOpenStoreRef.current = false;
-                              fn();
-                            }
                           }}
                         />
                       )}
