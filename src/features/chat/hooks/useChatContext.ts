@@ -12,6 +12,8 @@ import { createSubagentTool } from "@/features/tools/lib/subagent";
 import { getConfig } from "@/shared/config";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
+import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
+import { useImageTool } from "./useImageTool";
 
 export interface ChatContext {
   tools: () => Promise<Tool[]>;
@@ -30,6 +32,7 @@ export function useChatContext(
   // Artifacts provider — non-null whenever the feature is available, in which
   // case it's always active (no per-chat enable toggle).
   const artifactsProvider = useArtifactsProvider();
+  const imageTool = useImageTool();
 
   // Get current agent for its instructions
   const { currentAgent } = useAgents();
@@ -87,7 +90,11 @@ export function useChatContext(
 
         console.log("Compiled Tools from Providers:", toolsArrays);
 
-        const baseTools = toolsArrays.flat();
+        // Image generation follows renderer availability, independent of Studio.
+        const baseTools = [...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])];
+        // Clarification is a core chat capability, independent of provider
+        // selections and model allowlists. Only the outer chat owns elicitation.
+        const tools = [...baseTools, ASK_QUESTIONS_TOOL];
 
         const subagentModel =
           mode === "voice"
@@ -95,7 +102,7 @@ export function useChatContext(
             : (model?.id ?? null);
 
         if (baseTools.length === 0 || !subagentModel) {
-          return baseTools;
+          return tools;
         }
 
         const providerInstructions = filteredProviders
@@ -107,10 +114,7 @@ export function useChatContext(
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [
-          ...baseTools,
-          createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext),
-        ];
+        return [...tools, createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext)];
       },
 
       instructions: () => {
@@ -163,7 +167,17 @@ export function useChatContext(
           .filter(Boolean)
           .join("\n\n"),
     };
-  }, [mode, model, models, generateInstructions, providers, getProviderState, artifactsProvider, currentAgent]);
+  }, [
+    mode,
+    model,
+    models,
+    generateInstructions,
+    providers,
+    getProviderState,
+    artifactsProvider,
+    imageTool,
+    currentAgent,
+  ]);
 
   return context;
 }

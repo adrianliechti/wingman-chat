@@ -19,7 +19,7 @@ describe("subagent invocation identity", () => {
     });
   });
 
-  async function invoke(parent?: ToolContext) {
+  async function invoke(parent?: ToolContext, work?: (context: ToolContext) => void) {
     let child: ToolContext | undefined;
     const tool = createSubagentTool(
       "model",
@@ -30,6 +30,7 @@ describe("subagent invocation identity", () => {
           parameters: { type: "object", properties: {}, additionalProperties: false },
           function: async (_args, context) => {
             child = context;
+            work?.(context!);
             return [{ type: "text", text: "ok" }];
           },
         },
@@ -72,4 +73,37 @@ describe("subagent invocation identity", () => {
     expect(child.invocationContext?.branch).toBe("subagent");
     expect(invocationContext.budgetSnapshot()).toEqual({ used: 2, limit: 5 });
   });
+
+  it("preserves attached image references and elicitation for delegated tools", async () => {
+    const content: ToolContext["content"] = () => [{ type: "image", data: "data:image/png;base64,aW1hZ2U=" }];
+    const elicit = vi.fn().mockResolvedValue({ action: "accept" });
+    const child = await invoke({ chatId: "origin-chat", content, elicit });
+    expect(child.content?.()).toEqual(content());
+    await child.elicit?.({ message: "Generate an image" });
+    expect(elicit).toHaveBeenCalledExactlyOnceWith({ message: "Generate an image" });
+  });
+
+  it.each([false, true])(
+    "reports committed file changes to the parent even when a later model call fails: %s",
+    async (fail) => {
+      if (fail) {
+        state.complete
+          .mockReset()
+          .mockResolvedValueOnce({
+            role: "assistant",
+            content: [{ type: "tool_call", id: "inspect-call", name: "inspect", arguments: "{}" }],
+          })
+          .mockRejectedValueOnce(new Error("Later model request failed"));
+      }
+      const setMeta = vi.fn();
+      const mutations = [
+        { operation: "create", path: "/game.html" },
+        { operation: "create", path: "/lib/three.js" },
+      ];
+      await invoke({ chatId: "origin-chat", setMeta }, (context) => {
+        context.setMeta?.({ artifactDelta: { mutations } });
+      });
+      expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ artifactDelta: { mutations } }));
+    },
+  );
 });

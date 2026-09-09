@@ -1,5 +1,15 @@
 /// <reference types="vite/client" />
 
+declare module "virtual:artifact-library-source/three" {
+  const source: string;
+  export default source;
+}
+
+declare module "virtual:artifact-library-source/lucide" {
+  const source: string;
+  export default source;
+}
+
 // File System Access API type extensions
 // These extend the built-in types with methods that aren't fully typed yet
 

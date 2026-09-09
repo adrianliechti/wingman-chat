@@ -7,6 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite-plus";
 import { configDefaults } from "vitest/config";
+import { artifactLibrarySourcesPlugin } from "./scripts/artifact-library-sources";
 
 const src = path.resolve(import.meta.dirname, "src");
 
@@ -195,6 +196,7 @@ export default defineConfig({
     // are unsupported. 'es' overrides Vite's default 'iife' so the interpreter
     // worker is emitted as a module (and dynamic imports keep working).
     format: "es",
+    plugins: () => [artifactLibrarySourcesPlugin()],
   },
   server: {
     watch: {
@@ -241,6 +243,7 @@ export default defineConfig({
     tailwindcss(),
     skillsDevPlugin(),
     pdfjsAssetsPlugin(),
+    artifactLibrarySourcesPlugin(),
   ],
   build: {
     target: "esnext",

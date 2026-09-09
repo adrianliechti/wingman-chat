@@ -27,20 +27,40 @@ function artifactKind(path: string): ArtifactJob["kind"] {
   return "other";
 }
 
-function inferPrimaryPath(messages: Message[], runId: string): string | undefined {
-  return [...messages]
-    .reverse()
+function inferPrimaryPath(messages: Message[], runId: string, previousPath?: string): string | undefined {
+  const mutations = messages
     .filter((message) => message.runId === runId)
     .flatMap((message) => message.content)
-    .flatMap((part) => (part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : []))
-    .find((mutation) => mutation.operation !== "delete")?.path;
+    .flatMap((part) => (part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : []));
+  // Compaction may remove earlier writes from history. Keep the known output
+  // until a recorded move or deletion retires it.
+  const touched = new Set(previousPath ? [previousPath] : []);
+  const forget = (path: string) => {
+    for (const candidate of touched) {
+      if (candidate === path || candidate.startsWith(`${path}/`)) touched.delete(candidate);
+    }
+  };
+  for (const mutation of mutations) {
+    if (mutation.operation === "move" && mutation.from) forget(mutation.from);
+    forget(mutation.path);
+    if (mutation.operation !== "delete") touched.add(mutation.path);
+  }
+  const paths = [...touched].reverse();
+  if (previousPath && touched.has(previousPath)) return previousPath;
+  // Document entry points take precedence over companion scripts and assets,
+  // including a readme written after the actual deliverable.
+  return (
+    paths.find((path) => /\.(html?|pptx|docx|xlsx|pdf)$/i.test(path)) ??
+    paths.find((path) => /\.(md|txt)$/i.test(path)) ??
+    paths[0]
+  );
 }
 
 function finish(appendContent: Content[] = []): AgentBeforeFinishDecision {
   return appendContent.length > 0 ? { action: "finish", appendContent } : { action: "finish" };
 }
 
-/** Verify a Studio deliverable and decide whether the agent may finish or must repair it. */
+/** Verify a saved deliverable and decide whether the agent may finish or must repair it. */
 export async function applyArtifactStopPolicy({
   chatId,
   runId,
@@ -51,23 +71,29 @@ export async function applyArtifactStopPolicy({
   if (signal?.aborted) return finish();
 
   let job = await findArtifactJobForRun(chatId, runId);
-  if (!job) {
-    const primaryPath = inferPrimaryPath(messages, runId);
-    if (!primaryPath) return finish();
+  if (!job || job.inferred) {
+    const primaryPath = inferPrimaryPath(messages, runId, job?.primaryPath);
+    if (!primaryPath) {
+      if (job) {
+        await upsertArtifactJob(chatId, { ...job, phase: "interrupted", updatedAt: new Date().toISOString() });
+      }
+      return finish();
+    }
     const now = new Date().toISOString();
-    job = ArtifactJobSchema.parse({
-      id: crypto.randomUUID(),
-      chatId,
-      runId,
-      kind: artifactKind(primaryPath),
-      primaryPath,
-      phase: "building",
-      inferred: true,
-      sourceRefs: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-    await upsertArtifactJob(chatId, job);
+    job = job
+      ? { ...job, primaryPath, kind: artifactKind(primaryPath) }
+      : ArtifactJobSchema.parse({
+          id: crypto.randomUUID(),
+          chatId,
+          runId,
+          kind: artifactKind(primaryPath),
+          primaryPath,
+          phase: "building",
+          inferred: true,
+          sourceRefs: [],
+          createdAt: now,
+          updatedAt: now,
+        });
   }
   if (!job || signal?.aborted) return finish();
 

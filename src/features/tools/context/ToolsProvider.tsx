@@ -320,9 +320,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (internetProvider) list.push(internetProvider);
-    // The unified "Studio" capability (documents, visuals & images). Always
-    // available — it's a session capability that layers on top of an agent too —
-    // and its create_image tool is present only when a renderer is configured.
+    // Studio adds creative-output instructions and skills on top of default tools.
     list.push(studioProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     // The single Skills tool (one read_skill surface): an agent's curated subset

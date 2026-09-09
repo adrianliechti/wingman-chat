@@ -262,10 +262,10 @@ export async function verifyArtifactJob(fs: FileSystemManager, job: ArtifactJob)
   let units: ArtifactUnitResult[] | undefined;
 
   if (!primary) {
-    checks.push(check("manifest.primary", job.primaryPath, "fail", "The declared primary artifact does not exist."));
+    checks.push(check("manifest.primary", job.primaryPath, "fail", "The primary artifact does not exist."));
   } else {
     manifestPaths.add(primary.path);
-    checks.push(check("manifest.primary", primary.path, "pass", "The declared primary artifact exists."));
+    checks.push(check("manifest.primary", primary.path, "pass", "The primary artifact exists."));
     const validation = await validateArtifactFile(primary);
     checks.push(
       ...validation.errors.map((issue) => check(`syntax.${issue.validator}`, primary.path, "fail", issue.message)),
@@ -371,7 +371,6 @@ export async function verifyArtifactJob(fs: FileSystemManager, job: ArtifactJob)
       ...(source.startsWith("http") ? { url: source } : { path: source }),
     })),
     skillRefs: job.skillRefs,
-    promptLayerIds: ["chat.base", "studio.policy"],
     verification,
   });
 }

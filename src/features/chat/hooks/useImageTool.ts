@@ -11,7 +11,8 @@ import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
 
-function errorResult(error: string): TextContent[] {
+function errorResult(error: string, context?: ToolContext): TextContent[] {
+  context?.setError?.({ code: "IMAGE_GENERATION_ERROR", message: error });
   return [{ type: "text", text: JSON.stringify({ success: false, error }) }];
 }
 
@@ -37,8 +38,7 @@ async function blobFromDataUrl(dataUrl: string): Promise<Blob> {
  * The `create_image` tool — generate/edit an image via the configured renderer,
  * saving the result to the artifacts workspace and returning it inline.
  *
- * Returns null when no renderer is configured, so the Studio capability can
- * include image generation only where it's actually available.
+ * Available by default in chat when an image renderer is configured.
  */
 export function useImageTool(): Tool | null {
   const config = getConfig();
@@ -73,13 +73,13 @@ export function useImageTool(): Tool | null {
       prompt: {
         type: "string",
         description:
-          "The complete production prompt. Preserve every explicit user constraint and do not change the subject or intent. When the user delegates the look, or the image belongs inside a larger artifact, add concrete composition, palette, lighting, material, camera, and negative-space direction grounded in that brief. When editing reference images, describe the requested changes and what must remain unchanged.",
+          "Describe the subject, composition, style, and any required text. Preserve the user's constraints; add visual detail where unspecified. For edits, state the changes and elements to preserve.",
       },
       images: {
         type: "array",
         items: { type: "string" },
         description:
-          'Optional paths to image artifacts to use as references, e.g. ["/a-red-fox.png"]. Images attached to the current message are used automatically.',
+          'Artifact paths for edit/reference images, e.g. ["/fox.png"]. Current-message image attachments are also included automatically; use paths for earlier images.',
       },
     };
     if (caps.supportedAspectRatios?.length) {
@@ -87,7 +87,7 @@ export function useImageTool(): Tool | null {
         type: "string",
         enum: caps.supportedAspectRatios,
         description:
-          'Optional aspect ratio, e.g. "16:9" for widescreen or "9:16" for portrait. Snapped to the nearest the model supports. Omit for the model default (usually square).',
+          "Output shape. Choose a listed ratio that fits the intended placement, or omit for the renderer default.",
       };
     }
     if (caps.supportedQualities?.length) {
@@ -95,7 +95,7 @@ export function useImageTool(): Tool | null {
         type: "string",
         enum: caps.supportedQualities,
         description:
-          'Quality tier. The first supported tier is the default. When available, use "low" for drafts, "medium" for polished assets, and "high" for fine detail. Reserve "xhigh" or "max" for demanding final assets when supported. Higher tiers are slower and cost more.',
+          "Rendering quality; defaults to the first listed tier. Higher tiers usually take longer and cost more.",
       };
     }
     if (caps.supportedResolutions?.length) {
@@ -103,7 +103,7 @@ export function useImageTool(): Tool | null {
         type: "string",
         enum: caps.supportedResolutions,
         description:
-          'Output resolution. Leave at the default (1K) for most work; step up to "2K" or "4K" only when the deliverable is large-format or print, since higher resolutions are slower.',
+          "Output resolution; omit for the renderer default. Use higher resolutions when needed for the final size or detail.",
       };
     }
     if (caps.supportedBackgrounds?.length) {
@@ -111,7 +111,7 @@ export function useImageTool(): Tool | null {
         type: "string",
         enum: caps.supportedBackgrounds,
         description:
-          'Set "transparent" for a cut-out subject with no background; "opaque" forces a solid fill. Omit for the model default.',
+          'Use "transparent" for cutouts or compositing, or "opaque" for a filled background. Omit for the renderer default.',
       };
     }
 
@@ -124,7 +124,7 @@ export function useImageTool(): Tool | null {
         }),
       },
       description:
-        "Generate an image from a text description. Optionally provide reference images to edit or build on: pass `images` (paths to image artifacts) and/or attach images to the chat. The result is saved as an artifact and returned inline.",
+        "Generate or edit raster images such as photos, illustrations, and visual assets. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, SVG, or charts. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically. Returns the image inline and saves it to the chat workspace when available.",
       parameters: {
         type: "object",
         properties,
@@ -132,14 +132,22 @@ export function useImageTool(): Tool | null {
         additionalProperties: false,
       },
       function: async (args: Record<string, unknown>, context?: ToolContext) => {
+        context?.signal?.throwIfAborted();
         const activeFs = resolveArtifactFileSystem(fsRef.current, context?.chatId);
         const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
-        if (!prompt) return errorResult("`prompt` is required.");
+        if (!prompt) return errorResult("`prompt` is required.", context);
 
         // Confirm before spending a generation when elicitation is enabled.
-        if (elicitation && context?.elicit) {
+        if (elicitation) {
+          if (!context?.elicit) {
+            return errorResult(
+              "Image generation requires confirmation, which is unavailable in this context.",
+              context,
+            );
+          }
           const result = await context.elicit({ message: `Generate an image: ${prompt}` });
-          if (result.action !== "accept") return errorResult("Image generation cancelled by user.");
+          context.signal?.throwIfAborted();
+          if (result.action !== "accept") return errorResult("Image generation cancelled by user.", context);
         }
 
         try {
@@ -149,7 +157,7 @@ export function useImageTool(): Tool | null {
           const paths = Array.isArray(args.images) ? args.images.filter((p): p is string => typeof p === "string") : [];
           for (const path of paths) {
             const file = activeFs ? await activeFs.getFile(path) : undefined;
-            if (!file || !isDataUrl(file.content)) return errorResult(`No image artifact found at ${path}.`);
+            if (!file || !isDataUrl(file.content)) return errorResult(`No image artifact found at ${path}.`, context);
             references.push(await blobFromDataUrl(file.content));
           }
           for (const part of context?.content?.() ?? []) {
@@ -175,10 +183,12 @@ export function useImageTool(): Tool | null {
             options.background = args.background;
           }
 
+          context?.signal?.throwIfAborted();
           const imageBlob = await client.generateImage(model, prompt, references, options, {
             signal: context?.signal,
           });
           const dataUrl = await readAsDataURL(imageBlob);
+          context?.signal?.throwIfAborted();
 
           // Save to the artifacts workspace so the image is downloadable, editable
           // by path, and usable by the Python tool. Best-effort — a save
@@ -194,11 +204,13 @@ export function useImageTool(): Tool | null {
                   contentType: imageBlob.type || `image/${ext}`,
                 },
               ]);
+              context?.signal?.throwIfAborted();
               if (saved.mutations.length) {
                 context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });
               }
               name = saved.paths[0];
             } catch (error) {
+              context?.signal?.throwIfAborted();
               console.warn("Failed to save generated image to artifacts:", error);
             }
           }
@@ -210,8 +222,9 @@ export function useImageTool(): Tool | null {
           // reference it to edit the image later.
           return [{ type: "image" as const, data: dataUrl, name }];
         } catch (error) {
+          context?.signal?.throwIfAborted();
           const message = error instanceof Error ? error.message : "Unknown error";
-          return errorResult(`Image generation failed: ${message}`);
+          return errorResult(`Image generation failed: ${message}`, context);
         }
       },
     };

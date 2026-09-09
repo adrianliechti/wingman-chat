@@ -40,7 +40,7 @@ let fileToolsModule;
 let validatorsModule;
 let verifierModule;
 let executionSchemasModule;
-let declarationSchemaModule;
+let questionsToolModule;
 let artifactModule;
 let toolSchemasModule;
 
@@ -110,9 +110,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
       validatorsModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/artifactValidators.ts");
       verifierModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/artifact-verifier.ts");
       executionSchemasModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/executionToolSchemas.ts");
-      declarationSchemaModule = await harness.vite.ssrLoadModule(
-        "/src/features/studio/lib/artifactDeclarationSchema.ts",
-      );
+      questionsToolModule = await harness.vite.ssrLoadModule("/src/features/chat/lib/questionsTool.ts");
       artifactModule = await harness.vite.ssrLoadModule("/src/shared/types/artifact.ts");
       toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
 
@@ -455,14 +453,13 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 strict: false,
                 parameters: executionSchemasModule.JAVASCRIPT_EXECUTION_PARAMETERS,
               },
-              {
-                name: "declare_artifact",
-                description: "Schema compatibility fixture. Do not call this tool.",
-                strict: false,
-                parameters: declarationSchemaModule.ARTIFACT_DECLARATION_PARAMETERS,
-              },
             ].map((tool) => ({ ...tool, function: async () => [{ type: "text", text: "UNUSED" }] }));
-            const tools = [...productionFileTools(workspace), pythonTool, ...schemaOnlyTools];
+            const tools = [
+              ...productionFileTools(workspace),
+              pythonTool,
+              ...schemaOnlyTools,
+              questionsToolModule.ASK_QUESTIONS_TOOL,
+            ];
             assert.equal(
               tools.reduce((count, tool) => count + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
               0,

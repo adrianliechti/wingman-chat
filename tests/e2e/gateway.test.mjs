@@ -222,9 +222,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       const executionSchemasModule = await harness.vite.ssrLoadModule(
         "/src/features/artifacts/lib/executionToolSchemas.ts",
       );
-      const declarationSchemaModule = await harness.vite.ssrLoadModule(
-        "/src/features/studio/lib/artifactDeclarationSchema.ts",
-      );
+      const questionsToolModule = await harness.vite.ssrLoadModule("/src/features/chat/lib/questionsTool.ts");
       const artifactModule = await harness.vite.ssrLoadModule("/src/shared/types/artifact.ts");
       const toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
 
@@ -313,20 +311,13 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
           strict: false,
           parameters: executionSchemasModule.JAVASCRIPT_EXECUTION_PARAMETERS,
         },
-        {
-          name: "declare_artifact",
-          description: "Production schema compatibility fixture. Do not call this tool in this test.",
-          strict: false,
-          parameters: declarationSchemaModule.ARTIFACT_DECLARATION_PARAMETERS,
-        },
       ].map((tool) => ({
         ...tool,
         function: async () => [{ type: "text", text: "unused" }],
       }));
-      const tools = [...fileTools, ...schemaOnlyTools];
+      const tools = [...fileTools, ...schemaOnlyTools, questionsToolModule.ASK_QUESTIONS_TOOL];
 
-      // These are the exact production file, Studio declaration, and execution
-      // schemas that previously totaled 22 nullable unions. Keep the full set
+      // Keep the production file, execution, and default question schemas
       // union-free and schema-guided for predictable provider behavior.
       assert.equal(
         tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
@@ -341,7 +332,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       const result = await run(
         client,
         artifactModel,
-        'Create the requested artifact by calling artifacts_create exactly once with file_path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_python_code, execute_javascript_code, or declare_artifact. After the tool result, reply briefly that the artifact is complete.',
+        'Create the requested artifact by calling artifacts_create exactly once with file_path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_python_code, execute_javascript_code, or ask_questions. After the tool result, reply briefly that the artifact is complete.',
         [{ role: Role.User, content: [{ type: "text", text: "Create the deterministic JSON artifact." }] }],
         tools,
         {

@@ -271,8 +271,7 @@ export function useChatRun({
             }
           },
           beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
-            const studioEnabled = tools.some((tool) => tool.name === "declare_artifact");
-            if (!runFs || !studioEnabled) return { action: "finish" as const };
+            if (!runFs) return { action: "finish" as const };
             return applyArtifactStopPolicy({
               chatId: id,
               runId: activeRunId,

@@ -5,6 +5,7 @@ import { run as agentRun } from "@/shared/lib/agent";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
+import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
 import { Role, type Tool } from "@/shared/types/chat";
 
 export function createSubagentTool(
@@ -51,10 +52,24 @@ export function createSubagentTool(
             parentContext: ctx?.agentContext,
             invocationContext: (ctx?.invocationContext ?? new AgentInvocationContext()).fork("subagent"),
             options: { signal: ctx?.signal },
-            createToolContext: () => ({ model, chatId: ctx?.chatId }),
+            createToolContext: () => ({
+              model,
+              chatId: ctx?.chatId,
+              content: ctx?.content?.bind(ctx),
+              elicit: ctx?.elicit?.bind(ctx),
+              onElicitationComplete: ctx?.onElicitationComplete?.bind(ctx),
+            }),
             prepareMessages: (messages) => injectRequestContext(messages, requestContext),
           },
         );
+
+        // File writes belong to the same workspace. Report their mutations on
+        // the parent tool result so its completion check can verify them, even
+        // if the child failed after committing files.
+        const mutations = runResult.messages
+          .flatMap((message) => message.content)
+          .flatMap((part) => (part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : []));
+        if (mutations.length) ctx?.setMeta?.({ artifactDelta: artifactDelta(mutations) });
 
         if (runResult.status === "aborted") {
           return [{ type: "text", text: "Subagent interrupted before finishing." }];

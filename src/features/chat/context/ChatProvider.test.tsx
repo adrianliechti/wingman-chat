@@ -6,6 +6,7 @@ import type { Client } from "@/shared/lib/client";
 import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
+import type { AgentBeforeFinishDecision } from "@/shared/lib/agent";
 
 const fixture = vi.hoisted(() => ({
   chats: [] as Chat[],
@@ -15,6 +16,8 @@ const fixture = vi.hoisted(() => ({
   complete: vi.fn<Client["complete"]>(),
   summarize: vi.fn(),
   classify: vi.fn(),
+  artifacts: false,
+  verify: vi.fn<() => Promise<AgentBeforeFinishDecision>>(),
 }));
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
@@ -26,9 +29,9 @@ vi.mock("@/shared/config", () => ({
 }));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
-  useArtifacts: () => ({ isAvailable: false, setFileSystem: vi.fn() }),
+  useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn() }),
 }));
-vi.mock("@/features/artifacts/lib/artifact-stop-policy", () => ({ applyArtifactStopPolicy: vi.fn() }));
+vi.mock("@/features/artifacts/lib/artifact-stop-policy", () => ({ applyArtifactStopPolicy: fixture.verify }));
 vi.mock("@/features/artifacts/lib/fs", () => ({
   FileSystemManager: class {
     chatId: string;
@@ -36,7 +39,7 @@ vi.mock("@/features/artifacts/lib/fs", () => ({
       this.chatId = chatId;
     }
   },
-  resolveArtifactFileSystem: vi.fn(),
+  resolveArtifactFileSystem: (_fs: unknown, chatId: string) => ({ chatId }),
 }));
 vi.mock("@/features/chat/hooks/useChatContext", () => ({
   useChatContext: () => ({
@@ -120,6 +123,8 @@ beforeEach(() => {
   fixture.chats.length = 0;
   fixture.tools = [];
   fixture.chat = {};
+  fixture.artifacts = false;
+  fixture.verify.mockReset().mockResolvedValue({ action: "finish" });
   fixture.complete.mockReset();
   fixture.summarize.mockReset().mockResolvedValue("The tool gathered the evidence.");
   fixture.classify.mockReset().mockResolvedValue({ title: "Test", categories: [], risks: [] });
@@ -131,6 +136,27 @@ afterEach(() => {
 });
 
 describe("chat run integration", () => {
+  it("repairs and references saved artifacts without a declaration tool", async () => {
+    fixture.artifacts = true;
+    fixture.verify
+      .mockResolvedValueOnce({
+        action: "continue",
+        feedback: {
+          role: "user",
+          content: [{ type: "runtime_feedback", source: "verification", text: "Fix the missing local script." }],
+        },
+      })
+      .mockResolvedValueOnce({ action: "finish", appendContent: [{ type: "artifact_ref", path: "/game.html" }] });
+    fixture.complete.mockResolvedValue(assistant("Game created."));
+    await harness().sendMessage(user("Build a game"));
+    expect(fixture.verify).toHaveBeenCalledTimes(2);
+    expect(fixture.verify).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: "chat", fs: { chatId: "chat" }, runId: expect.any(String) }),
+    );
+    expect(fixture.complete).toHaveBeenCalledTimes(2);
+    expect(fixture.chats[0].messages.at(-1)?.content.at(-1)).toEqual({ type: "artifact_ref", path: "/game.html" });
+  });
+
   it("retains late tool metadata across later history commits", async () => {
     let toolContext: ToolContext | undefined;
     fixture.tools = [
