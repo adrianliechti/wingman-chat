@@ -1,13 +1,15 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-react";
+import { Bot, ClipboardCheck, Folder, LayoutGrid, Puzzle, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { BridgeServer } from "@/features/agent/types/agent";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
+import { PluginsStep } from "./steps/PluginsStep";
 import { ReviewStep } from "./steps/ReviewStep";
 import { SkillsStep } from "./steps/SkillsStep";
 import { ToolsStep } from "./steps/ToolsStep";
@@ -28,6 +30,7 @@ interface WizardState {
   instructions: string;
 
   selectedSkills: string[];
+  selectedPlugins: string[];
   selectedTools: string[];
   servers: Omit<BridgeServer, "id">[];
 
@@ -44,6 +47,7 @@ export type WizardAction =
   | { type: "SET_NAME"; value: string }
   | { type: "SET_INSTRUCTIONS"; value: string }
   | { type: "TOGGLE_SKILL"; name: string }
+  | { type: "TOGGLE_PLUGIN"; id: string }
   | { type: "TOGGLE_TOOL"; id: string }
   | { type: "ADD_SERVER"; server: Omit<BridgeServer, "id"> }
   | { type: "REMOVE_SERVER"; index: number }
@@ -62,6 +66,7 @@ function initialState(): WizardState {
     name: "",
     instructions: "",
     selectedSkills: [],
+    selectedPlugins: [],
     selectedTools: [],
     servers: [],
     pendingFiles: [],
@@ -98,6 +103,12 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
         : [...state.selectedSkills, action.name];
       return { ...state, selectedSkills: skills };
     }
+    case "TOGGLE_PLUGIN": {
+      const plugins = state.selectedPlugins.includes(action.id)
+        ? state.selectedPlugins.filter((p) => p !== action.id)
+        : [...state.selectedPlugins, action.id];
+      return { ...state, selectedPlugins: plugins };
+    }
     case "TOGGLE_TOOL": {
       const tools = state.selectedTools.includes(action.id)
         ? state.selectedTools.filter((t) => t !== action.id)
@@ -125,7 +136,7 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 
 // ── Steps config ──
 
-function getSteps(): StepDef[] {
+function getSteps(hasPlugins: boolean): StepDef[] {
   const config = getConfig();
   const steps: StepDef[] = [];
 
@@ -134,6 +145,9 @@ function getSteps(): StepDef[] {
   }
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
+  if (hasPlugins) {
+    steps.push({ id: "plugins", label: "Plugins", icon: Puzzle });
+  }
   steps.push({ id: "skills", label: "Skills", icon: Zap });
   steps.push({ id: "tools", label: "Tools", icon: Wrench });
   if (config.repository) {
@@ -152,12 +166,14 @@ interface AgentWizardProps {
 
 export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   const { createAgent, addServer, addFile } = useAgents();
+  const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const steps = useMemo(() => getSteps(), []);
+  const hasPlugins = plugins.length > 0;
+  const steps = useMemo(() => getSteps(hasPlugins), [hasPlugins]);
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 
@@ -192,6 +208,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       const agent = await createAgent(s.name.trim(), {
         instructions: s.instructions.trim() || undefined,
         skills: s.selectedSkills,
+        plugins: s.selectedPlugins,
         tools: s.selectedTools,
         model: s.model || undefined,
         memory: s.memory || undefined,
@@ -282,11 +299,18 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                   {currentStepId === "identity" && (
                     <IdentityStep instructions={state.instructions} dispatch={dispatch} />
                   )}
+                  {currentStepId === "plugins" && (
+                    <PluginsStep selectedPlugins={state.selectedPlugins} dispatch={dispatch} />
+                  )}
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
                   {currentStepId === "tools" && (
-                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
+                    <ToolsStep
+                      selectedTools={state.selectedTools}
+                      servers={state.servers}
+                      dispatch={dispatch}
+                    />
                   )}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />
@@ -296,6 +320,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                       name={state.name}
                       instructions={state.instructions}
                       selectedSkills={state.selectedSkills}
+                      selectedPlugins={state.selectedPlugins}
                       selectedTools={state.selectedTools}
                       servers={state.servers}
                       pendingFiles={state.pendingFiles}

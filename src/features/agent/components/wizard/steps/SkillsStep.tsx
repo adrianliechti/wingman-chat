@@ -1,8 +1,6 @@
-import { Check, Plus, Search, Settings2, X } from "lucide-react";
+import { Check, Search, Settings2, X } from "lucide-react";
 import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
-import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import type { Skill } from "@/features/skills/lib/skillParser";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -12,11 +10,9 @@ interface SkillsStepProps {
 }
 
 export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
-  const { skills } = useSkills();
+  const { skills, openSkillCatalog } = useSkills();
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catalogView, setCatalogView] = useState<"new" | "list">("new");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,14 +28,10 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
   const filtered = useMemo(() => {
     if (!search.trim()) return skills;
     const q = search.toLowerCase();
-    return skills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+    return skills.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
+    );
   }, [skills, search]);
-
-  const handleSkillSaved = (skill: Skill, isNew: boolean) => {
-    if (isNew && !selectedSkills.includes(skill.name)) {
-      dispatch({ type: "TOGGLE_SKILL", name: skill.name });
-    }
-  };
 
   return (
     <div className="space-y-3">
@@ -52,27 +44,17 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => {
-            setCatalogView("new");
-            setCatalogOpen(true);
-          }}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-        >
-          <Plus size={11} /> New
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setCatalogView("list");
-            setCatalogOpen(true);
-          }}
+          onClick={() => openSkillCatalog()}
           className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
         >
           <Settings2 size={11} /> Manage skills
         </button>
         {searchOpen ? (
           <div className="relative flex-1">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Search
+              size={12}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400"
+            />
             <input
               ref={searchInputRef}
               type="text"
@@ -147,29 +129,15 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                    {skill.description}
+                  </div>
                 </div>
               </button>
             );
           })
         )}
       </div>
-
-      <SkillCatalog
-        isOpen={catalogOpen}
-        onClose={() => setCatalogOpen(false)}
-        enabledSkillNames={selected}
-        onToggle={(name) => dispatch({ type: "TOGGLE_SKILL", name })}
-        onSkillSaved={handleSkillSaved}
-        onImported={(names) => {
-          for (const name of names) {
-            if (!selectedSkills.includes(name)) {
-              dispatch({ type: "TOGGLE_SKILL", name });
-            }
-          }
-        }}
-        initialView={catalogView}
-      />
     </div>
   );
 }

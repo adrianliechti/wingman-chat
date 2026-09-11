@@ -2,7 +2,10 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { McpApp } from "../../../src/features/chat/components/McpApp";
 import { MCPClient } from "../../../src/features/settings/lib/mcp";
-import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
+import {
+  ToolsContext,
+  type ToolsContextValue,
+} from "../../../src/features/tools/context/ToolsContext";
 import { ProviderState, type ToolResultContent } from "../../../src/shared/types/chat";
 import { AppProvider } from "../../../src/shell/context/AppProvider";
 import { useApp } from "../../../src/shell/hooks/useApp";
@@ -41,7 +44,9 @@ let holdResource: (() => void) | undefined;
 let hold = false;
 const fetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
-  if ((input instanceof Request ? input.url : input.toString()) !== `${location.origin}/fixture-mcp`)
+  if (
+    (input instanceof Request ? input.url : input.toString()) !== `${location.origin}/fixture-mcp`
+  )
     return fetch(input, init);
   if (init?.method === "GET") {
     return new Response(
@@ -86,7 +91,11 @@ window.fetch = async (input, init) => {
       const bytes = new TextEncoder().encode(html);
       result = {
         contents: [
-          { uri: "ui://fixture", mimeType: "text/html;profile=mcp-app", blob: btoa(String.fromCharCode(...bytes)) },
+          {
+            uri: "ui://fixture",
+            mimeType: "text/html;profile=mcp-app",
+            blob: btoa(String.fromCharCode(...bytes)),
+          },
         ],
       };
       break;
@@ -109,7 +118,7 @@ const toolsContext: ToolsContextValue = {
   getProviderPolicy: () => "optional",
   setProviderEnabled: async () => client.connect(),
   setModelOverrides: () => {},
-  skillSources: { personal: false, catalog: false },
+  skillSources: { personal: false },
   setSkillSources: () => {},
   companionAvailable: false,
   companionEnabled: false,

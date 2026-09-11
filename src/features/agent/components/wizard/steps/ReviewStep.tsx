@@ -1,8 +1,9 @@
-import { ChevronDown, FileText, Mic, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import { ChevronDown, FileText, Mic, Puzzle, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
 import { type Dispatch, useId } from "react";
 import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChatModel } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { getConfig } from "@/shared/config";
 import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
@@ -13,6 +14,7 @@ interface ReviewStepProps {
   name: string;
   instructions: string;
   selectedSkills: string[];
+  selectedPlugins: string[];
   selectedTools: string[];
   servers: Omit<BridgeServer, "id">[];
   pendingFiles: File[];
@@ -25,6 +27,7 @@ export function ReviewStep({
   name,
   instructions,
   selectedSkills,
+  selectedPlugins,
   selectedTools,
   servers,
   pendingFiles,
@@ -34,6 +37,7 @@ export function ReviewStep({
 }: ReviewStepProps) {
   const modelSelectId = useId();
   const { models } = useChatModel();
+  const { plugins } = usePlugins();
   const config = getConfig();
 
   const effectiveModel = model || defaultModelId(models, getSavedModelId());
@@ -109,6 +113,25 @@ export function ReviewStep({
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300"
                 >
                   <Zap size={8} /> {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Plugins */}
+        {selectedPlugins.length > 0 && (
+          <div className="px-3 py-2.5">
+            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
+              Plugins
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {selectedPlugins.map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300"
+                >
+                  <Puzzle size={8} /> {plugins.find((pl) => pl.id === p)?.title || p}
                 </span>
               ))}
             </div>

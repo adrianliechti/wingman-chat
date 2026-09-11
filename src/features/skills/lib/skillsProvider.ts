@@ -12,26 +12,14 @@ export const SKILLS_PROVIDER_ID = "skills";
 
 /**
  * Which independently-toggled sources the Skills tool exposes (no-agent mode).
- * Either may be on at once; a personal skill shadows a shipped template of the
- * same name (personal wins). The Studio skill pack is intentionally absent — it's
- * slaved to the Studio capability and passed to the provider as a separate
- * `studioEnabled` flag, not a user-toggled source.
+ * The Studio skill pack is intentionally absent here — it's slaved to the Studio
+ * capability and passed to the provider as a separate `studioEnabled` flag, not
+ * a user-toggled source.
  */
 export interface SkillSources {
   /** The user's own editable OPFS skills. */
   personal: boolean;
-  /** The shipped template catalog (excludes the Studio skill pack). */
-  catalog: boolean;
 }
-
-/**
- * Whether a catalog category (the first path segment of a template's SKILL.md,
- * e.g. `skills/<category>/<name>/SKILL.md`) belongs to the Studio skill pack —
- * the format/medium capabilities and output generators shipped under
- * `skills/studio/`. Surfaced as its own Skills source so they don't crowd the
- * general catalog.
- */
-export const isStudioSkillCategory = (category: string): boolean => category === "studio";
 
 /**
  * One skill exposed by the catalog. Content is loaded on demand so eager
@@ -57,36 +45,29 @@ function entryKey(plugin: string | undefined, name: string): string {
 }
 
 /**
- * Adapt shipped templates (content fetched lazily) to catalog entries, so the
- * Skills tool resolves `read_skill` / `read_skill_resource` identically across
- * sources. Name collisions across sources are resolved by the caller's single
- * dedup (push order = precedence), not here.
+ * Adapt the shipped Studio skill pack (content fetched lazily) to catalog
+ * entries, so the Skills tool resolves `read_skill` / `read_skill_resource`
+ * identically across sources. Name collisions across sources are resolved by
+ * the caller's single dedup (push order = precedence), not here.
  */
-export function templateEntries(
-  templates: SkillTemplate[],
-  loadTemplate: (path: string) => Promise<{ content: string } | null>,
-  predicate: (t: SkillTemplate) => boolean,
-): SkillEntry[] {
-  return templates.filter(predicate).map((t) => ({
-    name: t.name,
-    description: t.description,
-    compatibility: t.compatibility,
-    resources: t.resources,
-    loadContent: async () => {
-      const parsed = await loadTemplate(t.path);
-      if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
-      return parsed.content;
-    },
-    loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
-  }));
-}
-
-/** The shipped Studio skill pack (studio + generation categories) as entries. */
 export function studioTemplateEntries(
   templates: SkillTemplate[],
   loadTemplate: (path: string) => Promise<{ content: string } | null>,
 ): SkillEntry[] {
-  return templateEntries(templates, loadTemplate, (t) => isStudioSkillCategory(t.category));
+  return templates
+    .filter((t) => t.category === "studio")
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      compatibility: t.compatibility,
+      resources: t.resources,
+      loadContent: async () => {
+        const parsed = await loadTemplate(t.path);
+        if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
+        return parsed.content;
+      },
+      loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
+    }));
 }
 
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */
@@ -122,7 +103,10 @@ export interface SkillsProviderMeta {
  *
  * Returns null when there are no entries to expose.
  */
-export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProviderMeta): ToolProvider | null {
+export function createSkillsProvider(
+  entries: SkillEntry[],
+  meta: SkillsProviderMeta,
+): ToolProvider | null {
   if (entries.length === 0) return null;
 
   const byName = new Map(entries.map((e) => [entryKey(e.plugin, e.name), e]));
@@ -191,7 +175,8 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
                 plugin: {
                   type: "string",
                   enum: pluginIds,
-                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                  description:
+                    "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
                 },
               }
             : {}),
@@ -203,7 +188,9 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
         const skillName = args.name as string;
         const pluginId = typeof args.plugin === "string" && args.plugin ? args.plugin : undefined;
         if (!skillName) {
-          return [{ type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) }];
+          return [
+            { type: "text" as const, text: JSON.stringify({ error: "No skill name provided" }) },
+          ];
         }
         const entry = byName.get(entryKey(pluginId, skillName));
         if (!entry) {
@@ -243,7 +230,9 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           icon: FileCode2,
           label: state.error ? "Resource unavailable" : "Read skill resource",
           preview:
-            typeof args?.name === "string" && typeof args?.path === "string" ? `${args.name}/${args.path}` : undefined,
+            typeof args?.name === "string" && typeof args?.path === "string"
+              ? `${args.name}/${args.path}`
+              : undefined,
         }),
         input: () => [],
         output: (result) => {
@@ -271,7 +260,9 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
         properties: {
           name: {
             type: "string",
-            enum: entries.filter((entry) => entry.resources?.length && entry.loadResource).map((entry) => entry.name),
+            enum: entries
+              .filter((entry) => entry.resources?.length && entry.loadResource)
+              .map((entry) => entry.name),
             description: "The name of the skill that owns the resource.",
           },
           path: {
@@ -283,7 +274,8 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
                 plugin: {
                   type: "string",
                   enum: pluginIds,
-                  description: "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
+                  description:
+                    "The plugin that owns the skill. Omit for skills from the personal library or catalog.",
                 },
               }
             : {}),
@@ -372,7 +364,9 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
     description: meta.description,
     icon: Sparkles,
     instructions:
-      skillsPrompt.replace("{resourcesGuidance}", resourcesGuidance).replace("{skillsXml}", skillsXml) || undefined,
+      skillsPrompt
+        .replace("{resourcesGuidance}", resourcesGuidance)
+        .replace("{skillsXml}", skillsXml) || undefined,
     tools,
   };
 }
