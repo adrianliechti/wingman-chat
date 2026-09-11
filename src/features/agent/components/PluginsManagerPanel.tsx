@@ -458,10 +458,6 @@ export function PluginsManagerPanel({
                   </div>
                 )}
                 <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
-                  <span className="text-neutral-400 dark:text-neutral-500">Source</span>
-                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">{plugin.hubUrl}</span>
-                </div>
-                <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
                   <span className="text-neutral-400 dark:text-neutral-500">Installed</span>
                   <span className="min-w-0 text-neutral-700 dark:text-neutral-300">
                     {new Date(plugin.installedAt).toLocaleDateString()}
@@ -597,10 +593,6 @@ export function PluginsManagerPanel({
                     <span className="min-w-0 text-neutral-700 dark:text-neutral-300">{plugin.keywords.join(", ")}</span>
                   </div>
                 )}
-                <div className="col-span-2 grid grid-cols-subgrid items-baseline py-2">
-                  <span className="text-neutral-400 dark:text-neutral-500">Source</span>
-                  <span className="min-w-0 break-all text-neutral-700 dark:text-neutral-300">{plugin.source}</span>
-                </div>
               </div>
             </div>
           </div>
