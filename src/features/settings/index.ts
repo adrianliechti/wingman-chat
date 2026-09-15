@@ -1,7 +1,7 @@
 // Components
 
+export { AccountMenu } from "./components/AccountMenu";
 export { OpfsBrowser } from "./components/OpfsBrowser";
-export { SettingsButton } from "./components/SettingsButton";
 export { SettingsDrawer } from "./components/SettingsDrawer";
 export type { BridgeContextType, BridgeServer } from "./context/BridgeContext";
 // Context

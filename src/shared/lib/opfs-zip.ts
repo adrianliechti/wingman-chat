@@ -114,3 +114,41 @@ export async function downloadFolderAsZip(folderPath: string, filename: string):
   const blob = await exportFolderAsZip(folderPath);
   downloadBlob(blob, filename);
 }
+
+/** Export selected top-level OPFS folders together in a single ZIP. */
+export async function downloadFoldersAsZip(folderPaths: string[], filename: string): Promise<void> {
+  const paths = [...new Set(folderPaths.map((path) => path.replace(/^\/+|\/+$/g, "")).filter(Boolean))];
+  if (!paths.length) throw new Error("Select at least one folder to export.");
+
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  await flushPersistence();
+
+  const snapshot = async () => {
+    for (const path of paths) {
+      try {
+        if (path.includes("/")) throw new Error(`Only top-level paths can be exported: ${path}`);
+        try {
+          const folder = getZipFolder(zip, path);
+          await addDirectoryToZip(await getDirectory(path), folder, path);
+        } catch (error) {
+          if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
+          const file = await (await getRoot()).getFileHandle(path).then((handle) => handle.getFile());
+          zip.file(path, await file.arrayBuffer());
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "NotFoundError") continue;
+        throw error;
+      }
+    }
+  };
+  const lock = (index: number): Promise<void> =>
+    index === paths.length
+      ? snapshot()
+      : withPersistenceLock(`collection:${paths[index] === "profile.json" ? "profile" : paths[index]}`, () =>
+          lock(index + 1),
+        );
+  await lock(0);
+
+  downloadBlob(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }), filename);
+}

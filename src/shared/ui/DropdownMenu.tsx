@@ -31,6 +31,8 @@ export interface DropdownMenuItemProps {
   /** Renders a checkmark at the trailing edge. */
   selected?: boolean;
   onClick?: () => void;
+  /** Escape hatch when the handler needs the click event (e.g. modifier keys). */
+  onClickEvent?: (e: React.MouseEvent) => void;
   disabled?: boolean;
   children: ReactNode;
   /** Render-prop escape hatch — receives the base className string. */
@@ -43,6 +45,7 @@ export function DropdownMenuItem({
   destructive = false,
   selected = false,
   onClick,
+  onClickEvent,
   disabled,
   children,
   render,
@@ -69,7 +72,15 @@ export function DropdownMenuItem({
       {render ? (
         render({ className: baseClass, children: inner })
       ) : (
-        <button type="button" onClick={onClick} disabled={disabled} className={baseClass}>
+        <button
+          type="button"
+          onClick={(e) => {
+            onClickEvent?.(e);
+            onClick?.();
+          }}
+          disabled={disabled}
+          className={baseClass}
+        >
           {inner}
         </button>
       )}
