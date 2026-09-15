@@ -83,6 +83,29 @@ function saveTools(ids: Set<string>): void {
   }
 }
 
+// The global companion enable flag, persisted so a user who turns the companion
+// off keeps it off across reloads. This governs the companion only outside agent
+// mode — an active agent's own config decides whether the companion is on.
+const COMPANION_ENABLED_STORAGE_KEY = "app_companion_enabled";
+
+function loadCompanionEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(COMPANION_ENABLED_STORAGE_KEY);
+    // Default to on when nothing has been persisted yet.
+    return raw === null ? true : raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function saveCompanionEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(COMPANION_ENABLED_STORAGE_KEY, String(enabled));
+  } catch {
+    // Silently handle localStorage errors (private mode, quota, etc.)
+  }
+}
+
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
 
@@ -175,8 +198,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Local Wingman auto-discovery
   const bridgeHost = config.bridge?.url;
   const { available: companionAvailable } = useCompanion(bridgeHost);
-  const [companionEnabled, setCompanionEnabled] = useState(true);
-  const toggleCompanion = useCallback(() => setCompanionEnabled((v) => !v), []);
+  const [companionEnabled, setCompanionEnabled] = useState(() => loadCompanionEnabled());
+  const toggleCompanion = useCallback(
+    () =>
+      setCompanionEnabled((v) => {
+        const next = !v;
+        saveCompanionEnabled(next);
+        return next;
+      }),
+    [],
+  );
   const [companionClient] = useState<MCPClient | null>(() =>
     bridgeHost
       ? new MCPClient(
@@ -321,7 +352,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (skillsProvider) merged.add(SKILLS_PROVIDER_ID);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
-    if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
+    // Companion gating differs by mode. Without an agent the persisted global
+    // flag decides. Under an agent the global flag has no effect: the companion
+    // is only desired when the agent requires it (agentRequired, via agent.tools)
+    // or the user turned it on for this session (activeSelection) — both already
+    // merged above. This keeps it consistent with every other optional tool.
+    if (!currentAgent && companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     // Connect plugin MCP servers whenever their plugin provider is desired.
     for (const [providerId, clientIds] of pluginMcpClientsByProvider) {
       if (merged.has(providerId)) {
@@ -334,6 +370,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     skillsProvider,
     agentRequired,
     modelEnabledTools,
+    currentAgent,
     companionAvailable,
     companionEnabled,
     pluginMcpClientsByProvider,
@@ -385,11 +422,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
-      if (id === COMPANION_ID && !companionEnabled) return ProviderState.Disconnected;
+      // Outside agent mode the global flag gates the companion; when off it reads
+      // as disconnected regardless of the live MCP state. Under an agent the flag
+      // is ignored and the companion follows its normal MCP lifecycle state (which
+      // reflects the agent's requirement / session selection).
+      if (id === COMPANION_ID && !currentAgent && !companionEnabled)
+        return ProviderState.Disconnected;
       if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
       return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
-    [mcpIds, mcpStates, desiredTools, companionEnabled],
+    [mcpIds, mcpStates, desiredTools, currentAgent, companionEnabled],
   );
 
   const attemptsRef = useRef(
@@ -506,11 +548,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         updateMcpState(id, ProviderState.Disconnected);
       }
 
-      // Companion has its own enable flag that gates desiredTools; toggling
-      // userTools alone is not enough because desiredTools re-adds the id when
-      // companionEnabled is still true.
-      if (id === COMPANION_ID) {
+      // Companion toggle. Outside agent mode it has a dedicated persisted global
+      // flag that gates desiredTools; toggling userTools alone is not enough
+      // because desiredTools re-adds the id when companionEnabled is still true.
+      // Under an agent the global flag is ignored and the companion behaves like
+      // any other optional tool, so fall through to the standard selection path.
+      if (id === COMPANION_ID && !currentAgent) {
         setCompanionEnabled(enabled);
+        saveCompanionEnabled(enabled);
         await connectMcp(id, enabled);
         return;
       }

@@ -79,7 +79,9 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</p>
+      <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+        {label}
+      </p>
       <div className="flex rounded-lg overflow-hidden border border-neutral-300/50 dark:border-neutral-700/50">
         {options.map((opt) => (
           <button
@@ -118,11 +120,16 @@ function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelPr
       >
         <div className="flex items-center gap-3">
           <span className="text-neutral-700 dark:text-neutral-300">{icon}</span>
-          <span className="text-base font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
+          <span className="text-base font-medium text-neutral-900 dark:text-neutral-100">
+            {title}
+          </span>
         </div>
         <ChevronRight
           size={18}
-          className={cn("text-neutral-400 transition-transform duration-300 ease-out", isOpen && "rotate-90")}
+          className={cn(
+            "text-neutral-400 transition-transform duration-300 ease-out",
+            isOpen && "rotate-90",
+          )}
         />
       </button>
       <div
@@ -141,15 +148,27 @@ function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelPr
   );
 }
 
-export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
+export function SettingsDrawer({
+  isOpen,
+  onClose,
+  showAdvanced,
+  initialSection,
+}: SettingsDrawerProps) {
   const profileNameInputId = useId();
   const profileRoleInputId = useId();
   const profileAboutInputId = useId();
   const [openSection, setOpenSection] = useState<string | null>(null);
-  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } = useToolsContext();
+  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
+    useToolsContext();
+  const { agents, currentAgent, deleteAgent } = useAgents();
   const companion = providers.find((p) => p.id === COMPANION_ID);
   const companionState = companion ? getProviderState(companion.id) : ProviderState.Disconnected;
-  const companionConnected = companionState === ProviderState.Connected && companionEnabled;
+  // The global enable flag only governs the companion outside agent mode. With an
+  // agent active its config decides, so "enabled" for UI purposes is the live
+  // connection state; the global toggle is shown as inactive.
+  const companionConnected = currentAgent
+    ? companionState === ProviderState.Connected
+    : companionState === ProviderState.Connected && companionEnabled;
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -169,7 +188,6 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   } = useSettings();
   const { chats } = useChatList();
   const { deleteChat, stopStreaming } = useChatActions();
-  const { agents, deleteAgent } = useAgents();
   const {
     inputDeviceId,
     outputDeviceId,
@@ -239,7 +257,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Delete all data?",
-        message: "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
+        message:
+          "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
         danger: true,
       }))
     ) {
@@ -249,7 +268,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Are you absolutely sure?",
-        message: "This is your final warning. All data will be permanently deleted and cannot be recovered.",
+        message:
+          "This is your final warning. All data will be permanently deleted and cannot be recovered.",
         danger: true,
         confirmLabel: "Delete everything",
       }))
@@ -369,7 +389,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
           const result = await importChatsFromLegacyJson(jsonData);
           if (result.failed) {
-            notify.error("Some chats could not be imported", `${result.imported} imported; ${result.failed} failed.`);
+            notify.error(
+              "Some chats could not be imported",
+              `${result.imported} imported; ${result.failed} failed.`,
+            );
             if (!result.imported) return;
           }
           notify.success(
@@ -458,7 +481,11 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <div className="absolute inset-0 bg-black/40 dark:bg-black/60" onClick={onClose} aria-hidden="true" />
+            <div
+              className="absolute inset-0 bg-black/40 dark:bg-black/60"
+              onClick={onClose}
+              aria-hidden="true"
+            />
           </Transition.Child>
 
           {/* Drawer */}
@@ -483,7 +510,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   >
                     <X size={16} />
                   </button>
-                  <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Settings</h2>
+                  <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                    Settings
+                  </h2>
                 </div>
               </div>
 
@@ -497,8 +526,18 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   onClick={() => toggleSection("general")}
                 >
                   <div className="grid grid-cols-2 gap-3">
-                    <SegmentedControl label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
-                    <SegmentedControl label="Emoji" value={emojiMode} onChange={setEmojiMode} options={emojiOptions} />
+                    <SegmentedControl
+                      label="Theme"
+                      value={theme}
+                      onChange={setTheme}
+                      options={themeOptions}
+                    />
+                    <SegmentedControl
+                      label="Emoji"
+                      value={emojiMode}
+                      onChange={setEmojiMode}
+                      options={emojiOptions}
+                    />
                   </div>
                   <SegmentedControl
                     label="Layout"
@@ -642,13 +681,18 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     value={(profile.persona || "default") as PersonaKey}
                     onChange={(value) => updateProfile({ persona: value })}
                     options={personaOptions}
-                    description={personaOptions.find((p) => p.value === (profile.persona || "default"))?.description}
+                    description={
+                      personaOptions.find((p) => p.value === (profile.persona || "default"))
+                        ?.description
+                    }
                   />
 
                   {/* Storage Info */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        Storage
+                      </span>
                       <span className="text-sm text-neutral-500 dark:text-neutral-400">
                         {chats.length} chat{chats.length === 1 ? "" : "s"} •{" "}
                         {storageInfo.isLoading
@@ -690,7 +734,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       </button>
                     </div>
 
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                      Stored locally in your browser
+                    </p>
                   </div>
                 </SectionPanel>
 
@@ -703,7 +749,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                 >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        Storage
+                      </span>
                       <span className="text-sm text-neutral-500 dark:text-neutral-400">
                         {agents.length} agent{agents.length === 1 ? "" : "s"} •{" "}
                         {storageInfo.isLoading
@@ -760,12 +808,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     onClick={() => toggleSection("companion")}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">Enable companion</span>
+                      <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                        Enable companion
+                      </span>
                       <button
                         type="button"
                         onClick={toggleCompanion}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none ${
-                          companionEnabled ? "bg-emerald-500 dark:bg-emerald-600" : "bg-neutral-300 dark:bg-neutral-600"
+                        disabled={!!currentAgent}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+                          companionEnabled
+                            ? "bg-emerald-500 dark:bg-emerald-600"
+                            : "bg-neutral-300 dark:bg-neutral-600"
                         }`}
                         role="switch"
                         aria-checked={companionEnabled}
@@ -778,10 +831,18 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       </button>
                     </div>
 
+                    {currentAgent ? (
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                        While an agent is active, the companion is controlled by the agent's tools,
+                        not this global setting.
+                      </p>
+                    ) : null}
+
                     {companionConnected && companion && companion.tools.length > 0 ? (
                       <div className="space-y-1">
                         <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                          {companion.tools.length} tool{companion.tools.length !== 1 ? "s" : ""} available
+                          {companion.tools.length} tool{companion.tools.length !== 1 ? "s" : ""}{" "}
+                          available
                         </p>
                         <div className="space-y-1">
                           {companion.tools.map((tool) => (
@@ -789,9 +850,18 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               <span className="shrink-0 text-neutral-600 dark:text-neutral-400">
                                 {(() => {
                                   const toolIcon =
-                                    tool.icon ?? (typeof companion.icon === "string" ? companion.icon : undefined);
+                                    tool.icon ??
+                                    (typeof companion.icon === "string"
+                                      ? companion.icon
+                                      : undefined);
                                   if (toolIcon) {
-                                    return <McpProviderIcon src={toolIcon} size={16} className="object-contain" />;
+                                    return (
+                                      <McpProviderIcon
+                                        src={toolIcon}
+                                        size={16}
+                                        className="object-contain"
+                                      />
+                                    );
                                   }
                                   if (companion.icon && typeof companion.icon !== "string") {
                                     const CompanionIcon = companion.icon;
@@ -815,7 +885,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         </div>
                       </div>
                     ) : companionConnected ? (
-                      <p className="text-sm text-neutral-400 dark:text-neutral-500">No tools exposed</p>
+                      <p className="text-sm text-neutral-400 dark:text-neutral-500">
+                        No tools exposed
+                      </p>
                     ) : (
                       <p className="text-sm text-neutral-400 dark:text-neutral-500">
                         Enable the companion to see available tools.
@@ -864,7 +936,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               );
                             } catch (error) {
                               console.error("Export failed:", error);
-                              notify.error("Couldn't export data", "Something went wrong. Please try again.");
+                              notify.error(
+                                "Couldn't export data",
+                                "Something went wrong. Please try again.",
+                              );
                             } finally {
                               setIsExporting(false);
                             }
@@ -880,7 +955,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                             )}
                           />
                           <div className="min-w-0">
-                            <div className="font-medium">{isExporting ? "Exporting..." : "Export All Data"}</div>
+                            <div className="font-medium">
+                              {isExporting ? "Exporting..." : "Export All Data"}
+                            </div>
                             <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
                               Download chats, agents, images, skills, and profile as ZIP
                             </div>
@@ -892,9 +969,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           disabled={isExporting || isRestoring}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left disabled:opacity-50"
                         >
-                          <Download size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                          <Download
+                            size={16}
+                            className="text-neutral-500 dark:text-neutral-400 shrink-0"
+                          />
                           <div>
-                            <div className="font-medium">{isRestoring ? "Restoring..." : "Restore Backup"}</div>
+                            <div className="font-medium">
+                              {isRestoring ? "Restoring..." : "Restore Backup"}
+                            </div>
                             <div className="text-xs text-neutral-500 dark:text-neutral-500">
                               Restore all or part of a backup ZIP
                             </div>
@@ -913,7 +995,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                             onClick={() => setOpfsBrowserOpen(true)}
                             className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left"
                           >
-                            <HardDrive size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                            <HardDrive
+                              size={16}
+                              className="text-neutral-500 dark:text-neutral-400 shrink-0"
+                            />
                             <div className="min-w-0">
                               <div className="font-medium">OPFS Browser</div>
                               <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">

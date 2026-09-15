@@ -16,9 +16,11 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { SettingsButton } from "@/features/settings/components/SettingsButton";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
+import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
+import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -54,9 +56,15 @@ export function AppLayout() {
   } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
-  const { showAgentDrawer } = useAgents();
+  const { showAgentDrawer, currentAgent } = useAgents();
   const { showAppDrawer } = useApp();
-  const { companionAvailable, companionEnabled } = useToolsContext();
+  const { companionAvailable, companionEnabled, getProviderState } = useToolsContext();
+  // Header indicator reflects the companion's actual availability: the live
+  // connection state under an agent (its config decides), the persisted global
+  // flag otherwise.
+  const companionActive = currentAgent
+    ? getProviderState(COMPANION_ID) === ProviderState.Connected
+    : companionEnabled;
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
@@ -79,7 +87,9 @@ export function AppLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(
+    undefined,
+  );
 
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
@@ -93,7 +103,9 @@ export function AppLayout() {
   const updateSlider = useCallback(
     (containerRef: React.RefObject<HTMLDivElement | null>, key: "tablet" | "desktop") => {
       if (containerRef.current) {
-        const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
+        const activeButton = containerRef.current.querySelector(
+          `[data-page="${currentPage}"]`,
+        ) as HTMLElement;
         if (activeButton) {
           const containerRect = containerRef.current.getBoundingClientRect();
           const buttonRect = activeButton.getBoundingClientRect();
@@ -156,7 +168,12 @@ export function AppLayout() {
   // Navigation pages
   const pages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
-    { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
+    {
+      key: "translate" as const,
+      label: "Translate",
+      icon: <Languages size={20} />,
+      to: "/translate",
+    },
     { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
     if (page.key === "chat") return true;
@@ -308,7 +325,10 @@ export function AppLayout() {
                       <span>{pages.find((p) => p.key === currentPage)?.label}</span>
                       <ChevronDown
                         size={14}
-                        className={cn("transition-transform duration-200", mobileMenuOpen && "rotate-180")}
+                        className={cn(
+                          "transition-transform duration-200",
+                          mobileMenuOpen && "rotate-180",
+                        )}
                       />
                     </button>
                   </div>
@@ -372,7 +392,7 @@ export function AppLayout() {
                   }}
                   className={cn(
                     "p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    !companionEnabled && "opacity-40",
+                    !companionActive && "opacity-40",
                   )}
                   title="Companion"
                 >
