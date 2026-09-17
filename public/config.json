@@ -24,7 +24,15 @@
   "repository": {},
   "renderer": {},
   "extractor": {
-    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+    "files": [
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx",
+      ".ppt",
+      ".pptx"
+    ]
   },
   "internet": {
     "elicitation": true,
@@ -54,7 +62,17 @@
     }
   ],
   "translator": {
-    "files": [".pdf"],
-    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
+    "files": [
+      ".pdf"
+    ],
+    "languages": [
+      "en",
+      "es",
+      "fr",
+      "de",
+      "zh",
+      "ja",
+      "ru"
+    ]
   }
 }
