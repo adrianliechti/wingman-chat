@@ -29,7 +29,11 @@ import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { clearAll, getStorageUsage } from "@/shared/lib/opfs";
-import { downloadFolderAsZip, downloadFoldersAsZip, importFolderFromZip } from "@/shared/lib/opfs-zip";
+import {
+  downloadFolderAsZip,
+  downloadFoldersAsZip,
+  importFolderFromZip,
+} from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode } from "@/shared/types/settings";
@@ -82,8 +86,12 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</p>
-      {description && <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-500">{description}</p>}
+      <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+        {label}
+      </p>
+      {description && (
+        <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-500">{description}</p>
+      )}
       <div className="flex rounded-lg overflow-hidden border border-neutral-300/50 dark:border-neutral-700/50">
         {options.map((opt) => (
           <button
@@ -104,24 +112,40 @@ function SegmentedControl<T extends string>({
   );
 }
 
-function SettingsViewHeader({ id, title, description }: { id?: string; title: string; description: string }) {
+function SettingsViewHeader({
+  id,
+  title,
+  description,
+}: {
+  id?: string;
+  title: string;
+  description: string;
+}) {
   return (
     <div className="border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60">
       <h3 id={id} className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
         {title}
       </h3>
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{description}</p>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+        {description}
+      </p>
     </div>
   );
 }
 
-export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
+export function SettingsDrawer({
+  isOpen,
+  onClose,
+  showAdvanced,
+  initialSection,
+}: SettingsDrawerProps) {
   const profileNameInputId = useId();
   const profileRoleInputId = useId();
   const profileAboutInputId = useId();
   const [section, setSection] = useState<SectionId>("general");
   const [mobileShowList, setMobileShowList] = useState(true);
-  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } = useToolsContext();
+  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
+    useToolsContext();
   const { agents, currentAgent, deleteAgent } = useAgents();
   const { plugins } = usePlugins();
   const companion = providers.find((p) => p.id === COMPANION_ID);
@@ -135,7 +159,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState(0);
   const [backupSelectionOpen, setBackupSelectionOpen] = useState(false);
   const [backupSelection, setBackupSelection] = useState({
     chats: false,
@@ -229,7 +255,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Delete all data?",
-        message: "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
+        message:
+          "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
         danger: true,
       }))
     ) {
@@ -239,7 +266,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (
       !(await confirm({
         title: "Are you absolutely sure?",
-        message: "This is your final warning. All data will be permanently deleted and cannot be recovered.",
+        message:
+          "This is your final warning. All data will be permanently deleted and cannot be recovered.",
         danger: true,
         confirmLabel: "Delete everything",
       }))
@@ -273,9 +301,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       )
         return;
       setIsRestoring(true);
+      setRestoreProgress(0);
       stopStreaming();
       try {
-        await importFolderFromZip("/", file);
+        await importFolderFromZip("/", file, setRestoreProgress);
         window.location.reload();
       } catch (error) {
         notify.error("Couldn't restore backup", error);
@@ -324,8 +353,13 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (!folders.length) return;
 
     setIsExporting(true);
+    setExportProgress(0);
     try {
-      await downloadFoldersAsZip(folders, `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`);
+      await downloadFoldersAsZip(
+        folders,
+        `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`,
+        setExportProgress,
+      );
     } catch (error) {
       console.error("Export failed:", error);
       notify.error("Couldn't export data", "Something went wrong. Please try again.");
@@ -336,8 +370,13 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
   const exportEverythingBackup = async () => {
     setIsExporting(true);
+    setExportProgress(0);
     try {
-      await downloadFolderAsZip("/", `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`);
+      await downloadFolderAsZip(
+        "/",
+        `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`,
+        setExportProgress,
+      );
     } catch (error) {
       console.error("Export failed:", error);
       notify.error("Couldn't export data", "Something went wrong. Please try again.");
@@ -370,7 +409,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   };
 
   const storageSizeFor = (prefix: string) =>
-    storageInfo.entries.filter((entry) => entry.path.startsWith(prefix)).reduce((sum, entry) => sum + entry.size, 0);
+    storageInfo.entries
+      .filter((entry) => entry.path.startsWith(prefix))
+      .reduce((sum, entry) => sum + entry.size, 0);
   const chatStorageSize = storageSizeFor("chats/");
   const agentStorageSize = storageSizeFor("agents/");
   const imageStorageSize = storageSizeFor("images/");
@@ -483,7 +524,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               : "text-neutral-600 hover:bg-neutral-200/40 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
                           )}
                         >
-                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{s.icon}</span>
+                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
+                            {s.icon}
+                          </span>
                           {s.label}
                         </button>
                       ))}
@@ -498,7 +541,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     >
                       {/* General Section */}
                       {section === "general" && (
-                        <section aria-labelledby="appearance-settings-heading" className="space-y-6">
+                        <section
+                          aria-labelledby="appearance-settings-heading"
+                          className="space-y-6"
+                        >
                           <SettingsViewHeader
                             id="appearance-settings-heading"
                             title="Appearance"
@@ -506,7 +552,12 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           />
 
                           <div className="space-y-5">
-                            <SegmentedControl label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
+                            <SegmentedControl
+                              label="Theme"
+                              value={theme}
+                              onChange={setTheme}
+                              options={themeOptions}
+                            />
                             <SegmentedControl
                               label="Emoji"
                               description={
@@ -549,50 +600,50 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
 
                           <div className="space-y-5">
                             {inputDevices.length === 0 && outputDevices.length === 0 ? (
-                            <div className="space-y-2">
-                              <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                                Allow microphone access to select audio devices.
-                              </p>
-                              <button
-                                type="button"
-                                onClick={requestPermission}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                              >
-                                <Mic size={14} />
-                                Allow Access
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              {inputDevices.length > 0 && (
-                                <SelectMenu
-                                  label="Microphone"
-                                  value={inputDeviceId ?? null}
-                                  onChange={(value) => setInputDevice(value ?? undefined)}
-                                  options={[
-                                    { value: null, label: "System Default" },
-                                    ...inputDevices.map((d) => ({
-                                      value: d.deviceId,
-                                      label: d.label || `Microphone (${d.deviceId.slice(0, 8)})`,
-                                    })),
-                                  ]}
-                                />
-                              )}
-                              {outputDevices.length > 0 && (
-                                <SelectMenu
-                                  label="Speaker"
-                                  value={outputDeviceId ?? null}
-                                  onChange={(value) => setOutputDevice(value ?? undefined)}
-                                  options={[
-                                    { value: null, label: "System Default" },
-                                    ...outputDevices.map((d) => ({
-                                      value: d.deviceId,
-                                      label: d.label || `Speaker (${d.deviceId.slice(0, 8)})`,
-                                    })),
-                                  ]}
-                                />
-                              )}
-                            </>
+                              <div className="space-y-2">
+                                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                                  Allow microphone access to select audio devices.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={requestPermission}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                                >
+                                  <Mic size={14} />
+                                  Allow Access
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                {inputDevices.length > 0 && (
+                                  <SelectMenu
+                                    label="Microphone"
+                                    value={inputDeviceId ?? null}
+                                    onChange={(value) => setInputDevice(value ?? undefined)}
+                                    options={[
+                                      { value: null, label: "System Default" },
+                                      ...inputDevices.map((d) => ({
+                                        value: d.deviceId,
+                                        label: d.label || `Microphone (${d.deviceId.slice(0, 8)})`,
+                                      })),
+                                    ]}
+                                  />
+                                )}
+                                {outputDevices.length > 0 && (
+                                  <SelectMenu
+                                    label="Speaker"
+                                    value={outputDeviceId ?? null}
+                                    onChange={(value) => setOutputDevice(value ?? undefined)}
+                                    options={[
+                                      { value: null, label: "System Default" },
+                                      ...outputDevices.map((d) => ({
+                                        value: d.deviceId,
+                                        label: d.label || `Speaker (${d.deviceId.slice(0, 8)})`,
+                                      })),
+                                    ]}
+                                  />
+                                )}
+                              </>
                             )}
                           </div>
                         </section>
@@ -614,7 +665,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               onChange={(value) => updateProfile({ persona: value })}
                               options={personaOptions}
                               description={
-                                personaOptions.find((p) => p.value === (profile.persona || "default"))?.description
+                                personaOptions.find(
+                                  (p) => p.value === (profile.persona || "default"),
+                                )?.description
                               }
                             />
                           </section>
@@ -624,74 +677,76 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                             className="space-y-5 border-t border-neutral-200/60 pt-5 dark:border-neutral-800/60"
                           >
                             <div>
-                            <label
-                              htmlFor={profileNameInputId}
-                              className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
-                            >
-                              Your name
-                            </label>
-                            <input
-                              id={profileNameInputId}
-                              type="text"
-                              value={profile.name || ""}
-                              onChange={(e) => updateProfile({ name: e.target.value })}
-                              className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
-                              placeholder="Your nickname or name"
-                            />
+                              <label
+                                htmlFor={profileNameInputId}
+                                className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
+                              >
+                                Your name
+                              </label>
+                              <input
+                                id={profileNameInputId}
+                                type="text"
+                                value={profile.name || ""}
+                                onChange={(e) => updateProfile({ name: e.target.value })}
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                placeholder="Your nickname or name"
+                              />
                             </div>
 
                             <div>
-                            <label
-                              htmlFor={profileRoleInputId}
-                              className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
-                            >
-                              Your role
-                            </label>
-                            <input
-                              id={profileRoleInputId}
-                              type="text"
-                              value={profile.role || ""}
-                              onChange={(e) => updateProfile({ role: e.target.value })}
-                              className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
-                              placeholder="e.g., Software Developer, Student"
-                            />
+                              <label
+                                htmlFor={profileRoleInputId}
+                                className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
+                              >
+                                Your role
+                              </label>
+                              <input
+                                id={profileRoleInputId}
+                                type="text"
+                                value={profile.role || ""}
+                                onChange={(e) => updateProfile({ role: e.target.value })}
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                placeholder="e.g., Software Developer, Student"
+                              />
                             </div>
 
                             <div>
-                            <label
-                              htmlFor={profileAboutInputId}
-                              className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
-                            >
-                              About you
-                            </label>
-                            <textarea
-                              id={profileAboutInputId}
-                              value={profile.profile || ""}
-                              onChange={(e) => updateProfile({ profile: e.target.value })}
-                              className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
-                              rows={5}
-                              placeholder="Brief description about yourself..."
-                            />
+                              <label
+                                htmlFor={profileAboutInputId}
+                                className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400"
+                              >
+                                About you
+                              </label>
+                              <textarea
+                                id={profileAboutInputId}
+                                value={profile.profile || ""}
+                                onChange={(e) => updateProfile({ profile: e.target.value })}
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
+                                rows={5}
+                                placeholder="Brief description about yourself..."
+                              />
                             </div>
                           </section>
-
                         </section>
                       )}
 
                       {/* Backup & Restore Section */}
                       {section === "backup" && (
-                        <section aria-labelledby="backup-settings-heading" className="flex flex-col gap-6">
+                        <section
+                          aria-labelledby="backup-settings-heading"
+                          className="flex flex-col gap-6"
+                        >
                           <SettingsViewHeader
                             id="backup-settings-heading"
                             title="Backup & Restore"
                             description="Create copies of your data before making changes, or restore a previous backup."
                           />
 
-                          <section
-                            aria-labelledby="full-backup-heading"
-                            className="space-y-3"
-                          >
-                            <h4 id="full-backup-heading" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                          <section aria-labelledby="full-backup-heading" className="space-y-3">
+                            <h4
+                              id="full-backup-heading"
+                              className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                            >
                               Backup
                             </h4>
                             <div className="space-y-3">
@@ -699,10 +754,24 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 type="button"
                                 onClick={() => void exportEverythingBackup()}
                                 disabled={isExporting || isRestoring}
-                                className="w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                               >
-                                <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
-                                {isExporting ? "Creating backup..." : "Back up everything"}
+                                {isExporting && (
+                                  <span
+                                    aria-hidden="true"
+                                    className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                    style={{ width: `${Math.round(exportProgress * 100)}%` }}
+                                  />
+                                )}
+                                <span className="relative flex items-center justify-center gap-2">
+                                  <Download
+                                    size={16}
+                                    className={isExporting ? "animate-pulse" : undefined}
+                                  />
+                                  {isExporting
+                                    ? `Creating backup... ${Math.round(exportProgress * 100)}%`
+                                    : "Back up everything"}
+                                </span>
                               </button>
                               <button
                                 type="button"
@@ -713,160 +782,219 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 Choose items instead
                                 <ChevronDown
                                   size={15}
-                                  className={cn("transition-transform", backupSelectionOpen && "rotate-180")}
+                                  className={cn(
+                                    "transition-transform",
+                                    backupSelectionOpen && "rotate-180",
+                                  )}
                                 />
                               </button>
                               {backupSelectionOpen && (
                                 <>
-                              <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Profile</span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                    {storageInfo.isLoading
-                                      ? "Loading size..."
-                                      : formatBytes(storageInfo.entries.find((entry) => entry.path === "profile.json")?.size ?? 0)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.profile}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      profile: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="flex items-baseline gap-2">
-                                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Chats</span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{chats.length} chat{chats.length === 1 ? "" : "s"}</span>
-                                </span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                  {storageInfo.isLoading ? "..." : formatBytes(chatStorageSize)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.chats}
-                                  disabled={chats.length === 0}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      chats: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="flex items-baseline gap-2">
-                                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Agents</span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{agents.length} agent{agents.length === 1 ? "" : "s"}</span>
-                                </span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                  {storageInfo.isLoading ? "..." : formatBytes(agentStorageSize)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.agents}
-                                  disabled={agents.length === 0}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      agents: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="flex items-baseline gap-2">
-                                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Images</span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{imageCount} image{imageCount === 1 ? "" : "s"}</span>
-                                </span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                  {storageInfo.isLoading ? "..." : formatBytes(imageStorageSize)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.images}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      images: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="flex items-baseline gap-2">
-                                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Skills</span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{skillCount} skill{skillCount === 1 ? "" : "s"}</span>
-                                </span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                  {storageInfo.isLoading ? "..." : formatBytes(skillStorageSize)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.skills}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      skills: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
-                                <span className="flex items-baseline gap-2">
-                                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Plugins</span>
-                                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{plugins.length} plugin{plugins.length === 1 ? "" : "s"}</span>
-                                </span>
-                                <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                  {storageInfo.isLoading ? "..." : formatBytes(pluginStorageSize)}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={backupSelection.plugins}
-                                  onChange={(event) =>
-                                    setBackupSelection((selection) => ({
-                                      ...selection,
-                                      plugins: event.target.checked,
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
-                                />
-                              </label>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => void exportSelectedBackup()}
-                                disabled={
-                                  isExporting ||
-                                  isRestoring ||
-                                  (!backupSelection.chats &&
-                                    !backupSelection.agents &&
-                                    !backupSelection.profile &&
-                                    !backupSelection.images &&
-                                    !backupSelection.skills &&
-                                    !backupSelection.plugins)
-                                }
-                                className="mt-2 w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
-                              >
-                                <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
-                                {isExporting ? "Creating backup..." : "Back up selected"}
-                              </button>
+                                  <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                        Profile
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "Loading size..."
+                                          : formatBytes(
+                                              storageInfo.entries.find(
+                                                (entry) => entry.path === "profile.json",
+                                              )?.size ?? 0,
+                                            )}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.profile}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            profile: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Chats
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {chats.length} chat{chats.length === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "..."
+                                          : formatBytes(chatStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.chats}
+                                        disabled={chats.length === 0}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            chats: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Agents
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {agents.length} agent{agents.length === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "..."
+                                          : formatBytes(agentStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.agents}
+                                        disabled={agents.length === 0}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            agents: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Images
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {imageCount} image{imageCount === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "..."
+                                          : formatBytes(imageStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.images}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            images: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Skills
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {skillCount} skill{skillCount === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "..."
+                                          : formatBytes(skillStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.skills}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            skills: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                      <span className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                                          Plugins
+                                        </span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                          {plugins.length} plugin{plugins.length === 1 ? "" : "s"}
+                                        </span>
+                                      </span>
+                                      <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
+                                        {storageInfo.isLoading
+                                          ? "..."
+                                          : formatBytes(pluginStorageSize)}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={backupSelection.plugins}
+                                        onChange={(event) =>
+                                          setBackupSelection((selection) => ({
+                                            ...selection,
+                                            plugins: event.target.checked,
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                      />
+                                    </label>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => void exportSelectedBackup()}
+                                    disabled={
+                                      isExporting ||
+                                      isRestoring ||
+                                      (!backupSelection.chats &&
+                                        !backupSelection.agents &&
+                                        !backupSelection.profile &&
+                                        !backupSelection.images &&
+                                        !backupSelection.skills &&
+                                        !backupSelection.plugins)
+                                    }
+                                    className="relative mt-2 w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                  >
+                                    {isExporting && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                        style={{ width: `${Math.round(exportProgress * 100)}%` }}
+                                      />
+                                    )}
+                                    <span className="relative flex items-center justify-center gap-2">
+                                      <Download
+                                        size={16}
+                                        className={isExporting ? "animate-pulse" : undefined}
+                                      />
+                                      {isExporting
+                                        ? `Creating backup... ${Math.round(exportProgress * 100)}%`
+                                        : "Back up selected"}
+                                    </span>
+                                  </button>
                                 </>
                               )}
                             </div>
                           </section>
 
-                          <section aria-labelledby="restore-backup-heading" className="space-y-3 border-t border-neutral-200/60 pt-5 dark:border-neutral-800/60">
+                          <section
+                            aria-labelledby="restore-backup-heading"
+                            className="space-y-3 border-t border-neutral-200/60 pt-5 dark:border-neutral-800/60"
+                          >
                             <div>
-                              <h4 id="restore-backup-heading" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                              <h4
+                                id="restore-backup-heading"
+                                className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                              >
                                 Restore
                               </h4>
                               <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -877,10 +1005,24 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                               type="button"
                               onClick={restoreBackup}
                               disabled={isExporting || isRestoring}
-                              className="w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                              className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                             >
-                              <Upload size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-                              <span className="font-medium">{isRestoring ? "Restoring..." : "Restore backup"}</span>
+                              {isRestoring && (
+                                <span
+                                  aria-hidden="true"
+                                  className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                  style={{ width: `${Math.round(restoreProgress * 100)}%` }}
+                                />
+                              )}
+                              <span className="relative flex items-center justify-center gap-2">
+                                <Upload
+                                  size={16}
+                                  className="text-neutral-500 dark:text-neutral-400 shrink-0"
+                                />
+                                <span className="font-medium">
+                                  {isRestoring ? `Restoring... ${Math.round(restoreProgress * 100)}%` : "Restore backup"}
+                                </span>
+                              </span>
                             </button>
                           </section>
 
@@ -889,7 +1031,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                             className="space-y-3 border-t border-red-200/70 pt-5 dark:border-red-900/40"
                           >
                             <div>
-                              <h4 id="backup-danger-heading" className="text-sm font-medium text-red-700 dark:text-red-400">
+                              <h4
+                                id="backup-danger-heading"
+                                className="text-sm font-medium text-red-700 dark:text-red-400"
+                              >
                                 Danger zone
                               </h4>
                               <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -929,88 +1074,108 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                             description="Manage the companion connection and the tools it provides."
                           />
 
-                          <section aria-labelledby="companion-connection-heading" className="space-y-5">
-                          <div className="flex items-center justify-between">
-                            <h4 id="companion-connection-heading" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                              Connection
-                            </h4>
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm text-neutral-500 dark:text-neutral-400">Enable companion</span>
-                              <button
-                                type="button"
-                                onClick={toggleCompanion}
-                                disabled={!!currentAgent}
-                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  companionEnabled
-                                    ? "bg-emerald-500 dark:bg-emerald-600"
-                                    : "bg-neutral-300 dark:bg-neutral-600"
-                                }`}
-                                role="switch"
-                                aria-checked={companionEnabled}
-                                aria-label="Enable companion"
+                          <section
+                            aria-labelledby="companion-connection-heading"
+                            className="space-y-5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <h4
+                                id="companion-connection-heading"
+                                className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
                               >
-                                <span
-                                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                                    companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                                Connection
+                              </h4>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                                  Enable companion
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={toggleCompanion}
+                                  disabled={!!currentAgent}
+                                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    companionEnabled
+                                      ? "bg-emerald-500 dark:bg-emerald-600"
+                                      : "bg-neutral-300 dark:bg-neutral-600"
                                   }`}
-                                />
-                              </button>
-                            </div>
-                          </div>
-
-                          {currentAgent ? (
-                            <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                              While an agent is active, the companion is controlled by the agent's tools, not this
-                              global setting.
-                            </p>
-                          ) : null}
-
-                          {companionConnected && companion && companion.tools.length > 0 ? (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                                {companion.tools.length} tool{companion.tools.length !== 1 ? "s" : ""} available
-                              </p>
-                              <div className="space-y-1">
-                                {companion.tools.map((tool) => (
-                                  <div key={tool.name} className="flex items-center gap-2 py-1.5">
-                                    <span className="shrink-0 text-neutral-600 dark:text-neutral-400">
-                                      {(() => {
-                                        const toolIcon =
-                                          tool.icon ??
-                                          (typeof companion.icon === "string" ? companion.icon : undefined);
-                                        if (toolIcon) {
-                                          return (
-                                            <McpProviderIcon src={toolIcon} size={16} className="object-contain" />
-                                          );
-                                        }
-                                        if (companion.icon && typeof companion.icon !== "string") {
-                                          const CompanionIcon = companion.icon;
-                                          return <CompanionIcon width={16} height={16} />;
-                                        }
-                                        return <Wrench size={16} />;
-                                      })()}
-                                    </span>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
-                                        {tool.name}
-                                      </div>
-                                      {tool.description && (
-                                        <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                                          {tool.description}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  role="switch"
+                                  aria-checked={companionEnabled}
+                                  aria-label="Enable companion"
+                                >
+                                  <span
+                                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                                      companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                                    }`}
+                                  />
+                                </button>
                               </div>
                             </div>
-                          ) : companionConnected ? (
-                            <p className="text-sm text-neutral-400 dark:text-neutral-500">No tools exposed</p>
-                          ) : (
-                            <p className="text-sm text-neutral-400 dark:text-neutral-500">
-                              Enable the companion to see available tools.
-                            </p>
-                          )}
+
+                            {currentAgent ? (
+                              <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                                While an agent is active, the companion is controlled by the agent's
+                                tools, not this global setting.
+                              </p>
+                            ) : null}
+
+                            {companionConnected && companion && companion.tools.length > 0 ? (
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                                  {companion.tools.length} tool
+                                  {companion.tools.length !== 1 ? "s" : ""} available
+                                </p>
+                                <div className="space-y-1">
+                                  {companion.tools.map((tool) => (
+                                    <div key={tool.name} className="flex items-center gap-2 py-1.5">
+                                      <span className="shrink-0 text-neutral-600 dark:text-neutral-400">
+                                        {(() => {
+                                          const toolIcon =
+                                            tool.icon ??
+                                            (typeof companion.icon === "string"
+                                              ? companion.icon
+                                              : undefined);
+                                          if (toolIcon) {
+                                            return (
+                                              <McpProviderIcon
+                                                src={toolIcon}
+                                                size={16}
+                                                className="object-contain"
+                                              />
+                                            );
+                                          }
+                                          if (
+                                            companion.icon &&
+                                            typeof companion.icon !== "string"
+                                          ) {
+                                            const CompanionIcon = companion.icon;
+                                            return <CompanionIcon width={16} height={16} />;
+                                          }
+                                          return <Wrench size={16} />;
+                                        })()}
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                                          {tool.name}
+                                        </div>
+                                        {tool.description && (
+                                          <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                                            {tool.description}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : companionConnected ? (
+                              <p className="text-sm text-neutral-400 dark:text-neutral-500">
+                                No tools exposed
+                              </p>
+                            ) : (
+                              <p className="text-sm text-neutral-400 dark:text-neutral-500">
+                                Enable the companion to see available tools.
+                              </p>
+                            )}
                           </section>
                         </section>
                       )}
@@ -1050,7 +1215,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                 onClick={() => setOpfsBrowserOpen(true)}
                                 className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left"
                               >
-                                <HardDrive size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                                <HardDrive
+                                  size={16}
+                                  className="text-neutral-500 dark:text-neutral-400 shrink-0"
+                                />
                                 <div className="min-w-0">
                                   <div className="font-medium">OPFS Browser</div>
                                   <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">

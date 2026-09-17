@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export function useDrawerAnimation(isOpen: boolean) {
+export function useDrawerAnimation(isOpen: boolean, exitDurationMs = 300) {
   const [isAnimating, setIsAnimating] = useState(isOpen);
   const [shouldRender, setShouldRender] = useState(isOpen);
 
@@ -21,13 +21,13 @@ export function useDrawerAnimation(isOpen: boolean) {
     } else {
       // Schedule animation removal first, then unmount
       animationTimer = setTimeout(() => setIsAnimating(false), 0);
-      removeTimer = setTimeout(() => setShouldRender(false), 300);
+      removeTimer = setTimeout(() => setShouldRender(false), exitDurationMs);
       return () => {
         if (animationTimer) clearTimeout(animationTimer);
         if (removeTimer) clearTimeout(removeTimer);
       };
     }
-  }, [isOpen]);
+  }, [isOpen, exitDurationMs]);
 
   return { isAnimating, shouldRender };
 }

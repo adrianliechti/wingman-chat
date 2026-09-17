@@ -19,7 +19,11 @@ export { rebuildFolderIndex } from "./opfs-index";
 // ============================================================================
 
 /** Recursively add a directory handle's contents to a JSZip folder. */
-export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFolder: JSZip, path = ""): Promise<void> {
+export async function addDirectoryToZip(
+  handle: FileSystemDirectoryHandle,
+  zipFolder: JSZip,
+  path = "",
+): Promise<void> {
   for await (const [name, entryHandle] of handle.entries()) {
     if (entryHandle.kind === "file") {
       const file = await (entryHandle as FileSystemFileHandle).getFile();
@@ -30,7 +34,8 @@ export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFo
         throw new Error(`Failed to add folder to zip: ${name}`);
       }
       const childPath = path ? `${path}/${name}` : name;
-      const copy = () => addDirectoryToZip(entryHandle as FileSystemDirectoryHandle, subFolder, childPath);
+      const copy = () =>
+        addDirectoryToZip(entryHandle as FileSystemDirectoryHandle, subFolder, childPath);
       if (path === "chats") await withArtifactWorkspaceLock(name, copy);
       else await copy();
     }
@@ -60,11 +65,17 @@ export function isJunkZipEntry(path: string): boolean {
 // ZIP Export/Import
 // ============================================================================
 
+/** Reports ZIP generation progress as a fraction in the range [0, 1]. */
+export type ZipProgressHandler = (fraction: number) => void;
+
 /**
  * Export a specific folder from OPFS as a ZIP blob.
  * Use empty string or '/' for root.
  */
-export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
+export async function exportFolderAsZip(
+  folderPath: string,
+  onProgress?: ZipProgressHandler,
+): Promise<Blob> {
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
@@ -84,10 +95,14 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
     await addDirectoryToZip(folderHandle, zip, folderPath.split("/").filter(Boolean).join("/"));
   };
   const locked = (index: number): Promise<void> =>
-    index === keys.length ? snapshot() : withPersistenceLock(`collection:${keys[index]}`, () => locked(index + 1));
+    index === keys.length
+      ? snapshot()
+      : withPersistenceLock(`collection:${keys[index]}`, () => locked(index + 1));
   await locked(0);
 
-  return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  return zip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) =>
+    onProgress?.(metadata.percent / 100),
+  );
 }
 
 /**
@@ -95,8 +110,12 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
  * Merges with existing data (does not replace).
  * Rebuilds the folder index automatically after import.
  */
-export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Promise<void> {
-  const files = await readZipFiles(zipBlob);
+export async function importFolderFromZip(
+  folderPath: string,
+  zipBlob: Blob,
+  onProgress?: ZipProgressHandler,
+): Promise<void> {
+  const files = await readZipFiles(zipBlob, (fraction) => onProgress?.(fraction * 0.5));
   const folder = folderPath.split("/").filter(Boolean).join("/");
   const prefixed = [...files.keys()].some((path) => path.startsWith(`${folder}/`));
   const mapped = new Map<string, Blob>();
@@ -104,20 +123,30 @@ export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Pr
     if (folder && prefixed && !path.startsWith(`${folder}/`)) continue;
     mapped.set(folder && !prefixed ? `${folder}/${path}` : path, blob);
   }
-  await restoreFiles(mapped);
+  await restoreFiles(mapped, (fraction) => onProgress?.(0.5 + fraction * 0.5));
 }
 
 /**
  * Export a folder as a ZIP and trigger a browser download.
  */
-export async function downloadFolderAsZip(folderPath: string, filename: string): Promise<void> {
-  const blob = await exportFolderAsZip(folderPath);
+export async function downloadFolderAsZip(
+  folderPath: string,
+  filename: string,
+  onProgress?: ZipProgressHandler,
+): Promise<void> {
+  const blob = await exportFolderAsZip(folderPath, onProgress);
   downloadBlob(blob, filename);
 }
 
 /** Export selected top-level OPFS folders together in a single ZIP. */
-export async function downloadFoldersAsZip(folderPaths: string[], filename: string): Promise<void> {
-  const paths = [...new Set(folderPaths.map((path) => path.replace(/^\/+|\/+$/g, "")).filter(Boolean))];
+export async function downloadFoldersAsZip(
+  folderPaths: string[],
+  filename: string,
+  onProgress?: ZipProgressHandler,
+): Promise<void> {
+  const paths = [
+    ...new Set(folderPaths.map((path) => path.replace(/^\/+|\/+$/g, "")).filter(Boolean)),
+  ];
   if (!paths.length) throw new Error("Select at least one folder to export.");
 
   const JSZip = (await import("jszip")).default;
@@ -133,7 +162,11 @@ export async function downloadFoldersAsZip(folderPaths: string[], filename: stri
           await addDirectoryToZip(await getDirectory(path), folder, path);
         } catch (error) {
           if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
-          const file = await (await getRoot()).getFileHandle(path).then((handle) => handle.getFile());
+          const file = await (
+            await getRoot()
+          )
+            .getFileHandle(path)
+            .then((handle) => handle.getFile());
           zip.file(path, await file.arrayBuffer());
         }
       } catch (error) {
@@ -145,10 +178,14 @@ export async function downloadFoldersAsZip(folderPaths: string[], filename: stri
   const lock = (index: number): Promise<void> =>
     index === paths.length
       ? snapshot()
-      : withPersistenceLock(`collection:${paths[index] === "profile.json" ? "profile" : paths[index]}`, () =>
-          lock(index + 1),
+      : withPersistenceLock(
+          `collection:${paths[index] === "profile.json" ? "profile" : paths[index]}`,
+          () => lock(index + 1),
         );
   await lock(0);
 
-  downloadBlob(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }), filename);
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) =>
+    onProgress?.(metadata.percent / 100),
+  );
+  downloadBlob(blob, filename);
 }

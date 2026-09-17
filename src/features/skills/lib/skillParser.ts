@@ -186,6 +186,43 @@ export function parseSkillFile(content: string): SkillParseResult {
 }
 
 /**
+ * Import-time check: valid frontmatter and a well-formed name, tolerating a
+ * missing or empty description so partially-authored skills still restore.
+ */
+export function parseSkillFileForImport(content: string): SkillParseResult {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) {
+    return { success: false, errors: [{ field: "format", message: "Invalid format: Expected YAML frontmatter" }] };
+  }
+
+  const { frontmatter, body } = parsed;
+  const name = frontmatter.name;
+  if (!name) return { success: false, errors: [{ field: "name", message: "Name is required in frontmatter" }] };
+  const nameValidation = validateSkillName(name);
+  if (!nameValidation.valid) {
+    return { success: false, errors: [{ field: "name", message: nameValidation.error ?? "Invalid skill name" }] };
+  }
+
+  const description = frontmatter.description ?? "";
+  if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
+    return {
+      success: false,
+      errors: [{ field: "description", message: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less` }],
+    };
+  }
+
+  return {
+    success: true,
+    skill: {
+      name,
+      description,
+      content: body,
+      ...(frontmatter.compatibility ? { compatibility: frontmatter.compatibility } : {}),
+    },
+  };
+}
+
+/**
  * Serialize a skill to SKILL.md format with YAML frontmatter
  */
 export function serializeSkill(skill: Skill): string {

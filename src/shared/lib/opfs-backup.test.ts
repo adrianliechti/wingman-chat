@@ -69,6 +69,21 @@ describe("backup and restore", () => {
     expect(await opfs.readText("chats/one/artifacts/keep.txt")).toBe("keep");
   });
 
+  it("skips an agent file with empty metadata instead of failing the restore", async () => {
+    memory.put("profile.json", '{"name":"Before"}');
+    await restoreFiles(
+      new Map([
+        ["profile.json", new Blob(['{"name":"After"}'])],
+        ["agents/one/files/gone/metadata.json", new Blob([""])],
+        ["agents/one/files/gone/content.txt", new Blob(["orphan"])],
+        ["agents/one/files/gone/segments.json", new Blob(["not json"])],
+      ]),
+    );
+    expect(await opfs.readJson("profile.json")).toEqual({ name: "After" });
+    expect(await opfs.readText("agents/one/files/gone/content.txt")).toBeUndefined();
+    expect(await opfs.readText("agents/one/files/gone/segments.json")).toBeUndefined();
+  });
+
   it("validates metadata before overwriting any saved file", async () => {
     memory.put("profile.json", '{"name":"Before"}');
     await expect(
