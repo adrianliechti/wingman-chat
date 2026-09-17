@@ -231,7 +231,7 @@ export function ChatPage() {
 
   // Drawer animation states using custom hook
   const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } =
-    useDrawerAnimation(showAgentDrawer);
+    useDrawerAnimation(showAgentDrawer, 500);
   const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } =
     useDrawerAnimation(showArtifactsDrawer, 500);
   const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } =
@@ -793,7 +793,7 @@ export function ChatPage() {
         <div
           className={cn(
             "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
-            !isAgentResizing && "transition-all duration-300 ease-out",
+            !isAgentResizing && "transition-all duration-500 ease-in-out",
             isMobile ? "w-full" : "",
             isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
           )}
