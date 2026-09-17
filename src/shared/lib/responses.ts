@@ -8,12 +8,14 @@ import {
 } from "openai/error";
 import { Role, type Content, type Message, type ReasoningContent } from "../types/chat";
 import { selectFinalAssistantMessage } from "./assistantText";
-import { dropOrphanFunctionCalls } from "./recovery";
+import { replayableReasoning, type ReasoningBinding } from "./reasoning";
+import { dropDanglingReasoning, dropOrphanFunctionCalls } from "./recovery";
 import { serializeToolResultForApi } from "./utils";
 
 /** Build a portable, self-contained request without changing persisted history. */
-export function toResponseInput(input: Message[]): ResponseInputItem[] {
+export function toResponseInput(input: Message[], options: { reasoning?: ReasoningBinding } = {}): ResponseInputItem[] {
   const items: ResponseInputItem[] = [];
+  const replay = replayableReasoning(input, options.reasoning);
 
   for (const m of input) {
     switch (m.role) {
@@ -76,10 +78,6 @@ export function toResponseInput(input: Message[]): ResponseInputItem[] {
       }
 
       case Role.Assistant: {
-        // Reasoning items are intentionally not replayed back to the API.
-        // encrypted_content is provider+key-specific and breaks on model
-        // swaps and across Azure deployments/subscriptions.
-
         let bufferedText = "";
 
         const flushAssistantText = () => {
@@ -104,6 +102,23 @@ export function toResponseInput(input: Message[]): ResponseInputItem[] {
               continue;
             }
             bufferedText += part.text;
+            continue;
+          }
+
+          if (part.type === "reasoning") {
+            // Only payloads bound to this model and request prefix go back to
+            // the provider (see `replayableReasoning`); the rest is display-only.
+            if (!replay.has(part)) continue;
+            flushAssistantText();
+            // Visible text goes back too: a gateway fronting a thinking model
+            // verifies the signature against it.
+            items.push({
+              type: "reasoning",
+              id: part.id,
+              summary: part.summary ? [{ type: "summary_text", text: part.summary }] : [],
+              ...(part.text ? { content: [{ type: "reasoning_text", text: part.text }] } : {}),
+              encrypted_content: part.encryptedContent,
+            });
             continue;
           }
 
@@ -142,7 +157,7 @@ export function toResponseInput(input: Message[]): ResponseInputItem[] {
     }
   }
 
-  return dropOrphanFunctionCalls(items);
+  return dropDanglingReasoning(dropOrphanFunctionCalls(items));
 }
 
 /** A clean HTTP EOF does not guarantee that generation actually finished. */
@@ -194,10 +209,13 @@ export function finalResponseText(response: Response): string | null {
   return message.content.map((part) => (part.type === "output_text" ? part.text : "")).join("") || null;
 }
 
-/** Use the final output as the source of truth, keeping one text part per assistant message. */
-export function responseContent(response: Response): Content[] {
+/**
+ * Use the final output as the source of truth, keeping one text part per
+ * assistant message and one reasoning part per reasoning item, in output order.
+ * With a binding, each reasoning payload is kept for replay under it.
+ */
+export function responseContent(response: Response, binding?: ReasoningBinding): Content[] {
   const parts: Content[] = [];
-  let reasoning: ReasoningContent | undefined;
   for (const item of response.output) {
     if (item.type === "message") {
       const text = item.content
@@ -219,13 +237,21 @@ export function responseContent(response: Response): Content[] {
           : {}),
       });
     } else if (item.type === "reasoning") {
-      if (!reasoning) {
-        reasoning = { type: "reasoning", id: item.id, text: "" };
-        parts.unshift(reasoning);
-      }
-      reasoning.text += item.content?.map((part) => part.text).join("") ?? "";
+      // Items keep their position: a replayed payload must directly precede
+      // the output it produced.
+      const part: ReasoningContent = {
+        type: "reasoning",
+        id: item.id,
+        text: item.content?.map((part) => part.text).join("") ?? "",
+      };
       const summary = item.summary?.map((part) => part.text).join("\n") ?? "";
-      if (summary) reasoning.summary = [reasoning.summary, summary].filter(Boolean).join("\n");
+      if (summary) part.summary = summary;
+      if (binding && item.encrypted_content && (item.status === undefined || item.status === "completed")) {
+        part.encryptedContent = item.encrypted_content;
+        part.model = binding.model;
+        part.prefix = binding.prefix;
+      }
+      parts.push(part);
     }
   }
   return parts;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Message } from "@/shared/types/chat";
+import type { Message, ReasoningContent } from "@/shared/types/chat";
 import { toResponseInput } from "@/shared/lib/responses";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { compactIfNeeded, historyForRetry, prepareChatMessages, sanitizeForSummary } from "./chatHistory";
@@ -24,6 +24,49 @@ function options(summarizeHistory = vi.fn().mockResolvedValue("Earlier work is d
 }
 
 describe("chat history and compaction", () => {
+  it.each([true, false])(
+    "compacts retained reasoning and releases only summarized payloads (usage=%s)",
+    async (withUsage) => {
+      const binding = { model: "chat", prefix: "prefix" };
+      const signed = (id: string, encryptedContent: string): ReasoningContent => ({
+        type: "reasoning",
+        id,
+        text: "",
+        summary: "Plan",
+        encryptedContent,
+        ...binding,
+      });
+      const oldReasoning = signed("rs_old", withUsage ? "short-payload" : "opaque".repeat(2000));
+      const currentReasoning = signed("rs_current", "current-payload");
+      const messages: Message[] = [
+        user("Earlier request"),
+        {
+          role: "assistant",
+          content: [oldReasoning, { type: "text", text: "Earlier answer" }],
+          ...(withUsage ? { usage: { inputTokens: 20, outputTokens: 3004, reasoningTokens: 3000 } } : {}),
+        },
+        user("Current request"),
+        { role: "assistant", content: [currentReasoning, ...call("current").content] },
+        output("current", "Current evidence"),
+      ];
+      const original = structuredClone(messages);
+      const summarize = vi.fn().mockResolvedValue("Earlier work summarized, including its observed outcome.");
+      const compacted = await compactIfNeeded(messages, { ...options(summarize), threshold: 1000 });
+      expect(compacted).not.toBe(messages);
+      expect(summarize).toHaveBeenCalledOnce();
+      expect(JSON.stringify(summarize.mock.calls[0][1])).not.toContain("encryptedContent");
+      expect(compacted[1].content[0]).toEqual({ type: "reasoning", id: "rs_old", text: "", summary: "Plan" });
+      const input = toResponseInput(prepareChatMessages(compacted), { reasoning: binding });
+      expect(input.filter((item) => item.type === "reasoning")).toEqual([
+        expect.objectContaining({ id: "rs_current", encrypted_content: "current-payload" }),
+      ]);
+      expect(messages).toEqual(original);
+      const again = await compactIfNeeded(compacted, { ...options(summarize), threshold: 1000 });
+      expect(again).toBe(compacted);
+      expect(summarize).toHaveBeenCalledOnce();
+    },
+  );
+
   it("preserves the full current turn and every tool pair during proactive compaction", async () => {
     const messages = [...history(), call("a"), output("a", "Current evidence"), feedback];
     const opts = options();

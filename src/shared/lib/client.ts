@@ -31,8 +31,9 @@ import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelFromAPI } from "./models";
 import { traceGenAI } from "./otel";
+import { reasoningPrefix } from "./reasoning";
 import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
-import { planStrictToolSchemas } from "./toolSchemas";
+import { toResponseTools } from "./toolSchemas";
 import { compileToolRegistry } from "./toolRegistry";
 import { simplifyMarkdown } from "./utils";
 
@@ -211,17 +212,21 @@ export class Client {
       model,
       async () => {
         options?.signal?.throwIfAborted();
-        const items = toResponseInput(input);
-        const requestTools = this.toTools(tools);
+        const requestTools = toResponseTools(compileToolRegistry(tools).tools);
+        // Reasoning payloads are replayed only under the model and request
+        // prefix that produced them; see reasoning.ts.
+        const reasoning = { model, prefix: reasoningPrefix(instructions, requestTools) };
+        const items = toResponseInput(input, { reasoning });
 
         const contentParts: Content[] = [];
 
-        // Get-or-create the single reasoning part (always at index 0).
+        // Get-or-create the part for one reasoning item. Items keep their
+        // output position so the streamed render matches the committed order.
         const ensureReasoning = (id: string): ReasoningContent => {
-          let part = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
+          let part = contentParts.find((p): p is ReasoningContent => p.type === "reasoning" && p.id === id);
           if (!part) {
             part = { type: "reasoning", id, text: "" };
-            contentParts.unshift(part);
+            contentParts.push(part);
           }
           return part;
         };
@@ -256,6 +261,9 @@ export class Client {
                 model: model,
                 store: false,
                 truncation: "disabled",
+                // Request payloads explicitly for providers that do not return
+                // them by default. Their context mode decides which to use.
+                include: ["reasoning.encrypted_content"],
                 tools: requestTools,
                 input: items,
                 instructions: instructions,
@@ -301,6 +309,9 @@ export class Client {
             .on("response.output_item.added", (event) => {
               if (event.item.type === "message") {
                 phasesByIndex.set(event.output_index, event.item.phase ?? undefined);
+              } else if (event.item.type === "reasoning") {
+                ensureReasoning(event.item.id);
+                emit();
               } else if (event.item.type === "function_call") {
                 const part: ToolCallContent = {
                   type: "tool_call",
@@ -370,7 +381,7 @@ export class Client {
             validateResponse(finalResponse, true);
             // The terminal response is authoritative, including providers that
             // omit text deltas or item.done events.
-            assistant.content = responseContent(finalResponse);
+            assistant.content = responseContent(finalResponse, reasoning);
             handler?.(assistant.content.map((part) => ({ ...part })));
             assistant.usage = {
               model: finalResponse.model,
@@ -813,24 +824,6 @@ export class Client {
     // Rendering — especially high quality or large sizes — can take minutes, so
     // allow well beyond the default render/translate/search budget.
     return this.postRaw("/api/v1/render", data, (resp) => resp.blob(), headers, 300_000, requestOptions);
-  }
-
-  private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
-    if (!tools || tools.length === 0) {
-      return undefined;
-    }
-
-    const registry = compileToolRegistry(tools);
-    const strictPlan = planStrictToolSchemas(registry.tools);
-    return registry.tools.map((tool, index) => ({
-      type: "function",
-
-      name: tool.name,
-      description: tool.description,
-
-      strict: strictPlan.strict[index],
-      parameters: tool.parameters,
-    }));
   }
 
   async optimizeSkill(

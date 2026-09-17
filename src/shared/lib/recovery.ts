@@ -7,8 +7,9 @@
  * mid-tool), or vice versa from corrupted history. We drop those orphans
  * before sending.
  *
- * Reasoning items are never added to the input (see the assistant-role
- * branch in `client.ts`), so no recovery is needed for them.
+ * Replayed reasoning items have their own invariant: each must be followed by
+ * the assistant output it produced, so one stranded by orphan removal (or by
+ * an interrupted stream) is dropped as well.
  */
 
 import type { ResponseInputItem } from "openai/resources/responses/responses";
@@ -40,4 +41,24 @@ export function dropOrphanFunctionCalls(items: ResponseInputItem[]): ResponseInp
     }
   }
   return items.filter((_, index) => keep.has(index));
+}
+
+/**
+ * Keep a reasoning item only when the assistant output it produced (a message
+ * or function call) still follows it, possibly after further reasoning items.
+ * Providers reject a replayed reasoning item without its following item.
+ */
+export function dropDanglingReasoning(items: ResponseInputItem[]): ResponseInputItem[] {
+  const kept: ResponseInputItem[] = [];
+  let followedByOutput = false;
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index];
+    if (item.type === "reasoning") {
+      if (followedByOutput) kept.push(item);
+      continue;
+    }
+    followedByOutput = item.type === "function_call" || (item.type === "message" && item.role === "assistant");
+    kept.push(item);
+  }
+  return kept.reverse();
 }

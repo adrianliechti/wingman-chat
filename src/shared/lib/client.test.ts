@@ -1,4 +1,8 @@
-import type { Response as ModelResponse, ResponseOutputItem } from "openai/resources/responses/responses";
+import type {
+  Response as ModelResponse,
+  ResponseOutputItem,
+  ResponseReasoningItem,
+} from "openai/resources/responses/responses";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "./client";
 import * as errors from "./errors";
@@ -36,12 +40,19 @@ const textItem = (text: string): ResponseOutputItem => ({
 const callItem = (
   args = "{}",
   status: "completed" | "incomplete" | "in_progress" = "completed",
-): ResponseOutputItem => ({
+): Extract<ResponseOutputItem, { type: "function_call" }> => ({
   id: "fc_test",
   type: "function_call",
   call_id: "call_test",
   name: "write",
   arguments: args,
+  status,
+});
+const reasoningItem = (id: string, status: ResponseReasoningItem["status"] = "completed"): ResponseReasoningItem => ({
+  id,
+  type: "reasoning",
+  summary: [{ type: "summary_text", text: "Plan" }],
+  encrypted_content: `encrypted-${id}`,
   status,
 });
 
@@ -309,6 +320,225 @@ describe("Responses transport (real SDK, synthetic HTTP/SSE)", () => {
     ]);
     expect(history).toEqual(original);
   });
+
+  it("requests encrypted reasoning and replays it between the tool calls of one turn", async () => {
+    const reasoning = {
+      id: "rs_1",
+      type: "reasoning",
+      summary: [{ type: "summary_text", text: "Plan" }],
+      encrypted_content: "enc-1",
+      status: "completed",
+    } as ResponseOutputItem;
+    fetchMock
+      .mockResolvedValueOnce(finished(response([reasoning, callItem()])))
+      .mockResolvedValueOnce(finished(response([textItem("Done")])));
+    const write = vi.fn(async () => [{ type: "text" as const, text: "OK" }]);
+    const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: write }];
+    const result = await run(new Client(), "model", "Be brief", prompt, tools);
+    expect(result.status).toBe("completed");
+    const requests = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body));
+    expect(requests[0].include).toEqual(["reasoning.encrypted_content"]);
+    expect(requests[1].input.map((item: { type: string }) => item.type)).toEqual([
+      "message",
+      "reasoning",
+      "function_call",
+      "function_call_output",
+    ]);
+    expect(requests[1].input[1]).toEqual({
+      type: "reasoning",
+      id: "rs_1",
+      summary: [{ type: "summary_text", text: "Plan" }],
+      encrypted_content: "enc-1",
+    });
+    // Keep the payload available to providers that use reasoning from earlier turns.
+    expect(result.messages[1].content[0]).toMatchObject({
+      type: "reasoning",
+      id: "rs_1",
+      text: "",
+      summary: "Plan",
+      encryptedContent: "enc-1",
+      model: "model",
+    });
+  });
+
+  it("does not replay reasoning produced for another model", async () => {
+    const reasoning = { id: "rs_1", type: "reasoning", summary: [], encrypted_content: "enc-1" } as ResponseOutputItem;
+    fetchMock.mockResolvedValueOnce(finished(response([reasoning, callItem()])));
+    const first = await new Client().complete("model-a", "", prompt, []);
+    expect(first.content[0]).toMatchObject({ type: "reasoning", encryptedContent: "enc-1", model: "model-a" });
+    const history: Message[] = [
+      ...prompt,
+      first,
+      {
+        role: "user",
+        content: [{ type: "tool_result", id: "call_test", name: "write", arguments: "{}", result: [] }],
+      },
+    ];
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+    await new Client().complete("model-b", "", history, []);
+    const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
+    expect(input.map((item: { type: string }) => item.type)).toEqual([
+      "message",
+      "function_call",
+      "function_call_output",
+    ]);
+  });
+
+  it.each(["model", "instructions", "tools"] as const)(
+    "clears old bindings once when changing %s and replays fresh reasoning after a tool call",
+    async (change) => {
+      const client = new Client();
+      const write = vi.fn(async () => [{ type: "text" as const, text: "Written" }]);
+      const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: write }];
+      fetchMock.mockResolvedValueOnce(finished(response([reasoningItem("rs_old"), callItem()])));
+      const first = await client.complete("model-a", "Original instructions", prompt, tools);
+      const history: Message[] = [
+        ...prompt,
+        first,
+        {
+          role: "user",
+          content: [{ type: "tool_result", id: "call_test", name: "write", arguments: "{}", result: [] }],
+        },
+      ];
+      const original = structuredClone(history);
+      const changedTools: Tool[] =
+        change === "tools"
+          ? [{ ...tools[0], parameters: { type: "object", properties: { path: { type: "string" } } } }]
+          : tools;
+      fetchMock
+        .mockResolvedValueOnce(
+          finished(response([reasoningItem("rs_new"), { ...callItem(), id: "fc_new", call_id: "call_new" }])),
+        )
+        .mockResolvedValueOnce(finished(response([textItem("Done")])));
+      const changes: Message[][] = [];
+      const result = await run(
+        client,
+        change === "model" ? "model-b" : "model-a",
+        change === "instructions" ? "Updated instructions" : "Original instructions",
+        history,
+        changedTools,
+        { onMessagesChange: (messages) => changes.push(messages) },
+      );
+      expect(result.status).toBe("completed");
+      expect(write).toHaveBeenCalledOnce();
+      const switched = JSON.parse(fetchMock.mock.calls[1][1].body);
+      const continued = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(switched.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([]);
+      expect(continued.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([
+        expect.objectContaining({ id: "rs_new", encrypted_content: "encrypted-rs_new" }),
+      ]);
+      expect(changes[0][1].content[0]).toEqual({ type: "reasoning", id: "rs_old", text: "", summary: "Plan" });
+      expect(history).toEqual(original);
+
+      // Restoring persisted history and switching back must not resurrect old payloads.
+      const saved: Message[] = JSON.parse(JSON.stringify(result.messages));
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("Continued after restoring")])));
+      const restored = await run(client, "model-a", "Original instructions", saved, tools);
+      expect(restored.status).toBe("completed");
+      const back = JSON.parse(fetchMock.mock.calls[3][1].body);
+      expect(back.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([]);
+      expect(write).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["all_turns", "current_turn", undefined] as const)(
+    "preserves reasoning across saved human turns and lets the provider apply context mode %s",
+    async (context) => {
+      const client = new Client();
+      const model = "gpt-5.6-sol";
+      fetchMock.mockResolvedValueOnce(
+        finished(
+          response([reasoningItem("rs_first"), textItem("First answer")], {
+            model,
+            reasoning: context ? { context } : undefined,
+          }),
+        ),
+      );
+      const first = await run(client, model, "", prompt, []);
+      expect(first.status).toBe("completed");
+      const saved: Message[] = JSON.parse(JSON.stringify(first.messages));
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("Follow-up answer")], { model })));
+      const second = await run(
+        client,
+        model,
+        "",
+        [...saved, { role: "user", content: [{ type: "text", text: "Continue the previous analysis" }] }],
+        [],
+      );
+      expect(second.status).toBe("completed");
+      const followup = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(followup.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([
+        expect.objectContaining({ id: "rs_first", encrypted_content: "encrypted-rs_first" }),
+      ]);
+      expect(followup.reasoning?.context).toBeUndefined();
+    },
+  );
+
+  it.each(["in_progress", "incomplete"] as const)(
+    "omits %s reasoning while recovering truncated tool arguments",
+    async (status) => {
+      fetchMock
+        .mockResolvedValueOnce(
+          finished(
+            response([reasoningItem("rs_partial", status), callItem("{", "incomplete")], {
+              status: "incomplete",
+              incomplete_details: { reason: "max_output_tokens" },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+      const write = vi.fn(async () => [{ type: "text" as const, text: "Written" }]);
+      const result = await run(new Client(), "model", "", prompt, [
+        { name: "write", parameters: { type: "object" }, function: write },
+      ]);
+      expect(result.status).toBe("completed");
+      expect(write).not.toHaveBeenCalled();
+      const next = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(next.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([]);
+      expect(next.input.find((item: { type: string }) => item.type === "function_call_output").output).toContain(
+        "incomplete",
+      );
+      expect(result.messages[1].content[0]).toEqual({ type: "reasoning", id: "rs_partial", text: "", summary: "Plan" });
+    },
+  );
+
+  it.each([400, 413, 422, "error", "response.failed"] as const)(
+    "recovers a %s reasoning rejection without losing the conversation",
+    async (transport) => {
+      const client = new Client();
+      fetchMock.mockResolvedValueOnce(finished(response([reasoningItem("rs_old"), textItem("First answer")])));
+      const first = await client.complete("model", "", prompt, []);
+      const history: Message[] = [...prompt, first, { role: "user", content: [{ type: "text", text: "Continue" }] }];
+      const error = { code: "invalid_encrypted_content", message: "Encrypted content could not be verified" };
+      const rejection =
+        typeof transport === "number"
+          ? new Response(JSON.stringify({ error }), {
+              status: transport,
+              headers: { "content-type": "application/json" },
+            })
+          : sse([
+              { type: "response.created", response: response([], { status: "in_progress" }) },
+              transport === "error"
+                ? { type: "error", ...error }
+                : { type: "response.failed", response: { ...response(), status: "failed", error } },
+            ]);
+      fetchMock.mockResolvedValueOnce(rejection).mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+      const result = await run(client, "model", "", history, []);
+      expect(result.status).toBe("completed");
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const rejected = JSON.parse(fetchMock.mock.calls[1][1].body);
+      const retried = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(rejected.input.some((item: { type: string }) => item.type === "reasoning")).toBe(true);
+      expect(retried.input.filter((item: { type: string }) => item.type === "reasoning")).toEqual([]);
+      expect(retried.input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "assistant", content: "First answer" }),
+          expect.objectContaining({ role: "user", content: [{ type: "input_text", text: "Continue" }] }),
+        ]),
+      );
+      expect(result.messages[1].content[0]).toEqual({ type: "reasoning", id: "rs_old", text: "", summary: "Plan" });
+    },
+  );
 
   it("clears partial content before retrying rather than appending it to the new response", async () => {
     fetchMock

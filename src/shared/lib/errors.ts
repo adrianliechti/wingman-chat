@@ -162,6 +162,24 @@ export function isContextOverflowError(error: unknown): boolean {
 }
 
 /**
+ * The provider rejected replayed reasoning: the payload came from another
+ * model, key, or deployment, or lost the item it belongs to. The request is
+ * otherwise valid, so the caller drops the payloads and retries.
+ */
+export function isReasoningReplayError(error: unknown): boolean {
+  if (!isOpenAIError(error)) return false;
+  if (error.status !== undefined && ![400, 413, 422].includes(error.status)) return false;
+  if (error.code === "invalid_encrypted_content") return true;
+  const msg = (getServerMessage(error) ?? "").toLowerCase().replaceAll("`", "");
+  return (
+    msg.includes("invalid_encrypted_content") ||
+    msg.includes("encrypted content could not be verified") ||
+    (msg.includes("reasoning") && msg.includes("required following item")) ||
+    (msg.includes("thinking") && (msg.includes("invalid signature") || msg.includes("signature verification failed")))
+  );
+}
+
+/**
  * Best-effort extraction of the server-provided error message from an APIError.
  * OpenAI's SDK puts the parsed response body in `error.error`, which is the
  * user-facing text. Falls back to `error.message` (which may include the
