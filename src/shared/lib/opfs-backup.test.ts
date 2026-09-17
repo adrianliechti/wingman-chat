@@ -7,7 +7,14 @@ import { MemoryOpfs } from "./test-support/memoryOpfs";
 
 const memory = new MemoryOpfs();
 const storedChat = (id: string, extra = {}) =>
-  JSON.stringify({ id, created: "2020-01-01", updated: "2020-01-02", messages: [], model: null, ...extra });
+  JSON.stringify({
+    id,
+    created: "2020-01-01",
+    updated: "2020-01-02",
+    messages: [],
+    model: null,
+    ...extra,
+  });
 const zipBlob = async (files: Record<string, string>) => {
   const zip = new JSZip();
   for (const [path, text] of Object.entries(files)) zip.file(path, text);
@@ -57,13 +64,18 @@ describe("backup and restore", () => {
       "index.json": JSON.stringify([{ id: "fake" }]),
     });
     await opfs.importFolderFromZip("chats", backup);
-    expect((await opfs.readIndex("chats")).map((entry) => entry.id).sort()).toEqual(["existing", "one"]);
+    expect((await opfs.readIndex("chats")).map((entry) => entry.id).sort()).toEqual([
+      "existing",
+      "one",
+    ]);
   });
 
   it("accepts wrapped backups and repairs a missing file without deleting unrelated files", async () => {
     memory.put("chats/one/chat.json", storedChat("one"));
     memory.put("chats/one/artifacts/keep.txt", "keep");
-    const files = await readZipFiles(await zipBlob({ "backup/chats/one/blobs/missing.bin": "bytes" }));
+    const files = await readZipFiles(
+      await zipBlob({ "backup/chats/one/blobs/missing.bin": "bytes" }),
+    );
     await restoreFiles(files);
     expect(await opfs.readText("chats/one/blobs/missing.bin")).toBe("bytes");
     expect(await opfs.readText("chats/one/artifacts/keep.txt")).toBe("keep");
@@ -130,7 +142,10 @@ describe("backup and restore", () => {
       restoreFiles(
         new Map([
           ["chats/new/chat.json", new Blob([storedChat("new")])],
-          ["skills/valid/SKILL.md", new Blob(["---\nname: valid\ndescription: Description\n---\nBody"])],
+          [
+            "skills/valid/SKILL.md",
+            new Blob(["---\nname: valid\ndescription: Description\n---\nBody"]),
+          ],
         ]),
       ),
     ).rejects.toThrow("index failed");
@@ -144,7 +159,9 @@ describe("backup and restore", () => {
     memory.put("chats/old/chat.json", storedChat("old"));
     memory.put("chats/index.json", JSON.stringify([{ id: "old", updated: "2020-01-02" }]));
     const before = new Map(
-      await Promise.all([...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const)),
+      await Promise.all(
+        [...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const),
+      ),
     );
     let failed = false;
     memory.beforeWrite = async (path) => {
@@ -162,14 +179,18 @@ describe("backup and restore", () => {
       ),
     ).rejects.toThrow("quota");
     const after = new Map(
-      await Promise.all([...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const)),
+      await Promise.all(
+        [...memory.files].map(async ([path, blob]) => [path, await blob.text()] as const),
+      ),
     );
     expect(after).toEqual(before);
     expect(await opfs.listDirectories("chats")).toEqual(["old"]);
   });
 
   it("rejects path traversal even when the ZIP library sanitizes its filename", async () => {
-    await expect(readZipFiles(await zipBlob({ "../profile.json": "{}" }))).rejects.toThrow("Invalid archive path");
+    await expect(readZipFiles(await zipBlob({ "../profile.json": "{}" }))).rejects.toThrow(
+      "Invalid archive path",
+    );
     expect(memory.closed).toEqual([]);
   });
 
@@ -182,13 +203,18 @@ describe("backup and restore", () => {
   });
 
   it("rebuilds only recognizable records and preserves skill IDs and old timestamps", async () => {
-    memory.put("skills/index.json", JSON.stringify([{ id: "stable-id", title: "valid", updated: "2020-01-02" }]));
+    memory.put(
+      "skills/index.json",
+      JSON.stringify([{ id: "stable-id", title: "valid", updated: "2020-01-02" }]),
+    );
     memory.put("skills/valid/SKILL.md", "---\nname: valid\ndescription: A skill\n---\nBody");
     memory.put("skills/unrelated/readme.txt", "keep");
     memory.put("agents/unrelated/file.txt", "keep");
     await opfs.rebuildFolderIndex("skills");
     await opfs.rebuildFolderIndex("agents");
-    expect(await opfs.readIndex("skills")).toEqual([{ id: "stable-id", title: "valid", updated: "2020-01-02" }]);
+    expect(await opfs.readIndex("skills")).toEqual([
+      { id: "stable-id", title: "valid", updated: "2020-01-02" },
+    ]);
     expect(await opfs.readIndex("agents")).toEqual([]);
     expect(await opfs.readText("skills/unrelated/readme.txt")).toBe("keep");
   });

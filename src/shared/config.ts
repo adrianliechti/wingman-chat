@@ -178,7 +178,7 @@ interface ConfigSchema {
   bridge?: BridgeConfig;
   plugins?: PluginsConfig;
   support?: SupportConfig;
-  costDashboard?: SupportConfig;
+  cost?: SupportConfig;
 
   tools: ToolConfig[];
   models: ModelConfig[];
@@ -230,7 +230,7 @@ interface Config {
   bridge: BridgeConfig | null;
   plugins: PluginsConfig | null;
   support: SupportConfig | null;
-  costDashboard: SupportConfig | null;
+  cost: SupportConfig | null;
 
   client: Client;
 
@@ -284,7 +284,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       bridge: cfg.bridge ?? null,
       plugins: cfg.plugins ?? null,
       support: cfg.support ?? null,
-      costDashboard: cfg.costDashboard ?? null,
+      cost: cfg.cost ?? null,
 
       client: new Client(),
 

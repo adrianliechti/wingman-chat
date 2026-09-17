@@ -78,12 +78,12 @@ export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
         </>
       )}
 
-      {config.costDashboard?.url && (
+      {config.cost?.url && (
         <DropdownMenuItem
           icon={<Receipt size={18} className="mr-1" />}
           render={({ className, children }) => (
             <a
-              href={config.costDashboard?.url}
+              href={config.cost?.url}
               target="_blank"
               rel="noopener noreferrer"
               className={className}
@@ -95,11 +95,11 @@ export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
           <span className="flex w-full items-center justify-between gap-3">
             <span className="min-w-0">
               <span className="block truncate">
-                {config.costDashboard.title?.trim() || "Cost Dashboard"}
+                {config.cost.title?.trim() || "Cost Dashboard"}
               </span>
-              {config.costDashboard.description && (
+              {config.cost.description && (
                 <span className="mt-0.5 block text-xs leading-snug font-normal text-neutral-500 dark:text-neutral-400">
-                  {config.costDashboard.description}
+                  {config.cost.description}
                 </span>
               )}
             </span>

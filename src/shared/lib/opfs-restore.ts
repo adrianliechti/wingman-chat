@@ -22,7 +22,10 @@ function validatePath(path: string): void {
 export type RestoreProgressHandler = (fraction: number) => void;
 
 /** Decode and validate the entire archive before changing any saved files. */
-export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandler): Promise<Map<string, Blob>> {
+export async function readZipFiles(
+  blob: Blob,
+  onProgress?: RestoreProgressHandler,
+): Promise<Map<string, Blob>> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(await blob.arrayBuffer(), { checkCRC32: true });
   const files = new Map<string, Blob>();
@@ -50,7 +53,9 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
     const stripped = paths.map((path) => path.slice(prefix.length + 1));
     if (
       !stripped.some(
-        (path) => (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) || path === "profile.json",
+        (path) =>
+          (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) ||
+          path === "profile.json",
       )
     )
       break;
@@ -96,7 +101,9 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
             !Array.isArray(message.content) ||
             message.content.some(
               (part: unknown) =>
-                !part || typeof part !== "object" || typeof (part as { type?: unknown }).type !== "string",
+                !part ||
+                typeof part !== "object" ||
+                typeof (part as { type?: unknown }).type !== "string",
             ),
         )
       )
@@ -104,10 +111,15 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     }
     if (/\/(servers|files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
       throw new Error(`Invalid list in backup: ${path}`);
-    if (/\/(files\/index|segments)\.json$/.test(path) && (value as unknown[]).some((item) => typeof item !== "string"))
+    if (
+      /\/(files\/index|segments)\.json$/.test(path) &&
+      (value as unknown[]).some((item) => typeof item !== "string")
+    )
       throw new Error(`Invalid list entries in backup: ${path}`);
-    if (path.endsWith("/metadata.json") && Array.isArray(value)) throw new Error(`Invalid metadata in backup: ${path}`);
-    if (path === "profile.json" && Array.isArray(value)) throw new Error("Invalid profile in backup");
+    if (path.endsWith("/metadata.json") && Array.isArray(value))
+      throw new Error(`Invalid metadata in backup: ${path}`);
+    if (path === "profile.json" && Array.isArray(value))
+      throw new Error("Invalid profile in backup");
   }
 }
 
@@ -116,7 +128,10 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
  * Existing files with matching paths are replaced. All inputs are decoded and
  * checked first; a write failure restores the previous bytes and indexes.
  */
-export async function restoreFiles(input: ReadonlyMap<string, Blob>, onProgress?: RestoreProgressHandler): Promise<void> {
+export async function restoreFiles(
+  input: ReadonlyMap<string, Blob>,
+  onProgress?: RestoreProgressHandler,
+): Promise<void> {
   const files = new Map<string, Blob>();
   const collections = new Set<string>();
   const indexHints = new Map<string, IndexEntry[]>();
@@ -139,13 +154,18 @@ export async function restoreFiles(input: ReadonlyMap<string, Blob>, onProgress?
     // user files. Preserve them without inventing sidebar records for them.
     collections.add(path === "profile.json" ? "profile" : root);
     // A backup's listing must not replace the destination's merged listing.
-    if ((STORAGE_COLLECTIONS as readonly string[]).includes(root) && /^[^/]+\/index\.json$/.test(path)) {
+    if (
+      (STORAGE_COLLECTIONS as readonly string[]).includes(root) &&
+      /^[^/]+\/index\.json$/.test(path)
+    ) {
       try {
         const hints: unknown = JSON.parse(await blob.text());
         if (Array.isArray(hints))
           indexHints.set(
             root,
-            hints.filter((entry) => entry && typeof entry.id === "string" && typeof entry.updated === "string"),
+            hints.filter(
+              (entry) => entry && typeof entry.id === "string" && typeof entry.updated === "string",
+            ),
           );
       } catch {
         /* Listings are optional hints, never authoritative backup data. */
@@ -159,7 +179,8 @@ export async function restoreFiles(input: ReadonlyMap<string, Blob>, onProgress?
   for (const [path, blob] of files) {
     if (!/^agents\/[^/]+\/files\/[^/]+\/embeddings\.bin$/.test(path)) continue;
     const bytes = await blob.arrayBuffer();
-    if (bytes.byteLength < 4 || bytes.byteLength % 4) throw new Error(`Invalid embeddings in backup: ${path}`);
+    if (bytes.byteLength < 4 || bytes.byteLength % 4)
+      throw new Error(`Invalid embeddings in backup: ${path}`);
     const vectors = new Float32Array(bytes);
     const dimension = vectors[0];
     const texts = files.get(path.replace(/embeddings\.bin$/, "segments.json"));
@@ -176,7 +197,9 @@ export async function restoreFiles(input: ReadonlyMap<string, Blob>, onProgress?
   await flushPersistence();
   const keys = [...collections].sort();
   const chatIds = [
-    ...new Set([...files.keys()].flatMap((path) => (path.startsWith("chats/") ? [path.split("/")[1]] : []))),
+    ...new Set(
+      [...files.keys()].flatMap((path) => (path.startsWith("chats/") ? [path.split("/")[1]] : [])),
+    ),
   ].sort();
 
   const indexes = keys
@@ -186,11 +209,14 @@ export async function restoreFiles(input: ReadonlyMap<string, Blob>, onProgress?
     writeFileChanges(files, {
       extraPaths: indexes,
       afterWrite: async () => {
-        for (const collection of keys) await rebuildFolderIndexUnlocked(collection, indexHints.get(collection));
+        for (const collection of keys)
+          await rebuildFolderIndexUnlocked(collection, indexHints.get(collection));
       },
     });
   const lockChats = (index: number): Promise<void> =>
-    index === chatIds.length ? apply() : withArtifactWorkspaceLock(chatIds[index], () => lockChats(index + 1));
+    index === chatIds.length
+      ? apply()
+      : withArtifactWorkspaceLock(chatIds[index], () => lockChats(index + 1));
   const lockCollections = (index: number): Promise<void> =>
     index === keys.length
       ? lockChats(0)

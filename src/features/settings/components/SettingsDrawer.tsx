@@ -1020,7 +1020,9 @@ export function SettingsDrawer({
                                   className="text-neutral-500 dark:text-neutral-400 shrink-0"
                                 />
                                 <span className="font-medium">
-                                  {isRestoring ? `Restoring... ${Math.round(restoreProgress * 100)}%` : "Restore backup"}
+                                  {isRestoring
+                                    ? `Restoring... ${Math.round(restoreProgress * 100)}%`
+                                    : "Restore backup"}
                                 </span>
                               </span>
                             </button>
