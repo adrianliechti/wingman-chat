@@ -1,6 +1,7 @@
 import { ExternalLink, GraduationCap, Receipt, Settings } from "lucide-react";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { getConfig } from "@/shared/config";
+import { useMe } from "@/shared/hooks/useMe";
 import { Avatar } from "@/shared/ui/Avatar";
 import {
   DropdownMenu,
@@ -16,6 +17,9 @@ interface AccountMenuProps {
 export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
   const config = getConfig();
   const { profile } = useSettings();
+  const me = useMe();
+
+  const displayName = me.name || profile.name;
 
   return (
     <DropdownMenu
@@ -27,22 +31,28 @@ export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
           aria-label="Account menu"
         >
           <Avatar
-            name={profile.name}
+            name={displayName}
             className="bg-black text-white dark:bg-white dark:text-black"
           />
         </MenuButton>
       }
     >
       <div className="flex items-center gap-3 px-3 py-2">
-        <Avatar name={profile.name} className="bg-black text-white dark:bg-white dark:text-black" />
+        <Avatar name={displayName} className="bg-black text-white dark:bg-white dark:text-black" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">
-            {profile.name || "You"}
+            {displayName || "You"}
           </div>
-          {profile.role && (
+          {me.email ? (
             <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-              {profile.role}
+              {me.email.toLowerCase()}
             </div>
+          ) : (
+            profile.role && (
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                {profile.role}
+              </div>
+            )
           )}
         </div>
       </div>
