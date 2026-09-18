@@ -10,9 +10,6 @@
     "description": "Review your usage and spending",
     "url": "https://example.com"
   },
-  "bridge": {
-    "url": "http://localhost:8787"
-  },
   "plugins": {
     "url": "http://localhost:8080"
   },
