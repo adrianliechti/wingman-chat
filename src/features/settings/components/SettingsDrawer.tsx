@@ -204,6 +204,7 @@ export function SettingsDrawer({
     outputDeviceId,
     inputDevices,
     outputDevices,
+    micPermission,
     setInputDevice,
     setOutputDevice,
     requestPermission,
@@ -612,22 +613,34 @@ export function SettingsDrawer({
                           />
 
                           <div className="space-y-5">
-                            {inputDevices.length === 0 && outputDevices.length === 0 ? (
+                            {micPermission !== "granted" &&
+                            inputDevices.length === 0 &&
+                            outputDevices.length === 0 ? (
                               <div className="space-y-2">
                                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                                  Allow microphone access to select audio devices.
+                                  {micPermission === "denied"
+                                    ? "Microphone access is blocked. Enable it in your browser's site settings, then reload."
+                                    : "Allow microphone access to select audio devices."}
                                 </p>
-                                <button
-                                  type="button"
-                                  onClick={requestPermission}
-                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                                >
-                                  <Mic size={14} />
-                                  Allow Access
-                                </button>
+                                {micPermission !== "denied" && (
+                                  <button
+                                    type="button"
+                                    onClick={requestPermission}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                                  >
+                                    <Mic size={14} />
+                                    Allow Access
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <>
+                                {inputDevices.length === 0 && outputDevices.length === 0 ? (
+                                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                                    No audio devices were found. Connect a microphone or speaker to
+                                    select it here.
+                                  </p>
+                                ) : null}
                                 {inputDevices.length > 0 && (
                                   <SelectMenu
                                     label="Microphone"

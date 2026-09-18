@@ -1,7 +1,7 @@
 import { stopAudioTracks } from "@/shared/lib/audioResources";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AudioDeviceSettings } from "./AudioDeviceContext";
+import type { AudioDeviceSettings, MicPermissionState } from "./AudioDeviceContext";
 import { AudioDeviceContext } from "./AudioDeviceContext";
 
 function loadSettings(): AudioDeviceSettings {
@@ -37,6 +37,7 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   const permissionRequest = useRef<Promise<void> | null>(null);
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [micPermission, setMicPermission] = useState<MicPermissionState>("unknown");
 
   const enumerateDevices = useCallback(async () => {
     const request = ++enumeration.current;
@@ -89,9 +90,12 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           // This permission probe never owns a live recording, even after unmount.
           stopAudioTracks(stream);
-          if (mounted.current) await enumerateDevices();
+          if (mounted.current) {
+            setMicPermission("granted");
+            await enumerateDevices();
+          }
         } catch {
-          /* Permission denied or media devices unavailable. */
+          if (mounted.current) setMicPermission("denied");
         }
       })
       .finally(() => {
@@ -106,6 +110,29 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   }, [settings]);
 
   useEffect(() => {
+    if (!navigator.permissions?.query) return;
+    let status: PermissionStatus | undefined;
+    const onChange = () => {
+      if (!mounted.current || !status) return;
+      setMicPermission(status.state as MicPermissionState);
+      if (status.state === "granted") void enumerateDevices();
+    };
+    navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        status = result;
+        onChange();
+        result.addEventListener("change", onChange);
+      })
+      .catch(() => {
+        /* Permissions API unsupported for microphone. */
+      });
+    return () => {
+      status?.removeEventListener("change", onChange);
+    };
+  }, [enumerateDevices]);
+
+  useEffect(() => {
     mounted.current = true;
     void enumerateDevices();
     navigator.mediaDevices?.addEventListener("devicechange", enumerateDevices);
@@ -115,6 +142,13 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
       navigator.mediaDevices?.removeEventListener("devicechange", enumerateDevices);
     };
   }, [enumerateDevices]);
+
+  // A persisted grant should surface device labels without user action.
+  useEffect(() => {
+    if (micPermission === "granted" && inputDevices.length === 0 && outputDevices.length === 0) {
+      void requestPermission();
+    }
+  }, [micPermission, inputDevices.length, outputDevices.length, requestPermission]);
 
   const setInputDevice = useCallback((id: string | undefined) => {
     enumeration.current++;
@@ -133,6 +167,7 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
         outputDeviceId: settings.outputDeviceId,
         inputDevices,
         outputDevices,
+        micPermission,
         setInputDevice,
         setOutputDevice,
         requestPermission,
