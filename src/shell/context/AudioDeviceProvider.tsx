@@ -48,8 +48,11 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
       const inputs = devices.filter((d) => d.kind === "audioinput" && d.deviceId);
       const outputs = devices.filter((d) => d.kind === "audiooutput" && d.deviceId);
 
-      setInputDevices(inputs);
-      setOutputDevices(outputs);
+      // Without an active stream some browsers return placeholder devices with
+      // empty IDs. Keep the last known list instead of clearing valid devices.
+      const anyPresent = devices.some((d) => d.kind === "audioinput" || d.kind === "audiooutput");
+      setInputDevices((prev) => (inputs.length === 0 && anyPresent ? prev : inputs));
+      setOutputDevices((prev) => (outputs.length === 0 && anyPresent ? prev : outputs));
 
       // Permission can hide IDs, especially on initial load. Only forget a
       // device we've actually seen disappear from a labelled device list.
@@ -142,13 +145,6 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
       navigator.mediaDevices?.removeEventListener("devicechange", enumerateDevices);
     };
   }, [enumerateDevices]);
-
-  // A persisted grant should surface device labels without user action.
-  useEffect(() => {
-    if (micPermission === "granted" && inputDevices.length === 0 && outputDevices.length === 0) {
-      void requestPermission();
-    }
-  }, [micPermission, inputDevices.length, outputDevices.length, requestPermission]);
 
   const setInputDevice = useCallback((id: string | undefined) => {
     enumeration.current++;

@@ -5,6 +5,7 @@ import {
   Coffee,
   Download,
   HardDrive,
+  Loader2,
   Mic,
   Palette,
   Settings,
@@ -157,6 +158,7 @@ export function SettingsDrawer({
   const profileAboutInputId = useId();
   const [section, setSection] = useState<SectionId>("general");
   const [mobileShowList, setMobileShowList] = useState(true);
+  const [probingDevices, setProbingDevices] = useState(false);
   const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
     useToolsContext();
   const { agents, currentAgent, deleteAgent } = useAgents();
@@ -247,6 +249,28 @@ export function SettingsDrawer({
       void loadStorageInfo();
     }
   }, [isOpen, loadStorageInfo]);
+
+  // A persisted grant only exposes device labels after a probe stream this
+  // session, so refresh them when the user actually views audio settings.
+  useEffect(() => {
+    if (
+      isOpen &&
+      section === "audio" &&
+      micPermission === "granted" &&
+      inputDevices.length === 0 &&
+      outputDevices.length === 0
+    ) {
+      setProbingDevices(true);
+      void requestPermission().finally(() => setProbingDevices(false));
+    }
+  }, [
+    isOpen,
+    section,
+    micPermission,
+    inputDevices.length,
+    outputDevices.length,
+    requestPermission,
+  ]);
 
   const deleteChats = async () => {
     if (
@@ -636,10 +660,17 @@ export function SettingsDrawer({
                             ) : (
                               <>
                                 {inputDevices.length === 0 && outputDevices.length === 0 ? (
-                                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                                    No audio devices were found. Connect a microphone or speaker to
-                                    select it here.
-                                  </p>
+                                  probingDevices || micPermission === "granted" ? (
+                                    <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                                      <Loader2 size={16} className="animate-spin" />
+                                      Loading audio devices…
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                                      No audio devices were found. Connect a microphone or speaker
+                                      to select it here.
+                                    </p>
+                                  )
                                 ) : null}
                                 {inputDevices.length > 0 && (
                                   <SelectMenu
