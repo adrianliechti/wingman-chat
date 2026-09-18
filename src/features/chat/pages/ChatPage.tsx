@@ -107,6 +107,8 @@ export function ChatPage() {
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
+  const showChatLoading = !chats.some((c) => c.id === selectedChatId);
+
   // Sync URL → state for deep links and browser back/forward navigation.
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
@@ -518,7 +520,7 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {chatLoading || chatError ? (
+          {(chatLoading && showChatLoading) || chatError ? (
             <div
               className="m-auto p-6 text-sm text-neutral-500"
               role={chatError ? "alert" : "status"}
