@@ -29,7 +29,14 @@ import { notify } from "@/shared/lib/notify";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+} from "@/shared/ui/DropdownMenu";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
@@ -44,16 +51,28 @@ const CsvEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CsvEditor
 const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
 const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
 const JsEditor = lazyRouteComponent(() => import("@/shared/ui/editors/JsEditor"), "JsEditor");
-const MarkdownEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MarkdownEditor"), "MarkdownEditor");
-const MediaEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MediaEditor"), "MediaEditor");
-const MermaidEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MermaidEditor"), "MermaidEditor");
+const MarkdownEditor = lazyRouteComponent(
+  () => import("@/shared/ui/editors/MarkdownEditor"),
+  "MarkdownEditor",
+);
+const MediaEditor = lazyRouteComponent(
+  () => import("@/shared/ui/editors/MediaEditor"),
+  "MediaEditor",
+);
+const MermaidEditor = lazyRouteComponent(
+  () => import("@/shared/ui/editors/MermaidEditor"),
+  "MermaidEditor",
+);
 const OfficeMarkdownEditor = lazyRouteComponent(
   () => import("@/shared/ui/editors/OfficeMarkdownEditor"),
   "OfficeMarkdownEditor",
 );
 const PdfEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PdfEditor"), "PdfEditor");
 const PptxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PptxEditor"), "PptxEditor");
-const PythonEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PythonEditor"), "PythonEditor");
+const PythonEditor = lazyRouteComponent(
+  () => import("@/shared/ui/editors/PythonEditor"),
+  "PythonEditor",
+);
 const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor"), "SvgEditor");
 const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
 const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
@@ -118,7 +137,9 @@ export function ArtifactsDrawer() {
         console.error("Error uploading files:", error);
         notify.error(
           "Upload failed",
-          error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
+          error instanceof Error
+            ? error.message
+            : "The files couldn't be added; the workspace was left unchanged.",
         );
       } finally {
         setPendingUploads((count) => count - 1);
@@ -133,7 +154,12 @@ export function ArtifactsDrawer() {
       return uploadFiles(async () => {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          fetched.push(await downloadDriveFile(f, config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
+          fetched.push(
+            await downloadDriveFile(
+              f,
+              config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES,
+            ),
+          );
         }
         return fetched;
       });
@@ -247,7 +273,9 @@ export function ArtifactsDrawer() {
       if (files.length > 0) {
         return (
           <div className="h-full flex items-center justify-center p-8">
-            <p className="text-sm text-neutral-400 dark:text-neutral-500">Select a file from the sidebar</p>
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">
+              Select a file from the sidebar
+            </p>
           </div>
         );
       }
@@ -255,7 +283,9 @@ export function ArtifactsDrawer() {
         <div className="h-full flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center">
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
-            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+              No artifacts yet
+            </h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
               Drop files here or use Upload. Anything you create in the chat appears here too.
             </p>
@@ -355,8 +385,13 @@ export function ArtifactsDrawer() {
         return (
           <div className="h-full flex items-center justify-center p-8">
             <div className="max-w-md text-center">
-              <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
-              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
+              <FileIcon2
+                size={32}
+                className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600"
+              />
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+                Binary File
+              </h3>
               <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
                 This file is stored as binary data and cannot be edited as plain text here.
               </p>
@@ -496,8 +531,12 @@ export function ArtifactsDrawer() {
         <div className="absolute inset-0 bg-neutral-500/10 border-2 border-dashed border-neutral-400 dark:border-neutral-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
             <FileIcon2 size={48} className="text-neutral-500 mx-auto mb-3" />
-            <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-1">Drop files here</p>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">Files will be added to the project</p>
+            <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              Drop files here
+            </p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              Files will be added to the project
+            </p>
           </div>
         </div>
       )}
@@ -519,11 +558,18 @@ export function ArtifactsDrawer() {
       {/* Outer horizontal split: left = top bar + editor; right = files browser (full height) */}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
         {/* Left column: top bar + editor */}
-        <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
+        <ResizablePanel
+          defaultSize={75}
+          minSize={200}
+          className="h-full flex flex-col overflow-hidden"
+        >
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
           <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
-            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
+            <div
+              className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative"
+              ref={filePickerRef}
+            >
               {isEmpty && (
                 <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
                   Artifacts
@@ -606,7 +652,11 @@ export function ArtifactsDrawer() {
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
-                    <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                    <Code
+                      size={11}
+                      strokeWidth={2.25}
+                      className="w-3.5 h-3.5 md:w-2.75 md:h-2.75"
+                    />
                   </button>
                 </div>
               )}
@@ -647,7 +697,10 @@ export function ArtifactsDrawer() {
                     </MenuButton>
                   }
                 >
-                  <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                  <DropdownMenuItem
+                    icon={<Upload size={16} />}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
                     Upload
                   </DropdownMenuItem>
                   {config.drives.map((drive) => (
@@ -697,7 +750,9 @@ export function ArtifactsDrawer() {
                   {activeFileData &&
                     fs &&
                     (() => {
-                      const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
+                      const isMarkdown =
+                        artifactKind(activeFileData.path, activeFileData.contentType) ===
+                        "markdown";
                       if (!isMarkdown) {
                         return (
                           <button
@@ -741,10 +796,14 @@ export function ArtifactsDrawer() {
                                 type="button"
                                 onClick={async () => {
                                   try {
-                                    const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
+                                    const { markdownToDocx } =
+                                      await import("@/shared/lib/markdownToDocx");
                                     const blob = await markdownToDocx(activeFileData.content);
-                                    const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
-                                    downloadBlob(blob, `${baseName}.docx`);
+                                    const baseName = getFileName(activeFileData.path).replace(
+                                      /\.(md|markdown)$/i,
+                                      "",
+                                    );
+                                    await downloadBlob(blob, `${baseName}.docx`);
                                   } catch (error) {
                                     console.error("Failed to convert to Word:", error);
                                   }
@@ -819,7 +878,10 @@ export function ArtifactsDrawer() {
                     await fs.downloadAsZip();
                   } catch (error) {
                     console.error("Failed to download files:", error);
-                    notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
+                    notify.error(
+                      "Download failed",
+                      "The files couldn't be downloaded. Please try again.",
+                    );
                   }
                 }}
                 onDownloadFile={downloadFile}

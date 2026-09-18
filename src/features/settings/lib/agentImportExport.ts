@@ -41,7 +41,7 @@ export async function exportAgentsAsZip(): Promise<void> {
       }
     }),
   );
-  downloadBlob(
+  await downloadBlob(
     await zip.generateAsync({ type: "blob", compression: "DEFLATE" }),
     `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`,
   );
@@ -68,7 +68,7 @@ export async function exportSingleAgentAsZip(
     }),
   );
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
-  downloadBlob(
+  await downloadBlob(
     await zip.generateAsync({ type: "blob", compression: "DEFLATE" }),
     `wingman-agent-${safeName}-${new Date().toISOString().split("T")[0]}.zip`,
   );
@@ -138,7 +138,8 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
   }
   // Full backups store skills beside agents; shareable exports bundle them.
   for (const [path, blob] of files) if (path.startsWith("skills/")) mapped.set(path, blob);
-  if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
+  if (files.has("agents/index.json"))
+    mapped.set("agents/index.json", files.get("agents/index.json")!);
   await restoreFiles(mapped);
 }
 
@@ -156,7 +157,9 @@ export async function importAgentsFromLegacyJson(
       await storeAgent(importedAgent(record, id));
       imported++;
     } catch (error) {
-      await removeAgent(id).catch((cleanupError) => console.error("Import cleanup failed:", cleanupError));
+      await removeAgent(id).catch((cleanupError) =>
+        console.error("Import cleanup failed:", cleanupError),
+      );
       console.error("Could not import agent:", error);
     }
   }
@@ -209,7 +212,10 @@ export function triggerAgentImport(): void {
 
         const result = await importAgentsFromLegacyJson(jsonData);
         if (result.failed) {
-          notify.error("Some agents could not be imported", `${result.imported} imported; ${result.failed} failed.`);
+          notify.error(
+            "Some agents could not be imported",
+            `${result.imported} imported; ${result.failed} failed.`,
+          );
           if (!result.imported) return;
         }
         notify.success(

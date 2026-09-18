@@ -58,7 +58,7 @@ func loadConfigFiles(cfg *Config) {
 func loadLinks(cfg *Config) {
 	var links struct {
 		Support *Support `yaml:"support"`
-		Cost    *Cost    `yaml:"cost"`
+		Cost    *Support `yaml:"cost"`
 	}
 
 	loadYAML("links.yaml", &links)

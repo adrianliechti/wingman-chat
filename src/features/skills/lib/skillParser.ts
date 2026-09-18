@@ -130,9 +130,14 @@ function parseFrontmatter(
 }
 
 /**
- * Parse a SKILL.md file content and validate it
+ * Parse a SKILL.md file content and validate it. Set `requireDescription` to
+ * false at import time so partially-authored skills with a missing or empty
+ * description still restore.
  */
-export function parseSkillFile(content: string): SkillParseResult {
+export function parseSkillFile(
+  content: string,
+  { requireDescription = true }: { requireDescription?: boolean } = {},
+): SkillParseResult {
   const errors: SkillValidationError[] = [];
 
   const parsed = parseFrontmatter(content);
@@ -159,8 +164,8 @@ export function parseSkillFile(content: string): SkillParseResult {
   }
 
   // Validate description
-  const description = frontmatter.description;
-  if (!description) {
+  const description = frontmatter.description ?? "";
+  if (requireDescription && !description) {
     errors.push({ field: "description", message: "Description is required in frontmatter" });
   } else if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
     errors.push({
@@ -173,7 +178,7 @@ export function parseSkillFile(content: string): SkillParseResult {
     return { success: false, errors };
   }
 
-  if (!name || !description) {
+  if (!name) {
     return {
       success: false,
       errors: [{ field: "format", message: "Missing required frontmatter fields" }],
@@ -196,51 +201,7 @@ export function parseSkillFile(content: string): SkillParseResult {
  * missing or empty description so partially-authored skills still restore.
  */
 export function parseSkillFileForImport(content: string): SkillParseResult {
-  const parsed = parseFrontmatter(content);
-  if (!parsed) {
-    return {
-      success: false,
-      errors: [{ field: "format", message: "Invalid format: Expected YAML frontmatter" }],
-    };
-  }
-
-  const { frontmatter, body } = parsed;
-  const name = frontmatter.name;
-  if (!name)
-    return {
-      success: false,
-      errors: [{ field: "name", message: "Name is required in frontmatter" }],
-    };
-  const nameValidation = validateSkillName(name);
-  if (!nameValidation.valid) {
-    return {
-      success: false,
-      errors: [{ field: "name", message: nameValidation.error ?? "Invalid skill name" }],
-    };
-  }
-
-  const description = frontmatter.description ?? "";
-  if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
-    return {
-      success: false,
-      errors: [
-        {
-          field: "description",
-          message: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less`,
-        },
-      ],
-    };
-  }
-
-  return {
-    success: true,
-    skill: {
-      name,
-      description,
-      content: body,
-      ...(frontmatter.compatibility ? { compatibility: frontmatter.compatibility } : {}),
-    },
-  };
+  return parseSkillFile(content, { requireDescription: false });
 }
 
 /**
@@ -273,7 +234,7 @@ async function downloadSkillZip(skills: Skill[], filename: string): Promise<void
     }
   }
 
-  downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
+  await downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
 }
 
 /**
@@ -285,7 +246,7 @@ export async function downloadSkill(skill: Skill): Promise<void> {
     await downloadSkillZip([skill], `${skill.name}.zip`);
     return;
   }
-  downloadBlob(
+  await downloadBlob(
     new Blob([serializeSkill(skill)], { type: "text/markdown" }),
     `${skill.name}.SKILL.md`,
   );

@@ -135,7 +135,7 @@ export async function downloadFolderAsZip(
   onProgress?: ZipProgressHandler,
 ): Promise<void> {
   const blob = await exportFolderAsZip(folderPath, onProgress);
-  downloadBlob(blob, filename);
+  await downloadBlob(blob, filename);
 }
 
 /** Export selected top-level OPFS folders together in a single ZIP. */
@@ -187,5 +187,5 @@ export async function downloadFoldersAsZip(
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) =>
     onProgress?.(metadata.percent / 100),
   );
-  downloadBlob(blob, filename);
+  await downloadBlob(blob, filename);
 }

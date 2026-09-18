@@ -6,7 +6,7 @@ type Config struct {
 	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 	Plugins    *Plugins `json:"plugins,omitempty" yaml:"plugins,omitempty"`
 	Support    *Support `json:"support,omitempty" yaml:"support,omitempty"`
-	Cost       *Cost    `json:"cost,omitempty" yaml:"cost,omitempty"`
+	Cost       *Support `json:"cost,omitempty" yaml:"cost,omitempty"`
 
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
 	Models []Model `json:"models,omitempty" yaml:"models,omitempty"`
@@ -38,12 +38,6 @@ type Config struct {
 }
 
 type Support struct {
-	Title       string `json:"title,omitempty" yaml:"title,omitempty"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	URL         string `json:"url,omitempty" yaml:"url,omitempty"`
-}
-
-type Cost struct {
 	Title       string `json:"title,omitempty" yaml:"title,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	URL         string `json:"url,omitempty" yaml:"url,omitempty"`

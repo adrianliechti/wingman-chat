@@ -72,7 +72,8 @@ export interface ArtifactWorkspaceAccess {
 /** A file cannot replace an existing file, contain one, or sit below one. */
 function hasFileTreeConflict(path: string, existingPaths: readonly string[]): boolean {
   return existingPaths.some(
-    (existing) => existing === path || existing.startsWith(`${path}/`) || path.startsWith(`${existing}/`),
+    (existing) =>
+      existing === path || existing.startsWith(`${path}/`) || path.startsWith(`${existing}/`),
   );
 }
 
@@ -111,7 +112,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
    * Create a new file or update an existing file.
    * Writes directly to OPFS, then emits event.
    */
-  async createFile(path: string, content: string, contentType?: string): Promise<ArtifactMutation | null> {
+  async createFile(
+    path: string,
+    content: string,
+    contentType?: string,
+  ): Promise<ArtifactMutation | null> {
     const normalized = this.normalizePath(path);
 
     // Check if file exists to determine event type
@@ -119,7 +124,8 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     const isUpdate = existingFile !== undefined;
 
     const resolvedContentType = contentType ?? existingFile?.contentType;
-    if (existingFile?.content === content && existingFile.contentType === resolvedContentType) return null;
+    if (existingFile?.content === content && existingFile.contentType === resolvedContentType)
+      return null;
 
     if (existingFile) {
       await opfs.archiveArtifactRevision(this.chatId, {
@@ -244,7 +250,9 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     const direct = await opfs.readArtifact(this.chatId, normalized);
     const paths = direct
       ? [normalized]
-      : (await opfs.listArtifacts(this.chatId)).filter((candidate) => candidate.startsWith(`${normalized}/`));
+      : (await opfs.listArtifacts(this.chatId)).filter((candidate) =>
+          candidate.startsWith(`${normalized}/`),
+        );
     if (paths.length === 0) return [];
 
     const snapshots = await Promise.all(
@@ -298,11 +306,16 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
 
     const allFiles = await opfs.listArtifacts(this.chatId);
     const direct = await opfs.readArtifact(this.chatId, normalizedOld);
-    const sources = direct ? [normalizedOld] : allFiles.filter((path) => path.startsWith(`${normalizedOld}/`));
+    const sources = direct
+      ? [normalizedOld]
+      : allFiles.filter((path) => path.startsWith(`${normalizedOld}/`));
     if (!sources.length) return false;
     const sourceSet = new Set(sources);
     const unaffected = allFiles.filter((path) => !sourceSet.has(path));
-    const moves = sources.map((from) => ({ from, to: normalizedNew + from.slice(normalizedOld.length) }));
+    const moves = sources.map((from) => ({
+      from,
+      to: normalizedNew + from.slice(normalizedOld.length),
+    }));
     if (moves.some(({ to }) => hasFileTreeConflict(to, unaffected))) return false;
 
     const before = new Map<string, OverlayFile | undefined>();
@@ -334,7 +347,10 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
       try {
         await this.restoreTouchedFiles(before);
       } catch (rollbackError) {
-        throw new AggregateError([commitError, rollbackError], "Artifact move failed and its rollback was incomplete");
+        throw new AggregateError(
+          [commitError, rollbackError],
+          "Artifact move failed and its rollback was incomplete",
+        );
       }
       throw commitError;
     }
@@ -349,7 +365,9 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     const direct = await opfs.readArtifact(this.chatId, normalizedOld);
     const sources = direct
       ? [normalizedOld]
-      : (await opfs.listArtifacts(this.chatId)).filter((candidate) => candidate.startsWith(`${normalizedOld}/`));
+      : (await opfs.listArtifacts(this.chatId)).filter((candidate) =>
+          candidate.startsWith(`${normalizedOld}/`),
+        );
     const snapshots = await Promise.all(
       sources.map(async (from) => ({ from, file: await opfs.readArtifact(this.chatId, from) })),
     );
@@ -504,7 +522,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
         existing.content !== file.content ||
         existing.contentType !== (file.contentType ?? existing.contentType)
       ) {
-        const mutation = await this.createFile(path, file.content, file.contentType ?? existing.contentType);
+        const mutation = await this.createFile(
+          path,
+          file.content,
+          file.contentType ?? existing.contentType,
+        );
         updatedPaths.push(path);
         if (mutation) mutations.push(mutation);
       }
@@ -544,14 +566,16 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
           }
           continue;
         }
-        if (currentFile?.content === file.content && currentFile.contentType === file.contentType) continue;
+        if (currentFile?.content === file.content && currentFile.contentType === file.contentType)
+          continue;
         await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
         this.emit(currentFile ? "fileUpdated" : "fileCreated", path);
       } catch (error) {
         failures.push(error);
       }
     }
-    if (failures.length) throw new AggregateError(failures, "Could not restore every touched artifact");
+    if (failures.length)
+      throw new AggregateError(failures, "Could not restore every touched artifact");
   }
 
   /**
@@ -628,9 +652,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
 
     try {
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(zipBlob, filename);
+      await downloadBlob(zipBlob, filename);
     } catch (error) {
-      throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw new Error(
+        `Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
 
@@ -644,7 +670,7 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     }
 
     const blob = contentToBlob(file.content, file.contentType);
-    downloadBlob(blob, getFileName(file.path));
+    await downloadBlob(blob, getFileName(file.path));
   }
 }
 /** Coordinates UI, tools and interpreter transactions for this chat across instances/tabs. */
@@ -677,8 +703,12 @@ export class FileSystemManager implements FileSystem {
   createFile(path: string, content: string, contentType?: string) {
     return this.coordinate(
       async (access) =>
-        (await access.applyOverlayDelta({ upserts: { [path]: { content, contentType } }, deletes: [] })).mutations[0] ??
-        null,
+        (
+          await access.applyOverlayDelta({
+            upserts: { [path]: { content, contentType } },
+            deletes: [],
+          })
+        ).mutations[0] ?? null,
     );
   }
 
@@ -692,13 +722,15 @@ export class FileSystemManager implements FileSystem {
 
   deleteFile(path: string) {
     return this.coordinate(
-      async (access) => (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).deleted > 0,
+      async (access) =>
+        (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).deleted > 0,
     );
   }
 
   deleteFileWithDelta(path: string) {
     return this.coordinate(
-      async (access) => (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).mutations,
+      async (access) =>
+        (await access.applyOverlayDelta({ upserts: {}, deletes: [path] })).mutations,
     );
   }
 
@@ -730,7 +762,10 @@ export class FileSystemManager implements FileSystem {
     return this.coordinate((access) => access.applyOverlayDelta(delta));
   }
 
-  applyOverlaySnapshot(files: Record<string, string | OverlayFile>, options?: OverlaySnapshotOptions) {
+  applyOverlaySnapshot(
+    files: Record<string, string | OverlayFile>,
+    options?: OverlaySnapshotOptions,
+  ) {
     return this.coordinate((access) => access.applyOverlaySnapshot(files, options));
   }
 
