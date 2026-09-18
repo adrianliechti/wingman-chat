@@ -4,6 +4,8 @@ import { run } from "./agent";
 import { AgentInvocationContext, AgentRunController } from "./agent-run-controller";
 import { APIError, BadRequestError } from "openai/error";
 import type { Message, Tool } from "../types/chat";
+import { reasoningPrefix } from "./reasoning";
+import { toResponseTools } from "./toolSchemas";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
 
@@ -268,6 +270,84 @@ describe("agent recovery", () => {
     expect(result.status).toBe("aborted");
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.modelCalls.used).toBe(1);
+  });
+
+  it("drops rejected reasoning payloads once, then treats a repeat as a genuine request error", async () => {
+    const rejected = () =>
+      new BadRequestError(400, { code: "invalid_encrypted_content" }, "Bad payload", new Headers());
+    const history: Message[] = [
+      ...prompt,
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            text: "",
+            encryptedContent: "enc",
+            model: "model",
+            prefix: reasoningPrefix("", undefined),
+          },
+          { type: "tool_call", id: "c1", name: "read", arguments: "{}" },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", id: "c1", name: "read", arguments: "{}", result: [{ type: "text", text: "OK" }] },
+        ],
+      },
+    ];
+    const complete = vi.fn().mockRejectedValueOnce(rejected()).mockResolvedValueOnce(done);
+    const changes: Message[][] = [];
+    const result = await run(fakeClient(complete), "model", "", history, [], {
+      onMessagesChange: (messages) => changes.push(messages),
+    });
+    expect(result.status).toBe("completed");
+    expect(complete).toHaveBeenCalledTimes(2);
+    const retried: Message[] = complete.mock.calls[1][2];
+    expect(retried[1].content[0]).toEqual({ type: "reasoning", id: "rs_1", text: "" });
+    expect(changes[0]).toBe(retried);
+
+    const repeated = vi.fn().mockRejectedValue(rejected());
+    expect((await run(fakeClient(repeated), "model", "", history, [])).status).toBe("failed");
+    expect(repeated).toHaveBeenCalledTimes(2);
+
+    const nothingReplayed = vi.fn().mockRejectedValue(rejected());
+    expect((await run(fakeClient(nothingReplayed), "model", "", prompt, [])).status).toBe("failed");
+    expect(nothingReplayed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps reasoning payloads after completion and failure for subsequent requests", async () => {
+    const tools: Tool[] = [
+      { name: "read", parameters: { type: "object" }, function: async () => [{ type: "text", text: "OK" }] },
+    ];
+    const reasoning = {
+      type: "reasoning" as const,
+      id: "rs",
+      text: "",
+      summary: "Plan",
+      encryptedContent: "enc",
+      model: "model",
+      prefix: reasoningPrefix("", toResponseTools(tools)),
+    };
+    const finished = vi
+      .fn()
+      .mockResolvedValue({ role: "assistant", content: [reasoning, { type: "text", text: "Done" }] });
+    const completed = await run(fakeClient(finished), "model", "", prompt, tools);
+    expect(completed.status).toBe("completed");
+    expect(completed.messages.at(-1)?.content[0]).toEqual(reasoning);
+
+    const failing = vi
+      .fn()
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [reasoning, { type: "tool_call", id: "c", name: "read", arguments: "{}" }],
+      })
+      .mockRejectedValueOnce(new APIError(500, {}, "Unavailable", undefined));
+    const failed = await run(fakeClient(failing), "model", "", prompt, tools);
+    expect(failed.status).toBe("failed");
+    expect(failed.messages[1].content[0]).toMatchObject({ encryptedContent: "enc" });
   });
 
   it("keeps completed tools after a later model failure so recovery need not rerun them", async () => {

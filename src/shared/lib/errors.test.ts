@@ -4,6 +4,7 @@ import {
   getErrorInfo,
   getRetryAfterMs,
   isContextOverflowError,
+  isReasoningReplayError,
   isRecoverableStreamError,
   waitBeforeStreamRetry,
 } from "./errors";
@@ -35,6 +36,36 @@ describe("LLM error classification", () => {
       expect(isContextOverflowError(error)).toBe(false);
     }
     expect(getErrorInfo(new LengthFinishReasonError()).code).toBe("OUTPUT_TRUNCATED");
+  });
+
+  it("recognizes rejected reasoning payloads in OpenAI and Anthropic wording", () => {
+    for (const error of [
+      new BadRequestError(400, { code: "invalid_encrypted_content" }, "Bad payload", new Headers()),
+      new APIError(413, { code: "invalid_encrypted_content" }, "Bad payload", new Headers()),
+      new APIError(422, { code: "invalid_encrypted_content" }, "Bad payload", new Headers()),
+      new APIError(undefined, { code: "invalid_encrypted_content" }, "Bad payload", undefined),
+      new BadRequestError(400, { message: "The encrypted content could not be verified." }, "Bad", new Headers()),
+      new BadRequestError(400, { message: "thinking block: invalid signature" }, "Bad", new Headers()),
+      new BadRequestError(
+        400,
+        { message: "Item 'rs_1' of type 'reasoning' was provided without its required following item." },
+        "Bad",
+        new Headers(),
+      ),
+    ]) {
+      expect(isReasoningReplayError(error)).toBe(true);
+      expect(isContextOverflowError(error)).toBe(false);
+    }
+    for (const error of [
+      new BadRequestError(400, { code: "context_length_exceeded" }, "Too large", new Headers()),
+      new APIError(422, { message: "Unrelated validation error" }, "Bad", new Headers()),
+      new APIError(401, { code: "invalid_encrypted_content" }, "Unauthorized", new Headers()),
+      new APIError(403, { message: "thinking block: invalid signature" }, "Forbidden", new Headers()),
+      new APIError(500, { message: "encrypted content could not be verified" }, "Down", new Headers()),
+      new Error("invalid_encrypted_content"),
+    ]) {
+      expect(isReasoningReplayError(error)).toBe(false);
+    }
   });
 
   it("preserves an agent's terminal error detail", () => {

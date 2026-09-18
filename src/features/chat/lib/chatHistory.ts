@@ -1,5 +1,6 @@
 import type { Client } from "@/shared/lib/client";
 import { isAbortError } from "@/shared/lib/errors";
+import { clearReplayableReasoning, isReplayableReasoning } from "@/shared/lib/reasoning";
 import { injectRequestContext, isUserMessage } from "@/shared/lib/requestContext";
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
@@ -104,12 +105,21 @@ export function historyForRetry(messages: Message[]): Message[] | null {
 }
 
 /**
- * Rough token estimate (chars / 4) approximating the replay payload. Skips
- * reasoning (not replayed to the API) and binary content (images/files).
+ * Rough token estimate (chars / 4) excluding binary attachments. Use measured
+ * reasoning tokens where available; otherwise approximate the retained payload.
  */
 function estimateTokens(messages: Message[]): number {
   let chars = 0;
+  let reasoningTokens = 0;
   for (const msg of messages) {
+    const reasoning = msg.content.filter(isReplayableReasoning);
+    if (reasoning.length > 0) {
+      reasoningTokens +=
+        msg.usage?.reasoningTokens ??
+        Math.ceil(
+          reasoning.reduce((total, part) => total + Math.max(part.text.length, part.encryptedContent.length), 0) / 4,
+        );
+    }
     for (const part of msg.content) {
       if (part.type === "text" || part.type === "summary") {
         chars += part.text.length;
@@ -126,7 +136,7 @@ function estimateTokens(messages: Message[]): number {
       }
     }
   }
-  return Math.ceil(chars / 4);
+  return Math.ceil(chars / 4) + reasoningTokens;
 }
 
 function mediaPlaceholder(part: { type: string; name?: string }): TextContent {
@@ -137,8 +147,8 @@ function mediaPlaceholder(part: { type: string; name?: string }): TextContent {
 }
 
 /**
- * Wire-style view of messages for the summarizer: reasoning is dropped (never
- * replayed to the API either) and binary payloads become short placeholders —
+ * Wire-style view of messages for the summarizer: opaque reasoning is dropped
+ * and binary payloads become short placeholders —
  * JSON.stringifying megabytes of base64 into the helper-model prompt would
  * dwarf the history it's supposed to condense.
  */
@@ -197,7 +207,8 @@ function estimateWindowTokens(window: Message[]): number {
     const message = window[i];
     const usage = message.usage;
     if (message.role === Role.Assistant && usage?.inputTokens) {
-      const anchor = usage.inputTokens + (usage.outputTokens ?? 0) - (usage.reasoningTokens ?? 0);
+      const omittedReasoning = message.content.some(isReplayableReasoning) ? 0 : (usage.reasoningTokens ?? 0);
+      const anchor = usage.inputTokens + (usage.outputTokens ?? 0) - omittedReasoning;
       return Math.max(anchor + estimateTokens(window.slice(i + 1)), estimateTokens(window));
     }
   }
@@ -273,15 +284,16 @@ export async function compactIfNeeded(
     role: Role.Assistant,
     content: [{ type: "summary", text: summary }],
   });
-  // Keep all original messages in storage; strip prior summary markers so
-  // multiple don't accumulate. pruneAtSummary slices at the latest one.
+  // Keep visible history in storage, releasing payloads superseded by the new
+  // summary. Reasoning in the retained current turn stays available for replay.
+  // Strip prior summary markers; pruneAtSummary slices at the latest one.
   const storageBoundary = conversation.length - window.length + boundary;
   const preserved = conversation.slice(0, storageBoundary).flatMap((message) => {
     if (!message.content.some((part) => part.type === "summary")) return [message];
     const content = message.content.filter((part) => part.type !== "summary");
     return content.length ? [{ ...message, content }] : [];
   });
-  const compacted = [...preserved, summaryMsg, ...conversation.slice(storageBoundary)];
+  const compacted = [...clearReplayableReasoning(preserved), summaryMsg, ...conversation.slice(storageBoundary)];
   // A verbose or repeated summary must not create an endless recovery loop.
   return estimateTokens(prepareChatMessages(compacted)) < estimateTokens(prepared) ? compacted : conversation;
 }

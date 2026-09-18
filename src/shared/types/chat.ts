@@ -186,6 +186,9 @@ export type ReasoningContent = {
   id: string;
   text: string;
   summary?: string;
+  encryptedContent?: string;
+  model?: string;
+  prefix?: string;
 };
 
 export type ToolCallContent = {

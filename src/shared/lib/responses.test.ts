@@ -6,7 +6,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LengthFinishReasonError } from "openai/error";
 import { z } from "zod/v3";
-import type { Content, Tool } from "../types/chat";
+import type { Content, Message, Tool } from "../types/chat";
 import { run } from "./agent";
 import { Client } from "./client";
 import { responseContent, toResponseInput } from "./responses";
@@ -131,6 +131,139 @@ describe("structured output with multiple assistant messages (real SDK)", () => 
   it("rejects an unfinished final message even when the response says completed", async () => {
     respond([message(final, "commentary"), { ...message(final, "final_answer"), status: "incomplete" }]);
     await expect(parse()).rejects.toThrow();
+  });
+});
+
+describe("reasoning replay", () => {
+  const binding = { model: "model", prefix: "prefix" };
+  const bound = (id: string, encryptedContent: string, summary?: string): Content => ({
+    type: "reasoning",
+    id,
+    text: "",
+    ...(summary ? { summary } : {}),
+    encryptedContent,
+    ...binding,
+  });
+  const reasoningItem = (
+    id: string,
+    encrypted_content: string | null,
+    summary = "",
+    status: "completed" | "incomplete" | "in_progress" = "completed",
+  ): Extract<ResponseOutputItem, { type: "reasoning" }> => ({
+    id,
+    type: "reasoning",
+    summary: summary ? [{ type: "summary_text", text: summary }] : [],
+    encrypted_content,
+    status,
+  });
+  const call = (call_id: string): ResponseOutputItem => ({
+    id: `fc_${call_id}`,
+    type: "function_call",
+    call_id,
+    name: "read",
+    arguments: "{}",
+    status: "completed",
+  });
+  const toolCall = (id: string): Content => ({ type: "tool_call", id, name: "read", arguments: "{}" });
+  const toolResult = (id: string): Message => ({
+    role: "user",
+    content: [{ type: "tool_result", id, name: "read", arguments: "{}", result: [{ type: "text", text: "Evidence" }] }],
+  });
+  const user = (text: string): Message => ({ role: "user", content: [{ type: "text", text }] });
+
+  it("keeps one part per reasoning item, in output order, bound to the request that produced it", () => {
+    const output = [reasoningItem("rs_1", "enc-1", "Plan"), call("c1"), reasoningItem("rs_2", "enc-2"), call("c2")];
+    expect(responseContent(response(output), binding)).toEqual([
+      bound("rs_1", "enc-1", "Plan"),
+      toolCall("c1"),
+      bound("rs_2", "enc-2"),
+      toolCall("c2"),
+    ]);
+    expect(responseContent(response([reasoningItem("rs_1", "enc-1")]))).toEqual([
+      { type: "reasoning", id: "rs_1", text: "" },
+    ]);
+    for (const status of ["incomplete", "in_progress"] as const) {
+      expect(responseContent(response([reasoningItem("rs_1", "enc-1", "", status)]), binding)).toEqual([
+        { type: "reasoning", id: "rs_1", text: "" },
+      ]);
+    }
+    expect(responseContent(response([{ ...reasoningItem("rs_1", "enc-1"), status: undefined }]), binding)).toEqual([
+      bound("rs_1", "enc-1"),
+    ]);
+  });
+
+  it("replays compatible payloads across human turns before the output they produced", () => {
+    const history: Message[] = [
+      user("Earlier"),
+      { role: "assistant", content: [bound("rs_old", "enc-old"), { type: "text", text: "Earlier answer" }] },
+      user("Now"),
+      { role: "assistant", content: [bound("rs_1", "enc-1", "Plan"), toolCall("c1")] },
+      toolResult("c1"),
+    ];
+    const items = toResponseInput(history, { reasoning: binding });
+    expect(items.map((item) => item.type)).toEqual([
+      "message",
+      "reasoning",
+      "message",
+      "message",
+      "reasoning",
+      "function_call",
+      "function_call_output",
+    ]);
+    expect(items[4]).toEqual({
+      type: "reasoning",
+      id: "rs_1",
+      summary: [{ type: "summary_text", text: "Plan" }],
+      encrypted_content: "enc-1",
+    });
+    expect(items[1]).toMatchObject({ type: "reasoning", id: "rs_old", encrypted_content: "enc-old" });
+
+    const thinking: Message[] = [
+      user("Now"),
+      {
+        role: "assistant",
+        content: [{ ...bound("rs_2", "enc-2"), text: "Visible thought" } as Content, toolCall("c2")],
+      },
+      toolResult("c2"),
+    ];
+    expect(toResponseInput(thinking, { reasoning: binding })[1]).toEqual({
+      type: "reasoning",
+      id: "rs_2",
+      summary: [],
+      content: [{ type: "reasoning_text", text: "Visible thought" }],
+      encrypted_content: "enc-2",
+    });
+  });
+
+  it("replays nothing when any payload is bound to another model or prefix, or without a binding", () => {
+    const history: Message[] = [
+      user("Now"),
+      {
+        role: "assistant",
+        content: [
+          bound("rs_1", "enc-1"),
+          toolCall("c1"),
+          { ...bound("rs_2", "enc-2"), model: "other" } as Content,
+          toolCall("c2"),
+        ],
+      },
+      { role: "user", content: [...toolResult("c1").content, ...toolResult("c2").content] },
+    ];
+    for (const options of [{ reasoning: binding }, { reasoning: { model: "model", prefix: "changed" } }, {}]) {
+      const items = toResponseInput(history, options);
+      expect(items.some((item) => item.type === "reasoning")).toBe(false);
+      expect(items.filter((item) => item.type === "function_call")).toHaveLength(2);
+    }
+  });
+
+  it("drops reasoning stranded by an orphaned tool call", () => {
+    const history: Message[] = [
+      user("Now"),
+      { role: "assistant", content: [bound("rs_1", "enc-1"), toolCall("orphan")] },
+    ];
+    expect(toResponseInput(history, { reasoning: binding })).toEqual([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Now" }] },
+    ]);
   });
 });
 

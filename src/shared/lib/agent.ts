@@ -11,8 +11,15 @@ import {
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
 import { combineAbortSignals } from "./abortSignals";
-import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
+import { getErrorInfo, isAbortError, isContextOverflowError, isReasoningReplayError } from "./errors";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
+import {
+  clearIncompatibleReasoning,
+  clearReplayableReasoning,
+  hasReplayableReasoning,
+  reasoningPrefix,
+} from "./reasoning";
+import { toResponseTools } from "./toolSchemas";
 import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
 import { compileToolRegistry, ToolArgumentValidationError, ToolRegistryError, type ToolRegistry } from "./toolRegistry";
 import {
@@ -216,12 +223,20 @@ async function runLoop(
     },
   };
 
-  // Send one model request, recovering from a mid-run context overflow by
-  // compacting and re-sending rather than failing the turn. Bounded so a
-  // request that stays too large after compacting still surfaces the error.
+  // Send one model request, recovering from two provider rejections rather
+  // than failing the turn: replayed reasoning the provider will not accept is
+  // dropped once, and a mid-run context overflow is compacted and re-sent.
+  // Both are bounded so a request that stays invalid still surfaces the error.
   const sendTurn = async (turn: number): Promise<Message> => {
-    for (let compactions = 0; ; compactions++) {
+    let compactions = 0;
+    let droppedReasoning = false;
+    for (;;) {
       signal?.throwIfAborted();
+      const compatible = clearIncompatibleReasoning(conversation, {
+        model,
+        prefix: reasoningPrefix(instructions, toResponseTools(toolRegistry.tools)),
+      });
+      if (compatible !== conversation) commit(compatible);
       const modelMessages = prepareMessages ? await prepareMessages(conversation) : conversation;
       try {
         signal?.throwIfAborted();
@@ -249,12 +264,15 @@ async function runLoop(
         controller.emit({ type: "model.completed", turn });
         return assistant;
       } catch (error) {
-        if (
-          onContextOverflow &&
-          compactions < MAX_OVERFLOW_COMPACTIONS &&
-          !signal?.aborted &&
-          isContextOverflowError(error)
-        ) {
+        if (signal?.aborted) throw error;
+        if (!droppedReasoning && isReasoningReplayError(error) && hasReplayableReasoning(conversation)) {
+          // Payloads bound to another key or deployment: continue without them.
+          droppedReasoning = true;
+          commit(clearReplayableReasoning(conversation));
+          continue;
+        }
+        if (onContextOverflow && compactions < MAX_OVERFLOW_COMPACTIONS && isContextOverflowError(error)) {
+          compactions++;
           try {
             controller.emit({ type: "compaction.started", turn });
             const compacted = await onContextOverflow(conversation);

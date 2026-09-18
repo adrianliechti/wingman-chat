@@ -1,4 +1,5 @@
 import type { Tool } from "@/shared/types/chat";
+import type { FunctionTool } from "openai/resources/responses/responses";
 
 /** Published provider ceiling for nullable/union parameters in strict tools. */
 export const MAX_STRICT_SCHEMA_UNIONS = 16;
@@ -46,4 +47,17 @@ export function planStrictToolSchemas(tools: readonly Pick<Tool, "parameters" | 
   });
 
   return { strict, compiledTools, unionParameters };
+}
+
+/** Wire schemas shared by request serialization and reasoning-prefix checks. Validate the tools before calling. */
+export function toResponseTools(tools: readonly Tool[]): FunctionTool[] | undefined {
+  if (tools.length === 0) return undefined;
+  const strictPlan = planStrictToolSchemas(tools);
+  return tools.map((tool, index) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    strict: strictPlan.strict[index],
+    parameters: tool.parameters,
+  }));
 }
