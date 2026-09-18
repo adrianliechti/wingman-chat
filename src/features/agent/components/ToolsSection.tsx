@@ -1,10 +1,19 @@
-import { AlertTriangle, Loader2, Lock, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  Server,
+  ToggleLeft,
+  ToggleRight,
+  Wrench,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
-import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
@@ -36,7 +45,6 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
         (p) =>
           !agentInternalIds.has(p.id) &&
           p.id !== "artifacts" &&
-          p.id !== SKILL_BUILDER_ID &&
           !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
       )
       .map((p) => ({
@@ -51,7 +59,9 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
   const toggleTool = (toolId: string) => {
     const current = agent.tools || [];
-    const next = current.includes(toolId) ? current.filter((id) => id !== toolId) : [...current, toolId];
+    const next = current.includes(toolId)
+      ? current.filter((id) => id !== toolId)
+      : [...current, toolId];
     updateAgent(agent.id, { tools: next });
   };
 
@@ -226,7 +236,11 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                           : "Disabled (click to enable)"
                   }
                 >
-                  {state === ProviderState.Connected ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                  {state === ProviderState.Connected ? (
+                    <ToggleRight size={20} />
+                  ) : (
+                    <ToggleLeft size={20} />
+                  )}
                 </button>
               </div>
             );

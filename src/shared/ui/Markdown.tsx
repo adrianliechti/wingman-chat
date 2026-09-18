@@ -1,7 +1,16 @@
 import { Dialog, Transition } from "@headlessui/react";
 import type { Components } from "hast-util-to-jsx-runtime";
 import { Copy, CopyCheck, Download, Maximize2, Printer, X } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import rehypeReact from "rehype-react";
 import remarkBreaks from "remark-breaks";
@@ -48,7 +57,11 @@ const getInternalHash = (url: string): string | null => {
   if (typeof window === "undefined") return null;
   try {
     const parsed = new URL(url, window.location.href);
-    if (parsed.origin === window.location.origin && parsed.pathname === window.location.pathname && parsed.hash) {
+    if (
+      parsed.origin === window.location.origin &&
+      parsed.pathname === window.location.pathname &&
+      parsed.hash
+    ) {
       return decodeURIComponent(parsed.hash.slice(1));
     }
   } catch {
@@ -110,7 +123,11 @@ function LatexRenderer({ code, filename }: { code: string; filename?: string }) 
 
   return (
     <div className="my-4">
-      {filename && <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">{filename}</div>}
+      {filename && (
+        <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">
+          {filename}
+        </div>
+      )}
       <div ref={containerRef} className="overflow-x-auto" />
     </div>
   );
@@ -142,7 +159,9 @@ const tableElementToCsv = (table: HTMLTableElement | null): string => {
 
   const columnCount = Math.max(...rows.map((row) => row.length));
   return rows
-    .map((row) => Array.from({ length: columnCount }, (_, index) => escapeCsvCell(row[index] ?? "")).join(","))
+    .map((row) =>
+      Array.from({ length: columnCount }, (_, index) => escapeCsvCell(row[index] ?? "")).join(","),
+    )
     .join("\r\n");
 };
 
@@ -153,7 +172,11 @@ const tableElementToTsv = (table: HTMLTableElement | null): string => {
     .map((row) =>
       Array.from(row.cells).flatMap((cell) => {
         const colSpan = Math.max(1, cell.colSpan || 1);
-        const text = cell.innerText.replace(/\r?\n/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+        const text = cell.innerText
+          .replace(/\r?\n/g, " ")
+          .replace(/\t/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
         return [text, ...Array.from({ length: colSpan - 1 }, () => "")];
       }),
     )
@@ -162,7 +185,9 @@ const tableElementToTsv = (table: HTMLTableElement | null): string => {
   if (rows.length === 0) return "";
 
   const columnCount = Math.max(...rows.map((row) => row.length));
-  return rows.map((row) => Array.from({ length: columnCount }, (_, index) => row[index] ?? "").join("\t")).join("\n");
+  return rows
+    .map((row) => Array.from({ length: columnCount }, (_, index) => row[index] ?? "").join("\t"))
+    .join("\n");
 };
 
 const printTableElement = (table: HTMLTableElement | null): void => {
@@ -349,7 +374,10 @@ function ResizableTable({
           columnIndex += colSpan;
           if (!containsTarget) return false;
 
-          neededWidth = Math.max(neededWidth, Math.ceil(cell.getBoundingClientRect().width / colSpan));
+          neededWidth = Math.max(
+            neededWidth,
+            Math.ceil(cell.getBoundingClientRect().width / colSpan),
+          );
           return true;
         });
       });
@@ -381,7 +409,9 @@ function ResizableTable({
   };
 
   const totalWidth = widths ? widths.reduce((a, b) => a + b, 0) : undefined;
-  const tableStyle = widths ? { ...style, tableLayout: "fixed" as const, width: totalWidth } : style;
+  const tableStyle = widths
+    ? { ...style, tableLayout: "fixed" as const, width: totalWidth }
+    : style;
 
   return (
     <div className={scrollClassName}>
@@ -389,7 +419,12 @@ function ResizableTable({
         <table
           ref={setTableElement}
           {...props}
-          className={cn("border-collapse", !widths && "w-full", isResizing && "select-none", className)}
+          className={cn(
+            "border-collapse",
+            !widths && "w-full",
+            isResizing && "select-none",
+            className,
+          )}
           style={tableStyle}
         >
           {widths && (
@@ -425,7 +460,10 @@ function ResizableTable({
   );
 }
 
-function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTableElement> & { children?: ReactNode }) {
+function MarkdownTable({
+  children,
+  ...props
+}: React.TableHTMLAttributes<HTMLTableElement> & { children?: ReactNode }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
   const inlineTableRef = useRef<HTMLTableElement | null>(null);
@@ -438,7 +476,7 @@ function MarkdownTable({ children, ...props }: React.TableHTMLAttributes<HTMLTab
     const csv = tableElementToCsv(inlineTableRef.current);
     if (!csv) return;
     const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, TABLE_CSV_FILENAME);
+    void downloadBlob(blob, TABLE_CSV_FILENAME);
   }, []);
 
   const printTable = useCallback(() => {
@@ -586,7 +624,13 @@ function createComponents(
     },
     p: ({ children, ...props }) => {
       return (
-        <p className={cn("first:mt-0 last:mb-0", compact ? "my-2 leading-normal" : "my-3.5 leading-7")} {...props}>
+        <p
+          className={cn(
+            "first:mt-0 last:mb-0",
+            compact ? "my-2 leading-normal" : "my-3.5 leading-7",
+          )}
+          {...props}
+        >
           {children}
         </p>
       );
@@ -610,7 +654,11 @@ function createComponents(
       const isTask = typeof className === "string" && className.includes("task-list-item");
       return (
         <li
-          className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
+          className={cn(
+            "ml-0",
+            compact ? "py-0.5 leading-normal" : "py-0.5 leading-7",
+            isTask && "task-list-item",
+          )}
           {...props}
         >
           {children}
@@ -648,7 +696,10 @@ function createComponents(
         return (
           <button
             type="button"
-            className={cn(markdownLinkClassName, "cursor-pointer border-0 bg-transparent p-0 font-[inherit]")}
+            className={cn(
+              markdownLinkClassName,
+              "cursor-pointer border-0 bg-transparent p-0 font-[inherit]",
+            )}
             onClick={() => onOpenArtifact(artifactPath)}
           >
             {children}
@@ -693,7 +744,13 @@ function createComponents(
       }
 
       return (
-        <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
+        <a
+          className={markdownLinkClassName}
+          href={url}
+          target="_blank"
+          rel="noreferrer noopener"
+          {...props}
+        >
           {children}
         </a>
       );
@@ -703,7 +760,9 @@ function createComponents(
         <h1
           id={slugify(children)}
           className={
-            compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
+            compact
+              ? "text-base font-semibold mt-4 mb-1 first:mt-0"
+              : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
           }
           {...props}
         >
@@ -716,7 +775,9 @@ function createComponents(
         <h2
           id={slugify(children)}
           className={
-            compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
+            compact
+              ? "text-sm font-semibold mt-4 mb-1 first:mt-0"
+              : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
           }
           {...props}
         >
@@ -729,7 +790,9 @@ function createComponents(
         <h3
           id={slugify(children)}
           className={
-            compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"
+            compact
+              ? "text-sm font-semibold mt-3 mb-1 first:mt-0"
+              : "text-xl font-semibold mt-6 mb-2 first:mt-0"
           }
           {...props}
         >
@@ -742,7 +805,9 @@ function createComponents(
         <h4
           id={slugify(children)}
           className={
-            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"
+            compact
+              ? "text-sm font-semibold mt-2 mb-1 first:mt-0"
+              : "text-lg font-semibold mt-6 mb-2 first:mt-0"
           }
           {...props}
         >
@@ -755,7 +820,9 @@ function createComponents(
         <h5
           id={slugify(children)}
           className={
-            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"
+            compact
+              ? "text-sm font-semibold mt-2 mb-1 first:mt-0"
+              : "text-base font-semibold mt-5 mb-1 first:mt-0"
           }
           {...props}
         >
@@ -768,7 +835,9 @@ function createComponents(
         <h6
           id={slugify(children)}
           className={
-            compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"
+            compact
+              ? "text-xs font-semibold mt-2 mb-1 first:mt-0"
+              : "text-sm font-semibold mt-5 mb-1 first:mt-0"
           }
           {...props}
         >
@@ -857,12 +926,25 @@ function createComponents(
       const blockId = `${scopeId}:code:${blockCounterRef.current++}`;
 
       if (!match) {
-        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
+        return (
+          <CodeRenderer
+            key={blockId}
+            code={text}
+            language="text"
+            blockId={blockId}
+            isStreaming={isStreaming}
+          />
+        );
       }
 
       const language = match[1].toLowerCase();
 
-      if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
+      if (
+        language === "latex" ||
+        language === "tex" ||
+        language === "math" ||
+        language === "katex"
+      ) {
         const filename = extractFilename(text);
         return <LatexRenderer code={text} filename={filename} />;
       }
@@ -880,7 +962,15 @@ function createComponents(
       }
 
       if (language === "undefined" || language === "text" || language === "plain") {
-        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
+        return (
+          <CodeRenderer
+            key={blockId}
+            code={text}
+            language="text"
+            blockId={blockId}
+            isStreaming={isStreaming}
+          />
+        );
       }
 
       if (language === "markdown" || language === "md") {
@@ -983,7 +1073,8 @@ const stabilizeStreamingLinks = (content: string): string => {
       const destinationEnd = findMatchingLinkDestinationEnd(content, index + 2);
 
       if (destinationEnd === -1) {
-        const imageStart = labelStart > 0 && content[labelStart - 1] === "!" ? labelStart - 1 : labelStart;
+        const imageStart =
+          labelStart > 0 && content[labelStart - 1] === "!" ? labelStart - 1 : labelStart;
         return `${content.slice(0, imageStart)}${label}`;
       }
     }
@@ -1039,11 +1130,21 @@ function createMarkdownProcessor(
     rehypeReact,
     {
       ...baseRehypeReactOptions,
-      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact, onOpenArtifact),
+      components: createComponents(
+        scopeId,
+        isStreaming,
+        resolveAsset,
+        blockCounterRef,
+        compact,
+        onOpenArtifact,
+      ),
     },
   ]);
 
-  return unified().use(remarkPlugins).use(remarkRehype, { allowDangerousHtml: true }).use(rehypePlugins);
+  return unified()
+    .use(remarkPlugins)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypePlugins);
 }
 
 type MarkdownProps = {

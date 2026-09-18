@@ -7,10 +7,7 @@ import { useInternetProvider } from "@/features/research/hooks/useInternetProvid
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
 import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
-import {
-  SKILL_BUILDER_ID,
-  useSkillBuilderProvider,
-} from "@/features/skills/hooks/useSkillBuilderProvider";
+import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
@@ -343,9 +340,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // on agent select — the global selection does not carry in). The agent's own
     // tools are then unioned via agentRequired as the enforced floor.
     const merged = new Set<string>(activeSelection);
-    // Skill Builder is a core capability: it is available in every chat and is
-    // deliberately not part of the user's or agent's mutable tool selection.
-    merged.add(SKILL_BUILDER_ID);
     // The Skills tool's connection tracks the assembled provider: it's non-null
     // exactly when some source, the Studio pack, or an agent's curated set has
     // skills to expose — so no source/agent branching is needed here.
@@ -381,8 +375,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const desiredTools = useMemo(() => {
     const merged = new Set(mcpConnectionDesired);
     for (const id of modelDisabledTools) merged.delete(id);
-    // Model tool allow/deny lists do not suppress this core capability.
-    merged.add(SKILL_BUILDER_ID);
     return merged;
   }, [mcpConnectionDesired, modelDisabledTools]);
 
@@ -399,7 +391,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // under an agent, the selected global sources otherwise, plus the Studio pack
     // when the capability is on, plus enabled plugins' bundled skills.
     if (skillsProvider) list.push(skillsProvider);
-    list.push(skillBuilderProvider);
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
@@ -410,7 +401,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     studioProvider,
     artifactsProvider,
     skillsProvider,
-    skillBuilderProvider,
     visibleConfigMcpClients,
     companionAvailable,
     companionClient,
@@ -418,6 +408,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     pluginMcpClients,
     toolsVersion,
   ]);
+
+  // Always-on core providers: available in every chat, never user-toggleable, and
+  // exempt from model tool allow/deny lists. Kept out of `providers` so no toggle
+  // surface has to special-case them.
+  const coreProviders = useMemo<ToolProvider[]>(
+    () => [skillBuilderProvider],
+    [skillBuilderProvider],
+  );
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
@@ -533,10 +531,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
-      // Skill Builder is always enabled and intentionally has no user-facing
-      // toggle. Keep this guard for callers outside the chat-input menu.
-      if (id === SKILL_BUILDER_ID && !enabled) return;
-
       // Re-enabling after a failed auth reopens the popup; update the ref synchronously
       // since connectMcp below reads it before the setMcpStates re-render lands.
       if (
@@ -585,7 +579,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // is "optional" with no agent.
   const getProviderPolicy = useCallback(
     (id: string): "required" | "optional" =>
-      id === SKILL_BUILDER_ID || (currentAgent && agentRequired.has(id)) ? "required" : "optional",
+      currentAgent && agentRequired.has(id) ? "required" : "optional",
     [currentAgent, agentRequired],
   );
 
@@ -640,6 +634,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     <ToolsContext
       value={{
         providers,
+        coreProviders,
         getProviderState,
         getProviderPolicy,
         setProviderEnabled,

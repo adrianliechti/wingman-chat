@@ -80,5 +80,5 @@ export async function downloadPluginsAsZip(
     }
   }
 
-  downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
+  await downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
 }

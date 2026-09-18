@@ -114,6 +114,7 @@ const client = new MCPClient("fixture", `${location.origin}/fixture-mcp`, "Fixtu
 await client.connect();
 const toolsContext: ToolsContextValue = {
   providers: [client],
+  coreProviders: [],
   getProviderState: () => ProviderState.Connected,
   getProviderPolicy: () => "optional",
   setProviderEnabled: async () => client.connect(),

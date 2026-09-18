@@ -79,7 +79,10 @@ export function validateSkillDescription(description: string): { valid: boolean;
   }
 
   if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
-    return { valid: false, error: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less` };
+    return {
+      valid: false,
+      error: `Description must be ${SKILL_DESCRIPTION_MAX_LENGTH} characters or less`,
+    };
   }
 
   return { valid: true };
@@ -88,7 +91,9 @@ export function validateSkillDescription(description: string): { valid: boolean;
 /**
  * Parse YAML frontmatter from markdown content
  */
-function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } | null {
+function parseFrontmatter(
+  content: string,
+): { frontmatter: Record<string, string>; body: string } | null {
   const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/;
   const match = content.match(frontmatterRegex);
 
@@ -115,7 +120,8 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
         } catch {
           value = value.slice(1, -1);
         }
-      } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/''/g, "'");
+      } else if (value.startsWith("'") && value.endsWith("'"))
+        value = value.slice(1, -1).replace(/''/g, "'");
       frontmatter[key] = value;
     }
   }
@@ -124,9 +130,14 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 }
 
 /**
- * Parse a SKILL.md file content and validate it
+ * Parse a SKILL.md file content and validate it. Set `requireDescription` to
+ * false at import time so partially-authored skills with a missing or empty
+ * description still restore.
  */
-export function parseSkillFile(content: string): SkillParseResult {
+export function parseSkillFile(
+  content: string,
+  { requireDescription = true }: { requireDescription?: boolean } = {},
+): SkillParseResult {
   const errors: SkillValidationError[] = [];
 
   const parsed = parseFrontmatter(content);
@@ -153,8 +164,8 @@ export function parseSkillFile(content: string): SkillParseResult {
   }
 
   // Validate description
-  const description = frontmatter.description;
-  if (!description) {
+  const description = frontmatter.description ?? "";
+  if (requireDescription && !description) {
     errors.push({ field: "description", message: "Description is required in frontmatter" });
   } else if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
     errors.push({
@@ -167,7 +178,7 @@ export function parseSkillFile(content: string): SkillParseResult {
     return { success: false, errors };
   }
 
-  if (!name || !description) {
+  if (!name) {
     return {
       success: false,
       errors: [{ field: "format", message: "Missing required frontmatter fields" }],
@@ -183,6 +194,14 @@ export function parseSkillFile(content: string): SkillParseResult {
       ...(frontmatter.compatibility ? { compatibility: frontmatter.compatibility } : {}),
     },
   };
+}
+
+/**
+ * Import-time check: valid frontmatter and a well-formed name, tolerating a
+ * missing or empty description so partially-authored skills still restore.
+ */
+export function parseSkillFileForImport(content: string): SkillParseResult {
+  return parseSkillFile(content, { requireDescription: false });
 }
 
 /**
@@ -208,11 +227,14 @@ async function downloadSkillZip(skills: Skill[], filename: string): Promise<void
   for (const skill of skills) {
     zip.file(`${skill.name}/SKILL.md`, serializeSkill(skill));
     for (const { path, content } of skill.resources ?? []) {
-      zip.file(`${skill.name}/${path}`, content.startsWith("data:") ? decodeDataURL(content) : content);
+      zip.file(
+        `${skill.name}/${path}`,
+        content.startsWith("data:") ? decodeDataURL(content) : content,
+      );
     }
   }
 
-  downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
+  await downloadBlob(await zip.generateAsync({ type: "blob" }), filename);
 }
 
 /**
@@ -224,13 +246,19 @@ export async function downloadSkill(skill: Skill): Promise<void> {
     await downloadSkillZip([skill], `${skill.name}.zip`);
     return;
   }
-  downloadBlob(new Blob([serializeSkill(skill)], { type: "text/markdown" }), `${skill.name}.SKILL.md`);
+  await downloadBlob(
+    new Blob([serializeSkill(skill)], { type: "text/markdown" }),
+    `${skill.name}.SKILL.md`,
+  );
 }
 
 /**
  * Download all skills as a zip file
  */
-export async function downloadSkillsAsZip(skills: Skill[], filename: string = "skills.zip"): Promise<void> {
+export async function downloadSkillsAsZip(
+  skills: Skill[],
+  filename: string = "skills.zip",
+): Promise<void> {
   if (skills.length === 0) {
     throw new Error("No skills to download");
   }
@@ -253,7 +281,10 @@ function isHiddenZipPath(path: string): boolean {
  * inside one). Off by default so plain user imports keep ignoring siblings of a
  * loose root `.md`.
  */
-export async function parseSkillsFromZip(zip: JSZip, options?: { rootIsSkill?: boolean }): Promise<ParsedSkill[]> {
+export async function parseSkillsFromZip(
+  zip: JSZip,
+  options?: { rootIsSkill?: boolean },
+): Promise<ParsedSkill[]> {
   const skills: ParsedSkill[] = [];
   const rootIsSkill = options?.rootIsSkill ?? false;
 

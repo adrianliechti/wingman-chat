@@ -1,19 +1,10 @@
 import { Transition } from "@headlessui/react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  Coffee,
-  GraduationCap,
-  Image,
-  Languages,
-  MessageCircle,
-  PanelLeftOpen,
-  Settings,
-} from "lucide-react";
+import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { SettingsButton } from "@/features/settings/components/SettingsButton";
+import { AccountMenu } from "@/features/settings/components/AccountMenu";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
@@ -62,9 +53,7 @@ export function AppLayout() {
   // Header indicator reflects the companion's actual availability: the live
   // connection state under an agent (its config decides), the persisted global
   // flag otherwise.
-  const companionActive = currentAgent
-    ? getProviderState(COMPANION_ID) === ProviderState.Connected
-    : companionEnabled;
+  const companionActive = currentAgent ? getProviderState(COMPANION_ID) === ProviderState.Connected : companionEnabled;
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
@@ -87,9 +76,13 @@ export function AppLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(
-    undefined,
-  );
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
+
+  const openSettings = useCallback(({ advanced, section }: { advanced: boolean; section?: string }) => {
+    setSettingsInitialSection(section);
+    setSettingsAdvanced(advanced);
+    setSettingsOpen(true);
+  }, []);
 
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
@@ -103,9 +96,7 @@ export function AppLayout() {
   const updateSlider = useCallback(
     (containerRef: React.RefObject<HTMLDivElement | null>, key: "tablet" | "desktop") => {
       if (containerRef.current) {
-        const activeButton = containerRef.current.querySelector(
-          `[data-page="${currentPage}"]`,
-        ) as HTMLElement;
+        const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
         if (activeButton) {
           const containerRect = containerRef.current.getBoundingClientRect();
           const buttonRect = activeButton.getBoundingClientRect();
@@ -325,10 +316,7 @@ export function AppLayout() {
                       <span>{pages.find((p) => p.key === currentPage)?.label}</span>
                       <ChevronDown
                         size={14}
-                        className={cn(
-                          "transition-transform duration-200",
-                          mobileMenuOpen && "rotate-180",
-                        )}
+                        className={cn("transition-transform duration-200", mobileMenuOpen && "rotate-180")}
                       />
                     </button>
                   </div>
@@ -385,11 +373,7 @@ export function AppLayout() {
               {companionAvailable && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSettingsInitialSection("companion");
-                    setSettingsAdvanced(false);
-                    setSettingsOpen(true);
-                  }}
+                  onClick={() => openSettings({ advanced: false, section: "companion" })}
                   className={cn(
                     "p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     !companionActive && "opacity-40",
@@ -399,27 +383,8 @@ export function AppLayout() {
                   <Coffee size={20} />
                 </button>
               )}
-              {config.support?.url && (
-                <a
-                  href={config.support.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  title="Support"
-                >
-                  <GraduationCap size={24} />
-                </a>
-              )}
-              <div className="hidden md:block">
-                <SettingsButton
-                  onClick={(e) => {
-                    setSettingsInitialSection(undefined);
-                    setSettingsAdvanced(e.altKey);
-                    setSettingsOpen(true);
-                  }}
-                />
-              </div>
               {rightActions}
+              <AccountMenu onOpenSettings={openSettings} />
             </div>
           </div>
         </nav>
@@ -443,22 +408,6 @@ export function AppLayout() {
                   <span className="font-medium text-sm">{label}</span>
                 </Link>
               ))}
-
-              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  setSettingsInitialSection(undefined);
-                  setSettingsAdvanced(e.altKey);
-                  setSettingsOpen(true);
-                  setMobileMenuOpen(false);
-                }}
-                className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Settings size={20} />
-                <span className="font-medium text-sm">Settings</span>
-              </button>
             </div>
           </div>
         )}

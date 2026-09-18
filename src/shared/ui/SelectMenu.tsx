@@ -17,7 +17,7 @@ interface SelectMenuProps<T> {
   options: SelectMenuOption<T>[];
   /** Label rendered above the button. */
   label?: string;
-  /** Helper text rendered below. */
+  /** Supporting text displayed inside the selected value. */
   description?: string;
   /** Placeholder shown when value is null/undefined and doesn't match any option. */
   placeholder?: string;
@@ -40,12 +40,15 @@ export function SelectMenu<T extends string | null>({
 
   return (
     <div className={className}>
-      {label && <p className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{label}</p>}
+      {label && <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</p>}
       <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full rounded-xl bg-white/60 dark:bg-neutral-800/60 py-2.5 pl-3 pr-10 text-left text-sm border border-white/40 dark:border-neutral-700/60 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-xl shadow-sm transition-colors">
-          <span className="flex items-center gap-2 truncate text-neutral-800 dark:text-neutral-200">
+        <Listbox.Button className="relative w-full rounded-lg border border-neutral-300/50 bg-white/50 py-2.5 pl-3 pr-10 text-left text-sm text-neutral-900 transition-colors backdrop-blur-sm focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:border-transparent data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-100">
+          <span className="flex min-w-0 items-center gap-2 text-neutral-800 dark:text-neutral-200">
             {selected?.icon && <span className="shrink-0 text-neutral-400">{selected.icon}</span>}
-            {selected?.label ?? placeholder}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{selected?.label ?? placeholder}</span>
+              {description && <span className="mt-0.5 block truncate text-xs text-neutral-500 dark:text-neutral-400">{description}</span>}
+            </span>
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
             <ChevronsUpDown size={14} className="text-neutral-400" aria-hidden="true" />
@@ -80,8 +83,6 @@ export function SelectMenu<T extends string | null>({
           ))}
         </Listbox.Options>
       </Listbox>
-
-      {description && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{description}</p>}
     </div>
   );
 }

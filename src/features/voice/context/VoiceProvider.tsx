@@ -5,10 +5,19 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import type { ToolContextFactory } from "@/features/voice/hooks/useVoiceWebSockets";
-import { useVoiceWebSockets, voiceSessionSignature } from "@/features/voice/hooks/useVoiceWebSockets";
+import {
+  useVoiceWebSockets,
+  voiceSessionSignature,
+} from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
-import type { AudioContent, FileContent, ImageContent, TextContent, ToolContext } from "@/shared/types/chat";
+import type {
+  AudioContent,
+  FileContent,
+  ImageContent,
+  TextContent,
+  ToolContext,
+} from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { Elicitation } from "@/shared/types/elicitation";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
@@ -39,7 +48,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       return false;
     }
   });
-  const { addMessage, ensureChat, setVoiceToolCall, requestElicitation, updateToolMeta } = useChatActions();
+  const { addMessage, ensureChat, setVoiceToolCall, requestElicitation, updateToolMeta } =
+    useChatActions();
   const { models, model, setModel } = useChatModel();
   const { chatId } = useChatList();
   const { currentAgent } = useAgents();
@@ -50,8 +60,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     instructions: chatInstructions,
     runtimeContext: chatRuntimeContext,
   } = useChatContext("voice", model, models);
-  const { inputDeviceId, outputDeviceId } = useAudioDevices();
-
+  const {
+    inputDeviceId,
+    outputDeviceId,
+    inputDevices,
+    outputDevices,
+    micPermission,
+    requestPermission,
+  } = useAudioDevices();
   const { start, stop, sendText, updateSession, pauseAudio } = useVoiceWebSockets(
     onUserTranscriptCallback,
     onAssistantTranscriptCallback,
@@ -77,13 +93,19 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   function onUserTranscriptCallback(text: string) {
     if (text.trim() && voiceChatIdRef.current) {
-      void addMessage({ role: Role.User, content: [{ type: "text", text }] }, voiceChatIdRef.current);
+      void addMessage(
+        { role: Role.User, content: [{ type: "text", text }] },
+        voiceChatIdRef.current,
+      );
     }
   }
 
   function onAssistantTranscriptCallback(text: string) {
     if (text.trim() && voiceChatIdRef.current) {
-      void addMessage({ role: Role.Assistant, content: [{ type: "text", text }] }, voiceChatIdRef.current);
+      void addMessage(
+        { role: Role.Assistant, content: [{ type: "text", text }] },
+        voiceChatIdRef.current,
+      );
     }
   }
 
@@ -145,7 +167,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     (currentModel: string | undefined, chatId: string): ToolContextFactory => {
       const owner = sessionRef.current;
       const requireOwner = () => {
-        if (!owner || sessionRef.current !== owner) throw new DOMException("Voice session stopped", "AbortError");
+        if (!owner || sessionRef.current !== owner)
+          throw new DOMException("Voice session stopped", "AbortError");
       };
       return (toolCall: { id: string; name: string }): ToolContext => {
         let resultMeta: Record<string, unknown> = {};
@@ -207,7 +230,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, underlyingModelId]);
+  }, [
+    isListening,
+    chatTools,
+    chatInstructions,
+    updateSession,
+    buildToolContextFactory,
+    underlyingModelId,
+  ]);
 
   const stopVoice = useCallback(async () => {
     sessionRef.current = null;
@@ -248,7 +278,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       const instructions = chatInstructions();
       const toolContextFactory = buildToolContextFactory(underlyingModelId, sessionChat.id);
 
-      lastSessionSignatureRef.current = voiceSessionSignature(instructions, tools, underlyingModelId);
+      lastSessionSignatureRef.current = voiceSessionSignature(
+        instructions,
+        tools,
+        underlyingModelId,
+      );
 
       const history = await createAttachmentLoader(sessionChat.id)(sessionChat.messages);
       if (!isCurrent()) return;
@@ -282,11 +316,16 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       console.error("Failed to start voice mode:", error);
       const errorMessage = error?.toString() || "";
       if (errorMessage.includes("API key") || errorMessage.includes("401")) {
-        notify.error("Voice mode unavailable", "An OpenAI API key must be configured to use voice mode.");
+        notify.error(
+          "Voice mode unavailable",
+          "An OpenAI API key must be configured to use voice mode.",
+        );
       } else {
         notify.error(
           "Couldn't start voice mode",
-          error instanceof Error ? error.message : "Check your audio devices and permissions, then try again.",
+          error instanceof Error
+            ? error.message
+            : "Check your audio devices and permissions, then try again.",
         );
       }
     }
@@ -318,7 +357,35 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       void stopVoice();
       void startVoice();
     }
-  }, [isRealtimeSelected, chatId, inputDeviceId, outputDeviceId, isListening, isConnecting, stopVoice, startVoice]);
+  }, [
+    isRealtimeSelected,
+    chatId,
+    inputDeviceId,
+    outputDeviceId,
+    isListening,
+    isConnecting,
+    stopVoice,
+    startVoice,
+  ]);
+
+  // A persisted grant only exposes device labels after a probe stream this
+  // session, so refresh them when the user switches into live audio mode.
+  useEffect(() => {
+    if (
+      isRealtimeSelected &&
+      micPermission === "granted" &&
+      inputDevices.length === 0 &&
+      outputDevices.length === 0
+    ) {
+      void requestPermission();
+    }
+  }, [
+    isRealtimeSelected,
+    micPermission,
+    inputDevices.length,
+    outputDevices.length,
+    requestPermission,
+  ]);
 
   const sendVoiceText = useCallback(
     (text: string) => {

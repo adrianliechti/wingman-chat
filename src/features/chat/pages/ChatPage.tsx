@@ -1,5 +1,14 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { Transition } from "@headlessui/react";
+import {
+  AppWindow,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Plus as PlusIcon,
+  Shapes,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
@@ -7,7 +16,10 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { AgentButton } from "@/features/chat/components/AgentButton";
-import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
+import {
+  ChatConsentBackdrop,
+  ChatConsentBanner,
+} from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
@@ -15,7 +27,6 @@ import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
 import { groupRenderUnits, isToolResultMessage } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
-import { useDrawerAnimation } from "@/features/chat/hooks/useDrawerAnimation";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
@@ -96,6 +107,8 @@ export function ChatPage() {
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
+  const showChatLoading = !chats.some((c) => c.id === selectedChatId);
+
   // Sync URL → state for deep links and browser back/forward navigation.
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
@@ -146,8 +159,13 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
-    useSkills();
+  const {
+    showSkillCatalog,
+    skillCatalogTarget,
+    skillCatalogSection,
+    skillCatalogReadOnly,
+    closeSkillCatalog,
+  } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
   const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
@@ -156,7 +174,9 @@ export function ChatPage() {
     (pluginId: string) => {
       if (!currentAgent) return;
       const current = currentAgent.plugins ?? [];
-      const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
+      const next = current.includes(pluginId)
+        ? current.filter((id) => id !== pluginId)
+        : [...current, pluginId];
       updateAgent(currentAgent.id, { plugins: next });
     },
     [currentAgent, updateAgent],
@@ -166,7 +186,9 @@ export function ChatPage() {
     (skillName: string) => {
       if (!currentAgent) return;
       const current = currentAgent.skills ?? [];
-      const next = current.includes(skillName) ? current.filter((n) => n !== skillName) : [...current, skillName];
+      const next = current.includes(skillName)
+        ? current.filter((n) => n !== skillName)
+        : [...current, skillName];
       updateAgent(currentAgent.id, { skills: next });
     },
     [currentAgent, updateAgent],
@@ -209,13 +231,6 @@ export function ChatPage() {
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
 
-  // Drawer animation states using custom hook
-  const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } =
-    useDrawerAnimation(showAgentDrawer);
-  const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } =
-    useDrawerAnimation(showArtifactsDrawer);
-  const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } = useDrawerAnimation(showAppDrawer);
-
   // Track if we're on mobile for drawer positioning
   const isMobile = !useMediaQuery("(min-width: 768px)");
 
@@ -241,7 +256,11 @@ export function ChatPage() {
           ? (appWidthVw / 100) * window.innerWidth
           : 0,
     setSiblingWidthVw: (widthVw) =>
-      showArtifactsDrawer ? setArtifactsWidthVw(widthVw) : showAppDrawer ? setAppWidthVw(widthVw) : undefined,
+      showArtifactsDrawer
+        ? setArtifactsWidthVw(widthVw)
+        : showAppDrawer
+          ? setAppWidthVw(widthVw)
+          : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
     setShow: setShowAgentDrawer,
   });
@@ -327,7 +346,11 @@ export function ChatPage() {
   // Right-edge offset for content (chat column + footer) that must clear the open
   // right-side drawer(s). Both the main margin and the fixed footer use this, so it
   // lives in one place to stay in sync. `null` when nothing needs offsetting.
-  const drawerSiblingVw = showAppDrawer ? appWidthVw : showArtifactsDrawer ? artifactsWidthVw : null;
+  const drawerSiblingVw = showAppDrawer
+    ? appWidthVw
+    : showArtifactsDrawer
+      ? artifactsWidthVw
+      : null;
   const contentRightOffset = isMobile
     ? undefined
     : drawerSiblingVw !== null
@@ -337,7 +360,9 @@ export function ChatPage() {
         : undefined;
   // Whether the drawer driving that offset is mid-drag (so the footer tracks instantly).
   const isContentOffsetResizing =
-    isAgentResizing || (showAppDrawer && isAppResizing) || (showArtifactsDrawer && isArtifactsResizing);
+    isAgentResizing ||
+    (showAppDrawer && isAppResizing) ||
+    (showArtifactsDrawer && isArtifactsResizing);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar, sidebarWidth, isSidebarResizing } = useSidebar();
@@ -393,36 +418,6 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        {hasAppContent && (
-          <button
-            type="button"
-            className={cn(
-              "p-2 rounded-full transition-all duration-150 ease-out",
-              showAppDrawer
-                ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-            )}
-            onClick={toggleAppDrawer}
-            title={showAppDrawer ? "Close app" : "Open app"}
-          >
-            <AppWindow size={20} />
-          </button>
-        )}
-        {artifactsAvailable && (
-          <button
-            type="button"
-            className={cn(
-              "p-2 rounded-full transition-all duration-150 ease-out",
-              showArtifactsDrawer
-                ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-            )}
-            onClick={toggleArtifactsDrawer}
-            title={showArtifactsDrawer ? "Close artifacts" : "Open artifacts"}
-          >
-            <Shapes size={20} />
-          </button>
-        )}
         <AgentButton />
         <button
           type="button"
@@ -437,16 +432,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [
-    setRightActions,
-    handleNewChat,
-    artifactsAvailable,
-    showArtifactsDrawer,
-    toggleArtifactsDrawer,
-    showAppDrawer,
-    hasAppContent,
-    toggleAppDrawer,
-  ]);
+  }, [setRightActions, handleNewChat]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -534,8 +520,11 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {chatLoading || chatError ? (
-            <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
+          {(chatLoading && showChatLoading) || chatError ? (
+            <div
+              className="m-auto p-6 text-sm text-neutral-500"
+              role={chatError ? "alert" : "status"}
+            >
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (
                 <button
@@ -555,8 +544,16 @@ export function ChatPage() {
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
-                    <img src="/logo_light.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 dark:hidden" />
-                    <img src="/logo_dark.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 hidden dark:block" />
+                    <img
+                      src="/logo_light.svg"
+                      alt="Wingman Chat"
+                      className="h-24 w-24 opacity-70 dark:hidden"
+                    />
+                    <img
+                      src="/logo_dark.svg"
+                      alt="Wingman Chat"
+                      className="h-24 w-24 opacity-70 hidden dark:block"
+                    />
                   </div>
                 )}
               </div>
@@ -574,7 +571,9 @@ export function ChatPage() {
               <div
                 className={cn(
                   "px-3 pt-18 transition-[max-width] duration-150 ease-out",
-                  layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
+                  layoutMode === "wide"
+                    ? "max-w-full md:max-w-[80vw] mx-auto"
+                    : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
               >
@@ -584,9 +583,13 @@ export function ChatPage() {
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
+                      const first = messages[unit.indices[0]].content.find(
+                        (p) => p.type === "tool_result",
+                      );
                       const groupKey =
-                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
+                        first && "id" in first
+                          ? `group:${first.id}`
+                          : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
                           <ChatToolGroup messages={messages} indices={unit.indices} />
@@ -598,7 +601,11 @@ export function ChatPage() {
                     // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
                     const dataRole = isToolResultMessage(message) ? "tool" : message.role;
                     return (
-                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
+                      <div
+                        key={messageRenderKeys[index]}
+                        className="flow-root"
+                        data-role={dataRole}
+                      >
                         <ChatMessage
                           index={index}
                           message={message}
@@ -638,7 +645,12 @@ export function ChatPage() {
         )}
         style={{
           // Offset past the (resizable) sidebar so the input never sits under it.
-          ...(!isMobile && showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
+          ...(!isMobile &&
+          showSidebar &&
+          chats.length > 0 &&
+          !showAgentDrawer &&
+          !showAppDrawer &&
+          !showArtifactsDrawer
             ? { left: sidebarWidth + 12 }
             : {}),
           // Offset past the open right-side drawer(s); track the edge instantly while dragging.
@@ -670,88 +682,177 @@ export function ChatPage() {
 
       <ChatConsentBanner />
 
+      {/* Edge tabs - slim drawer handles on the right side of the viewport.
+          When the agent drawer is open, they ride its left edge so they stay clickable.
+          On mobile they render as compact icon-only handles. */}
+      <div
+        className={cn(
+          "fixed top-[max(4rem,calc(25vh-4rem))] z-30 flex flex-col items-end gap-2",
+          !isAgentResizing && "transition-[right] duration-500 ease-in-out",
+        )}
+        style={{ right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : "0vw" }}
+      >
+        {artifactsAvailable && !showArtifactsDrawer && !showAppDrawer && (
+          <button
+            type="button"
+            onClick={toggleArtifactsDrawer}
+            title="Open artifacts"
+            aria-label="Open artifacts"
+            className={cn(
+              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
+              isMobile ? "h-11" : "h-32",
+            )}
+          >
+            <Shapes size={16} className="shrink-0 -rotate-90" />
+            {!isMobile && (
+              <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
+                Artifacts
+              </span>
+            )}
+          </button>
+        )}
+        {hasAppContent && !showAppDrawer && !showArtifactsDrawer && (
+          <button
+            type="button"
+            onClick={toggleAppDrawer}
+            title="Open app"
+            aria-label="Open app"
+            className={cn(
+              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
+              isMobile ? "h-11" : "h-32",
+            )}
+          >
+            <AppWindow size={16} className="shrink-0 -rotate-90" />
+            {!isMobile && (
+              <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
+                App
+              </span>
+            )}
+          </button>
+        )}
+      </div>
+
       {/* Artifacts drawer - right side */}
-      {shouldRenderArtifactsDrawer && (
-        <div
-          className={cn(
-            "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
-            !isArtifactsResizing && "transition-all duration-300 ease-out",
-            isMobile ? "w-full" : "",
-            isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-          )}
-          style={{
-            width: isMobile ? undefined : `${artifactsWidthVw}vw`,
-            right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : undefined,
-            top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? 0 : undefined,
-          }}
-        >
-          {/* Resize handle on the left edge */}
-          {!isMobile && (
+      <Transition
+        show={showArtifactsDrawer}
+        as="div"
+        enter={cn(!isArtifactsResizing && "transition-all duration-500 ease-in-out")}
+        enterFrom="translate-x-full opacity-0"
+        enterTo="translate-x-0 opacity-100"
+        leave={cn(!isArtifactsResizing && "transition-all duration-500 ease-in-out")}
+        leaveFrom="translate-x-0 opacity-100"
+        leaveTo="translate-x-full opacity-0"
+        className={cn(
+          "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
+          !isArtifactsResizing && "transition-[right] duration-500 ease-in-out",
+          isMobile ? "w-full" : "",
+        )}
+        style={{
+          width: isMobile ? undefined : `${artifactsWidthVw}vw`,
+          right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : undefined,
+          top: isMobile ? "48px" : undefined,
+          bottom: isMobile ? 0 : undefined,
+        }}
+      >
+        {/* Resize handle on the left edge */}
+        {!isMobile && (
+          <button
+            type="button"
+            aria-label="Resize artifacts panel"
+            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
+            onMouseDown={handleArtifactsResizeMouseDown}
+          >
+            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
+              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+              </div>
+            </div>
+          </button>
+        )}
+        {/* Collapse handle on the left edge - mirrors the open tab, closes the drawer */}
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={toggleArtifactsDrawer}
+            title="Close artifacts"
+            aria-label="Close artifacts"
+            className="group absolute -left-6.75 top-[max(0.5rem,calc(25vh-7.5rem))] z-10 flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
+            style={{ clipPath: "inset(-8px 0 -8px -8px)" }}
+          >
+            <ChevronRight
+              size={16}
+              className="shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+            />
+            <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
+              Artifacts
+            </span>
+          </button>
+        )}
+        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
+          {/* Mobile close bar */}
+          <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
             <button
               type="button"
-              aria-label="Resize artifacts panel"
-              className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-              onMouseDown={handleArtifactsResizeMouseDown}
+              onClick={toggleArtifactsDrawer}
+              className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
             >
-              <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-                <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                </div>
-              </div>
+              <ChevronLeft size={16} />
+              <span>Back</span>
             </button>
-          )}
-          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
             <ArtifactsDrawer />
           </div>
         </div>
-      )}
-
-      {/* Agent drawer - right side - renders over artifacts when both are visible */}
-      {shouldRenderAgentDrawer && (
-        <div
-          className={cn(
-            "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
-            !isAgentResizing && "transition-all duration-300 ease-out",
-            isMobile ? "w-full" : "",
-            isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-          )}
-          style={{
-            width: isMobile ? undefined : `${agentWidthVw}vw`,
-            top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? 0 : undefined,
-          }}
-        >
-          {/* Resize handle on the left edge */}
-          {!isMobile && (
-            <button
-              type="button"
-              aria-label="Resize agent panel"
-              className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-              onMouseDown={handleAgentResizeMouseDown}
-            >
-              <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-                <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                </div>
+      </Transition>
+      <Transition
+        show={showAgentDrawer}
+        as="div"
+        enter={cn(!isAgentResizing && "transition-all duration-500 ease-in-out")}
+        enterFrom="translate-x-full opacity-0"
+        enterTo="translate-x-0 opacity-100"
+        leave={cn(!isAgentResizing && "transition-all duration-500 ease-in-out")}
+        leaveFrom="translate-x-0 opacity-100"
+        leaveTo="translate-x-full opacity-0"
+        className={cn(
+          "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
+          isMobile ? "w-full" : "",
+        )}
+        style={{
+          width: isMobile ? undefined : `${agentWidthVw}vw`,
+          top: isMobile ? "48px" : undefined,
+          bottom: isMobile ? 0 : undefined,
+        }}
+      >
+        {/* Resize handle on the left edge */}
+        {!isMobile && (
+          <button
+            type="button"
+            aria-label="Resize agent panel"
+            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
+            onMouseDown={handleAgentResizeMouseDown}
+          >
+            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
+              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
               </div>
-            </button>
-          )}
-          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
-            <AgentDrawer />
-          </div>
+            </div>
+          </button>
+        )}
+        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
+          <AgentDrawer />
         </div>
-      )}
+      </Transition>
 
       {/* App drawer - right side - for MCP tool UIs */}
       {/* Always render so iframe is available, but hide when not active */}
@@ -759,7 +860,7 @@ export function ChatPage() {
         className={cn(
           "w-full transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
           !isAppResizing && "transition-all duration-300 ease-out",
-          shouldRenderAppDrawer && isAppDrawerAnimating
+          showAppDrawer
             ? "translate-x-0 opacity-100"
             : "translate-x-full opacity-0 pointer-events-none",
         )}
@@ -790,7 +891,26 @@ export function ChatPage() {
             </div>
           </button>
         )}
-        <div className="h-full overflow-hidden flex flex-col">
+        {/* Collapse handle on the left edge - mirrors the open tab, closes the drawer */}
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={toggleAppDrawer}
+            title="Close app"
+            aria-label="Close app"
+            className="group absolute -left-6.75 top-[max(9rem,calc(25vh+1rem))] z-10 flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
+            style={{ clipPath: "inset(-8px 0 -8px -8px)" }}
+          >
+            <ChevronRight
+              size={16}
+              className="shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+            />
+            <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
+              App
+            </span>
+          </button>
+        )}
+        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
           {/* Mobile close bar */}
           <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
             <button

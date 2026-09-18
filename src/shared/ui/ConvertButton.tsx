@@ -20,7 +20,7 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
 
   const handleDownloadMarkdown = () => {
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    downloadBlob(blob, generateFilename("md"));
+    void downloadBlob(blob, generateFilename("md"));
   };
 
   const handleDownloadWord = async () => {
@@ -28,7 +28,7 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
     try {
       const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
       const blob = await markdownToDocx(markdown);
-      downloadBlob(blob, generateFilename("docx"));
+      await downloadBlob(blob, generateFilename("docx"));
     } catch (error) {
       console.error("Failed to convert to Word:", error);
     } finally {

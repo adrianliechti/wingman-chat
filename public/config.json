@@ -1,5 +1,15 @@
 {
   "navigation": true,
+  "support": {
+    "title": "Learning Hub",
+    "description": "Guides to get started",
+    "url": "https://example.com/support"
+  },
+  "cost": {
+    "title": "AI Cost Dashboard",
+    "description": "Review your usage and spending",
+    "url": "https://example.com"
+  },
   "plugins": {
     "url": "http://localhost:8080"
   },
@@ -11,7 +21,15 @@
   "repository": {},
   "renderer": {},
   "extractor": {
-    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
+    "files": [
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx",
+      ".ppt",
+      ".pptx"
+    ]
   },
   "internet": {
     "elicitation": true,
@@ -41,7 +59,17 @@
     }
   ],
   "translator": {
-    "files": [".pdf"],
-    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
+    "files": [
+      ".pdf"
+    ],
+    "languages": [
+      "en",
+      "es",
+      "fr",
+      "de",
+      "zh",
+      "ja",
+      "ru"
+    ]
   }
 }

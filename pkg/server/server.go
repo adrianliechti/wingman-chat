@@ -10,6 +10,7 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/api"
 	"github.com/adrianliechti/wingman-chat/pkg/server/drive"
 	"github.com/adrianliechti/wingman-chat/pkg/server/library"
+	"github.com/adrianliechti/wingman-chat/pkg/server/me"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
 )
@@ -22,6 +23,8 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 	}
 
 	api.New(prefix, token, url).Attach(mux)
+
+	me.New().Attach(mux)
 
 	if len(cfg.Drives) > 0 {
 		drive.New(cfg.Drives).Attach(mux, prefix)

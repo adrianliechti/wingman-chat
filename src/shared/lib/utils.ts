@@ -15,7 +15,9 @@ export function parseDataUrl(dataUrl: string): { mimeType: string; data: string 
  * Strips binary data (images, audio, files) and replaces with text descriptions
  * to avoid sending large base64 data URLs to the model which it cannot process.
  */
-export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
+export function serializeToolResultForApi(
+  result: (TextContent | ImageContent | AudioContent | FileContent)[],
+): string {
   return result
     .map((item) => {
       if (item.type === "text") {
@@ -61,7 +63,9 @@ export function readAsDataURL(blob: Blob): Promise<string> {
 export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
   // Native path (Safari 18.2+, Edge/Chrome 140+) — skips the intermediate
   // binary string entirely.
-  const fromBase64 = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }).fromBase64;
+  const fromBase64 = (
+    Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }
+  ).fromBase64;
   if (typeof fromBase64 === "function") {
     return fromBase64(base64);
   }
@@ -80,7 +84,11 @@ export function decodeDataURL(dataURL: string): Blob {
   return new Blob([decodeBase64(base64)], { type: mimeType });
 }
 
-export async function resizeImageBlob(blob: Blob, maxWidth: number, maxHeight: number): Promise<Blob> {
+export async function resizeImageBlob(
+  blob: Blob,
+  maxWidth: number,
+  maxHeight: number,
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = URL.createObjectURL(blob);
@@ -174,10 +182,44 @@ export function downloadFromUrl(url: string, filename: string = ""): void {
   document.body.removeChild(link);
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+interface SaveFilePickerWindow {
+  showSaveFilePicker?: (options?: {
+    suggestedName?: string;
+    types?: { description?: string; accept: Record<string, string[]> }[];
+  }) => Promise<FileSystemFileHandle>;
+}
+
+// Stream a blob to disk via the File System Access API. Returns false when the
+// API is unavailable so callers can fall back to the anchor-download path.
+async function saveBlobWithPicker(blob: Blob, filename: string): Promise<boolean> {
+  const showSaveFilePicker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof showSaveFilePicker !== "function") return false;
+
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  const mimeType = blob.type || (ext ? mime.getType(ext) : null) || "application/octet-stream";
+  const types = ext ? [{ accept: { [mimeType]: [ext] } }] : undefined;
+
+  try {
+    const handle = await showSaveFilePicker({ suggestedName: filename, types });
+    const writable = await handle.createWritable();
+    await blob.stream().pipeTo(writable);
+    return true;
+  } catch (error) {
+    // A user cancelling the picker is expected; swallow it rather than falling
+    // back to a second (anchor) download the user did not ask for.
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    return false;
+  }
+}
+
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  if (await saveBlobWithPicker(blob, filename)) return;
+
   const url = URL.createObjectURL(blob);
   downloadFromUrl(url, filename);
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can truncate large downloads (corrupt ZIPs) because
+  // the browser may still be reading the blob when click() returns.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 // Internal to downloadFromUrl — derives a filename for data URLs. Not exported.
@@ -210,7 +252,10 @@ export function simplifyMarkdown(content: string): string {
   content = content.replace(/<img[^>]*>/gi, "");
 
   // Remove data URLs (base64 embedded content)
-  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, "[data-url]");
+  content = content.replace(
+    /data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g,
+    "[data-url]",
+  );
 
   // Remove other embedded data URLs (non-base64)
   content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+,[^\s)"']+/g, "[data-url]");

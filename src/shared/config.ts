@@ -10,6 +10,10 @@ interface BackgroundPackConfig {
 }
 
 interface SupportConfig {
+  /** Label shown for the support link in the account menu. Defaults to "Support". */
+  title?: string;
+  /** Optional subtitle shown below the link label in the account menu. */
+  description?: string;
   url?: string;
 }
 
@@ -174,6 +178,7 @@ interface ConfigSchema {
   bridge?: BridgeConfig;
   plugins?: PluginsConfig;
   support?: SupportConfig;
+  cost?: SupportConfig;
 
   tools: ToolConfig[];
   models: ModelConfig[];
@@ -225,6 +230,7 @@ interface Config {
   bridge: BridgeConfig | null;
   plugins: PluginsConfig | null;
   support: SupportConfig | null;
+  cost: SupportConfig | null;
 
   client: Client;
 
@@ -278,6 +284,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       bridge: cfg.bridge ?? null,
       plugins: cfg.plugins ?? null,
       support: cfg.support ?? null,
+      cost: cfg.cost ?? null,
 
       client: new Client(),
 

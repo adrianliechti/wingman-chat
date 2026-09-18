@@ -14,7 +14,9 @@ interface SharedStrings {
 /**
  * Converts an XLSX file (File, Blob, or ArrayBuffer) to multiple CSV strings (one per sheet)
  */
-export async function xlsxToCsv(file: Blob | ArrayBuffer | Uint8Array): Promise<ConversionResult[]> {
+export async function xlsxToCsv(
+  file: Blob | ArrayBuffer | Uint8Array,
+): Promise<ConversionResult[]> {
   const zip = await JSZip.loadAsync(file);
 
   // Parse shared strings (XLSX stores repeated strings in a lookup table)
@@ -132,7 +134,10 @@ async function parseWorkbook(zip: JSZip): Promise<SheetEntry[]> {
     const name = sheet.getAttribute("name") ?? "Sheet";
     // The r:id attribute uses the relationships namespace - try multiple lookup strategies
     const rId =
-      sheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
+      sheet.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "id",
+      ) ||
       sheet.getAttribute("r:id") ||
       "";
     entries.push({ name, rId });
@@ -374,8 +379,10 @@ export function csvToMarkdownTable(csv: string): string {
   if (rows.length === 0) return title ? `## ${title}` : "";
 
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
-  const escapeCell = (s: string | undefined) => (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
-  const formatRow = (r: string[]) => `| ${Array.from({ length: maxCols }, (_, i) => escapeCell(r[i])).join(" | ")} |`;
+  const escapeCell = (s: string | undefined) =>
+    (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+  const formatRow = (r: string[]) =>
+    `| ${Array.from({ length: maxCols }, (_, i) => escapeCell(r[i])).join(" | ")} |`;
 
   const separator = `| ${Array.from({ length: maxCols }, () => "---").join(" | ")} |`;
   const table = [formatRow(rows[0]), separator, ...rows.slice(1).map(formatRow)].join("\n");
@@ -389,5 +396,5 @@ export function csvToMarkdownTable(csv: string): string {
 export function downloadCsv(csv: string, filename: string): void {
   // Prepend UTF-8 BOM so Excel detects encoding correctly
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
+  void downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }

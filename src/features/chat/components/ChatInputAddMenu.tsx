@@ -57,7 +57,6 @@ import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { pluginProviderId, PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
-import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { getConfig } from "@/shared/config";
@@ -380,7 +379,6 @@ export function ChatInputAddMenu({
   const otherProviders = visibleProviders.filter(
     (p) =>
       p.id !== SKILLS_PROVIDER_ID &&
-      p.id !== SKILL_BUILDER_ID &&
       p.id !== "repository" &&
       p.id !== "memory" &&
       !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),

@@ -16,10 +16,6 @@ func Load() *Config {
 		Disclaimer: os.Getenv("DISCLAIMER"),
 	}
 
-	if u := os.Getenv("SUPPORT_URL"); u != "" {
-		cfg.Support = &Support{URL: u}
-	}
-
 	if bridgeURL := os.Getenv("BRIDGE_URL"); bridgeURL != "" {
 		cfg.Bridge = &Bridge{URL: bridgeURL}
 	}
@@ -41,6 +37,7 @@ func Load() *Config {
 }
 
 func loadConfigFiles(cfg *Config) {
+	loadLinks(cfg)
 	loadYAML("tools.yaml", &cfg.Tools)
 	loadYAML("models.yaml", &cfg.Models)
 	loadYAML("drives.yaml", &cfg.Drives)
@@ -54,6 +51,25 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("internet.yaml", &cfg.Internet)
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
+}
+
+// loadLinks reads links.yaml, which configures the support and cost entries
+// shown in the account menu.
+func loadLinks(cfg *Config) {
+	var links struct {
+		Support *Support `yaml:"support"`
+		Cost    *Support `yaml:"cost"`
+	}
+
+	loadYAML("links.yaml", &links)
+
+	if links.Support != nil {
+		cfg.Support = links.Support
+	}
+
+	if links.Cost != nil {
+		cfg.Cost = links.Cost
+	}
 }
 
 func applyEnvOverrides(cfg *Config) {
