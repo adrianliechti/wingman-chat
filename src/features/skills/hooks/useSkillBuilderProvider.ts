@@ -6,11 +6,14 @@ import skillBuilderPrompt from "@/features/skills/prompts/skill-builder.txt?raw"
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
 
-/** Provider id of the "Skill Builder" tool (create/update/delete skills). */
-export const SKILL_BUILDER_ID = "skill-builder";
-
 export function useSkillBuilderProvider(): ToolProvider {
-  const { skills, getSkill, addSkill, updateSkill: updateSkillInLibrary, removeSkill } = useSkills();
+  const {
+    skills,
+    getSkill,
+    addSkill,
+    updateSkill: updateSkillInLibrary,
+    removeSkill,
+  } = useSkills();
   const { currentAgent, updateAgent } = useAgents();
 
   return useMemo<ToolProvider>(() => {
@@ -34,7 +37,11 @@ export function useSkillBuilderProvider(): ToolProvider {
         display: {
           header: (_args, state) => ({
             icon: FilePlus2,
-            label: state.error ? "Create failed" : state.running ? "Creating skill…" : "Created skill",
+            label: state.error
+              ? "Create failed"
+              : state.running
+                ? "Creating skill…"
+                : "Created skill",
           }),
           // Show just the SKILL.md content (the name/description are metadata).
           input: (args) => {
@@ -81,12 +88,19 @@ export function useSkillBuilderProvider(): ToolProvider {
 
           const nameValidation = validateSkillName(name);
           if (!nameValidation.valid) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: nameValidation.error }) }];
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: nameValidation.error }) },
+            ];
           }
 
           const descriptionValidation = validateSkillDescription(description);
           if (!descriptionValidation.valid) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: descriptionValidation.error }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: descriptionValidation.error }),
+              },
+            ];
           }
 
           const existing = getSkill(name);
@@ -94,7 +108,9 @@ export function useSkillBuilderProvider(): ToolProvider {
             return [
               {
                 type: "text" as const,
-                text: JSON.stringify({ error: `Skill "${name}" already exists. Use update_skill to modify it.` }),
+                text: JSON.stringify({
+                  error: `Skill "${name}" already exists. Use update_skill to modify it.`,
+                }),
               },
             ];
           }
@@ -126,7 +142,11 @@ export function useSkillBuilderProvider(): ToolProvider {
         display: {
           header: (_args, state) => ({
             icon: SquarePen,
-            label: state.error ? "Update failed" : state.running ? "Updating skill…" : "Updated skill",
+            label: state.error
+              ? "Update failed"
+              : state.running
+                ? "Updating skill…"
+                : "Updated skill",
           }),
           input: (args) => {
             const content = typeof args?.content === "string" ? args.content : "";
@@ -157,12 +177,19 @@ export function useSkillBuilderProvider(): ToolProvider {
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) }];
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) },
+            ];
           }
 
           const existing = getSkill(name);
           if (!existing) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${name}" not found` }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: `Skill "${name}" not found` }),
+              },
+            ];
           }
 
           const updates: Partial<{ description: string; content: string }> = {};
@@ -170,7 +197,12 @@ export function useSkillBuilderProvider(): ToolProvider {
             const desc = (args.description as string).trim();
             const descriptionValidation = validateSkillDescription(desc);
             if (!descriptionValidation.valid) {
-              return [{ type: "text" as const, text: JSON.stringify({ error: descriptionValidation.error }) }];
+              return [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({ error: descriptionValidation.error }),
+                },
+              ];
             }
             updates.description = desc;
           }
@@ -182,14 +214,21 @@ export function useSkillBuilderProvider(): ToolProvider {
             return [
               {
                 type: "text" as const,
-                text: JSON.stringify({ error: "No updates provided. Supply description and/or content." }),
+                text: JSON.stringify({
+                  error: "No updates provided. Supply description and/or content.",
+                }),
               },
             ];
           }
 
           updateSkillInLibrary(existing.id, updates);
 
-          return [{ type: "text" as const, text: JSON.stringify({ success: true, skill: { name, ...updates } }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, skill: { name, ...updates } }),
+            },
+          ];
         },
       },
       {
@@ -210,12 +249,19 @@ export function useSkillBuilderProvider(): ToolProvider {
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) }];
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) },
+            ];
           }
 
           const existing = getSkill(name);
           if (!existing) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${name}" not found` }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: `Skill "${name}" not found` }),
+              },
+            ];
           }
 
           removeSkill(existing.id);
@@ -229,13 +275,18 @@ export function useSkillBuilderProvider(): ToolProvider {
             removedFromAgent = currentAgent.name;
           }
 
-          return [{ type: "text" as const, text: JSON.stringify({ success: true, deleted: name, removedFromAgent }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, deleted: name, removedFromAgent }),
+            },
+          ];
         },
       },
     ];
 
     return {
-      id: SKILL_BUILDER_ID,
+      id: "skill-builder",
       name: "Skill Builder",
       description: "Create and edit skills",
       icon: PenTool,

@@ -12,6 +12,8 @@ import type {
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
+  /** Always-on providers that are never user-toggleable and bypass model tool filters (e.g. Skill Builder). */
+  coreProviders: ToolProvider[];
   getProviderState: (id: string) => ProviderState;
   /** Whether the active agent locks this tool on ("required") or leaves it user-toggleable ("optional"). */
   getProviderPolicy: (id: string) => "required" | "optional";

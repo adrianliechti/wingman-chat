@@ -61,9 +61,13 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
                 )}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
+                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                  {tool.label}
+                </div>
                 {tool.description && (
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{tool.description}</div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                    {tool.description}
+                  </div>
                 )}
               </div>
               <button
@@ -85,8 +89,12 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
             <div key={`${server.name}-${server.url}`} className="flex items-center gap-2 py-1.5">
               <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
+                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                  {server.name}
+                </div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                  {server.url}
+                </div>
               </div>
               <button
                 type="button"

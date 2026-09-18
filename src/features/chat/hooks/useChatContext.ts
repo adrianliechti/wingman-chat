@@ -5,7 +5,6 @@ import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
-import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
@@ -27,7 +26,7 @@ export function useChatContext(
   models: Model[] = [],
 ): ChatContext {
   const { generateInstructions } = useProfile();
-  const { providers, getProviderState } = useToolsContext();
+  const { providers, coreProviders, getProviderState } = useToolsContext();
 
   // Artifacts provider — non-null whenever the feature is available, in which
   // case it's always active (no per-chat enable toggle).
@@ -40,12 +39,16 @@ export function useChatContext(
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
       // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
-      let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
+      let filteredProviders = providers.filter(
+        (p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected,
+      );
 
       // Add the artifacts provider whenever the feature is available (the
       // provider is null otherwise). It may already be present if explicitly
       // enabled via the agent tools toggle.
-      const artifactsAlreadyIncluded = filteredProviders.some((p: ToolProvider) => p.id === "artifacts");
+      const artifactsAlreadyIncluded = filteredProviders.some(
+        (p: ToolProvider) => p.id === "artifacts",
+      );
       if (!artifactsAlreadyIncluded && artifactsProvider) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
@@ -63,16 +66,16 @@ export function useChatContext(
         filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
           const matchId = provider.id;
 
-          // Skill Builder is a core capability and remains available even when
-          // a model has an allowlist or denylist for other tools.
-          if (matchId === SKILL_BUILDER_ID) return true;
-
           if (enabledTools.size > 0) {
             return enabledTools.has(matchId);
           }
           return !disabledTools.has(matchId);
         });
       }
+
+      // Core providers (e.g. Skill Builder) are always available and exempt from
+      // model tool allow/deny lists, so append them after all filtering.
+      filteredProviders = [...filteredProviders, ...coreProviders];
 
       return filteredProviders;
     };
@@ -98,7 +101,8 @@ export function useChatContext(
 
         const subagentModel =
           mode === "voice"
-            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)
+            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ??
+              null)
             : (model?.id ?? null);
 
         if (baseTools.length === 0 || !subagentModel) {
@@ -114,7 +118,15 @@ export function useChatContext(
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [...tools, createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext)];
+        return [
+          ...tools,
+          createSubagentTool(
+            subagentModel,
+            providerInstructions,
+            baseTools,
+            providerRuntimeContext,
+          ),
+        ];
       },
 
       instructions: () => {
@@ -173,6 +185,7 @@ export function useChatContext(
     models,
     generateInstructions,
     providers,
+    coreProviders,
     getProviderState,
     artifactsProvider,
     imageTool,
