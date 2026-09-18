@@ -689,45 +689,54 @@ export function ChatPage() {
       <ChatConsentBanner />
 
       {/* Edge tabs - slim drawer handles on the right side of the viewport.
-          When the agent drawer is open, they ride its left edge so they stay clickable. */}
-      {!isMobile && (
-        <div
-          className={cn(
-            "fixed top-[max(4rem,calc(25vh-4rem))] z-30 flex flex-col items-end gap-2",
-            !isAgentResizing && "transition-all duration-500 ease-in-out",
-          )}
-          style={{ right: showAgentDrawer ? `${agentWidthVw}vw` : 0 }}
-        >
-          {artifactsAvailable && !showArtifactsDrawer && !showAppDrawer && (
-            <button
-              type="button"
-              onClick={toggleArtifactsDrawer}
-              title="Open artifacts"
-              aria-label="Open artifacts"
-              className="group flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
-            >
-              <Shapes size={16} className="shrink-0 -rotate-90" />
+          When the agent drawer is open, they ride its left edge so they stay clickable.
+          On mobile they render as compact icon-only handles. */}
+      <div
+        className={cn(
+          "fixed top-[max(4rem,calc(25vh-4rem))] z-30 flex flex-col items-end gap-2",
+          !isAgentResizing && "transition-[right] duration-500 ease-in-out",
+        )}
+        style={{ right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : "0vw" }}
+      >
+        {artifactsAvailable && !showArtifactsDrawer && !showAppDrawer && (
+          <button
+            type="button"
+            onClick={toggleArtifactsDrawer}
+            title="Open artifacts"
+            aria-label="Open artifacts"
+            className={cn(
+              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
+              isMobile ? "h-11" : "h-32",
+            )}
+          >
+            <Shapes size={16} className="shrink-0 -rotate-90" />
+            {!isMobile && (
               <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
                 Artifacts
               </span>
-            </button>
-          )}
-          {hasAppContent && !showAppDrawer && !showArtifactsDrawer && (
-            <button
-              type="button"
-              onClick={toggleAppDrawer}
-              title="Open app"
-              aria-label="Open app"
-              className="group flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
-            >
-              <AppWindow size={16} className="shrink-0 -rotate-90" />
+            )}
+          </button>
+        )}
+        {hasAppContent && !showAppDrawer && !showArtifactsDrawer && (
+          <button
+            type="button"
+            onClick={toggleAppDrawer}
+            title="Open app"
+            aria-label="Open app"
+            className={cn(
+              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
+              isMobile ? "h-11" : "h-32",
+            )}
+          >
+            <AppWindow size={16} className="shrink-0 -rotate-90" />
+            {!isMobile && (
               <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
                 App
               </span>
-            </button>
-          )}
-        </div>
-      )}
+            )}
+          </button>
+        )}
+      </div>
 
       {/* Artifacts drawer - right side */}
       {shouldRenderArtifactsDrawer && (
@@ -784,8 +793,21 @@ export function ChatPage() {
               </span>
             </button>
           )}
-          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
-            <ArtifactsDrawer />
+          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
+            {/* Mobile close bar */}
+            <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={toggleArtifactsDrawer}
+                className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
+              >
+                <ChevronLeft size={16} />
+                <span>Back</span>
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ArtifactsDrawer />
+            </div>
           </div>
         </div>
       )}
