@@ -24,6 +24,130 @@ function options(summarizeHistory = vi.fn().mockResolvedValue("Earlier work is d
 }
 
 describe("chat history and compaction", () => {
+  it.each(["current_turn", "all_turns", undefined] as const)(
+    "uses the effective reasoning context %s across human turns",
+    async (reasoningContext) => {
+      const messages: Message[] = [];
+      for (let i = 0; i < 4; i++) {
+        messages.push(user("Question"), {
+          role: "assistant",
+          content: [
+            { type: "reasoning", id: `rs_${i}`, text: "", encryptedContent: "signed" },
+            { type: "text", text: "Answer" },
+          ],
+          usage: { inputTokens: 100 + i * 20, outputTokens: 3005, reasoningTokens: 3000, reasoningContext },
+        });
+      }
+      messages.push(user("Next question"));
+      const opts = { ...options(), threshold: 10000 };
+      const result = await compactIfNeeded(messages, opts);
+      if (reasoningContext === "current_turn") {
+        expect(opts.client.summarizeHistory).not.toHaveBeenCalled();
+        expect(result).toBe(messages);
+      } else {
+        expect(opts.client.summarizeHistory).toHaveBeenCalledOnce();
+        expect(result).not.toBe(messages);
+      }
+    },
+  );
+
+  it("removes the previous tool loop's reasoning from measured input on a new human turn", async () => {
+    const messages: Message[] = [
+      user("Work"),
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", id: "rs_tool", text: "", encryptedContent: "signed" }, ...call("a").content],
+        usage: { inputTokens: 100, outputTokens: 9005, reasoningTokens: 9000, reasoningContext: "current_turn" },
+      },
+      output("a", "Evidence"),
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", id: "rs_answer", text: "", encryptedContent: "signed" },
+          { type: "text", text: "Done" },
+        ],
+        usage: { inputTokens: 9110, outputTokens: 2005, reasoningTokens: 2000, reasoningContext: "current_turn" },
+      },
+      user("Next question"),
+    ];
+    const opts = { ...options(), threshold: 1000 };
+    expect(await compactIfNeeded(messages, opts)).toBe(messages);
+    expect(opts.client.summarizeHistory).not.toHaveBeenCalled();
+
+    // Preserve measured input costs that cannot be reconstructed from prose.
+    messages[3].usage!.inputTokens = 15000;
+    await compactIfNeeded(messages, opts);
+    expect(opts.client.summarizeHistory).toHaveBeenCalledOnce();
+  });
+
+  it("does not reuse an older context mode when the latest response omits it", async () => {
+    const messages: Message[] = [
+      user("Earlier request"),
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", id: "rs_old", text: "", encryptedContent: "signed" }],
+        usage: { reasoningTokens: 12000, reasoningContext: "current_turn" },
+      },
+      user("Continue"),
+      assistant("Answer without context metadata"),
+      user("Next question"),
+    ];
+    const opts = { ...options(), threshold: 10000 };
+    expect(await compactIfNeeded(messages, opts)).not.toBe(messages);
+    expect(opts.client.summarizeHistory).toHaveBeenCalledOnce();
+  });
+
+  it("retains current-turn reasoning after tool results and runtime feedback", async () => {
+    const messages: Message[] = [
+      user("Earlier request"),
+      assistant("Earlier evidence ".repeat(200)),
+      user("Work"),
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", id: "rs_tool", text: "", encryptedContent: "signed" }, ...call("a").content],
+        usage: { inputTokens: 100, outputTokens: 12005, reasoningTokens: 12000, reasoningContext: "current_turn" },
+      },
+      output("a", "Evidence"),
+      feedback,
+    ];
+    const opts = { ...options(), threshold: 10000 };
+    const compacted = await compactIfNeeded(messages, opts);
+    expect(opts.client.summarizeHistory).toHaveBeenCalledOnce();
+    expect(prepareChatMessages(compacted).slice(1)).toEqual(messages.slice(2));
+  });
+
+  it.each(["text", "summary"] as const)(
+    "accepts useful compaction of signed %s when a legacy gateway reported zero reasoning tokens",
+    async (field) => {
+      const messages: Message[] = [
+        user("Work"),
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              id: "rs_tool",
+              text: "",
+              [field]: "thinking ".repeat(6000),
+              encryptedContent: "signed",
+            },
+            ...call("a").content,
+          ],
+          usage: { inputTokens: 100, outputTokens: 15010, reasoningTokens: 0 },
+        },
+        output("a", "42"),
+      ];
+      const original = structuredClone(messages);
+      const summarize = vi
+        .fn()
+        .mockResolvedValue("The tool returned 42; continue using that evidence to finish the requested work.");
+      const compacted = await compactIfNeeded(messages, { ...options(summarize), threshold: 10000, force: true });
+      expect(compacted).not.toBe(messages);
+      expect(JSON.stringify(toResponseInput(prepareChatMessages(compacted))).length).toBeLessThan(1000);
+      expect(messages).toEqual(original);
+    },
+  );
+
   it.each([true, false])(
     "compacts retained reasoning and releases only summarized payloads (usage=%s)",
     async (withUsage) => {

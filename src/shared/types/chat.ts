@@ -307,6 +307,7 @@ export type MessageUsage = {
   cachedInputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number;
+  reasoningContext?: "current_turn" | "all_turns";
 };
 
 export type MessageError = {

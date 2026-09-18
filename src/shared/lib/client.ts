@@ -389,6 +389,10 @@ export class Client {
               cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
               outputTokens: finalResponse.usage?.output_tokens,
               reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+              reasoningContext:
+                finalResponse.reasoning?.context === "current_turn" || finalResponse.reasoning?.context === "all_turns"
+                  ? finalResponse.reasoning.context
+                  : undefined,
             };
             return {
               result: assistant,

@@ -104,21 +104,34 @@ export function historyForRetry(messages: Message[]): Message[] | null {
   return history.some(isUserMessage) ? history : null;
 }
 
+/** Unknown context modes conservatively include all replayable reasoning. */
+function reasoningStart(messages: Message[]): number {
+  const usage = messages.findLast((message) => message.role === Role.Assistant)?.usage;
+  return usage?.reasoningContext === "current_turn" ? Math.max(0, messages.findLastIndex(isUserMessage)) : 0;
+}
+
 /**
  * Rough token estimate (chars / 4) excluding binary attachments. Use measured
  * reasoning tokens where available; otherwise approximate the retained payload.
  */
-function estimateTokens(messages: Message[]): number {
+function estimateTokens(messages: Message[], reasoningFrom = reasoningStart(messages)): number {
   let chars = 0;
   let reasoningTokens = 0;
-  for (const msg of messages) {
+  for (const [index, msg] of messages.entries()) {
     const reasoning = msg.content.filter(isReplayableReasoning);
-    if (reasoning.length > 0) {
+    if (index >= reasoningFrom && reasoning.length > 0) {
+      // Older gateways reported zero when the provider had no breakdown.
+      // A signed payload still needs an estimate in that case.
       reasoningTokens +=
-        msg.usage?.reasoningTokens ??
-        Math.ceil(
-          reasoning.reduce((total, part) => total + Math.max(part.text.length, part.encryptedContent.length), 0) / 4,
-        );
+        msg.usage?.reasoningTokens && msg.usage.reasoningTokens > 0
+          ? msg.usage.reasoningTokens
+          : Math.ceil(
+              reasoning.reduce(
+                (total, part) =>
+                  total + Math.max(part.text.length, part.summary?.length ?? 0, part.encryptedContent.length),
+                0,
+              ) / 4,
+            );
     }
     for (const part of msg.content) {
       if (part.type === "text" || part.type === "summary") {
@@ -203,13 +216,34 @@ export function sanitizeForClassification(messages: Message[]): Message[] {
 }
 
 function estimateWindowTokens(window: Message[]): number {
+  const reasoningFrom = reasoningStart(window);
   for (let i = window.length - 1; i >= 0; i--) {
     const message = window[i];
     const usage = message.usage;
     if (message.role === Role.Assistant && usage?.inputTokens) {
-      const omittedReasoning = message.content.some(isReplayableReasoning) ? 0 : (usage.reasoningTokens ?? 0);
-      const anchor = usage.inputTokens + (usage.outputTokens ?? 0) - omittedReasoning;
-      return Math.max(anchor + estimateTokens(window.slice(i + 1)), estimateTokens(window));
+      const omittedReasoning =
+        i >= reasoningFrom && message.content.some(isReplayableReasoning) ? 0 : (usage.reasoningTokens ?? 0);
+      // A new human turn also removes the prior tool loop's reasoning from
+      // the measured input. Subtract only measured counts, keeping attachment
+      // and other input costs that a character estimate cannot recover.
+      const priorTurn = window.slice(0, i);
+      const omittedInputReasoning =
+        i < reasoningFrom
+          ? priorTurn
+              .slice(Math.max(0, priorTurn.findLastIndex(isUserMessage)))
+              .reduce(
+                (total, prior) =>
+                  total + (prior.content.some(isReplayableReasoning) ? (prior.usage?.reasoningTokens ?? 0) : 0),
+                0,
+              )
+          : 0;
+      const anchor =
+        Math.max(0, usage.inputTokens - omittedInputReasoning) +
+        Math.max(0, (usage.outputTokens ?? 0) - omittedReasoning);
+      return Math.max(
+        anchor + estimateTokens(window.slice(i + 1), Math.max(0, reasoningFrom - i - 1)),
+        estimateTokens(window, reasoningFrom),
+      );
     }
   }
   return estimateTokens(window);

@@ -441,7 +441,7 @@ describe("Responses transport (real SDK, synthetic HTTP/SSE)", () => {
     },
   );
 
-  it.each(["all_turns", "current_turn", undefined] as const)(
+  it.each(["all_turns", "current_turn", "auto", undefined] as const)(
     "preserves reasoning across saved human turns and lets the provider apply context mode %s",
     async (context) => {
       const client = new Client();
@@ -457,6 +457,7 @@ describe("Responses transport (real SDK, synthetic HTTP/SSE)", () => {
       const first = await run(client, model, "", prompt, []);
       expect(first.status).toBe("completed");
       const saved: Message[] = JSON.parse(JSON.stringify(first.messages));
+      expect(saved.at(-1)?.usage?.reasoningContext).toBe(context === "auto" ? undefined : context);
       fetchMock.mockResolvedValueOnce(finished(response([textItem("Follow-up answer")], { model })));
       const second = await run(
         client,
