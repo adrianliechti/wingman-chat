@@ -1,4 +1,14 @@
 import { parseAgentMd } from "@/features/agent/lib/agentMarkdown";
+import {
+  isMemoryIndex,
+  memoryPath,
+  MEMORY_NOTE_MAX_BYTES,
+  parseMemoryDocument,
+  serializeMemoryDocument,
+} from "@/features/agent/lib/memoryDocument";
+import { redactSecrets } from "@/features/agent/lib/memoryHygiene";
+import { validateMemoryState } from "@/features/agent/lib/memoryState";
+import { prepareMemoryImport } from "@/features/agent/lib/memoryImport";
 import { parseSkillFileForImport } from "@/features/skills/lib/skillParser";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import type { IndexEntry } from "./opfs-core";
@@ -22,10 +32,7 @@ function validatePath(path: string): void {
 export type RestoreProgressHandler = (fraction: number) => void;
 
 /** Decode and validate the entire archive before changing any saved files. */
-export async function readZipFiles(
-  blob: Blob,
-  onProgress?: RestoreProgressHandler,
-): Promise<Map<string, Blob>> {
+export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandler): Promise<Map<string, Blob>> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(await blob.arrayBuffer(), { checkCRC32: true });
   const files = new Map<string, Blob>();
@@ -53,9 +60,7 @@ export async function readZipFiles(
     const stripped = paths.map((path) => path.slice(prefix.length + 1));
     if (
       !stripped.some(
-        (path) =>
-          (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) ||
-          path === "profile.json",
+        (path) => (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) || path === "profile.json",
       )
     )
       break;
@@ -67,6 +72,20 @@ export async function readZipFiles(
 }
 
 async function validateMetadata(path: string, blob: Blob): Promise<void> {
+  const memory = path.match(/^agents\/[^/]+\/memory\/(.+)$/);
+  if (memory) {
+    memoryPath(`/.memory/${memory[1]}`);
+    if (!memory[1].endsWith(".md")) throw new Error(`Memory imports must be Markdown: ${path}`);
+    if (!isMemoryIndex(memory[1])) {
+      if (blob.size > MEMORY_NOTE_MAX_BYTES) throw new Error(`Memory note exceeds 8 KiB: ${path}`);
+      parseMemoryDocument(await blob.text());
+    }
+    return;
+  }
+  if (/^agents\/[^/]+\/memory-state\.json$/.test(path)) {
+    validateMemoryState(JSON.parse(await blob.text()));
+    return;
+  }
   if (/^skills\/[^/]+\/SKILL\.md$/.test(path)) {
     const parsed = parseSkillFileForImport(await blob.text());
     if (!parsed.success || parsed.skill.name !== path.split("/")[1])
@@ -101,9 +120,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
             !Array.isArray(message.content) ||
             message.content.some(
               (part: unknown) =>
-                !part ||
-                typeof part !== "object" ||
-                typeof (part as { type?: unknown }).type !== "string",
+                !part || typeof part !== "object" || typeof (part as { type?: unknown }).type !== "string",
             ),
         )
       )
@@ -111,15 +128,10 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     }
     if (/\/(servers|files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
       throw new Error(`Invalid list in backup: ${path}`);
-    if (
-      /\/(files\/index|segments)\.json$/.test(path) &&
-      (value as unknown[]).some((item) => typeof item !== "string")
-    )
+    if (/\/(files\/index|segments)\.json$/.test(path) && (value as unknown[]).some((item) => typeof item !== "string"))
       throw new Error(`Invalid list entries in backup: ${path}`);
-    if (path.endsWith("/metadata.json") && Array.isArray(value))
-      throw new Error(`Invalid metadata in backup: ${path}`);
-    if (path === "profile.json" && Array.isArray(value))
-      throw new Error("Invalid profile in backup");
+    if (path.endsWith("/metadata.json") && Array.isArray(value)) throw new Error(`Invalid metadata in backup: ${path}`);
+    if (path === "profile.json" && Array.isArray(value)) throw new Error("Invalid profile in backup");
   }
 }
 
@@ -154,18 +166,13 @@ export async function restoreFiles(
     // user files. Preserve them without inventing sidebar records for them.
     collections.add(path === "profile.json" ? "profile" : root);
     // A backup's listing must not replace the destination's merged listing.
-    if (
-      (STORAGE_COLLECTIONS as readonly string[]).includes(root) &&
-      /^[^/]+\/index\.json$/.test(path)
-    ) {
+    if ((STORAGE_COLLECTIONS as readonly string[]).includes(root) && /^[^/]+\/index\.json$/.test(path)) {
       try {
         const hints: unknown = JSON.parse(await blob.text());
         if (Array.isArray(hints))
           indexHints.set(
             root,
-            hints.filter(
-              (entry) => entry && typeof entry.id === "string" && typeof entry.updated === "string",
-            ),
+            hints.filter((entry) => entry && typeof entry.id === "string" && typeof entry.updated === "string"),
           );
       } catch {
         /* Listings are optional hints, never authoritative backup data. */
@@ -173,14 +180,22 @@ export async function restoreFiles(
       continue;
     }
     await validateMetadata(path, blob);
-    files.set(path, blob);
+    if (/^agents\/[^/]+\/memory\/.+\.md$/.test(path) && !isMemoryIndex(path)) {
+      const normalized = new Blob([
+        serializeMemoryDocument(parseMemoryDocument(redactSecrets(await blob.text()).text)),
+      ]);
+      if (normalized.size > MEMORY_NOTE_MAX_BYTES)
+        throw new Error(`Memory note including metadata exceeds 8 KiB: ${path}`);
+      files.set(path, normalized);
+    } else {
+      files.set(path, blob);
+    }
   }
   if (!files.size) throw new Error("No restorable files were found in the archive");
   for (const [path, blob] of files) {
     if (!/^agents\/[^/]+\/files\/[^/]+\/embeddings\.bin$/.test(path)) continue;
     const bytes = await blob.arrayBuffer();
-    if (bytes.byteLength < 4 || bytes.byteLength % 4)
-      throw new Error(`Invalid embeddings in backup: ${path}`);
+    if (bytes.byteLength < 4 || bytes.byteLength % 4) throw new Error(`Invalid embeddings in backup: ${path}`);
     const vectors = new Float32Array(bytes);
     const dimension = vectors[0];
     const texts = files.get(path.replace(/embeddings\.bin$/, "segments.json"));
@@ -197,26 +212,24 @@ export async function restoreFiles(
   await flushPersistence();
   const keys = [...collections].sort();
   const chatIds = [
-    ...new Set(
-      [...files.keys()].flatMap((path) => (path.startsWith("chats/") ? [path.split("/")[1]] : [])),
-    ),
+    ...new Set([...files.keys()].flatMap((path) => (path.startsWith("chats/") ? [path.split("/")[1]] : []))),
   ].sort();
 
   const indexes = keys
     .filter((key) => (STORAGE_COLLECTIONS as readonly string[]).includes(key))
     .map((key) => `${key}/index.json`);
-  const apply = () =>
-    writeFileChanges(files, {
+  const apply = async () => {
+    const changes = new Map<string, Blob | undefined>(files);
+    await prepareMemoryImport(changes);
+    return writeFileChanges(changes, {
       extraPaths: indexes,
       afterWrite: async () => {
-        for (const collection of keys)
-          await rebuildFolderIndexUnlocked(collection, indexHints.get(collection));
+        for (const collection of keys) await rebuildFolderIndexUnlocked(collection, indexHints.get(collection));
       },
     });
+  };
   const lockChats = (index: number): Promise<void> =>
-    index === chatIds.length
-      ? apply()
-      : withArtifactWorkspaceLock(chatIds[index], () => lockChats(index + 1));
+    index === chatIds.length ? apply() : withArtifactWorkspaceLock(chatIds[index], () => lockChats(index + 1));
   const lockCollections = (index: number): Promise<void> =>
     index === keys.length
       ? lockChats(0)

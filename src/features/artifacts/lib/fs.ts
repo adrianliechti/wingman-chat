@@ -104,6 +104,9 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     if (!normalized) {
       throw new Error("Artifact path is required");
     }
+    if (normalized === "/.memory" || normalized.startsWith("/.memory/")) {
+      throw new Error("/.memory/ is reserved for agent memory. Use the file tools to access it.");
+    }
 
     return normalized;
   }

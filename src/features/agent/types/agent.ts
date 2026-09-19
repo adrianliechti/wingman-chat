@@ -29,5 +29,5 @@ export interface Agent {
   tools: string[]; // active built-in tool IDs: "internet", "canvas"
   servers: BridgeServer[]; // per-agent MCP server definitions
 
-  memory?: boolean; // enable persistent memory via MEMORY.md
+  memory?: boolean; // enable the persistent /.memory/ file mount
 }

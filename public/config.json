@@ -1,5 +1,6 @@
 {
   "navigation": true,
+  "memory": {},
   "support": {
     "title": "Learning Hub",
     "description": "Guides to get started",
@@ -46,7 +47,7 @@
       "instructions": "You are a helpful assistant."
     }
   ],
-  "tools": [
+  "_tools": [
     {
       "id": "web",
       "name": "Web",

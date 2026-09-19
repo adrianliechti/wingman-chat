@@ -23,6 +23,12 @@ describe("FileSystemManager.renameFile", () => {
     vi.resetAllMocks();
   });
 
+  it("reserves the memory mount even for code/runtime artifact writes", async () => {
+    const fs = new FileSystemManager("chat");
+    await expect(fs.createFile("/.memory/note.md", "Cannot bypass memory validation")).rejects.toThrow("reserved");
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
+  });
+
   it("rejects a folder move when any destination file already exists", async () => {
     const files = new Map([
       ["/source/a.html", { content: "a" }],
