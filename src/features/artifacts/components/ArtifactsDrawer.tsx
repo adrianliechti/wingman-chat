@@ -1,16 +1,5 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  Code,
-  Download,
-  Eye,
-  File as FileIcon2,
-  Loader2,
-  PanelRightOpen,
-  Play,
-  Shapes,
-  Upload,
-} from "lucide-react";
+import { Code, Download, Eye, File as FileIcon2, Loader2, Play, Shapes, Upload } from "lucide-react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
@@ -37,9 +26,8 @@ import {
   MenuItem,
   MenuItems,
 } from "@/shared/ui/DropdownMenu";
-import { FileIcon } from "@/shared/ui/FileIcon";
-import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
+import { ArtifactsNavigator } from "./ArtifactsNavigator";
 
 // Editors are loaded on demand. Each pulls in heavy, format-specific
 // dependencies (pdfjs, the docx/xlsx/pptx converters, mediabunny, shiki, …)
@@ -77,6 +65,8 @@ const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor
 const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
 const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
 
+const WIDE_DRAWER_PX = 680;
+
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
@@ -94,9 +84,19 @@ export function ArtifactsDrawer() {
   const currentRunner = runner?.fs === fs && runner?.path === activeFile ? runner : null;
   const runHandler = currentRunner?.run;
   const isRunning = currentRunner?.isRunning ?? false;
-  const [showFilePicker, setShowFilePicker] = useState(false);
-  const filePickerRef = useRef<HTMLDivElement>(null);
-  const [showFilesBrowser, setShowFilesBrowser] = useState(false);
+  // The file tree gets its own column only when the drawer can hold it next to a
+  // comfortable preview; below that it folds into the breadcrumb's popover.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const update = () => setWide(root.clientWidth >= WIDE_DRAWER_PX);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
   const viewSliderRef = useRef<HTMLDivElement>(null);
   const [viewSliderStyle, setViewSliderStyle] = useState({ left: 0, width: 0 });
   const dragCounterRef = useRef(0);
@@ -200,6 +200,15 @@ export function ArtifactsDrawer() {
     [fs],
   );
 
+  const downloadAll = useCallback(async () => {
+    if (!fs) return;
+    try {
+      await fs.downloadAsZip();
+    } catch (error) {
+      console.error("Failed to download files:", error);
+      notify.error("Download failed", "The files couldn't be downloaded. Please try again.");
+    }
+  }, [fs]);
   // Handle auto-opening a file when none is active but files are available.
   // Prefers the most recently modified file; falls back to alphabetical first.
   // Only re-run when the `files` list changes — not when `activeFile` toggles.
@@ -254,18 +263,6 @@ export function ArtifactsDrawer() {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
-
-  // Close file picker when clicking outside
-  useEffect(() => {
-    if (!showFilePicker) return;
-    const handleClick = (e: MouseEvent) => {
-      if (!filePickerRef.current?.contains(e.target as Node)) {
-        setShowFilePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showFilePicker]);
 
   // Render the file-specific editor
   const renderFileEditor = () => {
@@ -520,6 +517,7 @@ export function ArtifactsDrawer() {
 
   return (
     <div
+      ref={rootRef}
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0 bg-neutral-50 dark:bg-neutral-950"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -555,134 +553,36 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Outer horizontal split: left = top bar + editor; right = files browser (full height) */}
-      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-        {/* Left column: top bar + editor */}
-        <ResizablePanel
-          defaultSize={75}
-          minSize={200}
-          className="h-full flex flex-col overflow-hidden"
-        >
-          {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
+      {/* Left = top bar + editor; right = the file column when the drawer is wide */}
+      <div className="flex flex-1 min-h-0">
+        <div className="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Top bar — lives inside the left column so the file column spans the full drawer height */}
           <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
-            <div
-              className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative"
-              ref={filePickerRef}
-            >
+            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative">
               {isEmpty && (
                 <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
                   Artifacts
                 </span>
               )}
-              {activeFile && (
-                <button
-                  type="button"
-                  onClick={() => files.length > 1 && setShowFilePicker((v) => !v)}
-                  className={cn(
-                    "flex items-center gap-1.5 min-w-0 rounded px-1 -mx-1 py-0.5 transition-all duration-150 ease-out",
-                    files.length > 1
-                      ? "hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      : "cursor-default pointer-events-none",
-                  )}
-                >
-                  <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
-                  <span
-                    className="text-sm md:text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
-                    title={getFileName(activeFile)}
-                  >
-                    {getFileName(activeFile)}
-                  </span>
-                  {files.length > 1 && (
-                    <ChevronDown
-                      size={12}
-                      className={cn(
-                        "shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400 transition-transform duration-150",
-                        showFilePicker && "rotate-180",
-                      )}
-                    />
-                  )}
-                </button>
+              {activeFile && fs && (
+                <ArtifactsNavigator
+                  fs={fs}
+                  files={files}
+                  activePath={activeFile}
+                  onOpen={openFile}
+                  popover={!wide && files.length > 1}
+                  drives={config.drives}
+                  isProcessing={isProcessing}
+                  onUploadLocal={() => fileInputRef.current?.click()}
+                  onUploadDrive={(drive) => setActiveDrive(drive)}
+                  onDownloadAll={downloadAll}
+                  onDownloadFile={downloadFile}
+                />
               )}
               {/* The "Text preview" disclosure for extracted-text rendering
                   lives inside OfficeMarkdownEditor so it also covers the
                   fallback paths of the high-fidelity office editors. */}
-              {/* View mode segmented control — inline after filename */}
-              {supportsPreview() && (
-                <div
-                  ref={viewSliderRef}
-                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
-                >
-                  {/* responsive segmented control */}
-                  {/* Animated slider background */}
-                  {viewSliderStyle.width > 0 && (
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                      style={{
-                        left: `${viewSliderStyle.left}px`,
-                        width: `${viewSliderStyle.width}px`,
-                        height: "calc(100% - 4px)",
-                        top: "2px",
-                      }}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    data-view="preview"
-                    onClick={() => setViewMode("preview")}
-                    title="Preview"
-                    className={cn(
-                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                      viewMode === "preview"
-                        ? "text-neutral-900 dark:text-neutral-50"
-                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    )}
-                  >
-                    <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
-                  </button>
-                  <button
-                    type="button"
-                    data-view="code"
-                    onClick={() => setViewMode("code")}
-                    title="Code"
-                    className={cn(
-                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
-                      viewMode === "code"
-                        ? "text-neutral-900 dark:text-neutral-50"
-                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                    )}
-                  >
-                    <Code
-                      size={11}
-                      strokeWidth={2.25}
-                      className="w-3.5 h-3.5 md:w-2.75 md:h-2.75"
-                    />
-                  </button>
-                </div>
-              )}
-              {showFilePicker && files.length > 1 && (
-                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 overflow-hidden p-1">
-                  {files.map((f) => (
-                    <button
-                      key={f.path}
-                      type="button"
-                      onClick={() => {
-                        openFile(f.path);
-                        setShowFilePicker(false);
-                      }}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 rounded-lg text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/60 dark:hover:bg-white/5",
-                        f.path === activeFile && "font-medium",
-                      )}
-                    >
-                      <FileIcon name={f.path} className="shrink-0" />
-                      <span className="truncate" title={f.path}>
-                        {getFileName(f.path)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
@@ -729,6 +629,59 @@ export function ArtifactsDrawer() {
             {(runHandler || activeFileData) && (
               <>
                 <div className="flex items-center gap-0.5">
+                      {/* Preview / code toggle, grouped with the other file actions */}
+                  {supportsPreview() && (
+                    <div
+                      ref={viewSliderRef}
+                      className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 mr-1"
+                    >
+                      {/* responsive segmented control */}
+                      {/* Animated slider background */}
+                      {viewSliderStyle.width > 0 && (
+                        <div
+                          className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                          style={{
+                            left: `${viewSliderStyle.left}px`,
+                            width: `${viewSliderStyle.width}px`,
+                            height: "calc(100% - 4px)",
+                            top: "2px",
+                          }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        data-view="preview"
+                        onClick={() => setViewMode("preview")}
+                        title="Preview"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "preview"
+                            ? "text-neutral-900 dark:text-neutral-50"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
+                      </button>
+                      <button
+                        type="button"
+                        data-view="code"
+                        onClick={() => setViewMode("code")}
+                        title="Code"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "code"
+                            ? "text-neutral-900 dark:text-neutral-50"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Code
+                          size={11}
+                          strokeWidth={2.25}
+                          className="w-3.5 h-3.5 md:w-2.75 md:h-2.75"
+                        />
+                      </button>
+                    </div>
+                  )}
                   {/* Run button */}
                   {runHandler && (
                     <button
@@ -758,22 +711,20 @@ export function ArtifactsDrawer() {
                           <button
                             type="button"
                             onClick={() => downloadFile(activeFileData.path)}
-                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
+                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
                             <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                            <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
                       }
                       return (
                         <Menu>
                           <MenuButton
-                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
+                            className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                             title="Download"
                           >
                             <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
-                            <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
                             modal={false}
@@ -825,22 +776,7 @@ export function ArtifactsDrawer() {
                       );
                     })()}
                 </div>
-
-                {files.length > 0 && !showFilesBrowser && (
-                  <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
-                )}
               </>
-            )}
-
-            {files.length > 0 && !showFilesBrowser && (
-              <button
-                type="button"
-                onClick={() => setShowFilesBrowser(true)}
-                className="flex items-center p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                title="Show files"
-              >
-                <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-              </button>
             )}
           </div>
 
@@ -856,40 +792,25 @@ export function ArtifactsDrawer() {
               {renderFileEditor()}
             </Suspense>
           </div>
-        </ResizablePanel>
+        </div>
 
-        {/* Files browser — right panel shown alongside the editor */}
-        {files.length > 0 && fs && showFilesBrowser && (
-          <ResizablePanel defaultSize={25} minSize={120}>
-            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
-              <ArtifactsBrowser
-                key={fs.chatId}
-                fs={fs}
-                files={files}
-                openTabs={activeFile ? [activeFile] : []}
-                onFileClick={openFile}
-                drives={config.drives}
-                isProcessing={isProcessing}
-                onClose={() => setShowFilesBrowser(false)}
-                onUploadLocal={() => fileInputRef.current?.click()}
-                onUploadDrive={(drive) => setActiveDrive(drive)}
-                onDownloadAll={async () => {
-                  try {
-                    await fs.downloadAsZip();
-                  } catch (error) {
-                    console.error("Failed to download files:", error);
-                    notify.error(
-                      "Download failed",
-                      "The files couldn't be downloaded. Please try again.",
-                    );
-                  }
-                }}
-                onDownloadFile={downloadFile}
-              />
-            </div>
-          </ResizablePanel>
+        {wide && files.length > 0 && fs && (
+          <ArtifactsBrowser
+            key={fs.chatId}
+            className="w-52 shrink-0"
+            fs={fs}
+            files={files}
+            activePath={activeFile}
+            onOpen={openFile}
+            drives={config.drives}
+            isProcessing={isProcessing}
+            onUploadLocal={() => fileInputRef.current?.click()}
+            onUploadDrive={(drive) => setActiveDrive(drive)}
+            onDownloadAll={downloadAll}
+            onDownloadFile={downloadFile}
+          />
         )}
-      </ResizablePanelGroup>
+      </div>
 
       {activeDrive && (
         <DrivePicker
