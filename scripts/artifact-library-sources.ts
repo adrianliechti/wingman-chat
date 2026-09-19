@@ -8,9 +8,10 @@ const require = createRequire(import.meta.url);
 const threeRoot = path.resolve(path.dirname(require.resolve("three")), "..");
 const lucideRoot = path.dirname(require.resolve("lucide/package.json"));
 const threeEntry = path.resolve(import.meta.dirname, "artifact-libraries/three.js");
+const sdkEntry = path.resolve(import.meta.dirname, "../src/shared/lib/artifactSdk/sdk.ts");
 const prefix = "virtual:artifact-library-source/";
 
-type Library = "three" | "lucide";
+type Library = "three" | "lucide" | "wingman-sdk";
 type LibrarySource = { source: string; files: string[] };
 
 async function buildThreeSource(): Promise<LibrarySource> {
@@ -39,6 +40,21 @@ async function buildThreeSource(): Promise<LibrarySource> {
   }
 }
 
+async function buildSdkSource(): Promise<LibrarySource> {
+  // The page-side `window.wingman` SDK, served into HTML previews as one classic script.
+  const bundle = await rolldown({ input: sdkEntry, platform: "browser" });
+  try {
+    const { output } = await bundle.generate({ format: "iife", minify: true, codeSplitting: false });
+    const chunk = output[0];
+    if (output.length !== 1 || chunk.type !== "chunk" || chunk.imports.length || chunk.dynamicImports.length) {
+      throw new Error("The artifact SDK must be a single self-contained script.");
+    }
+    return { source: chunk.code, files: [...(await bundle.watchFiles)] };
+  } finally {
+    await bundle.close();
+  }
+}
+
 async function readLucideSource(): Promise<LibrarySource> {
   const files = [path.join(lucideRoot, "dist/umd/lucide.min.js"), path.join(lucideRoot, "LICENSE")];
   const [source, license] = await Promise.all(files.map((file) => fs.readFile(file, "utf8")));
@@ -54,7 +70,7 @@ export function artifactLibrarySourcesPlugin(): Plugin {
   return {
     name: "artifact-library-sources",
     resolveId(id) {
-      if (id === `${prefix}three` || id === `${prefix}lucide`) return `\0${id}`;
+      if (id === `${prefix}three` || id === `${prefix}lucide` || id === `${prefix}wingman-sdk`) return `\0${id}`;
       return undefined;
     },
     async load(id) {
@@ -62,7 +78,8 @@ export function artifactLibrarySourcesPlugin(): Plugin {
       const library = id.slice(prefix.length + 1) as Library;
       let pending = sources.get(library);
       if (!pending) {
-        pending = library === "three" ? buildThreeSource() : readLucideSource();
+        pending =
+          library === "three" ? buildThreeSource() : library === "wingman-sdk" ? buildSdkSource() : readLucideSource();
         sources.set(library, pending);
       }
       try {

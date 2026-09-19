@@ -112,7 +112,12 @@ type Renderer struct {
 	Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 }
 
-type Artifacts struct{}
+type Artifacts struct {
+	// Bridge exposes window.wingman to HTML previews. Nil means enabled.
+	Bridge *bool `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+	// DuckDB hosts DuckDB-WASM for SQL over workspace files. Nil means enabled.
+	DuckDB *bool `json:"duckdb,omitempty" yaml:"duckdb,omitempty"`
+}
 
 type Repository struct {
 	Embedder  string `json:"embedder,omitempty" yaml:"embedder,omitempty"`

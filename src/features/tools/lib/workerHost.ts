@@ -22,7 +22,7 @@ export interface ExecuteCodeOptions {
   /** Override the compute-stall ceiling. */
   timeoutMs?: number;
   /** Captured run context for model calls made by the interpreter. */
-  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext">;
+  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext" | "chatId">;
 }
 
 export type BridgeRequestOptions = Pick<ExecuteCodeOptions, "signal" | "context">;

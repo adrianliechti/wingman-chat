@@ -51,6 +51,7 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("internet.yaml", &cfg.Internet)
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
+	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
 }
 
 // loadLinks reads links.yaml, which configures the support and cost entries

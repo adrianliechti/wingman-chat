@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
+import { createPreviewSession, type PreviewSdkOptions, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import type { File, FileSystem } from "@/shared/types/file";
 
 export interface HtmlPreviewProps {
@@ -39,6 +39,19 @@ export interface HtmlPreviewProps {
    * Prevents reload storms while content streams in. Defaults to 150ms.
    */
   reloadDebounceMs?: number;
+  /**
+   * Serve `window.wingman` into the session's HTML documents. Read when the
+   * session is created; later capability changes are pushed to the session.
+   */
+  sdk?: PreviewSdkOptions;
+  /** Called with the live session and iframe once files are registered, and with nulls on teardown. */
+  onSession?: (session: PreviewSession | null, iframe: HTMLIFrameElement | null) => void;
+  /**
+   * Decide whether a filesystem change should reload the page. The session's
+   * copy of the file is updated either way; returning false only skips the
+   * navigation, e.g. for a file the page itself just wrote.
+   */
+  shouldReload?: (path: string) => boolean;
 }
 
 const DEFAULT_PATH = "index.html";
@@ -69,8 +82,17 @@ export function HtmlPreview({
   className = "w-full h-full",
   style,
   reloadDebounceMs = 150,
+  sdk,
+  onSession,
+  shouldReload,
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const sdkRef = useRef(sdk);
+  const onSessionRef = useRef(onSession);
+  const shouldReloadRef = useRef(shouldReload);
+  sdkRef.current = sdk;
+  onSessionRef.current = onSession;
+  shouldReloadRef.current = shouldReload;
   const sessionRef = useRef<PreviewSession | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
@@ -107,7 +129,7 @@ export function HtmlPreview({
 
     void (async () => {
       try {
-        const newSession = await createPreviewSession();
+        const newSession = await createPreviewSession({ sdk: sdkRef.current });
         // Own the session immediately so failures during initial file loading
         // cannot leave its page-side snapshot or worker registration behind.
         localSession = newSession;
@@ -150,6 +172,7 @@ export function HtmlPreview({
         // Publish only after all initial files are registered.
         sessionRef.current = newSession;
         setSession(newSession);
+        onSessionRef.current?.(newSession, iframeRef.current);
       } catch (err) {
         console.error("Failed to start HTML preview session:", err);
         await localSession?.destroy().catch(() => undefined);
@@ -162,6 +185,7 @@ export function HtmlPreview({
 
     return () => {
       cancelled = true;
+      if (sessionRef.current) onSessionRef.current?.(null, null);
       sessionRef.current = null;
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
@@ -171,6 +195,13 @@ export function HtmlPreview({
       setSession(null);
     };
   }, [fs]);
+
+  // Advertise capability changes (e.g. tools toggled) without rebuilding the session.
+  const capabilities = sdk?.capabilities;
+  useEffect(() => {
+    if (!session || !capabilities) return;
+    session.setCapabilities(capabilities).catch((err) => console.error("html preview: capabilities update failed", err));
+  }, [session, capabilities]);
 
   // Subscribe to filesystem change events for live reload.
   useEffect(() => {
@@ -188,7 +219,10 @@ export function HtmlPreview({
 
     const onUpsert = (p: string) => {
       loadAndUpdate(p)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (shouldReloadRef.current?.(p) === false) return;
+          scheduleReload();
+        })
         .catch((err) => console.error("html preview: upsert failed", err));
     };
     const onDeleted = (p: string) => {

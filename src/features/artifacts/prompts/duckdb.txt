@@ -1,0 +1,15 @@
+### SQL over workspace data (DuckDB)
+Every CSV, TSV, JSON, JSONL, Parquet and XLSX artifact is queryable by name in DuckDB, which runs in the browser: `SELECT region, SUM(amount) AS total FROM 'data/sales.csv' GROUP BY region` (the bare file name also works when it is unique). Spreadsheets: `SELECT * FROM read_xlsx('report.xlsx', sheet = 'Sheet1')` (the excel extension loads on demand; `fts` and `icu` are available the same way). Results are plain JSON: `{ columns: [{ name, type }], rows: [{ … }], rowCount }`.
+
+- Dashboards and explorers over workspace data must query DuckDB at runtime for every filter and view. Never embed a copy of the dataset (or precomputed aggregates) in the page or a companion script when the file is in the workspace; the current `duckdb_files` list in the request context names what is queryable.
+- In HTML artifacts: `const conn = await wingman.duckdb.connect(); const { rows } = await conn.query(sql, params?); await conn.close();` — or `wingman.duckdb.query(sql, params?)` on a shared connection. `wingman.duckdb.files()` lists the mounted names. Prefer SQL over hand-written aggregation for dashboards.
+- In both interpreters: `await sql(query, params?)` returns the same shape (Python: a dict; `pandas.DataFrame(result["rows"])` when a frame is needed). Files written during the current run become queryable in the next run.
+
+Dashboard pattern:
+```
+const w = window.wingman;
+if (w?.capabilities.duckdb) {
+  const { rows } = await w.duckdb.query("SELECT region, SUM(amount) AS total FROM 'sales.csv' GROUP BY region ORDER BY total DESC");
+  echarts.init(document.getElementById("chart")).setOption({ xAxis: { type: "category", data: rows.map(r => r.region) }, yAxis: { type: "value" }, series: [{ type: "bar", data: rows.map(r => r.total) }] });
+}
+```

@@ -10,6 +10,11 @@ declare module "virtual:artifact-library-source/lucide" {
   export default source;
 }
 
+declare module "virtual:artifact-library-source/wingman-sdk" {
+  const source: string;
+  export default source;
+}
+
 // File System Access API type extensions
 // These extend the built-in types with methods that aren't fully typed yet
 

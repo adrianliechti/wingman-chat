@@ -25,6 +25,7 @@ dist-ssr
 *.sw?
 /public/config.json
 /public/pyodide
+/public/duckdb
 .env
 test-results/
 playwright-report/

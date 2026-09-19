@@ -8,9 +8,11 @@ import {
   blobToDataUrl,
   deleteDirectory,
   deleteFile,
+  getDirectory,
   inferContentType,
   listDirectories,
   listFiles,
+  parsePath,
   readBlob,
   readFileMetadata,
   readJson,
@@ -89,6 +91,25 @@ export async function writeArtifact(
   }
 
   await writeText(fullPath, content, contentType ?? inferContentType(path) ?? "text/plain;charset=utf-8");
+}
+
+/**
+ * The stored file itself, for consumers that read bytes on demand (DuckDB
+ * mounts it without copying). The snapshot goes stale once the file is
+ * rewritten; callers re-request it on change events.
+ */
+export async function getArtifactNativeFile(chatId: string, path: string): Promise<globalThis.File | undefined> {
+  const normalizedPath = normalizeArtifactPath(path)?.slice(1);
+  if (!normalizedPath) return undefined;
+  const { dir, name } = parsePath(`chats/${chatId}/artifacts/${normalizedPath}`);
+  try {
+    const directory = await getDirectory(dir);
+    const handle = await directory.getFileHandle(name);
+    return await handle.getFile();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") return undefined;
+    throw error;
+  }
 }
 
 /**

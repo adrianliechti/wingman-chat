@@ -44,7 +44,7 @@ export function ExecutionEditor({
       executor: language === "python" ? executeCode : executeJavaScript,
       extension: language === "python" ? "py" : "js",
       mountSkills: language === "python",
-      context: { signal: controller.signal },
+      context: { signal: controller.signal, chatId: fs.chatId },
     });
     // Unmount/navigation cancels both execution and committing its snapshot.
     if (running.current !== controller) return;

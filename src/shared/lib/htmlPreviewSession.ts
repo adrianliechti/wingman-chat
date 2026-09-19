@@ -15,6 +15,8 @@
  *   session.destroy();
  */
 
+import { injectSdkScript } from "@/shared/lib/artifactSdk/inject";
+import { SDK_PATH, SDK_PREFIX, type SdkCapabilities } from "@/shared/lib/artifactSdk/protocol";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
 import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
@@ -29,10 +31,23 @@ export interface PreviewFilePayload {
   bytes?: ArrayBuffer;
 }
 
+/** Serve `window.wingman` into the session's HTML documents. */
+export interface PreviewSdkOptions {
+  /** The built SDK script (virtual:artifact-library-source/wingman-sdk). */
+  source: string;
+  capabilities: SdkCapabilities;
+}
+
+export interface PreviewSessionOptions {
+  sdk?: PreviewSdkOptions;
+}
+
 export interface PreviewSession {
   readonly token: string;
   /** Build the iframe URL for a given entry path. */
   previewUrl(entryPath: string): string;
+  /** Change what the injected SDK advertises; re-serves every HTML document. */
+  setCapabilities(capabilities: SdkCapabilities): Promise<void>;
   /** Register (or replace) the full file set for this session. */
   setFiles(files: File[] | Record<string, File>): Promise<void>;
   /** Upsert a single file. */
@@ -222,13 +237,30 @@ export function encodePreviewPath(path: string): string {
   return normalized.split("/").map(encodeURIComponent).join("/");
 }
 
-export async function createPreviewSession(): Promise<PreviewSession> {
+export async function createPreviewSession(options: PreviewSessionOptions = {}): Promise<PreviewSession> {
   await ensureRegistration();
   ensureRecoveryListener();
   const token = generateToken();
   let destroyed = false;
+  // `originals` holds files as the artifact stores them; `snapshot` is what the
+  // worker serves, with the SDK script tag added to HTML documents.
+  const originals = new Map<string, PreviewFilePayload>();
   const snapshot = new Map<string, PreviewFilePayload>();
   sessionSnapshots.set(token, snapshot);
+  const sdk = options.sdk;
+  let capabilities = sdk?.capabilities;
+
+  const isReserved = (key: string) => key.startsWith(SDK_PREFIX);
+  const decorate = (key: string, payload: PreviewFilePayload): PreviewFilePayload => {
+    if (!sdk || !capabilities || payload.content === undefined) return payload;
+    if (!payload.contentType?.toLowerCase().startsWith("text/html")) return payload;
+    return { ...payload, content: injectSdkScript(payload.content, { token, path: `/${key}`, capabilities }) };
+  };
+  const rebuild = () => {
+    snapshot.clear();
+    for (const [key, payload] of originals) snapshot.set(key, decorate(key, payload));
+    if (sdk) snapshot.set(SDK_PATH, { content: sdk.source, contentType: "text/javascript;charset=utf-8" });
+  };
 
   const session: PreviewSession = {
     token,
@@ -238,16 +270,29 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       return `${SCOPE_PREFIX}${encodeURIComponent(token)}/${path}`;
     },
 
+    async setCapabilities(next) {
+      if (destroyed || !sdk) return;
+      if (JSON.stringify(next) === JSON.stringify(capabilities)) return;
+      capabilities = next;
+      rebuild();
+      await postMessage({
+        type: "html-preview/register",
+        token,
+        files: Object.fromEntries(snapshot),
+      });
+    },
+
     async setFiles(input) {
       if (destroyed) return;
-      snapshot.clear();
+      originals.clear();
       const entries = Array.isArray(input) ? input : Object.values(input);
       for (const file of entries) {
         if (!file?.path) continue;
         const key = normalizeInputPath(file.path);
-        if (!key) continue;
-        snapshot.set(key, toPayload(file));
+        if (!key || isReserved(key)) continue;
+        originals.set(key, toPayload(file));
       }
+      rebuild();
       await postMessage({
         type: "html-preview/register",
         token,
@@ -258,8 +303,10 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     async updateFile(path, file) {
       if (destroyed) return;
       const key = normalizeInputPath(path);
-      if (!key) return;
-      const payload = toPayload(file);
+      if (!key || isReserved(key)) return;
+      const original = toPayload(file);
+      originals.set(key, original);
+      const payload = decorate(key, original);
       snapshot.set(key, payload);
       await postMessage({
         type: "html-preview/update",
@@ -272,7 +319,8 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     async deleteFile(path) {
       if (destroyed) return;
       const key = normalizeInputPath(path);
-      if (!key) return;
+      if (!key || isReserved(key)) return;
+      originals.delete(key);
       snapshot.delete(key);
       await postMessage({
         type: "html-preview/delete",
@@ -285,20 +333,22 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       if (destroyed) return;
       const fromKey = normalizeInputPath(fromPath);
       const toKey = normalizeInputPath(toPath);
-      if (!fromKey || !toKey) return;
-      const entry = snapshot.get(fromKey);
+      if (!fromKey || !toKey || isReserved(fromKey) || isReserved(toKey)) return;
+      const entry = originals.get(fromKey);
       if (entry) {
-        snapshot.delete(fromKey);
-        snapshot.set(toKey, entry);
+        originals.delete(fromKey);
+        originals.set(toKey, entry);
       }
       const folderPrefix = `${fromKey}/`;
       const toPrefix = `${toKey}/`;
-      for (const key of Array.from(snapshot.keys())) {
+      for (const key of Array.from(originals.keys())) {
         if (!key.startsWith(folderPrefix)) continue;
-        const child = snapshot.get(key);
-        snapshot.delete(key);
-        if (child) snapshot.set(`${toPrefix}${key.slice(folderPrefix.length)}`, child);
+        const child = originals.get(key);
+        originals.delete(key);
+        if (child) originals.set(`${toPrefix}${key.slice(folderPrefix.length)}`, child);
       }
+      // The injected tag carries the document's own path, so HTML must be re-decorated.
+      rebuild();
       await postMessage({
         type: "html-preview/rename",
         token,

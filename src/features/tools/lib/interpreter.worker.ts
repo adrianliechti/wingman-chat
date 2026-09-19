@@ -30,11 +30,12 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread } from "./interpreterRpc";
+import { callMainThread, describeError } from "./interpreterRpc";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
+import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
 import TRANSLATE_SHIM from "./translateShim.py?raw";
@@ -320,6 +321,7 @@ const USER_SHIMS = [
   TRANSCRIBE_SHIM,
   TRANSLATE_SHIM,
   PDF_RASTERIZE_SHIM,
+  SQL_SHIM,
 ];
 
 async function createExecutionGlobals(
@@ -349,6 +351,7 @@ async function createExecutionGlobals(
   );
   setBridge("_wingman_transcribe", (path: string) => requestTranscribe(pyodide, path));
   setBridge("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
+  setBridge("_wingman_sql", (query: string, paramsJson: string | null) => requestSql(query, paramsJson));
   setBridge("_wingman_translate_file", (lang: string, output: string, input: string) =>
     requestTranslateFile(pyodide, lang, output, input),
   );
@@ -440,7 +443,7 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     // FS state may be inconsistent — force a clean rebuild on the next call.
     lastSyncedFiles = null;
     const boundedError = new BoundedOutput(maxOutputBytes);
-    boundedError.append(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    boundedError.append(describeError(error));
     return {
       success: false,
       output: "",
@@ -577,6 +580,21 @@ async function requestTranscribe(pyodide: PyodideInterface, path: string): Promi
 }
 
 /** Bridge behind the Python `translate` helper (translateShim.py), resolved by the main thread. */
+/** Bridge behind the Python `sql` helper (sqlShim.py); the result is JSON so Pyodide needs no proxy conversion. */
+async function requestSql(query: string, paramsJson?: string | null): Promise<string> {
+  let params: unknown[] | undefined;
+  if (paramsJson) {
+    try {
+      const parsed: unknown = JSON.parse(paramsJson);
+      if (Array.isArray(parsed)) params = parsed;
+    } catch {
+      // Malformed parameters — run without them rather than failing the call.
+    }
+  }
+  const result = await callMain<unknown>((port) => ({ type: "duckdb-query-request", sql: query, params, port }));
+  return JSON.stringify(result);
+}
+
 function requestTranslateText(lang: string, text: string): Promise<string> {
   return callMain<string>((port) => ({ type: "translate-text-request", lang, text, port }));
 }

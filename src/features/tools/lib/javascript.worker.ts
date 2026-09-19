@@ -27,7 +27,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread } from "./interpreterRpc";
+import { callMainThread, describeError } from "./interpreterRpc";
 
 // Typed view of the worker global scope (project compiles against the DOM lib,
 // not the webworker lib).
@@ -257,6 +257,11 @@ const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise
 /** Behind the `llm(prompt, options?)` helper; resolved by the main thread. */
 function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
   return callMain<string>((port) => ({ type: "llm-request", prompt, options, port }));
+}
+
+/** Behind the `sql(query, params?)` helper: DuckDB over the run's workspace, on the main thread. */
+function sql(query: string, params?: unknown[]): Promise<unknown> {
+  return callMain<unknown>((port) => ({ type: "duckdb-query-request", sql: query, params, port }));
 }
 
 /**
@@ -498,7 +503,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   // declare locals named `render`, `translate`, … without a duplicate-parameter
   // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
-  const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs, limits) };
+  const bridges: Record<string, unknown> = { llm, sql, ...buildBridges(vfs, limits) };
   Object.assign(g, bridges);
 
   try {
@@ -535,7 +540,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
     return { success: true, output: resolvedOutput, files: resultFiles };
   } catch (error) {
     const boundedError = new BoundedOutput(limits.maxOutputBytes);
-    boundedError.append(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    boundedError.append(describeError(error));
     return {
       success: false,
       output: output.value().trim(),
