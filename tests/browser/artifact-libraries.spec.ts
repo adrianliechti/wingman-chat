@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
+import JSZip from "jszip";
 
 // Exercise the same scene using relative library/model files and fully embedded
 // scripts/assets. Actual pixels, animation, addons, and icons must work offline.
@@ -132,5 +134,70 @@ test("bundled Three.js and Lucide render in offline previews and standalone down
   const exportedState = JSON.parse((await exported.locator("#status").textContent())!);
   expect(exportedState).toMatchObject({ frames: 3, opaque: 255, cameraMoved: true, modelLoaded: true });
   expect(exportedState.green).toBeGreaterThan(100);
+  expect(errors).toEqual([]);
+});
+
+test("virtual .lib/ references load bundled libraries in previews, offline, and inline on export", async ({
+  page,
+  context,
+}, info) => {
+  const errors: string[] = [];
+  context.on("weberror", (error) => errors.push(error.error().message));
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "127.0.0.1" || url.protocol === "file:" || url.protocol === "data:") return route.continue();
+    errors.push(`Unexpected external request: ${url}`);
+    return route.abort();
+  });
+  await page.goto("/tests/browser/fixtures/html-artifacts.html");
+  await page.waitForFunction(() => Boolean(window.htmlArtifactsE2E));
+
+  const model = JSON.stringify({ asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{}] });
+  const body = '<button aria-label="Camera"><i data-lucide="camera"></i></button><pre id="status">Loading</pre>';
+  // No interpreter run and no library bytes: the page just references the virtual folder.
+  const html =
+    "<!doctype html><html><body>" +
+    body +
+    '<script src="/.lib/three.js"></script><script src="../.lib/lucide.js"></script>' +
+    `<script>const modelUrl = ${JSON.stringify(`data:model/gltf+json,${encodeURIComponent(model)}`)};${sceneScript}</script></body></html>`;
+  await page.evaluate(([path, content]) => window.htmlArtifactsE2E.write(path, content), ["/scenes/deck.html", html] as const);
+  await page.evaluate(() => window.htmlArtifactsE2E.write("/ready.html", "<!doctype html><p>Preview ready</p>"));
+  expect(html.length).toBeLessThan(6000);
+
+  const preview = page.frameLocator("iframe");
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/scenes/deck.html"));
+  await expect(preview.locator("svg.lucide-camera path")).not.toHaveCount(0);
+  await expect(preview.locator("#status")).toContainText('"frames":3');
+
+  // "Download all" ships the libraries and makes the absolute reference relative.
+  const zip = await JSZip.loadAsync(
+    Buffer.from(await page.evaluate(() => window.htmlArtifactsE2E.exportZip()), "base64"),
+  );
+  const exportedPage = await zip.file("scenes/deck.html")!.async("string");
+  expect(exportedPage).toContain('<script src="../.lib/three.js"></script>');
+  expect(exportedPage).not.toContain('"/.lib/');
+  expect(zip.file(".lib/three.js")).not.toBeNull();
+  expect(zip.file(".lib/lucide.js")).not.toBeNull();
+  expect((await zip.file(".lib/three.js")!.async("string")).length).toBeGreaterThan(500_000);
+  const exportDir = info.outputPath("deck-export");
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) continue;
+    const target = path.join(exportDir, entry.name);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, await entry.async("nodebuffer"));
+  }
+
+  // Offline, the worker serves the libraries from CacheStorage.
+  await context.setOffline(true);
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/ready.html"));
+  await expect(preview.locator("body")).toHaveText("Preview ready");
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/scenes/deck.html"));
+  await expect(preview.locator("#status")).toContainText('"frames":3');
+
+  // The extracted folder opens from disk with no worker and no network.
+  const opened = await context.newPage();
+  await opened.goto(pathToFileURL(path.join(exportDir, "scenes/deck.html")).href);
+  await expect(opened.locator("svg.lucide-camera path")).not.toHaveCount(0);
+  await expect(opened.locator("#status")).toContainText('"frames":3');
   expect(errors).toEqual([]);
 });

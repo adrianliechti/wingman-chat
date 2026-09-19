@@ -15,6 +15,7 @@
  *   session.destroy();
  */
 
+import { artifactLibraryUrls, rewriteAbsoluteLibraryReferences } from "@/shared/lib/artifactLibraries";
 import { injectSdkScript } from "@/shared/lib/artifactSdk/inject";
 import { SDK_PATH, SDK_PREFIX, type SdkCapabilities } from "@/shared/lib/artifactSdk/protocol";
 import { isDataUrl } from "@/shared/lib/fileContent";
@@ -87,7 +88,7 @@ function ensureRecoveryListener(): void {
       port.postMessage({ ok: false });
       return;
     }
-    port.postMessage({ ok: true, files: Object.fromEntries(files) });
+    port.postMessage({ ok: true, files: Object.fromEntries(files), libraries: artifactLibraryUrls() });
   });
 }
 
@@ -251,10 +252,13 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
   let capabilities = sdk?.capabilities;
 
   const isReserved = (key: string) => key.startsWith(SDK_PREFIX);
+  // `/.lib/x.js` would leave the worker's scope; point it at this session instead.
+  const sessionRoot = `${SCOPE_PREFIX}${encodeURIComponent(token)}/`;
   const decorate = (key: string, payload: PreviewFilePayload): PreviewFilePayload => {
-    if (!sdk || !capabilities || payload.content === undefined) return payload;
-    if (!payload.contentType?.toLowerCase().startsWith("text/html")) return payload;
-    return { ...payload, content: injectSdkScript(payload.content, { token, path: `/${key}`, capabilities }) };
+    if (payload.content === undefined || !payload.contentType?.toLowerCase().startsWith("text/html")) return payload;
+    let content = rewriteAbsoluteLibraryReferences(payload.content, sessionRoot);
+    if (sdk && capabilities) content = injectSdkScript(content, { token, path: `/${key}`, capabilities });
+    return { ...payload, content };
   };
   const rebuild = () => {
     snapshot.clear();
@@ -279,6 +283,7 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
         type: "html-preview/register",
         token,
         files: Object.fromEntries(snapshot),
+        libraries: artifactLibraryUrls(),
       });
     },
 
@@ -297,6 +302,8 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
         type: "html-preview/register",
         token,
         files: Object.fromEntries(snapshot),
+        // Bundled libraries served for `.lib/<name>` references; see artifactLibraries.ts.
+        libraries: artifactLibraryUrls(),
       });
     },
 

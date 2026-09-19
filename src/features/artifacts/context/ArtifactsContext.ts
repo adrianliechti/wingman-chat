@@ -1,6 +1,7 @@
 import { createContext } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { ArtifactReadWriteManager } from "@/features/artifacts/lib/artifactFileTools";
+import type { ArtifactEditRequest } from "@/features/artifacts/lib/editRequest";
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
@@ -26,6 +27,13 @@ export interface ArtifactsContextType {
    * chat changes.
    */
   setFileSystem: (fs: FileSystemManager | null) => void;
+  /**
+   * Sends a "change this highlighted passage" request through the active
+   * conversation. `null` when no host has registered one, in which case the
+   * viewer offers no select-to-edit control.
+   */
+  requestEdit: ((request: ArtifactEditRequest) => void) | null;
+  setEditRequestHandler: (handler: ((request: ArtifactEditRequest) => void) | null) => void;
 }
 
 export const ArtifactsContext = createContext<ArtifactsContextType | null>(null);

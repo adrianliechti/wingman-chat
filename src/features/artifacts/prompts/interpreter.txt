@@ -17,10 +17,8 @@ JavaScript:
 - Bundled globals: mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). svgToPng(svg, {width, height}) returns PNG bytes.
 - Use top-level await; console.log or return produces output. Buffer and a minimal process are shims, not a Node runtime.
 
-HTML libraries (source strings in execute_javascript_code; classic-script globals in HTML):
-- echartsSource → echarts; threeSource → THREE; lucideSource → lucide. Write sources directly; never print or reproduce their contents. THREE/lucide are not worker APIs.
-- Companion file: `vfs.write("/lib/three.js", threeSource, "text/javascript")`; /scene.html includes `<script src="./lib/three.js"></script>` before app code. Same pattern for other libraries. Paths are relative to the HTML file; export companion files together.
-- Standalone: concatenate `'<script>' + threeSource + '</script>'` before app code in the HTML passed to vfs.write. Embed every required library and asset. No CDN, remote imports, or import maps.
+HTML libraries (classic-script globals in HTML):
+- Pages load them from the virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library source with vfs or embed it in a page. THREE/lucide are not worker APIs. No CDN, remote imports, or import maps.
 - THREE includes core + OrbitControls, GLTFLoader, EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, OutputPass. Access addons as THREE.OrbitControls, etc. Use THREE.WebGLRenderer. Other addons/decoders are absent; use uncompressed glTF/GLB or supply decoders locally. Models/textures must be local or embedded.
 - Lucide: `<i data-lucide="camera"></i>` then `lucide.createIcons()` after markup exists. Label icon-only controls with aria-label.
 - WebGL: resize renderer/camera to the container; stop animation loops and dispose resources on teardown.

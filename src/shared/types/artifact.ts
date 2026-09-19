@@ -136,3 +136,28 @@ export const ArtifactManifestSchema = z.object({
   verification: VerificationReportSchema,
 });
 export type ArtifactManifest = z.infer<typeof ArtifactManifestSchema>;
+
+/** Who produced an artifact revision and why. Stored with the revision log. */
+export const RevisionOriginSchema = z.object({
+  actor: z.enum(["assistant", "user", "system"]),
+  runId: z.string().optional(),
+  reason: z
+    .enum(["create", "edit", "upload", "restore", "execution", "rename", "delete", "bridge"])
+    .optional(),
+});
+export type RevisionOrigin = z.infer<typeof RevisionOriginSchema>;
+
+/** One entry of a per-path revision log; content lives in the revision file. */
+export const ArtifactRevisionEntrySchema = z.object({
+  revision: z.string().min(1),
+  createdAt: z.string().datetime(),
+  size: z.number().int().nonnegative(),
+  contentType: z.string().optional(),
+  origin: RevisionOriginSchema.optional(),
+});
+export type ArtifactRevisionEntry = z.infer<typeof ArtifactRevisionEntrySchema>;
+
+export const ArtifactRevisionLogSchema = z.object({
+  entries: z.array(ArtifactRevisionEntrySchema),
+});
+export type ArtifactRevisionLog = z.infer<typeof ArtifactRevisionLogSchema>;

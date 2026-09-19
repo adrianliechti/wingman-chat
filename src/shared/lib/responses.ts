@@ -1,4 +1,5 @@
 import type { Response, ResponseInputItem, ResponseInputContent } from "openai/resources/responses/responses";
+import { formatArtifactSelection } from "./artifactSelection";
 import {
   APIConnectionError,
   APIError,
@@ -33,6 +34,8 @@ export function toResponseInput(input: Message[], options: { reasoning?: Reasoni
               type: "input_text",
               text: `[Artifact: ${part.displayName ?? part.path}; path=${part.path}${part.revision ? `; revision=${part.revision}` : ""}]`,
             });
+          } else if (part.type === "artifact_selection") {
+            content.push({ type: "input_text", text: formatArtifactSelection(part) });
           } else if (part.type === "image") {
             const imgPart = part;
             // Skip attachments with unrecognized MIME (e.g. application/octet-stream)

@@ -16,6 +16,8 @@ interface HtmlEditorProps {
   content: string;
   viewMode?: "code" | "preview";
   onViewModeChange?: (mode: "code" | "preview") => void;
+  /** Receives the preview iframe or the code view whose text selection the host watches. */
+  onSelectionRoot?: (element: HTMLElement | null) => void;
 }
 
 /** Providers a page must not drive: the model's own file tools, memory, and skills. */
@@ -23,7 +25,7 @@ const EXCLUDED_PROVIDERS = new Set(["artifacts", "memory", "skills"]);
 
 const NO_TOOLS: Tool[] = [];
 
-export function HtmlEditor({ path, content, viewMode = "preview" }: HtmlEditorProps) {
+export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoot }: HtmlEditorProps) {
   const { fs } = useArtifacts();
   const toolsContext = useContext(ToolsContext);
   const config = getConfig();
@@ -95,9 +97,10 @@ export function HtmlEditor({ path, content, viewMode = "preview" }: HtmlEditorPr
           sdk={sdk}
           onSession={onSession}
           shouldReload={shouldReload}
+          iframeRef={onSelectionRoot}
         />
       ) : (
-        <CodeEditor content={content} language="html" />
+        <CodeEditor content={content} language="html" onSelectionRoot={onSelectionRoot} />
       )}
     </div>
   );

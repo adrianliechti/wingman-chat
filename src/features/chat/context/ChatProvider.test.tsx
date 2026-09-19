@@ -33,7 +33,7 @@ vi.mock("@/shared/config", () => ({
 }));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
-  useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn() }),
+  useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn(), setEditRequestHandler: vi.fn() }),
 }));
 vi.mock("@/features/artifacts/lib/artifact-stop-policy", () => ({ applyArtifactStopPolicy: fixture.verify }));
 vi.mock("@/features/artifacts/lib/fs", () => ({

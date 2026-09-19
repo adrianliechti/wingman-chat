@@ -143,9 +143,9 @@ export function useArtifactsProvider(): ToolProvider | null {
           "already included in the user's message, which the chat model can inspect with built-in vision. " +
           "Use it for browser-native work: WebCodecs, OffscreenCanvas, createImageBitmap, crypto.subtle, WebAssembly, " +
           "TextEncoder/Decoder, and bundled libraries available as globals when referenced: `mediabunny` (media " +
-          "transcoding), `echarts` (SVG SSR charts), `jsPDF` (PDF), and browser script strings " +
-          "`echartsSource`, `threeSource`, `lucideSource`. Write source strings to local .js artifacts or inline " +
-          "script tags; they expose echarts, THREE, lucide in HTML. " +
+          "transcoding), `echarts` (SVG SSR charts), `jsPDF` (PDF). HTML pages load browser libraries from the " +
+          "virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library " +
+          "source into the workspace or into a page. " +
           "Files are NOT mounted " +
           "as a real filesystem — read and write artifacts through the injected " +
           "`vfs` helper: `vfs.read(path)` / `vfs.readBytes(path)` / `vfs.readJSON(path)` and `vfs.write(path, data, " +

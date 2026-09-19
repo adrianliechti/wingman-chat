@@ -18,6 +18,15 @@ window.htmlArtifactsE2E = {
   async read(path) {
     return (await fs.getFile(path))?.content;
   },
+  async write(path, content) {
+    await fs.createFile(path, content);
+  },
+  async exportZip() {
+    const bytes = new Uint8Array(await (await fs.exportZip()).arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  },
 };
 
 declare global {
@@ -26,6 +35,8 @@ declare global {
       create(code: string): Promise<{ success: boolean; error?: string; paths: string[] }>;
       preview(path: string): void;
       read(path: string): Promise<string | undefined>;
+      write(path: string, content: string): Promise<void>;
+      exportZip(): Promise<string>;
     };
   }
 }

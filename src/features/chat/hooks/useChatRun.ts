@@ -456,7 +456,9 @@ export function useChatRun({
       let resolvedMessage = message;
       if (artifactFiles?.length) {
         try {
-          const ingestion = await chatFs.ingestFiles(artifactFiles);
+          const ingestion = await chatFs.ingestFiles(artifactFiles, {
+            origin: { actor: "user", reason: "upload" },
+          });
           const revisions = Object.fromEntries(
             ingestion.mutations.map((mutation) => [mutation.path, mutation.revision]),
           );
@@ -474,7 +476,7 @@ export function useChatRun({
           await Promise.all(
             deletedPaths.map(async (p) => {
               try {
-                await chatFs.deleteFileWithDelta(p);
+                await chatFs.deleteFileWithDelta(p, { origin: { actor: "user", reason: "delete" } });
               } catch (err) {
                 console.error(`Failed to delete artifact ${p}:`, err);
                 throw err;

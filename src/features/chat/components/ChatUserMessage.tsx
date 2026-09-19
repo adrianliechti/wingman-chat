@@ -1,9 +1,18 @@
-import { Pencil } from "lucide-react";
+import { Pencil, TextSelect } from "lucide-react";
 import { memo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
-import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
+import type {
+  ArtifactSelectionContent,
+  AudioContent,
+  Content,
+  FileContent,
+  ImageContent,
+  Message,
+  TextContent,
+} from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
@@ -26,6 +35,10 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // Get first text content only (user's typed message)
   const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
   const [editContent, setEditContent] = useState(textContent);
+  // Passages highlighted in the artifact viewer, sent along with the instruction.
+  const selectionParts = message.content.filter(
+    (p): p is ArtifactSelectionContent => p.type === "artifact_selection",
+  );
   // Get additional text parts (file attachments) - all text content after the first one
   const textParts = message.content.filter((p): p is TextContent => p.type === "text");
   const additionalTextContent = textParts.slice(1);
@@ -145,6 +158,8 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     if (editContent.trim()) {
       newContent.push({ type: "text" as const, text: editContent });
     }
+    // The highlighted passage stays attached to an edited instruction.
+    newContent.push(...selectionParts);
     newContent.push(...editAdditionalTextContent);
     newContent.push(...editMediaContent);
     // Re-attach the workspace reference for media that survived editing (it was
@@ -214,6 +229,9 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
           <>
             <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
               <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere] min-w-0">{textContent}</pre>
+              {selectionParts.map((part, i) => (
+                <SelectionQuote key={i} part={part} />
+              ))}
               {/* Artifact attachments — clickable chips that open the file in the editor */}
               {attachedArtifactPaths.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2">
@@ -259,3 +277,49 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     </div>
   );
 });
+
+/** The highlighted artifact passage an instruction refers to; opens the file on click. */
+function SelectionQuote({ part }: { part: ArtifactSelectionContent }) {
+  const [expanded, setExpanded] = useState(false);
+  const { openFile, setShowArtifactsDrawer } = useArtifacts();
+  const name = part.path.split("/").pop() ?? part.path;
+  const location = part.startLine
+    ? part.endLine && part.endLine !== part.startLine
+      ? `lines ${part.startLine}–${part.endLine}`
+      : `line ${part.startLine}`
+    : null;
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-neutral-300/60 bg-white/60 text-left dark:border-neutral-700/60 dark:bg-neutral-950/40">
+      <button
+        type="button"
+        onClick={() => {
+          openFile(part.path);
+          setShowArtifactsDrawer(true);
+        }}
+        title={`Open ${part.path}`}
+        className="flex w-full items-center gap-1.5 border-b border-neutral-200/60 px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-black/5 dark:border-neutral-800/60 dark:text-neutral-400 dark:hover:bg-white/5"
+      >
+        <TextSelect size={11} className="shrink-0" />
+        <span className="truncate">
+          Selected in <span className="font-medium text-neutral-700 dark:text-neutral-300">{name}</span>
+          {location ? ` · ${location}` : ""}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="block w-full text-left"
+        title={expanded ? "Collapse" : "Expand"}
+      >
+        <pre
+          className={cn(
+            "px-2 py-1.5 font-sans text-xs whitespace-pre-wrap [overflow-wrap:anywhere] text-neutral-700 dark:text-neutral-300",
+            !expanded && "line-clamp-4",
+          )}
+        >
+          {part.text}
+        </pre>
+      </button>
+    </div>
+  );
+}

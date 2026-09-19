@@ -9,12 +9,16 @@ import {
   processUploadedFile,
   type ProcessedFile,
 } from "@/features/artifacts/lib/artifacts";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { ArtifactKind } from "@/features/artifacts/lib/artifacts";
+import type { ArtifactRevisionListing, FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatActions } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
+import { locateInSource } from "@/shared/ui/selection/locateInSource";
+import { SelectionActionPopover } from "@/shared/ui/selection/SelectionActionPopover";
+import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -26,6 +30,8 @@ import {
   MenuItem,
   MenuItems,
 } from "@/shared/ui/DropdownMenu";
+import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
+import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 import { ArtifactsNavigator } from "./ArtifactsNavigator";
 
@@ -65,11 +71,28 @@ const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor
 const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
 const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
 
+const ArtifactRevisionDiff = lazyRouteComponent(
+  () => import("./ArtifactRevisionDiff"),
+  "ArtifactRevisionDiff",
+);
+
 const WIDE_DRAWER_PX = 680;
+
+/** File kinds whose revisions can be compared as a line diff. */
+const DIFFABLE_KINDS = new Set<ArtifactKind>(["text", "code", "svg", "mermaid", "html", "csv", "markdown"]);
+
+/** An archived revision loaded for display in place of the live file. */
+interface RevisionView {
+  fs: FileSystemManager;
+  path: string;
+  entry: ArtifactRevisionListing;
+  content: string;
+  contentType?: string;
+}
 
 export function ArtifactsDrawer() {
   const config = getConfig();
-  const { fs, activeFile, openFile } = useArtifacts();
+  const { fs, activeFile, openFile, requestEdit } = useArtifacts();
   const { ensureChat } = useChatActions();
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -105,6 +128,132 @@ export function ArtifactsDrawer() {
   const files = useArtifactEntries(fs);
   const activeFileData = useArtifactFile(fs, activeFile);
 
+  // Archived revisions shown in place of the live file: a hover preview from
+  // the history list and a pinned one with restore/compare actions.
+  const [hoverRevision, setHoverRevision] = useState<RevisionView | null>(null);
+  const [pinnedRevision, setPinnedRevision] = useState<RevisionView | null>(null);
+  const [compareRevision, setCompareRevision] = useState(false);
+  const [restoringRevision, setRestoringRevision] = useState(false);
+  const revisionRequest = useRef(0);
+
+  const closeRevision = useCallback(() => {
+    revisionRequest.current++;
+    setHoverRevision(null);
+    setPinnedRevision(null);
+    setCompareRevision(false);
+  }, []);
+
+  // Another file, another workspace, or a change to the live file retires any
+  // archived view so the banner never describes a stale "current".
+  useEffect(() => {
+    closeRevision();
+    if (!fs || !activeFile) return;
+    const retire = (changed: string) => {
+      if (changed === activeFile) closeRevision();
+    };
+    const subscriptions = [
+      fs.subscribe("fileUpdated", retire),
+      fs.subscribe("fileDeleted", retire),
+      fs.subscribe("fileRenamed", (from) => retire(from)),
+    ];
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+  }, [fs, activeFile, closeRevision]);
+
+  const loadRevision = useCallback(
+    async (entry: ArtifactRevisionListing): Promise<RevisionView | null> => {
+      if (!fs || !activeFile) return null;
+      const file = await fs.readRevision(activeFile, entry.revision);
+      return file
+        ? { fs, path: activeFile, entry, content: file.content, contentType: file.contentType }
+        : null;
+    },
+    [fs, activeFile],
+  );
+
+  const handlePeekRevision = useCallback(
+    (entry: ArtifactRevisionListing | null) => {
+      const request = ++revisionRequest.current;
+      if (!entry || entry.current) {
+        setHoverRevision(null);
+        return;
+      }
+      loadRevision(entry)
+        .then((view) => {
+          if (request === revisionRequest.current) setHoverRevision(view);
+        })
+        .catch((error) => console.error("Error loading artifact revision:", error));
+    },
+    [loadRevision],
+  );
+
+  const handlePinRevision = useCallback(
+    (entry: ArtifactRevisionListing) => {
+      const request = ++revisionRequest.current;
+      setHoverRevision(null);
+      setCompareRevision(false);
+      if (entry.current) {
+        setPinnedRevision(null);
+        return;
+      }
+      loadRevision(entry)
+        .then((view) => {
+          if (request === revisionRequest.current) setPinnedRevision(view);
+        })
+        .catch((error) => console.error("Error loading artifact revision:", error));
+    },
+    [loadRevision],
+  );
+
+  const restoreRevision = useCallback(async () => {
+    if (!pinnedRevision) return;
+    setRestoringRevision(true);
+    try {
+      await pinnedRevision.fs.restoreRevision(pinnedRevision.path, pinnedRevision.entry.revision);
+      closeRevision();
+    } catch (error) {
+      console.error("Failed to restore revision:", error);
+      notify.error(
+        "Restore failed",
+        error instanceof Error ? error.message : "The revision couldn't be restored.",
+      );
+    } finally {
+      setRestoringRevision(false);
+    }
+  }, [pinnedRevision, closeRevision]);
+
+  const shownRevision =
+    [hoverRevision, pinnedRevision].find((view) => view && view.fs === fs && view.path === activeFile) ??
+    null;
+  const canCompareRevision =
+    !!activeFileData && DIFFABLE_KINDS.has(artifactKind(activeFileData.path, activeFileData.contentType));
+
+  // Select-to-edit: the editor reports the element (or preview iframe) whose
+  // selection to watch; a floating control turns the highlight into a request
+  // for the conversation. Archived revisions are read-only, so no control there.
+  const [selectionRoot, setSelectionRoot] = useState<HTMLElement | null>(null);
+  const selectionEnabled = !!requestEdit && !!activeFileData && !shownRevision;
+  const {
+    selection,
+    clear: clearSelection,
+    document: selectionDocument,
+  } = useTextSelection(selectionRoot, { enabled: selectionEnabled });
+  const onSelectionRoot = requestEdit ? setSelectionRoot : undefined;
+  const submitSelectionEdit = useCallback(
+    (instruction: string, snapshot: TextSelectionSnapshot) => {
+      if (!requestEdit || !activeFileData) return;
+      const lines = snapshot.lines ?? locateInSource(activeFileData.content, snapshot.text) ?? undefined;
+      requestEdit({
+        path: activeFileData.path,
+        text: snapshot.text,
+        startLine: lines?.start,
+        endLine: lines?.end,
+        instruction,
+      });
+      clearSelection();
+    },
+    [requestEdit, activeFileData, clearSelection],
+  );
+
   // Processing state for file uploads
   const [pendingUploads, setPendingUploads] = useState(0);
   const isProcessing = pendingUploads > 0;
@@ -130,7 +279,9 @@ export function ArtifactsDrawer() {
         for (const file of fileList) {
           batch.push(...(await processUploadedFile(file)));
         }
-        const ingestion = await activeFs.ingestFiles(batch);
+        const ingestion = await activeFs.ingestFiles(batch, {
+          origin: { actor: "user", reason: "upload" },
+        });
         const lastPath = ingestion.paths.at(-1);
         if (lastPath) openFile(lastPath, activeFs);
       } catch (error) {
@@ -312,8 +463,20 @@ export function ArtifactsDrawer() {
       return null;
     }
 
-    const editorKey = JSON.stringify([fs?.chatId, activeFileData.path]);
-    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
+    // A hovered or pinned revision replaces the live content in the same editor.
+    const shownFile = shownRevision
+      ? {
+          ...activeFileData,
+          content: shownRevision.content,
+          contentType: shownRevision.contentType ?? activeFileData.contentType,
+        }
+      : activeFileData;
+    const editorKey = JSON.stringify([
+      fs?.chatId,
+      shownFile.path,
+      shownRevision?.entry.revision ?? "current",
+    ]);
+    const kind = artifactKind(shownFile.path, shownFile.contentType);
 
     switch (kind) {
       case "image":
@@ -321,8 +484,8 @@ export function ArtifactsDrawer() {
           <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
             <img
               key={editorKey}
-              src={activeFileData.content}
-              alt={getFileName(activeFileData.path)}
+              src={shownFile.content}
+              alt={getFileName(shownFile.path)}
               className="max-w-full max-h-full object-contain rounded-md shadow-sm"
               draggable={false}
             />
@@ -333,47 +496,47 @@ export function ArtifactsDrawer() {
         return (
           <MediaEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "pdf":
-        return <PdfEditor key={editorKey} content={activeFileData.content} />;
+        return <PdfEditor key={editorKey} content={shownFile.content} />;
       case "pptx":
         return (
           <PptxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "docx":
         return (
           <DocxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "xlsx":
         return (
           <XlsxEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
           />
         );
       case "email":
         return (
           <OfficeMarkdownEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
-            contentType={activeFileData.contentType}
+            path={shownFile.path}
+            content={shownFile.content}
+            contentType={shownFile.contentType}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
@@ -393,7 +556,7 @@ export function ArtifactsDrawer() {
                 This file is stored as binary data and cannot be edited as plain text here.
               </p>
               <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-                {activeFileData.contentType || "application/octet-stream"}
+                {shownFile.contentType || "application/octet-stream"}
               </p>
             </div>
           </div>
@@ -402,17 +565,18 @@ export function ArtifactsDrawer() {
         return (
           <HtmlEditor
             key={editorKey}
-            path={activeFileData.path}
-            content={activeFileData.content}
+            path={shownFile.path}
+            content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "svg":
         return (
           <SvgEditor
             key={editorKey}
-            content={activeFileData.content}
+            content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
@@ -421,7 +585,7 @@ export function ArtifactsDrawer() {
         return (
           <MermaidEditor
             key={editorKey}
-            content={activeFileData.content}
+            content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
@@ -430,9 +594,9 @@ export function ArtifactsDrawer() {
         return (
           <CsvEditor
             key={editorKey}
-            content={activeFileData.content}
-            path={activeFileData.path}
-            contentType={activeFileData.contentType}
+            content={shownFile.content}
+            path={shownFile.path}
+            contentType={shownFile.contentType}
             viewMode={viewMode === "preview" ? "table" : "code"}
             onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
           />
@@ -441,21 +605,23 @@ export function ArtifactsDrawer() {
         return (
           <MarkdownEditor
             key={editorKey}
-            content={activeFileData.content}
-            path={activeFileData.path}
+            content={shownFile.content}
+            path={shownFile.path}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "code": {
-        const lang = artifactLanguage(activeFileData.path);
+        const lang = artifactLanguage(shownFile.path);
         if (lang === "py") {
           return (
             <PythonEditor
               key={editorKey}
-              content={activeFileData.content}
+              content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
@@ -463,16 +629,26 @@ export function ArtifactsDrawer() {
           return (
             <JsEditor
               key={editorKey}
-              content={activeFileData.content}
+              content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
-        return <CodeEditor key={editorKey} content={activeFileData.content} language={lang} />;
+        return (
+          <CodeEditor
+            key={editorKey}
+            content={shownFile.content}
+            language={lang}
+            onSelectionRoot={onSelectionRoot}
+          />
+        );
       }
       default:
-        return <TextEditor key={editorKey} content={activeFileData.content} />;
+        return (
+          <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />
+        );
     }
   };
 
@@ -682,8 +858,17 @@ export function ArtifactsDrawer() {
                       </button>
                     </div>
                   )}
-                  {/* Run button */}
-                  {runHandler && (
+                  {/* Revision history */}
+                  {activeFileData && fs && (
+                    <ArtifactHistoryPopover
+                      fs={fs}
+                      path={activeFileData.path}
+                      onPeek={handlePeekRevision}
+                      onPin={handlePinRevision}
+                    />
+                  )}
+                  {/* Run button (the live file only; an archived revision is read-only) */}
+                  {runHandler && !shownRevision && (
                     <button
                       type="button"
                       onClick={handleRun}
@@ -781,16 +966,33 @@ export function ArtifactsDrawer() {
           </div>
 
           {/* Editor fills the left column */}
-          <div className="flex-1 min-h-0 overflow-hidden relative z-0">
-            <Suspense
-              fallback={
-                <div className="h-full flex items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
-                </div>
-              }
-            >
-              {renderFileEditor()}
-            </Suspense>
+          <div className="flex-1 min-h-0 overflow-hidden relative z-0 flex flex-col">
+            {pinnedRevision && shownRevision === pinnedRevision && (
+              <ArtifactRevisionBanner
+                entry={pinnedRevision.entry}
+                canCompare={canCompareRevision}
+                comparing={compareRevision}
+                restoring={restoringRevision}
+                onToggleCompare={() => setCompareRevision((value) => !value)}
+                onRestore={restoreRevision}
+                onClose={closeRevision}
+              />
+            )}
+            <div className="flex-1 min-h-0 overflow-hidden relative">
+              <Suspense
+                fallback={
+                  <div className="h-full flex items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-neutral-400 dark:text-neutral-500" />
+                  </div>
+                }
+              >
+                {compareRevision && pinnedRevision && activeFileData ? (
+                  <ArtifactRevisionDiff before={pinnedRevision.content} after={activeFileData.content} />
+                ) : (
+                  renderFileEditor()
+                )}
+              </Suspense>
+            </div>
           </div>
         </div>
 
@@ -811,6 +1013,13 @@ export function ArtifactsDrawer() {
           />
         )}
       </div>
+
+      <SelectionActionPopover
+        selection={selection}
+        onSubmit={submitSelectionEdit}
+        onDismiss={clearSelection}
+        pressDocument={selectionDocument}
+      />
 
       {activeDrive && (
         <DrivePicker

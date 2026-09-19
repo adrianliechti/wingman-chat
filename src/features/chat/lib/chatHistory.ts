@@ -140,6 +140,8 @@ function estimateTokens(messages: Message[], reasoningFrom = reasoningStart(mess
         chars += part.text.length;
       } else if (part.type === "artifact_ref") {
         chars += part.path.length + (part.displayName?.length ?? 0) + (part.revision?.length ?? 0) + 24;
+      } else if (part.type === "artifact_selection") {
+        chars += part.path.length + part.text.length + 40;
       } else if (part.type === "tool_call") {
         chars += part.name.length + part.arguments.length;
       } else if (part.type === "tool_result") {

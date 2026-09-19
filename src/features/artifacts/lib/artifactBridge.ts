@@ -212,7 +212,7 @@ export class ArtifactBridge {
   private async commit(delta: OverlayDelta): Promise<void> {
     // The model is deliberately not told about these writes: if it edits a
     // file the page changed, the staleness check makes it read again first.
-    await this.options.fs.applyOverlayDelta(delta);
+    await this.options.fs.applyOverlayDelta(delta, { origin: { actor: "system", reason: "bridge" } });
     const now = Date.now();
     for (const path of [...Object.keys(delta.upserts), ...delta.deletes]) this.recentWrites.set(path, now);
   }

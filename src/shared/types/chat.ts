@@ -225,6 +225,16 @@ export type ArtifactRefContent = {
   displayName?: string;
 };
 
+/** Text the user highlighted in an artifact viewer, sent with an edit instruction. */
+export type ArtifactSelectionContent = {
+  type: "artifact_selection";
+  path: string;
+  text: string;
+  /** 1-based, inclusive; omitted when the passage could not be located in the source. */
+  startLine?: number;
+  endLine?: number;
+};
+
 /** Runtime-only policy feedback persisted for resumability but hidden in chat UI. */
 export type RuntimeFeedbackContent = {
   type: "runtime_feedback";
@@ -243,6 +253,7 @@ export type Content =
   | ToolResultContent
   | SummaryContent
   | ArtifactRefContent
+  | ArtifactSelectionContent
   | RuntimeFeedbackContent;
 
 export type TextContent = {

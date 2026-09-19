@@ -52,6 +52,8 @@ export interface HtmlPreviewProps {
    * navigation, e.g. for a file the page itself just wrote.
    */
   shouldReload?: (path: string) => boolean;
+  /** Receives the iframe element (and null on unmount), e.g. to watch its selection. */
+  iframeRef?: (element: HTMLIFrameElement | null) => void;
 }
 
 const DEFAULT_PATH = "index.html";
@@ -85,8 +87,16 @@ export function HtmlPreview({
   sdk,
   onSession,
   shouldReload,
+  iframeRef: onIframe,
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const setIframe = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      iframeRef.current = element;
+      onIframe?.(element);
+    },
+    [onIframe],
+  );
   const sdkRef = useRef(sdk);
   const onSessionRef = useRef(onSession);
   const shouldReloadRef = useRef(shouldReload);
@@ -281,7 +291,7 @@ export function HtmlPreview({
 
   return (
     <iframe
-      ref={iframeRef}
+      ref={setIframe}
       src={session ? session.previewUrl(path) : "about:blank"}
       title={title || "HTML preview"}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
