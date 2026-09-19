@@ -59,6 +59,7 @@ export function DataTable({ columns: inputColumns, rowCount, getRow, onVisibleRa
         accessorFn: (row: string[]) => row[index] ?? "",
         size: 150,
         minSize: 60,
+        sortDescFirst: false,
         meta: { title: column.detail ? `${column.name} (${column.detail})` : column.name },
       })),
     [inputColumns],

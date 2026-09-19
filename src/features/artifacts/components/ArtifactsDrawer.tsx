@@ -1,5 +1,5 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
-import { Code, Download, Eye, File as FileIcon2, Loader2, Play, Shapes, Upload } from "lucide-react";
+import { Code, Download, Eye, File as FileIcon2, Loader2, PanelRight, Play, Shapes, Upload } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
@@ -78,6 +78,16 @@ const ArtifactRevisionDiff = lazyRouteComponent(
 );
 
 const WIDE_DRAWER_PX = 680;
+/** Remembers whether a wide drawer shows the file column beside the editor. */
+const FILE_COLUMN_KEY = "wingman:artifacts:file-column";
+
+function readFileColumnPreference(): boolean {
+  try {
+    return localStorage.getItem(FILE_COLUMN_KEY) !== "hidden";
+  } catch {
+    return true;
+  }
+}
 
 /** File kinds whose revisions can be compared as a line diff. */
 const DIFFABLE_KINDS = new Set<ArtifactKind>(["text", "code", "svg", "mermaid", "html", "markdown"]);
@@ -112,6 +122,19 @@ export function ArtifactsDrawer() {
   // comfortable preview; below that it folds into the breadcrumb's popover.
   const rootRef = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(false);
+  // On wide drawers the file column is optional; narrow drawers always use the navigator.
+  const [fileColumn, setFileColumn] = useState(readFileColumnPreference);
+  const toggleFileColumn = useCallback(() => {
+    setFileColumn((shown) => {
+      try {
+        localStorage.setItem(FILE_COLUMN_KEY, shown ? "hidden" : "shown");
+      } catch {
+        // Preference stays for this session only.
+      }
+      return !shown;
+    });
+  }, []);
+  const showFileColumn = wide && fileColumn;
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -750,7 +773,7 @@ export function ArtifactsDrawer() {
                   files={files}
                   activePath={activeFile}
                   onOpen={openFile}
-                  popover={!wide && files.length > 1}
+                  popover={!showFileColumn && files.length > 1}
                   drives={config.drives}
                   isProcessing={isProcessing}
                   onUploadLocal={() => fileInputRef.current?.click()}
@@ -963,6 +986,24 @@ export function ArtifactsDrawer() {
                         </Menu>
                       );
                     })()}
+                  {/* File column toggle (wide drawers only) */}
+                  {wide && files.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleFileColumn}
+                      aria-pressed={fileColumn}
+                      title={fileColumn ? "Hide file list" : "Show file list"}
+                      aria-label={fileColumn ? "Hide file list" : "Show file list"}
+                      className={cn(
+                        "p-2 md:p-1.5 rounded transition-all duration-150 ease-out hover:bg-black/5 dark:hover:bg-white/5",
+                        fileColumn
+                          ? "text-neutral-800 dark:text-neutral-200"
+                          : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                      )}
+                    >
+                      <PanelRight size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -999,7 +1040,7 @@ export function ArtifactsDrawer() {
           </div>
         </div>
 
-        {wide && files.length > 0 && fs && (
+        {showFileColumn && files.length > 0 && fs && (
           <ArtifactsBrowser
             key={fs.chatId}
             className="w-52 shrink-0"
