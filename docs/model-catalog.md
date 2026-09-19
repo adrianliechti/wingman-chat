@@ -33,6 +33,8 @@ name-matching rule:
       "type": "completer",
       "supportedEfforts": ["low", "medium", "xhigh"],
       "effort": "medium",
+      "maxOutputTokens": 128000,
+      "outputTokenBudget": 96000,
       "compactThreshold": 100000
     }
   ]
@@ -105,10 +107,62 @@ Compaction thresholds are operational budgets that leave room for output and
 recovery. They are not advertised context-window sizes. Small/local deployments
 should configure their budget explicitly.
 
+## Chat output allowance
+
+The existing `MODEL_PROFILES` in `models.ts` hold both reasoning capabilities and
+numeric `maxOutputTokens` capacity. Deployment configuration takes precedence
+over optional `/models` `max_output_tokens` metadata, then the internal profile.
+The current Wingman backend returns only model IDs and inventory metadata, so
+the internal profiles supply known capacities without another model mapping.
+
+`Client.complete` defaults to `min(64,000, maxOutputTokens)`. This budget includes
+reasoning, text, and generated tool arguments, and applies to chat, subagents,
+and interpreter `llm` calls through the shared client. Explicit request budgets
+are also capped by the known capacity. Unknown capacities keep the provider
+default unless an explicit budget is configured; such an override cannot be
+clamped until the deployment supplies a capacity.
+
+Examples of documented capacities (reviewed September 19, 2026):
+
+| Model                                                                                                                            | Capacity | Default chat budget |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
+| [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
+| [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
+| [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |
+| [GPT-4o](https://developers.openai.com/api/docs/models/gpt-4o)                                                                   | 16,384   | 16,384              |
+| [Gemini 2.0 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-2.0-flash)                                                | 8,192    | 8,192               |
+
+Set `config.models[].maxOutputTokens` (or the same field in `models.yaml`) to
+describe an alias's capacity or a hosted-model difference. Set
+`outputTokenBudget` to override the chat default, for example 96,000 on a model
+with 128,000 capacity. Per-call `maxOutputTokens` options take precedence over
+that preferred budget; both are capped by the capacity. A zero budget omits the
+request field and lets the provider decide. A zero configured capacity disables
+the internal capacity fallback.
+
+Classification defaults to 8,000 tokens. Other structured helpers, including
+summarization, rewriting, and conversion, default to 16,000. They are capped by
+the model maximum and do not inherit the larger chat budget; `ParseOptions`
+supports an explicit override. Models with unknown capacity still use provider
+defaults. A budget cannot prevent exhaustion of the remaining context window.
+
+When telemetry is enabled, spans record `gen_ai.request.max_tokens` and
+`gen_ai.response.finish_reasons` alongside existing output/reasoning usage.
+`wingman.gen_ai.responses` counts responses by model, operation, and
+`wingman.response.finish_reason`, including `max_output_tokens` cutoffs. Usage
+is recorded before response validation so truncated text and JSON contribute.
+Compare output-usage percentiles and cutoff frequency per operation/model when
+tuning these starting defaults; no automatic budget increases are applied.
+
 ## Regression coverage
 
-- `models.test.ts`: endpoint collisions, known effort profiles, configuration
+- `models.test.ts`: endpoint collisions, output capacities and budgets, known effort profiles, configuration
   precedence, disabled controls, and image settings.
+- `client.test.ts`: output allowances in real SDK requests, deployment and
+  per-call overrides, provider defaults, invalid configuration, and retries.
+- `responses.test.ts` and `otel.test.ts`: utility budgets and usage/cutoff
+  telemetry for successful and truncated responses.
 - `client.models.test.ts`: real SDK parsing/filtering of HTTP model records and
   malformed optional metadata.
 - `modelCatalog.test.ts` and `commandUtils.test.ts`: shared requests, expiry,

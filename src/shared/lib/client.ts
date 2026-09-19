@@ -29,7 +29,7 @@ import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
-import { modelFromAPI } from "./models";
+import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
 import { traceGenAI } from "./otel";
 import { reasoningPrefix } from "./reasoning";
 import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
@@ -113,6 +113,7 @@ export interface GuardResult {
 
 export interface ParseOptions extends ClientRequestOptions {
   effort?: ReasoningEffort;
+  maxOutputTokens?: number;
 }
 
 /**
@@ -146,8 +147,11 @@ async function readErrorBody(resp: Response): Promise<string> {
 
 export class Client {
   private oai: OpenAI;
+  private readonly modelOverrides: Map<string, Pick<Model, "id" | "maxOutputTokens" | "outputTokenBudget">>;
+  private modelInfo: Model[] = [];
 
-  constructor(apiKey: string = "sk-") {
+  constructor(apiKey: string = "sk-", models: Pick<Model, "id" | "maxOutputTokens" | "outputTokenBudget">[] = []) {
+    this.modelOverrides = new Map(models.map((model) => [model.id, model]));
     this.oai = new OpenAI({
       baseURL: new URL("/api/v1", window.location.origin).toString(),
       apiKey: apiKey,
@@ -166,6 +170,7 @@ export class Client {
       headers: { "Cache-Control": "no-cache" },
     });
     const mappedModels = models.data.map(modelFromAPI);
+    this.modelInfo = mappedModels;
 
     if (type) {
       return mappedModels.filter((model) => model.type === type);
@@ -203,14 +208,19 @@ export class Client {
       effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
+      maxOutputTokens?: number;
       signal?: AbortSignal;
       parentContext?: AgentContext;
     },
   ): Promise<Message> {
+    const maxOutputTokens = this.outputTokenBudget(
+      model,
+      options?.maxOutputTokens ?? this.modelOverrides.get(model)?.outputTokenBudget,
+    );
     return traceGenAI(
       "chat",
       model,
-      async () => {
+      async (observeResponse) => {
         options?.signal?.throwIfAborted();
         const requestTools = toResponseTools(compileToolRegistry(tools).tools);
         // Reasoning payloads are replayed only under the model and request
@@ -261,6 +271,7 @@ export class Client {
                 model: model,
                 store: false,
                 truncation: "disabled",
+                ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
                 // Request payloads explicitly for providers that do not return
                 // them by default. Their context mode decides which to use.
                 include: ["reasoning.encrypted_content"],
@@ -378,6 +389,15 @@ export class Client {
             options?.signal?.throwIfAborted();
             const finalResponse = await attemptStream();
             options?.signal?.throwIfAborted();
+            observeResponse({
+              id: finalResponse.id,
+              model: finalResponse.model,
+              finishReasons: [finalResponse.incomplete_details?.reason ?? finalResponse.status ?? "unknown"],
+              inputTokens: finalResponse.usage?.input_tokens,
+              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
+              outputTokens: finalResponse.usage?.output_tokens,
+              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+            });
             validateResponse(finalResponse, true);
             // The terminal response is authoritative, including providers that
             // omit text deltas or item.done events.
@@ -394,10 +414,7 @@ export class Client {
                   ? finalResponse.reasoning.context
                   : undefined,
             };
-            return {
-              result: assistant,
-              response: { id: finalResponse.id, ...assistant.usage },
-            };
+            return assistant;
           } catch (error) {
             options?.signal?.throwIfAborted();
             if (isAbortError(error)) throw error;
@@ -412,6 +429,7 @@ export class Client {
         }
       },
       options?.parentContext,
+      { maxOutputTokens },
     ); // end traceGenAI
   }
 
@@ -862,10 +880,15 @@ export class Client {
     name: string,
     options: ParseOptions = {},
   ): Promise<z.infer<T> | null> {
+    const maxOutputTokens = this.outputTokenBudget(
+      model,
+      options.maxOutputTokens,
+      name === "classify_chat" ? 8_000 : 16_000,
+    );
     return traceGenAI(
       name,
       model,
-      async () => {
+      async (observeResponse) => {
         options.signal?.throwIfAborted();
         // Select the final message before parsing: the SDK parser also parses
         // commentary and its output_parsed getter returns the first result.
@@ -876,27 +899,37 @@ export class Client {
             instructions,
             input,
             truncation: "disabled",
+            ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
             text: { format: zodTextFormat(schema, name) },
             ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
           },
           options.signal ? { signal: options.signal } : undefined,
         );
         options.signal?.throwIfAborted();
+        // Record usage and cutoffs even when validation or JSON parsing fails.
+        observeResponse({
+          id: response.id,
+          model: response.model,
+          finishReasons: [response.incomplete_details?.reason ?? response.status ?? "unknown"],
+          inputTokens: response.usage?.input_tokens,
+          cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+          outputTokens: response.usage?.output_tokens,
+          reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+        });
         const text = finalResponseText(response);
-        return {
-          result: text === null ? null : schema.parse(JSON.parse(text)),
-          response: {
-            id: response.id,
-            model: response.model,
-            inputTokens: response.usage?.input_tokens,
-            cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
-            outputTokens: response.usage?.output_tokens,
-            reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
-          },
-        };
+        return text === null ? null : schema.parse(JSON.parse(text));
       },
       options.parentContext,
+      { maxOutputTokens },
     );
+  }
+
+  private outputTokenBudget(model: string, requested?: number, defaultBudget?: number): number | undefined {
+    const capacity =
+      this.modelOverrides.get(model)?.maxOutputTokens ??
+      this.modelInfo.find((info) => info.id === model)?.maxOutputTokens ??
+      modelMaxOutputTokens(model);
+    return outputTokenAllowance(capacity, requested, defaultBudget);
   }
 
   private async post<T>(

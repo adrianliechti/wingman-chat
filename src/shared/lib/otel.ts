@@ -14,6 +14,16 @@ const operationDuration = meter.createHistogram("gen_ai.client.operation.duratio
 const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
   description: "GenAI token usage",
   unit: "{token}",
+  advice: {
+    explicitBucketBoundaries: [
+      0, 512, 1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 48_000, 64_000, 96_000, 128_000, 256_000, 512_000, 1_048_576,
+    ],
+  },
+});
+
+const responses = meter.createCounter("wingman.gen_ai.responses", {
+  description: "Model responses by operation, model, and finish reason, including output cutoffs",
+  unit: "{response}",
 });
 
 async function traceSpan<T>(
@@ -65,13 +75,15 @@ export interface GenAIResponseInfo {
 export async function traceGenAI<T>(
   operation: string,
   model: string,
-  fn: () => Promise<{ result: T; response?: GenAIResponseInfo }>,
+  fn: (observeResponse: (response: GenAIResponseInfo) => void) => Promise<T>,
   parentContext?: AgentContext,
+  request?: { maxOutputTokens?: number },
 ): Promise<T> {
   const base: Attributes = {
     "gen_ai.operation.name": "chat",
     "gen_ai.provider.name": PROVIDER_NAME,
     "gen_ai.request.model": model,
+    "wingman.operation.name": operation,
   };
   let responseModel: string | undefined;
   const metricAttrs = (): Attributes => (responseModel ? { ...base, "gen_ai.response.model": responseModel } : base);
@@ -80,37 +92,39 @@ export async function traceGenAI<T>(
     {
       name: `${operation} ${model}`,
       kind: SpanKind.CLIENT,
-      attrs: base,
+      attrs: {
+        ...base,
+        ...(request?.maxOutputTokens ? { "gen_ai.request.max_tokens": request.maxOutputTokens } : {}),
+      },
       metricAttrs,
       parentContext,
     },
     async (span) => {
-      const { result, response } = await fn();
-      if (!response) return result;
+      const observeResponse = (response: GenAIResponseInfo) => {
+        responseModel = response.model;
+        if (response.id) span.setAttribute("gen_ai.response.id", response.id);
+        if (response.model) span.setAttribute("gen_ai.response.model", response.model);
+        if (response.finishReasons) span.setAttribute("gen_ai.response.finish_reasons", response.finishReasons);
 
-      responseModel = response.model;
-      if (response.id) span.setAttribute("gen_ai.response.id", response.id);
-      if (response.model) span.setAttribute("gen_ai.response.model", response.model);
-      if (response.finishReasons) span.setAttribute("gen_ai.response.finish_reasons", response.finishReasons);
+        const dims = metricAttrs();
+        responses.add(1, { ...dims, "wingman.response.finish_reason": response.finishReasons?.[0] ?? "unknown" });
 
-      const dims = metricAttrs();
-
-      if (response.inputTokens != null) {
-        span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
-        tokenUsage.record(response.inputTokens, { ...dims, "gen_ai.token.type": "input" });
-      }
-      if (response.outputTokens != null) {
-        span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
-        tokenUsage.record(response.outputTokens, { ...dims, "gen_ai.token.type": "output" });
-      }
-      if (response.cachedInputTokens != null) {
-        span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
-      }
-      if (response.reasoningTokens != null) {
-        span.setAttribute("gen_ai.usage.reasoning.output_tokens", response.reasoningTokens);
-      }
-
-      return result;
+        if (response.inputTokens != null) {
+          span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
+          tokenUsage.record(response.inputTokens, { ...dims, "gen_ai.token.type": "input" });
+        }
+        if (response.outputTokens != null) {
+          span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
+          tokenUsage.record(response.outputTokens, { ...dims, "gen_ai.token.type": "output" });
+        }
+        if (response.cachedInputTokens != null) {
+          span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
+        }
+        if (response.reasoningTokens != null) {
+          span.setAttribute("gen_ai.usage.reasoning.output_tokens", response.reasoningTokens);
+        }
+      };
+      return fn(observeResponse);
     },
   );
 }

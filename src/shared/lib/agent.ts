@@ -389,10 +389,10 @@ async function dispatchToolCall(
   if (toolCall.incomplete) {
     return toolErrorMessage(
       toolCall,
-      `Error: The response hit its output token limit while writing the arguments for "${toolCall.name}", so they are incomplete. Nothing was executed. Retry with a smaller payload — write the file in several smaller calls, or use \`edit\` to build it up in steps.`,
+      `Error: The response hit its output token limit while writing the arguments for "${toolCall.name}", so they are incomplete. Nothing was executed. Retry with a smaller, complete JSON object. For large files, create a small initial section and extend it with localized edits in separate calls, or use a short interpreter script to generate the file from existing data. Do not resend the same oversized payload.`,
       {
         code: "TOOL_ARGS_TRUNCATED",
-        message: `Arguments for "${toolCall.name}" were truncated by the output token limit.`,
+        message: `Arguments for "${toolCall.name}" were truncated by the output token limit. Nothing was executed; retry with a smaller payload.`,
       },
     );
   }
@@ -419,7 +419,7 @@ async function dispatchToolCall(
     if (error instanceof ToolArgumentValidationError) {
       return toolErrorMessage(
         toolCall,
-        `Error: ${error.message}. Re-send the call with the declared parameter types.`,
+        `Error: ${error.message}. Nothing was executed. Re-send one complete JSON object with every required property and the declared parameter types. Array parameters must be JSON arrays, even for a single item; do not stringify them.`,
         {
           code: "TOOL_ARGS_SCHEMA_INVALID",
           message: error.message,

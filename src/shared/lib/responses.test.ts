@@ -64,6 +64,24 @@ describe("structured output with multiple assistant messages (real SDK)", () => 
   const respond = (output: ResponseOutputItem[], fields: Partial<ModelResponse> = {}) =>
     fetchMock.mockResolvedValueOnce(Response.json(response(output, fields)));
 
+  it.each([
+    ["gpt-6-astra", "classify_chat", 8_000],
+    ["gpt-6-astra", "summarize_history", 16_000],
+    ["gpt-6-astra", "rewrite_text", 16_000],
+    ["gemini-2.0-flash", "summarize_history", 8_192],
+  ])("keeps %s's %s budget at %i", async (model, name, budget) => {
+    respond([message(final)]);
+    const client = new Client(undefined, [{ id: model, outputTokenBudget: 96_000 }]);
+    await client.parse(model, "Return code as JSON", "Go", schema, name);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(budget);
+  });
+
+  it("caps explicit utility overrides by the model's capacity", async () => {
+    respond([message(final)]);
+    await new Client().parse("gpt-4o", "", "Go", schema, "code", { maxOutputTokens: 64_000 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(16_384);
+  });
+
   it.each(['{"content":"working"}', "I will write the script.", '{"content":', '{"progress":true}'])(
     "parses only the final message after commentary %s",
     async (commentary) => {

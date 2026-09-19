@@ -20,30 +20,53 @@ export function defaultModelId(models: Model[], savedId?: string | null): string
 // Ordered profiles for known models, not predictions about future versions.
 // Sources and gateway limitations are recorded in docs/model-catalog.md.
 // Config can replace these levels, including [] to hide the effort picker.
-type ReasoningProfile = [pattern: RegExp, efforts: ReasoningEffort[], defaultEffort?: ReasoningEffort];
-const REASONING_PROFILES: ReasoningProfile[] = [
-  [/\bgpt-?6-astra\b/, ["low", "medium", "high", "xhigh", "max"]],
-  [/\bgpt-?5\.6(?:-(?:sol|terra|luna))?(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh", "max"], "medium"],
-  [/\bgpt-?5\.4-pro\b/, ["medium", "high", "xhigh"], "medium"],
-  [/\bgpt-?5\.5(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh"], "medium"],
-  [/\bgpt-?5\.1-codex-max\b/, ["low", "medium", "high", "xhigh"]],
-  [/\bgpt-?5\.[23]-codex\b/, ["low", "medium", "high", "xhigh"]],
-  [/\bgpt-?5(?:\.1)?-codex\b/, ["low", "medium", "high"]],
-  [/\bgpt-?5\.[234](?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh"]],
-  [/\bgpt-?5\.1(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high"]],
-  [/\bgpt-?5(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, ["minimal", "low", "medium", "high"]],
+type ModelProfile = [
+  pattern: RegExp,
+  efforts?: ReasoningEffort[],
+  defaultEffort?: ReasoningEffort,
+  maxOutputTokens?: number,
+];
+const MODEL_PROFILES: ModelProfile[] = [
+  [/\bgpt-?6-astra\b/, ["low", "medium", "high", "xhigh", "max"], undefined, 128_000],
+  [
+    /\bgpt-?5\.6(?:-(?:sol|terra|luna))?(?=$|[/:]|-\d{4})/,
+    ["none", "low", "medium", "high", "xhigh", "max"],
+    "medium",
+    128_000,
+  ],
+  [/\bgpt-?5\.4-pro\b/, ["medium", "high", "xhigh"], "medium", 128_000],
+  [/\bgpt-?5\.5(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh"], "medium", 128_000],
+  [/\bgpt-?5\.1-codex-max\b/, ["low", "medium", "high", "xhigh"], undefined, 128_000],
+  [/\bgpt-?5\.[23]-codex\b/, ["low", "medium", "high", "xhigh"], undefined, 128_000],
+  [/\bgpt-?5(?:\.1)?-codex\b/, ["low", "medium", "high"], undefined, 128_000],
+  [
+    /\bgpt-?5\.[234](?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/,
+    ["none", "low", "medium", "high", "xhigh"],
+    undefined,
+    128_000,
+  ],
+  [/\bgpt-?5\.1(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high"], undefined, 128_000],
+  [/\bgpt-?5(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, ["minimal", "low", "medium", "high"], undefined, 128_000],
   [/\bgpt-oss\b|\bo[13](?:-mini)?(?=$|[/:]|-\d{4})|\bo4-mini\b/, ["low", "medium", "high"]],
 
-  [/\b(?:fable|mythos)-5(?:\.1)?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high"],
-  [/\b(?:opus-4\.[78]|(?:opus|sonnet)-5)(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high"],
-  [/\b(?:(?:opus|sonnet)-4\.6|mythos-preview)(?=$|[-/:])/, ["low", "medium", "high", "max"], "high"],
-  [/\bopus-4\.5(?=$|[-/:])/, ["low", "medium", "high"], "high"],
+  [/\b(?:fable|mythos)-5(?:\.1)?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  [/\b(?:opus-4\.[78]|(?:opus|sonnet)-5)(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  [/\banthropic\.claude-sonnet-4\.6(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 64_000],
+  [/\b(?:(?:opus|sonnet)-4\.6|mythos-preview)(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 128_000],
+  [/\bopus-4\.5(?=$|[-/:])/, ["low", "medium", "high"], "high", 64_000],
+  [/\b(?:sonnet-4(?:\.[05])?|haiku-4\.5)(?=$|[-/:])/, undefined, undefined, 64_000],
+  [/\bopus-4\.1(?=$|[-/:])/, undefined, undefined, 32_000],
 
-  [/\bgemini-?3\.[78]-flash\b/, ["low", "medium", "high"], "medium"],
-  [/\bgemini-?3\.1-pro\b/, ["low", "medium", "high"], "high"],
-  [/\bgemini-?3-pro\b/, ["low", "high"], "high"],
-  [/\bgemini-?3(?:\.[156])?-flash\b/, ["minimal", "low", "medium", "high"]],
-  [/\bgemini-?2\.5-(?:pro|flash)\b/, ["low", "medium", "high"]],
+  [/\bgemini-?3\.[78]-flash\b/, ["low", "medium", "high"], "medium", 65_536],
+  [/\bgemini-?3\.1-pro\b/, ["low", "medium", "high"], "high", 65_536],
+  [/\bgemini-?3-pro\b/, ["low", "high"], "high", 65_536],
+  [/\bgemini-?3(?:\.[156])?-flash\b/, ["minimal", "low", "medium", "high"], undefined, 65_536],
+  [/\bgemini-?2\.5-(?:pro|flash)\b/, ["low", "medium", "high"], undefined, 65_536],
+  [/\bgemini-?2\.0-flash(?:-lite)?(?=$|[/:]|-001$)/, undefined, undefined, 8_192],
+
+  [/\bgpt-?4\.1(?:-(?:mini|nano))?(?=$|[/:]|-\d{4})/, undefined, undefined, 32_768],
+  // Only known newer GPT-4o snapshots support this output capacity.
+  [/\bgpt-?4o(?:-mini)?(?=$|[/:]|-2024[.-](?:07|08|11)-)/, undefined, undefined, 16_384],
 
   [/\bqwen-?3\.8(?:-|$)/, ["none", "low", "medium", "xhigh"], "xhigh"],
   [/\bdeepseek-?v4-(?:flash|pro)\b/, ["none", "low", "high", "max"], "high"],
@@ -56,30 +79,52 @@ function normalizedModelId(id: string): string {
     .replace(/-(\d+)-(\d{1,2})(?=-|$|:)/g, "-$1.$2");
 }
 
-function reasoningProfile(id: string): ReasoningProfile | undefined {
+function modelProfile(id: string): ModelProfile | undefined {
   if (modelType(id) !== "completer") return undefined;
   const normalized = normalizedModelId(id);
-  return REASONING_PROFILES.find(([pattern]) => pattern.test(normalized));
+  return MODEL_PROFILES.find(([pattern]) => pattern.test(normalized));
 }
 
 /** Supported effort choices where known; unknown models use the backend default. */
 export function supportedEfforts(id: string): ReasoningEffort[] | undefined {
-  return reasoningProfile(id)?.[1].slice();
+  return modelProfile(id)?.[1]?.slice();
 }
 
 /** Documented baseline, independent of a per-chat effort override. */
 export function defaultEffort(id: string): ReasoningEffort | undefined {
-  return reasoningProfile(id)?.[2];
+  return modelProfile(id)?.[2];
+}
+
+/** Output capacity from the shared model profile, independent of request budgets. */
+export function modelMaxOutputTokens(id: string): number | undefined {
+  return modelProfile(id)?.[3];
+}
+
+/** Default to 64k, with every explicit budget capped by the known model maximum. */
+export function outputTokenAllowance(
+  maxOutputTokens: number | undefined,
+  requested?: number,
+  defaultBudget = 64_000,
+): number | undefined {
+  for (const value of [maxOutputTokens, requested, defaultBudget]) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError("Output token limits must be non-negative safe integers (0 uses the provider default).");
+    }
+  }
+  if (requested === 0) return undefined;
+  if (!maxOutputTokens) return requested;
+  return Math.min(requested ?? defaultBudget, maxOutputTokens);
 }
 
 /** Resolve chat capabilities once, after applying deployment overrides. */
-function withEffortFallback(model: Model): Model {
+function withChatFallback(model: Model): Model {
   const supported = model.supportedEfforts ?? supportedEfforts(model.id);
   const baseline = model.effort ?? model.defaultEffort ?? defaultEffort(model.id);
   return {
     ...model,
     supportedEfforts: supported,
     defaultEffort: baseline && (!supported || supported.includes(baseline)) ? baseline : undefined,
+    maxOutputTokens: model.maxOutputTokens ?? modelMaxOutputTokens(model.id),
   };
 }
 
@@ -190,7 +235,7 @@ export function rendererCapabilities(id: string): RendererCapabilities {
 /**
  * Fill in heuristic renderer capabilities a model's config didn't specify. An
  * explicit config value (including `[]` to hide a picker) is kept, exactly like
- * `withEffortFallback` does for chat reasoning efforts.
+ * `withChatFallback` does for chat capabilities.
  */
 export function withRendererFallback(model: Model): Model {
   const caps = rendererCapabilities(model.id);
@@ -230,12 +275,21 @@ export function modelType(id: string): ModelType {
 }
 
 /** Optional gateway extensions to the standard /models record. */
-export function modelFromAPI(model: { id: string; type?: unknown; name?: unknown; description?: unknown }): Model {
+export function modelFromAPI(model: {
+  id: string;
+  type?: unknown;
+  name?: unknown;
+  description?: unknown;
+  max_output_tokens?: unknown;
+}): Model {
   return {
     id: model.id,
     type: isModelType(model.type) ? model.type : modelType(model.id),
     name: typeof model.name === "string" && model.name.trim() ? model.name : modelName(model.id),
     ...(typeof model.description === "string" && { description: model.description }),
+    ...(typeof model.max_output_tokens === "number" &&
+      Number.isSafeInteger(model.max_output_tokens) &&
+      model.max_output_tokens > 0 && { maxOutputTokens: model.max_output_tokens }),
   };
 }
 
@@ -250,7 +304,7 @@ export function configureModels(models: Model[], configured: Model[]): Model[] {
       name: override?.name || model.name,
       type: isModelType(override?.type) ? override.type : (model.type ?? modelType(model.id)),
     };
-    if (resolved.type === "completer") return withEffortFallback(resolved);
+    if (resolved.type === "completer") return withChatFallback(resolved);
     if (resolved.type === "renderer") return withRendererFallback(resolved);
     return resolved;
   });

@@ -57,17 +57,19 @@ type ModelTools struct {
 }
 
 type Model struct {
-	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
-	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
-	Caption          string      `json:"caption,omitempty" yaml:"caption,omitempty"`
-	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Instructions     string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
-	SupportedEfforts []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
-	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
-	CompactThreshold *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
-	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
+	ID                string      `json:"id,omitempty" yaml:"id,omitempty"`
+	Name              string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Caption           string      `json:"caption,omitempty" yaml:"caption,omitempty"`
+	Description       string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	Effort            string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	SupportedEfforts  []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
+	Summary           string      `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Verbosity         string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+	MaxOutputTokens   *int        `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
+	OutputTokenBudget *int        `json:"outputTokenBudget,omitempty" yaml:"outputTokenBudget,omitempty"`
+	CompactThreshold  *int        `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
+	Tools             *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
 type TTS struct {

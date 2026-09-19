@@ -55,3 +55,16 @@ it("filters after resolving types, keeping realtime out of chat and file STT", a
   respond(data);
   expect((await client.listModels("transcriber")).map((model) => model.id)).toEqual(["gpt-transcribe"]);
 });
+
+it("preserves valid output capacity metadata while ignoring malformed limits", async () => {
+  respond([
+    { id: "known", max_output_tokens: 32768 },
+    { id: "negative", max_output_tokens: -1 },
+    { id: "fractional", max_output_tokens: 1.5 },
+    { id: "string", max_output_tokens: "64000" },
+    { id: "zero", max_output_tokens: 0 },
+  ]);
+  const models = await new Client().listModels();
+  expect(models[0].maxOutputTokens).toBe(32768);
+  expect(models.slice(1).every((model) => model.maxOutputTokens === undefined)).toBe(true);
+});

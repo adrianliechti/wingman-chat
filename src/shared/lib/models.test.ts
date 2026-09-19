@@ -3,6 +3,8 @@ import {
   compactThreshold,
   configureModels,
   defaultEffort,
+  modelMaxOutputTokens,
+  outputTokenAllowance,
   minimalEffort,
   modelName,
   modelType,
@@ -71,6 +73,82 @@ describe("model display names", () => {
   it("keeps full names and unrelated vendors unchanged", () => {
     expect(modelName("anthropic.claude-sonnet-4-5")).toBe("Anthropic Claude Sonnet 4.5");
     expect(shortModelName("google.gemini-3-pro")).toBe("Google Gemini 3 Pro");
+  });
+});
+
+describe("model output budgets", () => {
+  it.each([
+    ["openai/gpt-6-astra", 64_000],
+    ["gpt-5.6-terra", 64_000],
+    ["gpt-5.4-mini", 64_000],
+    ["gpt-5.2-2025-12-11", 64_000],
+    ["gpt-5.3-codex", 64_000],
+    ["eu.anthropic.claude-sonnet-4-5-20250929-v1:0", 64_000],
+    ["anthropic.claude-sonnet-4-6", 64_000],
+    ["claude-sonnet-4-20250514", 64_000],
+    ["claude-opus-4-6", 64_000],
+    ["claude-fable-5-1", 64_000],
+    ["claude-haiku-4.5", 64_000],
+    ["google/gemini-3.1-pro-preview", 64_000],
+    ["gemini-3.8-flash", 64_000],
+    ["gemini-2.5-flash-lite", 64_000],
+    ["gpt-4.1-mini", 32_768],
+    ["anthropic.claude-opus-4-1-20250805-v1:0", 32_000],
+    ["GPT-4o", 16_384],
+    ["gpt-4o-2024-08-06", 16_384],
+    ["gpt-4o-mini-2024-07-18", 16_384],
+    ["gemini-2.0-flash", 8_192],
+    ["gemini-2.0-flash-lite-001", 8_192],
+  ])("caps the default budget by %s's capacity", (id, tokens) => {
+    expect(outputTokenAllowance(modelMaxOutputTokens(id))).toBe(tokens);
+  });
+
+  it.each([
+    "team-chat",
+    "gpt-7",
+    "gpt-5.99",
+    "gpt-5-chat-latest",
+    "gpt-4o-2024-05-13",
+    "gpt-4o-audio-preview",
+    "claude-opus-4.9",
+    "claude-3-opus-20240229",
+    "gemini-4-pro",
+    "gemini-3.1-flash-image-preview",
+    "gemini-2.5-flash-native-audio-preview",
+  ])("keeps provider defaults for unrecognized or non-chat variants: %s", (id) => {
+    expect(modelMaxOutputTokens(id)).toBeUndefined();
+  });
+
+  it.each([
+    [128_000, undefined, 64_000],
+    [65_536, undefined, 64_000],
+    [31_999, undefined, 31_999],
+    [4_096, undefined, 4_096],
+    [128_000, 96_000, 96_000],
+    [32_768, 96_000, 32_768],
+    [128_000, 8_000, 8_000],
+    [128_000, 0, undefined],
+    [undefined, undefined, undefined],
+    [undefined, 16_000, 16_000],
+  ])("uses capacity %s and requested budget %s to allow %s", (capacity, requested, expected) => {
+    expect(outputTokenAllowance(capacity, requested)).toBe(expected);
+  });
+
+  it("keeps utility defaults smaller while respecting low-capacity models", () => {
+    expect(outputTokenAllowance(128_000, undefined, 8_000)).toBe(8_000);
+    expect(outputTokenAllowance(4_096, undefined, 8_000)).toBe(4_096);
+  });
+
+  it("keeps capacity metadata on resolved models with deployment overrides taking precedence", () => {
+    const models = configureModels(
+      [
+        { id: "gpt-6-astra", name: "Astra" },
+        { id: "alias", name: "Alias", maxOutputTokens: 20_000 },
+      ],
+      [{ id: "alias", name: "Hosted", maxOutputTokens: 10_000, outputTokenBudget: 9_000 }],
+    );
+    expect(models[0].maxOutputTokens).toBe(128_000);
+    expect(models[1]).toMatchObject({ maxOutputTokens: 10_000, outputTokenBudget: 9_000 });
   });
 });
 

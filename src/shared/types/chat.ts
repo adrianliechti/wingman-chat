@@ -44,6 +44,8 @@ export type Model = {
   defaultEffort?: ReasoningEffort;
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
+  maxOutputTokens?: number;
+  outputTokenBudget?: number;
   compactThreshold?: number;
 
   /**

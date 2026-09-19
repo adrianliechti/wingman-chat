@@ -286,7 +286,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       support: cfg.support ?? null,
       cost: cfg.cost ?? null,
 
-      client: new Client(),
+      client: new Client(undefined, cfg.models),
 
       // Relative MCPs (no explicit url) are proxied through `/api/v1/mcp/{id}`
       // and gated by backend RBAC. They are resolved to their proxy url here;

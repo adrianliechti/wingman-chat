@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "./client";
 import * as errors from "./errors";
 import { run } from "./agent";
+import { loadConfig } from "../config";
 import type { Content, Message, Tool } from "../types/chat";
 
 function response(output: ResponseOutputItem[] = [], fields: Partial<ModelResponse> = {}): ModelResponse {
@@ -82,6 +83,87 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("chat output allowances", () => {
+  it.each([
+    ["gpt-5.6-sol", 64_000],
+    ["gpt-4.1", 32_768],
+    ["gpt-4o", 16_384],
+    ["gemini-2.0-flash", 8_192],
+  ])("sends the %s allowance in the Responses request", async (model, tokens) => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    await new Client().complete(model, "", prompt, []);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(tokens);
+  });
+
+  it.each([
+    ["team-chat", 64_000],
+    ["gpt-6-astra", 32_000],
+    ["gpt-6-astra", 0],
+  ])("loads %s's configured allowance (%i) into the shared client", async (id, maxOutputTokens) => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ models: [{ id, name: "Chat", maxOutputTokens }] })));
+    const config = await loadConfig();
+    expect(config).toBeDefined();
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    await config!.client.complete(id, "", prompt, []);
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    if (maxOutputTokens === 0) expect(body).not.toHaveProperty("max_output_tokens");
+    else expect(body.max_output_tokens).toBe(maxOutputTokens);
+  });
+
+  it.each([96_000, 256_000, 0])(
+    "caps an explicit request budget (%i) by the model's maximum",
+    async (maxOutputTokens) => {
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+      const client = new Client(undefined, [{ id: "gpt-6-astra", outputTokenBudget: 32_000 }]);
+      await client.complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      if (maxOutputTokens === 0) expect(body).not.toHaveProperty("max_output_tokens");
+      else expect(body.max_output_tokens).toBe(Math.min(maxOutputTokens, 128_000));
+    },
+  );
+
+  it("loads a deployment's preferred chat budget separately from its capacity", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ models: [{ id: "gpt-6-astra", outputTokenBudget: 96_000 }] }));
+    const config = await loadConfig();
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    await config!.client.complete("gpt-6-astra", "", prompt, []);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).max_output_tokens).toBe(96_000);
+  });
+
+  it("uses refreshed backend capacity metadata before the internal fallback", async () => {
+    const client = new Client();
+    for (const capacity of [20_000, 12_000]) {
+      fetchMock.mockResolvedValueOnce(Response.json({ data: [{ id: "gpt-6-astra", max_output_tokens: capacity }] }));
+      await client.listModels();
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+      await client.complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens: 96_000 });
+      expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body).max_output_tokens).toBe(capacity);
+    }
+  });
+
+  it("omits the limit for unknown models", async () => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    await new Client().complete("custom-deployment", "", prompt, []);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("max_output_tokens");
+  });
+
+  it.each([-1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects an invalid configured allowance (%s) before sending a request",
+    async (maxOutputTokens) => {
+      const client = new Client(undefined, [{ id: "team-chat", maxOutputTokens }]);
+      await expect(client.complete("team-chat", "", prompt, [])).rejects.toThrow(/Output token limits/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an invalid request override before sending a request", async () => {
+    await expect(
+      new Client().complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens: -1 }),
+    ).rejects.toThrow(/Output token limits/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("raw request lifetime", () => {
@@ -225,13 +307,14 @@ describe("Responses transport (real SDK, synthetic HTTP/SSE)", () => {
     vi.useFakeTimers();
     fetchMock.mockImplementationOnce(stalledStream);
     fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered after timeout")])));
-    const request = new Client().complete("model", "", prompt, []);
+    const request = new Client().complete("gpt-6-astra", "", prompt, []);
     const settled = vi.fn();
     void request.then(settled, settled);
     await vi.advanceTimersByTimeAsync(600_001);
     expect(settled).toHaveBeenCalledOnce();
     expect((await request).content).toEqual([{ type: "text", text: "Recovered after timeout" }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).max_output_tokens)).toEqual([64_000, 64_000]);
     expect(vi.getTimerCount()).toBe(0);
   });
 
