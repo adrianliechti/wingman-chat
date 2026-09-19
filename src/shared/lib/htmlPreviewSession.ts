@@ -15,6 +15,7 @@
  *   session.destroy();
  */
 
+import { artifactLibraryUrls, rewriteAbsoluteLibraryReferences } from "@/shared/lib/artifactLibraries";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
 import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
@@ -72,7 +73,7 @@ function ensureRecoveryListener(): void {
       port.postMessage({ ok: false });
       return;
     }
-    port.postMessage({ ok: true, files: Object.fromEntries(files) });
+    port.postMessage({ ok: true, files: Object.fromEntries(files), libraries: artifactLibraryUrls() });
   });
 }
 
@@ -230,6 +231,13 @@ export async function createPreviewSession(): Promise<PreviewSession> {
   const snapshot = new Map<string, PreviewFilePayload>();
   sessionSnapshots.set(token, snapshot);
 
+  // `/.lib/x.js` would leave the worker's scope; point it at this session instead.
+  const sessionRoot = `${SCOPE_PREFIX}${encodeURIComponent(token)}/`;
+  const decorate = (payload: PreviewFilePayload): PreviewFilePayload =>
+    payload.content !== undefined && payload.contentType?.toLowerCase().startsWith("text/html")
+      ? { ...payload, content: rewriteAbsoluteLibraryReferences(payload.content, sessionRoot) }
+      : payload;
+
   const session: PreviewSession = {
     token,
 
@@ -246,12 +254,14 @@ export async function createPreviewSession(): Promise<PreviewSession> {
         if (!file?.path) continue;
         const key = normalizeInputPath(file.path);
         if (!key) continue;
-        snapshot.set(key, toPayload(file));
+        snapshot.set(key, decorate(toPayload(file)));
       }
       await postMessage({
         type: "html-preview/register",
         token,
         files: Object.fromEntries(snapshot),
+        // Bundled libraries served for `.lib/<name>` references; see artifactLibraries.ts.
+        libraries: artifactLibraryUrls(),
       });
     },
 
@@ -259,7 +269,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
       if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key) return;
-      const payload = toPayload(file);
+      const payload = decorate(toPayload(file));
       snapshot.set(key, payload);
       await postMessage({
         type: "html-preview/update",

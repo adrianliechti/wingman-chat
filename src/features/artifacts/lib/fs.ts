@@ -1,3 +1,4 @@
+import { isLibraryFolderPath } from "@/shared/lib/artifactLibraries";
 import { contentToBlob, contentToZipValue } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import * as opfs from "@/shared/lib/opfs";
@@ -11,6 +12,7 @@ import {
   type ArtifactRevisionEntry,
   type RevisionOrigin,
 } from "@/shared/types/artifact";
+import { collectReferencedLibraries, exportArtifactHtmlForFolder } from "./exportArtifactHtml";
 import { withArtifactWorkspaceLock } from "./workspaceCoordinator";
 import {
   publishArtifactEvent,
@@ -133,6 +135,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     }
     if (normalized === "/.memory" || normalized.startsWith("/.memory/")) {
       throw new Error("/.memory/ is reserved for agent memory. Use the file tools to access it.");
+    }
+    if (isLibraryFolderPath(normalized)) {
+      throw new Error(
+        "/.lib/ is a virtual folder of bundled libraries. Reference them from HTML with a relative path such as .lib/echarts.js; do not write there.",
+      );
     }
 
     return normalized;
@@ -727,6 +734,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
    * Download all files as a zip archive.
    */
   async downloadAsZip(filename: string = "filesystem.zip"): Promise<void> {
+    await downloadBlob(await this.exportZip(), filename);
+  }
+
+  /** The workspace as a zip: pages with relative library references plus the referenced libraries. */
+  async exportZip(): Promise<Blob> {
     const files = await this.listFiles();
     if (files.length === 0) {
       throw new Error("No files to download");
@@ -734,15 +746,22 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
 
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
-    for (const file of files) {
+    // Pages referencing `/.lib/` get relative paths so the extracted folder opens from disk.
+    const exported = files.map((file) =>
+      /\.html?$/i.test(file.path) ? { ...file, content: exportArtifactHtmlForFolder(file.content, file.path) } : file,
+    );
+    for (const file of exported) {
       // Remove leading slash if present for cleaner zip structure
       const cleanPath = file.path.startsWith("/") ? file.path.substring(1) : file.path;
       zip.file(cleanPath, contentToZipValue(file));
     }
+    // Bundled libraries exist only in the preview; ship them where the pages expect them.
+    for (const [path, source] of await collectReferencedLibraries(exported)) {
+      zip.file(path.replace(/^\//, ""), source);
+    }
 
     try {
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      await downloadBlob(zipBlob, filename);
+      return await zip.generateAsync({ type: "blob" });
     } catch (error) {
       throw new Error(
         `Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -887,6 +906,10 @@ export class FileSystemManager implements FileSystem {
 
   downloadAsZip(filename = "filesystem.zip") {
     return this.coordinate((access) => access.downloadAsZip(filename));
+  }
+
+  exportZip() {
+    return this.coordinate((access) => access.exportZip());
   }
 
   downloadFile(path: string) {

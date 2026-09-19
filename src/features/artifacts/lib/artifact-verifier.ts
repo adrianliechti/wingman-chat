@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { getDocument } from "pdfjs-dist";
 import type { FileSystemManager } from "./fs";
+import { ARTIFACT_LIBRARIES, findArtifactLibrary, libraryNameFromPath } from "@/shared/lib/artifactLibraries";
 import { contentToBlob, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isBinaryContentType } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
@@ -27,6 +28,10 @@ function check(id: string, scope: string, status: Check["status"], message: stri
 }
 
 const REPORTED_ISSUE_LIMIT = 12;
+
+/** An inline script this large is almost always an embedded library or dataset. */
+const INLINE_SCRIPT_LIMIT = 100_000;
+const LIBRARY_BANNER = /Apache ECharts|three\.js|three\.module|@license lucide|lucide v\d/i;
 
 async function integrityChecks(
   path: string,
@@ -92,12 +97,45 @@ async function verifyHtml(
     if (!resolved) continue;
     if (/^https?:\/\//i.test(resolved)) {
       checks.push(check("html.no-cdn", path, "fail", `External runtime dependency is not allowed: ${reference}`));
-    } else if (!existingPaths.has(resolved)) {
+      continue;
+    }
+    // `.lib/<name>` is the virtual library folder: served by the preview, inlined on export.
+    const library = libraryNameFromPath(resolved);
+    if (library) {
+      checks.push(
+        findArtifactLibrary(library)
+          ? check("html.library", path, "pass", `Bundled library reference: ${reference}`)
+          : check(
+              "html.library",
+              path,
+              "fail",
+              `Unknown bundled library ${reference}; available: ${ARTIFACT_LIBRARIES.map((item) => `.lib/${item.name}`).join(", ")}`,
+            ),
+      );
+      continue;
+    }
+    if (!existingPaths.has(resolved)) {
       checks.push(check("html.local-ref", path, "fail", `Missing local reference: ${reference} (${resolved})`));
     } else {
       dependencies.add(resolved);
       checks.push(check("html.local-ref", path, "pass", `Resolved local reference: ${reference}`));
     }
+  }
+
+  // Library (or dataset) source pasted into the page costs tokens on every
+  // read and edit; libraries belong in `.lib/` references, data in files.
+  for (const script of document.querySelectorAll("script:not([src])")) {
+    const text = script.textContent ?? "";
+    const banner = LIBRARY_BANNER.exec(text.slice(0, 4000));
+    if (text.length <= INLINE_SCRIPT_LIMIT && !banner) continue;
+    checks.push(
+      check(
+        "html.inline-library",
+        path,
+        "fail",
+        `Inline script of ${Math.round(text.length / 1024)} KB${banner ? ` (${banner[0]})` : ""} embeds library or data source. Reference bundled libraries as .lib/echarts.js, .lib/three.js or .lib/lucide.js and keep data in workspace files instead.`,
+      ),
+    );
   }
   return dependencies;
 }

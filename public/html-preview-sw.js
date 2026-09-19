@@ -26,6 +26,47 @@ const sessions = new Map();
 const pendingRecoveries = new Map();
 const RECOVERY_TIMEOUT_MS = 1000;
 
+/**
+ * Bundled libraries every session can reference as `.lib/<name>` at any depth.
+ * The page tells us where the app serves each one; bytes are fetched once and
+ * kept in CacheStorage so previews keep working offline and after a restart.
+ */
+const libraryUrls = new Map();
+const LIBRARY_CACHE = "wingman-artifact-libraries";
+const LIBRARY_PATTERN = /(?:^|\/)\.lib\/([^/]+)$/;
+
+function setLibraries(libraries) {
+  if (!libraries || typeof libraries !== "object") return;
+  libraryUrls.clear();
+  for (const [name, url] of Object.entries(libraries)) {
+    if (typeof name === "string" && typeof url === "string" && name && url) libraryUrls.set(name, url);
+  }
+  // Drop cached copies of builds that are no longer referenced.
+  const wanted = new Set([...libraryUrls.values()].map((url) => new URL(url, self.location.href).href));
+  caches
+    .open(LIBRARY_CACHE)
+    .then(async (cache) => {
+      for (const request of await cache.keys()) if (!wanted.has(request.url)) await cache.delete(request);
+    })
+    .catch(() => {});
+}
+
+async function serveLibrary(name) {
+  const url = libraryUrls.get(name);
+  if (!url) return null;
+  const cache = await caches.open(LIBRARY_CACHE);
+  let response = await cache.match(url);
+  if (!response) {
+    response = await fetch(url);
+    if (!response.ok) return null;
+    await cache.put(url, response.clone());
+  }
+  return new Response(response.body, {
+    status: 200,
+    headers: { "Content-Type": "text/javascript;charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
 function normalizePath(path) {
   if (!path) return "";
   let p = String(path);
@@ -69,7 +110,8 @@ function buildFileEntry({ content, contentType, bytes }) {
   };
 }
 
-function registerSession(token, files) {
+function registerSession(token, files, libraries) {
+  setLibraries(libraries);
   const store = new Map();
   if (files && typeof files === "object") {
     for (const [rawPath, file] of Object.entries(files)) {
@@ -138,7 +180,8 @@ function requestSessionSnapshot(client, token) {
     };
     const timer = setTimeout(() => finish(null), RECOVERY_TIMEOUT_MS);
 
-    channel.port1.onmessage = (event) => finish(event.data?.ok ? event.data.files : null);
+    channel.port1.onmessage = (event) =>
+      finish(event.data?.ok ? { files: event.data.files, libraries: event.data.libraries } : null);
     try {
       client.postMessage({ type: "html-preview/recover-request", token }, [channel.port2]);
     } catch {
@@ -156,19 +199,19 @@ async function recoverSession(token) {
     // The app itself is outside this worker's narrow preview scope, so include
     // uncontrolled same-origin windows when asking for the live page snapshot.
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    let files;
+    let snapshot;
     try {
-      files = await Promise.any(
+      snapshot = await Promise.any(
         clients.map(async (client) => {
           const reply = await requestSessionSnapshot(client, token);
-          if (!reply || typeof reply !== "object" || Array.isArray(reply)) throw new Error("Session not owned");
+          if (!reply || typeof reply.files !== "object" || Array.isArray(reply.files)) throw new Error("Session not owned");
           return reply;
         }),
       );
     } catch {
       return false;
     }
-    registerSession(token, files);
+    registerSession(token, snapshot.files, snapshot.libraries);
     return true;
   })();
 
@@ -269,7 +312,7 @@ self.addEventListener("message", (event) => {
   try {
     switch (type) {
       case "html-preview/register":
-        registerSession(data.token, data.files);
+        registerSession(data.token, data.files, data.libraries);
         break;
       case "html-preview/update":
         updateFile(data.token, data.path, data.file);
@@ -323,8 +366,17 @@ async function handleFetch(request, { token, path }) {
   if (!sessions.has(token)) await recoverSession(token);
 
   const hit = lookupFile(token, path);
-  if (!hit) {
-    return notFoundResponse(token, path);
+  if (hit) return buildResponse(hit.entry);
+
+  // Not a session file: a `.lib/<name>` reference resolves to a bundled library.
+  const library = LIBRARY_PATTERN.exec(normalizePath(path));
+  if (library && sessions.has(token)) {
+    try {
+      const response = await serveLibrary(library[1]);
+      if (response) return response;
+    } catch {
+      // Fall through to the 404 below.
+    }
   }
-  return buildResponse(hit.entry);
+  return notFoundResponse(token, path);
 }

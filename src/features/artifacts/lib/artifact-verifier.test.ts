@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ArtifactJobSchema } from "@/shared/types/artifact";
 import type { FileSystemManager } from "./fs";
 import { verifyArtifactJob } from "./artifact-verifier";
@@ -72,5 +72,90 @@ describe("artifact OOXML verification", () => {
       { ordinal: 1, path: "ppt/slides/cover.xml", status: "ready" },
       { ordinal: 2, path: "ppt/slides/closing.xml", status: "ready" },
     ]);
+  });
+});
+
+describe("html library references", () => {
+  // Node has no DOMParser; a tag-level stand-in covers the selectors verifyHtml uses.
+  class FakeDOMParser {
+    parseFromString(html: string) {
+      const attributes = (raw: string) => (name: string) => {
+        const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(raw);
+        return match ? (match[1] ?? match[2] ?? "") : null;
+      };
+      return {
+        documentElement: {},
+        querySelectorAll(selector: string) {
+          if (selector.startsWith("script:not")) {
+            return [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+              .filter((match) => attributes(match[1])("src") === null)
+              .map((match) => ({ textContent: match[2] }));
+          }
+          return [...html.matchAll(/<(script|link|img|source|audio|video)\b([^>]*)>/gi)]
+            .map((match) => ({ getAttribute: attributes(match[2]) }))
+            .filter((element) => element.getAttribute("src") !== null || element.getAttribute("href") !== null);
+        },
+      };
+    }
+  }
+  beforeAll(() => vi.stubGlobal("DOMParser", FakeDOMParser));
+  afterAll(() => vi.unstubAllGlobals());
+
+  function htmlJob(primaryPath: string) {
+    const now = new Date().toISOString();
+    return ArtifactJobSchema.parse({
+      id: "job",
+      chatId: "chat",
+      kind: "html",
+      primaryPath,
+      phase: "building",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  function htmlFs(files: Array<{ path: string; content: string }>): FileSystemManager {
+    return {
+      listFiles: async () => files.map((file) => ({ ...file, contentType: "text/html" })),
+    } as unknown as FileSystemManager;
+  }
+  const ids = (checks: Array<{ id: string; status: string }>) =>
+    checks.map((item) => `${item.id}:${item.status}`);
+
+  it("accepts virtual .lib references that exist in no file", async () => {
+    const manifest = await verifyArtifactJob(
+      htmlFs([{ path: "/pages/a.html", content: '<html><body><script src="../.lib/echarts.js"></script></body></html>' }]),
+      htmlJob("/pages/a.html"),
+    );
+    expect(ids(manifest.verification.checks)).toContain("html.library:pass");
+    expect(ids(manifest.verification.checks)).not.toContain("html.local-ref:fail");
+    expect(manifest.files.map((file) => file.path)).toEqual(["/pages/a.html"]);
+  });
+
+  it("rejects unknown library names", async () => {
+    const manifest = await verifyArtifactJob(
+      htmlFs([{ path: "/a.html", content: '<script src=".lib/react.js"></script>' }]),
+      htmlJob("/a.html"),
+    );
+    const failure = manifest.verification.checks.find((item) => item.id === "html.library");
+    expect(failure?.status).toBe("fail");
+    expect(failure?.message).toContain(".lib/echarts.js");
+  });
+
+  it("flags inline library source", async () => {
+    const big = await verifyArtifactJob(
+      htmlFs([{ path: "/a.html", content: `<script>${"x".repeat(150_000)}</script>` }]),
+      htmlJob("/a.html"),
+    );
+    expect(ids(big.verification.checks)).toContain("html.inline-library:fail");
+    const banner = await verifyArtifactJob(
+      htmlFs([{ path: "/a.html", content: "<script>/*! Apache ECharts */var e=1</script>" }]),
+      htmlJob("/a.html"),
+    );
+    expect(ids(banner.verification.checks)).toContain("html.inline-library:fail");
+    const small = await verifyArtifactJob(
+      htmlFs([{ path: "/a.html", content: "<script>init()</script>" }]),
+      htmlJob("/a.html"),
+    );
+    expect(ids(small.verification.checks)).not.toContain("html.inline-library:fail");
   });
 });

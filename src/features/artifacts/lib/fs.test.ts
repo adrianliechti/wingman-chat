@@ -33,6 +33,13 @@ describe("FileSystemManager.renameFile", () => {
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
   });
 
+  it("reserves the virtual library folder", async () => {
+    const fs = new FileSystemManager("chat");
+    await expect(fs.createFile("/.lib/echarts.js", "var echarts")).rejects.toThrow("virtual folder");
+    await expect(fs.createFile("/.lib", "x")).rejects.toThrow("virtual folder");
+    expect(opfs.writeArtifact).not.toHaveBeenCalled();
+  });
+
   it("rejects a folder move when any destination file already exists", async () => {
     const files = new Map([
       ["/source/a.html", { content: "a" }],

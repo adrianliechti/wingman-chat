@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -7,11 +8,17 @@ import type { Plugin } from "vite-plus";
 const require = createRequire(import.meta.url);
 const threeRoot = path.resolve(path.dirname(require.resolve("three")), "..");
 const lucideRoot = path.dirname(require.resolve("lucide/package.json"));
+const echartsRoot = path.dirname(require.resolve("echarts/package.json"));
 const threeEntry = path.resolve(import.meta.dirname, "artifact-libraries/three.js");
 const prefix = "virtual:artifact-library-source/";
+/** `virtual:artifact-library-url/<lib>` resolves to a URL the app serves the library from. */
+const urlPrefix = "virtual:artifact-library-url/";
+/** Dev-server path for the served copies; builds emit hashed assets instead. */
+const devPath = "/__artifact-libraries__/";
 
-type Library = "three" | "lucide";
+type Library = "three" | "lucide" | "echarts";
 type LibrarySource = { source: string; files: string[] };
+const LIBRARIES: Library[] = ["three", "lucide", "echarts"];
 
 async function buildThreeSource(): Promise<LibrarySource> {
   // Modern Three.js is ESM-only in the browser. Produce one classic script,
@@ -48,32 +55,82 @@ async function readLucideSource(): Promise<LibrarySource> {
   };
 }
 
-/** Browser bundles exported as strings, just like echartsSource in the JS worker. */
+async function readEchartsSource(): Promise<LibrarySource> {
+  const file = path.join(echartsRoot, "dist/echarts.min.js");
+  return { source: await fs.readFile(file, "utf8"), files: [file] };
+}
+
+function buildSource(library: Library): Promise<LibrarySource> {
+  if (library === "three") return buildThreeSource();
+  if (library === "echarts") return readEchartsSource();
+  return readLucideSource();
+}
+
+/**
+ * Browser bundles as strings (`virtual:artifact-library-source/<lib>`, for
+ * inlining into HTML) and as served files (`virtual:artifact-library-url/<lib>`,
+ * what the preview worker fetches for `.lib/<lib>.js` references).
+ */
 export function artifactLibrarySourcesPlugin(): Plugin {
   const sources = new Map<Library, Promise<LibrarySource>>();
+  let base = "/";
+  let building = false;
+  const sourceOf = (library: Library) => {
+    let pending = sources.get(library);
+    if (!pending) {
+      pending = buildSource(library);
+      sources.set(library, pending);
+    }
+    return pending.catch((error) => {
+      sources.delete(library);
+      throw error;
+    });
+  };
   return {
     name: "artifact-library-sources",
+    configResolved(config) {
+      base = config.base.replace(/\/?$/, "/");
+      building = config.command === "build";
+    },
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = (req.url ?? "").split("?")[0];
+        if (!url.startsWith(devPath)) return next();
+        const library = url.slice(devPath.length).replace(/\.js$/, "") as Library;
+        if (!LIBRARIES.includes(library)) return next();
+        try {
+          const { source } = await sourceOf(library);
+          res.setHeader("Content-Type", "text/javascript;charset=utf-8");
+          res.setHeader("Cache-Control", "no-cache");
+          res.end(source);
+        } catch (error) {
+          next(error);
+        }
+      });
+    },
     resolveId(id) {
-      if (id === `${prefix}three` || id === `${prefix}lucide`) return `\0${id}`;
+      for (const library of LIBRARIES) {
+        if (id === `${prefix}${library}` || id === `${urlPrefix}${library}`) return `\0${id}`;
+      }
       return undefined;
     },
     async load(id) {
+      if (id.startsWith(`\0${urlPrefix}`)) {
+        const library = id.slice(urlPrefix.length + 1) as Library;
+        if (!building) return `export default ${JSON.stringify(`${devPath}${library}.js`)};`;
+        const { source, files } = await sourceOf(library);
+        for (const file of files) this.addWatchFile(file);
+        const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 8);
+        const fileName = `assets/${library}-${hash}.js`;
+        this.emitFile({ type: "asset", fileName, source });
+        return `export default ${JSON.stringify(`${base}${fileName}`)};`;
+      }
       if (!id.startsWith(`\0${prefix}`)) return undefined;
       const library = id.slice(prefix.length + 1) as Library;
-      let pending = sources.get(library);
-      if (!pending) {
-        pending = library === "three" ? buildThreeSource() : readLucideSource();
-        sources.set(library, pending);
-      }
-      try {
-        const { source, files } = await pending;
-        for (const file of files) this.addWatchFile(file);
-        // A library's string literals must not terminate an inline HTML script.
-        return `export default ${JSON.stringify(source.replace(/<\/script/gi, "<\\/script"))};`;
-      } catch (error) {
-        sources.delete(library);
-        throw error;
-      }
+      const { source, files } = await sourceOf(library);
+      for (const file of files) this.addWatchFile(file);
+      // A library's string literals must not terminate an inline HTML script.
+      return `export default ${JSON.stringify(source.replace(/<\/script/gi, "<\\/script"))};`;
     },
     watchChange() {
       sources.clear();
