@@ -62,6 +62,12 @@ export async function registerDuckDbFile(name: string, file: globalThis.File): P
   await db.registerFileHandle(name, file, DuckDBDataProtocol.BROWSER_FILEREADER, true);
 }
 
+/** Make bytes queryable under `name`; databases need this because their engines open files read-write. */
+export async function registerDuckDbBuffer(name: string, bytes: Uint8Array): Promise<void> {
+  const db = await getDuckDb();
+  await db.registerFileBuffer(name, bytes);
+}
+
 export async function dropDuckDbFile(name: string): Promise<void> {
   const db = await getDuckDb();
   await db.dropFile(name).catch(() => undefined);

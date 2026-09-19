@@ -5,10 +5,10 @@ describe("artifact extension classification", () => {
   it("does not treat extensionless names or dotfiles as extensions", () => {
     expect(artifactKind("csv")).toBe("text");
     expect(artifactKind("/.csv")).toBe("text");
-    expect(artifactKind("/report.csv")).toBe("csv");
+    expect(artifactKind("/report.csv")).toBe("data");
   });
 
   it("still lets an explicit content type select the editor", () => {
-    expect(artifactKind("/report", "text/csv")).toBe("csv");
+    expect(artifactKind("/report", "text/csv")).toBe("data");
   });
 });

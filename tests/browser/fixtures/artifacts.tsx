@@ -12,6 +12,7 @@ import { useChat } from "../../../src/features/chat/hooks/useChat";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
 import { loadConfig } from "../../../src/shared/config";
+import { getDuckDb } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
@@ -61,6 +62,47 @@ function Fixture() {
     },
     async remove(chatId, path) {
       await new FileSystemManager(chatId).deleteFile(path);
+    },
+    // A SQLite database produced by DuckDB's sqlite extension from a query.
+    async writeSqlite(chatId, path, table, sql) {
+      const db = await getDuckDb();
+      const connection = await db.connect();
+      try {
+        await connection.query("LOAD sqlite_scanner");
+        await connection.query("ATTACH 'e2e.sqlite' AS gen (TYPE sqlite)");
+        await connection.query(`CREATE TABLE gen.${table} AS ${sql}`);
+        await connection.query("DETACH gen");
+      } finally {
+        await connection.close();
+      }
+      const bytes = await db.copyFileToBuffer("e2e.sqlite");
+      await db.dropFile("e2e.sqlite");
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      await new FileSystemManager(chatId).createFile(
+        path,
+        `data:application/vnd.sqlite3;base64,${btoa(binary)}`,
+        "application/vnd.sqlite3",
+      );
+    },
+    // A Parquet artifact produced by DuckDB itself from a query.
+    async writeParquet(chatId, path, sql) {
+      const db = await getDuckDb();
+      const connection = await db.connect();
+      try {
+        await connection.query(`COPY (${sql}) TO 'e2e.parquet' (FORMAT PARQUET)`);
+      } finally {
+        await connection.close();
+      }
+      const bytes = await db.copyFileToBuffer("e2e.parquet");
+      await db.dropFile("e2e.parquet");
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      await new FileSystemManager(chatId).createFile(
+        path,
+        `data:application/vnd.apache.parquet;base64,${btoa(binary)}`,
+        "application/vnd.apache.parquet",
+      );
     },
     async rename(chatId, from, to) {
       await new FileSystemManager(chatId).renameFile(from, to);
@@ -181,6 +223,8 @@ declare global {
       showDrawer(show: boolean): void;
       write(chatId: string, path: string, content: string): Promise<void>;
       remove(chatId: string, path: string): Promise<void>;
+      writeParquet(chatId: string, path: string, sql: string): Promise<void>;
+      writeSqlite(chatId: string, path: string, table: string, sql: string): Promise<void>;
       rename(chatId: string, from: string, to: string): Promise<void>;
       read(chatId: string, path: string): Promise<File | undefined>;
       tool(name: string, args: Record<string, unknown>, chatId: string): Promise<unknown>;

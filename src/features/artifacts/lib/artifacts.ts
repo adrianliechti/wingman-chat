@@ -1,4 +1,5 @@
 import { getConfig } from "@/shared/config";
+import { isDataFilePath } from "@/shared/lib/dataFiles";
 import { readFileAsText } from "@/shared/lib/convert";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/shared/lib/mediaTypes";
@@ -11,7 +12,7 @@ export type ArtifactKind =
   | "svg"
   | "mermaid"
   | "html"
-  | "csv"
+  | "data"
   | "markdown"
   | "image"
   | "audio"
@@ -87,7 +88,7 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
   }
 
   if (normalizedContentType === "text/csv" || normalizedContentType === "text/tab-separated-values") {
-    return "csv";
+    return "data";
   }
 
   if (normalizedContentType === "text/markdown") {
@@ -119,9 +120,9 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "mermaid";
   }
 
-  // CSV files
-  if (ext === "csv" || ext === "tsv") {
-    return "csv";
+  // Tabular files and databases, viewed through DuckDB
+  if (isDataFilePath(path)) {
+    return "data";
   }
 
   // Markdown files

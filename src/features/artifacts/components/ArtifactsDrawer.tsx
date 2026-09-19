@@ -1,6 +1,6 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
 import { Code, Download, Eye, File as FileIcon2, Loader2, Play, Shapes, Upload } from "lucide-react";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
 import {
@@ -13,6 +13,7 @@ import type { ArtifactKind } from "@/features/artifacts/lib/artifacts";
 import type { ArtifactRevisionListing, FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatActions } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import type { File } from "@/shared/types/file";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
@@ -41,7 +42,7 @@ import { ArtifactsNavigator } from "./ArtifactsNavigator";
 // `lazyRouteComponent` is the same primitive the router uses — it also reloads
 // gracefully when a chunk goes missing after a deploy.
 const CodeEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CodeEditor"), "CodeEditor");
-const CsvEditor = lazyRouteComponent(() => import("@/shared/ui/editors/CsvEditor"), "CsvEditor");
+const DataEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DataEditor"), "DataEditor");
 const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
 const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
 const JsEditor = lazyRouteComponent(() => import("@/shared/ui/editors/JsEditor"), "JsEditor");
@@ -79,7 +80,7 @@ const ArtifactRevisionDiff = lazyRouteComponent(
 const WIDE_DRAWER_PX = 680;
 
 /** File kinds whose revisions can be compared as a line diff. */
-const DIFFABLE_KINDS = new Set<ArtifactKind>(["text", "code", "svg", "mermaid", "html", "csv", "markdown"]);
+const DIFFABLE_KINDS = new Set<ArtifactKind>(["text", "code", "svg", "mermaid", "html", "markdown"]);
 
 /** An archived revision loaded for display in place of the live file. */
 interface RevisionView {
@@ -126,7 +127,18 @@ export function ArtifactsDrawer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const files = useArtifactEntries(fs);
-  const activeFileData = useArtifactFile(fs, activeFile);
+  // Data files (CSV, Parquet, databases, …) are read through DuckDB; their
+  // possibly huge bytes never enter the editor, so only a stub is loaded.
+  const activeIsData = !!activeFile && artifactKind(activeFile) === "data";
+  const loadedFileData = useArtifactFile(fs, activeIsData ? null : activeFile);
+  const activeEntry = activeIsData ? files.find((entry) => entry.path === activeFile) : undefined;
+  const activeFileData = useMemo<File | null>(
+    () =>
+      activeIsData && activeFile
+        ? { path: activeFile, content: "", contentType: activeEntry?.contentType }
+        : loadedFileData,
+    [activeIsData, activeFile, activeEntry?.contentType, loadedFileData],
+  );
 
   // Archived revisions shown in place of the live file: a hover preview from
   // the history list and a pinned one with restore/compare actions.
@@ -590,17 +602,8 @@ export function ArtifactsDrawer() {
             onViewModeChange={setViewMode}
           />
         );
-      case "csv":
-        return (
-          <CsvEditor
-            key={editorKey}
-            content={shownFile.content}
-            path={shownFile.path}
-            contentType={shownFile.contentType}
-            viewMode={viewMode === "preview" ? "table" : "code"}
-            onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
-          />
-        );
+      case "data":
+        return <DataEditor key={editorKey} path={shownFile.path} />;
       case "markdown":
         return (
           <MarkdownEditor
@@ -677,7 +680,7 @@ export function ArtifactsDrawer() {
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
-    return ["html", "svg", "mermaid", "csv", "markdown"].includes(kind);
+    return ["html", "svg", "mermaid", "markdown"].includes(kind);
   };
 
   // Handle run button click

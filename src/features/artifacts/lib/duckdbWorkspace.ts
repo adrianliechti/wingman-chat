@@ -7,17 +7,13 @@
  */
 
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { dropDuckDbFile, getDuckDb, registerDuckDbFile, runDuckDbQuery } from "@/shared/lib/duckdb";
+import { dropDuckDbFile, getDuckDb, registerDuckDbBuffer, registerDuckDbFile, runDuckDbQuery } from "@/shared/lib/duckdb";
 import type { DuckDbQueryResult } from "@/shared/lib/duckdbResult";
+import { dataFileFormat, isMountablePath } from "@/shared/lib/dataFiles";
 import { getArtifactNativeFile, listArtifactEntries } from "@/shared/lib/opfs-artifacts";
 import { FileSystemManager } from "./fs";
 
-const DATA_EXTENSIONS = new Set(["csv", "tsv", "json", "jsonl", "ndjson", "parquet", "arrow", "xlsx"]);
-
-function isDataPath(path: string): boolean {
-  const extension = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  return path.includes(".") && DATA_EXTENSIONS.has(extension);
-}
+const isDataPath = isMountablePath;
 
 /** Names a workspace path is mounted under: its path without the leading slash, plus the bare name when unique. */
 export function mountNames(paths: string[]): Map<string, string[]> {
@@ -63,8 +59,13 @@ async function refresh(target: WorkspaceMount): Promise<void> {
   for (const [path, names] of wanted) {
     const file = await getArtifactNativeFile(target.chatId, path);
     if (!file) continue;
+    // SQLite and DuckDB engines open their files read-write, which a lazy
+    // File handle cannot offer; those are mounted from memory instead.
+    const database = dataFileFormat(path) !== null && dataFileFormat(path) !== "file";
+    const bytes = database ? new Uint8Array(await file.arrayBuffer()) : null;
     for (const name of names) {
-      await registerDuckDbFile(name, file);
+      if (bytes) await registerDuckDbBuffer(name, bytes);
+      else await registerDuckDbFile(name, file);
       target.registered.add(name);
     }
   }
