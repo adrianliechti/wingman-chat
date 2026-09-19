@@ -19,7 +19,7 @@ const ENGINE_VERSION = "v1.4.3";
 const PLATFORM = "wasm_eh";
 const REPOSITORY = "https://extensions.duckdb.org";
 // parquet and json are extensions in the wasm build, not built-ins; the rest are optional formats.
-const EXTENSIONS = ["parquet", "json", "excel", "fts", "icu", "sqlite_scanner"];
+const EXTENSIONS = ["parquet", "json", "excel", "fts", "icu"];
 
 const outputDir = path.join("public/duckdb/extensions", ENGINE_VERSION, PLATFORM);
 fs.mkdirSync(outputDir, { recursive: true });

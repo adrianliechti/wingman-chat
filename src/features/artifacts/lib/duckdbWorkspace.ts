@@ -7,9 +7,9 @@
  */
 
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { dropDuckDbFile, getDuckDb, registerDuckDbBuffer, registerDuckDbFile, runDuckDbQuery } from "@/shared/lib/duckdb";
+import { dropDuckDbFile, getDuckDb, registerDuckDbFile, runDuckDbQuery } from "@/shared/lib/duckdb";
 import type { DuckDbQueryResult } from "@/shared/lib/duckdbResult";
-import { dataFileFormat, isMountablePath } from "@/shared/lib/dataFiles";
+import { isMountablePath } from "@/shared/lib/dataFiles";
 import { getArtifactNativeFile, listArtifactEntries } from "@/shared/lib/opfs-artifacts";
 import { FileSystemManager } from "./fs";
 
@@ -59,13 +59,8 @@ async function refresh(target: WorkspaceMount): Promise<void> {
   for (const [path, names] of wanted) {
     const file = await getArtifactNativeFile(target.chatId, path);
     if (!file) continue;
-    // SQLite and DuckDB engines open their files read-write, which a lazy
-    // File handle cannot offer; those are mounted from memory instead.
-    const database = dataFileFormat(path) !== null && dataFileFormat(path) !== "file";
-    const bytes = database ? new Uint8Array(await file.arrayBuffer()) : null;
     for (const name of names) {
-      if (bytes) await registerDuckDbBuffer(name, bytes);
-      else await registerDuckDbFile(name, file);
+      await registerDuckDbFile(name, file);
       target.registered.add(name);
     }
   }

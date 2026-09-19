@@ -55,19 +55,10 @@ test("csv is typed and sorted numerically through DuckDB", async ({ page }) => {
   await expect(page.getByTitle("Code")).toHaveCount(0);
 });
 
-test("jsonl and sqlite databases open too, with a table picker for databases", async ({ page }) => {
+test("jsonl opens in the grid as well", async ({ page }) => {
   test.setTimeout(240_000);
   const id = await openFixture(page);
   await page.evaluate((id) => window.artifactsE2E.write(id, "/events.jsonl", '{"user":"a","n":1}\n{"user":"b","n":2}\n'), id);
   await expect(header(page, "user")).toBeVisible({ timeout: 180_000 });
   await expect(page.locator("td").nth(2)).toHaveText("b");
-
-  await page.evaluate(
-    (id) => window.artifactsE2E.writeSqlite(id, "/store.sqlite", "orders", "SELECT range AS id, range * 10 AS total FROM range(7)"),
-    id,
-  );
-  await page.evaluate(() => window.artifactsE2E.openFile("/store.sqlite"));
-  await expect(page.getByRole("combobox", { name: "Table" })).toHaveValue("orders", { timeout: 180_000 });
-  await expect(page.getByText("7 rows")).toBeVisible();
-  await expect(page.locator("td").nth(3)).toHaveText("10");
 });

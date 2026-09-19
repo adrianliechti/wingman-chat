@@ -1,19 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { dataFileFormat, isMountablePath } from "./dataFiles";
+import { isDataFilePath, isMountablePath } from "./dataFiles";
 
 describe("data files", () => {
-  it("classifies scanned files, databases, and compressed text", () => {
-    expect(dataFileFormat("/data/flights.csv")).toBe("file");
-    expect(dataFileFormat("/x.tsv.gz")).toBe("file");
-    expect(dataFileFormat("/events.ndjson")).toBe("file");
-    expect(dataFileFormat("/big.parquet")).toBe("file");
-    expect(dataFileFormat("/store.sqlite")).toBe("sqlite");
-    expect(dataFileFormat("/app.db")).toBe("sqlite");
-    expect(dataFileFormat("/warehouse.duckdb")).toBe("duckdb");
-    expect(dataFileFormat("/store.sqlite.gz")).toBeNull();
-    expect(dataFileFormat("/notes.md")).toBeNull();
-    expect(dataFileFormat("/config.json")).toBeNull();
-    expect(dataFileFormat("/.gz")).toBeNull();
+  it("recognises scanned tabular files, including compressed text", () => {
+    for (const path of ["/data/flights.csv", "/x.tsv.gz", "/events.ndjson", "/rows.jsonl", "/big.parquet", "/t.arrow"]) {
+      expect(isDataFilePath(path), path).toBe(true);
+    }
+    for (const path of ["/notes.md", "/config.json", "/store.sqlite", "/.gz", "/archive.gz", "/a.csvx"]) {
+      expect(isDataFilePath(path), path).toBe(false);
+    }
   });
 
   it("mounts data files and the formats with their own viewers", () => {

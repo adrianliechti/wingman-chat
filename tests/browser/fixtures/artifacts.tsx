@@ -63,28 +63,6 @@ function Fixture() {
     async remove(chatId, path) {
       await new FileSystemManager(chatId).deleteFile(path);
     },
-    // A SQLite database produced by DuckDB's sqlite extension from a query.
-    async writeSqlite(chatId, path, table, sql) {
-      const db = await getDuckDb();
-      const connection = await db.connect();
-      try {
-        await connection.query("LOAD sqlite_scanner");
-        await connection.query("ATTACH 'e2e.sqlite' AS gen (TYPE sqlite)");
-        await connection.query(`CREATE TABLE gen.${table} AS ${sql}`);
-        await connection.query("DETACH gen");
-      } finally {
-        await connection.close();
-      }
-      const bytes = await db.copyFileToBuffer("e2e.sqlite");
-      await db.dropFile("e2e.sqlite");
-      let binary = "";
-      for (const byte of bytes) binary += String.fromCharCode(byte);
-      await new FileSystemManager(chatId).createFile(
-        path,
-        `data:application/vnd.sqlite3;base64,${btoa(binary)}`,
-        "application/vnd.sqlite3",
-      );
-    },
     // A Parquet artifact produced by DuckDB itself from a query.
     async writeParquet(chatId, path, sql) {
       const db = await getDuckDb();
@@ -224,7 +202,6 @@ declare global {
       write(chatId: string, path: string, content: string): Promise<void>;
       remove(chatId: string, path: string): Promise<void>;
       writeParquet(chatId: string, path: string, sql: string): Promise<void>;
-      writeSqlite(chatId: string, path: string, table: string, sql: string): Promise<void>;
       rename(chatId: string, from: string, to: string): Promise<void>;
       read(chatId: string, path: string): Promise<File | undefined>;
       tool(name: string, args: Record<string, unknown>, chatId: string): Promise<unknown>;

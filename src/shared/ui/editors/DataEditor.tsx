@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { acquireDuckDbWorkspace, type DuckDbWorkspaceHost } from "@/features/artifacts/lib/duckdbWorkspace";
-import { dataFileFormat } from "@/shared/lib/dataFiles";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { DataTable, type DataTableColumn } from "./DataTable";
 
@@ -14,12 +13,9 @@ interface DataEditorProps {
 /** Rows fetched per window query. */
 const CHUNK = 500;
 
-interface Attached {
+interface Mounted {
   fs: FileSystemManager;
   host: DuckDbWorkspaceHost;
-  /** Catalog alias for database files; undefined for scanned files. */
-  alias?: string;
-  tables?: string[];
 }
 
 interface Shape {
@@ -38,29 +34,18 @@ function cellText(value: unknown): string {
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
 const quoteIdentifier = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
-let attachCounter = 0;
-
-/** A catalog name unique to this mount, so overlapping mounts (StrictMode, fast switches) never collide. */
-function nextAlias(): string {
-  attachCounter += 1;
-  return `viewer_${attachCounter}`;
-}
-
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * Read-only grid over any data artifact DuckDB can read: CSV, TSV, JSONL,
- * Parquet, Arrow (scanned by name) and SQLite or DuckDB databases (attached,
- * with a table picker). Rows are fetched in windows as the grid scrolls and
+ * Read-only grid over any tabular artifact DuckDB can scan by name: CSV, TSV,
+ * JSONL, Parquet, Arrow. Rows are fetched in windows as the grid scrolls and
  * sorted by DuckDB, so file size never matters to the page.
  */
 export function DataEditor({ path }: DataEditorProps) {
   const { fs } = useArtifacts();
-  const format = dataFileFormat(path);
-  const [attached, setAttached] = useState<Attached | null>(null);
-  const [table, setTable] = useState<string | null>(null);
+  const [mounted, setMounted] = useState<Mounted | null>(null);
   const [shape, setShape] = useState<Shape | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [error, setError] = useState<string | null>(null);
@@ -71,80 +56,57 @@ export function DataEditor({ path }: DataEditorProps) {
   const visible = useRef<[number, number] | null>(null);
   const [version, setVersion] = useState(0);
 
-  // Mount the workspace and, for databases, attach the file and list its tables.
   useEffect(() => {
     if (!fs) return;
     let cancelled = false;
     let host: DuckDbWorkspaceHost | null = null;
-    let alias: string | undefined;
-    setAttached(null);
+    setMounted(null);
     setShape(null);
     setError(null);
     setSorting([]);
-    (async () => {
-      host = await acquireDuckDbWorkspace(fs);
-      const name = path.replace(/^\/+/, "");
-      let tables: string[] | undefined;
-      if (format === "sqlite" || format === "duckdb") {
-        if (format === "sqlite") await host.query(null, "LOAD sqlite_scanner");
-        if (cancelled) return;
-        alias = nextAlias();
-        const type = format === "sqlite" ? "TYPE sqlite, " : "";
-        await host.query(null, `ATTACH ${quoteLiteral(name)} AS ${alias} (${type}READ_ONLY)`);
-        const listed = await host.query(
-          null,
-          `SELECT table_name FROM information_schema.tables WHERE table_catalog = ${quoteLiteral(alias)} ORDER BY table_name`,
-        );
-        tables = listed.rows.map((row) => cellText(row.table_name));
-      }
-      if (cancelled) return;
-      setAttached({ fs, host, alias, tables });
-      setTable(tables?.[0] ?? null);
-    })().catch((cause: unknown) => {
-      if (!cancelled) setError(describe(cause));
-    });
+    acquireDuckDbWorkspace(fs)
+      .then((acquired) => {
+        host = acquired;
+        if (!cancelled) setMounted({ fs, host: acquired });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(describe(cause));
+      });
     return () => {
       cancelled = true;
-      const current = host;
-      void (async () => {
-        if (alias) await current?.query(null, `DETACH ${alias}`).catch(() => undefined);
-        await current?.release();
-      })();
+      void host?.release();
     };
-  }, [fs, path, format]);
+  }, [fs, path]);
 
-  const source = useMemo(() => {
-    if (!attached || attached.fs !== fs) return null;
-    if (attached.alias) return table ? `${attached.alias}.${quoteIdentifier(table)}` : null;
-    return quoteLiteral(path.replace(/^\/+/, ""));
-  }, [attached, fs, table, path]);
+  const source = mounted?.fs === fs ? quoteLiteral(path.replace(/^\/+/, "")) : null;
 
-  // Columns and the row count for the selected source.
+  // Columns and the row count.
   useEffect(() => {
-    if (!attached || !source) return;
+    if (!mounted || !source) return;
     let cancelled = false;
     chunks.current.clear();
     pending.current.clear();
     setShape(null);
     setSorting([]);
-    (async () => {
-      const [described, counted] = await Promise.all([
-        attached.host.query(null, `DESCRIBE SELECT * FROM ${source}`),
-        attached.host.query(null, `SELECT count(*) AS n FROM ${source}`),
-      ]);
-      if (cancelled) return;
-      setShape({
-        source,
-        columns: described.rows.map((row) => ({ name: cellText(row.column_name), detail: cellText(row.column_type) })),
-        total: Number(counted.rows[0]?.n ?? 0),
+    Promise.all([
+      mounted.host.query(null, `DESCRIBE SELECT * FROM ${source}`),
+      mounted.host.query(null, `SELECT count(*) AS n FROM ${source}`),
+    ])
+      .then(([described, counted]) => {
+        if (cancelled) return;
+        setShape({
+          source,
+          columns: described.rows.map((row) => ({ name: cellText(row.column_name), detail: cellText(row.column_type) })),
+          total: Number(counted.rows[0]?.n ?? 0),
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(describe(cause));
       });
-    })().catch((cause: unknown) => {
-      if (!cancelled) setError(describe(cause));
-    });
     return () => {
       cancelled = true;
     };
-  }, [attached, source]);
+  }, [mounted, source]);
 
   const orderBy = useMemo(() => {
     const column = sorting[0] ? shape?.columns[Number(sorting[0].id)] : undefined;
@@ -153,14 +115,14 @@ export function DataEditor({ path }: DataEditorProps) {
 
   const loadChunk = useCallback(
     (index: number) => {
-      if (!attached || !shape || chunks.current.has(index) || pending.current.has(index)) return;
+      if (!mounted || !shape || chunks.current.has(index) || pending.current.has(index)) return;
       pending.current.add(index);
       const started = generation.current;
       const query = `SELECT * FROM ${shape.source}${orderBy} LIMIT ${CHUNK} OFFSET ${index * CHUNK}`;
-      attached.host
+      mounted.host
         .query(null, query)
         .then((result) => {
-          // An answer for an earlier source or sort order is stale; drop it.
+          // An answer for an earlier sort order is stale; drop it.
           if (started !== generation.current) return;
           pending.current.delete(index);
           chunks.current.set(
@@ -175,7 +137,7 @@ export function DataEditor({ path }: DataEditorProps) {
           setError(describe(cause));
         });
     },
-    [attached, shape, orderBy],
+    [mounted, shape, orderBy],
   );
 
   const request = useCallback(
@@ -185,8 +147,8 @@ export function DataEditor({ path }: DataEditorProps) {
     [loadChunk],
   );
 
-  // A new source or sort order invalidates every loaded window; the rows on
-  // screen are requested again right away rather than on the next scroll.
+  // A new sort order invalidates every loaded window; the rows on screen are
+  // requested again right away rather than on the next scroll.
   useEffect(() => {
     generation.current += 1;
     chunks.current.clear();
@@ -217,7 +179,7 @@ export function DataEditor({ path }: DataEditorProps) {
       </div>
     );
   }
-  if (!fs || !attached || !shape) {
+  if (!fs || !mounted || !shape) {
     return (
       <div className="h-full flex items-center justify-center gap-2 text-sm text-neutral-400 dark:text-neutral-500">
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -225,46 +187,24 @@ export function DataEditor({ path }: DataEditorProps) {
       </div>
     );
   }
-
+  if (shape.columns.length === 0 || shape.total === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-neutral-400 dark:text-neutral-500">
+        No rows
+      </div>
+    );
+  }
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
-      {attached.tables && (
-        <div className="shrink-0 flex items-center gap-3 px-3 py-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 border-b border-neutral-200/60 dark:border-neutral-800/60">
-          <label className="flex items-center gap-1.5">
-            <span>Table</span>
-            <select
-              aria-label="Table"
-              value={table ?? ""}
-              onChange={(event) => setTable(event.target.value)}
-              className="rounded border border-neutral-300/70 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-[11px] text-neutral-700 dark:text-neutral-200"
-            >
-              {attached.tables.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span>
-            {shape.total.toLocaleString("en")} {shape.total === 1 ? "row" : "rows"}
-          </span>
-        </div>
-      )}
-      {shape.columns.length === 0 || shape.total === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-neutral-400 dark:text-neutral-500">
-          No rows
-        </div>
-      ) : (
-        <DataTable
-          key={shape.source}
-          columns={shape.columns}
-          rowCount={shape.total}
-          getRow={getRow}
-          onVisibleRange={onVisibleRange}
-          sorting={sorting}
-          onSortingChange={setSorting}
-        />
-      )}
+      <DataTable
+        key={shape.source}
+        columns={shape.columns}
+        rowCount={shape.total}
+        getRow={getRow}
+        onVisibleRange={onVisibleRange}
+        sorting={sorting}
+        onSortingChange={setSorting}
+      />
     </div>
   );
 }

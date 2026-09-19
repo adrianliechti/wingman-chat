@@ -1,37 +1,16 @@
 /**
- * Data files the app reads through DuckDB: tabular files it scans by name and
- * database files it attaches. Shared by artifact kind detection, the DuckDB
- * workspace mount, and the data viewer.
+ * Tabular files the app reads through DuckDB by name. Shared by artifact kind
+ * detection, the DuckDB workspace mount, and the data viewer.
  */
 
-export type DataFileFormat = "file" | "sqlite" | "duckdb";
+const DATA_EXTENSIONS = new Set(["csv", "tsv", "jsonl", "ndjson", "parquet", "arrow"]);
 
-const FORMATS: Record<string, DataFileFormat> = {
-  csv: "file",
-  tsv: "file",
-  jsonl: "file",
-  ndjson: "file",
-  parquet: "file",
-  arrow: "file",
-  sqlite: "sqlite",
-  sqlite3: "sqlite",
-  db: "sqlite",
-  duckdb: "duckdb",
-};
-
-/** How DuckDB reads a path, or null when it is not a data file. `.gz` is allowed on scanned text files. */
-export function dataFileFormat(path: string): DataFileFormat | null {
-  const name = path.toLowerCase().split("/").pop() ?? "";
-  const compressed = name.endsWith(".gz");
-  const stripped = compressed ? name.slice(0, -3) : name;
-  const dot = stripped.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const format = FORMATS[stripped.slice(dot + 1)] ?? null;
-  return compressed && format !== "file" ? null : format;
-}
-
+/** Whether DuckDB can scan the file by name; `.gz` is allowed on text formats. */
 export function isDataFilePath(path: string): boolean {
-  return dataFileFormat(path) !== null;
+  const name = path.toLowerCase().split("/").pop() ?? "";
+  const stripped = name.endsWith(".gz") ? name.slice(0, -3) : name;
+  const dot = stripped.lastIndexOf(".");
+  return dot > 0 && DATA_EXTENSIONS.has(stripped.slice(dot + 1));
 }
 
 /** Files mounted by name for SQL: data files plus formats with their own viewer (xlsx, json). */
