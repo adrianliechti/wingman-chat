@@ -9,6 +9,8 @@ import {
   Mic,
   Palette,
   Settings,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Upload,
   User,
@@ -26,6 +28,7 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
@@ -58,7 +61,7 @@ const SECTION_META: { id: SectionId; label: string; icon: React.ReactNode }[] = 
   { id: "profile", label: "Profile", icon: <User size={16} /> },
   { id: "backup", label: "Backup & Restore", icon: <HardDrive size={16} /> },
   { id: "companion", label: "Companion", icon: <Coffee size={16} /> },
-  { id: "advanced", label: "Advanced", icon: <HardDrive size={16} /> },
+  { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
 
 const layoutOptions: { value: LayoutMode; label: string }[] = [
@@ -87,7 +90,7 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <p className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+      <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
         {label}
       </p>
       {description && (
@@ -158,6 +161,7 @@ export function SettingsDrawer({
   const profileAboutInputId = useId();
   const [section, setSection] = useState<SectionId>("general");
   const [mobileShowList, setMobileShowList] = useState(true);
+  const isDesktop = useBreakpoint("sm");
   const [probingDevices, setProbingDevices] = useState(false);
   const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
     useToolsContext();
@@ -514,7 +518,7 @@ export function SettingsDrawer({
               >
                 <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-3xl">
                   {/* ── Top bar ── */}
-                  <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-3 sm:px-4 dark:border-neutral-800/60">
+                  <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 dark:border-neutral-800/60">
                     {!mobileShowList && (
                       <button
                         type="button"
@@ -527,13 +531,13 @@ export function SettingsDrawer({
                       </button>
                     )}
                     <Dialog.Title className="shrink-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                      {activeMeta ? `Settings · ${activeMeta.label}` : "Settings"}
+                      {isDesktop || mobileShowList || !activeMeta ? "Settings" : activeMeta.label}
                     </Dialog.Title>
                     <button
                       type="button"
                       onClick={onClose}
                       aria-label="Close settings"
-                      className="ml-auto shrink-0 rounded-md p-2 sm:p-1.5 transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                      className="ml-auto shrink-0 rounded-md p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:p-1.5 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                     >
                       <X size={15} />
                     </button>
@@ -653,7 +657,7 @@ export function SettingsDrawer({
                                     className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
                                   >
                                     <Mic size={14} />
-                                    Allow Access
+                                    Allow access
                                   </button>
                                 )}
                               </div>
@@ -745,7 +749,7 @@ export function SettingsDrawer({
                                 type="text"
                                 value={profile.name || ""}
                                 onChange={(e) => updateProfile({ name: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
                                 placeholder="Your nickname or name"
                               />
                             </div>
@@ -762,7 +766,7 @@ export function SettingsDrawer({
                                 type="text"
                                 value={profile.role || ""}
                                 onChange={(e) => updateProfile({ role: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 backdrop-blur-sm transition-colors"
                                 placeholder="e.g., Software Developer, Student"
                               />
                             </div>
@@ -778,7 +782,7 @@ export function SettingsDrawer({
                                 id={profileAboutInputId}
                                 value={profile.profile || ""}
                                 onChange={(e) => updateProfile({ profile: e.target.value })}
-                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
+                                className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
                                 rows={5}
                                 placeholder="Brief description about yourself..."
                               />
@@ -811,12 +815,12 @@ export function SettingsDrawer({
                                 type="button"
                                 onClick={() => void exportEverythingBackup()}
                                 disabled={isExporting || isRestoring}
-                                className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                                className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                               >
                                 {isExporting && (
                                   <span
                                     aria-hidden="true"
-                                    className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                    className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
                                     style={{ width: `${Math.round(exportProgress * 100)}%` }}
                                   />
                                 )}
@@ -826,7 +830,7 @@ export function SettingsDrawer({
                                     className={isExporting ? "animate-pulse" : undefined}
                                   />
                                   {isExporting
-                                    ? `Creating backup... ${Math.round(exportProgress * 100)}%`
+                                    ? `Creating backup… ${Math.round(exportProgress * 100)}%`
                                     : "Back up everything"}
                                 </span>
                               </button>
@@ -848,13 +852,13 @@ export function SettingsDrawer({
                               {backupSelectionOpen && (
                                 <>
                                   <div className="divide-y divide-neutral-200/60 overflow-hidden rounded-lg border border-neutral-200/60 dark:divide-neutral-700/60 dark:border-neutral-700/60">
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                         Profile
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "Loading size..."
+                                          ? "…"
                                           : formatBytes(
                                               storageInfo.entries.find(
                                                 (entry) => entry.path === "profile.json",
@@ -870,10 +874,10 @@ export function SettingsDrawer({
                                             profile: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Chats
@@ -884,7 +888,7 @@ export function SettingsDrawer({
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "..."
+                                          ? "…"
                                           : formatBytes(chatStorageSize)}
                                       </span>
                                       <input
@@ -897,10 +901,10 @@ export function SettingsDrawer({
                                             chats: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Agents
@@ -911,7 +915,7 @@ export function SettingsDrawer({
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "..."
+                                          ? "…"
                                           : formatBytes(agentStorageSize)}
                                       </span>
                                       <input
@@ -924,10 +928,10 @@ export function SettingsDrawer({
                                             agents: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Images
@@ -938,7 +942,7 @@ export function SettingsDrawer({
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "..."
+                                          ? "…"
                                           : formatBytes(imageStorageSize)}
                                       </span>
                                       <input
@@ -950,10 +954,10 @@ export function SettingsDrawer({
                                             images: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Skills
@@ -964,7 +968,7 @@ export function SettingsDrawer({
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "..."
+                                          ? "…"
                                           : formatBytes(skillStorageSize)}
                                       </span>
                                       <input
@@ -976,10 +980,10 @@ export function SettingsDrawer({
                                             skills: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
-                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 dark:hover:bg-neutral-800/30">
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/30">
                                       <span className="flex items-baseline gap-2">
                                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                                           Plugins
@@ -990,7 +994,7 @@ export function SettingsDrawer({
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
                                         {storageInfo.isLoading
-                                          ? "..."
+                                          ? "…"
                                           : formatBytes(pluginStorageSize)}
                                       </span>
                                       <input
@@ -1002,7 +1006,7 @@ export function SettingsDrawer({
                                             plugins: event.target.checked,
                                           }))
                                         }
-                                        className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800"
+                                        className="h-4 w-4 rounded border-neutral-300 accent-neutral-800 focus:ring-neutral-500/60 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:accent-neutral-200"
                                       />
                                     </label>
                                   </div>
@@ -1024,7 +1028,7 @@ export function SettingsDrawer({
                                     {isExporting && (
                                       <span
                                         aria-hidden="true"
-                                        className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                        className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
                                         style={{ width: `${Math.round(exportProgress * 100)}%` }}
                                       />
                                     )}
@@ -1034,7 +1038,7 @@ export function SettingsDrawer({
                                         className={isExporting ? "animate-pulse" : undefined}
                                       />
                                       {isExporting
-                                        ? `Creating backup... ${Math.round(exportProgress * 100)}%`
+                                        ? `Creating backup… ${Math.round(exportProgress * 100)}%`
                                         : "Back up selected"}
                                     </span>
                                   </button>
@@ -1062,12 +1066,12 @@ export function SettingsDrawer({
                               type="button"
                               onClick={restoreBackup}
                               disabled={isExporting || isRestoring}
-                              className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                              className="relative w-full flex items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300/50 bg-white/50 px-3 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
                             >
                               {isRestoring && (
                                 <span
                                   aria-hidden="true"
-                                  className="absolute inset-y-0 left-0 bg-blue-500/15 transition-[width] duration-200 dark:bg-blue-400/20"
+                                  className="absolute inset-y-0 left-0 bg-neutral-500/15 transition-[width] duration-200 dark:bg-neutral-400/20"
                                   style={{ width: `${Math.round(restoreProgress * 100)}%` }}
                                 />
                               )}
@@ -1078,7 +1082,7 @@ export function SettingsDrawer({
                                 />
                                 <span className="font-medium">
                                   {isRestoring
-                                    ? `Restoring... ${Math.round(restoreProgress * 100)}%`
+                                    ? `Restoring… ${Math.round(restoreProgress * 100)}%`
                                     : "Restore backup"}
                                 </span>
                               </span>
@@ -1152,20 +1156,17 @@ export function SettingsDrawer({
                                   type="button"
                                   onClick={toggleCompanion}
                                   disabled={!!currentAgent}
-                                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  className={cn(
+                                    "shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                                     companionEnabled
-                                      ? "bg-emerald-500 dark:bg-emerald-600"
-                                      : "bg-neutral-300 dark:bg-neutral-600"
-                                  }`}
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-neutral-400 dark:text-neutral-500",
+                                  )}
                                   role="switch"
                                   aria-checked={companionEnabled}
                                   aria-label="Enable companion"
                                 >
-                                  <span
-                                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                                      companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
-                                    }`}
-                                  />
+                                  {companionEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                 </button>
                               </div>
                             </div>
@@ -1252,10 +1253,10 @@ export function SettingsDrawer({
                           <div className="rounded-lg bg-white/40 dark:bg-neutral-800/40 border border-neutral-200/50 dark:border-neutral-700/50 p-3">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                                Total Storage
+                                Total storage
                               </span>
                               <span className="text-sm font-mono text-neutral-600 dark:text-neutral-400">
-                                {storageInfo.isLoading ? "..." : formatBytes(storageInfo.totalSize)}
+                                {storageInfo.isLoading ? "…" : formatBytes(storageInfo.totalSize)}
                               </span>
                             </div>
                             <p className="text-xs text-neutral-500 dark:text-neutral-500">
@@ -1264,10 +1265,16 @@ export function SettingsDrawer({
                           </div>
 
                           {/* Diagnostic Tools */}
-                          <div className="space-y-2">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
-                              Diagnostic Tools
-                            </span>
+                          <section
+                            aria-labelledby="diagnostic-tools-heading"
+                            className="space-y-3 border-t border-neutral-200/60 pt-5 dark:border-neutral-800/60"
+                          >
+                            <h4
+                              id="diagnostic-tools-heading"
+                              className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                            >
+                              Diagnostic tools
+                            </h4>
                             <div className="space-y-2">
                               <button
                                 type="button"
@@ -1279,7 +1286,7 @@ export function SettingsDrawer({
                                   className="text-neutral-500 dark:text-neutral-400 shrink-0"
                                 />
                                 <div className="min-w-0">
-                                  <div className="font-medium">OPFS Browser</div>
+                                  <div className="font-medium">OPFS browser</div>
                                   <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
                                     Browse and inspect stored files
                                   </div>
@@ -1300,7 +1307,7 @@ export function SettingsDrawer({
                                 />
                                 <div className="min-w-0">
                                   <div className="font-medium">
-                                    {isRebuildingIndexes ? "Rebuilding..." : "Rebuild Indexes"}
+                                    {isRebuildingIndexes ? "Rebuilding…" : "Rebuild indexes"}
                                   </div>
                                   <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
                                     Rescan and repair storage indexes
@@ -1308,13 +1315,24 @@ export function SettingsDrawer({
                                 </div>
                               </button>
                             </div>
-                          </div>
+                          </section>
 
-                          {/* Danger Zone */}
-                          <div className="space-y-2">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-red-500/80 dark:text-red-400/80">
-                              Danger Zone
-                            </span>
+                          {/* Danger zone */}
+                          <section
+                            aria-labelledby="advanced-danger-heading"
+                            className="space-y-3 border-t border-red-200/70 pt-5 dark:border-red-900/40"
+                          >
+                            <div>
+                              <h4
+                                id="advanced-danger-heading"
+                                className="text-sm font-medium text-red-700 dark:text-red-400"
+                              >
+                                Danger zone
+                              </h4>
+                              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                                This removes everything stored in this browser and cannot be undone.
+                              </p>
+                            </div>
                             <button
                               type="button"
                               onClick={deleteAllData}
@@ -1322,13 +1340,13 @@ export function SettingsDrawer({
                             >
                               <Trash2 size={16} className="shrink-0" />
                               <div className="min-w-0">
-                                <div className="font-medium">Delete All Data</div>
+                                <div className="font-medium">Delete all data</div>
                                 <div className="text-xs text-red-600/70 dark:text-red-400/70 truncate">
                                   Permanently remove all chats, agents, and settings
                                 </div>
                               </div>
                             </button>
-                          </div>
+                          </section>
                         </section>
                       )}
                     </div>

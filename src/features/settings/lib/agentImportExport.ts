@@ -58,7 +58,12 @@ export async function exportSingleAgentAsZip(
   await withPersistenceLock("collection:agents", () =>
     withPersistenceLock("collection:skills", async () => {
       await addDirectoryToZip(await getDirectory(`agents/${id}`), zip);
-      if (!includeMemory) zip.remove("MEMORY.md");
+      // The runtime queue is never part of a shareable agent.
+      zip.remove("memory-state.json");
+      if (!includeMemory) {
+        zip.remove("MEMORY.md");
+        zip.remove("memory");
+      }
       const md = await readAgentMd(id);
       const parsed = md ? parseAgentMd(md) : undefined;
       if (parsed) {
@@ -122,6 +127,7 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
     for (const [path, blob] of files) {
       if (!path.startsWith(prefix)) continue;
       const relative = path.slice(prefix.length);
+      if (flat && relative === "memory-state.json") continue;
       if (relative.startsWith("skills/")) {
         mapped.set(relative, blob);
         continue;
@@ -138,8 +144,7 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
   }
   // Full backups store skills beside agents; shareable exports bundle them.
   for (const [path, blob] of files) if (path.startsWith("skills/")) mapped.set(path, blob);
-  if (files.has("agents/index.json"))
-    mapped.set("agents/index.json", files.get("agents/index.json")!);
+  if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
   await restoreFiles(mapped);
 }
 
@@ -157,9 +162,7 @@ export async function importAgentsFromLegacyJson(
       await storeAgent(importedAgent(record, id));
       imported++;
     } catch (error) {
-      await removeAgent(id).catch((cleanupError) =>
-        console.error("Import cleanup failed:", cleanupError),
-      );
+      await removeAgent(id).catch((cleanupError) => console.error("Import cleanup failed:", cleanupError));
       console.error("Could not import agent:", error);
     }
   }
@@ -212,10 +215,7 @@ export function triggerAgentImport(): void {
 
         const result = await importAgentsFromLegacyJson(jsonData);
         if (result.failed) {
-          notify.error(
-            "Some agents could not be imported",
-            `${result.imported} imported; ${result.failed} failed.`,
-          );
+          notify.error("Some agents could not be imported", `${result.imported} imported; ${result.failed} failed.`);
           if (!result.imported) return;
         }
         notify.success(

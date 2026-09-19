@@ -22,7 +22,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -52,7 +52,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <ToolsSection agent={agent} />
       <SkillsSection agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
-      {config.memory && <MemorySection agent={agent} />}
+      {config.memory && <MemorySection key={agent.id} agent={agent} />}
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
         <button
           type="button"
@@ -83,7 +83,7 @@ export function AgentDrawer() {
   const config = getConfig();
 
   // On mobile, tapping an agent activates it and closes the drawer instead of opening details.
-  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const isMobile = !useBreakpoint("md");
 
   // "list" shows the agent list; "details" shows the selected agent's configuration
   const [view, setView] = useState<"list" | "details">("list");

@@ -173,7 +173,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                 leaveTo="opacity-0 scale-95"
               >
                 <Dialog.Panel className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl sm:rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh]">
-                  <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 py-2 dark:border-neutral-800/60">
+                  <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-3 py-2 dark:border-neutral-800/60">
                     <div className="w-32 shrink-0">
                       <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                         Skills
@@ -207,9 +207,9 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                           setFilterOpen(false);
                           setFilterSearch("");
                         }}
-                        className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                        className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                       >
-                        <X size={14} />
+                        <X size={15} />
                       </button>
                     </div>
                   </div>

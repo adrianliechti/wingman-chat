@@ -20,6 +20,9 @@ import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
 import { useChatQueue } from "./useChatQueue";
 import { createAttachmentLoader } from "../lib/chatAttachments";
+import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
+import { recallMemory } from "@/features/agent/lib/memoryRecall";
+import { memoryMessageText, reconcileMemorySources } from "@/features/agent/lib/memorySources";
 
 interface Options {
   model: Model | null;
@@ -34,6 +37,7 @@ interface Options {
   chatTools: ReturnType<typeof useChatContext>["tools"];
   chatInstructions: ReturnType<typeof useChatContext>["instructions"];
   chatRuntimeContext: ReturnType<typeof useChatContext>["runtimeContext"];
+  chatMemory: ReturnType<typeof useChatContext>["memory"];
 }
 
 export function useChatRun({
@@ -49,6 +53,7 @@ export function useChatRun({
   chatTools,
   chatInstructions,
   chatRuntimeContext,
+  chatMemory,
 }: Options) {
   const config = getConfig();
   const client = config.client;
@@ -121,6 +126,9 @@ export function useChatRun({
         ? withMessageIdentity(appendTextContent(message, pendingModelContext), runId)
         : history.findLast(isUserMessage);
       let toolMessage = outgoingMessage;
+      // Capture ownership at run start, even if the selected agent later changes.
+      const memory = chatMemory();
+      const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
 
       let conversation = message && outgoingMessage ? [...history, outgoingMessage] : [...history];
 
@@ -173,7 +181,22 @@ export function useChatRun({
         abortController.signal.throwIfAborted();
         if (outgoingMessage) toolMessage = (await loadAttachments([outgoingMessage], abortController.signal))[0];
         const instructions = chatInstructions();
-        const requestContext = captureRequestContext(chatRuntimeContext());
+        let memoryContext = "";
+        if (memory) {
+          try {
+            await reconcileMemorySources(memory);
+            memoryContext = recallMemory(
+              await memory.snapshot(),
+              outgoingMessage ? memoryMessageText(outgoingMessage) : "",
+            );
+          } catch (error) {
+            console.warn("Memory recall unavailable:", error);
+          }
+        }
+        abortController.signal.throwIfAborted();
+        const requestContext = captureRequestContext(
+          [chatRuntimeContext(), memoryContext].filter(Boolean).join("\n\n"),
+        );
 
         // The model can opt out with 0; the deployment threshold is a ceiling.
         const compaction = config.chat?.compaction;
@@ -317,6 +340,15 @@ export function useChatRun({
           throw error;
         }
 
+        if (memory && runResult.status !== "max_turns") {
+          const delta = conversation.filter((item) => item.runId === runId && item.id !== outgoingMessage?.id);
+          if (outgoingMessage) delta.unshift(outgoingMessage);
+          // Persist a small queue entry before returning, never await extraction.
+          await enqueueMemoryLearning(memory, id, config.chat?.summarizer || currentModel.id, delta).catch((error) =>
+            console.warn("Memory learning could not be queued:", error),
+          );
+        }
+
         const ready = takeQueuedSends(id);
         if (ready.length > 0) {
           await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
@@ -379,6 +411,8 @@ export function useChatRun({
 
         updateChat(id, () => ({ messages: conversation }));
         setRunPhase("idle");
+      } finally {
+        releaseMemory?.();
       }
     },
     [
@@ -399,6 +433,7 @@ export function useChatRun({
       chatTools,
       chatInstructions,
       chatRuntimeContext,
+      chatMemory,
       requestElicitation,
       updateModelContext,
       updateStreamingMessage,

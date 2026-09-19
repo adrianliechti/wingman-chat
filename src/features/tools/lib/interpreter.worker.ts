@@ -327,6 +327,8 @@ async function createExecutionGlobals(
   signal: AbortSignal,
 ): Promise<PyodideInterface["globals"]> {
   const globals = pyodide.runPython("dict()") as PyodideInterface["globals"];
+  // Match standalone scripts so `if __name__ == "__main__"` blocks execute.
+  globals.set("__name__", "__main__");
   // Python tasks can retain their globals after runPythonAsync returns. Bind
   // bridges to this execution so delayed work cannot borrow the next run's
   // model, budget, or workspace through the reused worker's active RPC slot.

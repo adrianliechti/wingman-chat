@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { getMemoryManager, type MemoryManager } from "@/features/agent/lib/memoryManager";
+import { mountMemoryFiles } from "@/features/agent/lib/memoryFileMount";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
@@ -18,6 +20,7 @@ export interface ChatContext {
   tools: () => Promise<Tool[]>;
   instructions: () => string;
   runtimeContext: () => string;
+  memory: () => MemoryManager | undefined;
 }
 
 export function useChatContext(
@@ -39,16 +42,12 @@ export function useChatContext(
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
       // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
-      let filteredProviders = providers.filter(
-        (p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected,
-      );
+      let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
 
       // Add the artifacts provider whenever the feature is available (the
       // provider is null otherwise). It may already be present if explicitly
       // enabled via the agent tools toggle.
-      const artifactsAlreadyIncluded = filteredProviders.some(
-        (p: ToolProvider) => p.id === "artifacts",
-      );
+      const artifactsAlreadyIncluded = filteredProviders.some((p: ToolProvider) => p.id === "artifacts");
       if (!artifactsAlreadyIncluded && artifactsProvider) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
@@ -80,7 +79,13 @@ export function useChatContext(
       return filteredProviders;
     };
 
+    const memory = () =>
+      currentAgent?.memory && getConfig().memory && getFilteredProviders().some((p) => p.id === "memory")
+        ? getMemoryManager(currentAgent.id)
+        : undefined;
+
     return {
+      memory,
       tools: async () => {
         // Make the active chat model available to the python `llm` helper
         // so it inherits whatever the user is currently chatting with.
@@ -94,15 +99,14 @@ export function useChatContext(
         console.log("Compiled Tools from Providers:", toolsArrays);
 
         // Image generation follows renderer availability, independent of Studio.
-        const baseTools = [...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])];
+        const baseTools = mountMemoryFiles([...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])], memory());
         // Clarification is a core chat capability, independent of provider
         // selections and model allowlists. Only the outer chat owns elicitation.
         const tools = [...baseTools, ASK_QUESTIONS_TOOL];
 
         const subagentModel =
           mode === "voice"
-            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ??
-              null)
+            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)
             : (model?.id ?? null);
 
         if (baseTools.length === 0 || !subagentModel) {
@@ -114,19 +118,12 @@ export function useChatContext(
           .filter((s): s is string => !!s)
           .join("\n\n");
         const providerRuntimeContext = filteredProviders
+          .filter((p) => p.id !== "memory")
           .map((p: ToolProvider) => p.runtimeContext?.trim())
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [
-          ...tools,
-          createSubagentTool(
-            subagentModel,
-            providerInstructions,
-            baseTools,
-            providerRuntimeContext,
-          ),
-        ];
+        return [...tools, createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext)];
       },
 
       instructions: () => {
@@ -175,6 +172,7 @@ export function useChatContext(
       },
       runtimeContext: () =>
         getFilteredProviders()
+          .filter((provider) => mode === "voice" || provider.id !== "memory")
           .map((provider) => provider.runtimeContext?.trim())
           .filter(Boolean)
           .join("\n\n"),

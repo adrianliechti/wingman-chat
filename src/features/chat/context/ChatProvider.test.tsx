@@ -7,6 +7,9 @@ import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
 import type { AgentBeforeFinishDecision } from "@/shared/lib/agent";
+import { MemoryManager } from "@/features/agent/lib/memoryManager";
+import { memoryRevision } from "@/features/agent/lib/memoryDocument";
+import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 
 const fixture = vi.hoisted(() => ({
   chats: [] as Chat[],
@@ -18,6 +21,7 @@ const fixture = vi.hoisted(() => ({
   classify: vi.fn(),
   artifacts: false,
   verify: vi.fn<() => Promise<AgentBeforeFinishDecision>>(),
+  memory: undefined as MemoryManager | undefined,
 }));
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
@@ -46,6 +50,7 @@ vi.mock("@/features/chat/hooks/useChatContext", () => ({
     tools: async () => fixture.tools,
     instructions: () => "Instructions",
     runtimeContext: () => "",
+    memory: () => fixture.memory,
   }),
 }));
 vi.mock("@/features/chat/hooks/useModels", () => ({
@@ -124,6 +129,7 @@ beforeEach(() => {
   fixture.tools = [];
   fixture.chat = {};
   fixture.artifacts = false;
+  fixture.memory = undefined;
   fixture.verify.mockReset().mockResolvedValue({ action: "finish" });
   fixture.complete.mockReset();
   fixture.summarize.mockReset().mockResolvedValue("The tool gathered the evidence.");
@@ -131,11 +137,43 @@ beforeEach(() => {
   vi.stubGlobal("window", { setTimeout, clearTimeout });
 });
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("chat run integration", () => {
+  it("loads memory before the first request and keeps one snapshot throughout the tool loop", async () => {
+    vi.useFakeTimers();
+    const disk = new MemoryOpfs();
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
+    disk.put("agents/agent/AGENTS.md", "---\nname: Agent\nmemory: true\n---\n");
+    const manager = new MemoryManager("agent");
+    fixture.memory = manager;
+    await manager.write("/.memory/preference.md", "---\ntype: Preference\ncore: true\n---\nPrefer concise answers.");
+    fixture.tools = [
+      {
+        name: "work",
+        parameters: { type: "object" },
+        function: async () => {
+          const before = (await manager.snapshot()).files.get("preference.md")!;
+          await manager.write("/.memory/preference.md", "A different preference.", await memoryRevision(before));
+          return [{ type: "text", text: "Done" }];
+        },
+      },
+    ];
+    fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("Finished"));
+    await harness().sendMessage(user("Please work on this task."));
+    expect(fixture.complete).toHaveBeenCalledTimes(2);
+    for (const request of fixture.complete.mock.calls) {
+      expect(JSON.stringify(request[2])).toContain("Prefer concise answers.");
+      expect(JSON.stringify(request[2])).not.toContain("A different preference.");
+    }
+    expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("<memory>");
+    expect((await manager.snapshot()).state.jobs).toHaveLength(1);
+  });
+
   it("repairs and references saved artifacts without a declaration tool", async () => {
     fixture.artifacts = true;
     fixture.verify

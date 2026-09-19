@@ -10,7 +10,7 @@ import {
   validateSkillName,
 } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
@@ -100,7 +100,7 @@ export function SkillCatalogPanel({
   onConfirmDiscardChange,
 }: SkillCatalogPanelProps & { onShowOverview: () => void }) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
-  const isDesktop = useMediaQuery("(min-width: 640px)");
+  const isDesktop = useBreakpoint("sm");
   const editorNameInputId = useId();
   const editorDescriptionInputId = useId();
   const editorContentInputId = useId();
@@ -468,7 +468,7 @@ export function SkillCatalogPanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {/* ── Editor header ── */}
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-3 dark:border-neutral-800/60">
           <span className="ml-1 flex-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             {selectedSkill ? selectedSkill.name : "New Skill"}
           </span>
@@ -659,7 +659,7 @@ export function SkillCatalogPanel({
   if (viewKind === "skill-detail" && selectedSkill) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 px-4 dark:border-neutral-800/60">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-3 dark:border-neutral-800/60">
           <CatalogBreadcrumb parents={[{ label: "Skills", onClick: onShowOverview }]} title={selectedSkill.name} />
           <button
             type="button"

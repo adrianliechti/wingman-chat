@@ -6,9 +6,13 @@ import { createRepositoryTools } from "@/features/repository/lib/repository-tool
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { getConfig } from "@/shared/config";
-import * as opfs from "@/shared/lib/opfs";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
+import type { ToolProvider } from "@/shared/types/chat";
 import { useAgentFiles } from "./useAgentFiles";
+import { getMemoryManager } from "../lib/memoryManager";
+import { recallMemory } from "../lib/memoryRecall";
+import { subscribeMemory } from "../lib/memoryEvents";
+import { resumeMemoryLearning } from "../lib/memoryLearning";
+import { reconcileMemorySources } from "../lib/memorySources";
 
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
@@ -110,121 +114,47 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   // --- Memory provider ---
   const config = getConfig();
   const memoryEnabled = !!config.memory && !!agent?.memory;
-  const memoryPath = memoryEnabled ? `agents/${agentId}/MEMORY.md` : "";
-  const [memoryContent, setMemoryContent] = useState<string>("");
-
-  // Load memory content from OPFS when memory is enabled
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadMemoryContent = async () => {
-      const text = memoryPath ? await opfs.readText(memoryPath) : "";
-      if (!cancelled) {
-        setMemoryContent(text || "");
-      }
-    };
-
-    loadMemoryContent().catch(console.error);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [memoryPath]);
-
-  // Re-read memory when the agent writes to it mid-conversation
+  const [coreMemory, setCoreMemory] = useState({ agentId: "", content: "" });
   useEffect(() => {
     if (!memoryEnabled) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.agentId === agentId) {
-        void opfs.readText(memoryPath).then((text) => setMemoryContent(text || ""));
+    let active = true;
+    const manager = getMemoryManager(agentId);
+    const refresh = async () => {
+      await reconcileMemorySources(manager);
+      const snapshot = await manager.snapshot();
+      if (active) {
+        setCoreMemory({ agentId, content: recallMemory(snapshot, "") });
+        resumeMemoryLearning(manager);
       }
     };
-    window.addEventListener("memory-updated", handler);
-    return () => window.removeEventListener("memory-updated", handler);
-  }, [memoryEnabled, agentId, memoryPath]);
-
-  const memoryProvider = useMemo<ToolProvider | null>(() => {
-    if (!memoryEnabled) return null;
-
-    const agentPath = `agents/${agentId}`;
-    const tools: Tool[] = [
-      {
-        name: "write_memory",
-        display: {
-          header: (_args, state) => ({
-            icon: BrainCircuit,
-            label: state.error ? "Save failed" : state.running ? "Saving memory…" : "Saved memory",
-            suppressPreview: true,
-          }),
-          input: (args) => {
-            const content = typeof args?.content === "string" ? args.content : "";
-            return content ? [{ code: content, language: "markdown" }] : [];
-          },
-        },
-        description:
-          "Write/update your persistent memory. Replaces the entire content. Max 25KB. Keep under 200 lines by consolidating older entries.",
-        parameters: {
-          type: "object",
-          properties: {
-            content: {
-              type: "string",
-              description: "The full memory content to save (markdown format).",
-            },
-          },
-          required: ["content"],
-          additionalProperties: false,
-        },
-        function: async (args: Record<string, unknown>) => {
-          const content = args.content as string;
-          if (!content) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "No content provided" }) }];
-          }
-
-          const byteSize = new TextEncoder().encode(content).length;
-          const maxBytes = 25 * 1024;
-          if (byteSize > maxBytes) {
-            return [
-              {
-                type: "text" as const,
-                text: `Error: Memory content is ${Math.round(byteSize / 1024)}KB which exceeds the 25KB limit. Please consolidate or remove less important entries and try again.`,
-              },
-            ];
-          }
-
-          await opfs.writeText(`${agentPath}/MEMORY.md`, content);
-          window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } }));
-
-          const lineCount = content.split("\n").length;
-          const warnBytes = 12 * 1024;
-          let response = "Memory updated successfully.";
-          if (byteSize > warnBytes || lineCount > 150) {
-            response += ` Warning: Memory is ${(byteSize / 1024).toFixed(1)}KB / ${lineCount} lines. Consider consolidating to stay under 12KB / 200 lines.`;
-          }
-          return [{ type: "text" as const, text: response }];
-        },
-      },
-    ];
-
-    const memorySection = memoryContent.trim()
-      ? (() => {
-          const bytes = new TextEncoder().encode(memoryContent).length;
-          const lines = memoryContent.split("\n").length;
-          const meta = `<!-- ${(bytes / 1024).toFixed(1)}KB, ${lines} lines -->`;
-          return `\n\n<memory>\n${meta}\n${memoryContent.trim()}\n</memory>`;
-        })()
-      : "\n\nNo memories yet.";
-
-    return {
-      id: "memory",
-      name: "Memory",
-      description: "Persistent memory across conversations",
-      icon: BrainCircuit,
-      instructions: memoryPrompt,
-      runtimeContext: memorySection,
-      tools,
+    const load = () => {
+      void refresh().catch(console.error);
     };
-  }, [memoryEnabled, memoryContent, agentId]);
+    load();
+    const unsubscribe = subscribeMemory(agentId, load);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [agentId, memoryEnabled]);
+
+  const memoryProvider = useMemo<ToolProvider | null>(
+    () =>
+      memoryEnabled
+        ? {
+            id: "memory",
+            name: "Memory",
+            description: "Persistent notes across conversations",
+            icon: BrainCircuit,
+            instructions: memoryPrompt,
+            // Voice can consume core preferences synchronously. Text chat selects notes
+            // after loading the store and before capturing its per-run request context.
+            runtimeContext: coreMemory.agentId === agentId ? coreMemory.content : "",
+            tools: [],
+          }
+        : null,
+    [memoryEnabled, coreMemory, agentId],
+  );
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(

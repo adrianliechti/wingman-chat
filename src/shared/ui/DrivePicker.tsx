@@ -292,7 +292,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all flex flex-col max-h-[80vh]">
+              <Dialog.Panel className="w-full max-w-lg overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all flex flex-col max-h-[80vh]">
                 {/* Header */}
                 <div className="border-b border-neutral-200/60 px-4 py-2.5 dark:border-neutral-800/60 shrink-0">
                   <div className="flex items-center gap-3">

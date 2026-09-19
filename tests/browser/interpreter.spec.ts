@@ -194,6 +194,7 @@ test("Python uses real Pyodide, blocks fetch, writes files, and resets per-run s
       code: `import os
 from pathlib import Path
 sentinel = 42
+__name__ = "previous_run"
 os.environ["WINGMAN_SENTINEL"] = "set"
 os.chdir("/tmp")
 Path("/home/user/generated.txt").write_text("generated")
@@ -220,7 +221,8 @@ print("python-ok", network_blocked, storage_blocked)`,
   const second = await page.evaluate(() =>
     window.interpreterE2E.executePython({
       code: `import os
-print("sentinel" in globals(), os.getcwd(), os.environ.get("WINGMAN_SENTINEL"))`,
+if __name__ == "__main__":
+    print("sentinel" in globals(), os.getcwd(), os.environ.get("WINGMAN_SENTINEL"))`,
     }),
   );
   expect(second).toMatchObject({ success: true, output: "False /home/user None" });

@@ -1,10 +1,7 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { Transition } from "@headlessui/react";
 import {
   AppWindow,
   ArrowDown,
-  ChevronLeft,
-  ChevronRight,
   Info,
   Plus as PlusIcon,
   Shapes,
@@ -15,6 +12,8 @@ import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { EdgeLatch } from "@/features/chat/components/EdgeLatch";
+import { PanelShell } from "@/features/chat/components/PanelShell";
 import { AgentButton } from "@/features/chat/components/AgentButton";
 import {
   ChatConsentBackdrop,
@@ -35,7 +34,7 @@ import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
@@ -232,7 +231,7 @@ export function ChatPage() {
   const { backgroundImage } = useBackground();
 
   // Track if we're on mobile for drawer positioning
-  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const isMobile = !useBreakpoint("md");
 
   const APP_MIN_PX = 360;
   const ARTIFACTS_MIN_PX = 360;
@@ -262,6 +261,7 @@ export function ChatPage() {
           ? setAppWidthVw(widthVw)
           : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
+    show: showAgentDrawer,
     setShow: setShowAgentDrawer,
   });
 
@@ -277,6 +277,7 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showAppDrawer,
     setShow: setShowAppDrawer,
   });
 
@@ -292,6 +293,7 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showArtifactsDrawer,
     setShow: setShowArtifactsDrawer,
   });
 
@@ -358,6 +360,8 @@ export function ChatPage() {
       : showAgentDrawer
         ? `calc(${agentWidthVw}vw + 0.75rem)`
         : undefined;
+  // Right-side panel shells make room for the open agent drawer by this much.
+  const agentOffsetVw = !isMobile && showAgentDrawer ? agentWidthVw : 0;
   // Whether the drawer driving that offset is mid-drag (so the footer tracks instantly).
   const isContentOffsetResizing =
     isAgentResizing ||
@@ -682,251 +686,72 @@ export function ChatPage() {
 
       <ChatConsentBanner />
 
-      {/* Edge tabs - slim drawer handles on the right side of the viewport.
-          When the agent drawer is open, they ride its left edge so they stay clickable.
-          On mobile they render as compact icon-only handles. */}
-      <div
-        className={cn(
-          "fixed top-[max(4rem,calc(25vh-4rem))] z-30 flex flex-col items-end gap-2",
-          !isAgentResizing && "transition-[right] duration-500 ease-in-out",
-        )}
-        style={{ right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : "0vw" }}
-      >
-        {artifactsAvailable && !showArtifactsDrawer && !showAppDrawer && (
-          <button
-            type="button"
-            onClick={toggleArtifactsDrawer}
-            title="Open artifacts"
-            aria-label="Open artifacts"
-            className={cn(
-              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
-              isMobile ? "h-11" : "h-32",
-            )}
-          >
-            <Shapes size={16} className="shrink-0 -rotate-90" />
-            {!isMobile && (
-              <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
-                Artifacts
-              </span>
-            )}
-          </button>
-        )}
-        {hasAppContent && !showAppDrawer && !showArtifactsDrawer && (
-          <button
-            type="button"
-            onClick={toggleAppDrawer}
-            title="Open app"
-            aria-label="Open app"
-            className={cn(
-              "group flex flex-col items-center justify-center gap-2 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out",
-              isMobile ? "h-11" : "h-32",
-            )}
-          >
-            <AppWindow size={16} className="shrink-0 -rotate-90" />
-            {!isMobile && (
-              <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
-                App
-              </span>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* Artifacts drawer - right side */}
-      <Transition
-        show={showArtifactsDrawer}
-        as="div"
-        enter={cn(!isArtifactsResizing && "transition-all duration-500 ease-in-out")}
-        enterFrom="translate-x-full opacity-0"
-        enterTo="translate-x-0 opacity-100"
-        leave={cn(!isArtifactsResizing && "transition-all duration-500 ease-in-out")}
-        leaveFrom="translate-x-0 opacity-100"
-        leaveTo="translate-x-full opacity-0"
-        className={cn(
-          "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
-          !isArtifactsResizing && "transition-[right] duration-500 ease-in-out",
-          isMobile ? "w-full" : "",
-        )}
-        style={{
-          width: isMobile ? undefined : `${artifactsWidthVw}vw`,
-          right: !isMobile && showAgentDrawer ? `${agentWidthVw}vw` : undefined,
-          top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? 0 : undefined,
-        }}
-      >
-        {/* Resize handle on the left edge */}
-        {!isMobile && (
-          <button
-            type="button"
-            aria-label="Resize artifacts panel"
-            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-            onMouseDown={handleArtifactsResizeMouseDown}
-          >
-            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-              </div>
-            </div>
-          </button>
-        )}
-        {/* Collapse handle on the left edge - mirrors the open tab, closes the drawer */}
-        {!isMobile && (
-          <button
-            type="button"
-            onClick={toggleArtifactsDrawer}
-            title="Close artifacts"
-            aria-label="Close artifacts"
-            className="group absolute -left-6.75 top-[max(0.5rem,calc(25vh-7.5rem))] z-10 flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
-            style={{ clipPath: "inset(-8px 0 -8px -8px)" }}
-          >
-            <ChevronRight
-              size={16}
-              className="shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
-            />
-            <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
-              Artifacts
-            </span>
-          </button>
-        )}
-        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
-          {/* Mobile close bar */}
-          <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
-            <button
-              type="button"
+      {/* Right-side panels. Each shell is always mounted and slides with `translate`
+          (see PanelShell); the artifact and app shells also carry their edge latch. */}
+      <PanelShell
+        open={showArtifactsDrawer}
+        widthVw={artifactsWidthVw}
+        offsetVw={agentOffsetVw}
+        resizing={isArtifactsResizing || isAgentResizing}
+        compact={isMobile}
+        className="z-20"
+        resizeLabel="Resize artifacts panel"
+        onResizeStart={handleArtifactsResizeMouseDown}
+        onClose={toggleArtifactsDrawer}
+        latch={
+          artifactsAvailable && (
+            <EdgeLatch
+              label="Artifacts"
+              icon={<Shapes size={16} className="-rotate-90" />}
+              open={showArtifactsDrawer}
+              hidden={showAppDrawer}
+              compact={isMobile}
               onClick={toggleArtifactsDrawer}
-              className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
-            >
-              <ChevronLeft size={16} />
-              <span>Back</span>
-            </button>
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <ArtifactsDrawer />
-          </div>
-        </div>
-      </Transition>
-      <Transition
-        show={showAgentDrawer}
-        as="div"
-        enter={cn(!isAgentResizing && "transition-all duration-500 ease-in-out")}
-        enterFrom="translate-x-full opacity-0"
-        enterTo="translate-x-0 opacity-100"
-        leave={cn(!isAgentResizing && "transition-all duration-500 ease-in-out")}
-        leaveFrom="translate-x-0 opacity-100"
-        leaveTo="translate-x-full opacity-0"
-        className={cn(
-          "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
-          isMobile ? "w-full" : "",
-        )}
-        style={{
-          width: isMobile ? undefined : `${agentWidthVw}vw`,
-          top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? 0 : undefined,
-        }}
-      >
-        {/* Resize handle on the left edge */}
-        {!isMobile && (
-          <button
-            type="button"
-            aria-label="Resize agent panel"
-            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-            onMouseDown={handleAgentResizeMouseDown}
-          >
-            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-              </div>
-            </div>
-          </button>
-        )}
-        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
-          <AgentDrawer />
-        </div>
-      </Transition>
-
-      {/* App drawer - right side - for MCP tool UIs */}
-      {/* Always render so iframe is available, but hide when not active */}
-      <div
-        className={cn(
-          "w-full transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
-          !isAppResizing && "transition-all duration-300 ease-out",
-          showAppDrawer
-            ? "translate-x-0 opacity-100"
-            : "translate-x-full opacity-0 pointer-events-none",
-        )}
-        style={{
-          width: isMobile ? undefined : `${appWidthVw}vw`,
-          right: !isMobile && showAgentDrawer && showAppDrawer ? `${agentWidthVw}vw` : undefined,
-          top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? 0 : undefined,
-        }}
-      >
-        {/* Resize handle on the left edge */}
-        {!isMobile && (
-          <button
-            type="button"
-            aria-label="Resize app panel"
-            className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center cursor-ew-resize"
-            onMouseDown={handleAppResizeMouseDown}
-          >
-            <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
-              <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-                <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
-              </div>
-            </div>
-          </button>
-        )}
-        {/* Collapse handle on the left edge - mirrors the open tab, closes the drawer */}
-        {!isMobile && (
-          <button
-            type="button"
-            onClick={toggleAppDrawer}
-            title="Close app"
-            aria-label="Close app"
-            className="group absolute -left-6.75 top-[max(9rem,calc(25vh+1rem))] z-10 flex flex-col items-center justify-center gap-2 h-32 w-7 rounded-l-lg border border-r-0 border-black/10 dark:border-white/10 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-sm shadow-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 transition-all duration-150 ease-out"
-            style={{ clipPath: "inset(-8px 0 -8px -8px)" }}
-          >
-            <ChevronRight
-              size={16}
-              className="shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
             />
-            <span className="text-[11px] font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
-              App
-            </span>
-          </button>
-        )}
-        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
-          {/* Mobile close bar */}
-          <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
-            <button
-              type="button"
+          )
+        }
+      >
+        <ArtifactsDrawer />
+      </PanelShell>
+      <PanelShell
+        open={showAgentDrawer}
+        widthVw={agentWidthVw}
+        resizing={isAgentResizing}
+        compact={isMobile}
+        className="z-25"
+        resizeLabel="Resize agent panel"
+        onResizeStart={handleAgentResizeMouseDown}
+      >
+        <AgentDrawer />
+      </PanelShell>
+      {/* App drawer for MCP tool UIs stays mounted so its iframe survives closing. */}
+      <PanelShell
+        open={showAppDrawer}
+        widthVw={appWidthVw}
+        offsetVw={agentOffsetVw}
+        resizing={isAppResizing || isAgentResizing}
+        compact={isMobile}
+        keepMounted
+        className="z-20"
+        resizeLabel="Resize app panel"
+        onResizeStart={handleAppResizeMouseDown}
+        onClose={toggleAppDrawer}
+        latch={
+          hasAppContent && (
+            <EdgeLatch
+              label="App"
+              icon={<AppWindow size={16} className="-rotate-90" />}
+              open={showAppDrawer}
+              hidden={showArtifactsDrawer}
+              compact={isMobile}
+              slot={artifactsAvailable ? 1 : 0}
               onClick={toggleAppDrawer}
-              className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
-            >
-              <ChevronLeft size={16} />
-              <span>Back</span>
-            </button>
-          </div>
-          <div className={cn("flex-1 overflow-hidden", isAppResizing && "pointer-events-none")}>
-            <AppDrawer />
-          </div>
-        </div>
-      </div>
+            />
+          )
+        }
+      >
+        <AppDrawer />
+      </PanelShell>
       <LibraryDialog
         isOpen={showSkillCatalog}
         onClose={closeSkillCatalog}

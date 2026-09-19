@@ -1,5 +1,7 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
+import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
+import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
 
 // Artifacts-provider tools that produce or write files.
 const ARTIFACT_WRITE_TOOLS = new Set([
@@ -103,7 +105,7 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
       for (const path of toolResultArtifactPaths(part)) seen.add(path);
     }
   }
-  return [...seen];
+  return [...seen].filter((path) => !isMemoryPath(path));
 }
 
 // Skill-builder tools that create or modify skills.
@@ -318,12 +320,27 @@ export function summarizeToolGroup(messages: Message[], indices: number[]): stri
   let searches = 0;
   let runs = 0;
   let generic = 0;
+  const memoryReads = new Set<string>();
+  const memoryWrites = new Set<string>();
+  const memoryDeletes = new Set<string>();
+  let memorySearches = 0;
 
   for (const index of indices) {
     for (const part of messages[index]?.content ?? []) {
       if (part.type !== "tool_result") continue;
       const family = TOOL_FAMILIES[part.name] ?? (part.name.startsWith("execute_") ? "run" : "generic");
       const args = tryParseToolArguments(part.arguments);
+      if (args && part.name.startsWith("artifacts_")) {
+        const operation = part.name.slice("artifacts_".length);
+        const paths = memoryOperationPaths(operation, args).filter(isMemoryPath) as string[];
+        if (paths.length) {
+          if (operation === "glob" || operation === "grep") memorySearches++;
+          else
+            for (const path of paths)
+              (operation === "read" ? memoryReads : operation === "delete" ? memoryDeletes : memoryWrites).add(path);
+          continue;
+        }
+      }
       const argumentPath =
         typeof args?.file_path === "string"
           ? args.file_path
@@ -349,6 +366,10 @@ export function summarizeToolGroup(messages: Message[], indices: number[]): stri
   if (searches) segments.push(`Ran ${plural(searches, "search", "searches")}`);
   if (editTargets.size) segments.push(`Edited ${plural(editTargets.size, "file")}`);
   if (runs) segments.push(`Ran ${plural(runs, "command")}`);
+  if (memoryReads.size) segments.push(`Read ${plural(memoryReads.size, "memory note")}`);
+  if (memorySearches) segments.push("Searched memory");
+  if (memoryWrites.size) segments.push(`Updated ${plural(memoryWrites.size, "memory note")}`);
+  if (memoryDeletes.size) segments.push(`Forgot ${plural(memoryDeletes.size, "memory note")}`);
   if (generic && segments.length > 0) segments.push(`used ${plural(generic, "other tool")}`);
   if (segments.length === 0) return `Used ${plural(generic || indices.length, "tool")}`;
   return segments.join(", ");

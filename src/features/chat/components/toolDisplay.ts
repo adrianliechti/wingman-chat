@@ -9,6 +9,7 @@ import type {
   ToolProvider,
 } from "@/shared/types/chat";
 import { getToolCallPreview } from "./chatMessageUtils";
+import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
 
 export interface ResolvedToolHeader {
   Icon?: ToolDisplayIcon;
@@ -42,7 +43,7 @@ export function resolveToolHeader(
   // the preview fallback below — without hints, a still-streaming payload field
   // (e.g. `content` on create) makes recovery flaky and the preview flicker.
   const args = tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters));
-  const h = tool?.display?.header?.(args, state);
+  const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
   return {
     Icon: h?.icon,
     label: h?.label ?? tool?.title ?? getToolDisplayName(name),

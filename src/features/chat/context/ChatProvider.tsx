@@ -69,6 +69,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     tools: chatTools,
     instructions: chatInstructions,
     runtimeContext: chatRuntimeContext,
+    memory: chatMemory,
   } = useChatContext("chat", model, models);
 
   useEffect(() => {
@@ -239,6 +240,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chatTools,
     chatInstructions,
     chatRuntimeContext,
+    chatMemory,
   });
   const { streamingMessage, ...runContext } = run;
   const messages = useMemo(() => {
