@@ -220,6 +220,45 @@ test("file picker, file panel and editor context agree after switching and reope
   await expect(page.locator("pre")).toHaveText("Two");
 });
 
+test("Python editor Run displays output from a script's main block", async ({ page }) => {
+  await openFixture(page);
+  const id = await ensureChat(page);
+  const code = `"""A simple Python starter file."""
+
+
+def greet(name: str) -> str:
+    """Return a friendly greeting."""
+    return f"Hello, {name}! 👋"
+
+
+def fibonacci(n: int) -> list[int]:
+    """Return the first \`n\` Fibonacci numbers."""
+    seq = []
+    a, b = 0, 1
+    for _ in range(n):
+        seq.append(a)
+        a, b = b, a + b
+    return seq
+
+
+if __name__ == "__main__":
+    print(greet("Adrian"))
+    print("Fibonacci:", fibonacci(10))`;
+  await page.evaluate(
+    async ({ id, code }) => {
+      await window.artifactsE2E.write(id, "/main.py", code);
+      window.artifactsE2E.openFile("/main.py");
+      window.artifactsE2E.showDrawer(true);
+    },
+    { id, code },
+  );
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.locator("pre").filter({ hasText: "Hello, Adrian! 👋" })).toHaveText(
+    "Hello, Adrian! 👋\nFibonacci: [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]",
+  );
+  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
+});
+
 for (const language of ["javascript", "python"] as const) {
   test(`${language} editor cancels on file and chat switches and releases the next Run button`, async ({ page }) => {
     await openFixture(page);
