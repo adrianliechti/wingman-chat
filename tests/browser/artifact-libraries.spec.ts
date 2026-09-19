@@ -201,3 +201,91 @@ test("virtual .lib/ references load bundled libraries in previews, offline, and 
   await expect(opened.locator("#status")).toContainText('"frames":3');
   expect(errors).toEqual([]);
 });
+
+test("/.lib/tailwind.js compiles utility classes and @theme overrides in the preview", async ({ page, context }) => {
+  const errors: string[] = [];
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "127.0.0.1") return route.continue();
+    errors.push(`Unexpected external request: ${url}`);
+    return route.abort();
+  });
+  await page.goto("/tests/browser/fixtures/html-artifacts.html");
+  await page.waitForFunction(() => Boolean(window.htmlArtifactsE2E));
+  await page.evaluate(() =>
+    window.htmlArtifactsE2E.write(
+      "/styled.html",
+      '<!doctype html><html><head><script src="/.lib/tailwind.js"></script>' +
+        '<style type="text/tailwindcss">@theme { --color-brand: #167c80; }</style></head>' +
+        '<body><p id="box" class="p-4 text-brand">Styled</p></body></html>',
+    ),
+  );
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/styled.html"));
+  const box = page.frameLocator("iframe").locator("#box");
+  await expect(box).toHaveText("Styled");
+  await expect.poll(() => box.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("16px");
+  const color = await box.evaluate((element) => getComputedStyle(element).color);
+  expect(color).toMatch(/rgb\(22, 124, 128\)|oklch|color\(/);
+  expect(errors).toEqual([]);
+});
+
+test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder exports", async ({ page, context }) => {
+  const errors: string[] = [];
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "127.0.0.1") return route.continue();
+    errors.push(`Unexpected external request: ${url}`);
+    return route.abort();
+  });
+  await page.goto("/tests/browser/fixtures/html-artifacts.html");
+  await page.waitForFunction(() => Boolean(window.htmlArtifactsE2E));
+  await page.evaluate(() =>
+    window.htmlArtifactsE2E.write(
+      "/ui/components.html",
+      '<!doctype html><html data-theme="dark"><head><link rel="stylesheet" href="/.lib/daisyui.css">' +
+        '<script src="/.lib/tailwind.js"></script></head>' +
+        '<body><button id="cta" class="btn btn-primary">Go</button></body></html>',
+    ),
+  );
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/ui/components.html"));
+  const button = page.frameLocator("iframe").locator("#cta");
+  await expect(button).toHaveText("Go");
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).display)).toBe("inline-flex");
+  expect(await button.evaluate((element) => getComputedStyle(element).borderRadius)).not.toBe("0px");
+
+  const zip = await JSZip.loadAsync(
+    Buffer.from(await page.evaluate(() => window.htmlArtifactsE2E.exportZip()), "base64"),
+  );
+  expect(await zip.file("ui/components.html")!.async("string")).toContain('href="../.lib/daisyui.css"');
+  expect(zip.file(".lib/daisyui.css")).not.toBeNull();
+  expect(zip.file(".lib/tailwind.js")).not.toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test("/.lib/alpine.js drives declarative state in the preview", async ({ page, context }) => {
+  const errors: string[] = [];
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "127.0.0.1") return route.continue();
+    errors.push(`Unexpected external request: ${url}`);
+    return route.abort();
+  });
+  await page.goto("/tests/browser/fixtures/html-artifacts.html");
+  await page.waitForFunction(() => Boolean(window.htmlArtifactsE2E));
+  await page.evaluate(() =>
+    window.htmlArtifactsE2E.write(
+      "/counter.html",
+      '<!doctype html><html><head><script defer src="/.lib/alpine.js"></script></head>' +
+        '<body><div x-data="{ n: 1 }"><button id="inc" @click="n++">+</button><span id="n" x-text="n"></span>' +
+        '<p id="hidden" x-show="n > 1">shown</p></div></body></html>',
+    ),
+  );
+  await page.evaluate(() => window.htmlArtifactsE2E.preview("/counter.html"));
+  const frame = page.frameLocator("iframe");
+  await expect(frame.locator("#n")).toHaveText("1");
+  await expect(frame.locator("#hidden")).toBeHidden();
+  await frame.locator("#inc").click();
+  await expect(frame.locator("#n")).toHaveText("2");
+  await expect(frame.locator("#hidden")).toBeVisible();
+  expect(errors).toEqual([]);
+});

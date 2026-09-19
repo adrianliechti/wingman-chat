@@ -6,8 +6,12 @@
  * `exportArtifactHtml`) so exported files stay standalone.
  */
 
+import alpineUrl from "virtual:artifact-library-url/alpine";
+import daisyuiUrl from "virtual:artifact-library-url/daisyui";
+import daisyuiThemesUrl from "virtual:artifact-library-url/daisyui-themes";
 import echartsUrl from "virtual:artifact-library-url/echarts";
 import lucideUrl from "virtual:artifact-library-url/lucide";
+import tailwindUrl from "virtual:artifact-library-url/tailwind";
 import threeUrl from "virtual:artifact-library-url/three";
 
 export const LIBRARY_FOLDER = ".lib";
@@ -17,8 +21,7 @@ export interface ArtifactLibrary {
   name: string;
   /** Where the app serves the file (dev middleware or a hashed build asset). */
   url: string;
-  /** Global the classic script defines, for prompts and diagnostics. */
-  global: string;
+  kind: "script" | "stylesheet";
   /** Full source for standalone exports, fetched from the served copy on demand. */
   load: () => Promise<string>;
 }
@@ -33,20 +36,44 @@ export const ARTIFACT_LIBRARIES: readonly ArtifactLibrary[] = [
   {
     name: "echarts.js",
     url: echartsUrl,
-    global: "echarts",
+    kind: "script",
     load: () => fetchSource(echartsUrl),
   },
   {
     name: "three.js",
     url: threeUrl,
-    global: "THREE",
+    kind: "script",
     load: () => fetchSource(threeUrl),
   },
   {
     name: "lucide.js",
     url: lucideUrl,
-    global: "lucide",
+    kind: "script",
     load: () => fetchSource(lucideUrl),
+  },
+  {
+    name: "tailwind.js",
+    url: tailwindUrl,
+    kind: "script",
+    load: () => fetchSource(tailwindUrl),
+  },
+  {
+    name: "daisyui.css",
+    url: daisyuiUrl,
+    kind: "stylesheet",
+    load: () => fetchSource(daisyuiUrl),
+  },
+  {
+    name: "daisyui-themes.css",
+    url: daisyuiThemesUrl,
+    kind: "stylesheet",
+    load: () => fetchSource(daisyuiThemesUrl),
+  },
+  {
+    name: "alpine.js",
+    url: alpineUrl,
+    kind: "script",
+    load: () => fetchSource(alpineUrl),
   },
 ];
 

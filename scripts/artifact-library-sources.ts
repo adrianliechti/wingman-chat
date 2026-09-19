@@ -9,6 +9,9 @@ const require = createRequire(import.meta.url);
 const threeRoot = path.resolve(path.dirname(require.resolve("three")), "..");
 const lucideRoot = path.dirname(require.resolve("lucide/package.json"));
 const echartsRoot = path.dirname(require.resolve("echarts/package.json"));
+const tailwindRoot = path.dirname(require.resolve("@tailwindcss/browser/package.json"));
+const daisyuiRoot = path.dirname(require.resolve("daisyui/package.json"));
+const alpineRoot = path.dirname(require.resolve("alpinejs/package.json"));
 const threeEntry = path.resolve(import.meta.dirname, "artifact-libraries/three.js");
 const sdkEntry = path.resolve(import.meta.dirname, "../src/shared/lib/artifactSdk/sdk.ts");
 const prefix = "virtual:artifact-library-source/";
@@ -17,9 +20,14 @@ const urlPrefix = "virtual:artifact-library-url/";
 /** Dev-server path for the served copies; builds emit hashed assets instead. */
 const devPath = "/__artifact-libraries__/";
 
-type Library = "three" | "lucide" | "echarts" | "wingman-sdk";
+type Library = "three" | "lucide" | "echarts" | "tailwind" | "daisyui" | "daisyui-themes" | "alpine" | "wingman-sdk";
 type LibrarySource = { source: string; files: string[] };
-const LIBRARIES: Library[] = ["three", "lucide", "echarts"];
+const LIBRARIES: Library[] = ["three", "lucide", "echarts", "tailwind", "daisyui", "daisyui-themes", "alpine"];
+/** Served file extension and MIME type per library; scripts unless listed here. */
+const STYLESHEETS = new Set<Library>(["daisyui", "daisyui-themes"]);
+const extensionOf = (library: Library) => (STYLESHEETS.has(library) ? "css" : "js");
+const contentTypeOf = (library: Library) =>
+  STYLESHEETS.has(library) ? "text/css;charset=utf-8" : "text/javascript;charset=utf-8";
 
 async function buildThreeSource(): Promise<LibrarySource> {
   // Modern Three.js is ESM-only in the browser. Produce one classic script,
@@ -76,9 +84,31 @@ async function readEchartsSource(): Promise<LibrarySource> {
   return { source: await fs.readFile(file, "utf8"), files: [file] };
 }
 
+async function readTailwindSource(): Promise<LibrarySource> {
+  // Tailwind v4's in-browser compiler: utilities are generated from the page at load time.
+  const file = path.join(tailwindRoot, "dist/index.global.js");
+  return { source: await fs.readFile(file, "utf8"), files: [file] };
+}
+
+async function readDaisyuiSource(file: string): Promise<LibrarySource> {
+  // daisyUI's prebuilt stylesheets: component classes on top of Tailwind's utilities.
+  const full = path.join(daisyuiRoot, file);
+  return { source: await fs.readFile(full, "utf8"), files: [full] };
+}
+
+async function readAlpineSource(): Promise<LibrarySource> {
+  // Alpine's CDN build registers `window.Alpine` and starts itself once the DOM is ready.
+  const file = path.join(alpineRoot, "dist/cdn.min.js");
+  return { source: await fs.readFile(file, "utf8"), files: [file] };
+}
+
 function buildSource(library: Library): Promise<LibrarySource> {
   if (library === "three") return buildThreeSource();
+  if (library === "alpine") return readAlpineSource();
   if (library === "echarts") return readEchartsSource();
+  if (library === "tailwind") return readTailwindSource();
+  if (library === "daisyui") return readDaisyuiSource("daisyui.css");
+  if (library === "daisyui-themes") return readDaisyuiSource("themes.css");
   if (library === "wingman-sdk") return buildSdkSource();
   return readLucideSource();
 }
@@ -113,11 +143,11 @@ export function artifactLibrarySourcesPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const url = (req.url ?? "").split("?")[0];
         if (!url.startsWith(devPath)) return next();
-        const library = url.slice(devPath.length).replace(/\.js$/, "") as Library;
+        const library = url.slice(devPath.length).replace(/\.(js|css)$/, "") as Library;
         if (!LIBRARIES.includes(library)) return next();
         try {
           const { source } = await sourceOf(library);
-          res.setHeader("Content-Type", "text/javascript;charset=utf-8");
+          res.setHeader("Content-Type", contentTypeOf(library));
           res.setHeader("Cache-Control", "no-cache");
           res.end(source);
         } catch (error) {
@@ -135,11 +165,11 @@ export function artifactLibrarySourcesPlugin(): Plugin {
     async load(id) {
       if (id.startsWith(`\0${urlPrefix}`)) {
         const library = id.slice(urlPrefix.length + 1) as Library;
-        if (!building) return `export default ${JSON.stringify(`${devPath}${library}.js`)};`;
+        if (!building) return `export default ${JSON.stringify(`${devPath}${library}.${extensionOf(library)}`)};`;
         const { source, files } = await sourceOf(library);
         for (const file of files) this.addWatchFile(file);
         const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 8);
-        const fileName = `assets/${library}-${hash}.js`;
+        const fileName = `assets/${library}-${hash}.${extensionOf(library)}`;
         this.emitFile({ type: "asset", fileName, source });
         return `export default ${JSON.stringify(`${base}${fileName}`)};`;
       }

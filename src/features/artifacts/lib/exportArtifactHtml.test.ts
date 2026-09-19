@@ -36,3 +36,12 @@ describe("folder exports", () => {
     );
   });
 });
+
+describe("stylesheet references", () => {
+  it("treats link tags into /.lib/ as library references", async () => {
+    const { findLibraryReferences } = await import("./exportArtifactHtml");
+    expect(
+      findLibraryReferences('<link rel="stylesheet" href="/.lib/daisyui.css"><link rel="icon" href="/icon.png">', "/ui/a.html"),
+    ).toEqual([{ name: "daisyui.css", resolved: "/.lib/daisyui.css" }]);
+  });
+});

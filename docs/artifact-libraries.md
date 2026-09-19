@@ -8,6 +8,10 @@ workspace has a virtual `/.lib/` folder:
 | `/.lib/echarts.js` | `echarts` | `echarts/dist/echarts.min.js`                                        |
 | `/.lib/three.js`   | `THREE`   | Core plus OrbitControls, GLTFLoader, EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, OutputPass |
 | `/.lib/lucide.js`  | `lucide`  | Official UMD build                                                    |
+| `/.lib/tailwind.js` | (none)   | `@tailwindcss/browser`: Tailwind v4 compiled in the page at load time; `@theme` via `<style type="text/tailwindcss">` |
+| `/.lib/daisyui.css` | (stylesheet) | daisyUI 5 prebuilt components (light and dark themes); link it before the Tailwind script |
+| `/.lib/daisyui-themes.css` | (stylesheet) | daisyUI's remaining themes, selected with `data-theme` on `<html>` |
+| `/.lib/alpine.js` | `Alpine`  | Alpine.js 3 CDN build; load with `defer`, state in `x-data`         |
 
 A page references a library with the absolute path `/.lib/<name>`, from any
 folder depth, before its own script (relative forms such as `../.lib/three.js`

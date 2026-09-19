@@ -14,8 +14,8 @@ import {
 } from "@/shared/lib/artifactLibraries";
 import type { File } from "@/shared/types/file";
 
-const SCRIPT_TAG = /<script\b([^>]*)>\s*<\/script>/gi;
-const SRC_ATTRIBUTE = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+const REFERENCE_TAG = /<(?:script|link)\b([^>]*)>/gi;
+const SRC_ATTRIBUTE = /\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 
 export interface LibraryReference {
   name: string;
@@ -25,7 +25,7 @@ export interface LibraryReference {
 
 export function findLibraryReferences(html: string, pagePath: string): LibraryReference[] {
   const references: LibraryReference[] = [];
-  for (const match of html.matchAll(SCRIPT_TAG)) {
+  for (const match of html.matchAll(REFERENCE_TAG)) {
     const src = SRC_ATTRIBUTE.exec(match[1]);
     if (!src) continue;
     const resolved = resolveArtifactReference(pagePath, src[1] ?? src[2] ?? src[3] ?? "");

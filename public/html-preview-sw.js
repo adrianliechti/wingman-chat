@@ -61,9 +61,10 @@ async function serveLibrary(name) {
     if (!response.ok) return null;
     await cache.put(url, response.clone());
   }
+  const contentType = /\.css$/i.test(name) ? "text/css;charset=utf-8" : "text/javascript;charset=utf-8";
   return new Response(response.body, {
     status: 200,
-    headers: { "Content-Type": "text/javascript;charset=utf-8", "Cache-Control": "no-store" },
+    headers: { "Content-Type": contentType, "Cache-Control": "no-store" },
   });
 }
 
