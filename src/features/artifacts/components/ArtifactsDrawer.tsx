@@ -79,13 +79,13 @@ const ArtifactRevisionDiff = lazyRouteComponent(
 
 const WIDE_DRAWER_PX = 680;
 /** Remembers whether a wide drawer shows the file column beside the editor. */
-const FILE_COLUMN_KEY = "wingman:artifacts:file-column";
+const ARTIFACTS_BROWSER_KEY = "app_artifacts_browser";
 
 function readFileColumnPreference(): boolean {
   try {
-    return localStorage.getItem(FILE_COLUMN_KEY) !== "hidden";
+    return localStorage.getItem(ARTIFACTS_BROWSER_KEY) === "shown";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -127,7 +127,8 @@ export function ArtifactsDrawer() {
   const toggleFileColumn = useCallback(() => {
     setFileColumn((shown) => {
       try {
-        localStorage.setItem(FILE_COLUMN_KEY, shown ? "hidden" : "shown");
+        if (shown) localStorage.removeItem(ARTIFACTS_BROWSER_KEY);
+        else localStorage.setItem(ARTIFACTS_BROWSER_KEY, "shown");
       } catch {
         // Preference stays for this session only.
       }

@@ -63,7 +63,8 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 
 const bootstrap = async () => {
   try {
-    const [config] = await Promise.all([loadConfig(), prepareInitialEmojiRendering()]);
+    prepareInitialEmojiRendering();
+    const config = await loadConfig();
 
     if (config?.telemetry) {
       // Loaded on demand so the OpenTelemetry SDK stays out of the initial bundle.

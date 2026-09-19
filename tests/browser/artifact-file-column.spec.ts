@@ -10,7 +10,7 @@ async function openFixture(page: Page) {
   return id;
 }
 
-test("the file column on a wide drawer can be hidden, is remembered, and hands over to the navigator", async ({
+test("the file column defaults to hidden, remembers showing it, and hands over to the navigator", async ({
   page,
 }) => {
   const id = await openFixture(page);
@@ -19,12 +19,24 @@ test("the file column on a wide drawer can be hidden, is remembered, and hands o
   // The first file stays open; the second write only adds to the list.
   await expect(page.locator("pre")).toHaveText("First");
 
-  // Wide drawer: file column visible, no breadcrumb popover.
+  // Even a wide drawer starts with the breadcrumb navigator.
+  await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
+  await expect(page.getByTitle("Browse files")).toBeVisible();
+  await page.getByRole("button", { name: "Show file list" }).click();
   await expect(page.getByText("Files", { exact: true })).toBeVisible();
   await expect(page.getByTitle("Browse files")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("app_artifacts_browser"))).toBe("shown");
+
+  // An explicit choice to show the column survives a reload.
+  await page.reload();
+  await page.waitForFunction(() => window.artifactsE2E?.state().ready);
+  await page.evaluate((id) => window.artifactsE2E.selectChat(id), id);
+  await page.getByRole("button", { name: "Toggle artifacts" }).click();
+  await expect(page.getByText("Files", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Hide file list" }).click();
   await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("app_artifacts_browser"))).toBeNull();
   await page.getByTitle("Browse files").click();
   await page.getByRole("button", { name: "two.txt", exact: true }).click();
   await expect(page.locator("pre")).toHaveText("Second");

@@ -1,7 +1,5 @@
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { Client, UnauthorizedError } from "@modelcontextprotocol/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
 import { McpAppSession } from "./mcpAppSession";
@@ -158,7 +156,7 @@ describe("MCP app sessions", () => {
     const sdk = new Client({ name: "Test", version: "1" });
     vi.spyOn(sdk, "getServerCapabilities").mockReturnValue({ tools: { listChanged: true } });
     const refresh = vi.fn();
-    sdk.setNotificationHandler(ToolListChangedNotificationSchema, refresh);
+    sdk.setNotificationHandler("notifications/tools/list_changed", refresh);
     const handlers = (sdk as unknown as { _notificationHandlers: Map<string, unknown> })._notificationHandlers;
     const handler = handlers.get("notifications/tools/list_changed");
     const provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test");

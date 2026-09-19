@@ -5,13 +5,13 @@ import type {
   McpUiHostContext,
   McpUiResourceMeta,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type {
   CallToolResult,
+  Client,
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/client";
 import { Role, type Message, type ToolContext } from "@/shared/types/chat";
 
 export const MCP_HOST_INFO = { name: "Wingman Chat", version: "1.0.0" };

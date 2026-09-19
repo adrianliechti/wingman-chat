@@ -5,7 +5,7 @@ import { mcpToolName } from "./mcpToolNames";
 describe("MCP tool execution", () => {
   it("forwards the harness abort signal to the SDK request", async () => {
     const controller = new AbortController();
-    const callTool = vi.fn(async (_params: unknown, _schema: unknown, options?: { signal?: AbortSignal }) => {
+    const callTool = vi.fn(async (_params: unknown, options?: { signal?: AbortSignal }) => {
       expect(options?.signal).toBe(controller.signal);
       options?.signal?.throwIfAborted();
       return { content: [{ type: "text" as const, text: "unreachable" }] };

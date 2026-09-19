@@ -26,22 +26,11 @@ body.resizing * {
   user-select: none !important;
 }
 
-.noto-emoji {
+/* Native emoji remain visible while the optional monochrome font loads. */
+html.noto-emoji-ready:not(.emoji-native) .noto-emoji {
   font-family: "Noto Emoji", sans-serif;
   font-size: 0.9em;
   vertical-align: -0.05em;
-  visibility: hidden;
-}
-
-.noto-emoji-ready .noto-emoji {
-  visibility: visible;
-}
-
-html.emoji-native .noto-emoji {
-  font-family: inherit;
-  font-size: inherit;
-  vertical-align: initial;
-  visibility: visible;
 }
 
 /* Unordered list with properly sized bullets */

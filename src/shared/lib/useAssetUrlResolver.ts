@@ -62,7 +62,7 @@ export function useAssetUrlResolver(
   //   null       → known not-found (avoid retry loops)
   const cacheRef = useRef<Map<string, string | null>>(new Map());
   // Bump on each change so <img> tags re-render with the resolved URL.
-  const [, setTick] = useState(0);
+  const [version, setTick] = useState(0);
   const bump = useCallback(() => setTick((t) => t + 1), []);
 
   const load = useCallback(
@@ -129,8 +129,8 @@ export function useAssetUrlResolver(
         void load(absPath);
         return undefined;
       }
-      return typeof entry === "string" ? entry : undefined;
+      return typeof entry === "string" && entry !== "pending" ? entry : undefined;
     },
-    [fs, basePath, load],
+    [fs, basePath, load, version],
   );
 }
