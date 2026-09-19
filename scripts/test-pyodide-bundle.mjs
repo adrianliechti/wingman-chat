@@ -33,6 +33,50 @@ const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\
 // [name, code, { heavy? }]
 /** @type {Array<[string, string, ({ heavy?: boolean })?]>} */
 const CASES = [
+  // Run before pdfplumber (or anything else that loads cryptography), so this
+  // catches missing pypdf dependency edges even when the crypto wheel is bundled.
+  [
+    "pypdf AES encryption/decryption (first import)",
+    `from io import BytesIO
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
+
+for algorithm in ("AES-128", "AES-256-R5", "AES-256"):
+    for password in ("", "secret"):
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=144)
+        writer.add_metadata({"/Title": "Encrypted document"})
+        writer.add_attachment("note.txt", b"Encrypted attachment")
+        field = writer.add_annotation(0, {
+            "/Subtype": "/Widget", "/Rect": [0, 0, 72, 12],
+            "/FT": "/Tx", "/T": "name", "/V": "Encrypted field",
+        })
+        writer.root_object[NameObject("/AcroForm")] = DictionaryObject({
+            NameObject("/Fields"): ArrayObject([field.indirect_reference]),
+        })
+        writer.root_object[NameObject("/Lang")] = TextStringObject("en-US")
+        writer.encrypt(password, owner_password="owner", algorithm=algorithm)
+        output = BytesIO()
+        writer.write(output)
+        data = output.getvalue()
+        assert b"Encrypted document" not in data
+        assert b"Encrypted attachment" not in data
+
+        reader = PdfReader(BytesIO(data))
+        assert reader.is_encrypted
+        assert reader.decrypt("wrong password") == 0
+        assert reader.decrypt(password) != 0
+        assert reader.get_fields()["name"]["/V"] == "Encrypted field"
+        assert len(reader.pages) == 1
+        assert reader.pages[0].mediabox.height == 144
+        assert reader.metadata.title == "Encrypted document"
+        assert reader.attachments["note.txt"] == [b"Encrypted attachment"]
+        owner = PdfReader(BytesIO(data), password="owner")
+        assert "en-US" in str(owner.trailer.raw_get("/Root"))
+        assert owner.metadata.title == "Encrypted document"
+"AES-128, AES-256-R5, AES-256: password and empty-password PDFs"`,
+  ],
+
   // --- Base-interpreter stdlib (built in since Pyodide 314, no loading) ---
   [
     "stdlib sqlite3",

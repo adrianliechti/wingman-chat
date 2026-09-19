@@ -100,6 +100,14 @@ const PYPI_PACKAGES = [
   "extract-msg==0.36.5",
 ];
 
+// Optional dependencies required by the features we expose. Add these to both
+// the bundle and the dependent's lock entry so they load before its first import.
+// pypdf chooses its crypto provider at import time; bundling cryptography via
+// pdfminer alone leaves pypdf using its fallback, which cannot handle AES PDFs.
+const REQUIRED_OPTIONAL_DEPS = {
+  pypdf: ["cryptography"],
+};
+
 // Native-binary deps that have no pure wheel but are only imported lazily by
 // their dependents for features we don't use. We bundle the dependent anyway and
 // simply omit these from its `depends`, so Pyodide's loader never tries to fetch
@@ -250,6 +258,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
     } catch (err) {
       console.warn(`  ⚠ failed to fetch deps for ${pkg}: ${err.message} (treating as no deps)`);
     }
+    deps.push(...(REQUIRED_OPTIONAL_DEPS[pkg] ?? []));
     depsCache.set(pkg, deps);
     return deps;
   }
