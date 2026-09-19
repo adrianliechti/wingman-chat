@@ -142,7 +142,14 @@ export async function executeArtifactCode(options: {
     if (fs && result.files) {
       context?.signal?.throwIfAborted();
       for (const key of skillKeys) delete result.files[key];
-      const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+      const summary = await fs.applyOverlaySnapshot(result.files, {
+        deleteMissing: true,
+        origin: {
+          actor: context?.runId ? "assistant" : "user",
+          runId: context?.runId,
+          reason: "execution",
+        },
+      });
       await options.onCommit?.(fs, summary.mutations);
       if (summary.mutations.length > 0) {
         context?.setMeta?.({

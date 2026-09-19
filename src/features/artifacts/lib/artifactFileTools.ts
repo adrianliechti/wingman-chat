@@ -1,6 +1,6 @@
 import { createFileTools, type FileToolsOptions, type WritableFileSource } from "@/shared/lib/file-tools";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import { artifactRevision, type ArtifactMutation } from "@/shared/types/artifact";
+import { artifactRevision, type ArtifactMutation, type RevisionOrigin } from "@/shared/types/artifact";
 import type { Tool, ToolContext } from "@/shared/types/chat";
 import type { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import type { ArtifactWorkspaceAccess, FileSystemManager } from "./fs";
@@ -60,7 +60,11 @@ export class ArtifactReadWriteManager {
         return fs.withExclusiveAccess(async (access) => {
           context?.signal?.throwIfAborted();
           const seen = this.session(fs.chatId, context);
-          const source = this.source(() => access);
+          const source = this.source(() => access, {
+            actor: "assistant",
+            runId: context?.runId,
+            reason: mutationReason(definition.name),
+          });
           const read = source.read.bind(source);
           if (definition.name === `${options.namespace}_read`) {
             source.read = async (path) => {
@@ -122,28 +126,46 @@ export class ArtifactReadWriteManager {
     }));
   }
 
-  private source(getAccess: () => ArtifactWorkspaceAccess): WritableFileSource {
+  private source(getAccess: () => ArtifactWorkspaceAccess, origin?: RevisionOrigin): WritableFileSource {
+    const options = origin ? { origin } : undefined;
     return {
       list: () => getAccess().listEntries(),
       read: (path) => getAccess().getFile(path),
       write: async (path, content, contentType) =>
         (
-          await getAccess().applyOverlayDelta({
-            upserts: { [path]: { content, contentType } },
-            deletes: [],
-          })
+          await getAccess().applyOverlayDelta(
+            {
+              upserts: { [path]: { content, contentType } },
+              deletes: [],
+            },
+            options,
+          )
         ).mutations,
       writeBatch: async (files) =>
         (
-          await getAccess().applyOverlayDelta({
-            upserts: Object.fromEntries(
-              files.map((file) => [file.path, { content: file.content, contentType: file.contentType }]),
-            ),
-            deletes: [],
-          })
+          await getAccess().applyOverlayDelta(
+            {
+              upserts: Object.fromEntries(
+                files.map((file) => [file.path, { content: file.content, contentType: file.contentType }]),
+              ),
+              deletes: [],
+            },
+            options,
+          )
         ).mutations,
-      remove: async (path) => (await getAccess().applyOverlayDelta({ upserts: {}, deletes: [path] })).mutations,
-      move: (from, to) => getAccess().renameFileWithDelta(from, to),
+      remove: async (path) =>
+        (await getAccess().applyOverlayDelta({ upserts: {}, deletes: [path] }, options)).mutations,
+      move: (from, to) => getAccess().renameFileWithDelta(from, to, options),
     };
   }
+}
+
+/** Revision-log reason for a namespaced file tool such as `artifacts_edit`. */
+function mutationReason(toolName: string): RevisionOrigin["reason"] {
+  const operation = toolName.slice(toolName.lastIndexOf("_") + 1);
+  if (operation === "create") return "create";
+  if (operation === "edit") return "edit";
+  if (operation === "move") return "rename";
+  if (operation === "delete") return "delete";
+  return undefined;
 }

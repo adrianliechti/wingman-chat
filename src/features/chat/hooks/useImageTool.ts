@@ -197,13 +197,16 @@ export function useImageTool(): Tool | null {
           if (activeFs) {
             try {
               const ext = mime.getExtension(imageBlob.type) || "png";
-              const saved = await activeFs.ingestFiles([
-                {
-                  path: `/${slugify(prompt)}.${ext}`,
-                  content: dataUrl,
-                  contentType: imageBlob.type || `image/${ext}`,
-                },
-              ]);
+              const saved = await activeFs.ingestFiles(
+                [
+                  {
+                    path: `/${slugify(prompt)}.${ext}`,
+                    content: dataUrl,
+                    contentType: imageBlob.type || `image/${ext}`,
+                  },
+                ],
+                { origin: { actor: "assistant", runId: context?.runId, reason: "create" } },
+              );
               context?.signal?.throwIfAborted();
               if (saved.mutations.length) {
                 context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });

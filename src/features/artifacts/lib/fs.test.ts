@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const opfs = vi.hoisted(() => ({
   archiveArtifactRevision: vi.fn(),
+  copyArtifactRevisionHistory: vi.fn(),
   deleteArtifact: vi.fn(),
   deleteArtifactFolder: vi.fn(),
   listArtifactEntries: vi.fn(),
+  listArtifactRevisionEntries: vi.fn(),
   listArtifacts: vi.fn(),
+  loadArtifactRevision: vi.fn(),
   readArtifact: vi.fn(),
   writeArtifact: vi.fn(),
 }));
@@ -17,6 +20,7 @@ import { ArtifactReadWriteManager } from "./artifactFileTools";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { executeArtifactCode, type SandboxExecutor } from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
+import { artifactRevision } from "@/shared/types/artifact";
 
 describe("FileSystemManager.renameFile", () => {
   beforeEach(() => {
@@ -512,5 +516,117 @@ describe("coordinated artifact tools", () => {
     expect(files.get("/parent/nested/nested/x.txt")?.content).toBe("two");
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
     expect(opfs.deleteArtifact).not.toHaveBeenCalled();
+  });
+});
+
+describe("FileSystemManager revisions", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  function inMemoryWorkspace(initial: Array<[string, { content: string; contentType?: string }]> = []) {
+    const files = new Map(initial);
+    opfs.readArtifact.mockImplementation(async (_chatId: string, path: string) => files.get(path));
+    opfs.writeArtifact.mockImplementation(
+      async (_chatId: string, path: string, content: string, contentType?: string) => {
+        files.set(path, { content, contentType });
+      },
+    );
+    opfs.listArtifacts.mockImplementation(async () => [...files.keys()]);
+    opfs.listArtifactEntries.mockImplementation(async () => [...files.keys()].map((path) => ({ path, size: 0 })));
+    return files;
+  }
+
+  it("records who wrote a revision and why", async () => {
+    inMemoryWorkspace();
+    const fs = new FileSystemManager("chat");
+    const origin = { actor: "assistant" as const, runId: "run-1", reason: "create" as const };
+
+    await fs.createFile("/notes.md", "v1", "text/markdown", { origin });
+
+    expect(opfs.archiveArtifactRevision).toHaveBeenLastCalledWith(
+      "chat",
+      expect.objectContaining({ path: "/notes.md", content: "v1", origin }),
+    );
+  });
+
+  it("tags interpreter sync-backs as executions of the running turn", async () => {
+    inMemoryWorkspace();
+    const fs = new FileSystemManager("chat");
+    const executor: SandboxExecutor = async () => ({
+      success: true,
+      output: "",
+      files: { "/out.txt": { content: "done", contentType: "text/plain" } },
+    });
+
+    await executeArtifactCode({
+      args: { code: "print(1)" },
+      context: { runId: "run-9" },
+      executor,
+      extension: "py",
+      fs,
+    });
+
+    expect(opfs.archiveArtifactRevision).toHaveBeenLastCalledWith(
+      "chat",
+      expect.objectContaining({
+        path: "/out.txt",
+        origin: { actor: "assistant", runId: "run-9", reason: "execution" },
+      }),
+    );
+  });
+
+  it("lists revisions newest first and marks the live file's entry as current", async () => {
+    inMemoryWorkspace([["/notes.md", { content: "v2", contentType: "text/markdown" }]]);
+    const live = await artifactRevision("v2", "text/markdown");
+    opfs.listArtifactRevisionEntries.mockResolvedValue([
+      { revision: live, createdAt: "2026-01-01T00:00:00.000Z", size: 2 },
+      { revision: "sha256:other", createdAt: "2026-01-02T00:00:00.000Z", size: 2 },
+      { revision: live, createdAt: "2026-01-03T00:00:00.000Z", size: 2 },
+    ]);
+
+    const listed = await new FileSystemManager("chat").listRevisions("/notes.md");
+
+    expect(listed.map((entry) => [entry.createdAt, entry.current])).toEqual([
+      ["2026-01-03T00:00:00.000Z", true],
+      ["2026-01-02T00:00:00.000Z", false],
+      ["2026-01-01T00:00:00.000Z", false],
+    ]);
+  });
+
+  it("restores an archived revision as a new current revision", async () => {
+    const files = inMemoryWorkspace([["/notes.md", { content: "v2", contentType: "text/markdown" }]]);
+    opfs.loadArtifactRevision.mockResolvedValue({
+      path: "/notes.md",
+      revision: "sha256:old",
+      content: "v1",
+      contentType: "text/markdown",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const mutation = await new FileSystemManager("chat").restoreRevision("/notes.md", "sha256:old");
+
+    expect(mutation).toMatchObject({ operation: "update", path: "/notes.md" });
+    expect(files.get("/notes.md")?.content).toBe("v1");
+    expect(opfs.archiveArtifactRevision).toHaveBeenLastCalledWith(
+      "chat",
+      expect.objectContaining({ content: "v1", origin: { actor: "user", reason: "restore" } }),
+    );
+  });
+
+  it("rejects restoring a revision that was never archived", async () => {
+    inMemoryWorkspace();
+    opfs.loadArtifactRevision.mockResolvedValue(undefined);
+    await expect(new FileSystemManager("chat").restoreRevision("/notes.md", "sha256:missing")).rejects.toThrow(
+      "Revision not found",
+    );
+  });
+
+  it("carries history to the destination of a rename", async () => {
+    inMemoryWorkspace([["/old.md", { content: "v1", contentType: "text/markdown" }]]);
+    await new FileSystemManager("chat").renameFile("/old.md", "/new.md", {
+      origin: { actor: "assistant", reason: "rename" },
+    });
+    expect(opfs.copyArtifactRevisionHistory).toHaveBeenCalledWith("chat", "/old.md", "/new.md");
   });
 });
