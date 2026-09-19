@@ -261,6 +261,7 @@ export function ChatPage() {
           ? setAppWidthVw(widthVw)
           : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
+    show: showAgentDrawer,
     setShow: setShowAgentDrawer,
   });
 
@@ -276,6 +277,7 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showAppDrawer,
     setShow: setShowAppDrawer,
   });
 
@@ -291,6 +293,7 @@ export function ChatPage() {
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
     setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
     siblingMinPx: 280,
+    show: showArtifactsDrawer,
     setShow: setShowArtifactsDrawer,
   });
 
