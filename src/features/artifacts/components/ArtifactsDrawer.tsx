@@ -16,6 +16,9 @@ import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
+import { locateInSource } from "@/shared/ui/selection/locateInSource";
+import { SelectionActionPopover } from "@/shared/ui/selection/SelectionActionPopover";
+import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -89,7 +92,7 @@ interface RevisionView {
 
 export function ArtifactsDrawer() {
   const config = getConfig();
-  const { fs, activeFile, openFile } = useArtifacts();
+  const { fs, activeFile, openFile, requestEdit } = useArtifacts();
   const { ensureChat } = useChatActions();
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -223,6 +226,33 @@ export function ArtifactsDrawer() {
     null;
   const canCompareRevision =
     !!activeFileData && DIFFABLE_KINDS.has(artifactKind(activeFileData.path, activeFileData.contentType));
+
+  // Select-to-edit: the editor reports the element (or preview iframe) whose
+  // selection to watch; a floating control turns the highlight into a request
+  // for the conversation. Archived revisions are read-only, so no control there.
+  const [selectionRoot, setSelectionRoot] = useState<HTMLElement | null>(null);
+  const selectionEnabled = !!requestEdit && !!activeFileData && !shownRevision;
+  const {
+    selection,
+    clear: clearSelection,
+    document: selectionDocument,
+  } = useTextSelection(selectionRoot, { enabled: selectionEnabled });
+  const onSelectionRoot = requestEdit ? setSelectionRoot : undefined;
+  const submitSelectionEdit = useCallback(
+    (instruction: string, snapshot: TextSelectionSnapshot) => {
+      if (!requestEdit || !activeFileData) return;
+      const lines = snapshot.lines ?? locateInSource(activeFileData.content, snapshot.text) ?? undefined;
+      requestEdit({
+        path: activeFileData.path,
+        text: snapshot.text,
+        startLine: lines?.start,
+        endLine: lines?.end,
+        instruction,
+      });
+      clearSelection();
+    },
+    [requestEdit, activeFileData, clearSelection],
+  );
 
   // Processing state for file uploads
   const [pendingUploads, setPendingUploads] = useState(0);
@@ -539,6 +569,7 @@ export function ArtifactsDrawer() {
             content={shownFile.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "svg":
@@ -578,6 +609,7 @@ export function ArtifactsDrawer() {
             path={shownFile.path}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            onSelectionRoot={onSelectionRoot}
           />
         );
       case "code": {
@@ -589,6 +621,7 @@ export function ArtifactsDrawer() {
               content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
@@ -599,13 +632,23 @@ export function ArtifactsDrawer() {
               content={shownFile.content}
               onRunReady={onRunReady}
               onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
             />
           );
         }
-        return <CodeEditor key={editorKey} content={shownFile.content} language={lang} />;
+        return (
+          <CodeEditor
+            key={editorKey}
+            content={shownFile.content}
+            language={lang}
+            onSelectionRoot={onSelectionRoot}
+          />
+        );
       }
       default:
-        return <TextEditor key={editorKey} content={shownFile.content} />;
+        return (
+          <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />
+        );
     }
   };
 
@@ -970,6 +1013,13 @@ export function ArtifactsDrawer() {
           />
         )}
       </div>
+
+      <SelectionActionPopover
+        selection={selection}
+        onSubmit={submitSelectionEdit}
+        onDismiss={clearSelection}
+        pressDocument={selectionDocument}
+      />
 
       {activeDrive && (
         <DrivePicker

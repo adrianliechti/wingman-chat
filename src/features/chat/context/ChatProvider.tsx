@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { buildSelectionEditMessage } from "@/features/chat/lib/selectionMessage";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "../hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
@@ -30,7 +31,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadChat,
     searchChats,
   } = useChats();
-  const { isAvailable: artifactsEnabled, setFileSystem: setArtifactsFileSystem } = useArtifacts();
+  const {
+    isAvailable: artifactsEnabled,
+    setFileSystem: setArtifactsFileSystem,
+    setEditRequestHandler,
+  } = useArtifacts();
   const { closeApp } = useApp();
   const { currentAgent } = useAgents();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -243,6 +248,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chatMemory,
   });
   const { streamingMessage, ...runContext } = run;
+  // Lets the artifacts viewer send "edit this passage" requests through the active chat.
+  const { sendMessage: sendRunMessage } = run;
+  useEffect(() => {
+    setEditRequestHandler((request) => {
+      void sendRunMessage(buildSelectionEditMessage(request));
+    });
+    return () => setEditRequestHandler(null);
+  }, [sendRunMessage, setEditRequestHandler]);
   const messages = useMemo(() => {
     const baseMessages = chat?.messages ?? [];
 

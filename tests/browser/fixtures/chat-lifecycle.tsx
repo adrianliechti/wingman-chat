@@ -173,7 +173,7 @@ root.render(
   <StrictMode>
     <AgentContext value={{ currentAgent: null } as AgentContextType}>
       <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-        <ToolsContext value={{ providers: [] } as unknown as ToolsContextValue}>
+        <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
           <AppContext value={{ closeApp: async () => {} } as AppContextType}>
             <ArtifactsProvider>
               <ChatProvider>

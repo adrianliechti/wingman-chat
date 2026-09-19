@@ -7,17 +7,25 @@ interface HtmlEditorProps {
   content: string;
   viewMode?: "code" | "preview";
   onViewModeChange?: (mode: "code" | "preview") => void;
+  /** Receives the preview iframe or the code view whose text selection the host watches. */
+  onSelectionRoot?: (element: HTMLElement | null) => void;
 }
 
-export function HtmlEditor({ path, content, viewMode = "preview" }: HtmlEditorProps) {
+export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoot }: HtmlEditorProps) {
   const { fs } = useArtifacts();
 
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
       {viewMode === "preview" ? (
-        <HtmlPreview path={path} content={content} fs={fs ?? undefined} className="w-full h-full" />
+        <HtmlPreview
+          path={path}
+          content={content}
+          fs={fs ?? undefined}
+          className="w-full h-full"
+          iframeRef={onSelectionRoot}
+        />
       ) : (
-        <CodeEditor content={content} language="html" />
+        <CodeEditor content={content} language="html" onSelectionRoot={onSelectionRoot} />
       )}
     </div>
   );

@@ -162,6 +162,7 @@ function migrateContentPart(part: LegacyContentPart): Content | null {
       };
     case "summary":
     case "artifact_ref":
+    case "artifact_selection":
     case "runtime_feedback":
       return part as Content;
     case "compaction":

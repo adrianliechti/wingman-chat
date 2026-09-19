@@ -15,7 +15,7 @@ import { loadConfig } from "../../../src/shared/config";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
-import type { Tool } from "../../../src/shared/types/chat";
+import type { Content, Tool } from "../../../src/shared/types/chat";
 
 const config = await loadConfig();
 if (!config) throw new Error("Missing fixture config");
@@ -51,6 +51,9 @@ function Fixture() {
     selectChat: chat.selectChat,
     deleteChat: chat.deleteChat,
     send: () => chat.sendMessage({ role: "user", content: [{ type: "text", text: "Hello" }] }),
+    lastUserMessage: () =>
+      chat.messages.findLast((item) => item.role === "user" && item.content.some((part) => part.type === "text"))
+        ?.content,
     openFile: artifacts.openFile,
     showDrawer: artifacts.setShowArtifactsDrawer,
     async write(chatId, path, content) {
@@ -140,7 +143,7 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <AgentContext value={{ currentAgent: null } as AgentContextType}>
         <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-          <ToolsContext value={{ providers: [] } as unknown as ToolsContextValue}>
+          <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
             <AppContext value={{ closeApp: async () => {} } as AppContextType}>
               <ArtifactsProvider>
                 <ChatProvider>
@@ -173,6 +176,7 @@ declare global {
       selectChat(id: string | null): void;
       deleteChat(id: string): void;
       send(): Promise<void>;
+      lastUserMessage(): Content[] | undefined;
       openFile(path: string, fs?: FileSystemManager): void;
       showDrawer(show: boolean): void;
       write(chatId: string, path: string, content: string): Promise<void>;

@@ -39,6 +39,8 @@ export interface HtmlPreviewProps {
    * Prevents reload storms while content streams in. Defaults to 150ms.
    */
   reloadDebounceMs?: number;
+  /** Receives the iframe element (and null on unmount), e.g. to watch its selection. */
+  iframeRef?: (element: HTMLIFrameElement | null) => void;
 }
 
 const DEFAULT_PATH = "index.html";
@@ -69,8 +71,16 @@ export function HtmlPreview({
   className = "w-full h-full",
   style,
   reloadDebounceMs = 150,
+  iframeRef: onIframe,
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const setIframe = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      iframeRef.current = element;
+      onIframe?.(element);
+    },
+    [onIframe],
+  );
   const sessionRef = useRef<PreviewSession | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
@@ -247,7 +257,7 @@ export function HtmlPreview({
 
   return (
     <iframe
-      ref={iframeRef}
+      ref={setIframe}
       src={session ? session.previewUrl(path) : "about:blank"}
       title={title || "HTML preview"}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
