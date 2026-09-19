@@ -56,7 +56,7 @@ test("enabling memory waits for a delayed settings save without showing a disabl
   await page.waitForFunction(() => window.memoryE2E.saveHeld());
   try {
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await page.getByRole("button", { name: /No memories yet/ }).click();
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("heading", { name: "Memory", exact: true })).toBeVisible();
   } finally {
     await page.evaluate(() => window.memoryE2E.releaseAgentSave());
@@ -103,7 +103,7 @@ test("real OPFS serializes tabs, refreshes indexes, and rejects stale file-tool 
 
 test("plain text memories protect edits across tabs and persist the memory switch", async ({ page, context }) => {
   await open(page);
-  await page.getByRole("button", { name: /No memories yet/ }).click();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
   await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await page.getByLabel("Memory to remember").fill("Prefer concise answers.");
   await expect(page.getByLabel("Memory file path")).toHaveCount(0);
@@ -153,7 +153,7 @@ test("structured additions split topics and Clear all requires confirmation", as
     core: false,
   });
   await open(page, output);
-  await page.getByRole("button", { name: /No memories yet/ }).click();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
   await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await page.getByLabel("Memory to remember").fill("I prefer concise answers. Wingman uses browser storage.");
   await page.getByRole("button", { name: "Remember", exact: true }).click();
@@ -181,7 +181,7 @@ test("structured additions split topics and Clear all requires confirmation", as
 
 test("a failed structured addition keeps the user's text and writes nothing", async ({ page }) => {
   await open(page, null);
-  await page.getByRole("button", { name: /No memories yet/ }).click();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
   await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await page.getByLabel("Memory to remember").fill("Keep this text if the model is unavailable.");
   await page.getByRole("button", { name: "Remember", exact: true }).click();

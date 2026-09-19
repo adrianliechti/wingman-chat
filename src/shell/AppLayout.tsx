@@ -9,7 +9,7 @@ import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
@@ -70,7 +70,7 @@ export function AppLayout() {
 
   // Track desktop breakpoint so the sidebar width is only applied on md+
   // (mobile keeps its full-width overlay).
-  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isDesktop = useBreakpoint("md");
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -213,18 +213,16 @@ export function AppLayout() {
         />
       </Transition>
 
-      {/* Generic sidebar - pushes content normally, becomes overlay when panels are open */}
+      {/* Generic sidebar - pushes content normally, becomes overlay when panels are open.
+          A tinted, translucent surface sets it apart from the content instead of a border,
+          so it reads as one column from the top bar to the bottom edge. */}
       {sidebarContent && (
         <aside
-          className={`
-            fixed z-50
-            transition-transform duration-500 ease-in-out
-            ${showSidebar ? "translate-x-0" : "-translate-x-[calc(100%+0.5rem)]"}
-            left-0 top-0 bottom-0 right-0 w-full h-full
-            md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
-            md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
-            overflow-hidden
-          `}
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 w-full overflow-hidden bg-neutral-100/85 backdrop-blur-xl transition-transform duration-500 ease-in-out md:right-auto dark:bg-neutral-900/85",
+            showSidebar ? "translate-x-0" : "-translate-x-full",
+            hasPanelOpen && "md:shadow-2xl md:shadow-black/15 dark:md:shadow-black/50",
+          )}
           style={isDesktop ? { width: sidebarWidth } : undefined}
           onTouchStart={(e) => {
             (e.currentTarget as HTMLElement).dataset.swipeStartX = String(e.touches[0].clientX);
@@ -273,15 +271,15 @@ export function AppLayout() {
           "flex-1 flex flex-col overflow-hidden relative z-10 ease-in-out",
           !isSidebarResizing && "transition-all duration-500",
         )}
-        style={{ marginLeft: sidebarPushesContent ? sidebarWidth + 12 : 0 }}
+        style={{ marginLeft: sidebarPushesContent ? sidebarWidth : 0 }}
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
           className={cn(
-            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm ease-in-out",
+            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800 shadow-sm ease-in-out",
             !isSidebarResizing && "transition-[padding] duration-500",
           )}
-          style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 24 } : undefined}
+          style={sidebarPushesContent ? { paddingLeft: sidebarWidth + 12 } : undefined}
         >
           <div className="flex items-center justify-between">
             {/* Left section */}

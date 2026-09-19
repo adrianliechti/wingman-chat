@@ -19,7 +19,7 @@ export function ConfirmHost() {
 
       <div className="fixed inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
-          <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl transition-all">
+          <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl transition-all">
             <div className="px-6 pt-5 pb-4">
               <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
                 {request.title}

@@ -1,6 +1,6 @@
 # Agent memory
 
-Enabling an agent's **Memory** switch enables both recall and background learning. Memory belongs to that agent and persists locally in the browser. The agent drawer lets you view, add, edit, and forget individual memories, or clear them all with confirmation. Loads wait for pending settings saves, so turning memory on takes effect before the manager reads it.
+Enabling an agent's **Memory** switch enables both recall and background learning. Memory belongs to that agent and persists locally in the browser. The Memory section shows only the switch, a count, and a **Manage** link; the Manage dialog lets you view, add, edit, and forget individual memories, or clear them all with confirmation. Loads wait for pending settings saves, so turning memory on takes effect before the manager reads it.
 
 The **+** button beside Close accepts ordinary text. One structured-output model call organizes it into up to four OKF notes; the user never needs to enter a filename or YAML. This uses the summarizer, the agent's text model, or the first configured text model, with an 8 KiB input limit and a 45-second timeout. All results are validated and written together through the same memory manager as file tools. Existing notes are preserved, and a concurrent clear or edit cancels the result. On failure the entered text remains available to retry. Editing an individual memory changes only its plain text while preserving metadata; each sidebar entry has a Forget action.
 

@@ -313,13 +313,12 @@ export function ChatSidebar() {
 
     return (
       <div
-        className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 ${dragBorder} ${
-          isActive ? "text-neutral-900 dark:text-neutral-100" : "hover:text-neutral-600 dark:hover:text-neutral-300"
+        className={`flex items-center cursor-pointer relative shrink-0 group rounded-lg transition-colors duration-200 py-2 md:py-1.5 pl-3 pr-1 md:pr-0.5 ${dragBorder} ${
+          isActive
+            ? "bg-neutral-200/70 text-neutral-900 dark:bg-white/10 dark:text-neutral-100"
+            : "hover:bg-neutral-200/40 dark:hover:bg-white/5"
         }`}
       >
-        {isActive && (
-          <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-neutral-400 dark:bg-neutral-500" />
-        )}
         {renamingChatId === chatItem.id ? (
           <input
             ref={renameInputRef}
@@ -332,7 +331,7 @@ export function ChatSidebar() {
             }}
             onBlur={confirmRename}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 min-w-0 px-1 py-0 text-base md:text-sm bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 rounded outline-none focus:border-blue-500 dark:focus:border-blue-400"
+            className="flex-1 min-w-0 px-1 py-0 text-base md:text-sm bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 rounded outline-none focus:border-neutral-500 dark:focus:border-neutral-400"
           />
         ) : (
           <button
@@ -348,7 +347,7 @@ export function ChatSidebar() {
                 setShowSidebar(false);
               }
             }}
-            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
+            className={`flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm ${isActive ? "font-medium" : "text-neutral-700 dark:text-neutral-300"}`}
             title={displayTitle}
           >
             {displayTitle}
@@ -359,7 +358,7 @@ export function ChatSidebar() {
             anchor="bottom end"
             trigger={
               <MenuButton
-                className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={16} />
@@ -401,18 +400,22 @@ export function ChatSidebar() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md">
+    <div className="flex flex-col h-full w-full">
       {/* Static header with buttons */}
-      <div className="flex items-center px-2 py-2 md:px-1 md:py-1 shrink-0 h-14 md:h-10 gap-1">
+      {/* Same height and bottom border as the app top bar (py-2 + the 42px tab pill + 1px), so
+          the header line runs continuously across sidebar and content, and the close button
+          here shares a baseline with the open button there when the sidebar toggles. */}
+      <div className="flex items-center px-2 py-2 md:px-1.5 md:py-1 shrink-0 h-14 md:h-[3.6875rem] gap-1 border-b border-neutral-200 dark:border-neutral-800">
         {showSearch ? (
-          <div className="flex-1 flex items-center gap-1">
+          // Inline field on the same inset as the rows; the header line below frames it.
+          <div className="mx-1.5 flex flex-1 items-center gap-1">
             <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              className="w-full min-w-0 px-2 py-0.5 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
+              placeholder="Search…"
+              className="w-full min-w-0 px-3 py-1 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
             />
             <button
               type="button"
@@ -433,7 +436,7 @@ export function ChatSidebar() {
               <button
                 type="button"
                 onClick={() => setShowSearch(true)}
-                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
+                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200"
                 aria-label="Search chats"
               >
                 <Search size={20} />
@@ -441,7 +444,7 @@ export function ChatSidebar() {
               <button
                 type="button"
                 onClick={() => setShowSidebar(false)}
-                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
+                className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-white/10 rounded transition-all duration-200"
                 aria-label="Close sidebar"
               >
                 <PanelRightOpen size={20} />
@@ -455,14 +458,14 @@ export function ChatSidebar() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={sidebarScrollRef}>
         {/* Pinned chats section (non-virtualized, drag-and-drop) */}
         {pinnedChats.length > 0 && (
-          <div className="pl-1 pr-2 pt-2">
-            <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+          <div className="px-3 pt-2">
+            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
               <span>Pinned</span>
               <DropdownMenu
                 anchor="bottom end"
                 trigger={
                   <MenuButton
-                    className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                    className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <MoreVertical size={16} />
@@ -489,17 +492,12 @@ export function ChatSidebar() {
 
         {/* Unpinned chats (virtualized) */}
         <div
-          className="pt-2 pb-1 pl-1 pr-2"
-          style={{ height: sidebarVirtualizer.getTotalSize(), width: "100%", position: "relative" }}
+          className={cn("relative pb-1", pinnedChats.length > 0 ? "pt-3" : "pt-2")}
+          style={{ height: sidebarVirtualizer.getTotalSize() }}
         >
           <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              transform: `translateY(${sidebarVirtualItems[0]?.start ?? 0}px)`,
-            }}
+            className="absolute inset-x-0 top-0 px-3"
+            style={{ transform: `translateY(${sidebarVirtualItems[0]?.start ?? 0}px)` }}
           >
             {sidebarVirtualItems.map((virtualRow) => {
               const item = flatSidebarItems[virtualRow.index];
@@ -510,15 +508,15 @@ export function ChatSidebar() {
                     key={virtualRow.key}
                     data-index={virtualRow.index}
                     ref={sidebarVirtualizer.measureElement}
-                    className={cn(item.groupIndex > 0 && "pt-2")}
+                    className={cn(item.groupIndex > 0 && "pt-3")}
                   >
-                    <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+                    <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                       <span>{group.category}</span>
                       <DropdownMenu
                         anchor="bottom end"
                         trigger={
                           <MenuButton
-                            className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                            className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <MoreVertical size={16} />
