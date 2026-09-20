@@ -27,6 +27,7 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit-services", testMatch: "worker-services.spec.ts", use: { ...devices["Desktop Safari"] } },
     { name: "webkit-duckdb", testMatch: "duckdb-lifecycle.spec.ts", use: { ...devices["Desktop Safari"] } },
   ],
 });

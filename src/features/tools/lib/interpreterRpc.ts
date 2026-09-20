@@ -1,4 +1,5 @@
 import type { RpcReply, WorkerToMainMessage } from "./interpreterProtocol";
+import { requestPortReply } from "@/shared/lib/messagePortRpc";
 
 /**
  * RPC from an interpreter worker to the main thread. Each call ships its own
@@ -13,18 +14,12 @@ export function describeError(error: unknown): string {
   return stack.includes(message) ? stack : `${message}\n${stack}`.trim();
 }
 
-export function callMainThread<T>(
+export async function callMainThread<T>(
   post: (message: WorkerToMainMessage, transfer: Transferable[]) => void,
   build: (port: MessagePort) => WorkerToMainMessage,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const { port1, port2 } = new MessageChannel();
-  return new Promise<T>((resolve, reject) => {
-    port1.onmessage = (event: MessageEvent<RpcReply>) => {
-      port1.close();
-      const reply = event.data;
-      if (reply.ok) resolve(reply.value as T);
-      else reject(new Error(reply.error || "The main thread could not answer this call."));
-    };
-    post(build(port2), [port2]);
-  });
+  const reply = await requestPortReply<RpcReply>((port) => post(build(port), [port]), { signal });
+  if (!reply?.ok) throw new Error(reply?.error || "The main thread could not answer this call.");
+  return reply.value as T;
 }

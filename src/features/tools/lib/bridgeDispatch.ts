@@ -36,10 +36,10 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage, options: BridgeR
     case "pdf-rasterize-request":
       // Loaded on demand — pdf.js (~400 kB) stays out of the initial bundle.
       return import("@/shared/lib/pdf").then(({ rasterizePdf }) =>
-        rasterizePdf(message.data, { pages: message.pages, scale: message.scale }),
+        rasterizePdf(message.data, { pages: message.pages, scale: message.scale, signal: options.signal }),
       );
     case "svg-rasterize-request":
-      return rasterizeSvg(message.svg, { width: message.width, height: message.height });
+      return rasterizeSvg(message.svg, { width: message.width, height: message.height, signal: options.signal });
     case "duckdb-query-request": {
       // SQL over the run's workspace; DuckDB and the mount load on first use.
       const chatId = options.context?.chatId;

@@ -417,6 +417,7 @@ class ArtifactDocument {
         const options = isRecord(params[1]) ? params[1] : {};
         const { rasterizePdf } = await import("@/shared/lib/pdf");
         return rasterizePdf(await this.readBytes(path), {
+          signal: this.controller.signal,
           pages: Array.isArray(options.pages) ? (options.pages as number[]) : undefined,
           scale: typeof options.scale === "number" ? options.scale : undefined,
         });

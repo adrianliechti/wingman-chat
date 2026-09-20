@@ -21,10 +21,13 @@ import { SDK_PATH, SDK_PREFIX, type SdkCapabilities } from "@/shared/lib/artifac
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
 import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
+import { withAbort } from "./abortSignals";
+import { requestPortReply } from "./messagePortRpc";
 import type { File } from "@/shared/types/file";
 
 const SW_URL = "/html-preview-sw.js";
 const SCOPE_PREFIX = "/__preview__/";
+const WORKER_TIMEOUT_MS = 10_000;
 
 export interface PreviewFilePayload {
   content?: string;
@@ -40,6 +43,7 @@ export interface PreviewSdkOptions {
 }
 
 export interface PreviewSessionOptions {
+  signal?: AbortSignal;
   sdk?: PreviewSdkOptions;
 }
 
@@ -62,7 +66,7 @@ export interface PreviewSession {
 }
 
 let registrationPromise: Promise<ServiceWorkerRegistration> | null = null;
-const sessionSnapshots = new Map<string, Map<string, PreviewFilePayload>>();
+const sessionSnapshots = new Map<string, { files: Map<string, PreviewFilePayload>; revision: () => number }>();
 let recoveryListenerInstalled = false;
 
 function serviceWorkerSupported(): boolean {
@@ -83,12 +87,23 @@ function ensureRecoveryListener(): void {
     const port = event.ports?.[0];
     if (!port) return;
 
-    const files = sessionSnapshots.get(String(event.data.token ?? ""));
-    if (!files) {
-      port.postMessage({ ok: false });
-      return;
+    const snapshot = sessionSnapshots.get(String(event.data.token ?? ""));
+    try {
+      port.postMessage(
+        snapshot
+          ? {
+              ok: true,
+              files: Object.fromEntries(snapshot.files),
+              revision: snapshot.revision(),
+              libraries: artifactLibraryUrls(),
+            }
+          : { ok: false },
+      );
+    } catch {
+      // Recovery may finish after its requesting worker has stopped.
+    } finally {
+      port.close();
     }
-    port.postMessage({ ok: true, files: Object.fromEntries(files), libraries: artifactLibraryUrls() });
   });
 }
 
@@ -101,62 +116,66 @@ function ensureRecoveryListener(): void {
  * controlled. The SW is still fully functional for fetches made from within
  * its scope (i.e. the preview iframe).
  */
-async function waitForActivation(reg: ServiceWorkerRegistration): Promise<void> {
-  if (reg.active) return;
-  const sw = reg.installing || reg.waiting;
-  if (!sw) return;
-  await new Promise<void>((resolve) => {
-    const onChange = () => {
-      if (sw.state === "activated") {
-        sw.removeEventListener("statechange", onChange);
-        resolve();
-      }
-    };
-    sw.addEventListener("statechange", onChange);
-  });
+async function waitForActivation(reg: ServiceWorkerRegistration, signal: AbortSignal): Promise<void> {
+  const worker = reg.active || reg.installing || reg.waiting;
+  if (!worker) throw new Error("Service worker unavailable.");
+  if (worker.state === "activated") return;
+  let onChange!: () => void;
+  try {
+    await withAbort(
+      signal,
+      () =>
+        new Promise<void>((resolve, reject) => {
+          onChange = () => {
+            if (worker.state === "activated") resolve();
+            else if (worker.state === "redundant") reject(new Error("Preview service worker activation failed."));
+          };
+          worker.addEventListener("statechange", onChange);
+          onChange();
+        }),
+    );
+  } finally {
+    if (onChange) worker.removeEventListener("statechange", onChange);
+  }
 }
 
 async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
-  if (!serviceWorkerSupported()) {
-    throw new Error("Service workers are not available in this context.");
-  }
+  if (!serviceWorkerSupported()) throw new Error("Service workers are not available in this context.");
   if (!registrationPromise) {
-    registrationPromise = (async () => {
-      try {
-        const reg = await navigator.serviceWorker.register(SW_URL, { scope: SCOPE_PREFIX });
-        await waitForActivation(reg);
-        return reg;
-      } catch (error) {
-        registrationPromise = null;
-        throw error;
-      }
-    })();
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error("Preview service worker activation timed out.")),
+      WORKER_TIMEOUT_MS,
+    );
+    const pending = withAbort(controller.signal, async () => {
+      const reg = await navigator.serviceWorker.register(SW_URL, { scope: SCOPE_PREFIX });
+      await waitForActivation(reg, controller.signal);
+      return reg;
+    });
+    registrationPromise = pending;
+    void pending
+      .catch(() => {
+        if (registrationPromise === pending) registrationPromise = null;
+      })
+      .finally(() => clearTimeout(timer));
   }
   return registrationPromise;
 }
 
-async function postMessage(message: unknown): Promise<void> {
-  const reg = await ensureRegistration();
+async function postMessage(message: unknown, signal?: AbortSignal): Promise<void> {
+  const reg = signal ? await withAbort(signal, ensureRegistration) : await ensureRegistration();
+  signal?.throwIfAborted();
   const worker = reg.active;
-  if (!worker) throw new Error("Service worker unavailable.");
-  // Round-trip through a MessageChannel so we know the SW has processed the
-  // message before we resolve. Without this, a fire-and-forget postMessage
-  // can race against the iframe's first fetch — the iframe loads the preview
-  // URL before the SW's `message` handler has registered the session, and
-  // the request 404s.
-  await new Promise<void>((resolve, reject) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = (event) => {
-      channel.port1.close();
-      const data = event.data;
-      if (data && data.ok === false) {
-        reject(new Error(data.error || "Service worker rejected message"));
-      } else {
-        resolve();
-      }
-    };
-    worker.postMessage(message, [channel.port2]);
+  if (!worker || worker.state === "redundant") {
+    registrationPromise = null;
+    throw new Error("Service worker unavailable.");
+  }
+  const data = await requestPortReply<{ ok: boolean; error?: string }>((port) => worker.postMessage(message, [port]), {
+    signal,
+    timeoutMs: WORKER_TIMEOUT_MS,
+    timeoutMessage: "Preview service worker stopped responding.",
   });
+  if (!data?.ok) throw new Error(data?.error || "Service worker rejected message");
 }
 
 function generateToken(): string {
@@ -239,15 +258,19 @@ export function encodePreviewPath(path: string): string {
 }
 
 export async function createPreviewSession(options: PreviewSessionOptions = {}): Promise<PreviewSession> {
-  await ensureRegistration();
+  if (options.signal) await withAbort(options.signal, ensureRegistration);
+  else await ensureRegistration();
   ensureRecoveryListener();
   const token = generateToken();
   let destroyed = false;
+  let closing: Promise<void> | undefined;
+  let revision = 0;
+  const controller = new AbortController();
   // `originals` holds files as the artifact stores them; `snapshot` is what the
   // worker serves, with the SDK script tag added to HTML documents.
   const originals = new Map<string, PreviewFilePayload>();
   const snapshot = new Map<string, PreviewFilePayload>();
-  sessionSnapshots.set(token, snapshot);
+  sessionSnapshots.set(token, { files: snapshot, revision: () => revision });
   const sdk = options.sdk;
   let capabilities = sdk?.capabilities;
 
@@ -279,12 +302,16 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
       if (JSON.stringify(next) === JSON.stringify(capabilities)) return;
       capabilities = next;
       rebuild();
-      await postMessage({
-        type: "html-preview/register",
-        token,
-        files: Object.fromEntries(snapshot),
-        libraries: artifactLibraryUrls(),
-      });
+      await postMessage(
+        {
+          type: "html-preview/register",
+          token,
+          revision: ++revision,
+          files: Object.fromEntries(snapshot),
+          libraries: artifactLibraryUrls(),
+        },
+        controller.signal,
+      );
     },
 
     async setFiles(input) {
@@ -298,13 +325,17 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
         originals.set(key, toPayload(file));
       }
       rebuild();
-      await postMessage({
-        type: "html-preview/register",
-        token,
-        files: Object.fromEntries(snapshot),
-        // Bundled libraries served for `.lib/<name>` references; see artifactLibraries.ts.
-        libraries: artifactLibraryUrls(),
-      });
+      await postMessage(
+        {
+          type: "html-preview/register",
+          token,
+          revision: ++revision,
+          files: Object.fromEntries(snapshot),
+          // Bundled libraries served for `.lib/<name>` references; see artifactLibraries.ts.
+          libraries: artifactLibraryUrls(),
+        },
+        controller.signal,
+      );
     },
 
     async updateFile(path, file) {
@@ -315,25 +346,37 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
       originals.set(key, original);
       const payload = decorate(key, original);
       snapshot.set(key, payload);
-      await postMessage({
-        type: "html-preview/update",
-        token,
-        path: key,
-        file: payload,
-      });
+      await postMessage(
+        {
+          type: "html-preview/update",
+          token,
+          revision: ++revision,
+          path: key,
+          file: payload,
+        },
+        controller.signal,
+      );
     },
 
     async deleteFile(path) {
       if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key || isReserved(key)) return;
-      originals.delete(key);
-      snapshot.delete(key);
-      await postMessage({
-        type: "html-preview/delete",
-        token,
-        path: key,
-      });
+      for (const entry of originals.keys()) {
+        if (entry === key || entry.startsWith(`${key}/`)) {
+          originals.delete(entry);
+          snapshot.delete(entry);
+        }
+      }
+      await postMessage(
+        {
+          type: "html-preview/delete",
+          token,
+          revision: ++revision,
+          path: key,
+        },
+        controller.signal,
+      );
     },
 
     async renameFile(fromPath, toPath) {
@@ -356,25 +399,37 @@ export async function createPreviewSession(options: PreviewSessionOptions = {}):
       }
       // The injected tag carries the document's own path, so HTML must be re-decorated.
       rebuild();
-      await postMessage({
-        type: "html-preview/rename",
-        token,
-        fromPath: fromKey,
-        toPath: toKey,
-      });
+      await postMessage(
+        {
+          type: "html-preview/register",
+          token,
+          revision: ++revision,
+          files: Object.fromEntries(snapshot),
+          libraries: artifactLibraryUrls(),
+        },
+        controller.signal,
+      );
     },
 
-    async destroy() {
-      if (destroyed) return;
+    destroy() {
+      if (closing) return closing;
       destroyed = true;
+      controller.abort();
+      options.signal?.removeEventListener("abort", abort);
       sessionSnapshots.delete(token);
-      try {
-        await postMessage({ type: "html-preview/unregister", token });
-      } catch {
-        // Ignore — SW may already be gone.
-      }
+      originals.clear();
+      snapshot.clear();
+      closing = postMessage({ type: "html-preview/unregister", token }).catch(() => {
+        // The browser may already have discarded the worker and its sessions.
+      });
+      return closing;
     },
   };
 
+  const abort = () => {
+    void session.destroy();
+  };
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) await session.destroy();
   return session;
 }

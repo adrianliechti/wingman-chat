@@ -358,8 +358,13 @@ async function createExecutionGlobals(
   setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
     requestRasterizePdf(pyodide, path, optionsJson),
   );
-  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
-  return globals;
+  try {
+    for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
+    return globals;
+  } catch (error) {
+    globals.destroy();
+    throw error;
+  }
 }
 
 function loadPyodide(): Promise<PyodideInterface> {
@@ -415,9 +420,11 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     await ensurePackagesLoaded(pyodide, code);
 
     const executionController = new AbortController();
-    const globals = await createExecutionGlobals(pyodide, executionController.signal);
+    activeRpcSignal = executionController.signal;
+    let globals: PyodideInterface["globals"] | undefined;
 
     try {
+      globals = await createExecutionGlobals(pyodide, executionController.signal);
       onStarted?.();
 
       const runStart = Date.now();
@@ -435,7 +442,8 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       };
     } finally {
       executionController.abort();
-      globals.destroy();
+      activeRpcSignal = undefined;
+      globals?.destroy();
       lockDownUserNetwork();
     }
   } catch (error) {
@@ -484,8 +492,9 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
 // RPC to the main thread — each call ships its own reply port, so responses
 // need no correlation or routing.
 
+let activeRpcSignal: AbortSignal | undefined;
 const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> =>
-  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build);
+  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build, activeRpcSignal);
 
 /**
  * Bridge behind the Python `llm` helper (llmShim.py), resolved by the main thread.

@@ -135,11 +135,12 @@ export function HtmlPreview({
   // to the right manager.
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     let localSession: PreviewSession | null = null;
 
     void (async () => {
       try {
-        const newSession = await createPreviewSession({ sdk: sdkRef.current });
+        const newSession = await createPreviewSession({ sdk: sdkRef.current, signal: controller.signal });
         // Own the session immediately so failures during initial file loading
         // cannot leave its page-side snapshot or worker registration behind.
         localSession = newSession;
@@ -184,7 +185,7 @@ export function HtmlPreview({
         setSession(newSession);
         onSessionRef.current?.(newSession, iframeRef.current);
       } catch (err) {
-        console.error("Failed to start HTML preview session:", err);
+        if (!cancelled) console.error("Failed to start HTML preview session:", err);
         await localSession?.destroy().catch(() => undefined);
         localSession = null;
         if (!cancelled) {
@@ -195,6 +196,7 @@ export function HtmlPreview({
 
     return () => {
       cancelled = true;
+      controller.abort();
       if (sessionRef.current) onSessionRef.current?.(null, null);
       sessionRef.current = null;
       if (reloadTimerRef.current) {
@@ -233,7 +235,7 @@ export function HtmlPreview({
       const reload = shouldReloadRef.current?.(p) !== false;
       loadAndUpdate(p)
         .then(() => {
-          if (reload) scheduleReload();
+          if (reload && sessionRef.current === session) scheduleReload();
         })
         .catch((err) => console.error("html preview: upsert failed", err));
     };
@@ -242,7 +244,7 @@ export function HtmlPreview({
       session
         .deleteFile(p)
         .then(() => {
-          if (reload) scheduleReload();
+          if (reload && sessionRef.current === session) scheduleReload();
         })
         .catch((err) => console.error("html preview: delete failed", err));
     };
@@ -251,7 +253,7 @@ export function HtmlPreview({
       session
         .renameFile(oldPath, newPath)
         .then(() => {
-          if (reload) scheduleReload();
+          if (reload && sessionRef.current === session) scheduleReload();
         })
         .catch((err) => console.error("html preview: rename failed", err));
     };
@@ -279,7 +281,9 @@ export function HtmlPreview({
     lastPushedRef.current = { path, content };
     session
       .updateFile(path, { path, content, contentType })
-      .then(() => scheduleReload())
+      .then(() => {
+        if (sessionRef.current === session) scheduleReload();
+      })
       .catch((err) => console.error("html preview: update of active file failed", err));
   }, [session, path, content, scheduleReload]);
 
