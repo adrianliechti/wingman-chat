@@ -3,6 +3,21 @@ export interface CombinedAbortSignal {
   cleanup(): void;
 }
 
+/** Stop waiting when the owner goes away, including for APIs without signal support. */
+export async function withAbort<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([operation(), cancelled]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 /** Combine cancellation sources while retaining cleanup for the listener fallback. */
 export function combineAbortSignals(...values: Array<AbortSignal | undefined>): CombinedAbortSignal {
   const signals = [...new Set(values.filter((value): value is AbortSignal => value !== undefined))];

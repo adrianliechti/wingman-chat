@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
+import { createPreviewSession, type PreviewSdkOptions, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import type { File, FileSystem } from "@/shared/types/file";
 
 export interface HtmlPreviewProps {
@@ -39,6 +39,21 @@ export interface HtmlPreviewProps {
    * Prevents reload storms while content streams in. Defaults to 150ms.
    */
   reloadDebounceMs?: number;
+  /**
+   * Serve `window.wingman` into the session's HTML documents. Read when the
+   * session is created; later capability changes are pushed to the session.
+   */
+  sdk?: PreviewSdkOptions;
+  /** Called with the live session and iframe once files are registered, and with nulls on teardown. */
+  onSession?: (session: PreviewSession | null, iframe: HTMLIFrameElement | null) => void;
+  /**
+   * Decide whether a filesystem change should reload the page. The session's
+   * copy of the file is updated either way; returning false only skips the
+   * navigation, e.g. for a file the page itself just wrote.
+   */
+  shouldReload?: (path: string) => boolean;
+  /** Receives the iframe element (and null on unmount), e.g. to watch its selection. */
+  iframeRef?: (element: HTMLIFrameElement | null) => void;
 }
 
 const DEFAULT_PATH = "index.html";
@@ -69,8 +84,25 @@ export function HtmlPreview({
   className = "w-full h-full",
   style,
   reloadDebounceMs = 150,
+  sdk,
+  onSession,
+  shouldReload,
+  iframeRef: onIframe,
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const setIframe = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      iframeRef.current = element;
+      onIframe?.(element);
+    },
+    [onIframe],
+  );
+  const sdkRef = useRef(sdk);
+  const onSessionRef = useRef(onSession);
+  const shouldReloadRef = useRef(shouldReload);
+  sdkRef.current = sdk;
+  onSessionRef.current = onSession;
+  shouldReloadRef.current = shouldReload;
   const sessionRef = useRef<PreviewSession | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
@@ -103,11 +135,12 @@ export function HtmlPreview({
   // to the right manager.
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     let localSession: PreviewSession | null = null;
 
     void (async () => {
       try {
-        const newSession = await createPreviewSession();
+        const newSession = await createPreviewSession({ sdk: sdkRef.current, signal: controller.signal });
         // Own the session immediately so failures during initial file loading
         // cannot leave its page-side snapshot or worker registration behind.
         localSession = newSession;
@@ -150,8 +183,9 @@ export function HtmlPreview({
         // Publish only after all initial files are registered.
         sessionRef.current = newSession;
         setSession(newSession);
+        onSessionRef.current?.(newSession, iframeRef.current);
       } catch (err) {
-        console.error("Failed to start HTML preview session:", err);
+        if (!cancelled) console.error("Failed to start HTML preview session:", err);
         await localSession?.destroy().catch(() => undefined);
         localSession = null;
         if (!cancelled) {
@@ -162,6 +196,8 @@ export function HtmlPreview({
 
     return () => {
       cancelled = true;
+      controller.abort();
+      if (sessionRef.current) onSessionRef.current?.(null, null);
       sessionRef.current = null;
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
@@ -171,6 +207,15 @@ export function HtmlPreview({
       setSession(null);
     };
   }, [fs]);
+
+  // Advertise capability changes (e.g. tools toggled) without rebuilding the session.
+  const capabilities = sdk?.capabilities;
+  useEffect(() => {
+    if (!session || !capabilities) return;
+    session
+      .setCapabilities(capabilities)
+      .catch((err) => console.error("html preview: capabilities update failed", err));
+  }, [session, capabilities]);
 
   // Subscribe to filesystem change events for live reload.
   useEffect(() => {
@@ -187,20 +232,29 @@ export function HtmlPreview({
     };
 
     const onUpsert = (p: string) => {
+      const reload = shouldReloadRef.current?.(p) !== false;
       loadAndUpdate(p)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (reload && sessionRef.current === session) scheduleReload();
+        })
         .catch((err) => console.error("html preview: upsert failed", err));
     };
     const onDeleted = (p: string) => {
+      const reload = shouldReloadRef.current?.(p) !== false;
       session
         .deleteFile(p)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (reload && sessionRef.current === session) scheduleReload();
+        })
         .catch((err) => console.error("html preview: delete failed", err));
     };
     const onRenamed = (oldPath: string, newPath: string) => {
+      const reload = shouldReloadRef.current?.(oldPath) !== false && shouldReloadRef.current?.(newPath) !== false;
       session
         .renameFile(oldPath, newPath)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (reload && sessionRef.current === session) scheduleReload();
+        })
         .catch((err) => console.error("html preview: rename failed", err));
     };
 
@@ -227,7 +281,9 @@ export function HtmlPreview({
     lastPushedRef.current = { path, content };
     session
       .updateFile(path, { path, content, contentType })
-      .then(() => scheduleReload())
+      .then(() => {
+        if (sessionRef.current === session) scheduleReload();
+      })
       .catch((err) => console.error("html preview: update of active file failed", err));
   }, [session, path, content, scheduleReload]);
 
@@ -247,7 +303,7 @@ export function HtmlPreview({
 
   return (
     <iframe
-      ref={iframeRef}
+      ref={setIframe}
       src={session ? session.previewUrl(path) : "about:blank"}
       title={title || "HTML preview"}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"

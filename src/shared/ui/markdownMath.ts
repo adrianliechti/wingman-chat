@@ -29,8 +29,3 @@ export async function loadMathPlugins(): Promise<MathPlugins> {
 export async function loadKatex(): Promise<typeof import("katex").default> {
   return (await loadKatexBundle()).katex;
 }
-
-/** True when preprocessed markdown contains `$$…$$` math the KaTeX pipeline must handle. */
-export function contentHasMath(text: string): boolean {
-  return text.includes("$$");
-}

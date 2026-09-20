@@ -1,128 +1,55 @@
 # Offline HTML artifact libraries
 
-HTML artifacts can use ECharts, Three.js, and Lucide without a CDN. The JavaScript
-executor supplies `echartsSource`, `threeSource`, and `lucideSource`: strings
-containing browser scripts, loaded only when the execution code references them.
+HTML artifacts can use ECharts, Three.js, and Lucide without a CDN. Every artifact
+workspace has a virtual `/.lib/` folder:
 
-The model discovers these globals through the artifact and interpreter prompts in
-`src/features/artifacts/prompts/` and the `execute_javascript_code` tool description
-in `useArtifactsProvider.ts`. The source strings never need to pass through the
-model's output; its code writes them directly into the artifact workspace.
+| Reference          | Global    | Notes                                                                 |
+| ------------------ | --------- | --------------------------------------------------------------------- |
+| `/.lib/echarts.js` | `echarts` | `echarts/dist/echarts.min.js`                                        |
+| `/.lib/three.js`   | `THREE`   | Core plus OrbitControls, GLTFLoader, EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, OutputPass |
+| `/.lib/lucide.js`  | `lucide`  | Official UMD build                                                    |
+| `/.lib/tailwind.js` | (none)   | `@tailwindcss/browser`: Tailwind v4 compiled in the page at load time; `@theme` via `<style type="text/tailwindcss">` |
+| `/.lib/daisyui.css` | (stylesheet) | daisyUI 5 prebuilt components (light and dark themes); link it before the Tailwind script |
+| `/.lib/daisyui-themes.css` | (stylesheet) | daisyUI's remaining themes, selected with `data-theme` on `<html>` |
+| `/.lib/alpine.js` | `Alpine`  | Alpine.js 3 CDN build; load with `defer`, state in `x-data`         |
 
-## Where the libraries live
+A page references a library with the absolute path `/.lib/<name>`, from any
+folder depth, before its own script (relative forms such as `../.lib/three.js`
+also work):
 
-Three.js and Lucide are pinned npm dependencies. During development and production
-builds, `scripts/artifact-library-sources.ts` exposes their browser bundles as
-virtual modules. Vite emits them into the app's own assets as separate lazy chunks.
-There is no CDN URL or public library endpoint for the model to construct.
-
-Three.js is bundled into a single classic script because modern Three.js uses ES
-modules. Its core and selected addons share one instance. Lucide uses its official
-UMD browser bundle. Both sources retain their license notices and can be embedded
-in HTML script tags.
-
-The executor obtains these strings from the Wingman installation. Once written to
-an artifact, the libraries belong to that artifact's files. HTML previews serve
-companion files through the preview service worker. Standalone HTML embeds the
-scripts and can run after download without Wingman or a network connection. This
-does not make the entire Wingman application available offline after a cold reload.
-
-## Companion scripts
-
-Run this with `execute_javascript_code`:
-
-```js
-vfs.write("/lib/three.js", threeSource, "text/javascript");
-vfs.write("/lib/lucide.js", lucideSource, "text/javascript");
-vfs.write(
-  "/scene.html",
-  `<!doctype html>
-<html><body>
-<button aria-label="Reset camera"><i data-lucide="camera"></i></button>
-<script src="./lib/three.js"></script>
-<script src="./lib/lucide.js"></script>
-<script>
-  lucide.createIcons();
-  const scene = new THREE.Scene();
-  // Add a camera, renderer, geometry, and animation here.
-</script>
-</body></html>`,
-  "text/html",
-);
+```html
+<script src="/.lib/echarts.js"></script>
 ```
 
-Use paths relative to the HTML file. Downloaded HTML needs its companion files;
-for a single downloadable file, use inline scripts instead.
+In the preview session the absolute reference is rewritten to the session's own
+URL so the worker can answer it. "Download all" (zip) rewrites it to a relative
+path and ships the library at `.lib/`; a single-file download is the page as
+stored, so it needs the folder export to run from disk.
 
-## Standalone HTML
+Nothing is stored in the workspace and the model never handles library source
+(`src/features/artifacts/prompts/artifacts.txt` and `interpreter.txt` say so;
+the verifier fails pages that inline library or dataset source and pages that
+reference an unknown `.lib/` name). `/.lib/` is a reserved path like `/.memory/`.
 
-The following executor code creates a complete, offline 3D artifact:
+## How it is served
 
-```js
-vfs.write(
-  "/cube.html",
-  `<!doctype html>
-<html><head><meta charset="utf-8"><title>Rotating cube</title>
-<style>body { margin: 0; } canvas { display: block; }
-button { position: fixed; top: 12px; left: 12px; }</style>
-</head><body>
-<button id="pause" aria-label="Pause animation"><i data-lucide="pause"></i></button>
-<script>${threeSource}</script>
-<script>${lucideSource}</script>
-<script>
-  lucide.createIcons();
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
-  camera.position.z = 4;
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  document.body.appendChild(renderer.domElement);
-  const geometry = new THREE.BoxGeometry();
-  const material = new THREE.MeshNormalMaterial();
-  const cube = new THREE.Mesh(geometry, material);
-  scene.add(cube);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  function resize() {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  }
-  addEventListener('resize', resize);
-  resize();
-  let paused = false;
-  const button = document.getElementById('pause');
-  button.onclick = () => {
-    paused = !paused;
-    button.setAttribute('aria-label', paused ? 'Resume animation' : 'Pause animation');
-    button.innerHTML = '<i data-lucide="' + (paused ? 'play' : 'pause') + '"></i>';
-    lucide.createIcons();
-  };
-  let previous;
-  renderer.setAnimationLoop((time) => {
-    const delta = previous === undefined ? 0 : Math.min((time - previous) / 1000, 0.1);
-    previous = time;
-    if (!paused) cube.rotation.y += delta;
-    controls.update();
-    renderer.render(scene, camera);
-  });
-  addEventListener('pagehide', () => {
-    renderer.setAnimationLoop(null);
-    controls.dispose();
-    geometry.dispose();
-    material.dispose();
-    renderer.dispose();
-    removeEventListener('resize', resize);
-  });
-</script></body></html>`,
-  "text/html",
-);
-```
+`scripts/artifact-library-sources.ts` provides each library twice: as a string
+(`virtual:artifact-library-source/<lib>`, escaped for inline scripts) and as a
+served file (`virtual:artifact-library-url/<lib>`: a dev-server path, or a hashed
+asset emitted into `dist/assets/` on build). `src/shared/lib/artifactLibraries.ts`
+is the registry both sides use.
 
-The page gets the globals `THREE` and `lucide`; they are not objects available in
-the executor's DOM-free worker. No import map is needed for these classic scripts.
+The preview session sends the URL map to `public/html-preview-sw.js`, which
+answers any `.lib/<name>` request (at any folder depth) by fetching the served
+file once and keeping it in CacheStorage, so previews work offline and after the
+worker restarts. Session snapshots never contain library bytes.
 
-The Three.js bundle includes `OrbitControls`, `GLTFLoader`, `EffectComposer`,
-`RenderPass`, `ShaderPass`, `UnrealBloomPass`, and `OutputPass`, all accessed through
-`THREE`. Use `WebGLRenderer`. Other addons, Draco/Meshopt/KTX2 decoders, fonts,
-textures, and models are not included. Supply any needed assets locally or embed
-them; for standalone HTML, all required assets must be embedded too.
+## Exports
+
+`FileSystemManager.downloadAsZip` rewrites absolute `/.lib/` references to
+relative ones (`exportArtifactHtmlForFolder`) and adds each referenced library
+at the path the page resolves it to (`collectReferencedLibraries`).
+
+The JavaScript interpreter still exposes `echarts` as a worker global for SVG
+server-side rendering. The older `echartsSource`/`threeSource`/`lucideSource`
+strings remain for existing artifacts but are no longer advertised.

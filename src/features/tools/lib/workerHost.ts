@@ -14,7 +14,7 @@ import type {
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 import type { ToolContext } from "@/shared/types/chat";
-import { combineAbortSignals } from "@/shared/lib/abortSignals";
+import { combineAbortSignals, withAbort } from "@/shared/lib/abortSignals";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
@@ -22,7 +22,7 @@ export interface ExecuteCodeOptions {
   /** Override the compute-stall ceiling. */
   timeoutMs?: number;
   /** Captured run context for model calls made by the interpreter. */
-  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext">;
+  context?: Pick<ToolContext, "model" | "invocationContext" | "agentContext" | "chatId">;
 }
 
 export type BridgeRequestOptions = Pick<ExecuteCodeOptions, "signal" | "context">;
@@ -40,6 +40,8 @@ export interface WorkerHostConfig {
   startupStallMs?: number;
   /** Reuse the runtime after a successful execution. Defaults to true. */
   reuseWorker?: boolean;
+  /** Release a reusable runtime after this much idle time. Defaults to one minute. */
+  idleTimeoutMs?: number;
 }
 
 /** Pure-compute no-progress ceiling before the run is treated as wedged and
@@ -62,6 +64,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
 
   let worker: Worker | null = null;
   let executionTail: Promise<CodeExecutionResult> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Each in-flight execution registers a "worker died" callback so it settles
   // with an error instead of hanging on a reply port that will never arrive.
@@ -74,19 +77,19 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
 
   async function replyOnPort(
     port: MessagePort,
-    bridge: typeof activeBridge,
+    bridge: NonNullable<typeof activeBridge>,
     run: () => Promise<unknown>,
   ): Promise<void> {
     // The worker is waiting on us, not stalled — pause its stall timer. Capture
     // the slot now so a reply that lands after teardown can't disturb the next run.
-    bridge?.enter();
+    bridge.enter();
     let reply: RpcReply;
     try {
-      reply = { ok: true, value: await run() };
+      reply = { ok: true, value: await withAbort(bridge.signal!, run) };
     } catch (error) {
       reply = { ok: false, error: error instanceof Error ? error.message : String(error) };
     } finally {
-      bridge?.leave();
+      bridge.leave();
     }
     // Abort/teardown may close the transferred port while the main-thread RPC
     // is still settling. A late reply must not become an unhandled rejection.
@@ -100,6 +103,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function getWorker(): Worker {
+    clearTimeout(idleTimer);
     if (!worker) {
       const created = config.createWorker();
       created.addEventListener("message", (event: MessageEvent<WorkerToMainMessage>) => {
@@ -116,15 +120,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
           config.handleMessage(message, { signal: bridge.signal, context: bridge.context }),
         );
       });
-      created.addEventListener("error", (event) => {
+      const onFailure = () => {
         if (worker !== created) return;
-        // Drop the dead worker so the next call spawns a fresh one.
-        console.error("Interpreter worker error:", event.message || event);
+        const failures = [...pendingFailures];
         worker = null;
-        created.terminate();
-        for (const onCrash of pendingFailures) onCrash();
-        pendingFailures.clear();
-      });
+        if (failures.length) failures.forEach((fail) => fail());
+        else created.terminate();
+      };
+      created.addEventListener("error", onFailure);
+      created.addEventListener("messageerror", onFailure);
       worker = created;
     }
     return worker;
@@ -135,13 +139,26 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
     const run = () => executeNow(request, { ...options, signal: combined.signal });
     // Runtime state and bridge replies belong to exactly one execution at a time.
     // This also covers UI runs and different chats, independently of workspace locks.
-    const result = executionTail ? executionTail.then(run, run) : run();
-    executionTail = result;
+    const queued = executionTail !== null;
+    const scheduled = executionTail ? executionTail.then(run, run) : run();
+    // Cancelling a queued caller settles it immediately, while its queue slot
+    // stays behind the running job. No later caller can jump into that runtime.
+    const result =
+      queued && combined.signal
+        ? withAbort(combined.signal, () => scheduled).catch((error: unknown) => {
+            if (!combined.signal?.aborted) throw error;
+            return { success: false, output: "", error: "Execution cancelled" };
+          })
+        : scheduled;
+    executionTail = scheduled;
     const clear = () => {
-      combined.cleanup();
-      if (executionTail === result) executionTail = null;
+      if (executionTail === scheduled) executionTail = null;
     };
-    void result.then(clear, clear);
+    void result.then(
+      () => combined.cleanup(),
+      () => combined.cleanup(),
+    );
+    void scheduled.then(clear, clear);
     return result;
   }
 
@@ -188,6 +205,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       // A wedged run can't be interrupted cooperatively — tear the worker down
       // (next call respawns) and settle so the caller's sandbox lock releases.
       const fail = (error: string) => {
+        if (settled) return;
         if (worker === target) worker = null;
         target.terminate();
         settle({ success: false, output: "", error });
@@ -235,10 +253,20 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         signal?.removeEventListener("abort", onAbort);
         executionController.abort();
         bridgeSignal.cleanup();
+        port1.onmessage = port1.onmessageerror = null;
         port1.close();
-        if (config.reuseWorker === false && worker === target) {
-          worker = null;
-          target.terminate();
+        port2.close();
+        if (worker === target) {
+          if (config.reuseWorker === false || !result.success) {
+            worker = null;
+            target.terminate();
+          } else {
+            idleTimer = setTimeout(() => {
+              if (worker !== target || activeBridge) return;
+              worker = null;
+              target.terminate();
+            }, config.idleTimeoutMs ?? 60_000);
+          }
         }
         resolve(result);
       }
@@ -252,6 +280,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         }
         settle(reply.result);
       };
+      port1.onmessageerror = onCrash;
       pendingFailures.add(onCrash);
       if (signal) {
         if (signal.aborted) {
@@ -265,7 +294,6 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       try {
         target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
       } catch (error) {
-        port2.close();
         fail(error instanceof Error ? error.message : "Unable to start code execution");
       }
     });

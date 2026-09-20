@@ -105,6 +105,28 @@ for algorithm in ("AES-128", "AES-256-R5", "AES-256"):
     "import pandas as pd\nstr(pd.Timestamp('2026-06-14 12:00').tz_localize('Europe/Zurich').tz_convert('UTC').tz)",
     { heavy: true },
   ],
+  [
+    "duckdb + Arrow + Parquet files",
+    `import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
+table = pa.table({"id": pa.array([9007199254740993, None], type=pa.int64()), "amount": [4.5, 2.5]})
+with duckdb.connect("analysis.duckdb") as con:
+    con.register("input_data", table)
+    con.execute("CREATE TABLE saved AS SELECT * FROM input_data")
+    con.execute("COPY saved TO 'result.parquet' (FORMAT PARQUET)")
+    result = con.sql("SELECT * FROM saved").to_arrow_table()
+    assert isinstance(result, pa.Table) and result.equals(table)
+    assert con.sql("SELECT * FROM saved").to_arrow_reader(batch_size=1).read_all().equals(table)
+assert pq.read_table("result.parquet").equals(table)
+with pa.ipc.new_file("result.arrow", table.schema) as writer:
+    writer.write_table(table)
+assert pa.ipc.open_file("result.arrow").read_all().equals(table)
+with duckdb.connect("analysis.duckdb") as con:
+    assert con.execute("SELECT sum(amount) FROM saved").fetchone()[0] == 7.0
+"DuckDB database, Parquet and Arrow round-trips"`,
+    { heavy: true },
+  ],
 
   // --- Validation ---
   ["pydantic v2", "from pydantic import BaseModel\nclass M(BaseModel):\n  x:int\nM(x='5').x"],

@@ -12,10 +12,11 @@ import { useChat } from "../../../src/features/chat/hooks/useChat";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
 import { loadConfig } from "../../../src/shared/config";
+import { DuckDbRuntime } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
-import type { Tool } from "../../../src/shared/types/chat";
+import type { Content, Tool } from "../../../src/shared/types/chat";
 
 const config = await loadConfig();
 if (!config) throw new Error("Missing fixture config");
@@ -51,6 +52,9 @@ function Fixture() {
     selectChat: chat.selectChat,
     deleteChat: chat.deleteChat,
     send: () => chat.sendMessage({ role: "user", content: [{ type: "text", text: "Hello" }] }),
+    lastUserMessage: () =>
+      chat.messages.findLast((item) => item.role === "user" && item.content.some((part) => part.type === "text"))
+        ?.content,
     openFile: artifacts.openFile,
     showDrawer: artifacts.setShowArtifactsDrawer,
     async write(chatId, path, content) {
@@ -58,6 +62,24 @@ function Fixture() {
     },
     async remove(chatId, path) {
       await new FileSystemManager(chatId).deleteFile(path);
+    },
+    // A Parquet artifact produced by DuckDB itself from a query.
+    async writeParquet(chatId, path, sql) {
+      const runtime = new DuckDbRuntime();
+      const bytes = await runtime
+        .run(async (db) => {
+          const connection = await db.connect();
+          await connection.query(`COPY (${sql}) TO 'e2e.parquet' (FORMAT PARQUET)`);
+          return db.copyFileToBuffer("e2e.parquet");
+        })
+        .finally(() => runtime.dispose());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      await new FileSystemManager(chatId).createFile(
+        path,
+        `data:application/vnd.apache.parquet;base64,${btoa(binary)}`,
+        "application/vnd.apache.parquet",
+      );
     },
     async rename(chatId, from, to) {
       await new FileSystemManager(chatId).renameFile(from, to);
@@ -140,7 +162,7 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <AgentContext value={{ currentAgent: null } as AgentContextType}>
         <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-          <ToolsContext value={{ providers: [] } as unknown as ToolsContextValue}>
+          <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
             <AppContext value={{ closeApp: async () => {} } as AppContextType}>
               <ArtifactsProvider>
                 <ChatProvider>
@@ -173,10 +195,12 @@ declare global {
       selectChat(id: string | null): void;
       deleteChat(id: string): void;
       send(): Promise<void>;
+      lastUserMessage(): Content[] | undefined;
       openFile(path: string, fs?: FileSystemManager): void;
       showDrawer(show: boolean): void;
       write(chatId: string, path: string, content: string): Promise<void>;
       remove(chatId: string, path: string): Promise<void>;
+      writeParquet(chatId: string, path: string, sql: string): Promise<void>;
       rename(chatId: string, from: string, to: string): Promise<void>;
       read(chatId: string, path: string): Promise<File | undefined>;
       tool(name: string, args: Record<string, unknown>, chatId: string): Promise<unknown>;

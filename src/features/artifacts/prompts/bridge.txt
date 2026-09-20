@@ -1,0 +1,9 @@
+## Artifact page SDK (`window.wingman`)
+HTML artifacts previewed in the drawer receive a `window.wingman` object; a downloaded copy does not. Always feature-detect: `const w = window.wingman; if (w?.capabilities.files) { … } else { show a fallback }`. Never load the SDK from a URL; the preview injects it before the page's own scripts run. All methods are async and reject with an Error.
+
+- `wingman.capabilities` — booleans: llm, vision, ocr, translate, render, synthesize, transcribe, files, store, tools, duckdb.
+- `wingman.llm(prompt, { system?, model?, effort? })` → string. Same semantics as the interpreter `llm` helper.
+- `wingman.files` — `list()`, `exists(path)`, `read(path)` (Uint8Array), `readText(path)`, `readJSON(path)`, `write(path, data, contentType?)`, `writeText(path, text)`, `writeJSON(path, value)`, `remove(path)`. Paths are artifact paths like `/data/sales.csv`. The page's own writes are saved as artifacts without reloading it.
+- `wingman.store` — `get(key)`, `set(key, value)`, `remove(key)`, `keys()`. Small JSON state (1 MiB) kept per artifact outside the workspace. Use it for UI state, filters, drafts and preferences instead of files.
+- `wingman.tools.list()` → `[{ name, title, description, parameters }]`; `wingman.tools.call(name, args)` → content parts. Runs the chat's enabled tools (including MCP). The user is asked once per artifact before the first call; handle a rejection gracefully.
+- Media helpers, present only when `capabilities` says so: `vision(path, prompt?)`, `ocr(path)`, `translate(text, lang)`, `translateFile(input, lang, output)`, `render(prompt, output, inputs?, options?)`, `synthesize(text, output, voice?)`, `transcribe(path)`, `rasterizePdf(path, { scale?, pages? })`. Same arguments as the JavaScript interpreter helpers; outputs are written to the given artifact path.

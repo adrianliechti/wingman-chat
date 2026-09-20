@@ -7,7 +7,11 @@ import {
 } from "@/features/artifacts/lib/executionToolSchemas";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
+import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
+import { useArtifactEntries } from "./useArtifactFiles";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
+import bridgeInstructionsText from "@/features/artifacts/prompts/bridge.txt?raw";
+import duckdbInstructionsText from "@/features/artifacts/prompts/duckdb.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import ocrInstructionsText from "@/features/artifacts/prompts/ocr.txt?raw";
@@ -61,6 +65,10 @@ function runningCodeLabel(code: unknown): string {
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
+  const entries = useArtifactEntries(fs);
+  const duckdbEnabled = getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false;
+  const queryable = duckdbEnabled ? queryableMountNames(entries.map((entry) => entry.path)) : [];
+  const queryableKey = queryable.join("\n");
 
   // Direct/UI calls can use the latest fs. Model calls carry their originating
   // chatId so neither a draft-chat render nor navigation can redirect a write.
@@ -94,7 +102,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         display: {
           header: (args, state) => ({
             icon: SquareCode,
-            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
+            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
           }),
           input: (args) => {
             const code = typeof args?.code === "string" ? args.code : "";
@@ -122,7 +130,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         display: {
           header: (args, state) => ({
             icon: Braces,
-            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
+            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
           }),
           input: (args) => {
             const code = typeof args?.code === "string" ? args.code : "";
@@ -135,9 +143,9 @@ export function useArtifactsProvider(): ToolProvider | null {
           "already included in the user's message, which the chat model can inspect with built-in vision. " +
           "Use it for browser-native work: WebCodecs, OffscreenCanvas, createImageBitmap, crypto.subtle, WebAssembly, " +
           "TextEncoder/Decoder, and bundled libraries available as globals when referenced: `mediabunny` (media " +
-          "transcoding), `echarts` (SVG SSR charts), `jsPDF` (PDF), and browser script strings " +
-          "`echartsSource`, `threeSource`, `lucideSource`. Write source strings to local .js artifacts or inline " +
-          "script tags; they expose echarts, THREE, lucide in HTML. " +
+          "transcoding), `echarts` (SVG SSR charts), `jsPDF` (PDF). HTML pages load browser libraries from the " +
+          "virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library " +
+          "source into the workspace or into a page. " +
           "Files are NOT mounted " +
           "as a real filesystem — read and write artifacts through the injected " +
           "`vfs` helper: `vfs.read(path)` / `vfs.readBytes(path)` / `vfs.readJSON(path)` and `vfs.write(path, data, " +
@@ -178,6 +186,11 @@ export function useArtifactsProvider(): ToolProvider | null {
       instructions: [
         artifactsInstructionsText,
         interpreterInstructionsText,
+        // HTML pages can call back into the app; SQL needs the DuckDB host too.
+        ...(getConfig().artifacts?.bridge !== false ? [bridgeInstructionsText] : []),
+        ...(getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false
+          ? [duckdbInstructionsText]
+          : []),
         officeInstructionsText,
         // Always available — pdf.js rasterization needs no backing service.
         rasterizeInstructionsText,
@@ -198,10 +211,18 @@ export function useArtifactsProvider(): ToolProvider | null {
         `active_file: ${activeFile ? JSON.stringify(activeFile) : "null"}`,
         `open_tabs: ${activeFile ? `[${JSON.stringify(activeFile)}]` : "[]"}`,
         "Use artifacts_read to inspect an active file; do not assume its contents from the path.",
+        ...(duckdbEnabled
+          ? [
+              `duckdb_files: ${JSON.stringify(queryable)}`,
+              "These workspace files are queryable by name with DuckDB (wingman.duckdb in HTML, sql() in the interpreters).",
+            ]
+          : []),
       ].join("\n"),
       tools: artifactsTools(),
     };
-  }, [isAvailable, activeFile, artifactsTools]);
+    // queryableKey stands in for the derived array so the memo only changes with its content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryableKey]);
 
   return provider;
 }

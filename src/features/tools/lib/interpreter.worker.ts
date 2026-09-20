@@ -11,6 +11,7 @@ import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTy
 import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath, SANDBOX_HOME } from "@/shared/lib/sandbox";
 import ASYNCIO_SHIM from "./asyncioShim.py?raw";
+import DUCKDB_SCOPE from "./duckdbScope.py?raw";
 import {
   BoundedOutput,
   CodeExecutionLimitError,
@@ -30,11 +31,12 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread } from "./interpreterRpc";
+import { callMainThread, describeError } from "./interpreterRpc";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
+import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
 import TRANSLATE_SHIM from "./translateShim.py?raw";
@@ -320,6 +322,7 @@ const USER_SHIMS = [
   TRANSCRIBE_SHIM,
   TRANSLATE_SHIM,
   PDF_RASTERIZE_SHIM,
+  SQL_SHIM,
 ];
 
 async function createExecutionGlobals(
@@ -349,14 +352,20 @@ async function createExecutionGlobals(
   );
   setBridge("_wingman_transcribe", (path: string) => requestTranscribe(pyodide, path));
   setBridge("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
+  setBridge("_wingman_sql", (query: string, paramsJson: string | null) => requestSql(query, paramsJson));
   setBridge("_wingman_translate_file", (lang: string, output: string, input: string) =>
     requestTranslateFile(pyodide, lang, output, input),
   );
   setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
     requestRasterizePdf(pyodide, path, optionsJson),
   );
-  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
-  return globals;
+  try {
+    for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
+    return globals;
+  } catch (error) {
+    globals.destroy();
+    throw error;
+  }
 }
 
 function loadPyodide(): Promise<PyodideInterface> {
@@ -412,14 +421,22 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     await ensurePackagesLoaded(pyodide, code);
 
     const executionController = new AbortController();
-    const globals = await createExecutionGlobals(pyodide, executionController.signal);
+    activeRpcSignal = executionController.signal;
+    let globals: PyodideInterface["globals"] | undefined;
+    let closeDuckDb: ((() => void) & { destroy(): void }) | undefined;
 
     try {
+      globals = await createExecutionGlobals(pyodide, executionController.signal);
+      if (pyodide.loadedPackages.duckdb) {
+        closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals }) as typeof closeDuckDb;
+      }
       onStarted?.();
 
       const runStart = Date.now();
       const output = await runPythonCode(pyodide, code, globals, limits.maxOutputBytes);
 
+      // Flush database files and discard SQL state before capturing the run.
+      closeDuckDb?.();
       const resultFiles = collectPyodideFiles(pyodide, files, runStart, limits);
       validateArtifactFiles(resultFiles, limits);
       // Remember the materialized tree so the next call can sync incrementally.
@@ -432,15 +449,21 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       };
     } finally {
       executionController.abort();
-      globals.destroy();
-      lockDownUserNetwork();
+      activeRpcSignal = undefined;
+      try {
+        closeDuckDb?.();
+      } finally {
+        closeDuckDb?.destroy();
+        globals?.destroy();
+        lockDownUserNetwork();
+      }
     }
   } catch (error) {
     console.error("Code execution error:", error);
     // FS state may be inconsistent — force a clean rebuild on the next call.
     lastSyncedFiles = null;
     const boundedError = new BoundedOutput(maxOutputBytes);
-    boundedError.append(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    boundedError.append(describeError(error));
     return {
       success: false,
       output: "",
@@ -481,8 +504,9 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
 // RPC to the main thread — each call ships its own reply port, so responses
 // need no correlation or routing.
 
+let activeRpcSignal: AbortSignal | undefined;
 const callMain = <T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> =>
-  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build);
+  callMainThread<T>((message, transfer) => ctx.postMessage(message, transfer), build, activeRpcSignal);
 
 /**
  * Bridge behind the Python `llm` helper (llmShim.py), resolved by the main thread.
@@ -577,6 +601,21 @@ async function requestTranscribe(pyodide: PyodideInterface, path: string): Promi
 }
 
 /** Bridge behind the Python `translate` helper (translateShim.py), resolved by the main thread. */
+/** Bridge behind the Python `sql` helper (sqlShim.py); the result is JSON so Pyodide needs no proxy conversion. */
+async function requestSql(query: string, paramsJson?: string | null): Promise<string> {
+  let params: unknown[] | undefined;
+  if (paramsJson) {
+    try {
+      const parsed: unknown = JSON.parse(paramsJson);
+      if (Array.isArray(parsed)) params = parsed;
+    } catch {
+      // Malformed parameters — run without them rather than failing the call.
+    }
+  }
+  const result = await callMain<unknown>((port) => ({ type: "duckdb-query-request", sql: query, params, port }));
+  return JSON.stringify(result);
+}
+
 function requestTranslateText(lang: string, text: string): Promise<string> {
   return callMain<string>((port) => ({ type: "translate-text-request", lang, text, port }));
 }

@@ -5,9 +5,13 @@ import {
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  Client,
+  ProtocolError,
+  ProtocolErrorCode,
+  StreamableHTTPClientTransport as ClientTransport,
+  UnauthorizedError,
+} from "@modelcontextprotocol/client";
 import type {
   CallToolRequest,
   CallToolResult,
@@ -15,16 +19,7 @@ import type {
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
-} from "@modelcontextprotocol/sdk/types.js";
-import {
-  ElicitationCompleteNotificationSchema,
-  ElicitRequestSchema,
-  ErrorCode,
-  McpError,
-  ToolListChangedNotificationSchema,
-  ResourceListChangedNotificationSchema,
-  PromptListChangedNotificationSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/client";
 import { trace } from "@opentelemetry/api";
 import { textToDataUrl } from "@/shared/lib/fileContent";
 import {
@@ -170,14 +165,14 @@ export class MCPClient implements ToolProvider {
       if (this.connectionVersion !== version) throw new DOMException("MCP connection cancelled", "AbortError");
     };
 
-    client.setRequestHandler(ElicitRequestSchema, async (request): Promise<ElicitResult> => {
+    client.setRequestHandler("elicitation/create", async (request): Promise<ElicitResult> => {
       assertCurrent();
       // The SDK does not expose which outgoing call an incoming elicitation belongs
       // to. Never send a concurrent call's request to whichever context ran last.
       const [call] = this.activeToolCalls;
       const context = call?.context;
       if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
-        throw new McpError(ErrorCode.InvalidRequest, "Elicitation requires a single active tool context");
+        throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Elicitation requires a single active tool context");
       }
 
       if (request.params.mode === "url") {
@@ -289,7 +284,7 @@ export class MCPClient implements ToolProvider {
 
     // Listen before discovery so changes during the initial scan are not lost.
     if (client.getServerCapabilities()?.tools?.listChanged) {
-      client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      client.setNotificationHandler("notifications/tools/list_changed", async () => {
         if (this.client !== client) return;
         await this.loadToolsAndInstructions(client);
         if (this.client === client) await this.notifyApps("tools");
@@ -297,18 +292,18 @@ export class MCPClient implements ToolProvider {
     }
 
     if (client.getServerCapabilities()?.resources?.listChanged) {
-      client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
+      client.setNotificationHandler("notifications/resources/list_changed", async () => {
         if (this.client === client) await this.notifyApps("resources");
       });
     }
     if (client.getServerCapabilities()?.prompts?.listChanged) {
-      client.setNotificationHandler(PromptListChangedNotificationSchema, async () => {
+      client.setNotificationHandler("notifications/prompts/list_changed", async () => {
         if (this.client === client) await this.notifyApps("prompts");
       });
     }
 
     // Register elicitation complete notification handler
-    client.setNotificationHandler(ElicitationCompleteNotificationSchema, (notification) => {
+    client.setNotificationHandler("notifications/elicitation/complete", (notification) => {
       if (this.client !== client) return;
       const { elicitationId } = notification.params;
       this.elicitations.get(elicitationId)?.context?.onElicitationComplete?.(elicitationId);
@@ -372,18 +367,10 @@ export class MCPClient implements ToolProvider {
           discovery.dirty = false;
           const tools: MCPTool[] = [];
           if (client.getServerCapabilities()?.tools) {
-            let cursor: string | undefined;
-            const seen = new Set<string>();
-            do {
-              const page = await client.listTools(cursor === undefined ? undefined : { cursor });
-              if (this.client !== client) return;
-              tools.push(...page.tools);
-              cursor = page.nextCursor;
-              if (cursor !== undefined) {
-                if (seen.has(cursor)) throw new Error("MCP tools/list returned a repeated pagination cursor");
-                seen.add(cursor);
-              }
-            } while (cursor !== undefined && !discovery.dirty);
+            // The SDK walks every page itself and rejects runaway pagination (listMaxPages).
+            const page = await client.listTools();
+            if (this.client !== client) return;
+            tools.push(...page.tools);
           }
           // A notification invalidates the entire scan, including earlier pages.
           if (discovery.dirty) continue;
@@ -427,7 +414,11 @@ export class MCPClient implements ToolProvider {
             ...(ui?.availableDisplayModes ? { appDisplayModes: ui.availableDisplayModes } : {}),
           });
         }
-        if (result.structuredContent) context?.setContent?.(result.structuredContent);
+        // structuredContent is any JSON value on the wire; the UI context takes an object.
+        const structured = result.structuredContent;
+        if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+          context?.setContent?.(structured as Record<string, unknown>);
+        }
         return processContent(result.content, client, context?.signal);
       },
     };
@@ -442,7 +433,7 @@ export class MCPClient implements ToolProvider {
     const call = { context };
     this.activeToolCalls.add(call);
     try {
-      const result = await client.callTool(params, undefined, { signal: context?.signal });
+      const result = await client.callTool(params, { signal: context?.signal });
       context?.signal?.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
       return "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
@@ -516,22 +507,22 @@ export class MCPClient implements ToolProvider {
               oncalltool: async (params, extra) => {
                 const definition = this.toolDefinitions.get(params.name);
                 if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition)) {
-                  throw new McpError(ErrorCode.InvalidRequest, "Tool is not available to this app");
+                  throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
                 }
-                return this.callTool(client, params, { signal: extra.signal });
+                return this.callTool(client, params, { signal: extra.mcpReq.signal });
               },
             }
           : {}),
         ...(capabilities?.resources
           ? {
-              onlistresources: (params, extra) => client.listResources(params, { signal: extra.signal }),
-              onreadresource: (params, extra) => client.readResource(params, { signal: extra.signal }),
+              onlistresources: (params, extra) => client.listResources(params, { signal: extra.mcpReq.signal }),
+              onreadresource: (params, extra) => client.readResource(params, { signal: extra.mcpReq.signal }),
               onlistresourcetemplates: (params, extra) =>
-                client.listResourceTemplates(params, { signal: extra.signal }),
+                client.listResourceTemplates(params, { signal: extra.mcpReq.signal }),
             }
           : {}),
         ...(capabilities?.prompts
-          ? { onlistprompts: (params, extra) => client.listPrompts(params, { signal: extra.signal }) }
+          ? { onlistprompts: (params, extra) => client.listPrompts(params, { signal: extra.mcpReq.signal }) }
           : {}),
       },
       onClose: () => this.appSessions.delete(session),

@@ -7,7 +7,7 @@ const NATIVE_CLASS = "emoji-native";
 const FONT_SPEC = '300 1em "Noto Emoji"';
 const FONT_SAMPLE = "😀";
 
-type EmojiMode = "monochrome" | "native";
+export type EmojiMode = "monochrome" | "native";
 
 const getRootElement = () => {
   if (typeof document === "undefined") {
@@ -15,13 +15,6 @@ const getRootElement = () => {
   }
 
   return document.documentElement;
-};
-
-const markNotoEmojiReady = () => {
-  const root = getRootElement();
-  if (root) {
-    root.classList.add(READY_CLASS);
-  }
 };
 
 export const getStoredEmojiMode = (): EmojiMode => {
@@ -54,11 +47,6 @@ export const applyEmojiModeClass = (mode: EmojiMode) => {
   root.classList.toggle(NATIVE_CLASS, mode === "native");
 };
 
-export const isNotoEmojiReady = () => {
-  const root = getRootElement();
-  return root?.classList.contains(READY_CLASS) ?? false;
-};
-
 let notoEmojiReadyPromise: Promise<void> | null = null;
 
 export const ensureNotoEmojiReady = (): Promise<void> => {
@@ -66,37 +54,26 @@ export const ensureNotoEmojiReady = (): Promise<void> => {
     return notoEmojiReadyPromise;
   }
 
-  const fontSet = typeof document !== "undefined" ? (document as Document & { fonts?: FontFaceSet }).fonts : undefined;
-
-  if (!fontSet) {
-    markNotoEmojiReady();
-    notoEmojiReadyPromise = Promise.resolve();
-    return notoEmojiReadyPromise;
-  }
-
-  if (fontSet.check(FONT_SPEC, FONT_SAMPLE)) {
-    markNotoEmojiReady();
-    notoEmojiReadyPromise = Promise.resolve();
-    return notoEmojiReadyPromise;
-  }
+  const fontSet = typeof document !== "undefined" ? document.fonts : undefined;
+  if (!fontSet) return Promise.resolve();
 
   notoEmojiReadyPromise = fontSet
     .load(FONT_SPEC, FONT_SAMPLE)
-    .catch(() => undefined)
-    .then(() => {
-      markNotoEmojiReady();
+    .then((fonts) => {
+      if (fonts.length > 0) getRootElement()?.classList.add(READY_CLASS);
+      else notoEmojiReadyPromise = null;
+    })
+    .catch(() => {
+      // Keep native emoji visible; a later mode change can retry the font.
+      notoEmojiReadyPromise = null;
     });
 
   return notoEmojiReadyPromise;
 };
 
-export const prepareInitialEmojiRendering = async () => {
+export const prepareInitialEmojiRendering = () => {
   const emojiMode = getStoredEmojiMode();
   applyEmojiModeClass(emojiMode);
 
-  if (emojiMode === "monochrome") {
-    await ensureNotoEmojiReady();
-  } else {
-    void ensureNotoEmojiReady();
-  }
+  if (emojiMode === "monochrome") void ensureNotoEmojiReady();
 };

@@ -1,0 +1,53 @@
+import { expect, test, type Page } from "@playwright/test";
+
+async function openFixture(page: Page) {
+  await page.route("**/config.json", (route) => route.fulfill({ json: { artifacts: {}, models: [] } }));
+  await page.goto("/tests/browser/fixtures/artifacts.html");
+  await page.waitForFunction(() => window.artifactsE2E?.state().ready);
+  const id = await page.evaluate(() => window.artifactsE2E.ensureChat());
+  await expect.poll(() => page.evaluate(() => window.artifactsE2E.state().fsChatId)).toBe(id);
+  await page.getByRole("button", { name: "Toggle artifacts" }).click();
+  return id;
+}
+
+test("the file column defaults to hidden, remembers showing it, and hands over to the navigator", async ({
+  page,
+}) => {
+  const id = await openFixture(page);
+  await page.evaluate((id) => window.artifactsE2E.write(id, "/one.txt", "First"), id);
+  await page.evaluate((id) => window.artifactsE2E.write(id, "/two.txt", "Second"), id);
+  // The first file stays open; the second write only adds to the list.
+  await expect(page.locator("pre")).toHaveText("First");
+
+  // Even a wide drawer starts with the breadcrumb navigator.
+  await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
+  await expect(page.getByTitle("Browse files")).toBeVisible();
+  await page.getByRole("button", { name: "Show file list" }).click();
+  await expect(page.getByText("Files", { exact: true })).toBeVisible();
+  await expect(page.getByTitle("Browse files")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("app_artifacts_browser"))).toBe("shown");
+
+  // An explicit choice to show the column survives a reload.
+  await page.reload();
+  await page.waitForFunction(() => window.artifactsE2E?.state().ready);
+  await page.evaluate((id) => window.artifactsE2E.selectChat(id), id);
+  await page.getByRole("button", { name: "Toggle artifacts" }).click();
+  await expect(page.getByText("Files", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Hide file list" }).click();
+  await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("app_artifacts_browser"))).toBeNull();
+  await page.getByTitle("Browse files").click();
+  await page.getByRole("button", { name: "two.txt", exact: true }).click();
+  await expect(page.locator("pre")).toHaveText("Second");
+
+  // The choice survives a reload.
+  await page.reload();
+  await page.waitForFunction(() => window.artifactsE2E?.state().ready);
+  await page.evaluate((id) => window.artifactsE2E.selectChat(id), id);
+  await page.getByRole("button", { name: "Toggle artifacts" }).click();
+  await expect(page.locator("pre")).toBeVisible();
+  await expect(page.getByText("Files", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show file list" }).click();
+  await expect(page.getByText("Files", { exact: true })).toBeVisible();
+});

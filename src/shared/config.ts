@@ -88,6 +88,10 @@ interface ExtractorConfig {
 interface ArtifactsConfig {
   /** Max size in bytes for a file uploaded into the artifacts workspace. Optional. */
   maxFileSize?: number;
+  /** Expose `window.wingman` to HTML previews. Defaults to on. */
+  bridge?: boolean;
+  /** Host DuckDB-WASM for SQL over workspace data. Defaults to on. */
+  duckdb?: boolean;
 }
 
 interface RepositoryConfig {

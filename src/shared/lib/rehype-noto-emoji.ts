@@ -1,34 +1,36 @@
 import emojiRegex from "emoji-regex";
-import type { ElementContent, Element as HastElement, Root, Text } from "hast";
-import { visit } from "unist-util-visit";
+import type { ElementContent, Root } from "hast";
+import { SKIP, visit } from "unist-util-visit";
+import type { EmojiMode } from "./noto-emoji";
 
-const SKIP_TAGS = new Set(["code", "pre", "script", "style", "textarea"]);
+const SKIP_TAGS = new Set(["code", "pre", "script", "style", "textarea", "svg", "math"]);
 
 /**
  * Rehype plugin that wraps emoji characters in a span with the "noto-emoji"
  * class so they render using Google's monochrome Noto Emoji font instead of
  * the OS default color emoji.
  */
-const rehypeNotoEmoji = () => {
-  const detectEmojiRegex = emojiRegex();
-  const splitEmojiRegex = emojiRegex();
+const rehypeNotoEmoji = ({ mode = "monochrome" }: { mode?: EmojiMode } = {}) => {
+  const pattern = emojiRegex();
 
   return (tree: Root) => {
-    visit(tree, "text", (node: Text, index, parent) => {
-      if (index === undefined || !parent) return;
-
-      const parentTagName = "tagName" in parent && typeof parent.tagName === "string" ? parent.tagName : undefined;
-      if (parentTagName && SKIP_TAGS.has(parentTagName)) return;
+    visit(tree, (node, index, parent) => {
+      if (node.type === "element") {
+        const classes = node.properties.className;
+        if (SKIP_TAGS.has(node.tagName) || (Array.isArray(classes) && classes.includes("noto-emoji"))) {
+          return SKIP;
+        }
+      }
+      if (node.type !== "text" || index === undefined || !parent) return;
 
       const value = node.value;
 
-      detectEmojiRegex.lastIndex = 0;
-      if (!detectEmojiRegex.test(value)) return;
+      pattern.lastIndex = 0;
+      let match = pattern.exec(value);
+      if (!match) return;
 
       const parts: ElementContent[] = [];
       let lastIndex = 0;
-      splitEmojiRegex.lastIndex = 0;
-      let match: RegExpExecArray | null = splitEmojiRegex.exec(value);
       while (match !== null) {
         if (match.index > lastIndex) {
           parts.push({
@@ -37,16 +39,19 @@ const rehypeNotoEmoji = () => {
           });
         }
 
-        const emojiSpan: HastElement = {
+        parts.push({
           type: "element",
           tagName: "span",
           properties: { className: ["noto-emoji"] },
-          children: [{ type: "text", value: match[0] }],
-        };
-        parts.push(emojiSpan);
+          // VS16 explicitly requests emoji presentation and can make browsers
+          // choose a color fallback even when Noto contains the glyph. Remove
+          // only that selector for display; keep joiners, modifiers, and the
+          // original Markdown intact. Native mode retains the exact sequence.
+          children: [{ type: "text", value: mode === "native" ? match[0] : match[0].replaceAll("\uFE0F", "") }],
+        });
 
         lastIndex = match.index + match[0].length;
-        match = splitEmojiRegex.exec(value);
+        match = pattern.exec(value);
       }
 
       if (lastIndex < value.length) {
@@ -56,9 +61,9 @@ const rehypeNotoEmoji = () => {
         });
       }
 
-      if (parts.length > 0) {
-        parent.children.splice(index, 1, ...parts);
-      }
+      parent.children.splice(index, 1, ...parts);
+      // Do not walk the spans we just inserted and wrap their text again.
+      return index + parts.length;
     });
   };
 };

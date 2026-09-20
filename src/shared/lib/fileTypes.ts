@@ -23,6 +23,8 @@ const MIME_OVERRIDES: Record<string, string> = {
   ".pickle": "application/octet-stream",
   ".sqlite": "application/octet-stream",
   ".db": "application/octet-stream",
+  ".duckdb": "application/octet-stream",
+  ".wal": "application/octet-stream",
   // Scientific / data binaries from the Python stack (numpy, pandas, scipy,
   // sklearn) that `mime` doesn't know — without an override they default to text
   // and get corrupted by the UTF-8 round trip through the sandbox FS.

@@ -1,15 +1,6 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  type CallToolResult,
-  type ListToolsResult,
-  type ServerCapabilities,
-  type Tool,
-} from "@modelcontextprotocol/sdk/types.js";
+import { Client } from "@modelcontextprotocol/client";
+import type { CallToolResult, ListToolsResult, ServerCapabilities, Tool } from "@modelcontextprotocol/client";
+import { InMemoryTransport, Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ElicitationResult } from "@/shared/types/elicitation";
 import { MCPClient } from "./mcp";
@@ -50,10 +41,10 @@ beforeEach(() => {
     server = new Server({ name: "fixture", version: "1" }, { capabilities });
     servers.push(server);
     if (capabilities.tools) {
-      server.setRequestHandler(ListToolsRequestSchema, (request) => list(request.params?.cursor));
-      server.setRequestHandler(CallToolRequestSchema, (request) => call(request.params.name));
+      server.setRequestHandler("tools/list", (request) => list(request.params?.cursor));
+      server.setRequestHandler("tools/call", (request) => call(request.params.name));
     }
-    if (capabilities.resources) server.setRequestHandler(ReadResourceRequestSchema, (request) => read(request.params));
+    if (capabilities.resources) server.setRequestHandler("resources/read", (request) => read(request.params));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     return original.call(this, clientTransport, options);
@@ -110,7 +101,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await vi.waitFor(() => expect(list).toHaveBeenCalledOnce());
     await server.sendToolListChanged();
     await server.sendToolListChanged();
-    old.resolve({ tools: [tool("obsolete")], nextCursor: "obsolete-page" });
+    old.resolve({ tools: [tool("obsolete")] });
     await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
     expect(list.mock.calls).toEqual([[undefined], [undefined]]);
     expect(provider.tools).toEqual([]);
@@ -134,10 +125,12 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     expect(servers).toHaveLength(2);
   });
 
-  it("rejects repeated cursors instead of looping or publishing partial tools", async () => {
-    list.mockResolvedValue({ tools: [tool("partial")], nextCursor: "same" });
-    await expect(provider.connect()).rejects.toThrow("repeated pagination cursor");
-    expect(list).toHaveBeenCalledTimes(2);
+  it("rejects runaway pagination instead of looping or publishing partial tools", async () => {
+    // The SDK stops on a repeated cursor; ever-changing cursors hit its listMaxPages cap.
+    let page = 0;
+    list.mockImplementation(async () => ({ tools: [tool(`partial-${page}`)], nextCursor: `page-${++page}` }));
+    await expect(provider.connect()).rejects.toThrow("exceeded listMaxPages");
+    expect(list.mock.calls.length).toBeGreaterThan(1);
     expect(provider.tools).toEqual([]);
     expect(provider.isConnected()).toBe(false);
   });

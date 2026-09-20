@@ -28,6 +28,8 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
   const toolDef = useMemo(() => findTool(providers, toolResult?.name), [providers, toolResult?.name]);
   const toolIcon = toolDef?.icon;
   const isToolError = !!message.error;
+  const isExecutionError = message.error?.code === "EXECUTION_ERROR";
+  const errorTextColor = isExecutionError ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400";
   // When a result carries an MCP UI app, the app is the primary renderer; per the
   // MCP Apps spec the `content` blocks are for model context / text-only fallback,
   // so we don't also render the (redundant) media inline.
@@ -50,7 +52,12 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
   return (
     <div className="pb-2 max-w-full">
-      <div className={cn("rounded-lg overflow-hidden max-w-full", isToolError && "bg-red-50/30 dark:bg-red-950/5")}>
+      <div
+        className={cn(
+          "rounded-lg overflow-hidden max-w-full",
+          isToolError && (isExecutionError ? "bg-amber-50/30 dark:bg-amber-950/5" : "bg-red-50/30 dark:bg-red-950/5"),
+        )}
+      >
         <button
           onClick={() => setToolResultExpanded(!toolResultExpanded)}
           className="w-full text-left transition-colors"
@@ -65,7 +72,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
             />
             <div className="flex items-center gap-2 min-w-0">
               {isToolError ? (
-                <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
+                <AlertCircle className={cn("w-3 h-3 shrink-0", errorTextColor)} />
               ) : header.Icon ? (
                 <header.Icon className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               ) : toolIcon ? (
@@ -81,7 +88,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
                 className={cn(
                   "text-xs whitespace-nowrap truncate",
                   header.mono ? "font-mono" : "font-medium",
-                  isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400",
+                  isToolError ? errorTextColor : "text-neutral-500 dark:text-neutral-400",
                 )}
               >
                 {isToolError && !header.Icon ? "Tool Error" : header.label}

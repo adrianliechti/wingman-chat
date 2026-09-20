@@ -45,6 +45,7 @@ const PYODIDE_BUILTIN_TARGETS = [
   "networkx",
   "pillow",
   "pyarrow",
+  "duckdb",
   "beautifulsoup4",
   "lxml",
   "sqlalchemy",

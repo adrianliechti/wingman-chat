@@ -5,9 +5,11 @@ import { useTheme } from "@/shell/hooks/useTheme";
 interface CodeEditorProps {
   content: string;
   language?: string;
+  /** Receives the element whose text selection the host watches. */
+  onSelectionRoot?: (element: HTMLElement | null) => void;
 }
 
-export const CodeEditor = memo(function CodeEditor({ content, language = "" }: CodeEditorProps) {
+export const CodeEditor = memo(function CodeEditor({ content, language = "", onSelectionRoot }: CodeEditorProps) {
   const [html, setHtml] = useState<string>("");
   const { isDark } = useTheme();
   const renderedHtml = useMemo(
@@ -46,7 +48,7 @@ export const CodeEditor = memo(function CodeEditor({ content, language = "" }: C
   }, [content, language, isDark]);
 
   return (
-    <div className="h-full relative">
+    <div ref={onSelectionRoot} className="h-full relative">
       {html?.trim() ? (
         <div
           className="h-full overflow-auto"

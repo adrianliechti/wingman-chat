@@ -200,3 +200,67 @@ describe("interpreter host coordination", () => {
     expect(worker.terminate).not.toHaveBeenCalled();
   });
 });
+
+describe("worker lifetime boundaries", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("cancels a queued run promptly without letting a later run overlap the active one", async () => {
+    const worker = new TestWorker();
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage: async () => {},
+      crashMessage: "crashed",
+    });
+    const first = host.execute({ code: "first" });
+    const controller = new AbortController();
+    const cancelled = host.execute({ code: "cancelled" }, { signal: controller.signal });
+    controller.abort();
+    expect((await cancelled).success).toBe(false);
+    const third = host.execute({ code: "third" });
+    expect(worker.requests).toHaveLength(1);
+    worker.finish(0, "first");
+    await first;
+    await vi.waitFor(() => expect(worker.requests).toHaveLength(2));
+    expect(worker.requests[1].request.code).toBe("third");
+    worker.finish(1, "third");
+    expect((await third).output).toBe("third");
+  });
+
+  it("closes pending RPC ports even when the handler ignores cancellation", async () => {
+    const worker = new TestWorker();
+    const host = createWorkerHost({
+      createWorker: () => worker as unknown as Worker,
+      handleMessage: () => new Promise(() => {}),
+      crashMessage: "crashed",
+    });
+    const run = host.execute({ code: "unfinished RPC" });
+    const port = { postMessage: vi.fn(), close: vi.fn() };
+    worker.dispatchEvent(new MessageEvent("message", { data: { type: "llm-request", prompt: "pending", port } }));
+    worker.finish(0, "done");
+    await run;
+    await vi.waitFor(() => expect(port.close).toHaveBeenCalledOnce());
+    expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
+  it("retires idle runtimes, then recovers after a message decoding failure", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const workers = [new TestWorker(), new TestWorker()];
+    const createWorker = vi.fn().mockReturnValueOnce(workers[0]).mockReturnValueOnce(workers[1]);
+    const host = createWorkerHost({
+      createWorker,
+      handleMessage: async () => {},
+      crashMessage: "crashed",
+      idleTimeoutMs: 100,
+    });
+    const first = host.execute({ code: "first" });
+    workers[0].finish(0, "done");
+    await first;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    const second = host.execute({ code: "second" });
+    workers[1].dispatchEvent(new Event("messageerror"));
+    expect((await second).error).toBe("crashed");
+    expect(workers[1].terminate).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

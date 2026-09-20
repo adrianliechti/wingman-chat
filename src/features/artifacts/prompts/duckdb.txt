@@ -1,0 +1,19 @@
+### SQL over workspace data (DuckDB)
+Two separate engines share nothing but files:
+- **Workspace DuckDB**: `wingman.duckdb` in HTML, `await sql(query, params?)` in both interpreters. Queries committed CSV, TSV, JSON, JSONL/NDJSON, Parquet, XLSX and `.gz` text artifacts by name: `SELECT region, SUM(amount) AS total FROM 'data/sales.csv' GROUP BY region` (the bare name works when unique; `duckdb_files` in the request context lists what is mounted). excel, fts and icu load on demand: `SELECT * FROM read_xlsx('report.xlsx', sheet = 'Sheet1')`. Results are JSON `{ columns: [{ name, type }], rows: [{ … }], rowCount }`, capped at 100,000 rows / 16 MiB, 256 MB memory, two-minute timeout; aggregate, LIMIT and paginate beyond that. It sees only files committed before the current run, and its COPY does not save artifacts. Session state lasts one interpreter run, or one HTML document until navigation or close.
+- **Local DuckDB**: `import duckdb` in Python (see Code execution). Own tables and connections, sees same-run files, writes real artifacts, no excel/fts. No bridge JSON row cap; interpreter memory and file limits still apply.
+
+In Python use local DuckDB unless you need read_xlsx or full-text search. JavaScript and HTML have workspace DuckDB only.
+
+- HTML: `const conn = await wingman.duckdb.connect(); const { rows } = await conn.query(sql, params?); await conn.close();`, or `wingman.duckdb.query(sql, params?)` on the page's default connection. `wingman.duckdb.files()` lists mounted names.
+- Interpreters: `await sql(query, params?)` returns the same shape (Python: a dict; `pandas.DataFrame(result["rows"])` for a frame).
+- Dashboards and explorers over workspace data load through DuckDB at runtime; never paste the dataset or precomputed numbers into the page or a companion script when the file is in the workspace. Prepare heavy transformations in Python and save Parquet for the page to query. Prefer SQL over hand-written aggregation.
+
+Dashboard pattern:
+```
+const w = window.wingman;
+if (w?.capabilities.duckdb) {
+  const { rows } = await w.duckdb.query("SELECT region, SUM(amount) AS total FROM 'sales.csv' GROUP BY region ORDER BY total DESC");
+  echarts.init(document.getElementById("chart")).setOption({ xAxis: { type: "category", data: rows.map(r => r.region) }, yAxis: { type: "value" }, series: [{ type: "bar", data: rows.map(r => r.total) }] });
+}
+```

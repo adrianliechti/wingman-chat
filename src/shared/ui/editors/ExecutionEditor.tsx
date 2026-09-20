@@ -11,6 +11,8 @@ export interface ExecutionEditorProps {
   content: string;
   onRunReady?: (handler: (() => Promise<void>) | null) => void;
   onRunningChange?: (isRunning: boolean) => void;
+  /** Receives the code view whose text selection the host watches. */
+  onSelectionRoot?: (element: HTMLElement | null) => void;
 }
 
 export function ExecutionEditor({
@@ -18,6 +20,7 @@ export function ExecutionEditor({
   language,
   onRunReady,
   onRunningChange,
+  onSelectionRoot,
 }: ExecutionEditorProps & { language: "python" | "javascript" }) {
   const { fs } = useArtifacts();
   const [isRunning, setIsRunning] = useState(false);
@@ -44,7 +47,7 @@ export function ExecutionEditor({
       executor: language === "python" ? executeCode : executeJavaScript,
       extension: language === "python" ? "py" : "js",
       mountSkills: language === "python",
-      context: { signal: controller.signal },
+      context: { signal: controller.signal, chatId: fs.chatId },
     });
     // Unmount/navigation cancels both execution and committing its snapshot.
     if (running.current !== controller) return;
@@ -67,12 +70,12 @@ export function ExecutionEditor({
     <div className="h-full flex flex-col overflow-hidden">
       {!result ? (
         <div className="flex-1 overflow-hidden">
-          <CodeEditor content={content} language={language} />
+          <CodeEditor content={content} language={language} onSelectionRoot={onSelectionRoot} />
         </div>
       ) : (
         <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
           <ResizablePanel defaultSize={75} minSize={20} className="overflow-hidden">
-            <CodeEditor content={content} language={language} />
+            <CodeEditor content={content} language={language} onSelectionRoot={onSelectionRoot} />
           </ResizablePanel>
           <ResizablePanel
             defaultSize={25}

@@ -14,6 +14,8 @@ declare global {
     interpreterE2E: {
       executePython(request: unknown, options?: unknown): Promise<ExecutionResult>;
       executeJavaScript(request: unknown, options?: unknown): Promise<ExecutionResult>;
+      executeWorkspace(engine: "python" | "javascript", chatId: string, code: string): Promise<ExecutionResult>;
+      queryWorkspace(chatId: string, query: string): Promise<{ rows: Record<string, unknown>[] }>;
       initializeLlm(): Promise<void>;
       runToolFlow(chatId: string): Promise<{
         created: TextToolResult;

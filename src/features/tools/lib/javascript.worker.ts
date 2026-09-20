@@ -27,7 +27,7 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
-import { callMainThread } from "./interpreterRpc";
+import { callMainThread, describeError } from "./interpreterRpc";
 
 // Typed view of the worker global scope (project compiles against the DOM lib,
 // not the webworker lib).
@@ -259,6 +259,11 @@ function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
   return callMain<string>((port) => ({ type: "llm-request", prompt, options, port }));
 }
 
+/** Behind the `sql(query, params?)` helper: DuckDB over the run's workspace, on the main thread. */
+function sql(query: string, params?: unknown[]): Promise<unknown> {
+  return callMain<unknown>((port) => ({ type: "duckdb-query-request", sql: query, params, port }));
+}
+
 /**
  * File-backed AI helpers (mirroring the Python globals): inputs read from the
  * VFS, outputs written back, proxied to the main thread. Built per-run so they
@@ -388,7 +393,7 @@ function makeConsole(append: (line: string) => void) {
 function sandboxRequire(name: unknown): never {
   throw new Error(
     `require(${JSON.stringify(name)}) is not available — the sandbox has no npm or CommonJS. ` +
-      "Use the provided globals (vfs, llm, Buffer, mediabunny, echarts, echartsSource, threeSource, lucideSource, jsPDF) and browser APIs.",
+      "Use the provided globals (vfs, llm, sql, arrow, Buffer, mediabunny, echarts, echartsSource, threeSource, lucideSource, jsPDF) and browser APIs.",
   );
 }
 
@@ -448,6 +453,7 @@ const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
 // run that doesn't use one pays neither download nor parse cost. `name` is both
 // the global handed to user code and the token matched against the source.
 const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }[] = [
+  { name: "arrow", test: /\barrow\b/, load: () => import("apache-arrow") },
   { name: "mediabunny", test: /\bmediabunny\b/, load: () => import("mediabunny") },
   // echarts reads the Node-only `global` when `window` is absent;
   // `ensureRuntimeCompat` defines it before any library loads.
@@ -498,7 +504,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   // declare locals named `render`, `translate`, … without a duplicate-parameter
   // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
-  const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs, limits) };
+  const bridges: Record<string, unknown> = { llm, sql, ...buildBridges(vfs, limits) };
   Object.assign(g, bridges);
 
   try {
@@ -535,7 +541,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
     return { success: true, output: resolvedOutput, files: resultFiles };
   } catch (error) {
     const boundedError = new BoundedOutput(limits.maxOutputBytes);
-    boundedError.append(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    boundedError.append(describeError(error));
     return {
       success: false,
       output: output.value().trim(),

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import os from "node:os";
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
@@ -24,5 +25,9 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 120_000,
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit-services", testMatch: "worker-services.spec.ts", use: { ...devices["Desktop Safari"] } },
+    { name: "webkit-duckdb", testMatch: "duckdb-lifecycle.spec.ts", use: { ...devices["Desktop Safari"] } },
+  ],
 });

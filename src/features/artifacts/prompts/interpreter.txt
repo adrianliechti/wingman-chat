@@ -5,7 +5,9 @@ Pass code for an inline script or path for an existing artifact script. Import/r
 
 Python:
 - Artifacts are mounted under /home/user/: /data.csv becomes /home/user/data.csv. Save outputs there.
-- Python 3.14 / Pyodide, NumPy 2.x, pandas 3.x. Explicit imports load bundled offline packages. Common packages: numpy, pandas, scipy, sklearn, statsmodels, sympy, matplotlib, seaborn, PIL, cv2, openpyxl, xlsxwriter, docx, pptx, pypdf, pdfminer, pdfplumber, reportlab. Standard-library json/csv/re/sqlite3/pathlib/zipfile are available.
+- Python 3.14 / Pyodide, NumPy 2.x, pandas 3.x. Explicit imports load bundled offline packages. Common packages: numpy, pandas, pyarrow, duckdb, scipy, sklearn, statsmodels, sympy, matplotlib, seaborn, PIL, cv2, openpyxl, xlsxwriter, docx, pptx, pypdf, pdfminer, pdfplumber, reportlab. Standard-library json/csv/re/sqlite3/pathlib/zipfile are available.
+- `import duckdb` (1.5, in-process) for SQL over CSV/TSV, gzipped text, JSON/JSONL and Parquet, joins across files, and COPY exports; pandas for frame work. It sees files written earlier in the same run and accepts `con.register(name, df_or_arrow_table)`. Use `with duckdb.connect() as con:`; temporary tables end with the run. `duckdb.connect("analysis.duckdb")` persists a database, but prefer Parquet outputs: they preview in the app and dashboards can query them.
+- Pitfalls: the wheel ships only core, icu, json and parquet, so no INSTALL/LOAD and no read_xlsx (read Excel with pandas/openpyxl and register the frame). `rel.arrow()` returns a reader here; `rel.to_arrow_table()` gives a Table. Prefer `rel.to_arrow_reader()` or COPY to avoid materializing whole result tables. Connections default to 256 MB buffer memory and one thread; Python/Arrow allocations and interpreter file limits still apply. Polars is not bundled. Import pyarrow explicitly before pandas read_parquet/to_parquet. Write Arrow IPC uncompressed (`pa.ipc.new_file`) when JavaScript will read it.
 - No network, host shell, subprocess programs, or package installation. Use top-level await, never asyncio.run or run_until_complete.
 - Matplotlib uses headless Agg; savefig writes output, show does not display it.
 - NumPy string choices need a compatible default (for example np.select(..., default="")); avoid implicit mixed-type coercion.
@@ -14,13 +16,12 @@ Python:
 JavaScript:
 - Sandboxed Web Worker: no DOM, Node require, npm, or remote networking. Browser APIs include OffscreenCanvas, createImageBitmap, WebCodecs, crypto.subtle, WebAssembly, Blob, and TextEncoder/Decoder.
 - Use artifact paths with vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove. vfs.write accepts strings or bytes plus optional contentType. fetch of a local artifact path reads VFS; remote URLs are blocked.
-- Bundled globals: mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). svgToPng(svg, {width, height}) returns PNG bytes.
+- Bundled globals: arrow (Apache Arrow), mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). svgToPng(svg, {width, height}) returns PNG bytes.
+- Arrow IPC: `const table = arrow.tableFromIPC(vfs.readBytes("data.arrow")); vfs.writeBytes("result.arrow", arrow.tableToIPC(table, "file"));`. Build tables with arrow.tableFromArrays / arrow.vectorFromArray; use BigInt for exact 64-bit integers. Arrow JS handles IPC, not Parquet. Use Python to produce Parquet for dashboards and workspace DuckDB.
 - Use top-level await; console.log or return produces output. Buffer and a minimal process are shims, not a Node runtime.
 
-HTML libraries (source strings in execute_javascript_code; classic-script globals in HTML):
-- echartsSource → echarts; threeSource → THREE; lucideSource → lucide. Write sources directly; never print or reproduce their contents. THREE/lucide are not worker APIs.
-- Companion file: `vfs.write("/lib/three.js", threeSource, "text/javascript")`; /scene.html includes `<script src="./lib/three.js"></script>` before app code. Same pattern for other libraries. Paths are relative to the HTML file; export companion files together.
-- Standalone: concatenate `'<script>' + threeSource + '</script>'` before app code in the HTML passed to vfs.write. Embed every required library and asset. No CDN, remote imports, or import maps.
+HTML libraries (classic-script globals in HTML):
+- Pages load them from the virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library source with vfs or embed it in a page. THREE/lucide are not worker APIs. No CDN, remote imports, or import maps.
 - THREE includes core + OrbitControls, GLTFLoader, EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, OutputPass. Access addons as THREE.OrbitControls, etc. Use THREE.WebGLRenderer. Other addons/decoders are absent; use uncompressed glTF/GLB or supply decoders locally. Models/textures must be local or embedded.
 - Lucide: `<i data-lucide="camera"></i>` then `lucide.createIcons()` after markup exists. Label icon-only controls with aria-label.
 - WebGL: resize renderer/camera to the container; stop animation loops and dispose resources on teardown.

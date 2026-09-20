@@ -60,9 +60,14 @@ func (h *Handler) spaHandler() http.Handler {
 			p = "index.html"
 		}
 
-		if _, err := fs.Stat(h.dist, p); err == nil {
-			w.Header().Set("Cache-Control", cacheControl(p))
-			fileServer.ServeHTTP(w, r)
+		if info, err := fs.Stat(h.dist, p); err == nil {
+			// Preserve the file server's directory handling and index redirects.
+			if info.IsDir() || strings.HasSuffix(r.URL.Path, "/index.html") || (p != "index.html" && strings.HasSuffix(r.URL.Path, "/")) {
+				w.Header().Set("Cache-Control", cacheControl(p))
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			h.serveAsset(w, r, p, info)
 			return
 		}
 
@@ -75,14 +80,12 @@ func (h *Handler) spaHandler() http.Handler {
 			return
 		}
 
-		indexFile, err := fs.ReadFile(h.dist, "index.html")
+		info, err := fs.Stat(h.dist, "index.html")
 		if err != nil {
 			http.Error(w, "index.html not found", http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", cacheRevalidate)
-		w.Write(indexFile)
+		h.serveAsset(w, r, "index.html", info)
 	})
 }
