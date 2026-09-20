@@ -393,7 +393,7 @@ function makeConsole(append: (line: string) => void) {
 function sandboxRequire(name: unknown): never {
   throw new Error(
     `require(${JSON.stringify(name)}) is not available — the sandbox has no npm or CommonJS. ` +
-      "Use the provided globals (vfs, llm, Buffer, mediabunny, echarts, echartsSource, threeSource, lucideSource, jsPDF) and browser APIs.",
+      "Use the provided globals (vfs, llm, sql, arrow, Buffer, mediabunny, echarts, echartsSource, threeSource, lucideSource, jsPDF) and browser APIs.",
   );
 }
 
@@ -453,6 +453,7 @@ const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
 // run that doesn't use one pays neither download nor parse cost. `name` is both
 // the global handed to user code and the token matched against the source.
 const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }[] = [
+  { name: "arrow", test: /\barrow\b/, load: () => import("apache-arrow") },
   { name: "mediabunny", test: /\bmediabunny\b/, load: () => import("mediabunny") },
   // echarts reads the Node-only `global` when `window` is absent;
   // `ensureRuntimeCompat` defines it before any library loads.

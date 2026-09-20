@@ -51,6 +51,7 @@
     "@voidzero-dev/vite-plus-core": "^0.3.0",
     "ajv": "^8.20.0",
     "alpinejs": "^3.17.3",
+    "apache-arrow": "17.0.0",
     "buffer": "^6.0.3",
     "clsx": "^2.1.1",
     "daisyui": "^5.7.42",

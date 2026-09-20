@@ -19,8 +19,9 @@ conversations, retrieval over your own files, and a library of reusable skills.
 
 ### Tools & Agents
 
-- **In-browser code interpreter** — a sandboxed Python runtime (Pyodide) with bundled scientific
-  packages. The model writes and runs real code; charts, files, and results land back in the chat.
+- **In-browser code interpreters** — sandboxed Python (Pyodide) and JavaScript workers with bundled
+  data, document and media libraries. The model writes and runs real code; charts, files, and results
+  land back in the workspace.
 - **Web search & browsing** for grounded, up-to-date answers.
 - **Sub-agents** for delegating focused, multi-step work.
 - **Model Context Protocol (MCP)** — connect external tool servers through a configurable bridge.
@@ -41,6 +42,53 @@ Ask for a real deliverable and Wingman builds it for real, then drops it in your
 
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
 and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
+
+### Data analysis & workflows
+
+Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
+Apache Arrow as the `arrow` global. Both interpreters can also query saved workspace files through
+`await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
+
+| Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
+| ------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| SQL over CSV/TSV, JSON/JSONL and Parquet   | Local `duckdb`, or `await sql(...)` bridge        | `await sql(...)` bridge                              | `wingman.duckdb.query(...)`                       |
+| Query pandas / Arrow objects               | Register them with a local DuckDB connection      | Write an Arrow IPC file for Python                   | Query prepared workspace datasets                 |
+| Read/write Arrow IPC files                 | `pyarrow.ipc`                                     | `arrow.tableFromIPC` / `arrow.tableToIPC` with `vfs` | Use Parquet for SQL dashboards                    |
+| Write Parquet datasets                     | DuckDB `COPY` or `pyarrow.parquet`                | Hand off to Python                                   | Consume generated datasets                        |
+| Write CSV / JSON                           | DuckDB `COPY`, pandas or standard library         | `vfs.write` / `vfs.writeJSON`                        | Consume generated datasets                        |
+| Read Excel                                 | pandas/openpyxl; bridge also supports `read_xlsx` | Bridge `read_xlsx`                                   | Bridge `read_xlsx`                                |
+| Query files created during the current run | Local DuckDB reads them immediately               | Bridge sees them after a successful run              | Sees committed workspace files                    |
+| Save a database for later runs             | `duckdb.connect("analysis.duckdb")`               | Preserve/download the binary file                    | No `.duckdb` data viewer                          |
+| Interactive filtered dashboards            | Prepare data and statistical results              | Generate charts and HTML                             | Query current workspace data for each filter/view |
+
+Use **Parquet to hand datasets between Python, the SQL bridge and HTML dashboards**. Use Arrow IPC
+when exchanging typed tables between Python and JavaScript. SQL sessions are separate: local Python
+tables and bridge tables are not shared, and temporary tables end with their run or preview session.
+
+Python's DuckDB wheel includes `core_functions`, `icu`, `json` and `parquet`; Excel and full-text-search
+extensions are available through the bridge, not the Python wheel. Local DuckDB connections default
+to one thread and a 256 MB buffer-memory limit. This is not a limit on all Python, Arrow or result
+memory: use `COPY` or `to_arrow_reader()` for larger results; `df()` and `to_arrow_table()` materialize
+them. Bridge JSON results are capped at 100,000 rows / 16 MiB. Interpreter file/output limits also apply.
+
+Successful interpreter runs commit file changes to the workspace; failed or cancelled runs do not.
+Close database connections before finishing (prefer `with duckdb.connect(...) as con:`). The runtime
+also closes connections opened through `duckdb.connect` and resets the default connection per run.
+Database revisions store whole changed files, so Parquet outputs are usually preferable to frequent
+updates of a growing database. Direct networking and runtime package installation are unavailable.
+
+Example requests:
+
+- **Sales dashboard:** “Join these monthly CSVs, normalize regions, save a Parquet dataset, and build
+  a dashboard with date and region filters.”
+- **Reconciliation:** “Compare the invoice spreadsheet with payment exports; give me unmatched
+  records, duplicate IDs and a downloadable exception report.”
+- **Event analysis:** “Read these gzipped JSONL logs, calculate funnel conversion and session counts,
+  and save the results with charts.”
+- **Data quality:** “Profile missing values, invalid dates and outliers; produce a cleaned dataset
+  and an audit report explaining every rule.”
+- **Typed data exchange:** “Generate a table in Python, save Arrow IPC, and use JavaScript to build
+  a visualization without losing large integer IDs.”
 
 ### Repository (retrieval)
 
@@ -84,7 +132,7 @@ or a **local** directory.
 | Layer          | Stack                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
-| Code execution | Pyodide (Python in WebAssembly), bundled at build time                                      |
+| Code execution | Python/Pyodide + DuckDB/PyArrow; JavaScript workers + Arrow; DuckDB-Wasm preview bridge     |
 | Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry              |
 | Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
 

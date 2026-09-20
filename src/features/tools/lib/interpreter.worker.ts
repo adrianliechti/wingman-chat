@@ -11,6 +11,7 @@ import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTy
 import type { RasterizedPage } from "@/shared/lib/pdf";
 import { normalizeArtifactPath, SANDBOX_HOME } from "@/shared/lib/sandbox";
 import ASYNCIO_SHIM from "./asyncioShim.py?raw";
+import DUCKDB_SCOPE from "./duckdbScope.py?raw";
 import {
   BoundedOutput,
   CodeExecutionLimitError,
@@ -422,14 +423,20 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     const executionController = new AbortController();
     activeRpcSignal = executionController.signal;
     let globals: PyodideInterface["globals"] | undefined;
+    let closeDuckDb: ((() => void) & { destroy(): void }) | undefined;
 
     try {
       globals = await createExecutionGlobals(pyodide, executionController.signal);
+      if (pyodide.loadedPackages.duckdb) {
+        closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals }) as typeof closeDuckDb;
+      }
       onStarted?.();
 
       const runStart = Date.now();
       const output = await runPythonCode(pyodide, code, globals, limits.maxOutputBytes);
 
+      // Flush database files and discard SQL state before capturing the run.
+      closeDuckDb?.();
       const resultFiles = collectPyodideFiles(pyodide, files, runStart, limits);
       validateArtifactFiles(resultFiles, limits);
       // Remember the materialized tree so the next call can sync incrementally.
@@ -443,8 +450,13 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     } finally {
       executionController.abort();
       activeRpcSignal = undefined;
-      globals?.destroy();
-      lockDownUserNetwork();
+      try {
+        closeDuckDb?.();
+      } finally {
+        closeDuckDb?.destroy();
+        globals?.destroy();
+        lockDownUserNetwork();
+      }
     }
   } catch (error) {
     console.error("Code execution error:", error);

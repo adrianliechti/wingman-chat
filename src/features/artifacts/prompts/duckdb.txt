@@ -1,11 +1,13 @@
 ### SQL over workspace data (DuckDB)
-Every CSV, TSV, JSON, JSONL/NDJSON, Parquet, Arrow and XLSX artifact (also `.gz`-compressed text files) is queryable by name in DuckDB, which runs in the browser: `SELECT region, SUM(amount) AS total FROM 'data/sales.csv' GROUP BY region` (the bare file name also works when it is unique). Spreadsheets: `SELECT * FROM read_xlsx('report.xlsx', sheet = 'Sheet1')`. The excel, fts and icu extensions load on demand. Results are plain JSON: `{ columns: [{ name, type }], rows: [{ … }], rowCount }`.
+Two separate engines share nothing but files:
+- **Workspace DuckDB**: `wingman.duckdb` in HTML, `await sql(query, params?)` in both interpreters. Queries committed CSV, TSV, JSON, JSONL/NDJSON, Parquet, XLSX and `.gz` text artifacts by name: `SELECT region, SUM(amount) AS total FROM 'data/sales.csv' GROUP BY region` (the bare name works when unique; `duckdb_files` in the request context lists what is mounted). excel, fts and icu load on demand: `SELECT * FROM read_xlsx('report.xlsx', sheet = 'Sheet1')`. Results are JSON `{ columns: [{ name, type }], rows: [{ … }], rowCount }`, capped at 100,000 rows / 16 MiB, 256 MB memory, two-minute timeout; aggregate, LIMIT and paginate beyond that. It sees only files committed before the current run, and its COPY does not save artifacts. Session state lasts one interpreter run, or one HTML document until navigation or close.
+- **Local DuckDB**: `import duckdb` in Python (see Code execution). Own tables and connections, sees same-run files, writes real artifacts, no excel/fts. No bridge JSON row cap; interpreter memory and file limits still apply.
 
-- Dashboards and explorers over workspace data must query DuckDB at runtime for every filter and view. Never embed a copy of the dataset (or precomputed aggregates) in the page or a companion script when the file is in the workspace; the current `duckdb_files` list in the request context names what is queryable.
-- In HTML artifacts: `const conn = await wingman.duckdb.connect(); const { rows } = await conn.query(sql, params?); await conn.close();` — or `wingman.duckdb.query(sql, params?)` on the page's default connection. `wingman.duckdb.files()` lists the mounted names. Prefer SQL over hand-written aggregation for dashboards.
-- In both interpreters: `await sql(query, params?)` returns the same shape (Python: a dict; `pandas.DataFrame(result["rows"])` when a frame is needed). SQL calls share a session within one run; tables and session state end when the run finishes. Files written during the current run become queryable in the next run.
+In Python use local DuckDB unless you need read_xlsx or full-text search. JavaScript and HTML have workspace DuckDB only.
 
-Each HTML document owns its SQL session until navigation or close. Results are limited to 100,000 rows and 16 MiB; use aggregation, LIMIT and pagination for larger datasets. The engine has a 256 MB memory budget and operations time out after two minutes.
+- HTML: `const conn = await wingman.duckdb.connect(); const { rows } = await conn.query(sql, params?); await conn.close();`, or `wingman.duckdb.query(sql, params?)` on the page's default connection. `wingman.duckdb.files()` lists mounted names.
+- Interpreters: `await sql(query, params?)` returns the same shape (Python: a dict; `pandas.DataFrame(result["rows"])` for a frame).
+- Dashboards and explorers over workspace data load through DuckDB at runtime; never paste the dataset or precomputed numbers into the page or a companion script when the file is in the workspace. Prepare heavy transformations in Python and save Parquet for the page to query. Prefer SQL over hand-written aggregation.
 
 Dashboard pattern:
 ```

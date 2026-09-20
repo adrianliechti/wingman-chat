@@ -7,6 +7,8 @@
   <body>
     <script type="module">
       import { FileSystemManager } from "/src/features/artifacts/lib/fs.ts";
+      import { executeArtifactCode } from "/src/features/artifacts/lib/executeArtifactCode.ts";
+      import { createDuckDbWorkspace } from "/src/features/artifacts/lib/duckdbWorkspace.ts";
       import { ArtifactReadWriteManager } from "/src/features/artifacts/lib/artifactFileTools.ts";
       import { executeCode } from "/src/features/tools/lib/interpreter.ts";
       import { executeJavaScript } from "/src/features/tools/lib/javascript.ts";
@@ -16,6 +18,23 @@
       window.interpreterE2E = {
         executePython: executeCode,
         executeJavaScript,
+        executeWorkspace(engine, chatId, code) {
+          return executeArtifactCode({
+            args: { code },
+            context: { chatId },
+            executor: engine === "python" ? executeCode : executeJavaScript,
+            extension: engine === "python" ? "py" : "js",
+            fs: new FileSystemManager(chatId),
+          });
+        },
+        async queryWorkspace(chatId, query) {
+          const host = createDuckDbWorkspace(new FileSystemManager(chatId));
+          try {
+            return await host.query(null, query);
+          } finally {
+            host.dispose();
+          }
+        },
         async initializeLlm() {
           await loadConfig();
           setModel("ui-model");
