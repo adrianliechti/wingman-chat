@@ -231,6 +231,8 @@ test("/.lib/tailwind.js compiles utility classes and @theme overrides in the pre
 
 test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder exports", async ({ page, context }) => {
   const errors: string[] = [];
+  // A failed Tailwind compile surfaces as an unhandled rejection inside the preview.
+  context.on("weberror", (error) => errors.push(error.error().message));
   await context.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (url.hostname === "127.0.0.1") return route.continue();
@@ -243,22 +245,41 @@ test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder
     window.htmlArtifactsE2E.write(
       "/ui/components.html",
       '<!doctype html><html data-theme="dark"><head><link rel="stylesheet" href="/.lib/daisyui.css">' +
-        '<script src="/.lib/tailwind.js"></script></head>' +
-        '<body><button id="cta" class="btn btn-primary">Go</button></body></html>',
+        '<script src="/.lib/tailwind.js"></script>' +
+        // daisyUI colours and radii are Tailwind tokens: usable in @apply, with variants and modifiers.
+        '<style type="text/tailwindcss">.panel { @apply bg-base-200 rounded-box p-6; }</style></head>' +
+        '<body><button id="cta" class="btn btn-primary">Go</button><section id="panel" class="panel">Panel</section>' +
+        '<span id="chip" class="bg-primary/50 hover:bg-secondary">Chip</span></body></html>',
     ),
   );
   await page.evaluate(() => window.htmlArtifactsE2E.preview("/ui/components.html"));
-  const button = page.frameLocator("iframe").locator("#cta");
+  const frame = page.frameLocator("iframe");
+  const button = frame.locator("#cta");
   await expect(button).toHaveText("Go");
   await expect.poll(() => button.evaluate((element) => getComputedStyle(element).display)).toBe("inline-flex");
   expect(await button.evaluate((element) => getComputedStyle(element).borderRadius)).not.toBe("0px");
+  const panel = frame.locator("#panel");
+  await expect.poll(() => panel.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("24px");
+  const panelStyle = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, radius: style.borderRadius, baseVariable: style.getPropertyValue("--color-base-200") };
+  });
+  expect(panelStyle.baseVariable.trim()).not.toBe("");
+  expect(panelStyle.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(panelStyle.radius).not.toBe("0px");
+  const chip = frame.locator("#chip");
+  const chipBackground = () => chip.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await expect.poll(chipBackground).toMatch(/\/ 0\.5\)$/);
+  const translucent = await chipBackground();
+  await chip.hover();
+  await expect.poll(chipBackground).not.toBe(translucent);
 
   const zip = await JSZip.loadAsync(
     Buffer.from(await page.evaluate(() => window.htmlArtifactsE2E.exportZip()), "base64"),
   );
   expect(await zip.file("ui/components.html")!.async("string")).toContain('href="../.lib/daisyui.css"');
   expect(zip.file(".lib/daisyui.css")).not.toBeNull();
-  expect(zip.file(".lib/tailwind.js")).not.toBeNull();
+  expect(await zip.file(".lib/tailwind.js")!.async("string")).toContain("@theme inline reference default {");
   expect(errors).toEqual([]);
 });
 

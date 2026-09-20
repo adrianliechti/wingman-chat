@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { rolldown } from "@voidzero-dev/vite-plus-core/rolldown";
 import type { Plugin } from "vite-plus";
 
@@ -12,6 +13,8 @@ const echartsRoot = path.dirname(require.resolve("echarts/package.json"));
 const tailwindRoot = path.dirname(require.resolve("@tailwindcss/browser/package.json"));
 const daisyuiRoot = path.dirname(require.resolve("daisyui/package.json"));
 const alpineRoot = path.dirname(require.resolve("alpinejs/package.json"));
+/** The theme tokens daisyUI registers with Tailwind when used as a plugin. */
+const daisyuiVariables = path.join(daisyuiRoot, "functions/variables.js");
 const threeEntry = path.resolve(import.meta.dirname, "artifact-libraries/three.js");
 const sdkEntry = path.resolve(import.meta.dirname, "../src/shared/lib/artifactSdk/sdk.ts");
 const prefix = "virtual:artifact-library-source/";
@@ -84,10 +87,42 @@ async function readEchartsSource(): Promise<LibrarySource> {
   return { source: await fs.readFile(file, "utf8"), files: [file] };
 }
 
+/** Tailwind `@theme` namespace per daisyUI token group. */
+const DAISYUI_THEME_NAMESPACES: Record<string, string> = { colors: "--color", borderRadius: "--radius" };
+
+/**
+ * daisyUI is served as a plain stylesheet, so Tailwind's in-browser compiler
+ * knows nothing of its colour and radius tokens: `@apply bg-base-200` throws
+ * "unknown utility class" and, because the browser build compiles every
+ * `text/tailwindcss` block in one go, takes all utilities on the page down with
+ * it. Registering the tokens the way the daisyUI plugin does (as references to
+ * daisyUI's own CSS variables) makes them utilities, variants and `@apply`
+ * targets. `reference` emits no `:root` variables, `default` lets a page's own
+ * `@theme` override any of them, `inline` keeps the generated CSS to
+ * `var(--color-base-200)`.
+ */
+async function buildDaisyuiThemePrelude(): Promise<string> {
+  const { default: variables } = (await import(pathToFileURL(daisyuiVariables).href)) as {
+    default: Record<string, Record<string, string>>;
+  };
+  const declarations = Object.entries(DAISYUI_THEME_NAMESPACES).flatMap(([group, namespace]) =>
+    Object.entries(variables[group] ?? {}).map(([name, value]) => `${namespace}-${name}: ${value};`),
+  );
+  const theme = `@theme inline reference default { ${declarations.join(" ")} }`;
+  return (
+    "/*! daisyUI theme tokens, so daisyUI colours and radii work as Tailwind utilities and in @apply. */\n" +
+    '(function () { if (typeof document === "undefined") return; var style = document.createElement("style"); ' +
+    'style.setAttribute("type", "text/tailwindcss"); style.setAttribute("data-daisyui-theme", ""); ' +
+    `style.textContent = ${JSON.stringify(theme)}; (document.head || document.documentElement).appendChild(style); })();\n`
+  );
+}
+
 async function readTailwindSource(): Promise<LibrarySource> {
   // Tailwind v4's in-browser compiler: utilities are generated from the page at load time.
+  // The daisyUI token prelude must run first so the compiler sees it when it reads the page's styles.
   const file = path.join(tailwindRoot, "dist/index.global.js");
-  return { source: await fs.readFile(file, "utf8"), files: [file] };
+  const [prelude, tailwind] = await Promise.all([buildDaisyuiThemePrelude(), fs.readFile(file, "utf8")]);
+  return { source: prelude + tailwind, files: [file, daisyuiVariables] };
 }
 
 async function readDaisyuiSource(file: string): Promise<LibrarySource> {
