@@ -92,6 +92,11 @@ The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies req
 prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
 the client can read.
 
+Production builds generate Brotli and gzip variants of WASM, JavaScript, CSS, HTML, and other text
+assets. The Go server negotiates the encoding and serves those files directly, with no compression
+work during requests. Hot files use the OS page cache rather than a separate Go memory cache.
+Hashed assets keep their one-year immutable browser cache; other files revalidate on reuse.
+
 ## Getting started
 
 ### Prerequisites

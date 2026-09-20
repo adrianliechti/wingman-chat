@@ -102,7 +102,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         display: {
           header: (args, state) => ({
             icon: SquareCode,
-            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
+            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
           }),
           input: (args) => {
             const code = typeof args?.code === "string" ? args.code : "";
@@ -130,7 +130,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         display: {
           header: (args, state) => ({
             icon: Braces,
-            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
+            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
           }),
           input: (args) => {
             const code = typeof args?.code === "string" ? args.code : "";
