@@ -84,7 +84,7 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
   );
 
   // A file the page wrote itself is updated in the session without reloading the page.
-  const shouldReload = useCallback((changed: string) => !bridgeRef.current?.recentlyWrote(changed), []);
+  const shouldReload = useCallback((changed: string) => !bridgeRef.current?.isWriting(changed), []);
 
   return (
     <div className="h-full flex flex-col overflow-hidden relative">

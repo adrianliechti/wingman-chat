@@ -627,7 +627,7 @@ export function ArtifactsDrawer() {
           />
         );
       case "data":
-        return <DataEditor key={editorKey} path={shownFile.path} />;
+        return <DataEditor key={editorKey} path={shownFile.path} snapshot={shownRevision ? shownFile : undefined} />;
       case "markdown":
         return (
           <MarkdownEditor

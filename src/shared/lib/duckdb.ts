@@ -1,16 +1,12 @@
-/**
- * DuckDB-WASM hosted by the app: one database per page, created on first use.
- * The bundle ships with the app (no CDN), so SQL keeps working offline; the
- * single-threaded `eh` build is used because the threaded one needs a
- * cross-origin-isolated page.
- */
-
+/** A lazy, single-threaded DuckDB worker owned by one consumer. No database outlives its owner. */
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import ehWorkerUrl from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 import ehWasmUrl from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
-import { serializeArrowTable, type DuckDbQueryResult } from "./duckdbResult";
+import { withAbort } from "./abortSignals";
+import { collectDuckDbResult, type DuckDbQueryResult } from "./duckdbResult";
 
-let database: Promise<AsyncDuckDB> | null = null;
+export const DUCKDB_MEMORY_LIMIT = "256MB";
+export const DUCKDB_OPERATION_TIMEOUT_MS = 120_000;
 
 /** Where the bundled extensions live: `{origin}{base}duckdb/extensions/{version}/{platform}/…`. */
 export function extensionRepository(): string {
@@ -18,67 +14,107 @@ export function extensionRepository(): string {
   return `${location.origin}${base}duckdb/extensions`;
 }
 
-export function getDuckDb(): Promise<AsyncDuckDB> {
-  if (!database) {
-    database = (async () => {
-      const duckdb = await import("@duckdb/duckdb-wasm");
-      const bundle = await duckdb.selectBundle({
-        mvp: { mainModule: ehWasmUrl, mainWorker: ehWorkerUrl },
-        eh: { mainModule: ehWasmUrl, mainWorker: ehWorkerUrl },
-      });
-      const worker = new Worker(bundle.mainWorker!);
-      const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
-      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      // Plain JSON for consumers: decimals (incl. HUGEINT sums) as doubles, timestamps as dates.
-      await db.open({ query: { castTimestampToDate: true, castDecimalToDouble: true } });
-      // Extensions (excel, fts, icu) are bundled by scripts/bundle-duckdb-extensions.mjs
-      // and served from the app's own origin, so LOAD and autoloading work offline.
-      const connection = await db.connect();
+export class DuckDbRuntime {
+  private readonly controller = new AbortController();
+  readonly signal = this.controller.signal;
+  private worker: Worker | null = null;
+  private database: Promise<AsyncDuckDB> | null = null;
+  private removeOwnerListener?: () => void;
+
+  constructor(owner?: AbortSignal) {
+    if (!owner) return;
+    const abort = () => this.dispose(owner.reason);
+    owner.addEventListener("abort", abort, { once: true });
+    this.removeOwnerListener = () => owner.removeEventListener("abort", abort);
+    if (owner.aborted) abort();
+  }
+
+  dispose(reason: unknown = new DOMException("DuckDB workspace closed", "AbortError")): void {
+    if (this.signal.aborted) return;
+    this.controller.abort(reason);
+    this.removeOwnerListener?.();
+    this.removeOwnerListener = undefined;
+    // Closing native connections while a query/connect is in flight can corrupt
+    // WASM memory. Terminating our worker cancels all of them atomically instead.
+    this.worker?.terminate();
+    this.worker = null;
+    this.database = null;
+  }
+
+  run<T>(operation: (db: AsyncDuckDB) => Promise<T>): Promise<T> {
+    return withAbort(this.signal, async () => {
+      const timer = setTimeout(() => {
+        this.dispose(new Error("DuckDB operation timed out. Reopen the artifact or run the code again."));
+      }, DUCKDB_OPERATION_TIMEOUT_MS);
       try {
-        await connection.query(`SET custom_extension_repository = '${extensionRepository()}'`);
-        // In the wasm build the parquet and json readers are extensions; load
-        // them up front so a missing bundle surfaces here, not as an
-        // "invalid signature" from an HTML 404 page during a query.
-        for (const extension of ["parquet", "json"]) {
-          await connection.query(`LOAD ${extension}`).catch((error: unknown) => {
-            console.warn(`duckdb: could not load the ${extension} extension; run \`npm run bundle:duckdb\`.`, error);
-          });
-        }
+        const db = await (this.database ??= this.initialize());
+        return await withAbort(this.signal, () => operation(db));
+      } catch (error) {
+        if (error instanceof Error && error.name === "RuntimeError") this.dispose(error);
+        throw error;
       } finally {
-        await connection.close();
+        clearTimeout(timer);
       }
-      return db;
-    })().catch((error) => {
-      database = null;
-      throw error;
     });
   }
-  return database;
+
+  private async initialize(): Promise<AsyncDuckDB> {
+    try {
+      const duckdb = await import("@duckdb/duckdb-wasm");
+      this.signal.throwIfAborted();
+      const worker = new Worker(ehWorkerUrl);
+      this.worker = worker;
+      worker.addEventListener("error", (event) => this.dispose(new Error(`DuckDB worker failed: ${event.message}`)));
+      worker.addEventListener("messageerror", () =>
+        this.dispose(new Error("DuckDB worker message could not be read.")),
+      );
+      const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+      await withAbort(this.signal, () => db.instantiate(ehWasmUrl));
+      await withAbort(this.signal, () => db.open({ query: { castTimestampToDate: true, castDecimalToDouble: true } }));
+      const connection = await withAbort(this.signal, () => db.connect());
+      try {
+        await withAbort(this.signal, () => connection.query(`SET memory_limit = '${DUCKDB_MEMORY_LIMIT}'`));
+        await withAbort(this.signal, () =>
+          connection.query(`SET custom_extension_repository = '${extensionRepository().replace(/'/g, "''")}'`),
+        );
+        for (const extension of ["parquet", "json"]) {
+          await withAbort(this.signal, () => connection.query(`LOAD ${extension}`));
+        }
+      } finally {
+        if (!this.signal.aborted) await withAbort(this.signal, () => connection.close());
+      }
+      return db;
+    } catch (error) {
+      this.dispose(error);
+      throw error;
+    }
+  }
 }
 
-/** Make a stored file queryable under `name`; DuckDB reads it lazily through the File object. */
-export async function registerDuckDbFile(name: string, file: globalThis.File): Promise<void> {
-  const [db, { DuckDBDataProtocol }] = await Promise.all([getDuckDb(), import("@duckdb/duckdb-wasm")]);
-  await db.registerFileHandle(name, file, DuckDBDataProtocol.BROWSER_FILEREADER, true);
-}
-
-export async function dropDuckDbFile(name: string): Promise<void> {
-  const db = await getDuckDb();
-  await db.dropFile(name).catch(() => undefined);
-}
-
+/** Read batches instead of materializing an unbounded Arrow table before copying it into JSON. */
 export async function runDuckDbQuery(
   connection: AsyncDuckDBConnection,
   sql: string,
-  params?: unknown[],
+  params: unknown[] | undefined,
+  signal: AbortSignal,
 ): Promise<DuckDbQueryResult> {
-  if (params && params.length > 0) {
-    const statement = await connection.prepare(sql);
+  signal.throwIfAborted();
+  const statement = params?.length ? await withAbort(signal, () => connection.prepare(sql)) : undefined;
+  let complete = false;
+  try {
+    const reader = await withAbort(signal, () => (statement ? statement.send(...params!) : connection.send(sql, true)));
     try {
-      return serializeArrowTable(await statement.query(...params));
+      await withAbort(signal, () => reader.open());
+      const result = await withAbort(signal, () => collectDuckDbResult(reader));
+      complete = true;
+      return result;
     } finally {
-      await statement.close();
+      await reader.cancel();
+    }
+  } finally {
+    if (!signal.aborted) {
+      if (!complete) await withAbort(signal, () => connection.cancelSent());
+      if (statement) await withAbort(signal, () => statement.close());
     }
   }
-  return serializeArrowTable(await connection.query(sql));
 }

@@ -17,6 +17,8 @@ type Params = unknown[];
   const token = script?.dataset.token;
   const path = script?.dataset.path ?? "/";
   if (!token || window.parent === window) return;
+  const documentId = crypto.randomUUID();
+  script.dataset.documentId = documentId;
 
   let capabilities: SdkCapabilities;
   try {
@@ -34,7 +36,9 @@ type Params = unknown[];
         if (reply && reply.ok) resolve(reply.value);
         else reject(new Error(reply && !reply.ok ? reply.error : "The artifact bridge did not answer."));
       };
-      window.parent.postMessage({ type: "wingman:rpc", token, method, params }, location.origin, [channel.port2]);
+      window.parent.postMessage({ type: "wingman:rpc", token, documentId, method, params }, location.origin, [
+        channel.port2,
+      ]);
     });
 
   const call =

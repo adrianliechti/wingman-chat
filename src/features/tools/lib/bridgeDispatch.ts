@@ -45,7 +45,7 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage, options: BridgeR
       const chatId = options.context?.chatId;
       if (!chatId) return Promise.reject(new Error("sql: no workspace for this run"));
       return import("@/features/artifacts/lib/duckdbWorkspace").then(({ queryDuckDbWorkspace }) =>
-        queryDuckDbWorkspace(chatId, message.sql, message.params),
+        queryDuckDbWorkspace(chatId, message.sql, message.params, options.signal),
       );
     }
     default:

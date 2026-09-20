@@ -20,11 +20,6 @@ interface ArrowLikeField {
   type: unknown;
 }
 
-export interface ArrowLikeTable {
-  schema: { fields: ArrowLikeField[] };
-  toArray(): Array<{ toJSON(): Record<string, unknown> }>;
-}
-
 const isTemporal = (type: string) => /^(Date|Timestamp|Time)\b/i.test(type);
 
 export function toJsonValue(value: unknown, type = ""): unknown {
@@ -46,13 +41,30 @@ export function toJsonValue(value: unknown, type = ""): unknown {
   return value;
 }
 
-export function serializeArrowTable(table: ArrowLikeTable): DuckDbQueryResult {
-  const columns = table.schema.fields.map((field) => ({ name: field.name, type: String(field.type) }));
-  const rows = table.toArray().map((row) => {
-    const raw = row.toJSON();
-    const out: Record<string, unknown> = {};
-    for (const column of columns) out[column.name] = toJsonValue(raw[column.name], column.type);
-    return out;
-  });
+export const DUCKDB_RESULT_MAX_ROWS = 100_000;
+export const DUCKDB_RESULT_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Bound the JSON copy before it is sent to an artifact or interpreter. */
+export async function collectDuckDbResult(
+  reader: AsyncIterable<Iterable<{ toJSON(): Record<string, unknown> }>> & { schema: { fields: ArrowLikeField[] } },
+  limits = { rows: DUCKDB_RESULT_MAX_ROWS, bytes: DUCKDB_RESULT_MAX_BYTES },
+): Promise<DuckDbQueryResult> {
+  const columns = reader.schema.fields.map((field) => ({ name: field.name, type: String(field.type) }));
+  const rows: Record<string, unknown>[] = [];
+  const encoder = new TextEncoder();
+  let bytes = encoder.encode(JSON.stringify(columns)).byteLength;
+  for await (const batch of reader) {
+    for (const row of batch) {
+      if (rows.length >= limits.rows)
+        throw new Error("SQL result is too large. Use LIMIT, pagination, or aggregation.");
+      const raw = row.toJSON();
+      const value = Object.fromEntries(
+        columns.map((column) => [column.name, toJsonValue(raw[column.name], column.type)]),
+      );
+      bytes += encoder.encode(JSON.stringify(value)).byteLength;
+      if (bytes > limits.bytes) throw new Error("SQL result is too large. Select fewer columns or rows.");
+      rows.push(value);
+    }
+  }
   return { columns, rows, rowCount: rows.length };
 }

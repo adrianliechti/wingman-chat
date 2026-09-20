@@ -6,7 +6,15 @@ import { ArtifactBridge, resolveCapabilities } from "./artifactBridge";
 import type { FileSystemManager, OverlayDelta } from "./fs";
 
 vi.mock("@/shared/config", () => ({
-  getConfig: () => ({ vision: { model: "v" }, extractor: null, translator: null, renderer: null, tts: null, stt: null, artifacts: {} }),
+  getConfig: () => ({
+    vision: { model: "v" },
+    extractor: null,
+    translator: null,
+    renderer: null,
+    tts: null,
+    stt: null,
+    artifacts: {},
+  }),
 }));
 vi.mock("@/features/tools/lib/llmCommand", () => ({ runLlm: vi.fn(async (prompt: string) => `echo:${prompt}`) }));
 vi.mock("@/features/tools/lib/visionCommand", () => ({
@@ -17,11 +25,11 @@ vi.mock("@/features/tools/lib/renderCommand", () => ({ runRenderImage: vi.fn() }
 vi.mock("@/features/tools/lib/synthesizeCommand", () => ({ runSynthesize: vi.fn() }));
 vi.mock("@/features/tools/lib/transcribeCommand", () => ({ runTranscribe: vi.fn() }));
 vi.mock("@/features/tools/lib/translateCommand", () => ({ runTranslateText: vi.fn(), runTranslateFile: vi.fn() }));
-vi.mock("./duckdbWorkspace", () => ({ acquireDuckDbWorkspace: vi.fn() }));
+vi.mock("./duckdbWorkspace", () => ({ createDuckDbWorkspace: vi.fn() }));
 
 const memory = new MemoryOpfs();
 
-function fakeFs() {
+function fakeFs(onCommit: (delta: OverlayDelta) => void = () => {}) {
   const files = new Map<string, { content: string; contentType?: string }>();
   const fs = {
     chatId: "chat",
@@ -31,7 +39,9 @@ function fakeFs() {
     },
     listEntries: async () => [...files.keys()].map((path) => ({ path })),
     fileExists: async (path: string) => files.has(path),
+    withExclusiveAccess: async (run: (access: FileSystemManager) => Promise<unknown>) => run(fs),
     applyOverlayDelta: async (delta: OverlayDelta) => {
+      onCommit(delta);
       for (const [path, file] of Object.entries(delta.upserts)) files.set(path, file);
       for (const path of delta.deletes) files.delete(path);
       return { mutations: [] };
@@ -47,7 +57,9 @@ function bridge(overrides: Partial<ConstructorParameters<typeof ArtifactBridge>[
     name: "search",
     description: "search",
     parameters: { type: "object", properties: {} },
-    function: vi.fn(async (args: Record<string, unknown>) => [{ type: "text" as const, text: `found ${JSON.stringify(args)}` }]),
+    function: vi.fn(async (args: Record<string, unknown>) => [
+      { type: "text" as const, text: `found ${JSON.stringify(args)}` },
+    ]),
   };
   const instance = new ArtifactBridge({
     fs,
@@ -82,7 +94,7 @@ describe("resolveCapabilities", () => {
 });
 
 describe("ArtifactBridge.dispatch", () => {
-  it("reads and writes workspace files and remembers its own writes briefly", async () => {
+  it("reads and writes workspace files", async () => {
     const { instance, files } = bridge();
     expect(await instance.dispatch("files.write", ["/out/data.json", '{"a":1}'])).toBe("/out/data.json");
     expect(files.get("/out/data.json")).toEqual({ content: '{"a":1}', contentType: "application/json" });
@@ -91,10 +103,41 @@ describe("ArtifactBridge.dispatch", () => {
     expect(files.get("/bytes.bin")?.content).toMatch(/^data:application\/octet-stream;base64,/);
     expect(await instance.dispatch("files.read", ["/bytes.bin"])).toEqual(new Uint8Array([1, 2, 3]));
     expect(await instance.dispatch("files.list", [])).toEqual(["/out/data.json", "/bytes.bin"]);
-    expect(instance.recentlyWrote("/out/data.json")).toBe(true);
-    expect(instance.recentlyWrote("/other.txt")).toBe(false);
+    expect(instance.isWriting("/out/data.json")).toBe(false);
+    expect(instance.isWriting("/other.txt")).toBe(false);
     expect(await instance.dispatch("files.remove", ["/bytes.bin"])).toBe(true);
     expect(await instance.dispatch("files.exists", ["/bytes.bin"])).toBe(false);
+  });
+
+  it("suppresses only its own committed file events, including folder deletions", async () => {
+    const observations: boolean[] = [];
+    const { fs } = fakeFs(() => {
+      observations.push(instance.isWriting("/folder/data.csv"), instance.isWriting("/other.csv"));
+    });
+    const { instance } = bridge({ fs });
+    await instance.dispatch("files.writeText", ["/folder/data.csv", "value"]);
+    await instance.dispatch("files.remove", ["/folder"]);
+    expect(observations).toEqual([true, false, true, false]);
+    expect(instance.isWriting("/folder/data.csv")).toBe(false);
+  });
+
+  it("cannot revive a pending consent request after detaching", async () => {
+    let grant!: (value: boolean) => void;
+    const consent = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          grant = resolve;
+        }),
+    );
+    const { instance, tool } = bridge({ consent });
+    const pending = instance.dispatch("tools.call", ["search", {}]);
+    const rejected = expect(pending).rejects.toThrow();
+    await vi.waitFor(() => expect(consent).toHaveBeenCalledOnce());
+    instance.detach();
+    grant(true);
+    await rejected;
+    await expect(instance.dispatch("files.writeText", ["/late.txt", "late"])).rejects.toThrow();
+    expect(tool.function).not.toHaveBeenCalled();
   });
 
   it("rejects reserved paths, unknown methods, and capabilities that are off", async () => {
@@ -129,7 +172,9 @@ describe("ArtifactBridge.dispatch", () => {
     expect(await instance.dispatch("tools.list", [])).toEqual([
       { name: "search", title: undefined, description: "search", parameters: { type: "object", properties: {} } },
     ]);
-    expect(await instance.dispatch("tools.call", ["search", { q: "x" }])).toEqual([{ type: "text", text: 'found {"q":"x"}' }]);
+    expect(await instance.dispatch("tools.call", ["search", { q: "x" }])).toEqual([
+      { type: "text", text: 'found {"q":"x"}' },
+    ]);
     await instance.dispatch("tools.call", ["search", {}]);
     expect(consent).toHaveBeenCalledTimes(1);
     expect(consent).toHaveBeenCalledWith(["search"]);

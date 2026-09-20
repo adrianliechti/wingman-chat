@@ -12,7 +12,7 @@ import { useChat } from "../../../src/features/chat/hooks/useChat";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
 import { loadConfig } from "../../../src/shared/config";
-import { getDuckDb } from "../../../src/shared/lib/duckdb";
+import { DuckDbRuntime } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
@@ -65,15 +65,14 @@ function Fixture() {
     },
     // A Parquet artifact produced by DuckDB itself from a query.
     async writeParquet(chatId, path, sql) {
-      const db = await getDuckDb();
-      const connection = await db.connect();
-      try {
-        await connection.query(`COPY (${sql}) TO 'e2e.parquet' (FORMAT PARQUET)`);
-      } finally {
-        await connection.close();
-      }
-      const bytes = await db.copyFileToBuffer("e2e.parquet");
-      await db.dropFile("e2e.parquet");
+      const runtime = new DuckDbRuntime();
+      const bytes = await runtime
+        .run(async (db) => {
+          const connection = await db.connect();
+          await connection.query(`COPY (${sql}) TO 'e2e.parquet' (FORMAT PARQUET)`);
+          return db.copyFileToBuffer("e2e.parquet");
+        })
+        .finally(() => runtime.dispose());
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
       await new FileSystemManager(chatId).createFile(

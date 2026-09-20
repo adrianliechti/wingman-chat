@@ -2,18 +2,23 @@ import type { SortingState } from "@tanstack/react-table";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { acquireDuckDbWorkspace, type DuckDbWorkspaceHost } from "@/features/artifacts/lib/duckdbWorkspace";
+import { createDuckDbWorkspace, type DuckDbWorkspaceHost } from "@/features/artifacts/lib/duckdbWorkspace";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { contentToBlob } from "@/shared/lib/fileContent";
+import type { File as ArtifactFile } from "@/shared/types/file";
 import { DataTable, type DataTableColumn } from "./DataTable";
 
 interface DataEditorProps {
   path: string;
+  snapshot?: ArtifactFile;
 }
 
 /** Rows fetched per window query. */
 const CHUNK = 500;
+const MAX_CACHED_CHUNKS = 8;
 
 interface Mounted {
+  path: string;
   fs: FileSystemManager;
   host: DuckDbWorkspaceHost;
 }
@@ -41,9 +46,9 @@ function describe(error: unknown): string {
 /**
  * Read-only grid over any tabular artifact DuckDB can scan by name: CSV, TSV,
  * JSONL, Parquet, Arrow. Rows are fetched in windows as the grid scrolls and
- * sorted by DuckDB, so file size never matters to the page.
+ * sorted by DuckDB, with a bounded cache of loaded windows.
  */
-export function DataEditor({ path }: DataEditorProps) {
+export function DataEditor({ path, snapshot }: DataEditorProps) {
   const { fs } = useArtifacts();
   const [mounted, setMounted] = useState<Mounted | null>(null);
   const [shape, setShape] = useState<Shape | null>(null);
@@ -53,37 +58,70 @@ export function DataEditor({ path }: DataEditorProps) {
   const pending = useRef(new Set<number>());
   // Bumped whenever the cache is cleared; answers from an older generation are dropped.
   const generation = useRef(0);
+  const shapeGeneration = useRef(0);
   const visible = useRef<[number, number] | null>(null);
   const [version, setVersion] = useState(0);
+  const [fileRevision, setFileRevision] = useState(0);
+  const snapshotContent = snapshot?.content;
+  const snapshotType = snapshot?.contentType;
 
   useEffect(() => {
     if (!fs) return;
-    let cancelled = false;
-    let host: DuckDbWorkspaceHost | null = null;
-    setMounted(null);
+    const host = createDuckDbWorkspace(fs, {
+      snapshot:
+        snapshotContent === undefined
+          ? undefined
+          : {
+              path,
+              file: new File([contentToBlob(snapshotContent, snapshotType)], path, { type: snapshotType }),
+            },
+    });
+    generation.current++;
+    shapeGeneration.current++;
+    chunks.current.clear();
+    pending.current.clear();
+    visible.current = null;
+    setMounted({ fs, path, host });
     setShape(null);
     setError(null);
     setSorting([]);
-    acquireDuckDbWorkspace(fs)
-      .then((acquired) => {
-        host = acquired;
-        if (!cancelled) setMounted({ fs, host: acquired });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(describe(cause));
-      });
-    return () => {
-      cancelled = true;
-      void host?.release();
+    const changed = (changedPath: string) => {
+      if (changedPath !== path && !path.startsWith(`${changedPath}/`)) return;
+      generation.current++;
+      shapeGeneration.current++;
+      chunks.current.clear();
+      pending.current.clear();
+      setShape(null);
+      setError(null);
+      setFileRevision((value) => value + 1);
     };
-  }, [fs, path]);
+    const subscriptions =
+      snapshotContent !== undefined
+        ? []
+        : [
+            fs.subscribe("fileCreated", changed),
+            fs.subscribe("fileUpdated", changed),
+            fs.subscribe("fileDeleted", changed),
+            fs.subscribe("fileRenamed", (from, to) => {
+              changed(from);
+              changed(to);
+            }),
+          ];
+    return () => {
+      generation.current++;
+      shapeGeneration.current++;
+      subscriptions.forEach((off) => off());
+      host.dispose();
+    };
+  }, [fs, path, snapshotContent, snapshotType]);
 
-  const source = mounted?.fs === fs ? quoteLiteral(path.replace(/^\/+/, "")) : null;
+  const source = mounted?.fs === fs && mounted?.path === path ? quoteLiteral(path.replace(/^\/+/, "")) : null;
 
   // Columns and the row count.
   useEffect(() => {
     if (!mounted || !source) return;
     let cancelled = false;
+    const started = shapeGeneration.current;
     chunks.current.clear();
     pending.current.clear();
     setShape(null);
@@ -93,20 +131,23 @@ export function DataEditor({ path }: DataEditorProps) {
       mounted.host.query(null, `SELECT count(*) AS n FROM ${source}`),
     ])
       .then(([described, counted]) => {
-        if (cancelled) return;
+        if (cancelled || started !== shapeGeneration.current) return;
         setShape({
           source,
-          columns: described.rows.map((row) => ({ name: cellText(row.column_name), detail: cellText(row.column_type) })),
+          columns: described.rows.map((row) => ({
+            name: cellText(row.column_name),
+            detail: cellText(row.column_type),
+          })),
           total: Number(counted.rows[0]?.n ?? 0),
         });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(describe(cause));
+        if (!cancelled && started === shapeGeneration.current) setError(describe(cause));
       });
     return () => {
       cancelled = true;
     };
-  }, [mounted, source]);
+  }, [mounted, source, fileRevision]);
 
   const orderBy = useMemo(() => {
     const column = sorting[0] ? shape?.columns[Number(sorting[0].id)] : undefined;
@@ -115,7 +156,13 @@ export function DataEditor({ path }: DataEditorProps) {
 
   const loadChunk = useCallback(
     (index: number) => {
-      if (!mounted || !shape || chunks.current.has(index) || pending.current.has(index)) return;
+      if (!mounted || !shape || pending.current.has(index)) return;
+      const cached = chunks.current.get(index);
+      if (cached) {
+        chunks.current.delete(index);
+        chunks.current.set(index, cached);
+        return;
+      }
       pending.current.add(index);
       const started = generation.current;
       const query = `SELECT * FROM ${shape.source}${orderBy} LIMIT ${CHUNK} OFFSET ${index * CHUNK}`;
@@ -129,6 +176,9 @@ export function DataEditor({ path }: DataEditorProps) {
             index,
             result.rows.map((row) => shape.columns.map((column) => cellText(row[column.name]))),
           );
+          while (chunks.current.size > MAX_CACHED_CHUNKS) {
+            chunks.current.delete(chunks.current.keys().next().value!);
+          }
           setVersion((value) => value + 1);
         })
         .catch((cause: unknown) => {
@@ -142,9 +192,11 @@ export function DataEditor({ path }: DataEditorProps) {
 
   const request = useCallback(
     (start: number, end: number) => {
-      for (let index = Math.floor(start / CHUNK); index <= Math.floor(end / CHUNK); index++) loadChunk(index);
+      if (!shape) return;
+      const last = Math.min(end, shape.total - 1);
+      for (let index = Math.floor(start / CHUNK); index <= Math.floor(last / CHUNK); index++) loadChunk(index);
     },
-    [loadChunk],
+    [loadChunk, shape],
   );
 
   // A new sort order invalidates every loaded window; the rows on screen are
@@ -155,6 +207,9 @@ export function DataEditor({ path }: DataEditorProps) {
     pending.current.clear();
     setVersion((value) => value + 1);
     if (visible.current) request(...visible.current);
+    return () => {
+      generation.current++;
+    };
   }, [request]);
 
   const onVisibleRange = useCallback(

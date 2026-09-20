@@ -210,7 +210,9 @@ export function HtmlPreview({
   const capabilities = sdk?.capabilities;
   useEffect(() => {
     if (!session || !capabilities) return;
-    session.setCapabilities(capabilities).catch((err) => console.error("html preview: capabilities update failed", err));
+    session
+      .setCapabilities(capabilities)
+      .catch((err) => console.error("html preview: capabilities update failed", err));
   }, [session, capabilities]);
 
   // Subscribe to filesystem change events for live reload.
@@ -228,23 +230,29 @@ export function HtmlPreview({
     };
 
     const onUpsert = (p: string) => {
+      const reload = shouldReloadRef.current?.(p) !== false;
       loadAndUpdate(p)
         .then(() => {
-          if (shouldReloadRef.current?.(p) === false) return;
-          scheduleReload();
+          if (reload) scheduleReload();
         })
         .catch((err) => console.error("html preview: upsert failed", err));
     };
     const onDeleted = (p: string) => {
+      const reload = shouldReloadRef.current?.(p) !== false;
       session
         .deleteFile(p)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (reload) scheduleReload();
+        })
         .catch((err) => console.error("html preview: delete failed", err));
     };
     const onRenamed = (oldPath: string, newPath: string) => {
+      const reload = shouldReloadRef.current?.(oldPath) !== false && shouldReloadRef.current?.(newPath) !== false;
       session
         .renameFile(oldPath, newPath)
-        .then(() => scheduleReload())
+        .then(() => {
+          if (reload) scheduleReload();
+        })
         .catch((err) => console.error("html preview: rename failed", err));
     };
 

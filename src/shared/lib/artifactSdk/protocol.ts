@@ -28,6 +28,7 @@ export type SdkCapabilities = Record<SdkCapabilityName, boolean>;
 export interface SdkRpcRequest {
   type: typeof SDK_RPC_TYPE;
   token: string;
+  documentId: string;
   method: string;
   params: unknown[];
 }
@@ -62,6 +63,7 @@ export function isSdkRpcRequest(data: unknown): data is SdkRpcRequest {
   return (
     record.type === SDK_RPC_TYPE &&
     typeof record.token === "string" &&
+    typeof record.documentId === "string" &&
     typeof record.method === "string" &&
     Array.isArray(record.params)
   );

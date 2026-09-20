@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeArrowTable, toJsonValue } from "./duckdbResult";
+import { collectDuckDbResult, toJsonValue } from "./duckdbResult";
 
 describe("duckdb result serialisation", () => {
   it("keeps safe integers as numbers and larger ones as strings", () => {
@@ -14,8 +14,8 @@ describe("duckdb result serialisation", () => {
     expect(toJsonValue(new Uint8Array([1, 2]))).toEqual([1, 2]);
   });
 
-  it("flattens Arrow rows, vectors and structs", () => {
-    const table = {
+  it("flattens Arrow rows, vectors and structs", async () => {
+    const reader = {
       schema: {
         fields: [
           { name: "id", type: "Int64" },
@@ -23,17 +23,19 @@ describe("duckdb result serialisation", () => {
           { name: "meta", type: "Struct" },
         ],
       },
-      toArray: () => [
-        {
-          toJSON: () => ({
-            id: 7n,
-            tags: { toArray: () => ["a", "b"] },
-            meta: { toJSON: () => ({ n: 1n, when: null }) },
-          }),
-        },
-      ],
+      async *[Symbol.asyncIterator]() {
+        yield [
+          {
+            toJSON: () => ({
+              id: 7n,
+              tags: { toArray: () => ["a", "b"] },
+              meta: { toJSON: () => ({ n: 1n, when: null }) },
+            }),
+          },
+        ];
+      },
     };
-    expect(serializeArrowTable(table)).toEqual({
+    expect(await collectDuckDbResult(reader)).toEqual({
       columns: [
         { name: "id", type: "Int64" },
         { name: "tags", type: "List<Utf8>" },
@@ -42,5 +44,45 @@ describe("duckdb result serialisation", () => {
       rows: [{ id: 7, tags: ["a", "b"], meta: { n: 1, when: null } }],
       rowCount: 1,
     });
+  });
+});
+
+describe("streamed result budgets", () => {
+  function reader(values: unknown[]) {
+    let read = 0;
+    let closed = false;
+    return {
+      schema: { fields: [{ name: "value", type: "Utf8" }] },
+      get read() {
+        return read;
+      },
+      get closed() {
+        return closed;
+      },
+      async *[Symbol.asyncIterator]() {
+        try {
+          for (const value of values) {
+            read++;
+            yield [{ toJSON: () => ({ value }) }];
+          }
+        } finally {
+          closed = true;
+        }
+      },
+    };
+  }
+
+  it("stops consuming batches at the row limit", async () => {
+    const source = reader([1, 2, 3, 4]);
+    await expect(collectDuckDbResult(source, { rows: 2, bytes: 1024 })).rejects.toThrow("Use LIMIT");
+    expect(source.read).toBe(3);
+    expect(source.closed).toBe(true);
+  });
+
+  it("counts UTF-8 bytes and permits results exactly at the row limit", async () => {
+    const values = ["é".repeat(30)];
+    await expect(collectDuckDbResult(reader(values), { rows: 1, bytes: 90 })).rejects.toThrow("fewer columns");
+    const result = await collectDuckDbResult(reader(values), { rows: 1, bytes: 120 });
+    expect(result.rows).toEqual([{ value: values[0] }]);
   });
 });

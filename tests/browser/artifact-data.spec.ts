@@ -44,7 +44,10 @@ test("parquet opens in a windowed grid sorted by DuckDB", async ({ page }) => {
 test("csv is typed and sorted numerically through DuckDB", async ({ page }) => {
   test.setTimeout(240_000);
   const id = await openFixture(page);
-  await page.evaluate((id) => window.artifactsE2E.write(id, "/sales.csv", "region,amount\nnorth,9\nsouth,10\neast,100\n"), id);
+  await page.evaluate(
+    (id) => window.artifactsE2E.write(id, "/sales.csv", "region,amount\nnorth,9\nsouth,10\neast,100\n"),
+    id,
+  );
   await expect(header(page, "amount")).toHaveAttribute("title", /BIGINT/i, { timeout: 180_000 });
   await expect(page.locator("td").nth(1)).toHaveText("9");
   await header(page, "amount").getByRole("button").first().click();
@@ -58,7 +61,37 @@ test("csv is typed and sorted numerically through DuckDB", async ({ page }) => {
 test("jsonl opens in the grid as well", async ({ page }) => {
   test.setTimeout(240_000);
   const id = await openFixture(page);
-  await page.evaluate((id) => window.artifactsE2E.write(id, "/events.jsonl", '{"user":"a","n":1}\n{"user":"b","n":2}\n'), id);
+  await page.evaluate(
+    (id) => window.artifactsE2E.write(id, "/events.jsonl", '{"user":"a","n":1}\n{"user":"b","n":2}\n'),
+    id,
+  );
   await expect(header(page, "user")).toBeVisible({ timeout: 180_000 });
   await expect(page.locator("td").nth(2)).toHaveText("b");
+});
+
+test("the open grid refreshes its schema and rows after a file update", async ({ page }) => {
+  const id = await openFixture(page);
+  await page.evaluate((id) => window.artifactsE2E.write(id, "/data.csv", "value\n1\n"), id);
+  await expect(page.locator("td").first()).toHaveText("1");
+  await page.evaluate((id) => window.artifactsE2E.write(id, "/data.csv", "value,label\n2,two\n3,three\n"), id);
+  await expect(header(page, "label")).toBeVisible();
+  await expect(page.locator("td")).toHaveText(["2", "two", "3", "three"]);
+});
+
+test("a pinned data revision reads the archived snapshot without changing live data", async ({ page }) => {
+  const id = await openFixture(page);
+  await page.evaluate(async (id) => {
+    await window.artifactsE2E.write(id, "/data.csv", "value\n1\n");
+    await window.artifactsE2E.write(id, "/data.csv", "value\n2\n");
+  }, id);
+  await expect(page.locator("td").first()).toHaveText("2");
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  const revisions = page.getByRole("list", { name: "Revisions" }).getByRole("button");
+  await expect(revisions).toHaveCount(2);
+  await revisions.nth(1).click();
+  await expect(page.getByRole("status")).toContainText("Viewing revision");
+  await expect(page.locator("td").first()).toHaveText("1");
+  expect((await page.evaluate((id) => window.artifactsE2E.read(id, "/data.csv"), id))?.content).toBe("value\n2\n");
+  await page.getByRole("button", { name: "Back to current version" }).click();
+  await expect(page.locator("td").first()).toHaveText("2");
 });
