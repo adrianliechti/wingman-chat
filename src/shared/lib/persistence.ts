@@ -1,3 +1,5 @@
+import { notify } from "./notify";
+
 /** Serialize a storage operation across tabs, with an in-process fallback. */
 const locks = new Map<string, Promise<unknown>>();
 
@@ -106,6 +108,25 @@ export async function flushPersistence(): Promise<void> {
   const results = await Promise.allSettled([...new Set(queues.values())].map((queue) => queue.flush()));
   const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
   if (errors.length) throw new AggregateError(errors, "Could not finish saving changes");
+}
+
+/**
+ * Backups are the recovery path when saving itself is broken (for example a
+ * corrupt index that makes every queued save fail). Report the failure but
+ * still snapshot the files that did reach storage.
+ */
+export async function flushForBackup(): Promise<boolean> {
+  try {
+    await flushPersistence();
+    return true;
+  } catch (error) {
+    console.warn("Some unsaved changes could not be included in this backup:", error);
+    notify.error(
+      "Backup contains saved data only",
+      "Some recent changes could not be saved and are missing from this backup.",
+    );
+    return false;
+  }
 }
 
 /** A confirmed full reset must not be undone by late debounce callbacks. */

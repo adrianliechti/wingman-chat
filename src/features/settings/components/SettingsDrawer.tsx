@@ -404,7 +404,7 @@ export function SettingsDrawer({
       );
     } catch (error) {
       console.error("Export failed:", error);
-      notify.error("Couldn't export data", "Something went wrong. Please try again.");
+      notify.error("Couldn't export data", error);
     } finally {
       setIsExporting(false);
     }
@@ -421,7 +421,7 @@ export function SettingsDrawer({
       );
     } catch (error) {
       console.error("Export failed:", error);
-      notify.error("Couldn't export data", "Something went wrong. Please try again.");
+      notify.error("Couldn't export data", error);
     } finally {
       setIsExporting(false);
     }

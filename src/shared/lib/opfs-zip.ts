@@ -9,7 +9,7 @@ import type JSZip from "jszip";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import { getDirectory, getRoot } from "./opfs-core";
 import { downloadBlob } from "./utils";
-import { flushPersistence, withPersistenceLock } from "./persistence";
+import { flushForBackup, withPersistenceLock } from "./persistence";
 import { STORAGE_COLLECTIONS } from "./opfs-index";
 import { readZipFiles, restoreFiles } from "./opfs-restore";
 export { rebuildFolderIndex } from "./opfs-index";
@@ -79,9 +79,11 @@ export async function exportFolderAsZip(
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
-  await flushPersistence();
+  await flushForBackup();
   const collection = folderPath.split("/").filter(Boolean)[0];
-  const keys = collection ? [collection] : [...STORAGE_COLLECTIONS, "profile"];
+  // Same lock order as restoreFiles so an export and a restore in two tabs
+  // cannot wait on each other forever.
+  const keys = collection ? [collection] : [...STORAGE_COLLECTIONS, "profile"].sort();
   const snapshot = async () => {
     const isRoot = !folderPath || folderPath === "/";
     let folderHandle: FileSystemDirectoryHandle;
@@ -146,32 +148,35 @@ export async function downloadFoldersAsZip(
 ): Promise<void> {
   const paths = [
     ...new Set(folderPaths.map((path) => path.replace(/^\/+|\/+$/g, "")).filter(Boolean)),
-  ];
+  ].sort();
   if (!paths.length) throw new Error("Select at least one folder to export.");
+  for (const path of paths) {
+    if (path.includes("/")) throw new Error(`Only top-level paths can be exported: ${path}`);
+  }
 
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
-  await flushPersistence();
+  await flushForBackup();
 
   const snapshot = async () => {
+    const root = await getRoot();
     for (const path of paths) {
+      // A root entry such as profile.json is a file: asking for it as a
+      // directory throws TypeMismatchError, and it must land in the archive as
+      // a file entry, not as an empty folder of the same name.
+      let handle: FileSystemDirectoryHandle | FileSystemFileHandle;
       try {
-        if (path.includes("/")) throw new Error(`Only top-level paths can be exported: ${path}`);
-        try {
-          const folder = getZipFolder(zip, path);
-          await addDirectoryToZip(await getDirectory(path), folder, path);
-        } catch (error) {
-          if (!(error instanceof DOMException) || error.name !== "NotFoundError") throw error;
-          const file = await (
-            await getRoot()
-          )
-            .getFileHandle(path)
-            .then((handle) => handle.getFile());
-          zip.file(path, await file.arrayBuffer());
-        }
+        handle = await root.getDirectoryHandle(path);
       } catch (error) {
-        if (error instanceof DOMException && error.name === "NotFoundError") continue;
-        throw error;
+        if (!(error instanceof DOMException)) throw error;
+        if (error.name === "NotFoundError") continue;
+        if (error.name !== "TypeMismatchError") throw error;
+        handle = await root.getFileHandle(path);
+      }
+      if (handle.kind === "file") {
+        zip.file(path, await (await handle.getFile()).arrayBuffer());
+      } else {
+        await addDirectoryToZip(handle, getZipFolder(zip, path), path);
       }
     }
   };

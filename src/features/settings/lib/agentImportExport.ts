@@ -7,7 +7,7 @@ import { notify } from "@/shared/lib/notify";
 import { getDirectory, listDirectories, readText } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, getZipFolder } from "@/shared/lib/opfs-zip";
 import { readZipFiles, restoreFiles } from "@/shared/lib/opfs-restore";
-import { flushPersistence, withPersistenceLock } from "@/shared/lib/persistence";
+import { flushForBackup, withPersistenceLock } from "@/shared/lib/persistence";
 import { downloadBlob } from "@/shared/lib/utils";
 
 async function readAgentMd(id: string): Promise<string | undefined> {
@@ -28,7 +28,7 @@ async function addSkillsToZip(names: string[], zip: JSZip): Promise<void> {
 }
 
 export async function exportAgentsAsZip(): Promise<void> {
-  await flushPersistence();
+  await flushForBackup();
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   await withPersistenceLock("collection:agents", () =>
@@ -51,7 +51,7 @@ export async function exportSingleAgentAsZip(
   id: string,
   { includeMemory = false }: { includeMemory?: boolean } = {},
 ): Promise<void> {
-  await flushPersistence();
+  await flushForBackup();
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   let name = "agent";
@@ -136,8 +136,15 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
       mapped.set(`agents/${id}/${relative === "AGENT.md" ? "AGENTS.md" : relative}`, blob);
     }
     if (!mapped.has(`agents/${id}/AGENTS.md`)) {
-      const meta = files.get(`${prefix}${repository ? "repository" : "agent"}.json`)!;
-      const agent = importedAgent(JSON.parse(await meta.text()), id);
+      const metaPath = `${prefix}${repository ? "repository" : "agent"}.json`;
+      const meta = files.get(metaPath)!;
+      let record: unknown;
+      try {
+        record = JSON.parse(await meta.text());
+      } catch {
+        throw new Error(`Invalid JSON in backup: ${metaPath}`);
+      }
+      const agent = importedAgent(record, id);
       mapped.set(`agents/${id}/AGENTS.md`, new Blob([serializeAgentMd(agent)]));
       mapped.set(`agents/${id}/servers.json`, new Blob([JSON.stringify(agent.servers)]));
     }

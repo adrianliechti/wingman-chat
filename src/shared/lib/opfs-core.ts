@@ -352,12 +352,34 @@ export interface IndexEntry {
  * Read the index for a collection.
  */
 export async function readIndex(collection: string): Promise<IndexEntry[]> {
-  const index = await readJson<IndexEntry[]>(`${collection}/index.json`);
+  let index: unknown;
+  try {
+    index = await readJson<unknown>(`${collection}/index.json`);
+  } catch (error) {
+    if (!(error instanceof Error && error.cause instanceof SyntaxError)) throw error;
+    return healIndex(collection, error);
+  }
   if (index === undefined) return [];
   if (!Array.isArray(index) || index.some((entry) => !entry || typeof entry.id !== "string" || !entry.id)) {
-    throw new Error(`Invalid index in ${collection}/index.json`);
+    return healIndex(collection, new Error(`Invalid index in ${collection}/index.json`));
   }
-  return index;
+  return index as IndexEntry[];
+}
+
+/**
+ * A damaged listing would otherwise hide every record and fail every save
+ * until the user finds "Rebuild indexes". The folders are the source of
+ * truth, so rebuild the listing from them and store it. Callers hold the
+ * collection lock, which serializes this with every other index writer.
+ */
+async function healIndex(collection: string, reason: Error): Promise<IndexEntry[]> {
+  console.warn(`Repairing ${collection}/index.json from stored records:`, reason);
+  // Loaded lazily: the scanner depends on record parsers built on this module.
+  const { isRebuildableCollection, salvageIndexEntries, scanFolderIndex } = await import("./opfs-index");
+  const salvaged = await salvageIndexEntries(collection);
+  const entries = isRebuildableCollection(collection) ? await scanFolderIndex(collection, salvaged) : salvaged;
+  await writeJson(`${collection}/index.json`, entries);
+  return entries;
 }
 
 /**

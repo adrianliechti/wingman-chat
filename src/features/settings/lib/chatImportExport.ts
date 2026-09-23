@@ -16,10 +16,12 @@ export async function importChatsFromZip(file: Blob): Promise<void> {
   const paths = [...files.keys()];
   const prefixed = paths.some((path) => path.startsWith("chats/"));
   const flat = files.has("chat.json");
-  const flatId = flat ? JSON.parse(await files.get("chat.json")!.text()).id || crypto.randomUUID() : undefined;
   if (!prefixed && !paths.some((path) => /(^|\/)chat\.json$/.test(path))) {
     throw new Error("Unrecognized archive: expected a chats export.");
   }
+  // The ID only names the destination folder. Damaged JSON is reported by the
+  // restore validation with the file's path, not as a bare parse error here.
+  const flatId = flat ? await flatChatId(files.get("chat.json")!) : undefined;
 
   const mapped = new Map<string, Blob>();
   for (const [path, blob] of files) {
@@ -27,6 +29,16 @@ export async function importChatsFromZip(file: Blob): Promise<void> {
     mapped.set(prefixed ? path : flat ? `chats/${flatId}/${path}` : `chats/${path}`, blob);
   }
   await restoreFiles(mapped);
+}
+
+async function flatChatId(blob: Blob): Promise<string> {
+  try {
+    const id: unknown = JSON.parse(await blob.text())?.id;
+    if (typeof id === "string" && id && !/[\\/]/.test(id) && id !== "." && id !== "..") return id;
+  } catch {
+    /* Validation in restoreFiles reports the invalid file. */
+  }
+  return crypto.randomUUID();
 }
 
 /**

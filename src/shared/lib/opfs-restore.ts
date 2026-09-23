@@ -71,6 +71,14 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
   return files;
 }
 
+function parseBackupJson(path: string, text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON in backup: ${path}`);
+  }
+}
+
 async function validateMetadata(path: string, blob: Blob): Promise<void> {
   const memory = path.match(/^agents\/[^/]+\/memory\/(.+)$/);
   if (memory) {
@@ -83,7 +91,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     return;
   }
   if (/^agents\/[^/]+\/memory-state\.json$/.test(path)) {
-    validateMemoryState(JSON.parse(await blob.text()));
+    validateMemoryState(parseBackupJson(path, await blob.text()));
     return;
   }
   if (/^skills\/[^/]+\/SKILL\.md$/.test(path)) {
@@ -102,12 +110,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
       path,
     )
   ) {
-    let value: unknown;
-    try {
-      value = JSON.parse(await blob.text());
-    } catch {
-      throw new Error(`Invalid JSON in backup: ${path}`);
-    }
+    const value = parseBackupJson(path, await blob.text());
     if (!value || typeof value !== "object") throw new Error(`Invalid metadata in backup: ${path}`);
     if (/^chats\/.+\/chat\.json$/.test(path)) {
       const messages = (value as { messages?: unknown }).messages;
