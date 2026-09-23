@@ -7,6 +7,7 @@ import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { contentToBlob } from "@/shared/lib/fileContent";
 import type { File as ArtifactFile } from "@/shared/types/file";
 import { DataTable, type DataTableColumn } from "./DataTable";
+import { cellText, createDataCellFormatter, isTemporalDataType } from "./dataCell";
 
 interface DataEditorProps {
   path: string;
@@ -25,15 +26,8 @@ interface Mounted {
 
 interface Shape {
   source: string;
-  columns: DataTableColumn[];
+  columns: (DataTableColumn & { formatValue: (value: unknown) => string })[];
   total: number;
-}
-
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
-  return JSON.stringify(value);
 }
 
 const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
@@ -137,6 +131,7 @@ export function DataEditor({ path, snapshot }: DataEditorProps) {
           columns: described.rows.map((row) => ({
             name: cellText(row.column_name),
             detail: cellText(row.column_type),
+            formatValue: createDataCellFormatter(cellText(row.column_type)),
           })),
           total: Number(counted.rows[0]?.n ?? 0),
         });
@@ -151,8 +146,22 @@ export function DataEditor({ path, snapshot }: DataEditorProps) {
 
   const orderBy = useMemo(() => {
     const column = sorting[0] ? shape?.columns[Number(sorting[0].id)] : undefined;
-    return column ? ` ORDER BY ${quoteIdentifier(column.name)} ${sorting[0].desc ? "DESC" : "ASC"}` : "";
+    // Qualify the input column so sorting uses its original type, not the text alias.
+    return column ? ` ORDER BY data.${quoteIdentifier(column.name)} ${sorting[0].desc ? "DESC" : "ASC"}` : "";
   }, [sorting, shape]);
+
+  const projection = useMemo(
+    () =>
+      shape?.columns
+        .map((column) => {
+          const name = quoteIdentifier(column.name);
+          // Arrow's date conversion loses timestamp precision and represents
+          // TIME as an integer. Ask DuckDB for lossless text only in this preview.
+          return isTemporalDataType(column.detail) ? `CAST(data.${name} AS VARCHAR) AS ${name}` : `data.${name}`;
+        })
+        .join(", "),
+    [shape],
+  );
 
   const loadChunk = useCallback(
     (index: number) => {
@@ -165,7 +174,7 @@ export function DataEditor({ path, snapshot }: DataEditorProps) {
       }
       pending.current.add(index);
       const started = generation.current;
-      const query = `SELECT * FROM ${shape.source}${orderBy} LIMIT ${CHUNK} OFFSET ${index * CHUNK}`;
+      const query = `SELECT ${projection} FROM ${shape.source} AS data${orderBy} LIMIT ${CHUNK} OFFSET ${index * CHUNK}`;
       mounted.host
         .query(null, query)
         .then((result) => {
@@ -174,7 +183,7 @@ export function DataEditor({ path, snapshot }: DataEditorProps) {
           pending.current.delete(index);
           chunks.current.set(
             index,
-            result.rows.map((row) => shape.columns.map((column) => cellText(row[column.name]))),
+            result.rows.map((row) => shape.columns.map((column) => column.formatValue(row[column.name]))),
           );
           while (chunks.current.size > MAX_CACHED_CHUNKS) {
             chunks.current.delete(chunks.current.keys().next().value!);
@@ -187,7 +196,7 @@ export function DataEditor({ path, snapshot }: DataEditorProps) {
           setError(describe(cause));
         });
     },
-    [mounted, shape, orderBy],
+    [mounted, shape, orderBy, projection],
   );
 
   const request = useCallback(
