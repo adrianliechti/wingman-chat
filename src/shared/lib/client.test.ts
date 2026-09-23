@@ -86,8 +86,28 @@ afterEach(() => {
 });
 
 describe("chat output allowances", () => {
+  it.each(["gpt-6-sol", "gpt-6-luna"])("sends %s with reasoning and tools through Responses", async (model) => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    const tool: Tool = {
+      name: "write",
+      description: "Write text",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      function: async () => [{ type: "text", text: "done" }],
+    };
+    await new Client().complete(model, "", prompt, [tool], undefined, { effort: "none" });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      model,
+      max_output_tokens: 64_000,
+      reasoning: { effort: "none" },
+    });
+    expect(body.tools).toMatchObject([{ type: "function", name: "write" }]);
+  });
+
   it.each([
     ["gpt-5.6-sol", 64_000],
+    ["gpt-6-sol", 64_000],
+    ["gpt-6-luna", 64_000],
     ["gpt-4.1", 32_768],
     ["gpt-4o", 16_384],
     ["gemini-2.0-flash", 8_192],

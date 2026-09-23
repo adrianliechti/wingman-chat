@@ -29,6 +29,12 @@ type ModelProfile = [
 const MODEL_PROFILES: ModelProfile[] = [
   [/\bgpt-?6-astra\b/, ["low", "medium", "high", "xhigh", "max"], undefined, 128_000],
   [
+    /\bgpt-?6-(?:sol|luna)(?=$|[/:]|-\d{4})/,
+    ["none", "low", "medium", "high", "xhigh", "max"],
+    "medium",
+    128_000,
+  ],
+  [
     /\bgpt-?5\.6(?:-(?:sol|terra|luna))?(?=$|[/:]|-\d{4})/,
     ["none", "low", "medium", "high", "xhigh", "max"],
     "medium",

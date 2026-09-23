@@ -42,6 +42,8 @@ describe("model endpoint detection", () => {
     ["claude-fable-5-1", "completer"],
     ["claude-mythos-5-1", "completer"],
     ["gpt-6-astra", "completer"],
+    ["gpt-6-sol", "completer"],
+    ["gpt-6-luna", "completer"],
     ["budget-chat", "completer"],
     ["eclipse-chat", "completer"],
     ["BGE-reranker-v2-m3", "reranker"],
@@ -79,6 +81,8 @@ describe("model display names", () => {
 describe("model output budgets", () => {
   it.each([
     ["openai/gpt-6-astra", 64_000],
+    ["gpt-6-sol", 64_000],
+    ["gpt-6-luna", 64_000],
     ["gpt-5.6-terra", 64_000],
     ["gpt-5.4-mini", 64_000],
     ["gpt-5.2-2025-12-11", 64_000],
@@ -160,9 +164,15 @@ describe("reasoning effort levels", () => {
     expect(supportedEfforts("qwen2.5-72b")).toBeUndefined();
   });
 
-  it("uses the current Astra and GPT-5.6 efforts instead of extrapolating GPT-5.2", () => {
+  it("uses the documented GPT-6 and GPT-5.6 efforts instead of extrapolating GPT-5.2", () => {
     expect(supportedEfforts("gpt-6-astra")).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(minimalEffort("openai/gpt-6-astra")).toBe("low");
+    for (const id of ["gpt-6-sol", "gpt-6-luna", "openai/gpt-6-sol-2026-09-23"]) {
+      expect(supportedEfforts(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+      expect(defaultEffort(id)).toBe("medium");
+      expect(minimalEffort(id)).toBe("none");
+      expect(modelMaxOutputTokens(id)).toBe(128_000);
+    }
     for (const id of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
       expect(supportedEfforts(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
       expect(defaultEffort(id)).toBe("medium");
@@ -250,6 +260,8 @@ describe("configured model catalogue", () => {
       "bedrock-opus-4-8",
       "claude-fable-5-1",
       "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
     ]) {
       expect(compactThreshold(id)).toBe(272_000);
     }

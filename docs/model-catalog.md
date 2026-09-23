@@ -64,12 +64,16 @@ the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
 
 ## Capability sources and limits
 
-Reviewed September 6, 2026. Profiles are fallbacks, not an API guarantee, and do
+Reviewed September 23, 2026. Profiles are fallbacks, not an API guarantee, and do
 not extrapolate new major versions. Custom or hosted models can specify their
 own supported efforts instead of inheriting a vendor profile.
 
 - [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra): low,
   medium, high, xhigh, max; no none/minimal.
+- [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
+  [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
+  medium, high, xhigh, max; medium default. Both use the Responses API for tool
+  calling and structured outputs in Wingman.
 - [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
   [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), and
   [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna): none through
@@ -122,11 +126,13 @@ are also capped by the known capacity. Unknown capacities keep the provider
 default unless an explicit budget is configured; such an override cannot be
 clamped until the deployment supplies a capacity.
 
-Examples of documented capacities (reviewed September 19, 2026):
+Examples of documented capacities (reviewed September 23, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |
