@@ -79,7 +79,9 @@ own supported efforts instead of inheriting a vendor profile.
   [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna): none through
   max, excluding minimal; medium default. The unsuffixed ID aliases Sol.
 - [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort):
-  Fable/Mythos 5.1 include xhigh and max. Mythos Preview and Opus/Sonnet 4.6 have
+  Fable/Mythos 5.1 include xhigh and max. [Opus 5.5](https://www.anthropic.com/claude-opus-5-5)
+  has low through max with a medium default (Opus 5 defaults to high); its
+  thinking cannot be disabled, so low is its minimal effort. Mythos Preview and Opus/Sonnet 4.6 have
   max but no xhigh. Haiku and older Sonnet models do not inherit Opus's efforts.
 - [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
   3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
@@ -133,6 +135,7 @@ Examples of documented capacities (reviewed September 23, 2026):
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
+| [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |
