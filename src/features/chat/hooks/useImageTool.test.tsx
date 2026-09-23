@@ -5,10 +5,12 @@ import type { Model } from "@/shared/types/chat";
 
 const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
-  renderer: { model: "gpt-image-2" } as { model: string; elicitation?: boolean },
+  renderer: { model: "gpt-image-2" } as { model?: string; elicitation?: boolean },
   models: [] as Model[],
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
+// Stands in for the live catalog, which already applies config.models overrides.
+vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => config.models }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
 vi.mock("@/shared/lib/utils", () => ({ readAsDataURL: async () => "data:image/png;base64,aW1hZ2U=" }));
 
@@ -56,6 +58,17 @@ it("sends a configured supported quality instead of defaulting to unsupported lo
   const result = await buildTool().function({ prompt: "A test image" });
   expect(result).toMatchObject([{ type: "image" }]);
   expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ quality: "medium" });
+});
+
+it("falls back to the first catalog renderer when none is configured", async () => {
+  config.renderer = {};
+  config.models = [
+    { id: "chat", name: "Chat", type: "completer" },
+    { id: "flux", name: "Flux", type: "renderer", supportedQualities: [] },
+  ];
+  expect(parameters().quality).toBeUndefined();
+  await buildTool().function({ prompt: "A test image" });
+  expect(config.client.generateImage.mock.calls.at(-1)?.[0]).toBe("flux");
 });
 
 it("marks renderer failures as tool errors instead of displaying a successful creation", async () => {

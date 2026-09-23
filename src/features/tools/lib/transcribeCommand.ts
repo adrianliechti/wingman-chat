@@ -2,6 +2,7 @@ import { getConfig } from "@/shared/config";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 import { extractAudioForTranscription } from "./extractAudio";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
 export async function runTranscribe(
   bytes: Uint8Array,
@@ -25,7 +26,7 @@ export async function runTranscribe(
     throw new Error(`transcribe: not an audio file: ${name} — use a known audio extension like .mp3 or .wav`);
   }
 
-  const model = config.stt.model ?? "";
+  const model = await resolveModel(config.stt.model, "transcriber");
 
   requestOptions.signal?.throwIfAborted();
 

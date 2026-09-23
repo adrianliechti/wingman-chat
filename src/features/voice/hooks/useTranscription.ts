@@ -5,6 +5,7 @@ import { AudioResources } from "@/shared/lib/audioResources";
 import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
 export interface UseTranscriptionReturn {
   canTranscribe: boolean;
@@ -100,9 +101,8 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
         const audio = pcm16ToWav(mergePcm16Chunks(session.chunks), 24000);
         session.chunks = [];
         const config = getConfig();
-        const text = await session.scope.wait(
-          config.client.transcribe(config.stt?.model ?? "", audio, { signal: session.scope.signal }),
-        );
+        const model = await session.scope.wait(resolveModel(config.stt?.model, "transcriber"));
+        const text = await session.scope.wait(config.client.transcribe(model, audio, { signal: session.scope.signal }));
         session.scope.signal.throwIfAborted();
         return text;
       } catch (error) {

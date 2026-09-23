@@ -2,7 +2,7 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
-import { resolveModel } from "./commandUtils";
+import { resolveModel } from "@/shared/lib/modelSelection";
 import type { RenderInput } from "./interpreterProtocol";
 
 export async function runRenderImage(

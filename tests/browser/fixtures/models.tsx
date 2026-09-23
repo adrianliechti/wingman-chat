@@ -2,7 +2,7 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useModels } from "../../../src/features/chat/hooks/useModels";
 import { useRendererModels } from "../../../src/features/canvas/hooks/useRendererModels";
-import { resolveModel } from "../../../src/features/tools/lib/commandUtils";
+import { resolveModel } from "../../../src/shared/lib/modelSelection";
 import { loadConfig } from "../../../src/shared/config";
 import { useModelCatalog } from "../../../src/shared/hooks/useModelCatalog";
 import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";

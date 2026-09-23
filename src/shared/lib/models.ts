@@ -261,10 +261,9 @@ export function withRendererFallback(model: Model): Model {
 // an unrelated deployment alias. Generic "audio" does not imply TTS: audio chat
 // models also accept ordinary completion requests.
 const MODEL_TYPE_CUES: [ModelType, RegExp][] = [
-  [
-    "realtime",
-    /(?:^|[^a-z0-9])(?:realtime|sonic|live-preview|live-transcribe|transcribe-live|native-audio|gemini-live)(?:$|[^a-z0-9])/,
-  ],
+  // A standalone "live" token marks Live API models, including
+  // gemini-3.8-live and gemini-3.8-live-extended-thinking.
+  ["realtime", /(?:^|[^a-z0-9])(?:realtime|sonic|live|native-audio)(?:$|[^a-z0-9])/],
   ["reranker", /(?:^|[^a-z0-9])(?:rerank|reranker)(?:$|[^a-z0-9])/],
   ["embedder", /(?:^|[^a-z0-9])(?:embedding|embeddings|embed|bge|clip|gte|minilm)(?:$|[^a-z0-9])/],
   ["transcriber", /(?:^|[^a-z0-9])(?:stt|transcribe|whisper)(?:$|[^a-z0-9])/],
