@@ -38,6 +38,16 @@
     "scraper": "web",
     "researcher": "web"
   },
+  "chat": {
+    "presets": [
+      { "model": "gpt-6-luna", "effort": "low", "verbosity": "low", "label": "GPT-6 Luna" },
+      { "model": "gpt-6-luna", "effort": "high", "label": "GPT-6 Luna" },
+      { "model": "gpt-6-sol", "effort": "medium", "label": "GPT-6 Sol" },
+      { "model": "gpt-6-sol", "effort": "high", "label": "GPT-6 Sol" },
+      { "model": "gpt-6-astra", "effort": "medium", "label": "GPT-6 Astra" },
+      { "model": "gpt-6-astra", "effort": "xhigh", "verbosity": "high", "label": "GPT-6 Astra" }
+    ]
+  },
   "_telemetry": {},
   "_models": [
     {

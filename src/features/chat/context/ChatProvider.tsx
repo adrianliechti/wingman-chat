@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import type { Agent } from "@/features/agent/types/agent";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { buildSelectionEditMessage } from "@/features/chat/lib/selectionMessage";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
@@ -14,6 +15,17 @@ import { useApp } from "@/shell/hooks/useApp";
 import { type ChatContextType } from "./ChatContext";
 
 import { ChatContextProviders } from "./ChatContextProviders";
+
+// An agent's effort and verbosity override its model's defaults and the chat's
+// stored effort, so edits in the agent drawer also apply to its existing chats.
+function withAgentSettings(model: Model, agent: Agent | null | undefined): Model {
+  if (!agent || agent.model !== model.id || (!agent.effort && !agent.verbosity)) return model;
+  return {
+    ...model,
+    ...(agent.effort ? { effort: agent.effort } : {}),
+    ...(agent.verbosity ? { verbosity: agent.verbosity } : {}),
+  };
+}
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -57,18 +69,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chatError = !chat && loadError?.id === chatId ? loadError.error : null;
   const chatLoading = !!chatId && !chat && !chatError;
   const createChatOnce = useMemo(() => createChatCreationGate(), []);
-  const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
+  const agentModel = useMemo(() => {
+    const found = currentAgent?.model ? models.find((m) => m.id === currentAgent.model) : undefined;
+    return found ? withAgentSettings(found, currentAgent) : null;
+  }, [models, currentAgent]);
   const currentChatModel = chat?.model;
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
-  // current, but keep the chat's stored `effort` (the per-chat selection, which
-  // starts at the model's configured default and the user can change in the picker).
+  // current, but keep the chat's stored `effort` and `verbosity` (the per-chat
+  // selection, which starts at the model's configured default and the user can
+  // change in the picker or via a slider preset).
   // Memoized so the effort overlay doesn't mint a new `model` object every render
   // (which would thrash useChatContext and other model-keyed memos on each token).
   const chatModel = useMemo(() => {
     if (!currentChatModel) return null;
     const resolved = models.find((m) => m.id === currentChatModel.id) ?? currentChatModel;
-    return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
-  }, [models, currentChatModel]);
+    const stored = {
+      ...resolved,
+      ...("effort" in currentChatModel ? { effort: currentChatModel.effort } : {}),
+      // A slider preset can pick a verbosity for the chat, just like effort.
+      ...("verbosity" in currentChatModel ? { verbosity: currentChatModel.verbosity } : {}),
+    };
+    return withAgentSettings(stored, currentAgent);
+  }, [models, currentChatModel, currentAgent]);
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const {
     tools: chatTools,
@@ -175,6 +197,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [model, setModel],
   );
 
+  // Per-chat verbosity, stored on the chat's model like effort. Clearing it
+  // restores the configured level, so "Default" follows the model config.
+  const configuredVerbosity = model ? models.find((m) => m.id === model.id)?.verbosity : undefined;
+  const setVerbosity = useCallback(
+    (verbosity: Model["verbosity"] | null) => {
+      if (!model) return;
+      setModel({ ...model, verbosity: verbosity ?? configuredVerbosity });
+    },
+    [model, configuredVerbosity, setModel],
+  );
+
   // Single chat-creation path. Returns the active chat (creating it if needed)
   // together with its `FileSystemManager`. The fs is bound eagerly and cached
   // in `fsRef` so callers get it without waiting for React to re-derive `fs`.
@@ -274,6 +307,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setModel,
     effort: model?.effort ?? null,
     setEffort,
+    // A level equal to the configured one is the default, not an override.
+    verbosity: model?.verbosity && model.verbosity !== configuredVerbosity ? model.verbosity : null,
+    setVerbosity,
 
     // Chats
     chats,

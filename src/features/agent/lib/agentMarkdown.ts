@@ -1,4 +1,8 @@
+import type { ReasoningEffort } from "@/shared/types/chat";
 import type { Agent } from "../types/agent";
+
+const EFFORTS: readonly string[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const VERBOSITIES: readonly string[] = ["low", "medium", "high"];
 
 // --- AGENTS.md serialization / parsing ---
 
@@ -6,6 +10,8 @@ export function serializeAgentMd(agent: Agent): string {
   const lines: string[] = ["---"];
   lines.push(`name: ${JSON.stringify(agent.name)}`);
   if (agent.model) lines.push(`model: ${JSON.stringify(agent.model)}`);
+  if (agent.effort) lines.push(`effort: ${agent.effort}`);
+  if (agent.verbosity) lines.push(`verbosity: ${agent.verbosity}`);
   if (agent.skills.length > 0) lines.push(`skills: ${JSON.stringify(agent.skills)}`);
   if (agent.plugins.length > 0) lines.push(`plugins: ${JSON.stringify(agent.plugins)}`);
   if (agent.tools.length > 0) lines.push(`tools: ${JSON.stringify(agent.tools)}`);
@@ -22,6 +28,8 @@ export function parseAgentMd(content: string):
   | {
       name: string;
       model?: string;
+      effort?: Agent["effort"];
+      verbosity?: Agent["verbosity"];
       skills: string[];
       plugins: string[];
       tools: string[];
@@ -78,12 +86,17 @@ export function parseAgentMd(content: string):
     }
     return value.replace(/^'(.*)'$/, "$1").replace(/''/g, "'");
   };
+  const oneOf = (value: string | undefined, allowed: readonly string[]) =>
+    value && allowed.includes(value) ? value : undefined;
   return {
     name: parseString(fields.name) || "Untitled",
     skills: parseList(fields.skills),
     plugins: parseList(fields.plugins),
     tools: parseList(fields.tools),
     model: parseString(fields.model),
+    // Unknown levels (e.g. from a newer build) are dropped so the model default applies.
+    effort: oneOf(parseString(fields.effort), EFFORTS) as ReasoningEffort | undefined,
+    verbosity: oneOf(parseString(fields.verbosity), VERBOSITIES) as Agent["verbosity"],
     memory: fields.memory === "true",
     instructions: body,
   };

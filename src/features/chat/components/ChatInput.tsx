@@ -31,6 +31,7 @@ import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
+import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
@@ -48,7 +49,8 @@ export function ChatInput() {
   const config = getConfig();
 
   const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
-  const { models, model, setModel: onModelChange, effort, setEffort } = useChatModel();
+  const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
+  const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
   const { isResponding, queuedSends } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
   const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
@@ -740,6 +742,23 @@ export function ChatInput() {
                           value: effort ?? null,
                           defaultValue: model.defaultEffort,
                           onChange: setEffort,
+                        }
+                      : undefined
+                  }
+                  verbosity={{
+                    value: verbosity ?? null,
+                    defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                    onChange: setVerbosity,
+                  }}
+                  presets={
+                    presets.length > 1
+                      ? {
+                          steps: presets,
+                          value: modelPresetIndex(presets, model),
+                          onChange: (index) => {
+                            const { model: next, effort, verbosity } = presets[index];
+                            onModelChange({ ...next, effort, verbosity });
+                          },
                         }
                       : undefined
                   }

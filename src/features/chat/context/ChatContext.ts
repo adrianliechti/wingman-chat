@@ -21,6 +21,9 @@ export interface ChatContextType {
   /** Per-chat reasoning effort selection; null means the model/backend default. */
   effort: Model["effort"] | null;
   setEffort: (effort: Model["effort"] | null) => void;
+  /** Per-chat verbosity override; null means the model's configured default. */
+  verbosity: Model["verbosity"] | null;
+  setVerbosity: (verbosity: Model["verbosity"] | null) => void;
 
   // Chats
   chats: ChatEntry[];
@@ -87,7 +90,10 @@ export type ChatListContextType = Pick<
 >;
 export const ChatListContext = createContext<ChatListContextType | undefined>(undefined);
 
-export type ChatModelContextType = Pick<ChatContextType, "models" | "model" | "effort" | "setModel" | "setEffort">;
+export type ChatModelContextType = Pick<
+  ChatContextType,
+  "models" | "model" | "effort" | "verbosity" | "setModel" | "setEffort" | "setVerbosity"
+>;
 export const ChatModelContext = createContext<ChatModelContextType | undefined>(undefined);
 
 export type ChatConversationContextType = Pick<ChatContextType, "chat" | "messages" | "toolMeta">;

@@ -20,6 +20,8 @@ export interface Agent {
   name: string;
 
   model?: string; // model ID override for this agent
+  effort?: import("@/shared/types/chat").ReasoningEffort; // reasoning effort; unset uses the model default
+  verbosity?: NonNullable<import("@/shared/types/chat").Model["verbosity"]>; // response length; unset uses the model default
   instructions?: string;
 
   files?: import("@/features/repository/types/repository").RepositoryFile[];
