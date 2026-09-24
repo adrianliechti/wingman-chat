@@ -27,6 +27,9 @@ await test("precompresses nested runtime assets and replaces or removes stale va
     ["photo.png", Buffer.alloc(4096)],
     ["package.whl", Buffer.alloc(4096)],
     ["random.wasm", randomBytes(4096)],
+    ["logo_dark.svg", Buffer.from("<svg></svg>".repeat(200))],
+    ["icon_light.svg", Buffer.from("<svg></svg>".repeat(200))],
+    ["manifest.json", Buffer.from(JSON.stringify({ name: "x".repeat(2048) }))],
   ]);
   for (const [name, source] of [...files, ...skipped]) {
     await fs.writeFile(path.join(root, name), source);

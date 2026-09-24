@@ -10,6 +10,10 @@ import { brotliCompress, constants, gzip } from "node:zlib";
 const brotliAsync = promisify(brotliCompress);
 const gzipAsync = promisify(gzip);
 const compressible = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt", ".wasm"]);
+// Deployments replace branding files after the build (mounts, derived images).
+// A replacement can carry an older mtime than the build's variants, so the
+// server would keep serving the default logo; never precompress these.
+const replaceable = /^(?:(?:logo|icon)_[^/]+\.svg|manifest\.json|config\.json)$/;
 
 export async function compressAssets(root) {
   const totals = { files: 0, original: 0, brotli: 0, gzip: 0 };
@@ -24,10 +28,11 @@ export async function compressAssets(root) {
       if (!entry.isFile() || !compressible.has(path.extname(entry.name))) continue;
 
       const source = await fs.readFile(file);
+      const excluded = replaceable.test(path.relative(root, file).split(path.sep).join("/"));
       // Bound build memory by processing one asset at a time. Quality 6 gives
       // good WASM/JS compression without quality 11's much longer build times.
       const variants =
-        source.length < 1024
+        excluded || source.length < 1024
           ? []
           : await Promise.all([
               brotliAsync(source, { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }),
