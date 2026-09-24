@@ -9,12 +9,14 @@ interface BackgroundPackConfig {
   [packName: string]: BackgroundConfig[];
 }
 
-interface SupportConfig {
-  /** Label shown for the support link in the account menu. Defaults to "Support". */
+interface LinkConfig {
+  /** Label shown in the account menu. Defaults to the URL. */
   title?: string;
   /** Optional subtitle shown below the link label in the account menu. */
   description?: string;
   url?: string;
+  /** Common icon name, such as support, docs, learning, or cost. Defaults to link. */
+  icon?: string;
 }
 
 interface ToolConfig {
@@ -194,8 +196,10 @@ interface ConfigSchema {
   navigation?: boolean;
   bridge?: BridgeConfig;
   plugins?: PluginsConfig;
-  support?: SupportConfig;
-  cost?: SupportConfig;
+  links?: LinkConfig[];
+  /** Legacy links, used only when links is absent. */
+  support?: LinkConfig;
+  cost?: LinkConfig;
 
   tools: ToolConfig[];
   models: ModelConfig[];
@@ -246,8 +250,7 @@ interface Config {
   navigation: boolean;
   bridge: BridgeConfig | null;
   plugins: PluginsConfig | null;
-  support: SupportConfig | null;
-  cost: SupportConfig | null;
+  links: LinkConfig[];
 
   client: Client;
 
@@ -294,14 +297,20 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
     const cfg: ConfigSchema = await resp.json();
 
+    const links = cfg.links ?? [
+      { ...cfg.support, title: cfg.support?.title?.trim() || "Support", icon: cfg.support?.icon ?? "learning" },
+      { ...cfg.cost, title: cfg.cost?.title?.trim() || "Cost Dashboard", icon: cfg.cost?.icon ?? "cost" },
+    ];
+
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
       navigation: cfg.navigation !== false,
       bridge: cfg.bridge ?? null,
       plugins: cfg.plugins ?? null,
-      support: cfg.support ?? null,
-      cost: cfg.cost ?? null,
+      links: links
+        .filter((link) => link.url?.trim())
+        .map((link) => ({ ...link, url: link.url!.trim(), title: link.title?.trim() || link.url!.trim() })),
 
       client: new Client(undefined, cfg.models),
 

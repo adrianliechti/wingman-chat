@@ -5,8 +5,10 @@ type Config struct {
 	Disclaimer string   `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
 	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 	Plugins    *Plugins `json:"plugins,omitempty" yaml:"plugins,omitempty"`
-	Support    *Support `json:"support,omitempty" yaml:"support,omitempty"`
-	Cost       *Support `json:"cost,omitempty" yaml:"cost,omitempty"`
+	Links      []Link   `json:"links,omitempty" yaml:"links,omitempty"`
+	// Legacy account links, used when Links is absent.
+	Support *Link `json:"support,omitempty" yaml:"support,omitempty"`
+	Cost    *Link `json:"cost,omitempty" yaml:"cost,omitempty"`
 
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
 	Models []Model `json:"models,omitempty" yaml:"models,omitempty"`
@@ -37,10 +39,11 @@ type Config struct {
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
 }
 
-type Support struct {
+type Link struct {
 	Title       string `json:"title,omitempty" yaml:"title,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	URL         string `json:"url,omitempty" yaml:"url,omitempty"`
+	Icon        string `json:"icon,omitempty" yaml:"icon,omitempty"`
 }
 
 type Tool struct {

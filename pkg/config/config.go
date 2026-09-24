@@ -54,22 +54,27 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
 }
 
-// loadLinks reads links.yaml, which configures the support and cost entries
-// shown in the account menu.
+// loadLinks reads the ordered account-menu links from links.yaml. The old
+// support/cost mapping remains supported for existing deployments.
 func loadLinks(cfg *Config) {
-	var links struct {
-		Support *Support `yaml:"support"`
-		Cost    *Support `yaml:"cost"`
+	data, err := os.ReadFile("links.yaml")
+	if err != nil {
+		return
 	}
 
-	loadYAML("links.yaml", &links)
-
-	if links.Support != nil {
-		cfg.Support = links.Support
+	var links []Link
+	if err := yaml.Unmarshal(data, &links); err == nil {
+		cfg.Links = links
+		return
 	}
 
-	if links.Cost != nil {
-		cfg.Cost = links.Cost
+	var legacy struct {
+		Support *Link `yaml:"support"`
+		Cost    *Link `yaml:"cost"`
+	}
+	if err := yaml.Unmarshal(data, &legacy); err == nil {
+		cfg.Support = legacy.Support
+		cfg.Cost = legacy.Cost
 	}
 }
 

@@ -224,7 +224,8 @@ docker run -it --rm -p 8000:8000 \
 
 ## Configuration
 
-Wingman is configured through environment variables, YAML files, and a runtime `public/config.json`.
+Wingman is configured through environment variables and YAML files. The Go server exposes that
+configuration at `/config.json`; local frontend development uses `public/config.json` instead.
 
 **Connection**
 
@@ -235,7 +236,34 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 
 **Branding**
 
-- `TITLE`, `DISCLAIMER`, `SUPPORT_URL`, `BRIDGE_URL`
+- `TITLE`, `DISCLAIMER`, `BRIDGE_URL`
+
+**Account menu links**
+
+Add any number of links to `links.yaml` in the server's working directory, in display order:
+
+```yaml
+- title: Learning Hub
+  description: Guides to get started
+  url: https://example.com/support
+  icon: learning
+- title: AI Cost Dashboard
+  url: https://example.com/cost
+  icon: cost
+- title: Documentation
+  url: https://example.com/docs
+  icon: docs
+```
+
+For local frontend development, put the same array under `"links"` in `public/config.json`.
+`description` and `icon` are optional; a missing title falls back to the URL. Icon names are
+`support`, `docs`, `learning`, `cost`, `dashboard`, `status`, `community`, `feedback`, `mail`,
+and `link`. Missing or unknown icons use the generic link icon. Entries without a URL are hidden.
+Links open in a new tab. Use an empty array (`[]`) to hide all links.
+
+The old `support`/`cost` mapping in `links.yaml` and those fields in `public/config.json` remain
+supported. In JSON, `links` takes precedence, including an empty array. Changes require a server
+restart and browser refresh in production, or a browser refresh during frontend development.
 
 **Plugin hub**
 
@@ -255,6 +283,6 @@ Wingman is configured through environment variables, YAML files, and a runtime `
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
-backgrounds, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`,
+backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
