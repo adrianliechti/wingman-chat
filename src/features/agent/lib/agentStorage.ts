@@ -112,6 +112,8 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
   let tools: string[] = [];
   let servers: BridgeServer[] = [];
   let model: string | undefined;
+  let effort: Agent["effort"];
+  let verbosity: Agent["verbosity"];
   let memory: boolean | undefined;
 
   const mdContent = (await opfs.readText(`${agentPath}/AGENTS.md`)) || (await opfs.readText(`${agentPath}/AGENT.md`));
@@ -125,6 +127,8 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
       plugins = parsed.plugins;
       tools = parsed.tools;
       model = parsed.model;
+      effort = parsed.effort;
+      verbosity = parsed.verbosity;
       memory = parsed.memory || undefined;
     }
   } else {
@@ -186,6 +190,8 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
     servers,
     tools,
     model,
+    effort,
+    verbosity,
     memory,
     files: reconciled.files.length > 0 ? reconciled.files : undefined,
   };

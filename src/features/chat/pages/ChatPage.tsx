@@ -28,7 +28,7 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { getSavedModel } from "@/features/chat/hooks/useModels";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
@@ -94,9 +94,7 @@ export function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     if (model?.id === "realtime") {
-      const savedId = getSavedModelId();
-      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-      setModel(restored ?? null);
+      setModel(getSavedModel(models) ?? models[0] ?? null);
     }
     if (isListening) {
       void stopVoice();

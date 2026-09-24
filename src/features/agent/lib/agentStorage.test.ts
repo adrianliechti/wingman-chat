@@ -93,6 +93,8 @@ describe("agent storage", () => {
       ...agent(),
       name: 'Name: "Quoted"\nline',
       model: "provider:model",
+      effort: "high" as const,
+      verbosity: "low" as const,
       skills: ["a,b", "it's"],
       tools: ["one,two"],
       memory: true,
@@ -101,6 +103,8 @@ describe("agent storage", () => {
     expect(parseAgentMd(serializeAgentMd(value))).toEqual({
       name: value.name,
       model: value.model,
+      effort: "high",
+      verbosity: "low",
       skills: value.skills,
       plugins: [],
       tools: value.tools,
@@ -111,6 +115,10 @@ describe("agent storage", () => {
       name: "Shared",
       skills: ["a", "b"],
       instructions: "Body",
+    });
+    expect(parseAgentMd("---\nname: Shared\neffort: turbo\nverbosity: high\n---")).toMatchObject({
+      effort: undefined,
+      verbosity: "high",
     });
   });
 

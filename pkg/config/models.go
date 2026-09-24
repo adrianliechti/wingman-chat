@@ -136,6 +136,16 @@ type Chat struct {
 	Classification *Classification `json:"classification,omitempty" yaml:"classification,omitempty"`
 	Categories     []Category      `json:"categories,omitempty" yaml:"categories,omitempty"`
 	Risks          []Risk          `json:"risks,omitempty" yaml:"risks,omitempty"`
+
+	Presets []Preset `json:"presets,omitempty" yaml:"presets,omitempty"`
+}
+
+// Preset is one step of the chat model slider, ordered from fastest to most capable.
+type Preset struct {
+	Model     string `json:"model,omitempty" yaml:"model,omitempty"`
+	Effort    string `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Verbosity string `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+	Label     string `json:"label,omitempty" yaml:"label,omitempty"`
 }
 
 type Compaction struct {
@@ -144,6 +154,7 @@ type Compaction struct {
 
 type Classification struct {
 	Model     string  `json:"model,omitempty" yaml:"model,omitempty"`
+	Effort    string  `json:"effort,omitempty" yaml:"effort,omitempty"`
 	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
 }
 

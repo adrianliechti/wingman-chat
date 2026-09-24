@@ -5,6 +5,9 @@ import { defaultModelId } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
+// Kept apart from STORAGE_KEY so its "id@effort" format stays readable by older builds.
+const VERBOSITY_STORAGE_KEY = "app_model_verbosity";
+const VERBOSITIES = new Set<string>(["low", "medium", "high"]);
 
 type Effort = NonNullable<Model["effort"]>;
 const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -26,6 +29,29 @@ export function getSavedModelId(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The saved default model with its saved effort and verbosity, or null when it's
+ * no longer available. Used to leave voice mode without losing those settings.
+ */
+export function getSavedModel(models: readonly Model[]): Model | null {
+  let saved: { id: string; effort?: Effort } | null = null;
+  let verbosity: string | null = null;
+  try {
+    saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
+    verbosity = localStorage.getItem(VERBOSITY_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage errors.
+  }
+  const model = models.find((model) => model.id === saved?.id);
+  if (!model) return null;
+  const effort = saved?.effort;
+  return {
+    ...model,
+    ...(effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort)) ? { effort } : {}),
+    ...(verbosity && VERBOSITIES.has(verbosity) ? { verbosity: verbosity as Model["verbosity"] } : {}),
+  };
 }
 
 export function useModels() {
@@ -54,18 +80,7 @@ export function useModels() {
     if (!models.length) return;
     setSelectedModelState((current) => {
       if (current !== undefined) return current;
-      let saved: { id: string; effort?: Effort } | null = null;
-      try {
-        saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
-      } catch {
-        // Ignore localStorage errors.
-      }
-      const model = models.find((model) => model.id === saved?.id);
-      if (!model) return models.find((model) => model.id === defaultModelId(models)) ?? models[0];
-      const effort = saved?.effort;
-      return effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort))
-        ? { ...model, effort }
-        : model;
+      return getSavedModel(models) ?? models.find((model) => model.id === defaultModelId(models)) ?? models[0];
     });
   }, [models]);
 
@@ -78,8 +93,12 @@ export function useModels() {
         // Persist the effort alongside the id ("id@effort") so a fresh chat after
         // reload defaults to the last chosen effort, not just the last model.
         localStorage.setItem(STORAGE_KEY, model.effort ? `${model.id}@${model.effort}` : model.id);
+        // Verbosity a slider preset chose; unset leaves the model's own default.
+        if (model.verbosity) localStorage.setItem(VERBOSITY_STORAGE_KEY, model.verbosity);
+        else localStorage.removeItem(VERBOSITY_STORAGE_KEY);
       } else if (!model) {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(VERBOSITY_STORAGE_KEY);
       }
     } catch {
       // Silently handle localStorage errors

@@ -3,7 +3,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChatActions, useChatList, useChatModel } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { getSavedModel } from "@/features/chat/hooks/useModels";
 import type { ToolContextFactory } from "@/features/voice/hooks/useVoiceWebSockets";
 import {
   useVoiceWebSockets,
@@ -129,11 +129,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setVoiceToolCallRef.current(null);
 
     if (reason?.fatal) {
-      const savedId = getSavedModelId();
       const restored =
-        (savedId && modelsRef.current.find((m) => m.id === savedId)) ||
-        modelsRef.current.find((m) => m.id !== "realtime") ||
-        null;
+        getSavedModel(modelsRef.current) ?? modelsRef.current.find((m) => m.id !== "realtime") ?? null;
       setModelRef.current(restored);
       console.error("[voice] session ended:", reason.message);
       alert(`Voice mode stopped: ${reason.message}`);

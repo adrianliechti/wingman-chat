@@ -19,7 +19,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -31,6 +31,7 @@ import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
+import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
@@ -48,7 +49,8 @@ export function ChatInput() {
   const config = getConfig();
 
   const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
-  const { models, model, setModel: onModelChange, effort, setEffort } = useChatModel();
+  const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
+  const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
   const { isResponding, queuedSends } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
   const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
@@ -743,6 +745,23 @@ export function ChatInput() {
                         }
                       : undefined
                   }
+                  verbosity={{
+                    value: verbosity ?? null,
+                    defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                    onChange: setVerbosity,
+                  }}
+                  presets={
+                    presets.length > 1
+                      ? {
+                          steps: presets,
+                          value: modelPresetIndex(presets, model),
+                          onChange: (index) => {
+                            const { model: next, effort, verbosity } = presets[index];
+                            onModelChange({ ...next, effort, verbosity });
+                          },
+                        }
+                      : undefined
+                  }
                   dropdownClassName="w-auto min-w-48 whitespace-nowrap"
                   trigger={({ getProps }) => (
                     <button
@@ -970,9 +989,7 @@ export function ChatInput() {
                       title="Cancel connecting"
                       onClick={async () => {
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       <LoaderCircle size={12} className="animate-spin" />
@@ -988,9 +1005,7 @@ export function ChatInput() {
                           return;
                         }
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       {isListening ? (

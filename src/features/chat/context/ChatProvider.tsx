@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import type { Agent } from "@/features/agent/types/agent";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { buildSelectionEditMessage } from "@/features/chat/lib/selectionMessage";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "../hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
-import { useModels } from "@/features/chat/hooks/useModels";
+import { getSavedModel, useModels } from "@/features/chat/hooks/useModels";
 import { useChatRun } from "../hooks/useChatRun";
 import { createChatCreationGate } from "../lib/chatCreation";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
@@ -15,12 +16,29 @@ import { type ChatContextType } from "./ChatContext";
 
 import { ChatContextProviders } from "./ChatContextProviders";
 
+// A stored effort override only while the model still offers it, so a config
+// change never sends a level the model no longer supports.
+function supportedEffort(model: Model, effort: Model["effort"]): Model["effort"] {
+  const supported = model.supportedEfforts;
+  return effort && supported?.length && !supported.includes(effort) ? undefined : effort;
+}
+
+// An agent's effort and verbosity override its model's defaults.
+function withAgentSettings(model: Model, agent: Agent): Model {
+  const effort = supportedEffort(model, agent.effort);
+  return {
+    ...model,
+    ...(effort ? { effort } : {}),
+    ...(agent.verbosity ? { verbosity: agent.verbosity } : {}),
+  };
+}
+
 interface ChatProviderProps {
   children: React.ReactNode;
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { models, selectedModel, setSelectedModel, getSavedModelId } = useModels();
+  const { models, selectedModel, setSelectedModel } = useModels();
   const {
     chats,
     isLoaded: chatsLoaded,
@@ -57,19 +75,36 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chatError = !chat && loadError?.id === chatId ? loadError.error : null;
   const chatLoading = !!chatId && !chat && !chatError;
   const createChatOnce = useMemo(() => createChatCreationGate(), []);
-  const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
   const currentChatModel = chat?.model;
+  const agentModel = useMemo(() => {
+    if (!currentAgent?.model) return null;
+    // The catalog can be loading or omit a previously selected model. Keep
+    // applying agent settings to a matching cached model in either case.
+    const found =
+      models.find((m) => m.id === currentAgent.model) ??
+      [currentChatModel, selectedModel].find((m) => m?.id === currentAgent.model);
+    return found ? withAgentSettings(found, currentAgent) : null;
+  }, [models, currentAgent, currentChatModel, selectedModel]);
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
-  // current, but keep the chat's stored `effort` (the per-chat selection, which
-  // starts at the model's configured default and the user can change in the picker).
+  // current, but keep the chat's stored `effort` and `verbosity` (the per-chat
+  // selection, which starts at the model's configured default and the user can
+  // change in the picker or via a slider preset).
   // Memoized so the effort overlay doesn't mint a new `model` object every render
   // (which would thrash useChatContext and other model-keyed memos on each token).
   const chatModel = useMemo(() => {
     if (!currentChatModel) return null;
     const resolved = models.find((m) => m.id === currentChatModel.id) ?? currentChatModel;
-    return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
+    return {
+      ...resolved,
+      ...("effort" in currentChatModel ? { effort: supportedEffort(resolved, currentChatModel.effort) } : {}),
+      // A slider preset can pick a verbosity for the chat, just like effort.
+      ...("verbosity" in currentChatModel ? { verbosity: currentChatModel.verbosity } : {}),
+    };
   }, [models, currentChatModel]);
-  const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
+  // A selected agent owns the model, effort and verbosity (the picker is hidden
+  // meanwhile), so switching agents or editing one in the drawer also applies
+  // to existing chats. Deselecting it falls back to the chat's own model.
+  const model = agentModel ?? chatModel ?? selectedModel ?? models[0];
   const {
     tools: chatTools,
     instructions: chatInstructions,
@@ -129,12 +164,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       // When starting a new chat, reset realtime model back to the last saved chat model
       if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
-        const savedId = getSavedModelId();
-        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-        setSelectedModel(restored ?? null);
+        setSelectedModel(getSavedModel(models) ?? models[0] ?? null);
       }
     },
-    [closeApp, selectedModel, chatModel, models, setSelectedModel, getSavedModelId],
+    [closeApp, selectedModel, chatModel, models, setSelectedModel],
   );
 
   const deleteChat = useCallback(
@@ -173,6 +206,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setModel(next);
     },
     [model, setModel],
+  );
+
+  // Per-chat verbosity, stored on the chat's model like effort. Clearing it
+  // restores the configured level, so "Default" follows the model config.
+  const configuredVerbosity = model ? models.find((m) => m.id === model.id)?.verbosity : undefined;
+  const setVerbosity = useCallback(
+    (verbosity: Model["verbosity"] | null) => {
+      if (!model) return;
+      setModel({ ...model, verbosity: verbosity ?? configuredVerbosity });
+    },
+    [model, configuredVerbosity, setModel],
   );
 
   // Single chat-creation path. Returns the active chat (creating it if needed)
@@ -274,6 +318,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setModel,
     effort: model?.effort ?? null,
     setEffort,
+    // A level equal to the configured one is the default, not an override.
+    verbosity: model?.verbosity && model.verbosity !== configuredVerbosity ? model.verbosity : null,
+    setVerbosity,
 
     // Chats
     chats,

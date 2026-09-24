@@ -72,7 +72,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 // outside-click guard needed to keep the menu open while toggling submenu items.
 
 const MENU_PANEL_CLASS =
-  "rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1";
+  "rounded-xl border border-neutral-200/80 dark:border-white/10 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl shadow-xl shadow-black/15 dark:shadow-black/60 p-1";
 
 const ROW_CLASS =
   "group flex w-full items-center gap-3 px-3 py-2 rounded-lg text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5 focus:bg-neutral-100/60 dark:focus:bg-white/5 focus:outline-none transition-colors";

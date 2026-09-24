@@ -149,6 +149,17 @@ export interface CompactionConfig {
   threshold?: number;
 }
 
+/** One step of the chat model slider; presets are ordered fastest to most capable. */
+export interface ModelPresetConfig {
+  model: string;
+  /** Reasoning effort for this step; unset uses the model's default. */
+  effort?: ReasoningEffort;
+  /** Response verbosity for this step; unset uses the model's default. */
+  verbosity?: Model["verbosity"];
+  /** Display name for this step; defaults to the model name. */
+  label?: string;
+}
+
 interface ChatConfig {
   instructions?: string;
   retentionDays?: number;
@@ -158,6 +169,8 @@ interface ChatConfig {
   classification?: ClassificationConfig;
   categories?: CategoryConfig[];
   risks?: RiskConfig[];
+  /** Replaces the model list with a slider when at least two presets are available. */
+  presets?: ModelPresetConfig[];
 }
 
 export interface DriveConfig {

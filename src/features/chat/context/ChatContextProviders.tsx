@@ -27,10 +27,12 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       models: value.models,
       model: value.model,
       effort: value.effort,
+      verbosity: value.verbosity,
       setModel: value.setModel,
       setEffort: value.setEffort,
+      setVerbosity: value.setVerbosity,
     }),
-    [value.models, value.model, value.effort, value.setModel, value.setEffort],
+    [value.models, value.model, value.effort, value.verbosity, value.setModel, value.setEffort, value.setVerbosity],
   );
   const chatConversation = useMemo(
     () => ({

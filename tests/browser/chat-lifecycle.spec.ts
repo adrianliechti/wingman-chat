@@ -6,6 +6,101 @@ async function open(page: Page) {
   await page.waitForFunction(() => window.chatE2E?.state().ready);
 }
 
+for (const existingChat of [false, true]) {
+  test(`agent settings survive a missing catalog in ${existingChat ? "an existing" : "a new"} chat`, async ({
+    page,
+  }) => {
+    await open(page);
+    await page.evaluate(() =>
+      window.chatE2E.setModel({
+        id: "fixture",
+        name: "Fixture",
+        effort: "low",
+        verbosity: "low",
+        supportedEfforts: ["low", "high"],
+      }),
+    );
+    await expect.poll(() => page.evaluate(() => window.chatE2E.state().model?.effort)).toBe("low");
+    if (existingChat) {
+      await page.evaluate(() => window.chatE2E.send("Before selecting the agent"));
+      await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+      await page.evaluate(() => window.chatE2E.finish(0, "First answer"));
+      await expect(page.getByTestId("messages")).toContainText("First answer");
+    }
+    await page.evaluate(() =>
+      window.setChatAgent({
+        id: "agent",
+        name: "Agent",
+        model: "fixture",
+        effort: "high",
+        verbosity: "high",
+        skills: [],
+        plugins: [],
+        tools: [],
+        servers: [],
+      }),
+    );
+    await expect
+      .poll(() => page.evaluate(() => window.chatE2E.state().model))
+      .toMatchObject({
+        id: "fixture",
+        effort: "high",
+        verbosity: "high",
+      });
+    await page.evaluate(() => window.chatE2E.refreshModels([]));
+    await expect
+      .poll(() => page.evaluate(() => window.chatE2E.state().model))
+      .toMatchObject({
+        id: "fixture",
+        effort: "high",
+        verbosity: "high",
+      });
+    await page.evaluate(() => window.chatE2E.send("Use the agent settings"));
+    const requestIndex = existingChat ? 1 : 0;
+    await page.waitForFunction((index) => window.chatE2E.state().calls.length === index + 1, requestIndex);
+    expect(await page.evaluate((index) => window.chatE2E.state().calls[index], requestIndex)).toMatchObject({
+      model: "fixture",
+      effort: "high",
+      verbosity: "high",
+    });
+    await page.evaluate((index) => window.chatE2E.finish(index, "Agent answer"), requestIndex);
+    await expect(page.getByTestId("messages")).toContainText("Agent answer");
+    if (existingChat) {
+      await page.evaluate(() => window.setChatAgent(null));
+      await expect
+        .poll(() => page.evaluate(() => window.chatE2E.state().model))
+        .toMatchObject({
+          effort: "low",
+          verbosity: "low",
+        });
+    }
+  });
+}
+
+test("an unavailable agent model does not apply its settings to a different cached model", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.chatE2E.setModel({ id: "fixture", name: "Fixture", effort: "low" }));
+  await page.evaluate(() => window.chatE2E.refreshModels([]));
+  await page.evaluate(() =>
+    window.setChatAgent({
+      id: "agent",
+      name: "Agent",
+      model: "other",
+      effort: "high",
+      skills: [],
+      plugins: [],
+      tools: [],
+      servers: [],
+    }),
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.chatE2E.state().model))
+    .toMatchObject({
+      id: "fixture",
+      effort: "low",
+    });
+});
+
 test("streaming leaves list, action, and composer subscribers unchanged; queued sends retain fresh history", async ({
   page,
 }) => {
