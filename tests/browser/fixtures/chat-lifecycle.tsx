@@ -1,6 +1,7 @@
-import { memo, StrictMode, useEffect } from "react";
+import { memo, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentContext, type AgentContextType } from "../../../src/features/agent/context/AgentContext";
+import type { Agent } from "../../../src/features/agent/types/agent";
 import { ArtifactsProvider } from "../../../src/features/artifacts/context/ArtifactsProvider";
 import { ChatProvider } from "../../../src/features/chat/context/ChatProvider";
 import {
@@ -17,24 +18,33 @@ import { ProfileContext, type ProfileContextType } from "../../../src/features/s
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
-import { type Content, type Message, getTextFromContent } from "../../../src/shared/types/chat";
+import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
+import { type Content, type Message, type Model, getTextFromContent } from "../../../src/shared/types/chat";
 import type { ElicitationResult } from "../../../src/shared/types/elicitation";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 
 const config = await loadConfig();
 if (!config) throw new Error("Missing config");
-config.client.listModels = async () => [{ id: "fixture", name: "Fixture" }];
+let inventory: Model[] = [{ id: "fixture", name: "Fixture", supportedEfforts: ["low", "high"] }];
+config.client.listModels = async () => inventory;
+const catalog = getModelCatalog(config);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
 const calls: {
+  model: string;
+  effort?: Model["effort"];
+  verbosity?: Model["verbosity"];
   input: Message[];
   stream: (text: string) => void;
   finish: (text: string) => void;
   signal?: AbortSignal;
 }[] = [];
-config.client.complete = async (_model, _instructions, input, _tools, handler, options) =>
+config.client.complete = async (model, _instructions, input, _tools, handler, options) =>
   new Promise((resolve) => {
     // Deliberately ignore cancellation in this fake service to exercise late callbacks.
     calls.push({
+      model,
+      effort: options?.effort,
+      verbosity: options?.verbosity,
       input,
       signal: options?.signal,
       stream: (text) => handler?.([{ type: "text", text }]),
@@ -100,6 +110,7 @@ function Fixture() {
       ready: chat.chatsLoaded && !!chat.model,
       chatId: chat.chatId,
       loadedId: chat.chat?.id,
+      model: chat.model,
       loading: chat.chatLoading,
       error: chat.chatError,
       chats: chat.chats,
@@ -109,9 +120,20 @@ function Fixture() {
       renders: { ...renders },
       results: [...results],
       reads: [...reads],
-      calls: calls.map((call) => ({ input: call.input, aborted: call.signal?.aborted })),
+      calls: calls.map(({ model, effort, verbosity, input, signal }) => ({
+        model,
+        effort,
+        verbosity,
+        input,
+        aborted: signal?.aborted,
+      })),
     }),
     select: chat.selectChat,
+    setModel: chat.setModel,
+    refreshModels: async (models: Model[]) => {
+      inventory = models;
+      await catalog.refresh(true);
+    },
     load: chat.loadChat,
     create: chat.createChat,
     remove: chat.deleteChat,
@@ -168,10 +190,16 @@ function Fixture() {
   );
 }
 
+function AgentOwner({ children }: { children: ReactNode }) {
+  const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
+  window.setChatAgent = setCurrentAgent;
+  return <AgentContext value={{ currentAgent } as AgentContextType}>{children}</AgentContext>;
+}
+
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <StrictMode>
-    <AgentContext value={{ currentAgent: null } as AgentContextType}>
+    <AgentOwner>
       <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
         <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
           <AppContext value={{ closeApp: async () => {} } as AppContextType}>
@@ -183,17 +211,19 @@ root.render(
           </AppContext>
         </ToolsContext>
       </ProfileContext>
-    </AgentContext>
+    </AgentOwner>
   </StrictMode>,
 );
 
 declare global {
   interface Window {
+    setChatAgent(agent: Agent | null): void;
     chatE2E: {
       state(): {
         ready: boolean;
         chatId: string | null;
         loadedId?: string;
+        model: Model | null;
         loading: boolean;
         error: string | null;
         chats: import("../../../src/shared/types/chat").ChatEntry[];
@@ -203,9 +233,17 @@ declare global {
         renders: typeof renders;
         results: typeof results;
         reads: string[];
-        calls: { input: Message[]; aborted?: boolean }[];
+        calls: {
+          model: string;
+          effort?: Model["effort"];
+          verbosity?: Model["verbosity"];
+          input: Message[];
+          aborted?: boolean;
+        }[];
       };
       select(id: string | null): void;
+      setModel(model: Model | null): void;
+      refreshModels(models: Model[]): Promise<void>;
       load(id: string): Promise<import("../../../src/shared/types/chat").Chat>;
       create(): Promise<import("../../../src/shared/types/chat").Chat>;
       remove(id: string): void;

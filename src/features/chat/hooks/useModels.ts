@@ -31,6 +31,29 @@ export function getSavedModelId(): string | null {
   }
 }
 
+/**
+ * The saved default model with its saved effort and verbosity, or null when it's
+ * no longer available. Used to leave voice mode without losing those settings.
+ */
+export function getSavedModel(models: readonly Model[]): Model | null {
+  let saved: { id: string; effort?: Effort } | null = null;
+  let verbosity: string | null = null;
+  try {
+    saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
+    verbosity = localStorage.getItem(VERBOSITY_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage errors.
+  }
+  const model = models.find((model) => model.id === saved?.id);
+  if (!model) return null;
+  const effort = saved?.effort;
+  return {
+    ...model,
+    ...(effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort)) ? { effort } : {}),
+    ...(verbosity && VERBOSITIES.has(verbosity) ? { verbosity: verbosity as Model["verbosity"] } : {}),
+  };
+}
+
 export function useModels() {
   const config = getConfig();
   const available = useModelCatalog("completer");
@@ -57,26 +80,7 @@ export function useModels() {
     if (!models.length) return;
     setSelectedModelState((current) => {
       if (current !== undefined) return current;
-      let saved: { id: string; effort?: Effort } | null = null;
-      try {
-        saved = parseSavedModel(localStorage.getItem(STORAGE_KEY));
-      } catch {
-        // Ignore localStorage errors.
-      }
-      const model = models.find((model) => model.id === saved?.id);
-      if (!model) return models.find((model) => model.id === defaultModelId(models)) ?? models[0];
-      const effort = saved?.effort;
-      let verbosity: string | null = null;
-      try {
-        verbosity = localStorage.getItem(VERBOSITY_STORAGE_KEY);
-      } catch {
-        // Ignore localStorage errors.
-      }
-      return {
-        ...model,
-        ...(effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort)) ? { effort } : {}),
-        ...(verbosity && VERBOSITIES.has(verbosity) ? { verbosity: verbosity as Model["verbosity"] } : {}),
-      };
+      return getSavedModel(models) ?? models.find((model) => model.id === defaultModelId(models)) ?? models[0];
     });
   }, [models]);
 

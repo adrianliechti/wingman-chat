@@ -235,8 +235,8 @@ export function useChatRun({
           agentName: "chat",
           options: {
             effort: currentModel.effort,
-            summary: model?.summary,
-            verbosity: model?.verbosity,
+            summary: currentModel.summary,
+            verbosity: currentModel.verbosity,
             signal: abortController.signal,
           },
           prepareMessages: (msgs) => loadAttachments(prepareChatMessages(msgs, requestContext), abortController.signal),

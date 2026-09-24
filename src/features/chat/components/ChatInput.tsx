@@ -19,7 +19,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -989,9 +989,7 @@ export function ChatInput() {
                       title="Cancel connecting"
                       onClick={async () => {
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       <LoaderCircle size={12} className="animate-spin" />
@@ -1007,9 +1005,7 @@ export function ChatInput() {
                           return;
                         }
                         await stopVoice();
-                        const savedId = getSavedModelId();
-                        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
-                        onModelChange(restored ?? null);
+                        onModelChange(getSavedModel(models) ?? models[0] ?? null);
                       }}
                     >
                       {isListening ? (
