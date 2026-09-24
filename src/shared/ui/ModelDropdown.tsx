@@ -2,6 +2,7 @@ import {
   autoUpdate,
   FloatingFocusManager,
   FloatingNode,
+  FloatingOverlay,
   FloatingPortal,
   FloatingTree,
   flip,
@@ -19,10 +20,14 @@ import {
   useInteractions,
   useRole,
   useTransitionStyles,
+  type FloatingContext,
+  type Placement,
+  type Side,
 } from "@floating-ui/react";
 import { AlignLeft, Boxes, Check, ChevronRight, Gauge, Mic, Search } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import type { ModelPreset } from "@/shared/lib/modelPresets";
 import type { Model } from "@/shared/types/chat";
@@ -31,7 +36,7 @@ import type { Model } from "@/shared/types/chat";
 const SEARCH_THRESHOLD = 8;
 
 const PANEL_CLASS =
-  "rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1";
+  "rounded-xl border border-neutral-200/80 dark:border-white/10 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl shadow-xl shadow-black/15 dark:shadow-black/60 p-1";
 
 type Effort = NonNullable<Model["effort"]>;
 
@@ -224,6 +229,46 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ─── Motion ───────────────────────────────────────────────────────────────────
+// Panels unfold from their trigger: a short slide and scale with a soft landing,
+// closing a little faster than they open. Reduced motion keeps it a plain cut.
+
+const EASE_OUT = "cubic-bezier(0.16, 1, 0.3, 1)";
+
+// Start slightly toward the trigger, then settle into place.
+const SLIDE_FROM: Record<Side, string> = {
+  bottom: "translateY(-6px)",
+  top: "translateY(6px)",
+  right: "translateX(-6px)",
+  left: "translateX(6px)",
+};
+
+// Scale from the corner nearest the trigger.
+function transformOrigin(side: Side, placement: Placement) {
+  const align = placement.split("-")[1];
+  if (side === "top" || side === "bottom") {
+    const x = align === "start" ? "left" : align === "end" ? "right" : "center";
+    return `${side === "bottom" ? "top" : "bottom"} ${x}`;
+  }
+  const y = align === "start" ? "top" : align === "end" ? "bottom" : "center";
+  return `${y} ${side === "right" ? "left" : "right"}`;
+}
+
+function usePanelTransition(context: FloatingContext, duration: { open: number; close: number }) {
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  return useTransitionStyles(context, {
+    duration: reduceMotion ? 0 : duration,
+    initial: ({ side }) => ({
+      opacity: 0,
+      transform: reduceMotion ? "none" : `${SLIDE_FROM[side]} scale(0.96)`,
+    }),
+    common: ({ side, placement }) => ({
+      transformOrigin: transformOrigin(side, placement),
+      transitionTimingFunction: EASE_OUT,
+    }),
+  });
+}
+
 // ─── Tree-aware close ─────────────────────────────────────────────────────────
 // The dropdown and its effort flyout share one FloatingTree so the root's
 // useDismiss treats a click inside the (portaled) submenu as "inside". Selecting
@@ -272,6 +317,7 @@ function Flyout({
   const dismiss = useDismiss(context, { bubbles: true });
   const role = useRole(context, { role: "menu" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, click, dismiss, role]);
+  const { isMounted, styles: transitionStyles } = usePanelTransition(context, { open: 180, close: 120 });
 
   // Collapse when a sibling submenu opens so only one flyout is open at a time.
   useEffect(() => {
@@ -302,10 +348,12 @@ function Flyout({
         )}
         <ChevronRight size={14} className="shrink-0 text-neutral-400" />
       </button>
-      {isOpen && (
+      {isMounted && (
         <FloatingPortal>
           <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
-            <div className={cn(PANEL_CLASS, panelClassName)}>{children}</div>
+            <div style={transitionStyles} className={cn(PANEL_CLASS, panelClassName)}>
+              {children}
+            </div>
           </div>
         </FloatingPortal>
       )}
@@ -431,7 +479,7 @@ function PresetSlider({
   };
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col select-none">
       <div className="px-3 pt-2 pb-1">
         <div className="flex justify-between text-[11px] font-medium text-neutral-400 dark:text-neutral-500">
           <span>Faster</span>
@@ -453,8 +501,13 @@ function PresetSlider({
           onKeyDown={onKeyDown}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
+            e.currentTarget.focus({ preventScroll: true });
             setDragIndex(indexAt(e.clientX));
           }}
+          // `select-none` only covers the track; cancelling mousedown stops the drag
+          // (or a double-click) from starting a selection in the text around it.
+          // That also skips focusing, hence the explicit focus above.
+          onMouseDown={(e) => e.preventDefault()}
           onPointerMove={(e) => {
             if (dragIndex !== null) setDragIndex(indexAt(e.clientX));
           }}
@@ -544,9 +597,13 @@ function ModelDropdownRoot({
   const dismiss = useDismiss(context, { bubbles: { escapeKey: false, outsidePress: true } });
   const { getReferenceProps, getFloatingProps } = useInteractions([click, role, dismiss]);
 
-  const { isMounted, styles: transitionStyles } = useTransitionStyles(context, {
-    duration: 100,
-    initial: { opacity: 0, transform: "scale(0.95)" },
+  const { isMounted, styles: transitionStyles } = usePanelTransition(context, { open: 220, close: 150 });
+  // The dimmed backdrop fades on its own, slower curve so it eases in behind the panel.
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const { isMounted: isOverlayMounted, styles: overlayStyles } = useTransitionStyles(context, {
+    duration: reduceMotion ? 0 : { open: 280, close: 200 },
+    initial: { opacity: 0 },
+    common: { transitionTimingFunction: "ease-out" },
   });
 
   // Any leaf selection emits a tree "click" to close the whole stack.
@@ -727,6 +784,12 @@ function ModelDropdownRoot({
       })}
 
       <TreeCloseContext.Provider value={closeAll}>
+        {isOverlayMounted && (
+          <FloatingPortal>
+            {/* Dims the page so the open panel stands out; a click on it dismisses. */}
+            <FloatingOverlay className="z-9998 bg-black/10 dark:bg-black/40" style={overlayStyles} />
+          </FloatingPortal>
+        )}
         {isMounted && (
           <FloatingPortal>
             <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>

@@ -24,6 +24,7 @@ export function AccountMenu({ onOpenSettings }: AccountMenuProps) {
   return (
     <DropdownMenu
       anchor="bottom end"
+      backdrop
       panelClassName="min-w-72"
       trigger={
         <MenuButton

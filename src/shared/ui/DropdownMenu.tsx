@@ -1,7 +1,7 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Menu, MenuButton, MenuItem, MenuItems, Portal, Transition } from "@headlessui/react";
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
-import { ITEM_CLASS, ITEM_DESTRUCTIVE_CLASS, PANEL_CLASS } from "./menuStyles";
+import { BACKDROP_CLASS, ITEM_CLASS, ITEM_DESTRUCTIVE_CLASS, PANEL_CLASS } from "./menuStyles";
 
 // ─── Divider ─────────────────────────────────────────────────────────────────
 
@@ -97,21 +97,53 @@ export interface DropdownMenuProps {
   anchor?: string;
   /** Extra classes appended to the panel. Useful for min-w, max-h overrides. */
   panelClassName?: string;
+  /** Dim the page while open. For top-level pickers, not small row menus. */
+  backdrop?: boolean;
   children: ReactNode;
 }
 
-export function DropdownMenu({ trigger, anchor = "bottom start", panelClassName, children }: DropdownMenuProps) {
+// The panel unfolds from its trigger: it grows from the anchored corner and
+// slides in from the trigger's side. Literal classes so Tailwind can see them.
+const ANCHOR_MOTION: Record<string, string> = {
+  "bottom start": "origin-top-left data-closed:-translate-y-1.5",
+  "bottom end": "origin-top-right data-closed:-translate-y-1.5",
+  bottom: "origin-top data-closed:-translate-y-1.5",
+  "top start": "origin-bottom-left data-closed:translate-y-1.5",
+  "top end": "origin-bottom-right data-closed:translate-y-1.5",
+  top: "origin-bottom data-closed:translate-y-1.5",
+};
+
+export function DropdownMenu({
+  trigger,
+  anchor = "bottom start",
+  panelClassName,
+  backdrop,
+  children,
+}: DropdownMenuProps) {
   return (
     <Menu>
-      {trigger}
-      <MenuItems
-        modal={false}
-        transition
-        anchor={anchor as Parameters<typeof MenuItems>[0]["anchor"]}
-        className={[PANEL_CLASS, panelClassName].filter(Boolean).join(" ")}
-      >
-        {children}
-      </MenuItems>
+      {({ open }) => (
+        <>
+          {trigger}
+          {backdrop && (
+            // Portaled: a fixed element inside a blurred header would be
+            // positioned relative to the header instead of the viewport.
+            <Portal>
+              <Transition show={open}>
+                <div aria-hidden="true" className={BACKDROP_CLASS} />
+              </Transition>
+            </Portal>
+          )}
+          <MenuItems
+            modal={false}
+            transition
+            anchor={anchor as Parameters<typeof MenuItems>[0]["anchor"]}
+            className={[PANEL_CLASS, ANCHOR_MOTION[anchor], panelClassName].filter(Boolean).join(" ")}
+          >
+            {children}
+          </MenuItems>
+        </>
+      )}
     </Menu>
   );
 }

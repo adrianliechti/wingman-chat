@@ -58,7 +58,7 @@ export function SelectMenu<T extends string | null>({
         <Listbox.Options
           anchor="bottom"
           transition
-          className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 z-[200] transition duration-100 ease-in data-closed:opacity-0"
+          className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200/80 dark:border-white/10 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl shadow-xl shadow-black/15 dark:shadow-black/60 p-1 z-[200] transition duration-100 ease-in data-closed:opacity-0"
         >
           {options.map((option) => (
             <Listbox.Option
