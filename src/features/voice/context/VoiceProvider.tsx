@@ -23,6 +23,7 @@ import type { Elicitation } from "@/shared/types/elicitation";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import type { VoiceContextType } from "./VoiceContext";
 import { VoiceContext } from "./VoiceContext";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
 interface VoiceProviderProps {
   children: React.ReactNode;
@@ -269,7 +270,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (!isCurrent()) return;
       session.chatId = sessionChat.id;
       voiceChatIdRef.current = sessionChat.id;
-      const realtimeModel = config.voice?.model;
+      const realtimeModel = await resolveModel(config.voice?.model, "realtime");
+      if (!isCurrent()) return;
       // Realtime transcription has its own model contract; file STT models
       // (including non-OpenAI providers) are not interchangeable with it.
       const transcribeModel = config.voice?.transcriber;

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
 type PlayButtonProps = {
   text: string;
@@ -37,7 +38,7 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     setStatus("loading");
     try {
       const config = getConfig();
-      const model = config.tts?.model ?? "";
+      const model = await resolveModel(config.tts?.model, "synthesizer");
       const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
       await config.client.speakText(model, text, resolvedVoice, outputDeviceId, {
         signal: controller.signal,

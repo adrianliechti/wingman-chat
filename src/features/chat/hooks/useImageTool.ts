@@ -7,6 +7,8 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { withRendererFallback } from "@/shared/lib/models";
+import { pickModel } from "@/shared/lib/modelSelection";
+import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
@@ -60,11 +62,15 @@ export function useImageTool(): Tool | null {
   }, [config.renderer]);
 
   const client = config.client;
+  const catalog = useModelCatalog();
 
   const buildTool = useCallback((): Tool => {
     const elicitation = config.renderer?.elicitation;
-    const model = config.renderer?.model || "";
-    const caps = withRendererFallback(config.models.find((entry) => entry.id === model) ?? { id: model, name: model });
+    const model = pickModel(catalog, config.renderer?.model, "renderer");
+    // The catalog may not have loaded yet, or may type a configured alias
+    // differently — config overrides still carry the renderer's capabilities.
+    const entry = catalog.find((m) => m.id === model) ?? config.models.find((m) => m.id === model);
+    const caps = withRendererFallback(entry ?? { id: model, name: model });
 
     // Advertise only the controls this renderer honors — the same capability
     // mapping the Canvas pickers use — so the model isn't offered aspect ratios,
@@ -231,7 +237,7 @@ export function useImageTool(): Tool | null {
         }
       },
     };
-  }, [client, config.models, config.renderer?.elicitation, config.renderer?.model]);
+  }, [client, catalog, config.models, config.renderer?.elicitation, config.renderer?.model]);
 
   return useMemo<Tool | null>(() => (isAvailable ? buildTool() : null), [isAvailable, buildTool]);
 }

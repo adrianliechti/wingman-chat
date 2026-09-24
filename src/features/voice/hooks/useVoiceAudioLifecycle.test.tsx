@@ -143,7 +143,7 @@ describe("voice sessions using the actual recorder and player", () => {
     const permission = deferred<ReturnType<typeof fakeStream>>();
     audio.getUserMedia.mockReturnValueOnce(permission.promise);
     const { hook } = harness();
-    const starting = hook.start();
+    const starting = hook.start("");
     await vi.waitFor(() => expect(audio.getUserMedia).toHaveBeenCalled());
     await hook.stop();
     await starting;
@@ -237,7 +237,7 @@ describe("voice sessions using the actual recorder and player", () => {
   it("times out a socket that never opens and ignores its late open", async () => {
     vi.useFakeTimers();
     const { hook, closed } = harness();
-    await hook.start();
+    await hook.start("");
     const socket = Socket.instances[0];
     await vi.advanceTimersByTimeAsync(15_000);
     expect(closed).toHaveBeenCalledTimes(1);

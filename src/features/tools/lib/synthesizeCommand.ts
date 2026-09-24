@@ -1,4 +1,5 @@
 import { getConfig } from "@/shared/config";
+import { resolveModel } from "@/shared/lib/modelSelection";
 
 export async function runSynthesize(
   text: string,
@@ -16,7 +17,7 @@ export async function runSynthesize(
 
   // Logical speaker names from the config (e.g. "narrator") resolve to voice ids.
   const resolvedVoice = voice ? (config.tts.voices?.[voice] ?? voice) : undefined;
-  const model = config.tts.model ?? "";
+  const model = await resolveModel(config.tts.model, "synthesizer");
   requestOptions.signal?.throwIfAborted();
   const blob = await config.client.generateAudio(model, text, resolvedVoice, requestOptions);
   const data = new Uint8Array(await blob.arrayBuffer());
