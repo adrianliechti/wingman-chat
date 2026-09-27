@@ -1,12 +1,13 @@
 import { getConfig } from "@/shared/config";
 import { getModelCatalog } from "@/shared/lib/modelCatalog";
+import { modelSupportsVision } from "@/shared/lib/models";
 import type { Model, ModelType } from "@/shared/types/chat";
 
 /**
  * The one selection rule for helper services (images, speech, transcription,
  * realtime): the configured id when set, otherwise the first catalog model of
- * the given type. Returns "" when neither exists — callers pass that through
- * and the backend applies its own default.
+ * the given type. Returns "" when neither exists; callers can report the service
+ * as unavailable or use a backend default where supported.
  */
 export function pickModel(models: readonly Model[], configured: string | undefined, type: ModelType): string {
   if (configured) return configured;
@@ -19,17 +20,40 @@ function isLiveTranscriber(model: Model, type: ModelType): boolean {
   return type === "realtime" && /transcri/i.test(model.id);
 }
 
+/** Feature availability reflects services in the current backend inventory. */
+export function getModelCapabilities(models: readonly Model[]) {
+  return {
+    vision: models.some(modelSupportsVision),
+    renderer: !!pickModel(models, undefined, "renderer"),
+    tts: !!pickModel(models, undefined, "synthesizer"),
+    stt: !!pickModel(models, undefined, "transcriber"),
+    voice: !!pickModel(models, undefined, "realtime"),
+  };
+}
+
 /** `pickModel` against the shared catalog, for calls made outside React. */
 export async function resolveModel(configured: string | undefined, type: ModelType): Promise<string> {
   if (configured) return configured;
+  return pickModel(await loadModels(), configured, type);
+}
+
+/** Prefer a configured vision model, then the originating chat model, then an available vision model. */
+export async function resolveVisionModel(configured?: string, preferred?: string | null): Promise<string> {
+  const models = (await loadModels()).filter(modelSupportsVision);
+  return (
+    (configured
+      ? models.find((model) => model.id === configured)
+      : (models.find((model) => model.id === preferred) ?? models[0])
+    )?.id ?? ""
+  );
+}
+
+async function loadModels(): Promise<Model[]> {
   const config = getConfig();
-  const models = await getModelCatalog(config)
-    .refresh()
-    .catch((error) => {
-      // The catalog only picks a default; an unreachable /models must not
-      // block the call itself, which can still use the backend default.
-      console.warn(`Failed to list models for the ${type} default:`, error);
-      return [];
-    });
-  return pickModel(models, configured, type);
+  const catalog = getModelCatalog(config);
+  return catalog.refresh().catch((error) => {
+    // Keep working defaults during an outage after a successful inventory load.
+    console.warn("Failed to list models for helper selection:", error);
+    return catalog.getSnapshot() ?? [];
+  });
 }

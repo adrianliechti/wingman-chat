@@ -5,6 +5,7 @@ import { useRendererModels } from "../../../src/features/canvas/hooks/useRendere
 import { resolveModel } from "../../../src/shared/lib/modelSelection";
 import { loadConfig } from "../../../src/shared/config";
 import { useModelCatalog } from "../../../src/shared/hooks/useModelCatalog";
+import { useModelCapabilities } from "../../../src/shared/hooks/useModelCapabilities";
 import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
 import type { Model } from "../../../src/shared/types/chat";
 
@@ -16,7 +17,8 @@ function Consumer() {
   const chat = useModels();
   const renderers = useRendererModels();
   const all = useModelCatalog();
-  const state = { all, chat: chat.models, renderers, selected: chat.selectedModel };
+  const capabilities = useModelCapabilities();
+  const state = { all, chat: chat.models, renderers, selected: chat.selectedModel, capabilities };
   window.modelsE2E = {
     state: () => state,
     select: chat.setSelectedModel,
@@ -39,7 +41,13 @@ function Fixture() {
 declare global {
   interface Window {
     modelsE2E: {
-      state(): { all: Model[]; chat: Model[]; renderers: Model[]; selected: Model | null };
+      state(): {
+        all: Model[];
+        chat: Model[];
+        renderers: Model[];
+        selected: Model | null;
+        capabilities: ReturnType<typeof useModelCapabilities>;
+      };
       select(model: Model | null): void;
       refresh(): Promise<void>;
       resolveRenderer(): Promise<string>;

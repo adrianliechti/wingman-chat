@@ -410,7 +410,8 @@ export function AgentDrawer() {
                                 </span>
                               </div>
                               {(() => {
-                                const toolsCount = agent.tools.length + agent.servers.length;
+                                const toolsCount =
+                                  agent.tools.length + (config.enableCustomMCP ? agent.servers.length : 0);
                                 return (
                                   (agent.skills.length > 0 ||
                                     toolsCount > 0 ||

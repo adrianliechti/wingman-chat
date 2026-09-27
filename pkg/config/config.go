@@ -79,20 +79,23 @@ func loadLinks(cfg *Config) {
 }
 
 func applyEnvOverrides(cfg *Config) {
-	withFeature("TTS_ENABLED", &cfg.TTS, func(t *TTS) {
-		envOverride("TTS_MODEL", &t.Model)
-	})
+	if value := os.Getenv("CUSTOM_MCP_ENABLED"); value != "" {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.EnableCustomMCP = &enabled
+		}
+	}
 
-	withFeature("STT_ENABLED", &cfg.STT, func(t *STT) {
-		envOverride("STT_MODEL", &t.Model)
-	})
-
-	withFeature("VOICE_ENABLED", &cfg.Voice, func(v *Voice) {
-		envOverride("VOICE_MODEL", &v.Model)
-		envOverride("VOICE_TRANSCRIBER", &v.Transcriber)
-	})
-
-	withFeature("VISION_ENABLED", &cfg.Vision, nil)
+	// Speech availability comes from the model inventory; these only select defaults.
+	if model := os.Getenv("TTS_MODEL"); model != "" {
+		cfg.TTS = &TTS{Model: model}
+	}
+	if model := os.Getenv("STT_MODEL"); model != "" {
+		cfg.STT = &STT{Model: model}
+	}
+	voice := Voice{Model: os.Getenv("VOICE_MODEL"), Transcriber: os.Getenv("VOICE_TRANSCRIBER")}
+	if voice.Model != "" || voice.Transcriber != "" {
+		cfg.Voice = &voice
+	}
 
 	withFeature("INTERNET_ENABLED", &cfg.Internet, func(i *Internet) {
 		envOverride("INTERNET_SCRAPER", &i.Scraper)
@@ -103,13 +106,9 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	})
 
-	withFeature("RENDERER_ENABLED", &cfg.Renderer, func(r *Renderer) {
-		envOverride("RENDERER_MODEL", &r.Model)
-		envOverride("RENDERER_DISCLAIMER", &r.Disclaimer)
-		if envBool("RENDERER_ELICITATION") {
-			r.Elicitation = true
-		}
-	})
+	if model := os.Getenv("RENDERER_MODEL"); model != "" {
+		cfg.Renderer = &Renderer{Model: model}
+	}
 
 	withFeature("ARTIFACTS_ENABLED", &cfg.Artifacts, nil)
 

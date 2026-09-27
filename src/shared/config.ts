@@ -68,8 +68,6 @@ interface VisionConfig {
 
 interface RendererConfig {
   model?: string;
-  disclaimer?: string;
-  elicitation?: boolean;
 }
 
 interface InternetConfig {
@@ -194,6 +192,8 @@ interface ConfigSchema {
   disclaimer: string;
   /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
   navigation?: boolean;
+  /** Allow agent-defined MCP servers. Defaults to true; deployment and plugin MCPs are unaffected. */
+  enableCustomMCP?: boolean;
   bridge?: BridgeConfig;
   plugins?: PluginsConfig;
   links?: LinkConfig[];
@@ -248,6 +248,8 @@ interface Config {
   disclaimer: string;
   /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
   navigation: boolean;
+  /** Whether agents can configure and connect their own MCP servers. */
+  enableCustomMCP: boolean;
   bridge: BridgeConfig | null;
   plugins: PluginsConfig | null;
   links: LinkConfig[];
@@ -259,18 +261,21 @@ interface Config {
 
   drives: DriveConfig[];
 
-  tts: TTSConfig | null;
-  stt: STTConfig | null;
+  /** Optional speech defaults; availability comes from the model catalog. */
+  tts: TTSConfig;
+  stt: STTConfig;
 
-  voice: VoiceConfig | null;
-  vision: VisionConfig | null;
+  voice: VoiceConfig;
+  /** Image input defaults; support is determined by the selected model. */
+  vision: VisionConfig;
 
   text: TextConfig | null;
   extractor: ExtractorConfig | null;
 
   internet: InternetConfig | null;
 
-  renderer: RendererConfig | null;
+  /** Optional image defaults; availability comes from the model catalog. */
+  renderer: RendererConfig;
 
   memory: object | null;
 
@@ -306,6 +311,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
       navigation: cfg.navigation !== false,
+      enableCustomMCP: cfg.enableCustomMCP !== false,
       bridge: cfg.bridge ?? null,
       plugins: cfg.plugins ?? null,
       links: links
@@ -327,17 +333,15 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       drives: cfg.drives ?? [],
 
-      tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
-      stt: cfg.stt ?? null,
+      tts: { model: cfg.tts?.model, voices: cfg.tts?.voices ?? DEFAULT_TTS_VOICES },
+      stt: cfg.stt ?? {},
 
-      voice: cfg.voice ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber } : null,
-      vision: cfg.vision
-        ? {
-            model: cfg.vision.model,
-            files: cfg.vision.files ?? DEFAULT_VISION_FILES,
-            maxFileSize: cfg.vision.maxFileSize,
-          }
-        : null,
+      voice: cfg.voice ?? {},
+      vision: {
+        model: cfg.vision?.model,
+        files: cfg.vision?.files ?? DEFAULT_VISION_FILES,
+        maxFileSize: cfg.vision?.maxFileSize,
+      },
 
       text: cfg.text ? { files: cfg.text.files } : null,
 
@@ -350,7 +354,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         : null,
 
       internet: cfg.internet ?? null,
-      renderer: cfg.renderer ?? null,
+      renderer: cfg.renderer ?? {},
       memory: cfg.memory ?? null,
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,

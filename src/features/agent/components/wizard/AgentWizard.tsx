@@ -6,6 +6,7 @@ import type { BridgeServer } from "@/features/agent/types/agent";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { notify } from "@/shared/lib/notify";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
@@ -138,11 +139,8 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 
 function getSteps(hasPlugins: boolean): StepDef[] {
   const config = getConfig();
-  const steps: StepDef[] = [];
-
-  if (config.voice) {
-    steps.push({ id: "type", label: "Type", icon: LayoutGrid });
-  }
+  // Always collect the name, even when no realtime model is available yet.
+  const steps: StepDef[] = [{ id: "type", label: "Setup", icon: LayoutGrid }];
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
   if (hasPlugins) {
@@ -165,6 +163,8 @@ interface AgentWizardProps {
 }
 
 export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
+  const { enableCustomMCP } = getConfig();
+  const { voice: voiceAvailable } = useModelCapabilities();
   const { createAgent, addServer, addFile } = useAgents();
   const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -175,19 +175,18 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 
-  // Type step (or identity step when no voice config) requires a name
+  // The setup step requires a name.
   const canAdvanceFromNameStep = !!state.name.trim();
-  const nameStepId = steps.find((s) => s.id === "type") ? "type" : "identity";
 
   const handleNext = useCallback(() => {
-    if (currentStepId === nameStepId && !canAdvanceFromNameStep) {
+    if (currentStepId === "type" && !canAdvanceFromNameStep) {
       dispatch({ type: "SHOW_VALIDATION" });
       return;
     }
     if (state.currentStep < steps.length - 1) {
       dispatch({ type: "SET_STEP", step: state.currentStep + 1 });
     }
-  }, [currentStepId, nameStepId, canAdvanceFromNameStep, state.currentStep, steps.length]);
+  }, [currentStepId, canAdvanceFromNameStep, state.currentStep, steps.length]);
 
   const handleBack = useCallback(() => {
     if (state.currentStep > 0) {
@@ -207,14 +206,14 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       skills: s.selectedSkills,
       plugins: s.selectedPlugins,
       tools: s.selectedTools,
-      model: s.model || undefined,
+      model: s.model === "realtime" && !voiceAvailable ? undefined : s.model || undefined,
       memory: s.memory || undefined,
     };
     try {
       const agent = await createAgent(s.name.trim(), options);
 
       // Add MCP servers
-      s.servers.forEach((server) => addServer(agent.id, server));
+      if (enableCustomMCP) s.servers.forEach((server) => addServer(agent.id, server));
 
       // Bind the entire batch to the created agent before closing the wizard.
       void (async () => {
@@ -226,7 +225,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       console.error("Failed to create agent:", error);
     }
     setIsCreating(false);
-  }, [state, createAgent, addServer, addFile, onClose]);
+  }, [state, createAgent, addServer, addFile, onClose, enableCustomMCP, voiceAvailable]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });
@@ -286,7 +285,8 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                 <div className="px-5 py-4 flex-1 overflow-y-auto">
                   {currentStepId === "type" && (
                     <TypeStep
-                      agentType={state.agentType}
+                      agentType={voiceAvailable ? state.agentType : "model"}
+                      voiceAvailable={voiceAvailable}
                       name={state.name}
                       showValidation={state.showValidation}
                       dispatch={dispatch}
@@ -304,7 +304,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                   {currentStepId === "tools" && (
                     <ToolsStep
                       selectedTools={state.selectedTools}
-                      servers={state.servers}
+                      servers={enableCustomMCP ? state.servers : []}
                       dispatch={dispatch}
                     />
                   )}
@@ -318,9 +318,9 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                       selectedSkills={state.selectedSkills}
                       selectedPlugins={state.selectedPlugins}
                       selectedTools={state.selectedTools}
-                      servers={state.servers}
+                      servers={enableCustomMCP ? state.servers : []}
                       pendingFiles={state.pendingFiles}
-                      model={state.model}
+                      model={state.model === "realtime" && !voiceAvailable ? "" : state.model}
                       memory={state.memory}
                       dispatch={dispatch}
                     />

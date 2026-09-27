@@ -4,6 +4,7 @@ import { ArtifactBridge, resolveCapabilities } from "@/features/artifacts/lib/ar
 import { ToolsContext } from "@/features/tools/context/ToolsContext";
 import { getModel } from "@/features/tools/lib/llmCommand";
 import { getConfig } from "@/shared/config";
+import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { confirm } from "@/shared/lib/confirm";
 import type { PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import { ProviderState, type Tool } from "@/shared/types/chat";
@@ -29,6 +30,7 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
   const { fs } = useArtifacts();
   const toolsContext = useContext(ToolsContext);
   const config = getConfig();
+  const models = useModelCatalog();
   const bridgeEnabled = config.artifacts?.bridge !== false && !!fs;
 
   const tools = useMemo(() => {
@@ -36,7 +38,8 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
     return toolsContext.providers
       .filter(
         (provider) =>
-          !EXCLUDED_PROVIDERS.has(provider.id) && toolsContext.getProviderState(provider.id) === ProviderState.Connected,
+          !EXCLUDED_PROVIDERS.has(provider.id) &&
+          toolsContext.getProviderState(provider.id) === ProviderState.Connected,
       )
       .flatMap((provider) => provider.tools);
   }, [toolsContext]);
@@ -46,8 +49,14 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
   });
 
   const hasTools = tools.length > 0;
-  const capabilities = useMemo(() => resolveCapabilities(config, { tools: hasTools }), [config, hasTools]);
-  const sdk = useMemo(() => (bridgeEnabled ? { source: sdkSource, capabilities } : undefined), [bridgeEnabled, capabilities]);
+  const capabilities = useMemo(
+    () => resolveCapabilities(config, { tools: hasTools, models }),
+    [config, hasTools, models],
+  );
+  const sdk = useMemo(
+    () => (bridgeEnabled ? { source: sdkSource, capabilities } : undefined),
+    [bridgeEnabled, capabilities],
+  );
 
   const bridgeRef = useRef<ArtifactBridge | null>(null);
   useEffect(() => {

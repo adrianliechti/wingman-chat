@@ -7,7 +7,7 @@ import { getConfig } from "@/shared/config";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { withRendererFallback } from "@/shared/lib/models";
-import { pickModel } from "@/shared/lib/modelSelection";
+import { getModelCapabilities, pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
@@ -43,12 +43,11 @@ interface ImageToolOptions {
   catalog: ReturnType<typeof useModelCatalog>;
   models: Config["models"];
   rendererModel?: string;
-  elicitation?: NonNullable<Config["renderer"]>["elicitation"];
   /** May be stale (e.g. a chat created mid-send); the call's `chatId` takes precedence. */
   fs: FileSystemManager | null;
 }
 
-function createImageTool({ client, catalog, models, rendererModel, elicitation, fs }: ImageToolOptions): Tool {
+function createImageTool({ client, catalog, models, rendererModel, fs }: ImageToolOptions): Tool {
   const model = pickModel(catalog, rendererModel, "renderer");
   // The catalog may not have loaded yet, or may type a configured alias
   // differently — config overrides still carry the renderer's capabilities.
@@ -125,19 +124,6 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
       const activeFs = resolveArtifactFileSystem(fs, context?.chatId);
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) return errorResult("`prompt` is required.", context);
-
-      // Confirm before spending a generation when elicitation is enabled.
-      if (elicitation) {
-        if (!context?.elicit) {
-          return errorResult(
-            "Image generation requires confirmation, which is unavailable in this context.",
-            context,
-          );
-        }
-        const result = await context.elicit({ message: `Generate an image: ${prompt}` });
-        context.signal?.throwIfAborted();
-        if (result.action !== "accept") return errorResult("Image generation cancelled by user.", context);
-      }
 
       try {
         // Reference images to edit or build on: explicit artifact paths, plus
@@ -226,32 +212,20 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
  * The `create_image` tool — generate/edit an image via the configured renderer,
  * saving the result to the artifacts workspace and returning it inline.
  *
- * Available by default in chat when an image renderer is configured.
+ * Available in chat when the model catalog exposes an image renderer.
  */
 export function useImageTool(): Tool | null {
   const config = getConfig();
   const { fs } = useArtifacts();
 
-  const isAvailable = useMemo(() => {
-    try {
-      return !!config.renderer;
-    } catch (error) {
-      console.warn("Failed to get image generation config:", error);
-      return false;
-    }
-  }, [config.renderer]);
-
   const client = config.client;
   const catalog = useModelCatalog();
+  const { renderer: isAvailable } = getModelCapabilities(catalog);
 
-  const elicitation = config.renderer?.elicitation;
   const rendererModel = config.renderer?.model;
   const models = config.models;
   return useMemo<Tool | null>(
-    () =>
-      isAvailable
-        ? createImageTool({ client, catalog, models, rendererModel, elicitation, fs })
-        : null,
-    [isAvailable, client, catalog, models, rendererModel, elicitation, fs],
+    () => (isAvailable ? createImageTool({ client, catalog, models, rendererModel, fs }) : null),
+    [isAvailable, client, catalog, models, rendererModel, fs],
   );
 }

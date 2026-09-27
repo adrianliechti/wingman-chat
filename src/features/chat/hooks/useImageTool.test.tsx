@@ -5,7 +5,7 @@ import type { Model } from "@/shared/types/chat";
 
 const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
-  renderer: { model: "gpt-image-2" } as { model?: string; elicitation?: boolean },
+  renderer: { model: "gpt-image-2" } as { model?: string },
   models: [] as Model[],
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
@@ -16,7 +16,7 @@ vi.mock("@/shared/lib/utils", () => ({ readAsDataURL: async () => "data:image/pn
 
 beforeEach(() => {
   config.renderer = { model: "gpt-image-2" };
-  config.models = [];
+  config.models = [{ id: "gpt-image-2", name: "Image", type: "renderer" }];
   config.client.generateImage.mockReset().mockResolvedValue(new Blob(["image"], { type: "image/png" }));
 });
 
@@ -35,13 +35,13 @@ function parameters() {
 }
 
 it("advertises the gateway image controls with config overrides, including disabled controls", () => {
-  config.models = [];
   expect(parameters().aspect_ratio.enum).toContain("16:9");
   expect(parameters().background).toBeUndefined();
   config.models = [
     {
       id: "gpt-image-2",
       name: "Image",
+      type: "renderer",
       supportedQualities: [],
       supportedAspectRatios: [],
       supportedBackgrounds: ["transparent"],
@@ -54,7 +54,7 @@ it("advertises the gateway image controls with config overrides, including disab
 });
 
 it("sends a configured supported quality instead of defaulting to unsupported low", async () => {
-  config.models = [{ id: "gpt-image-2", name: "Image", supportedQualities: ["medium", "high"] }];
+  config.models = [{ id: "gpt-image-2", name: "Image", type: "renderer", supportedQualities: ["medium", "high"] }];
   const result = await buildTool().function({ prompt: "A test image" });
   expect(result).toMatchObject([{ type: "image" }]);
   expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ quality: "medium" });
@@ -71,27 +71,17 @@ it("falls back to the first catalog renderer when none is configured", async () 
   expect(config.client.generateImage.mock.calls.at(-1)?.[0]).toBe("flux");
 });
 
+it("hides image generation when no renderer is available, even with a configured override", () => {
+  config.models = [{ id: "chat", name: "Chat", type: "completer" }];
+  expect(buildTool()).toBeNull();
+});
+
 it("marks renderer failures as tool errors instead of displaying a successful creation", async () => {
   config.client.generateImage.mockRejectedValueOnce(new Error("Renderer unavailable"));
   const setError = vi.fn();
   const result = await buildTool().function({ prompt: "A test image" }, { setError });
   expect(result).toEqual([{ type: "text", text: expect.stringContaining("Renderer unavailable") }]);
   expect(setError).toHaveBeenCalledWith(expect.objectContaining({ code: "IMAGE_GENERATION_ERROR" }));
-});
-
-it("honors configured confirmation even in a context without an elicitation handler", async () => {
-  config.renderer.elicitation = true;
-  const result = await buildTool().function({ prompt: "A test image" });
-  expect(config.client.generateImage).not.toHaveBeenCalled();
-  expect(result).toEqual([{ type: "text", text: expect.stringContaining("confirmation") }]);
-});
-
-it("does not generate an image when the user declines confirmation", async () => {
-  config.renderer.elicitation = true;
-  const elicit = vi.fn().mockResolvedValue({ action: "decline" });
-  await buildTool().function({ prompt: "A test image" }, { elicit });
-  expect(elicit).toHaveBeenCalledOnce();
-  expect(config.client.generateImage).not.toHaveBeenCalled();
 });
 
 it("forwards current-message image attachments to the renderer", async () => {

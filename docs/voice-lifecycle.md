@@ -43,18 +43,25 @@ request. Extraction releases its decoder, conversion and output on success,
 failure and cancellation. Video audio is resampled to mono 16 kHz; unavailable
 compressed encoders fall back to WAV.
 
-`stt.model` selects file/dictation STT; `tts.model` selects synthesis. The UI and
-interpreter helpers both use these settings, or the backend default when absent.
-They no longer guess a default from the order of `/models`. The speech client
-validates empty audio and malformed STT responses and preserves cancellation.
+The shared model catalogue enables file/dictation STT when it contains a
+`transcriber`, synthesis when it contains a `synthesizer`, and voice conversation
+when it contains a conversational `realtime` model. Live transcription-only
+models do not enable file transcription or conversation. No speech enable flags
+or empty config objects are needed. Controls follow catalogue refreshes; failed
+refreshes preserve the last successful inventory.
+
+`stt.model` and `tts.model` optionally override the selected models. Without an
+override, the UI and interpreter helpers use the first matching catalogue model.
+No matching model means the helper is unavailable. The speech client validates
+empty audio and malformed STT responses and preserves cancellation.
 
 Realtime uses **only** `voice.transcriber`, with the hook's realtime-compatible
 default when absent. File STT and realtime transcribers are different API
 contracts. For example, the local backend smoke test accepted
 `gpt-live-transcribe` in realtime configuration but rejected it at
 `/v1/audio/transcriptions`; `gpt-transcribe` successfully transcribed the
-synthetic WAV there. File STT needs a backend default that supports that upload endpoint, or an
-explicit `stt.model` override. Portable client defaults do not infer or substitute a different model.
+synthetic WAV there. `voice.model` optionally overrides the conversational model;
+otherwise the first conversational realtime model is used.
 
 ## Read-aloud
 

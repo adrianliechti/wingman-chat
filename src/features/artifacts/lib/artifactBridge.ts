@@ -18,6 +18,7 @@ import { runTranslateFile, runTranslateText } from "@/features/tools/lib/transla
 import { runVision } from "@/features/tools/lib/visionCommand";
 import type { BridgeRequestOptions } from "@/features/tools/lib/workerHost";
 import { getConfig } from "@/shared/config";
+import { getModelCapabilities } from "@/shared/lib/modelSelection";
 import { withAbort } from "@/shared/lib/abortSignals";
 import {
   isSdkRpcRequest,
@@ -35,7 +36,7 @@ import {
   updateArtifactState,
 } from "@/shared/lib/opfs-artifact-state";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import type { Tool, ToolContext } from "@/shared/types/chat";
+import type { Model, Tool, ToolContext } from "@/shared/types/chat";
 import { createDuckDbWorkspace, type DuckDbWorkspaceHost } from "./duckdbWorkspace";
 import type { FileSystemManager, OverlayDelta } from "./fs";
 
@@ -56,15 +57,19 @@ const CONSENT_KEY = `${ARTIFACT_STATE_RESERVED_PREFIX}tools-consent`;
 
 type Config = ReturnType<typeof getConfig>;
 
-export function resolveCapabilities(config: Config = getConfig(), options: { tools?: boolean } = {}): SdkCapabilities {
+export function resolveCapabilities(
+  config: Config = getConfig(),
+  options: { tools?: boolean; models?: readonly Model[] } = {},
+): SdkCapabilities {
+  const models = getModelCapabilities(options.models ?? []);
   return {
     llm: true,
-    vision: !!config.vision,
+    vision: models.vision,
     ocr: !!config.extractor,
     translate: !!config.translator,
-    render: !!config.renderer,
-    synthesize: !!config.tts,
-    transcribe: !!config.stt,
+    render: models.renderer,
+    synthesize: models.tts,
+    transcribe: models.stt,
     files: true,
     store: true,
     tools: !!options.tools,

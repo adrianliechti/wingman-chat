@@ -8,6 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { getConfig } from "./shared/config";
+import { getModelCatalog } from "./shared/lib/modelCatalog";
+import { getModelCapabilities } from "./shared/lib/modelSelection";
 import { AppLayout } from "./shell/AppLayout";
 
 // ChatPage is the default landing route, so it stays in the initial bundle.
@@ -85,8 +87,10 @@ const translateRoute = createRoute({
 const canvasRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/canvas",
-  beforeLoad: () => {
-    if (!getConfig().renderer) throw redirect({ to: "/chat" });
+  beforeLoad: async () => {
+    const catalog = getModelCatalog(getConfig());
+    const models = await catalog.refresh().catch(() => catalog.getSnapshot() ?? []);
+    if (!getModelCapabilities(models).renderer) throw redirect({ to: "/chat" });
   },
   component: CanvasPage,
 });

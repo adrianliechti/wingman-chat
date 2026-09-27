@@ -2,24 +2,33 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { runSynthesize } from "./synthesizeCommand";
 import { runTranscribe } from "./transcribeCommand";
 import { deferred } from "@/features/voice/lib/audioTestSupport";
+import type { Model } from "@/shared/types/chat";
 
 const mocks = vi.hoisted(() => ({
   models: { tts: "tts" as string | undefined, stt: "stt" as string | undefined },
+  speechConfig: true,
+  listModels: vi.fn<() => Promise<Model[]>>(),
   synthesize: vi.fn(async () => new Blob(["wav"])),
   transcribe: vi.fn(async () => "Transcript"),
   extract: vi.fn(async () => new Blob(["extracted"], { type: "audio/ogg" })),
 }));
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
-    tts: { model: mocks.models.tts, voices: { narrator: "voice-id" } },
-    stt: { model: mocks.models.stt, format: "opus" },
-    client: { generateAudio: mocks.synthesize, transcribe: mocks.transcribe },
+    tts: mocks.speechConfig ? { model: mocks.models.tts, voices: { narrator: "voice-id" } } : undefined,
+    stt: mocks.speechConfig ? { model: mocks.models.stt, format: "opus" } : undefined,
+    models: [],
+    client: { generateAudio: mocks.synthesize, transcribe: mocks.transcribe, listModels: mocks.listModels },
   }),
 }));
 vi.mock("./extractAudio", () => ({ extractAudioForTranscription: mocks.extract }));
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.models = { tts: "tts", stt: "stt" };
+  mocks.speechConfig = true;
+  mocks.listModels.mockReset().mockResolvedValue([
+    { id: "discovered-tts", name: "Speaker", type: "synthesizer" },
+    { id: "discovered-stt", name: "Dictation", type: "transcriber" },
+  ]);
 });
 
 it("resolves a configured speaker and forwards cancellation to synthesis", async () => {
@@ -43,12 +52,21 @@ it("preserves audio bytes and strips video through cancellable extraction", asyn
   });
 });
 
-it("uses the backend default when no speech model is configured", async () => {
-  mocks.models = { tts: undefined, stt: undefined };
+it("uses catalog models without speech config", async () => {
+  mocks.speechConfig = false;
   await runSynthesize("Hello");
   await runTranscribe(new Uint8Array([1]), "/memo.wav");
-  expect(mocks.synthesize).toHaveBeenCalledWith("", "Hello", undefined, {});
-  expect(mocks.transcribe).toHaveBeenCalledWith("", expect.any(Blob), {});
+  expect(mocks.synthesize).toHaveBeenCalledWith("discovered-tts", "Hello", undefined, {});
+  expect(mocks.transcribe).toHaveBeenCalledWith("discovered-stt", expect.any(Blob), {});
+});
+
+it("does not dispatch speech requests when the catalog has no matching models", async () => {
+  mocks.models = { tts: undefined, stt: undefined };
+  mocks.listModels.mockResolvedValue([{ id: "gpt-live-transcribe", name: "Live", type: "realtime" }]);
+  await expect(runSynthesize("Hello")).rejects.toThrow("no speech synthesis model available");
+  await expect(runTranscribe(new Uint8Array([1]), "/memo.wav")).rejects.toThrow("no transcription model available");
+  expect(mocks.synthesize).not.toHaveBeenCalled();
+  expect(mocks.transcribe).not.toHaveBeenCalled();
 });
 
 it("does not upload a file whose extraction finishes after cancellation", async () => {

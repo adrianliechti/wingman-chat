@@ -25,6 +25,7 @@ import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
 import { getConfig } from "@/shared/config";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { executeArtifactCode } from "../lib/executeArtifactCode";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
@@ -63,6 +64,7 @@ function runningCodeLabel(code: unknown): string {
 }
 
 export function useArtifactsProvider(): ToolProvider | null {
+  const { tts, stt, renderer, vision } = useModelCapabilities();
   const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
   const entries = useArtifactEntries(fs);
   const duckdbEnabled = getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false;
@@ -73,14 +75,11 @@ export function useArtifactsProvider(): ToolProvider | null {
   // Direct/UI calls use the active fs. Model calls carry their originating
   // chatId so neither a draft-chat render nor navigation can redirect a write.
   const artifactsTools = useCallback((): Tool[] => {
-    const fileTools = readWriteManager.createTools(
-      (context) => resolveArtifactFileSystem(fs, context?.chatId),
-      {
-        namespace: "artifacts",
-        spaceName: "artifact workspace",
-        validators: ARTIFACT_VALIDATORS,
-      },
-    );
+    const fileTools = readWriteManager.createTools((context) => resolveArtifactFileSystem(fs, context?.chatId), {
+      namespace: "artifacts",
+      spaceName: "artifact workspace",
+      validators: ARTIFACT_VALIDATORS,
+    });
     const runCode = async (options: Omit<Parameters<typeof executeArtifactCode>[0], "fs">) => {
       const workspace = resolveArtifactFileSystem(fs, options.context?.chatId);
       const result = await executeArtifactCode({
@@ -194,10 +193,10 @@ export function useArtifactsProvider(): ToolProvider | null {
         // `transcribe`, and `translate` helpers when their backing services
         // are configured.
         ...(getConfig().extractor ? [ocrInstructionsText] : []),
-        ...(getConfig().vision ? [visionInstructionsText] : []),
-        ...(getConfig().renderer ? [renderInstructionsText] : []),
-        ...(getConfig().tts ? [synthesizeInstructionsText] : []),
-        ...(getConfig().stt ? [transcribeInstructionsText] : []),
+        ...(vision ? [visionInstructionsText] : []),
+        ...(renderer ? [renderInstructionsText] : []),
+        ...(tts ? [synthesizeInstructionsText] : []),
+        ...(stt ? [transcribeInstructionsText] : []),
         ...(getConfig().translator ? [translateInstructionsText] : []),
       ].join("\n\n"),
       runtimeContext: [
@@ -215,7 +214,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       ].join("\n"),
       tools: artifactsTools(),
     };
-  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable]);
+  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable, tts, stt, renderer, vision]);
 
   return provider;
 }

@@ -127,6 +127,7 @@ function Consumer({ chatId, realtime, showPlay }: { chatId: string; realtime: bo
   window.voiceE2E = {
     ...window.voiceControls,
     state: () => ({
+      available: voice.isAvailable,
       listening: voice.isListening,
       connecting: voice.isConnecting,
       recording: dictation.isTranscribing,
@@ -281,6 +282,7 @@ declare global {
     };
     voiceE2E: Window["voiceControls"] & {
       state: () => {
+        available: boolean;
         listening: boolean;
         connecting: boolean;
         recording: boolean;

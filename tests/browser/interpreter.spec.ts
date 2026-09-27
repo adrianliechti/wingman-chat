@@ -48,7 +48,12 @@ for (const runtime of ["executeJavaScript", "executePython"] as const) {
       previous_response_id?: string;
       conversation?: unknown;
     }> = [];
-    await page.route("**/config.json", (route) => route.fulfill({ json: { vision: {} } }));
+    await page.route("**/config.json", (route) => route.fulfill({ json: {} }));
+    await page.route("**/api/v1/models", (route) =>
+      route.fulfill({
+        json: { data: ["first-run-model", "next-run-model"].map((id) => ({ id, supports_vision: true })) },
+      }),
+    );
     await page.route("**/api/v1/responses", async (route) => {
       requests.push(route.request().postDataJSON());
       const response = {

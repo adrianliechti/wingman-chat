@@ -1,20 +1,11 @@
-import {
-  AlertTriangle,
-  Loader2,
-  Lock,
-  Pencil,
-  Plus,
-  Server,
-  ToggleLeft,
-  ToggleRight,
-  Wrench,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Lock, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { PLUGIN_PROVIDER_PREFIX } from "@/features/plugins/lib/pluginProvider";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { getConfig } from "@/shared/config";
 import { ProviderState } from "@/shared/types/chat";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -25,6 +16,7 @@ interface ToolsSectionProps {
 }
 
 export function ToolsSection({ agent }: ToolsSectionProps) {
+  const { enableCustomMCP } = getConfig();
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
 
@@ -41,12 +33,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
   // Global tools: built-in providers + config MCPs (everything not agent-internal)
   const availableTools = useMemo(() => {
     return providers
-      .filter(
-        (p) =>
-          !agentInternalIds.has(p.id) &&
-          p.id !== "artifacts" &&
-          !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
-      )
+      .filter((p) => !agentInternalIds.has(p.id) && p.id !== "artifacts" && !p.id.startsWith(PLUGIN_PROVIDER_PREFIX))
       .map((p) => ({
         id: p.id,
         label: p.name,
@@ -89,26 +76,30 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
   return (
     <>
-      <BridgeEditor
-        isOpen={bridgeEditorOpen}
-        onClose={() => setBridgeEditorOpen(false)}
-        onSave={handleSaveBridge}
-        onDelete={editingBridge ? () => handleDeleteBridge(editingBridge) : undefined}
-        bridge={editingBridge}
-      />
+      {enableCustomMCP && (
+        <BridgeEditor
+          isOpen={bridgeEditorOpen}
+          onClose={() => setBridgeEditorOpen(false)}
+          onSave={handleSaveBridge}
+          onDelete={editingBridge ? () => handleDeleteBridge(editingBridge) : undefined}
+          bridge={editingBridge}
+        />
+      )}
 
       <Section
         title="Tools"
         isOpen={true}
         collapsible={false}
         headerAction={
-          <button
-            type="button"
-            onClick={handleNewBridge}
-            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-          >
-            <Plus size={12} /> Add MCP
-          </button>
+          enableCustomMCP && (
+            <button
+              type="button"
+              onClick={handleNewBridge}
+              className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            >
+              <Plus size={12} /> Add MCP
+            </button>
+          )
         }
       >
         <div className="divide-y divide-neutral-200/40 dark:divide-neutral-700/40">
@@ -155,7 +146,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
             );
           })}
 
-          {agent.servers.map((server) => {
+          {(enableCustomMCP ? agent.servers : []).map((server) => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
             const liveIcon = providers.find((p) => p.id === server.id)?.icon;
             const resolvedIcon =
@@ -236,11 +227,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                           : "Disabled (click to enable)"
                   }
                 >
-                  {state === ProviderState.Connected ? (
-                    <ToggleRight size={20} />
-                  ) : (
-                    <ToggleLeft size={20} />
-                  )}
+                  {state === ProviderState.Connected ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 </button>
               </div>
             );

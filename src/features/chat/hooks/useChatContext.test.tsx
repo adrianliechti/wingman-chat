@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   coreProviders: [] as ToolProvider[],
   studio: false,
   renderer: undefined as { model: string } | undefined,
+  catalog: [] as Model[],
 }));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
 vi.mock("@/features/settings/hooks/useProfile", () => ({
@@ -22,6 +23,7 @@ vi.mock("@/shared/config", () => ({
   getConfig: () => ({ client: state.client, chat: {}, renderer: state.renderer, models: [] }),
 }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
+vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => state.catalog }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({
   useToolsContext: () => {
     const studio = useStudioProvider();
@@ -59,6 +61,7 @@ describe("chat prompt context", () => {
     state.coreProviders = [];
     state.studio = false;
     state.renderer = undefined;
+    state.catalog = [];
   });
 
   it("changing the active file leaves the complete static system instructions unchanged", () => {
@@ -152,6 +155,7 @@ describe("chat prompt context", () => {
     { enabled: [], disabled: ["studio", "artifacts"] },
   ])("keeps default tools available with model provider filters %j", async (tools) => {
     state.renderer = { model: "image" };
+    state.catalog = [{ id: "image", name: "Image", type: "renderer" }];
     const available = await context({ id: "test", name: "Test", tools }).tools();
     expect(available.map((tool) => tool.name)).toEqual(["create_image", "ask_questions", "agent"]);
     expect(() => compileToolRegistry(available)).not.toThrow();
@@ -159,6 +163,7 @@ describe("chat prompt context", () => {
 
   it("enabling Studio adds its instructions without duplicating default tools", async () => {
     state.renderer = { model: "image" };
+    state.catalog = [{ id: "image", name: "Image", type: "renderer" }];
     const defaults = await context().tools();
     state.studio = true;
     const studio = context();

@@ -238,6 +238,16 @@ configuration at `/config.json`; local frontend development uses `public/config.
 
 - `TITLE`, `DISCLAIMER`, `BRIDGE_URL`
 
+**MCP servers**
+
+- Set `CUSTOM_MCP_ENABLED=false` to disable agent-defined MCP servers. For local frontend
+  development, set `"enableCustomMCP": false` in `public/config.json`. Defaults to enabled.
+  This hides the agent MCP controls and prevents connections from existing or imported agent
+  definitions, while preserving those definitions. Deployment-configured servers (`tools.yaml`)
+  and plugin-bundled servers remain available.
+- The local Companion bridge is enabled by `BRIDGE_URL`. Leave it unset or empty to disable
+  discovery and connections. For local frontend development, omit `bridge` or `bridge.url`.
+
 **Account menu links**
 
 Add any number of links to `links.yaml` in the server's working directory, in display order:
@@ -268,19 +278,44 @@ restart and browser refresh in production, or a browser refresh during frontend 
 **Plugin hub**
 
 - `PLUGINS_URL` — base URL of a [plugin-hub](https://agent-plugins.org) instance. When set, a "Hub" tab
-  appears in the Skill Catalog for browsing and installing its plugins' skills into your local
-  skill library. Only skills are installed; any `mcp_servers` a plugin declares are shown for
-  information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
-  skill-folder archives (`SKILL.md` at the archive root).
+  appears in the library for browsing and installing plugins with skills and MCP servers.
+  URL-based MCP servers connect when their plugin is enabled. Supports both Agent Plugin
+  archives (`skills/{name}/SKILL.md`, `mcp.json`) and standalone skill-folder archives
+  (`SKILL.md` at the archive root).
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
-- `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
 - `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
-- `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
+- `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
+
+**Images, speech, and voice**
+
+Image generation, text-to-speech, transcription, and voice chat are detected from the models
+exposed by `/api/v1/models`: `renderer`, `synthesizer`, `transcriber`, and conversational
+`realtime` models respectively. Live transcription-only models do not enable voice chat.
+`RENDERER_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`, and `VOICE_ENABLED` are no longer used.
+Availability updates when the model catalog refreshes.
+
+Vision also uses model capabilities; `VISION_ENABLED` is no longer used. Image attachments
+and screen capture follow the selected chat model's `supportsVision` capability, inferred
+for known model families when metadata is absent. For aliases, set `supportsVision` in
+`models.yaml` or `config.models`; an explicit `false` disables image input for that model.
+The `vision()` helper uses the originating chat model when capable, otherwise an available
+vision model. Optional `vision.model`, `vision.files`, and `vision.maxFileSize` settings
+remain available in JSON or `vision.yaml`.
+
+Optional defaults remain: `TTS_MODEL`, `STT_MODEL`, `VOICE_MODEL`, and `VOICE_TRANSCRIBER`, or
+`tts.model`, `stt.model`, `voice.model`, and `voice.transcriber` in JSON. Without a model override,
+the first matching model is selected. Realtime transcription keeps its separate default; file
+transcription models are not substituted for it. `tts.voices` and `stt.format` still customize
+speaker aliases and video-audio extraction. For opaque model aliases, set their `type` in
+`models.yaml` or `config.models`; only models present in the backend inventory enable features.
+
+The optional image model remains in `renderer.yaml` or the JSON `renderer.model` field.
+`RENDERER_MODEL` overrides it without an enable flag.
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,

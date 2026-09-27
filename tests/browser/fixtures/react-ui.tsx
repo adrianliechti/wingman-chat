@@ -62,8 +62,50 @@ if (parameters.has("panels")) {
 } else {
   const config = await loadConfig();
   if (!config) throw new Error("Missing fixture config");
-  const model = { id: "fixture", name: "Fixture" };
-  config.client.listModels = async () => [model];
+  if (parameters.has("agent-servers")) {
+    const { importAgentsFromLegacyJson } = await import("../../../src/features/settings/lib/agentImportExport");
+    const { loadAgents } = await import("../../../src/features/agent/lib/agentStorage");
+    const { savePlugin } = await import("../../../src/features/plugins/lib/opfs-plugins");
+    if (!(await loadAgents()).length) {
+      await importAgentsFromLegacyJson(
+        JSON.stringify({
+          agents: [
+            {
+              name: "MCP Agent",
+              tools: ["configured"],
+              plugins: ["fixture-plugin"],
+              servers: [
+                {
+                  id: "custom",
+                  name: "Custom agent server",
+                  description: "Custom MCP",
+                  url: `${location.origin}/fixture-mcp/custom`,
+                  enabled: true,
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    }
+    localStorage.setItem("app_agent", (await loadAgents())[0].id);
+    await savePlugin({
+      id: "fixture-plugin",
+      title: "Fixture plugin",
+      hubUrl: location.origin,
+      installedAt: new Date().toISOString(),
+      skills: [],
+      mcpServers: [{ name: "Plugin server", type: "http", url: `${location.origin}/fixture-mcp/plugin` }],
+    });
+    config.client.listMCPs = async () => ["configured"];
+  }
+  const model = { id: "fixture", name: "Fixture", supportsVision: parameters.has("vision-models") };
+  config.client.listModels = async () =>
+    parameters.has("renderer-model")
+      ? [model, { id: "gpt-image-2", name: "Image", type: "renderer" }]
+      : parameters.has("vision-models")
+        ? [model, { id: "text-only", name: "Text only", supportsVision: false }]
+        : [model];
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   config.client.complete = async (_model, _instructions, _input, _tools, handler) =>
     new Promise<Message>((resolve) => {
@@ -90,7 +132,11 @@ if (parameters.has("panels")) {
       });
     }
   }
-  history.replaceState(null, "", parameters.has("seed") ? "/chat/history-119" : "/chat");
+  history.replaceState(
+    null,
+    "",
+    parameters.has("canvas") ? "/canvas" : parameters.has("seed") ? "/chat/history-119" : "/chat",
+  );
   const { default: App } = await import("../../../src/App");
   root.render(
     <StrictMode>

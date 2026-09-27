@@ -20,6 +20,7 @@ import { isSupportedFile } from "@/features/translate/context/TranslateContext";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { notify } from "@/shared/lib/notify";
@@ -55,7 +56,7 @@ export function TranslatePage() {
   const rewriteController = useRef<AbortController | null>(null);
 
   const config = getConfig();
-  const enableTTS = !!config.tts;
+  const { tts: enableTTS } = useModelCapabilities();
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 

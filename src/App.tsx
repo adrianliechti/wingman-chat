@@ -36,9 +36,9 @@ const providers = [
   { key: "ArtifactsProvider", Provider: ArtifactsProvider },
   { key: "AppProvider", Provider: AppProvider },
   { key: "AgentProvider", Provider: AgentProvider },
-  { key: "ScreenCaptureProvider", Provider: ScreenCaptureProvider },
   { key: "ToolsProvider", Provider: ToolsProvider },
   { key: "ChatProvider", Provider: ChatProvider },
+  { key: "ScreenCaptureProvider", Provider: ScreenCaptureProvider },
   { key: "VoiceProvider", Provider: VoiceProvider },
   { key: "TranslateProvider", Provider: TranslateProvider },
 ];

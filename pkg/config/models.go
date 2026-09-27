@@ -13,6 +13,9 @@ type Config struct {
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
 	Models []Model `json:"models,omitempty" yaml:"models,omitempty"`
 
+	// EnableCustomMCP allows agent-defined MCP servers. Nil means enabled.
+	EnableCustomMCP *bool `json:"enableCustomMCP,omitempty" yaml:"enableCustomMCP,omitempty"`
+
 	Drives []Drive `json:"drives,omitempty" yaml:"drives,omitempty"`
 
 	TTS *TTS `json:"tts,omitempty" yaml:"tts,omitempty"`
@@ -61,9 +64,11 @@ type ModelTools struct {
 
 type Model struct {
 	ID                string      `json:"id,omitempty" yaml:"id,omitempty"`
+	Type              string      `json:"type,omitempty" yaml:"type,omitempty"`
 	Name              string      `json:"name,omitempty" yaml:"name,omitempty"`
 	Caption           string      `json:"caption,omitempty" yaml:"caption,omitempty"`
 	Description       string      `json:"description,omitempty" yaml:"description,omitempty"`
+	SupportsVision    *bool       `json:"supportsVision,omitempty" yaml:"supportsVision,omitempty"`
 	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort            string      `json:"effort,omitempty" yaml:"effort,omitempty"`
 	SupportedEfforts  []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
@@ -90,7 +95,9 @@ type Voice struct {
 }
 
 type Vision struct {
-	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+	Model       string   `json:"model,omitempty" yaml:"model,omitempty"`
+	Files       []string `json:"files,omitempty" yaml:"files,omitempty"`
+	MaxFileSize *int     `json:"maxFileSize,omitempty" yaml:"maxFileSize,omitempty"`
 }
 
 type Text struct {
@@ -110,9 +117,7 @@ type Internet struct {
 }
 
 type Renderer struct {
-	Model       string `json:"model,omitempty" yaml:"model,omitempty"`
-	Disclaimer  string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
-	Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
+	Model string `json:"model,omitempty" yaml:"model,omitempty"`
 }
 
 type Artifacts struct {

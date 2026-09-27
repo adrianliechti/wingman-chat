@@ -4,6 +4,7 @@ import { mergePcm16Chunks, pcm16ToWav } from "@/features/voice/lib/audio";
 import { AudioResources } from "@/shared/lib/audioResources";
 import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { resolveModel } from "@/shared/lib/modelSelection";
 
@@ -31,6 +32,7 @@ async function transcribe(session: Dictation): Promise<string> {
   session.chunks = [];
   const config = getConfig();
   const model = await session.scope.wait(resolveModel(config.stt?.model, "transcriber"));
+  if (!model) throw new Error("No transcription model available");
   const text = await session.scope.wait(config.client.transcribe(model, audio, { signal: session.scope.signal }));
   session.scope.signal.throwIfAborted();
   return text;
@@ -40,13 +42,8 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
   const [isTranscribing, setIsTranscribing] = useState(false);
   const current = useRef<Dictation | null>(null);
   const { inputDeviceId } = useAudioDevices();
-  const config = getConfig();
-  const canTranscribe = !!(
-    enabled &&
-    config.stt &&
-    typeof navigator !== "undefined" &&
-    navigator.mediaDevices?.getUserMedia
-  );
+  const { stt } = useModelCapabilities();
+  const canTranscribe = !!(enabled && stt && typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia);
 
   const cancel = useCallback(() => {
     const session = current.current;
@@ -58,7 +55,7 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
   useEffect(() => {
     setIsTranscribing(false);
     return cancel;
-  }, [cancel, ownerKey, inputDeviceId, enabled]);
+  }, [cancel, ownerKey, inputDeviceId, canTranscribe]);
 
   const startTranscription = useCallback(async () => {
     if (!canTranscribe) throw new Error("Transcription is not available");

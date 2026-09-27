@@ -32,6 +32,7 @@ import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
+import { modelSupportsVision } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
@@ -68,6 +69,11 @@ export function ChatInput() {
 
   const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
+  const visionAvailable = modelSupportsVision(models.find((candidate) => candidate.id === model?.id));
+  const visionFiles = useMemo(
+    () => (visionAvailable ? config.vision.files : []),
+    [visionAvailable, config.vision.files],
+  );
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
   const { isResponding, queuedSends } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
@@ -142,7 +148,7 @@ export function ChatInput() {
     clearAttachments,
     removeAttachment,
   } = useFileAttachments({
-    visionFiles: config.vision?.files ?? [],
+    visionFiles,
     artifactsAvailable,
     visionMaxFileSize: config.vision?.maxFileSize,
     artifactsMaxFileSize: config.artifacts?.maxFileSize,
@@ -183,8 +189,8 @@ export function ChatInput() {
 
   // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
   const acceptString = useMemo(
-    () => chatAcceptString(config.vision?.files ?? [], artifactsAvailable),
-    [config.vision?.files, artifactsAvailable],
+    () => chatAcceptString(visionFiles, artifactsAvailable),
+    [visionFiles, artifactsAvailable],
   );
 
   const shouldShowPlaceholder = !content.trim();
@@ -281,12 +287,16 @@ export function ChatInput() {
     async (e: FormEvent) => {
       e.preventDefault();
       if (chatLoading || chatError) return;
+      if (!visionAvailable && attachments.some((part) => part.type === "image")) {
+        notify.error("This model doesn't support image input", "Choose a model with vision or remove the images.");
+        return;
+      }
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
         let screenCaptureFile: File | null = null;
 
-        if (isContinuousCaptureActive) {
+        if (visionAvailable && isContinuousCaptureActive) {
           const capture = await captureScreenAttachment(captureFrame);
           if (capture) {
             finalAttachments = [capture.content, ...finalAttachments];
@@ -341,6 +351,7 @@ export function ChatInput() {
     [
       content,
       attachments,
+      visionAvailable,
       pendingFiles,
       pendingImages,
       isContinuousCaptureActive,
@@ -370,7 +381,7 @@ export function ChatInput() {
             f.mime && f.mime !== "application/octet-stream"
               ? f.mime
               : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
-          const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+          const maxBytes = visionFiles.includes(effectiveType)
             ? config.vision?.maxFileSize
             : artifactsAvailable
               ? config.artifacts?.maxFileSize
@@ -390,7 +401,7 @@ export function ChatInput() {
     [
       artifactsAvailable,
       config.artifacts?.maxFileSize,
-      config.vision?.files,
+      visionFiles,
       config.vision?.maxFileSize,
       handleFiles,
       setExtractingAttachments,

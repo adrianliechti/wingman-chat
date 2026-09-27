@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getConfig } from "@/shared/config";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useChatModel } from "@/features/chat/hooks/useChat";
+import { modelSupportsVision } from "@/shared/lib/models";
 import type { ScreenCaptureContextType } from "./ScreenCaptureContext";
 import { ScreenCaptureContext } from "./ScreenCaptureContext";
 
@@ -42,12 +43,9 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Check if screen capture is available (both supported by browser and enabled in config)
-  // This combines browser capability check with config.vision setting
-  const isAvailable = useMemo(() => {
-    const config = getConfig();
-    return !!config.vision && supportsScreenCapture();
-  }, []);
+  const { model, models } = useChatModel();
+  const isAvailable =
+    modelSupportsVision(models.find((candidate) => candidate.id === model?.id)) && supportsScreenCapture();
 
   // Helper to clean up resources
   const cleanupResources = useCallback(() => {
@@ -71,7 +69,12 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
     cleanupResources();
   }, [cleanupResources]);
 
+  useEffect(() => {
+    if (!isAvailable) cleanupResources();
+  }, [isAvailable, cleanupResources]);
+
   const startCapture = useCallback(async () => {
+    if (!isAvailable) return;
     // Clean up any existing capture first
     cleanupResources();
 
@@ -127,7 +130,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       }
       throw error;
     }
-  }, [cleanupResources]);
+  }, [isAvailable, cleanupResources]);
 
   const captureFrame = useCallback(async (): Promise<Blob | null> => {
     if (!streamRef.current || !videoRef.current) {

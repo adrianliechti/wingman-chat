@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pickModel, resolveModel } from "./modelSelection";
+import { pickModel, resolveModel, resolveVisionModel } from "./modelSelection";
 import { getModelCatalog, MODEL_CATALOG_MAX_AGE_MS } from "@/shared/lib/modelCatalog";
 import type { Model } from "@/shared/types/chat";
 
@@ -43,6 +43,24 @@ it("never defaults voice to a transcription-only live model", () => {
   ];
   expect(pickModel(models, undefined, "realtime")).toBe("gpt-realtime-2.1");
   expect(pickModel(models.slice(0, 2), undefined, "realtime")).toBe("");
+});
+
+it("selects a vision model from the inventory, preserving capable run models and explicit overrides", async () => {
+  config.models = [];
+  config.client.listModels.mockReset().mockResolvedValue([
+    { id: "text", name: "Text", supportsVision: false },
+    { id: "vision-a", name: "A", supportsVision: true },
+    { id: "vision-b", name: "B", supportsVision: true },
+  ]);
+  expect(await resolveVisionModel()).toBe("vision-a");
+  expect(await resolveVisionModel(undefined, "vision-b")).toBe("vision-b");
+  expect(await resolveVisionModel("vision-a", "vision-b")).toBe("vision-a");
+  expect(await resolveVisionModel(undefined, "text")).toBe("vision-a");
+  expect(await resolveVisionModel("text", "vision-b")).toBe("");
+  expect(await resolveVisionModel("missing")).toBe("");
+  config.client.listModels.mockResolvedValue([]);
+  await getModelCatalog(config).refresh(true);
+  expect(await resolveVisionModel(undefined, "vision-b")).toBe("");
 });
 
 it("falls back to the backend default when the catalogue is unreachable", async () => {

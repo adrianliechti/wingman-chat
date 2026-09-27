@@ -10,6 +10,7 @@ import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import { useBreakpoint, useMediaQuery } from "@/shared/hooks/useMediaQuery";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { cn } from "@/shared/lib/cn";
 import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
@@ -34,6 +35,7 @@ function getPageFromPath(pathname: string): Page {
 
 export function AppLayout() {
   const config = getConfig();
+  const { renderer: rendererAvailable } = useModelCapabilities();
   const currentPage = useRouterState({ select: (s) => getPageFromPath(s.location.pathname) });
   const {
     showSidebar,
@@ -119,7 +121,7 @@ export function AppLayout() {
   ].filter((page) => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
-    if (page.key === "canvas") return !!config.renderer;
+    if (page.key === "canvas") return rendererAvailable;
     return true;
   });
   // `config.navigation: false` hides the tab bar entirely — only Chat is shown.

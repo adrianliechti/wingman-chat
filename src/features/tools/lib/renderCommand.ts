@@ -11,10 +11,8 @@ export async function runRenderImage(
   options?: ImageRenderOptions,
   requestOptions: { signal?: AbortSignal } = {},
 ): Promise<Uint8Array> {
+  requestOptions.signal?.throwIfAborted();
   const config = getConfig();
-  if (!config.renderer) {
-    throw new Error("render: no image rendering service configured");
-  }
   if (!prompt.trim()) {
     throw new Error("render: no prompt provided");
   }
@@ -33,9 +31,12 @@ export async function runRenderImage(
     return new File([data as BlobPart], name, { type });
   });
 
-  const model = await resolveModel(config.renderer.model, "renderer");
+  const model = await resolveModel(config.renderer?.model, "renderer");
+  requestOptions.signal?.throwIfAborted();
+  if (!model) throw new Error("render: no image rendering model available");
   const blob = await config.client.generateImage(model, prompt, images, options, requestOptions);
   const data = new Uint8Array(await blob.arrayBuffer());
+  requestOptions.signal?.throwIfAborted();
   if (data.length === 0) {
     throw new Error("render: service returned an empty image");
   }

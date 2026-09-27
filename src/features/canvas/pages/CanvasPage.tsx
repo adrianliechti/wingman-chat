@@ -1,4 +1,4 @@
-import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
+import { Download, ImagePlus, Loader2, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasInput } from "@/features/canvas/components/CanvasInput";
 import { useImageStyles } from "@/features/canvas/hooks/useImageStyles";
@@ -8,7 +8,6 @@ import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
-import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -44,33 +43,6 @@ function CanvasBackground() {
     </div>
   );
 }
-
-function loadDisclaimer() {
-  try {
-    const config = getConfig();
-    return config.renderer?.disclaimer?.trim()
-      ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "canvas-disclaimer" })
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-// Memoized disclaimer component to avoid re-computing on every render
-const Disclaimer = () => {
-  const disclaimer = useMemo(() => loadDisclaimer(), []);
-
-  if (!disclaimer) return null;
-
-  return (
-    <div className="mb-6 mx-auto max-w-2xl">
-      <div className="flex items-start justify-center gap-2 px-4 py-3">
-        <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
-      </div>
-    </div>
-  );
-};
 
 export function CanvasPage() {
   const config = getConfig();
@@ -392,7 +364,6 @@ export function CanvasPage() {
             /* Empty / prompt-only state */
             <div className="flex flex-col items-center justify-center gap-5 w-full flex-1 relative">
               <CanvasBackground />
-              <Disclaimer />
 
               {isGenerating && (
                 <div className="relative w-64 h-64 md:w-72 md:h-72 rounded-2xl overflow-hidden bg-neutral-100 dark:bg-neutral-900 shadow-lg mb-2">

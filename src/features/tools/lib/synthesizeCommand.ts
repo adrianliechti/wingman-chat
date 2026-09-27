@@ -8,17 +8,15 @@ export async function runSynthesize(
 ): Promise<Uint8Array> {
   requestOptions.signal?.throwIfAborted();
   const config = getConfig();
-  if (!config.tts) {
-    throw new Error("synthesize: no speech synthesis service configured");
-  }
   if (!text.trim()) {
     throw new Error("synthesize: no text provided");
   }
 
   // Logical speaker names from the config (e.g. "narrator") resolve to voice ids.
-  const resolvedVoice = voice ? (config.tts.voices?.[voice] ?? voice) : undefined;
-  const model = await resolveModel(config.tts.model, "synthesizer");
+  const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
+  const model = await resolveModel(config.tts?.model, "synthesizer");
   requestOptions.signal?.throwIfAborted();
+  if (!model) throw new Error("synthesize: no speech synthesis model available");
   const blob = await config.client.generateAudio(model, text, resolvedVoice, requestOptions);
   const data = new Uint8Array(await blob.arrayBuffer());
   requestOptions.signal?.throwIfAborted();

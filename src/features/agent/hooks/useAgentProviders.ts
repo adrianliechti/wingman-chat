@@ -33,6 +33,7 @@ export interface AgentProviders {
  * knows which built-in tools to activate.
  */
 export function useAgentProviders(agent: Agent | null): AgentProviders {
+  const config = getConfig();
   const agentId = agent?.id || "";
   const { files, queryChunks } = useAgentFiles(agentId);
 
@@ -41,9 +42,9 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   const clientsRef = useRef<MCPClient[]>([]);
 
   const enabledServers = useMemo(() => {
-    if (!agent) return [];
+    if (!config.enableCustomMCP || !agent) return [];
     return agent.servers.filter((s) => s.enabled);
-  }, [agent]);
+  }, [agent, config.enableCustomMCP]);
 
   // Track server configs to detect edits (URL, headers, etc.)
   const serverConfigRef = useRef<Map<string, string>>(new Map());
@@ -112,7 +113,6 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [agent, files, queryChunks]);
 
   // --- Memory provider ---
-  const config = getConfig();
   const memoryEnabled = !!config.memory && !!agent?.memory;
   const [coreMemory, setCoreMemory] = useState({ agentId: "", content: "" });
   useEffect(() => {

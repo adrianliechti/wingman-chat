@@ -3,6 +3,7 @@ import { type Dispatch, useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import type { BridgeServer } from "@/features/agent/types/agent";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { getConfig } from "@/shared/config";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -15,6 +16,7 @@ interface ToolsStepProps {
 const AGENT_INTERNAL_IDS = new Set(["artifacts", "repository", "skills", "memory"]);
 
 export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) {
+  const { enableCustomMCP } = getConfig();
   const { providers } = useToolsContext();
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
 
@@ -36,15 +38,17 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
       />
 
       {/* Actions */}
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setBridgeEditorOpen(true)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-        >
-          <Plus size={11} /> Add MCP Server
-        </button>
-      </div>
+      {enableCustomMCP && (
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setBridgeEditorOpen(true)}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+          >
+            <Plus size={11} /> Add MCP Server
+          </button>
+        </div>
+      )}
 
       <div className="space-y-0.5">
         {availableTools.map((tool) => {
@@ -83,7 +87,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
       </div>
 
       {/* Pending MCP servers */}
-      {servers.length > 0 && (
+      {enableCustomMCP && servers.length > 0 && (
         <div className="space-y-0.5 pt-1 border-t border-neutral-200/40 dark:border-neutral-700/40">
           {servers.map((server, i) => (
             <div key={`${server.name}-${server.url}`} className="flex items-center gap-2 py-1.5">
@@ -108,12 +112,14 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
         </div>
       )}
 
-      <BridgeEditor
-        isOpen={bridgeEditorOpen}
-        onClose={() => setBridgeEditorOpen(false)}
-        onSave={(data) => dispatch({ type: "ADD_SERVER", server: data })}
-        bridge={null}
-      />
+      {enableCustomMCP && (
+        <BridgeEditor
+          isOpen={bridgeEditorOpen}
+          onClose={() => setBridgeEditorOpen(false)}
+          onSave={(data) => dispatch({ type: "ADD_SERVER", server: data })}
+          bridge={null}
+        />
+      )}
     </div>
   );
 }

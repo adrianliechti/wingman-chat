@@ -1,17 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@/shared/lib/client";
+import type { Model } from "@/shared/types/chat";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { runLlm, setModel } from "./llmCommand";
 import { runVision } from "./visionCommand";
 
-const { complete, vision } = vi.hoisted(() => ({
-  complete: vi.fn<Client["complete"]>(),
-  vision: { files: [], model: undefined as string | undefined },
+const config = vi.hoisted(() => ({
+  client: { complete: vi.fn<Client["complete"]>(), listModels: vi.fn<Client["listModels"]>() },
+  models: [] as Model[],
+  vision: { files: [] as string[], model: undefined as string | undefined },
 }));
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: { complete }, vision }) }));
+const { complete } = config.client;
+const { vision } = config;
+vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 beforeEach(() => {
+  config.models = [];
+  config.client.listModels
+    .mockReset()
+    .mockResolvedValue(
+      ["ui-model", "run-model", "vision-specialist"].map((id) => ({ id, name: id, supportsVision: true })),
+    );
   complete.mockReset().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
   vision.model = undefined;
+  vision.files = [];
   setModel("ui-model");
 });
 
@@ -66,6 +77,21 @@ describe("interpreter model calls", () => {
     vision.model = "vision-specialist";
     await runVision(new Uint8Array([1]), "/image.png", "Describe", { context: { model: "parent" } });
     expect(complete.mock.calls[0][0]).toBe("vision-specialist");
+  });
+
+  it("uses an available vision model when the chat model only accepts text", async () => {
+    config.client.listModels.mockResolvedValue([
+      { id: "ui-model", name: "Text", supportsVision: false },
+      { id: "vision-specialist", name: "Vision", supportsVision: true },
+    ]);
+    await runVision(new Uint8Array([1]), "/image.png", "Describe");
+    expect(complete.mock.calls[0][0]).toBe("vision-specialist");
+  });
+
+  it("does not send images when the inventory has no capable model", async () => {
+    config.client.listModels.mockResolvedValue([{ id: "ui-model", name: "Text", supportsVision: false }]);
+    await expect(runVision(new Uint8Array([1]), "/image.png")).rejects.toThrow("no image-capable chat model");
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it.each(["llm", "vision"])("honors invocation-only cancellation for %s without spending budget", async (helper) => {

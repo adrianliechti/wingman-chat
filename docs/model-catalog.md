@@ -7,7 +7,7 @@ are not used to infer capabilities or freshness.
 The catalogue resolves each available ID once, in this order:
 
 1. Deployment entries in `config.models`, including an explicit `type`.
-2. Optional backend `type`, `name`, and `description` fields.
+2. Optional backend `type`, `name`, `description`, and `supports_vision` fields.
 3. ID cues for endpoint type and known profiles for missing capabilities.
 
 Types are `completer`, `embedder`, `renderer`, `reranker`, `realtime`,
@@ -31,6 +31,7 @@ name-matching rule:
       "id": "team-chat",
       "name": "Team chat",
       "type": "completer",
+      "supportsVision": true,
       "supportedEfforts": ["low", "medium", "xhigh"],
       "effort": "medium",
       "maxOutputTokens": 128000,
@@ -46,7 +47,7 @@ arrays hide their picker; an explicit zero compaction threshold disables
 compaction. Configured chat models determine ordering and visibility in the chat
 picker. Configuring only images does not hide chat models.
 
-Chat, Canvas, and image helper selection share a catalogue keyed by client and
+Chat, Canvas, speech controls, and helper selection share a catalogue keyed by client and
 configuration. Concurrent reads share one request. Successful results, including
 an empty inventory, are cached for one minute. Mounted consumers refresh while
 visible and on focus, visibility, or reconnection when stale. Unmount removes
@@ -59,8 +60,30 @@ conversation. Initial restoration checks a saved effort against the resolved
 supported levels. Choosing realtime or clearing the selection during initial
 loading also wins over the late response.
 
-Speech calls use their configured model or backend default. They do not choose
-the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
+Canvas and image tools are enabled by available `renderer` models; speech controls
+use `synthesizer`, `transcriber`, and conversational `realtime` models, without
+feature flags. Calls use an optional
+model override or the first matching catalogue model. Live transcription-only
+models enable neither file transcription nor voice conversation. Missing models
+hide the corresponding controls; failed refreshes retain the last successful
+inventory. See [voice lifecycle](voice-lifecycle.md).
+
+Image input is a capability of a chat model, separate from the `renderer` endpoint.
+`supportsVision` in model configuration overrides backend `supports_vision`, including
+explicit `false`. Known GPT, Claude, and Gemini families provide a fallback when the
+backend only lists IDs; unknown aliases require explicit metadata. The selected model
+controls inline image attachments and screen capture. The `vision()` helper prefers its
+configured model, then a capable originating chat model, then the first capable model
+in the inventory. `vision` configuration only supplies model and file defaults.
+Neither `VISION_ENABLED` nor the presence of a `vision` object enables the feature.
+
+The vision fallbacks follow the documented image input support in the
+[OpenAI vision guide](https://developers.openai.com/api/docs/guides/images-vision),
+[GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[GPT-5.6](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
+[Claude vision guide](https://platform.claude.com/docs/en/build-with-claude/vision), and
+[Gemini image understanding guide](https://ai.google.dev/gemini-api/docs/image-understanding).
+They exclude known text/audio-only variants and non-chat endpoints.
 
 ## Capability sources and limits
 

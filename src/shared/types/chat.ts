@@ -24,6 +24,8 @@ export type Model = {
 
   type?: ModelType;
   description?: string;
+  /** Image input support for chat. Config overrides API metadata and known-model defaults. */
+  supportsVision?: boolean;
 
   instructions?: string;
 

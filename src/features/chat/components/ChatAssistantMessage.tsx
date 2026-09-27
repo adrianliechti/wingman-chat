@@ -5,7 +5,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatActions, useChatConversation, useChatRunState } from "@/features/chat/hooks/useChat";
 import { SkillChip } from "@/features/skills/components/SkillChip";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { getConfig } from "@/shared/config";
+import { useModelCapabilities } from "@/shared/hooks/useModelCapabilities";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
 import type { Content, Message } from "@/shared/types/chat";
@@ -283,8 +283,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
   const isReasoningActive = isLast && isResponding && !hasTextContent && !hasToolCalls;
 
-  const config = getConfig();
-  const enableTTS = !!config.tts;
+  const { tts: enableTTS } = useModelCapabilities();
   const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
 
   // Handle error messages

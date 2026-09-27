@@ -7,7 +7,6 @@ import type { FileSystemManager, OverlayDelta } from "./fs";
 
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
-    vision: { model: "v" },
     extractor: null,
     translator: null,
     renderer: null,
@@ -84,12 +83,29 @@ describe("resolveCapabilities", () => {
     expect(resolveCapabilities(undefined, { tools: true })).toEqual({
       ...emptyCapabilities(),
       llm: true,
-      vision: true,
       files: true,
       store: true,
       tools: true,
       duckdb: true,
     });
+  });
+
+  it("advertises vision, image, and speech helpers from the model inventory without feature config", () => {
+    expect(
+      resolveCapabilities(undefined, {
+        models: [
+          { id: "chat", name: "Chat", type: "completer", supportsVision: true },
+          { id: "image", name: "Image", type: "renderer" },
+          { id: "speaker", name: "Speaker", type: "synthesizer" },
+          { id: "dictation", name: "Dictation", type: "transcriber" },
+        ],
+      }),
+    ).toMatchObject({ vision: true, render: true, synthesize: true, transcribe: true });
+    expect(
+      resolveCapabilities(undefined, {
+        models: [{ id: "gpt-live-transcribe", name: "Live transcription", type: "realtime" }],
+      }),
+    ).toMatchObject({ vision: false, synthesize: false, transcribe: false });
   });
 });
 
