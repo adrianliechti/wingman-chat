@@ -222,6 +222,11 @@ export async function downloadBlob(blob: Blob, filename: string): Promise<void> 
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+export async function downloadMarkdownAsDocx(markdown: string, filename: string): Promise<void> {
+  const { markdownToDocx } = await import("@/shared/lib/markdownToDocx");
+  await downloadBlob(await markdownToDocx(markdown), filename);
+}
+
 // Internal to downloadFromUrl — derives a filename for data URLs. Not exported.
 function filenameFromUrl(src: string): string {
   // If it's a data URL, extract the MIME type and derive a simple filename

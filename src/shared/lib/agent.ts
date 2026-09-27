@@ -71,8 +71,8 @@ export interface RunHooks {
   /** Called with partial content as the model streams. */
   onStream?: (content: Content[]) => void;
 
-  /** Called before each LLM request (e.g. to set up streaming UI). */
-  onTurnStart?: () => void;
+  /** Called before each turn with the empty assistant message and its durable identity. */
+  onTurnStart?: (assistant: Message) => void;
 
   /** Called after each LLM response is received with the new assistant message. */
   onTurnEnd?: (assistant: Message) => void;
@@ -298,9 +298,13 @@ async function runLoop(
     // Bounded to keep a runaway tool-calling loop from never terminating.
     for (let turn = 0; turn < maxTurns; turn++) {
       if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-      onTurnStart?.();
+      const pendingAssistant = withMessageIdentity({ role: "assistant", content: [] }, controller.runId);
+      onTurnStart?.(pendingAssistant);
 
-      const assistantMessage = withMessageIdentity(await sendTurn(turn), controller.runId);
+      const assistantMessage = withMessageIdentity(
+        { ...(await sendTurn(turn)), id: pendingAssistant.id, createdAt: pendingAssistant.createdAt },
+        controller.runId,
+      );
       if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
 
       const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");

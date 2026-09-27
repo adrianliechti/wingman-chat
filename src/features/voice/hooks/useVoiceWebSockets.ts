@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
 import { parseToolArguments, toolArgumentHints } from "@/shared/lib/toolArguments";
@@ -78,7 +78,9 @@ export function useVoiceWebSockets(
   const toolRegistryRef = useRef<ToolRegistry | undefined>(undefined);
   const toolContextFactoryRef = useRef<ToolContextFactory | undefined>(undefined);
   const runtimeContextRef = useRef(getRuntimeContext);
-  runtimeContextRef.current = getRuntimeContext;
+  useLayoutEffect(() => {
+    runtimeContextRef.current = getRuntimeContext;
+  });
   const contextItemIdRef = useRef<string | null>(null);
   const voiceRunIdRef = useRef(crypto.randomUUID());
 
@@ -185,13 +187,7 @@ export function useVoiceWebSockets(
     pendingTextRef.current = null;
     contextItemIdRef.current = null;
     controller?.abort();
-    try {
-      if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
-        ws.close(1000, "User stopped session");
-      }
-    } catch {
-      /* A closing socket still must release its audio. */
-    }
+    if (ws) closeSocket(ws);
     await Promise.allSettled([
       (async () => {
         await recorder?.end();
@@ -266,9 +262,11 @@ export function useVoiceWebSockets(
         onClosedRef.current?.(reason);
       };
       const audioFailed = (error: Error) => closeSession({ fatal: true, message: error.message });
+      const sessionTools = tools ?? [];
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
       try {
-        toolRegistryRef.current = compileToolRegistry(tools ?? []);
+        toolRegistryRef.current = compileToolRegistry(sessionTools);
         const player = new AudioStreamPlayer({ sampleRate: 24000, sinkId: outputDeviceId, onError: audioFailed });
         wavPlayerRef.current = player;
         await player.connect();
@@ -279,7 +277,6 @@ export function useVoiceWebSockets(
         await recorder.begin();
         sessionController.signal.throwIfAborted();
 
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const baseUrl = `${protocol}//${window.location.host}/api/v1/realtime?model=${encodeURIComponent(realtimeModel)}`;
 
         const ws = new WebSocket(baseUrl);
@@ -318,11 +315,12 @@ export function useVoiceWebSockets(
             const callback = buildRecordCallback();
             recordCallbackRef.current = callback;
             await recorder.record(callback);
-            if (isCurrent()) onReady?.();
           } catch (error) {
             console.error("Failed to start recording:", error);
             closeSession({ fatal: true, message: "Couldn't start microphone recording." });
+            return;
           }
+          if (isCurrent()) onReady?.();
         };
 
         let sessionReady = false;
@@ -373,18 +371,15 @@ export function useVoiceWebSockets(
 
         ws.addEventListener("message", (e) => {
           if (!isCurrent()) return;
-          let msg: Record<string, unknown>;
-          try {
-            msg = JSON.parse(e.data) as Record<string, unknown>;
-            if (!msg || typeof msg !== "object") throw new Error("Invalid message");
-          } catch {
+          const msg = parseServerEvent(e.data);
+          if (!msg) {
             closeSession({ fatal: true, message: "The voice service sent an invalid message." });
             return;
           }
           console.log("Received message:", msg.type);
           const eventWs = e.target as WebSocket;
 
-          try {
+          const handleEvent = () => {
             switch (msg.type) {
               // Only session.updated (the ack of our session.update) means the VAD/
               // transcription config is live — session.created arrives before the
@@ -508,64 +503,24 @@ export function useVoiceWebSockets(
                   if (deferredCalls.length > 0) {
                     for (const deferred of deferredCalls) {
                       void (async () => {
-                        const registry = toolRegistryRef.current;
-                        const tool = registry?.get(deferred.toolName);
-                        const { callId, toolName, argsStr } = deferred;
-
+                        const { callId, toolName } = deferred;
                         onToolCallRef.current?.(toolName, callId);
 
-                        let output = "";
-
-                        let args: Record<string, unknown> | undefined;
-                        try {
-                          args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
-                        } catch (parseError) {
-                          console.error("Malformed tool arguments:", argsStr, parseError);
-                        }
-
-                        if (deferred.incomplete) {
-                          output = JSON.stringify({
-                            error:
-                              "Tool arguments are incomplete; the tool was not executed. Retry with a smaller payload.",
-                          });
-                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                        } else if (args === undefined) {
-                          output = JSON.stringify({
-                            error: "Malformed arguments: could not parse JSON. Please retry with valid arguments.",
-                          });
-                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                        } else if (!tool) {
-                          console.error(`Tool not found: ${toolName}`);
-                          output = JSON.stringify({ error: `Tool "${toolName}" is not available.` });
-                          onToolResultRef.current?.(toolName, callId, [{ type: "text", text: output }]);
-                        } else {
-                          try {
-                            const ctx = {
-                              ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
-                              runId: entry.runId,
-                              signal: sessionController.signal,
-                            };
-                            ctx.signal.throwIfAborted();
-                            const result = await tool.function(registry!.parse(tool, args), ctx);
-                            if (ctx.signal.aborted) return;
-                            const rawResult =
-                              typeof result === "string"
-                                ? [{ type: "text" as const, text: result }]
-                                : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
-
-                            output = serializeToolResultForApi(rawResult);
-                            onToolResultRef.current?.(toolName, callId, rawResult);
-                          } catch (error) {
-                            if (sessionController.signal.aborted) return;
-                            console.error("Error executing tool:", error);
-                            const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
-                            output = JSON.stringify({ error: errorMessage });
-                            onToolResultRef.current?.(toolName, callId, [{ type: "text", text: errorMessage }]);
-                          }
-                        }
+                        const executed = await executeVoiceTool(
+                          toolRegistryRef.current,
+                          deferred,
+                          () => ({
+                            ...toolContextFactoryRef.current?.({ id: callId, name: toolName }),
+                            runId: entry.runId,
+                            signal: sessionController.signal,
+                          }),
+                          sessionController.signal,
+                        );
+                        if (!executed) return;
+                        onToolResultRef.current?.(toolName, callId, executed.display);
 
                         onToolCallDoneRef.current?.(callId);
-                        sendFunctionOutput(eventWs, callId, output);
+                        sendFunctionOutput(eventWs, callId, executed.output);
 
                         const e = pendingResponsesRef.current.get(doneResponseId);
                         if (e === entry) {
@@ -597,6 +552,9 @@ export function useVoiceWebSockets(
                 break;
               }
             }
+          };
+          try {
+            handleEvent();
           } catch (error) {
             console.error("Invalid voice service event:", error);
             closeSession({ fatal: true, message: "Couldn't process a voice service event." });
@@ -676,9 +634,8 @@ export function useVoiceWebSockets(
       const pending = { texts: [text], done: Promise.resolve() };
       pendingTextRef.current = pending;
       pendingPostToolFireRef.current = false;
-      pending.done = (async () => {
-        try {
-          await interruptPlayback();
+      pending.done = interruptPlayback()
+        .then(() => {
           if (
             controller.signal.aborted ||
             sessionControllerRef.current !== controller ||
@@ -700,16 +657,17 @@ export function useVoiceWebSockets(
             );
           }
           ws.send(JSON.stringify({ type: "response.create" }));
-        } catch (error) {
+        })
+        .catch((error: unknown) => {
           if (!controller.signal.aborted) {
             console.error("Couldn't send voice text:", error);
             void stop();
             onClosedRef.current?.({ fatal: true, message: "Couldn't send text to the voice service." });
           }
-        } finally {
+        })
+        .finally(() => {
           if (pendingTextRef.current === pending) pendingTextRef.current = null;
-        }
-      })();
+        });
       return pending.done;
     },
     [hasOtherActiveResponse, interruptPlayback, refreshRequestContext, stop],
@@ -723,6 +681,78 @@ export function useVoiceWebSockets(
   }, [stop]);
 
   return { start, stop, sendText, updateSession, pauseAudio };
+}
+
+type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
+
+/**
+ * Runs one deferred tool call. Returns the output sent to the model and the
+ * result shown in chat, or null when the session was aborted meanwhile.
+ */
+async function executeVoiceTool(
+  registry: ToolRegistry | undefined,
+  deferred: DeferredToolCall,
+  createContext: () => ToolContext,
+  signal: AbortSignal,
+): Promise<{ output: string; display: ToolResultContent[] } | null> {
+  const { toolName, argsStr } = deferred;
+  const tool = registry?.get(toolName);
+  const failed = (error: string) => {
+    const output = JSON.stringify({ error });
+    return { output, display: [{ type: "text" as const, text: output }] };
+  };
+
+  let args: Record<string, unknown> | undefined;
+  try {
+    args = parseToolArguments(argsStr, toolArgumentHints(tool?.parameters));
+  } catch (parseError) {
+    console.error("Malformed tool arguments:", argsStr, parseError);
+  }
+
+  if (deferred.incomplete) {
+    return failed("Tool arguments are incomplete; the tool was not executed. Retry with a smaller payload.");
+  }
+  if (args === undefined) {
+    return failed("Malformed arguments: could not parse JSON. Please retry with valid arguments.");
+  }
+  if (!tool || !registry) {
+    console.error(`Tool not found: ${toolName}`);
+    return failed(`Tool "${toolName}" is not available.`);
+  }
+
+  try {
+    const ctx = createContext();
+    signal.throwIfAborted();
+    const result = await tool.function(registry.parse(tool, args), ctx);
+    if (signal.aborted) return null;
+    const display =
+      typeof result === "string" ? [{ type: "text" as const, text: result }] : (result as ToolResultContent[]);
+    return { output: serializeToolResultForApi(display), display };
+  } catch (error) {
+    if (signal.aborted) return null;
+    console.error("Error executing tool:", error);
+    const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
+    return { output: JSON.stringify({ error: errorMessage }), display: [{ type: "text", text: errorMessage }] };
+  }
+}
+
+function closeSocket(ws: WebSocket) {
+  try {
+    if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+      ws.close(1000, "User stopped session");
+    }
+  } catch {
+    /* A closing socket still must release its audio. */
+  }
+}
+
+function parseServerEvent(data: string): Record<string, unknown> | null {
+  try {
+    const msg: unknown = JSON.parse(data);
+    return msg && typeof msg === "object" ? (msg as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function base64EncodePcm16(samples: Int16Array): string {

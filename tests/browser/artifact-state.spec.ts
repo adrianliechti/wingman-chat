@@ -210,6 +210,8 @@ test("file picker, file panel and editor context agree after switching and reope
   await page.getByRole("button", { name: "one.txt", exact: true }).click();
   await page.getByRole("button", { name: "two.txt", exact: true }).click();
   await expect(page.locator("pre")).toHaveText("Two");
+  await expect(page.getByTitle("Browse files", { exact: true })).toHaveAttribute("aria-expanded", "false");
+  await page.getByTitle("Browse files", { exact: true }).click();
   await page.getByRole("button", { name: "one.txt", exact: true }).click();
   await expect(page.locator("pre")).toHaveText("One");
   expect(await page.evaluate(() => window.artifactsE2E.state().runtimeContext)).toContain('open_tabs: ["/one.txt"]');

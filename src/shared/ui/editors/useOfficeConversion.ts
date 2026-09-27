@@ -14,6 +14,19 @@ import { getFileName } from "@/shared/lib/utils";
  */
 export const OFFICE_IFRAME_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
 
+function decodeOfficeDataUrl(content: string) {
+  const declaredBytes = dataUrlDecodedByteLength(content);
+  if (declaredBytes === null) throw new TypeError("Office artifact is not a valid base64 data URL");
+  // Reject from encoded length before decoding allocates the byte buffer.
+  assertOoxmlInputByteLength(declaredBytes);
+  const parsed = dataUrlToBytes(content);
+  if (!parsed) throw new TypeError("Office artifact is not a valid base64 data URL");
+  // The decoded buffer is authoritative if the input decoder ever accepts a
+  // representation the length preflight did not account for.
+  assertOoxmlInputByteLength(parsed.bytes.byteLength);
+  return parsed;
+}
+
 /**
  * Shared loader for the office preview editors: decodes the artifact's binary
  * data URL, runs it through the given converter, and reports failure so the
@@ -35,17 +48,9 @@ export function useOfficeConversion<T>(
     setResult(null);
     setFailed(false);
 
-    let parsed: ReturnType<typeof dataUrlToBytes>;
+    let parsed: ReturnType<typeof decodeOfficeDataUrl>;
     try {
-      const declaredBytes = dataUrlDecodedByteLength(content);
-      if (declaredBytes === null) throw new TypeError("Office artifact is not a valid base64 data URL");
-      // Reject from encoded length before decoding allocates the byte buffer.
-      assertOoxmlInputByteLength(declaredBytes);
-      parsed = dataUrlToBytes(content);
-      if (!parsed) throw new TypeError("Office artifact is not a valid base64 data URL");
-      // The decoded buffer is authoritative if the input decoder ever accepts a
-      // representation the length preflight did not account for.
-      assertOoxmlInputByteLength(parsed.bytes.byteLength);
+      parsed = decodeOfficeDataUrl(content);
     } catch (error) {
       console.error(`Office preview failed for ${path}, falling back to text preview:`, error);
       setFailed(true);

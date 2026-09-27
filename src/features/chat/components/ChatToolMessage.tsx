@@ -45,9 +45,10 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
     providers.some((p) => p.id === appProviderId);
   const header = resolveToolHeader(toolDef, toolResult?.name ?? "", toolResult?.arguments, { error: isToolError });
   const inputBlocks = useMemo(() => resolveToolInput(toolDef, toolResult?.arguments), [toolDef, toolResult?.arguments]);
+  const toolOutput = toolResult?.result;
   const outputBlock = useMemo(
-    () => (message.error || !toolResult?.result ? null : resolveToolOutput(toolDef, toolResult.result)),
-    [toolDef, message.error, toolResult?.result],
+    () => (message.error || !toolOutput ? null : resolveToolOutput(toolDef, toolOutput)),
+    [toolDef, message.error, toolOutput],
   );
 
   return (

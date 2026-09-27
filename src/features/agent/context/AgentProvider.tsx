@@ -91,9 +91,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     (id: string) => (ownerActive.current ? getItems().find((agent) => agent.id === id) : undefined),
     [getItems],
   );
-  const [ingestion] = useState(
-    () =>
-      new FileIngestion({
+  // Created on first use (from events only) so render never builds the service.
+  const ingestionRef = useRef<FileIngestion | null>(null);
+  const getIngestion = useCallback(() => {
+    if (!ingestionRef.current) {
+      ingestionRef.current = new FileIngestion({
         getFiles: (id) => {
           const agent = getAgent(id);
           return agent ? (agent.files ?? []) : undefined;
@@ -111,42 +113,44 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         convert: (file, signal) => convertFileToText(file, { signal }),
         segment: (text, signal) => getConfig().client.segmentText(text, { signal }),
         embed: (model, text, signal) => getConfig().client.embedText(model, text, { signal }),
-      }),
-  );
+      });
+    }
+    return ingestionRef.current;
+  }, [getAgent, upsertFile, update, flush]);
   useEffect(() => {
     ownerActive.current = true;
     return () => {
       ownerActive.current = false;
-      ingestion.cancelAll();
+      ingestionRef.current?.cancelAll();
     };
-  }, [ingestion]);
+  }, []);
 
   const addFile = useCallback(
-    (agentId: string, file: File) => ingestion.addFile(agentId, file),
-    [ingestion],
+    (agentId: string, file: File) => getIngestion().addFile(agentId, file),
+    [getIngestion],
   );
   const reindexFile = useCallback(
-    (agentId: string, fileId: string) => ingestion.reindexFile(agentId, fileId),
-    [ingestion],
+    (agentId: string, fileId: string) => getIngestion().reindexFile(agentId, fileId),
+    [getIngestion],
   );
   const deleteAgent = useCallback(
     async (id: string) => {
-      ingestion.cancelRepository(id);
+      getIngestion().cancelRepository(id);
       setCurrentId((current) => (current === id ? null : current));
       await remove(id);
     },
-    [ingestion, remove],
+    [getIngestion, remove],
   );
 
   const removeFile = useCallback(
     (id: string, fileId: string) => {
-      ingestion.cancelFile(id, fileId);
+      getIngestion().cancelFile(id, fileId);
       update(id, (agent) => ({
         ...agent,
         files: agent.files?.filter((file) => file.id !== fileId),
       }));
     },
-    [ingestion, update],
+    [getIngestion, update],
   );
 
   const addServer = useCallback(

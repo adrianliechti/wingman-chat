@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { notify } from "@/shared/lib/notify";
 import { reportPersistenceError, usePersistenceQueue } from "./usePersistenceQueue";
 
@@ -16,7 +16,9 @@ export function usePersistentCollection<T extends { id: string }>(storage: Colle
   const touched = useRef(new Set<string>());
   const queue = usePersistenceQueue();
   const storageRef = useRef(storage);
-  storageRef.current = storage;
+  useLayoutEffect(() => {
+    storageRef.current = storage;
+  });
 
   const publish = useCallback((next: T[]) => {
     // Synchronous ownership lets two edits in the same event see each other.

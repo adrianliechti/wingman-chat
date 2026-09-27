@@ -27,6 +27,53 @@ function toDiagramText(content: string): string {
   }
 }
 
+async function renderMermaid(content: string): Promise<string> {
+  const mermaid = (await import("mermaid")).default;
+  const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  const themeVariables = dark
+    ? {
+        darkMode: true,
+        background: "#111715",
+        primaryColor: "#153d39",
+        primaryTextColor: "#f3f7f5",
+        primaryBorderColor: "#4fc1b2",
+        secondaryColor: "#4a2d27",
+        secondaryTextColor: "#fff5ef",
+        secondaryBorderColor: "#f08a68",
+        tertiaryColor: "#302845",
+        tertiaryTextColor: "#f7f2ff",
+        tertiaryBorderColor: "#a991d4",
+        lineColor: "#a8bab4",
+        textColor: "#f3f7f5",
+        clusterBkg: "#18211e",
+        clusterBorder: "#60736d",
+        edgeLabelBackground: "#18211e",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      }
+    : {
+        background: "#ffffff",
+        primaryColor: "#e4f4f0",
+        primaryTextColor: "#17332f",
+        primaryBorderColor: "#168779",
+        secondaryColor: "#fff0e8",
+        secondaryTextColor: "#4b2b22",
+        secondaryBorderColor: "#d96846",
+        tertiaryColor: "#f1ecfb",
+        tertiaryTextColor: "#322747",
+        tertiaryBorderColor: "#7659a3",
+        lineColor: "#53645f",
+        textColor: "#20302c",
+        clusterBkg: "#f7faf8",
+        clusterBorder: "#9bada7",
+        edgeLabelBackground: "#ffffff",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      };
+  mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables, securityLevel: "strict" });
+  renderSeq += 1;
+  const { svg } = await mermaid.render(`mermaid-${renderSeq}`, content);
+  return svg;
+}
+
 /**
  * Renders Mermaid diagram source to SVG. `mermaid` is imported dynamically so it
  * lands in its own chunk (loaded only when a `.mmd` artifact is viewed) — and
@@ -42,49 +89,7 @@ function MermaidPreview({ content }: { content: string }) {
     setError(null);
     void (async () => {
       try {
-        const mermaid = (await import("mermaid")).default;
-        const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-        const themeVariables = dark
-          ? {
-              darkMode: true,
-              background: "#111715",
-              primaryColor: "#153d39",
-              primaryTextColor: "#f3f7f5",
-              primaryBorderColor: "#4fc1b2",
-              secondaryColor: "#4a2d27",
-              secondaryTextColor: "#fff5ef",
-              secondaryBorderColor: "#f08a68",
-              tertiaryColor: "#302845",
-              tertiaryTextColor: "#f7f2ff",
-              tertiaryBorderColor: "#a991d4",
-              lineColor: "#a8bab4",
-              textColor: "#f3f7f5",
-              clusterBkg: "#18211e",
-              clusterBorder: "#60736d",
-              edgeLabelBackground: "#18211e",
-              fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            }
-          : {
-              background: "#ffffff",
-              primaryColor: "#e4f4f0",
-              primaryTextColor: "#17332f",
-              primaryBorderColor: "#168779",
-              secondaryColor: "#fff0e8",
-              secondaryTextColor: "#4b2b22",
-              secondaryBorderColor: "#d96846",
-              tertiaryColor: "#f1ecfb",
-              tertiaryTextColor: "#322747",
-              tertiaryBorderColor: "#7659a3",
-              lineColor: "#53645f",
-              textColor: "#20302c",
-              clusterBkg: "#f7faf8",
-              clusterBorder: "#9bada7",
-              edgeLabelBackground: "#ffffff",
-              fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            };
-        mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables, securityLevel: "strict" });
-        renderSeq += 1;
-        const { svg: rendered } = await mermaid.render(`mermaid-${renderSeq}`, content);
+        const rendered = await renderMermaid(content);
         if (!cancelled) setSvg(rendered);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));

@@ -152,24 +152,13 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
       const nodes = await buildTree(root, "");
       setTree(nodes);
 
-      // Calculate totals
-      let size = 0;
-      let files = 0;
-      const walk = (n: TreeNode) => {
-        if (n.kind === "file") {
-          files++;
-          size += n.size ?? 0;
-        }
-        n.children?.forEach(walk);
-      };
-      nodes.forEach(walk);
-      setTotalSize(size);
-      setTotalFiles(files);
+      const totals = nodes.map(countDescendants);
+      setTotalSize(totals.reduce((sum, t) => sum + t.size, 0));
+      setTotalFiles(totals.reduce((sum, t) => sum + t.files, 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to read OPFS");
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {

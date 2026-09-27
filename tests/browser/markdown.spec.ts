@@ -31,12 +31,16 @@ test("emoji have one wrapper, preserve sequences, and use Noto for hearts and su
 
 test("finishing a stream and loading math preserve preview state", async ({ page }) => {
   const source = "```markdown\n# Preview\n```";
-  await page.evaluate((content) => window.markdownE2E.render(content, true), source);
+  await page.evaluate((content) => window.markdownE2E.render(content), source);
   await page.getByRole("button", { name: "Code", exact: true }).click();
+  await expect(page.locator("pre")).toContainText("# Preview");
+  await page.evaluate((content) => window.markdownE2E.render(content, true), source);
+  await expect(page.getByRole("button", { name: "Preview", exact: true })).toHaveCount(0);
   await expect(page.locator("pre")).toContainText("# Preview");
   await page.evaluate((content) => window.markdownE2E.render(content + "\n\n$$x^2$$"), source);
   await expect(page.locator(".katex")).toBeVisible();
   await expect(page.locator("pre")).toContainText("# Preview");
+  await expect(page.getByRole("button", { name: "Preview", exact: true })).toBeVisible();
 });
 
 test("code shows the latest source while highlighting waits", async ({ page }) => {

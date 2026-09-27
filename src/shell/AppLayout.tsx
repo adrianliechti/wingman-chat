@@ -1,7 +1,7 @@
 import { Transition } from "@headlessui/react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, Coffee, Image, Languages, MessageCircle, PanelLeftOpen } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ViewTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { AccountMenu } from "@/features/settings/components/AccountMenu";
@@ -9,7 +9,7 @@ import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
-import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
+import { useBreakpoint, useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { ProviderState } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
@@ -71,6 +71,7 @@ export function AppLayout() {
   // Track desktop breakpoint so the sidebar width is only applied on md+
   // (mobile keeps its full-width overlay).
   const isDesktop = useBreakpoint("md");
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -84,63 +85,12 @@ export function AppLayout() {
     setSettingsOpen(true);
   }, []);
 
-  // Refs and state for animated slider (tablet and desktop only)
-  const tabletRef = useRef<HTMLDivElement>(null);
-  const desktopRef = useRef<HTMLDivElement>(null);
-  const [sliderStyles, setSliderStyles] = useState({
-    tablet: { left: 0, width: 0 },
-    desktop: { left: 0, width: 0 },
-  });
-
-  // Shared function to update slider positions
-  const updateSlider = useCallback(
-    (containerRef: React.RefObject<HTMLDivElement | null>, key: "tablet" | "desktop") => {
-      if (containerRef.current) {
-        const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
-        if (activeButton) {
-          const containerRect = containerRef.current.getBoundingClientRect();
-          const buttonRect = activeButton.getBoundingClientRect();
-
-          setSliderStyles((prev) => ({
-            ...prev,
-            [key]: {
-              left: buttonRect.left - containerRect.left,
-              width: buttonRect.width,
-            },
-          }));
-        }
-      }
-    },
-    [currentPage],
-  );
-
-  // Update slider positions for all breakpoints
+  // React to breakpoint changes; the active tab's highlight follows its own
+  // layout and React coordinates the shared-element navigation animation.
   useEffect(() => {
-    setTimeout(() => {
-      updateSlider(tabletRef, "tablet");
-      updateSlider(desktopRef, "desktop");
-    }, 0);
-  }, [updateSlider]);
-
-  // Auto-close sidebar on mobile screens and update sliders on resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setShowSidebar(false);
-      }
-      if (window.innerWidth >= 768) {
-        setMobileMenuOpen(false);
-      }
-      setTimeout(() => {
-        updateSlider(tabletRef, "tablet");
-        updateSlider(desktopRef, "desktop");
-      }, 100);
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [setShowSidebar, updateSlider]);
+    if (isDesktop) setMobileMenuOpen(false);
+    else setShowSidebar(false);
+  }, [isDesktop, setShowSidebar]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
   useEffect(() => {
@@ -327,23 +277,7 @@ export function AppLayout() {
             {/* Center section - Modern pill navigation for desktop */}
             {showNavigation && (
               <div className="hidden md:flex items-center justify-center">
-                <div
-                  ref={desktopRef}
-                  className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-                >
-                  {/* Animated slider background */}
-                  {pages.some((p) => p.key === currentPage) && (
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                      style={{
-                        left: `${sliderStyles.desktop.left}px`,
-                        width: `${sliderStyles.desktop.width}px`,
-                        height: "calc(100% - 8px)",
-                        top: "4px",
-                      }}
-                    />
-                  )}
-
+                <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
                   {/* Navigation items */}
                   {pages.map(({ key, label, icon, to }) => (
                     <Link
@@ -351,13 +285,24 @@ export function AppLayout() {
                       to={to}
                       data-page={key}
                       className={cn(
-                        "relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out",
+                        "relative isolate z-10 px-3 py-1.5 rounded-full font-medium transition-colors duration-200 ease-out",
                         "flex items-center gap-2 text-sm cursor-pointer",
                         currentPage === key
                           ? "text-neutral-900 dark:text-neutral-100"
                           : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                       )}
                     >
+                      {currentPage === key && (
+                        <ViewTransition
+                          name="navigation-highlight"
+                          default={reducedMotion ? "none" : "navigation-highlight"}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-white shadow-sm dark:bg-neutral-950"
+                          />
+                        </ViewTransition>
+                      )}
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
                     </Link>

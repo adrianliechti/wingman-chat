@@ -1,6 +1,6 @@
 import { Dialog, Transition } from "@headlessui/react";
 import { Bot, ClipboardCheck, Folder, LayoutGrid, Puzzle, Wrench, X, Zap } from "lucide-react";
-import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useReducer, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { BridgeServer } from "@/features/agent/types/agent";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
@@ -169,8 +169,6 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   const hasPlugins = plugins.length > 0;
   const steps = useMemo(() => getSteps(hasPlugins), [hasPlugins]);
@@ -202,22 +200,21 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   }, []);
 
   const handleCreate = useCallback(async () => {
-    const s = stateRef.current;
+    const s = state;
     setIsCreating(true);
+    const options = {
+      instructions: s.instructions.trim() || undefined,
+      skills: s.selectedSkills,
+      plugins: s.selectedPlugins,
+      tools: s.selectedTools,
+      model: s.model || undefined,
+      memory: s.memory || undefined,
+    };
     try {
-      const agent = await createAgent(s.name.trim(), {
-        instructions: s.instructions.trim() || undefined,
-        skills: s.selectedSkills,
-        plugins: s.selectedPlugins,
-        tools: s.selectedTools,
-        model: s.model || undefined,
-        memory: s.memory || undefined,
-      });
+      const agent = await createAgent(s.name.trim(), options);
 
       // Add MCP servers
-      for (const server of s.servers) {
-        addServer(agent.id, server);
-      }
+      s.servers.forEach((server) => addServer(agent.id, server));
 
       // Bind the entire batch to the created agent before closing the wizard.
       void (async () => {
@@ -227,10 +224,9 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       onClose();
     } catch (error) {
       console.error("Failed to create agent:", error);
-    } finally {
-      setIsCreating(false);
     }
-  }, [createAgent, addServer, addFile, onClose]);
+    setIsCreating(false);
+  }, [state, createAgent, addServer, addFile, onClose]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });

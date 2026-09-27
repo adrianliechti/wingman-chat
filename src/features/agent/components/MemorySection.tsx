@@ -235,9 +235,8 @@ export function MemorySection({ agent }: { agent: Agent }) {
       await refresh();
     } catch (error) {
       setError(describe(error));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const save = () =>
     operate(async () => {

@@ -98,9 +98,8 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
       } catch (err) {
         console.error("Failed to list directory:", err);
         setChildren([]);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     }
 
     setExpanded(true);

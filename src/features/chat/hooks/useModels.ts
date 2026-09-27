@@ -54,6 +54,24 @@ export function getSavedModel(models: readonly Model[]): Model | null {
   };
 }
 
+function saveSelectedModel(model: Model | null) {
+  try {
+    if (model && model.id !== "realtime") {
+      // Persist the effort alongside the id ("id@effort") so a fresh chat after
+      // reload defaults to the last chosen effort, not just the last model.
+      localStorage.setItem(STORAGE_KEY, model.effort ? `${model.id}@${model.effort}` : model.id);
+      // Verbosity a slider preset chose; unset leaves the model's own default.
+      if (model.verbosity) localStorage.setItem(VERBOSITY_STORAGE_KEY, model.verbosity);
+      else localStorage.removeItem(VERBOSITY_STORAGE_KEY);
+    } else if (!model) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(VERBOSITY_STORAGE_KEY);
+    }
+  } catch {
+    // Silently handle localStorage errors
+  }
+}
+
 export function useModels() {
   const config = getConfig();
   const available = useModelCatalog("completer");
@@ -87,22 +105,7 @@ export function useModels() {
   // Function to update selected model and save to localStorage
   const setSelectedModel = useCallback((model: Model | null) => {
     setSelectedModelState(model);
-
-    try {
-      if (model && model.id !== "realtime") {
-        // Persist the effort alongside the id ("id@effort") so a fresh chat after
-        // reload defaults to the last chosen effort, not just the last model.
-        localStorage.setItem(STORAGE_KEY, model.effort ? `${model.id}@${model.effort}` : model.id);
-        // Verbosity a slider preset chose; unset leaves the model's own default.
-        if (model.verbosity) localStorage.setItem(VERBOSITY_STORAGE_KEY, model.verbosity);
-        else localStorage.removeItem(VERBOSITY_STORAGE_KEY);
-      } else if (!model) {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(VERBOSITY_STORAGE_KEY);
-      }
-    } catch {
-      // Silently handle localStorage errors
-    }
+    saveSelectedModel(model);
   }, []);
 
   return {

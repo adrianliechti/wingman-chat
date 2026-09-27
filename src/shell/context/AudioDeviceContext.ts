@@ -13,6 +13,8 @@ export interface AudioDeviceContextType {
   inputDevices: MediaDeviceInfo[];
   outputDevices: MediaDeviceInfo[];
   micPermission: MicPermissionState;
+  /** True once an enumeration has completed, so an empty list means "no usable devices". */
+  devicesEnumerated: boolean;
   setInputDevice: (id: string | undefined) => void;
   setOutputDevice: (id: string | undefined) => void;
   requestPermission: () => Promise<void>;

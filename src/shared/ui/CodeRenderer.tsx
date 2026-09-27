@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { highlightCode } from "@/shared/lib/highlight";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
@@ -78,16 +79,7 @@ const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle =
 
     const highlight = async () => {
       try {
-        const { codeToHtml } = await import("shiki");
-        if (cancelled) return;
-        const highlighted = await codeToHtml(code, {
-          lang: normalizedLanguage,
-          theme: isDark ? "one-dark-pro" : "one-light",
-          colorReplacements: {
-            "#fafafa": "transparent",
-            "#282c34": "transparent",
-          },
-        });
+        const highlighted = await highlightCode(code, normalizedLanguage, isDark);
 
         if (!cancelled) {
           // Retain completed blocks, not hundreds of growing stream prefixes.

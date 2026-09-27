@@ -12,7 +12,8 @@ export function useArtifactEntries(fs: FileSystemManager | null): FileEntry[] {
     if (!fs) return;
     let version = 0;
     const load = async () => {
-      const request = ++version;
+      version += 1;
+      const request = version;
       try {
         const files = await fs.listEntries();
         if (request === version) setLoaded({ workspace, files });
@@ -29,7 +30,7 @@ export function useArtifactEntries(fs: FileSystemManager | null): FileEntry[] {
     ];
     void load();
     return () => {
-      version++;
+      version += 1;
       subscriptions.forEach((unsubscribe) => unsubscribe());
     };
   }, [workspace]);
@@ -46,14 +47,16 @@ export function useArtifactFile(fs: FileSystemManager | null, path: string | nul
     if (!fs || !path) return;
     let version = 0;
     const load = async () => {
-      const request = ++version;
-      try {
-        const file = (await fs.getFile(path)) ?? null;
-        if (request === version) setLoaded({ selection, file });
-      } catch (error) {
-        console.error("Error loading artifact content:", error);
-        if (request === version) setLoaded({ selection, file: null });
-      }
+      version += 1;
+      const request = version;
+      const file = await fs.getFile(path).then(
+        (loaded) => loaded ?? null,
+        (error: unknown) => {
+          console.error("Error loading artifact content:", error);
+          return null;
+        },
+      );
+      if (request === version) setLoaded({ selection, file });
     };
     const refresh = (changed: string) => {
       if (changed === path) void load();
@@ -66,13 +69,13 @@ export function useArtifactFile(fs: FileSystemManager | null, path: string | nul
       }),
       fs.subscribe("fileDeleted", (deleted) => {
         if (deleted !== path) return;
-        version++;
+        version += 1;
         setLoaded({ selection, file: null });
       }),
     ];
     void load();
     return () => {
-      version++;
+      version += 1;
       subscriptions.forEach((unsubscribe) => unsubscribe());
     };
   }, [selection]);

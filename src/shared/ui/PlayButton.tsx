@@ -11,6 +11,19 @@ type PlayButtonProps = {
   className?: string;
 };
 
+async function speak(
+  text: string,
+  voice: string | undefined,
+  outputDeviceId: string | undefined,
+  signal: AbortSignal,
+  onPlaying: () => void,
+) {
+  const config = getConfig();
+  const model = await resolveModel(config.tts?.model, "synthesizer");
+  const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
+  await config.client.speakText(model, text, resolvedVoice, outputDeviceId, { signal, onPlaying });
+}
+
 export function PlayButton({ text, voice, className }: PlayButtonProps) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const controllerRef = useRef<AbortController | null>(null);
@@ -37,25 +50,18 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     controllerRef.current = controller;
     setStatus("loading");
     try {
-      const config = getConfig();
-      const model = await resolveModel(config.tts?.model, "synthesizer");
-      const resolvedVoice = voice ? (config.tts?.voices?.[voice] ?? voice) : undefined;
-      await config.client.speakText(model, text, resolvedVoice, outputDeviceId, {
-        signal: controller.signal,
-        onPlaying: () => {
-          if (controllerRef.current === controller) setStatus("playing");
-        },
+      await speak(text, voice, outputDeviceId, controller.signal, () => {
+        if (controllerRef.current === controller) setStatus("playing");
       });
     } catch (error) {
       if (!controller.signal.aborted) {
         console.error("Failed to play text:", error);
         notify.error("Couldn't play message", "Check your audio output and try again.");
       }
-    } finally {
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
-        setStatus("idle");
-      }
+    }
+    if (controllerRef.current === controller) {
+      controllerRef.current = null;
+      setStatus("idle");
     }
   };
 

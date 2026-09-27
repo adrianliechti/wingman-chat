@@ -1,12 +1,6 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import {
-  AppWindow,
-  ArrowDown,
-  Info,
-  Plus as PlusIcon,
-  Shapes,
-} from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -15,10 +9,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { EdgeLatch } from "@/features/chat/components/EdgeLatch";
 import { PanelShell } from "@/features/chat/components/PanelShell";
 import { AgentButton } from "@/features/chat/components/AgentButton";
-import {
-  ChatConsentBackdrop,
-  ChatConsentBanner,
-} from "@/features/chat/components/ChatConsentOverlay";
+import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
@@ -45,18 +36,20 @@ import { useLayout } from "@/shell/hooks/useLayout";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
+function loadDisclaimer() {
+  try {
+    const config = getConfig();
+    return config.disclaimer?.trim()
+      ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
-  const disclaimer = useMemo(() => {
-    try {
-      const config = getConfig();
-      return config.disclaimer?.trim()
-        ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
-        : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const disclaimer = useMemo(() => loadDisclaimer(), []);
 
   if (!disclaimer) return null;
 
@@ -156,13 +149,8 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const {
-    showSkillCatalog,
-    skillCatalogTarget,
-    skillCatalogSection,
-    skillCatalogReadOnly,
-    closeSkillCatalog,
-  } = useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
+    useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
   const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
@@ -171,9 +159,7 @@ export function ChatPage() {
     (pluginId: string) => {
       if (!currentAgent) return;
       const current = currentAgent.plugins ?? [];
-      const next = current.includes(pluginId)
-        ? current.filter((id) => id !== pluginId)
-        : [...current, pluginId];
+      const next = current.includes(pluginId) ? current.filter((id) => id !== pluginId) : [...current, pluginId];
       updateAgent(currentAgent.id, { plugins: next });
     },
     [currentAgent, updateAgent],
@@ -183,9 +169,7 @@ export function ChatPage() {
     (skillName: string) => {
       if (!currentAgent) return;
       const current = currentAgent.skills ?? [];
-      const next = current.includes(skillName)
-        ? current.filter((n) => n !== skillName)
-        : [...current, skillName];
+      const next = current.includes(skillName) ? current.filter((n) => n !== skillName) : [...current, skillName];
       updateAgent(currentAgent.id, { skills: next });
     },
     [currentAgent, updateAgent],
@@ -253,11 +237,7 @@ export function ChatPage() {
           ? (appWidthVw / 100) * window.innerWidth
           : 0,
     setSiblingWidthVw: (widthVw) =>
-      showArtifactsDrawer
-        ? setArtifactsWidthVw(widthVw)
-        : showAppDrawer
-          ? setAppWidthVw(widthVw)
-          : undefined,
+      showArtifactsDrawer ? setArtifactsWidthVw(widthVw) : showAppDrawer ? setAppWidthVw(widthVw) : undefined,
     siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
     show: showAgentDrawer,
     setShow: setShowAgentDrawer,
@@ -346,11 +326,7 @@ export function ChatPage() {
   // Right-edge offset for content (chat column + footer) that must clear the open
   // right-side drawer(s). Both the main margin and the fixed footer use this, so it
   // lives in one place to stay in sync. `null` when nothing needs offsetting.
-  const drawerSiblingVw = showAppDrawer
-    ? appWidthVw
-    : showArtifactsDrawer
-      ? artifactsWidthVw
-      : null;
+  const drawerSiblingVw = showAppDrawer ? appWidthVw : showArtifactsDrawer ? artifactsWidthVw : null;
   const contentRightOffset = isMobile
     ? undefined
     : drawerSiblingVw !== null
@@ -362,9 +338,7 @@ export function ChatPage() {
   const agentOffsetVw = !isMobile && showAgentDrawer ? agentWidthVw : 0;
   // Whether the drawer driving that offset is mid-drag (so the footer tracks instantly).
   const isContentOffsetResizing =
-    isAgentResizing ||
-    (showAppDrawer && isAppResizing) ||
-    (showArtifactsDrawer && isArtifactsResizing);
+    isAgentResizing || (showAppDrawer && isAppResizing) || (showArtifactsDrawer && isArtifactsResizing);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar, sidebarWidth, isSidebarResizing } = useSidebar();
@@ -372,9 +346,6 @@ export function ChatPage() {
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
-  const messageKeysRef = useRef<string[]>([]);
-  const messageKeyScopeRef = useRef<string | null>(null);
-  const nextMessageKeyRef = useRef(0);
   const previousChatIdRef = useRef<string | null>(null);
   // Tracks the previous *route* chatId (from the URL). Used to distinguish a
   // genuine user navigation away from a chat from a transient router render
@@ -382,26 +353,10 @@ export function ChatPage() {
   // Previous route chatId — distinguishes real navigation from implicit-creation renders
   const previousRouteChatIdRef = useRef<string | undefined>(undefined);
 
-  const messageRenderKeys = useMemo(() => {
-    const scopeKey = chat?.id ?? routeChatId ?? "__draft__";
-
-    if (messageKeyScopeRef.current !== scopeKey) {
-      messageKeysRef.current = [];
-      nextMessageKeyRef.current = 0;
-      messageKeyScopeRef.current = scopeKey;
-    }
-
-    if (messageKeysRef.current.length > messages.length) {
-      messageKeysRef.current.length = messages.length;
-    }
-
-    while (messageKeysRef.current.length < messages.length) {
-      messageKeysRef.current.push(`${scopeKey}-message-${nextMessageKeyRef.current}`);
-      nextMessageKeyRef.current += 1;
-    }
-
-    return messageKeysRef.current.slice(0, messages.length);
-  }, [chat?.id, messages.length, routeChatId]);
+  // Persisted IDs survive streaming, edits and reloads. Scope legacy fallbacks
+  // to the chat without mutating refs during a potentially interrupted render.
+  const messageScope = chat?.id ?? routeChatId ?? "__draft__";
+  const messageRenderKeys = messages.map((message, index) => `${messageScope}:${message.id ?? index}`);
 
   // Fold runs of consecutive tool results into collapsible groups so tool-heavy
   // turns read as one tidy "Used N tools" row instead of a scattered stack.
@@ -451,67 +406,16 @@ export function ChatPage() {
     return () => setSidebarContent(null);
   }, [sidebarContent, setSidebarContent]);
 
-  // Ref to cache the fixed footer element
-  const footerElementRef = useRef<HTMLElement | null>(null);
-
-  // Memoized height observer callback
-  const observeHeight = useCallback(() => {
-    const element = footerElementRef.current ?? document.querySelector("footer");
-    if (element) {
-      footerElementRef.current = element;
-      const height = element.getBoundingClientRect().height;
-      setChatInputHeight(height + 24);
-    }
+  const measureFooter = useCallback((footer: HTMLElement | null) => {
+    if (!footer) return;
+    // Measure during attachment, before the initial scroll-to-bottom. The
+    // observer also catches font loading, attachments and viewport changes.
+    const measure = () => setChatInputHeight(footer.getBoundingClientRect().height + 24);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(footer);
+    return () => observer.disconnect();
   }, []);
-
-  // Measure footer height synchronously on mount so that the initial
-  // scroll-to-bottom on direct URL loads uses the correct paddingBottom.
-  // The async 100ms measurement below fires too late when messages are cached.
-  useLayoutEffect(() => {
-    observeHeight();
-  }, [observeHeight]);
-
-  // Observer for chat input height changes to adjust message container padding
-  useEffect(() => {
-    // Fallback measurement after a short delay in case the layout effect fired
-    // before fonts/styles were fully applied (rare, but keeps the observer setup).
-    const timer = setTimeout(observeHeight, 100);
-
-    // Create a MutationObserver to watch for changes in the footer area
-    const mutationObserver = new MutationObserver(observeHeight);
-
-    // Use ResizeObserver to watch for height changes
-    const resizeObserver = new ResizeObserver(observeHeight);
-
-    // Start observing once the fixed footer element exists
-    const startObserving = () => {
-      const footerElement = document.querySelector("footer");
-      if (footerElement) {
-        footerElementRef.current = footerElement as HTMLElement;
-        resizeObserver.observe(footerElement);
-        mutationObserver.observe(footerElement, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-        });
-      } else {
-        // If footer doesn't exist yet, try again after a short delay
-        setTimeout(startObserving, 50);
-      }
-    };
-
-    startObserving();
-
-    // Also listen for window resize as a fallback
-    window.addEventListener("resize", observeHeight);
-
-    return () => {
-      clearTimeout(timer);
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-      window.removeEventListener("resize", observeHeight);
-    };
-  }, [observeHeight]);
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
@@ -523,10 +427,7 @@ export function ChatPage() {
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {(chatLoading && showChatLoading) || chatError ? (
-            <div
-              className="m-auto p-6 text-sm text-neutral-500"
-              role={chatError ? "alert" : "status"}
-            >
+            <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (
                 <button
@@ -546,23 +447,15 @@ export function ChatPage() {
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
-                    <img
-                      src="/logo_light.svg"
-                      alt="Wingman Chat"
-                      className="h-24 w-24 opacity-70 dark:hidden"
-                    />
-                    <img
-                      src="/logo_dark.svg"
-                      alt="Wingman Chat"
-                      className="h-24 w-24 opacity-70 hidden dark:block"
-                    />
+                    <img src="/logo_light.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 dark:hidden" />
+                    <img src="/logo_dark.svg" alt="Wingman Chat" className="h-24 w-24 opacity-70 hidden dark:block" />
                   </div>
                 )}
               </div>
             </div>
           ) : (
             <div
-              className="flex-1 overflow-auto transition-opacity duration-300 relative"
+              className="flex-1 overflow-auto [overflow-anchor:none] transition-opacity duration-300 relative"
               ref={handleScrollContainerRef}
               onTouchStart={() => {
                 if (document.activeElement instanceof HTMLElement) {
@@ -573,9 +466,7 @@ export function ChatPage() {
               <div
                 className={cn(
                   "px-3 pt-18 transition-[max-width] duration-150 ease-out",
-                  layoutMode === "wide"
-                    ? "max-w-full md:max-w-[80vw] mx-auto"
-                    : "max-content-width",
+                  layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
                 )}
                 style={{ paddingBottom: chatInputHeight }}
               >
@@ -585,13 +476,9 @@ export function ChatPage() {
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].content.find(
-                        (p) => p.type === "tool_result",
-                      );
+                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
                       const groupKey =
-                        first && "id" in first
-                          ? `group:${first.id}`
-                          : `group:${messageRenderKeys[unit.indices[0]]}`;
+                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
                           <ChatToolGroup messages={messages} indices={unit.indices} />
@@ -603,11 +490,7 @@ export function ChatPage() {
                     // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
                     const dataRole = isToolResultMessage(message) ? "tool" : message.role;
                     return (
-                      <div
-                        key={messageRenderKeys[index]}
-                        className="flow-root"
-                        data-role={dataRole}
-                      >
+                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
                         <ChatMessage
                           index={index}
                           message={message}
@@ -630,7 +513,7 @@ export function ChatPage() {
               onClick={goToLatest}
               className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
               style={{ bottom: chatInputHeight + 16 }}
-              title="Jump to latest"
+              title="Follow latest response"
             >
               <ArrowDown size={16} />
               <span>Latest</span>
@@ -641,18 +524,14 @@ export function ChatPage() {
       </div>
 
       <footer
+        ref={measureFooter}
         className={cn(
           "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           "right-0",
         )}
         style={{
           // Offset past the (resizable) sidebar so the input never sits under it.
-          ...(!isMobile &&
-          showSidebar &&
-          chats.length > 0 &&
-          !showAgentDrawer &&
-          !showAppDrawer &&
-          !showArtifactsDrawer
+          ...(!isMobile && showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
             ? { left: sidebarWidth + 12 }
             : {}),
           // Offset past the open right-side drawer(s); track the edge instantly while dragging.
@@ -713,6 +592,7 @@ export function ChatPage() {
       </PanelShell>
       <PanelShell
         open={showAgentDrawer}
+        preserveState
         widthVw={agentWidthVw}
         resizing={isAgentResizing}
         compact={isMobile}
@@ -720,7 +600,7 @@ export function ChatPage() {
         resizeLabel="Resize agent panel"
         onResizeStart={handleAgentResizeMouseDown}
       >
-        <AgentDrawer />
+        <AgentDrawer key={selectedChatId ?? "__draft__"} />
       </PanelShell>
       {/* App drawer for MCP tool UIs stays mounted so its iframe survives closing. */}
       <PanelShell

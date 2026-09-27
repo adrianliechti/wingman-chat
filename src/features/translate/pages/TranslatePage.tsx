@@ -90,11 +90,10 @@ export function TranslatePage() {
       const f = files[0];
       if (!f) return;
       setIsFetchingDrive(true);
-      try {
-        selectFile(await downloadDriveFile(f, config.translator?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
-      } finally {
-        setIsFetchingDrive(false);
-      }
+      const maxBytes = config.translator?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES;
+      await downloadDriveFile(f, maxBytes)
+        .then(selectFile)
+        .finally(() => setIsFetchingDrive(false));
     },
     [config.translator?.maxFileSize, selectFile],
   );
@@ -220,9 +219,10 @@ export function TranslatePage() {
     const controller = new AbortController();
     rewriteController.current = controller;
 
+    const model = config.translator?.model || "";
     try {
       const result = await config.client.rewriteText(
-        config.translator?.model || "",
+        model,
         currentText,
         selectedLanguage.code,
         undefined, // tone
@@ -237,14 +237,13 @@ export function TranslatePage() {
         setPromptText(""); // Clear the prompt input after successful rewrite
       }
     } catch (err) {
-      if (controller.signal.aborted) return;
-      const errorMessage = err instanceof Error ? err.message : "Failed to rewrite text";
-      setPromptError(errorMessage);
-    } finally {
-      if (rewriteController.current === controller) {
-        rewriteController.current = null;
-        setIsPromptLoading(false);
+      if (!controller.signal.aborted) {
+        setPromptError(err instanceof Error ? err.message : "Failed to rewrite text");
       }
+    }
+    if (rewriteController.current === controller) {
+      rewriteController.current = null;
+      setIsPromptLoading(false);
     }
   };
 

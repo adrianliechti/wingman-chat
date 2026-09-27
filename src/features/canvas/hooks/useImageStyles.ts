@@ -4,6 +4,18 @@ import { type ImageStyle, parseImageStyles } from "@/shared/lib/imageStyles";
 
 const STYLE_SKILL_NAME = "image-styles";
 
+async function loadImageStyles(): Promise<ImageStyle[] | null> {
+  try {
+    const template = (await loadSkillTemplates()).find((t) => t.name === STYLE_SKILL_NAME);
+    if (!template) return null;
+    const skill = await loadSkillTemplate(template.path);
+    return skill ? parseImageStyles(skill.content) : null;
+  } catch (error) {
+    console.error("Failed to load image styles:", error);
+    return null;
+  }
+}
+
 /**
  * Loads named image styles at runtime from the served `image-styles` skill, so
  * adding, removing, or editing that skill (e.g. mounted into the Docker image)
@@ -15,19 +27,9 @@ export function useImageStyles(): { styles: ImageStyle[]; prompts: Record<string
 
   useEffect(() => {
     let cancelled = false;
-
-    const load = async () => {
-      try {
-        const template = (await loadSkillTemplates()).find((t) => t.name === STYLE_SKILL_NAME);
-        if (!template) return;
-        const skill = await loadSkillTemplate(template.path);
-        if (skill && !cancelled) setStyles(parseImageStyles(skill.content));
-      } catch (error) {
-        console.error("Failed to load image styles:", error);
-      }
-    };
-
-    void load();
+    void loadImageStyles().then((loaded) => {
+      if (loaded && !cancelled) setStyles(loaded);
+    });
     return () => {
       cancelled = true;
     };

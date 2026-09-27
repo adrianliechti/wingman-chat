@@ -38,49 +38,53 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
   const [micPermission, setMicPermission] = useState<MicPermissionState>("unknown");
+  const [devicesEnumerated, setDevicesEnumerated] = useState(false);
 
   const enumerateDevices = useCallback(async () => {
     const request = ++enumeration.current;
     if (!navigator.mediaDevices?.enumerateDevices) return;
+    let devices: MediaDeviceInfo[];
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      if (!mounted.current || request !== enumeration.current) return;
-      const inputs = devices.filter((d) => d.kind === "audioinput" && d.deviceId);
-      const outputs = devices.filter((d) => d.kind === "audiooutput" && d.deviceId);
-
-      // Without an active stream some browsers return placeholder devices with
-      // empty IDs. Keep the last known list instead of clearing valid devices.
-      const anyPresent = devices.some((d) => d.kind === "audioinput" || d.kind === "audiooutput");
-      setInputDevices((prev) => (inputs.length === 0 && anyPresent ? prev : inputs));
-      setOutputDevices((prev) => (outputs.length === 0 && anyPresent ? prev : outputs));
-
-      // Permission can hide IDs, especially on initial load. Only forget a
-      // device we've actually seen disappear from a labelled device list.
-      const labelled = devices.some((device) => device.label);
-      const previouslyKnown = new Set(knownDevices.current);
-      if (labelled) knownDevices.current = new Set(devices.map((device) => device.deviceId));
-      setSettings((prev) => {
-        const inputValid =
-          !labelled ||
-          !prev.inputDeviceId ||
-          !previouslyKnown.has(prev.inputDeviceId) ||
-          inputs.some((d) => d.deviceId === prev.inputDeviceId);
-        const outputValid =
-          !labelled ||
-          !prev.outputDeviceId ||
-          !previouslyKnown.has(prev.outputDeviceId) ||
-          outputs.some((d) => d.deviceId === prev.outputDeviceId);
-
-        if (inputValid && outputValid) return prev;
-
-        return {
-          inputDeviceId: inputValid ? prev.inputDeviceId : undefined,
-          outputDeviceId: outputValid ? prev.outputDeviceId : undefined,
-        };
-      });
+      devices = await navigator.mediaDevices.enumerateDevices();
     } catch (error) {
       console.warn("Failed to enumerate audio devices:", error);
+      return;
     }
+    if (!mounted.current || request !== enumeration.current) return;
+    setDevicesEnumerated(true);
+    const inputs = devices.filter((d) => d.kind === "audioinput" && d.deviceId);
+    const outputs = devices.filter((d) => d.kind === "audiooutput" && d.deviceId);
+
+    // Without an active stream some browsers return placeholder devices with
+    // empty IDs. Keep the last known list instead of clearing valid devices.
+    const anyPresent = devices.some((d) => d.kind === "audioinput" || d.kind === "audiooutput");
+    setInputDevices((prev) => (inputs.length === 0 && anyPresent ? prev : inputs));
+    setOutputDevices((prev) => (outputs.length === 0 && anyPresent ? prev : outputs));
+
+    // Permission can hide IDs, especially on initial load. Only forget a
+    // device we've actually seen disappear from a labelled device list.
+    const labelled = devices.some((device) => device.label);
+    const previouslyKnown = new Set(knownDevices.current);
+    if (labelled) knownDevices.current = new Set(devices.map((device) => device.deviceId));
+    setSettings((prev) => {
+      const inputValid =
+        !labelled ||
+        !prev.inputDeviceId ||
+        !previouslyKnown.has(prev.inputDeviceId) ||
+        inputs.some((d) => d.deviceId === prev.inputDeviceId);
+      const outputValid =
+        !labelled ||
+        !prev.outputDeviceId ||
+        !previouslyKnown.has(prev.outputDeviceId) ||
+        outputs.some((d) => d.deviceId === prev.outputDeviceId);
+
+      if (inputValid && outputValid) return prev;
+
+      return {
+        inputDeviceId: inputValid ? prev.inputDeviceId : undefined,
+        outputDeviceId: outputValid ? prev.outputDeviceId : undefined,
+      };
+    });
   }, []);
 
   // Request microphone permission to unlock full device labels/IDs,
@@ -164,6 +168,7 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
         inputDevices,
         outputDevices,
         micPermission,
+        devicesEnumerated,
         setInputDevice,
         setOutputDevice,
         requestPermission,

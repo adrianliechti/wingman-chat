@@ -255,9 +255,9 @@ export function useChatRun({
             else if (event.type === "verification.started") setRunPhase("running_tool");
             else if (event.type === "verification.completed") setRunPhase("thinking");
           },
-          onTurnStart: () => {
+          onTurnStart: (assistant) => {
             if (!isActive()) return;
-            streamingAssistant = withMessageIdentity({ role: Role.Assistant, content: [] }, runId);
+            streamingAssistant = assistant;
             updateStreamingMessage({
               chatId: id,
               message: streamingAssistant,

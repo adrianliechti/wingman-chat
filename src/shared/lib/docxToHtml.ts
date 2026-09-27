@@ -1987,16 +1987,33 @@ function splitTable(table,body,target){
   var originalRows=Array.prototype.slice.call(tbody.rows),headerCount=0;
   while(headerCount<originalRows.length&&originalRows[headerCount].dataset.repeatHeader)headerCount++;
   if(headerCount===originalRows.length)headerCount=0;
-  var headerClones=[];
-  for(var h=0;h<headerCount;h++)headerClones.push(originalRows[h].cloneNode(true));
+  // Keep at least one data row with the headers so oversized rows still make progress.
+  var minimum=headerCount+1;
+  if(originalRows.length<=minimum)return false;
   var tail=table.cloneNode(false),children=table.children;
   for(var i=0;i<children.length;i++)if(children[i].tagName==='COLGROUP')tail.appendChild(children[i].cloneNode(true));
-  var tailBody=document.createElement('tbody'),movedRows=[];tail.appendChild(tailBody);
-  while(!fits(body)&&tbody.rows.length>1)movedRows.unshift(tbody.rows[tbody.rows.length-1]);
-  if(!movedRows.length)return false;
-  for(var j=0;j<headerClones.length;j++)tailBody.appendChild(headerClones[j]);
-  for(var k=0;k<movedRows.length;k++)tailBody.appendChild(movedRows[k]);
-  if(headerCount&&tbody.rows.length===headerCount)table.remove();
+  var tailBody=document.createElement('tbody'),remaining=originalRows.length;tail.appendChild(tailBody);
+  function keepRows(count){
+    var fragment=document.createDocumentFragment();
+    if(count<remaining){
+      for(var r=count;r<remaining;r++)fragment.appendChild(originalRows[r]);
+      tailBody.insertBefore(fragment,tailBody.firstChild);
+    }else{
+      for(var r=remaining;r<count;r++)fragment.appendChild(originalRows[r]);
+      tbody.appendChild(fragment);
+    }
+    remaining=count;
+  }
+  // Move rows in batches and binary-search the break instead of forcing layout per row.
+  var low=minimum,high=originalRows.length-1,best=minimum;
+  while(low<=high){
+    var mid=(low+high)>>1;keepRows(mid);
+    if(fits(body)){best=mid;low=mid+1}else high=mid-1;
+  }
+  keepRows(best);
+  var headers=document.createDocumentFragment();
+  for(var h=0;h<headerCount;h++)headers.appendChild(originalRows[h].cloneNode(true));
+  tailBody.insertBefore(headers,tailBody.firstChild);
   target.insertBefore(tail,target.firstChild);
   return true;
 }
@@ -2029,6 +2046,61 @@ function paginate(){
   syncAll();
 }
 window.__ooxmlPaginate=paginate;
+})();`;
+
+const DOCX_VIEW_SCRIPT = `(function(){
+var userZoom=1,pageWidth=0,fitFrame=0;
+function fit(){
+  fitFrame=0;
+  if(!pageWidth)return;
+  var scale=Math.min(1,document.documentElement.clientWidth/(pageWidth+32));
+  document.body.style.zoom=scale*userZoom;
+}
+function scheduleFit(){if(!fitFrame)fitFrame=requestAnimationFrame(fit)}
+function run(){
+  window.__ooxmlPaginate();
+  // Authored page widths do not change on zoom/resize. Measure once after pagination.
+  var pages=document.querySelectorAll('body > .pg');
+  for(var i=0;i<pages.length;i++)pageWidth=Math.max(pageWidth,pages[i].offsetWidth);
+  fit();
+}
+function setupComments(){
+  var toggle=document.querySelector('.comments-toggle'),panel=document.getElementById('docx-comments');
+  if(!toggle||!panel)return;
+  function setOpen(open,id){
+    panel.hidden=!open;toggle.setAttribute('aria-expanded',open?'true':'false');
+    var items=panel.querySelectorAll('.comment');
+    for(var i=0;i<items.length;i++)items[i].classList.toggle('is-active',items[i].id===id);
+    if(open&&id){var item=document.getElementById(id);if(item)item.scrollIntoView({block:'nearest'})}
+  }
+  toggle.addEventListener('click',function(){setOpen(panel.hidden)});
+  var close=panel.querySelector('[data-comments-close]');
+  if(close)close.addEventListener('click',function(){setOpen(false);toggle.focus()});
+  document.addEventListener('click',function(event){
+    var target=event.target,link=target&&target.closest&&target.closest('a[href^="#comment-"]');
+    if(!link)return;
+    event.preventDefault();setOpen(true,link.getAttribute('href').slice(1));
+  });
+  document.addEventListener('keydown',function(event){
+    if(event.key==='Escape'&&!panel.hidden){setOpen(false);toggle.focus()}
+  });
+}
+window.addEventListener('message',function(event){
+  var data=event.data;
+  if(event.source!==parent||!data||data.type!=='wingman:docx-zoom')return;
+  var next=Number(data.value);
+  if(!Number.isFinite(next))return;
+  userZoom=Math.max(.5,Math.min(2,next));scheduleFit();
+});
+window.addEventListener('resize',scheduleFit);
+// Wait for both images and fonts, then paginate once. Independent load, font-ready,
+// and animation-frame callbacks used to rebuild the complete page stack three times.
+var loaded=new Promise(function(resolve){
+  if(document.readyState==='complete')resolve();
+  else window.addEventListener('load',resolve,{once:true});
+});
+loaded.then(function(){return document.fonts&&document.fonts.ready}).then(run);
+setupComments();
 })();`;
 
 async function renderDocument(ctx: DocxCtx): Promise<string> {
@@ -2274,7 +2346,7 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     pageTemplates,
     commentsHtml,
     // Paginate after fonts/images settle, then fit the page stack to the viewport.
-    `<script>${DOCX_PAGINATION_SCRIPT}(function(){var userZoom=1;function f(){document.body.style.zoom='1';var W=0,p=document.querySelectorAll('body > .pg');for(var i=0;i<p.length;i++)W=Math.max(W,p[i].offsetWidth);var z=Math.min(1,document.documentElement.clientWidth/(W+32));document.body.style.zoom=z*userZoom;}function run(){window.__ooxmlPaginate();f()}function setupComments(){var toggle=document.querySelector('.comments-toggle'),panel=document.getElementById('docx-comments');if(!toggle||!panel)return;function setOpen(open,id){panel.hidden=!open;toggle.setAttribute('aria-expanded',open?'true':'false');var items=panel.querySelectorAll('.comment');for(var i=0;i<items.length;i++)items[i].classList.toggle('is-active',items[i].id===id);if(open&&id){var item=document.getElementById(id);if(item)item.scrollIntoView({block:'nearest'})}}toggle.addEventListener('click',function(){setOpen(panel.hidden)});var close=panel.querySelector('[data-comments-close]');if(close)close.addEventListener('click',function(){setOpen(false);toggle.focus()});document.addEventListener('click',function(event){var target=event.target,link=target&&target.closest&&target.closest('a[href^="#comment-"]');if(!link)return;event.preventDefault();setOpen(true,link.getAttribute('href').slice(1))});document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!panel.hidden){setOpen(false);toggle.focus()}})}window.addEventListener('message',function(event){var data=event.data;if(event.source!==parent||!data||data.type!=='wingman:docx-zoom')return;var next=Number(data.value);if(!Number.isFinite(next))return;userZoom=Math.max(.5,Math.min(2,next));f()});window.addEventListener('resize',f);window.addEventListener('load',run);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run);requestAnimationFrame(run);setupComments()})();</script>`,
+    `<script>${DOCX_PAGINATION_SCRIPT}${DOCX_VIEW_SCRIPT}</script>`,
     "</body></html>",
   ].join("");
 }

@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createPreviewSession, type PreviewSdkOptions, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import type { File, FileSystem } from "@/shared/types/file";
 
@@ -59,6 +59,10 @@ export interface HtmlPreviewProps {
 const DEFAULT_PATH = "index.html";
 const HTML_CONTENT_TYPE = "text/html;charset=utf-8";
 
+async function listFiles(fs: FileSystem | undefined): Promise<File[]> {
+  return fs ? fs.listFiles() : [];
+}
+
 function isHtmlPath(path: string): boolean {
   return path.endsWith(".html") || path.endsWith(".htm");
 }
@@ -97,38 +101,50 @@ export function HtmlPreview({
     },
     [onIframe],
   );
-  const sdkRef = useRef(sdk);
-  const onSessionRef = useRef(onSession);
-  const shouldReloadRef = useRef(shouldReload);
-  sdkRef.current = sdk;
-  onSessionRef.current = onSession;
-  shouldReloadRef.current = shouldReload;
   const sessionRef = useRef<PreviewSession | null>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const contentRef = useRef(content);
-  const pathRef = useRef(path);
   // Tracks the last (path, content) actually pushed to the session, so we
   // can skip redundant updateFile + reload cycles that cause iframe flicker.
   const lastPushedRef = useRef<{ path: string; content: string } | null>(null);
   const [session, setSession] = useState<PreviewSession | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep refs in sync so async callbacks see the latest values.
-  contentRef.current = content;
-  pathRef.current = path;
+  // Session events read committed props without restarting the filesystem's
+  // session or subscriptions when content and host callbacks change.
+  const startSession = useEffectEvent((signal: AbortSignal) => createPreviewSession({ sdk, signal }));
+  const notifySession = useEffectEvent((next: PreviewSession | null) => {
+    onSession?.(next, next ? iframeRef.current : null);
+  });
+  const includeActiveContent = useEffectEvent((files: Map<string, File>) => {
+    if (path && content !== undefined) {
+      files.set(path, {
+        path,
+        content,
+        contentType: isHtmlPath(path) ? HTML_CONTENT_TYPE : files.get(path)?.contentType,
+      });
+      lastPushedRef.current = { path, content };
+    }
+  });
+  const updateSessionFile = useEffectEvent((target: PreviewSession, file: File) =>
+    target.updateFile(file.path, {
+      ...file,
+      content: file.path === path && content !== undefined ? content : file.content,
+    }),
+  );
+  const shouldReloadFile = useEffectEvent((changedPath: string) => shouldReload?.(changedPath) !== false);
+  const reloadPage = useEffectEvent(() => {
+    reloadTimerRef.current = null;
+    const iframe = iframeRef.current;
+    const currentSession = sessionRef.current;
+    if (iframe && currentSession) iframe.src = currentSession.previewUrl(path);
+  });
 
-  const scheduleReload = useCallback(() => {
+  const scheduleReload = useEffectEvent(() => {
     if (reloadTimerRef.current) {
       clearTimeout(reloadTimerRef.current);
     }
-    reloadTimerRef.current = setTimeout(() => {
-      reloadTimerRef.current = null;
-      const iframe = iframeRef.current;
-      const currentSession = sessionRef.current;
-      if (!iframe || !currentSession) return;
-      iframe.src = currentSession.previewUrl(pathRef.current);
-    }, reloadDebounceMs);
-  }, [reloadDebounceMs]);
+    reloadTimerRef.current = setTimeout(reloadPage, reloadDebounceMs);
+  });
 
   // Create session on mount; tear down on unmount.
   // The session is re-created if `fs` identity changes so subscriptions attach
@@ -140,7 +156,7 @@ export function HtmlPreview({
 
     void (async () => {
       try {
-        const newSession = await createPreviewSession({ sdk: sdkRef.current, signal: controller.signal });
+        const newSession = await startSession(controller.signal);
         // Own the session immediately so failures during initial file loading
         // cannot leave its page-side snapshot or worker registration behind.
         localSession = newSession;
@@ -151,24 +167,9 @@ export function HtmlPreview({
 
         // Build the initial file set: fs files, with in-memory content
         // overriding the active path.
-        const merged = new Map<string, File>();
-        if (fs) {
-          for (const file of await fs.listFiles()) {
-            merged.set(file.path, file);
-          }
-        }
-        const activePath = pathRef.current;
-        const activeContent = contentRef.current;
-        if (activePath && activeContent !== undefined) {
-          merged.set(activePath, {
-            path: activePath,
-            content: activeContent,
-            contentType: isHtmlPath(activePath) ? HTML_CONTENT_TYPE : merged.get(activePath)?.contentType,
-          });
-          // Record what we just pushed so the content-sync effect below can
-          // skip a redundant updateFile + reload for the same payload.
-          lastPushedRef.current = { path: activePath, content: activeContent };
-        }
+        const files = await listFiles(fs);
+        const merged = new Map<string, File>(files.map((file) => [file.path, file]));
+        includeActiveContent(merged);
 
         if (cancelled) {
           await newSession.destroy();
@@ -183,7 +184,7 @@ export function HtmlPreview({
         // Publish only after all initial files are registered.
         sessionRef.current = newSession;
         setSession(newSession);
-        onSessionRef.current?.(newSession, iframeRef.current);
+        notifySession(newSession);
       } catch (err) {
         if (!cancelled) console.error("Failed to start HTML preview session:", err);
         await localSession?.destroy().catch(() => undefined);
@@ -197,7 +198,7 @@ export function HtmlPreview({
     return () => {
       cancelled = true;
       controller.abort();
-      if (sessionRef.current) onSessionRef.current?.(null, null);
+      if (sessionRef.current) notifySession(null);
       sessionRef.current = null;
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
@@ -226,13 +227,11 @@ export function HtmlPreview({
       if (!file) return;
       // If the editor's in-memory content supersedes fs for the active path,
       // prefer that so we don't flash stale content.
-      const effectiveContent =
-        changedPath === pathRef.current && contentRef.current !== undefined ? contentRef.current : file.content;
-      await session.updateFile(changedPath, { ...file, content: effectiveContent });
+      await updateSessionFile(session, file);
     };
 
     const onUpsert = (p: string) => {
-      const reload = shouldReloadRef.current?.(p) !== false;
+      const reload = shouldReloadFile(p);
       loadAndUpdate(p)
         .then(() => {
           if (reload && sessionRef.current === session) scheduleReload();
@@ -240,7 +239,7 @@ export function HtmlPreview({
         .catch((err) => console.error("html preview: upsert failed", err));
     };
     const onDeleted = (p: string) => {
-      const reload = shouldReloadRef.current?.(p) !== false;
+      const reload = shouldReloadFile(p);
       session
         .deleteFile(p)
         .then(() => {
@@ -249,7 +248,7 @@ export function HtmlPreview({
         .catch((err) => console.error("html preview: delete failed", err));
     };
     const onRenamed = (oldPath: string, newPath: string) => {
-      const reload = shouldReloadRef.current?.(oldPath) !== false && shouldReloadRef.current?.(newPath) !== false;
+      const reload = shouldReloadFile(oldPath) && shouldReloadFile(newPath);
       session
         .renameFile(oldPath, newPath)
         .then(() => {
@@ -268,7 +267,7 @@ export function HtmlPreview({
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [fs, session, scheduleReload]);
+  }, [fs, session]);
 
   // When the in-memory `content` changes, push it through and reload.
   useEffect(() => {
@@ -285,7 +284,7 @@ export function HtmlPreview({
         if (sessionRef.current === session) scheduleReload();
       })
       .catch((err) => console.error("html preview: update of active file failed", err));
-  }, [session, path, content, scheduleReload]);
+  }, [session, path, content]);
 
   if (error) {
     return (

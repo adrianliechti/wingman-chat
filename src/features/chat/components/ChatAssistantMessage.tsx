@@ -470,21 +470,22 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           </div>
         )}
 
-        <div
-          className={cn(
-            "flex items-center gap-3 mt-1 transition-opacity duration-200",
-            // The completed last message keeps its actions always visible; while it's
-            // still streaming, hover-gate them (avoids flicker as content reflows).
-            isLast && !isResponding ? "opacity-100" : hovered ? "opacity-100" : "opacity-100 md:opacity-0",
-          )}
-        >
-          <div className="flex items-center gap-2 shrink-0">
-            <CopyButton markdown={textContent} className="h-4 w-4" />
-            <ConvertButton markdown={textContent} className="h-4 w-4" />
-            {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
+        {!(isLast && isResponding) && (
+          <div
+            className={cn(
+              "flex items-center gap-3 mt-1 transition-opacity duration-200",
+              // Keep the latest completed reply's actions visible; reveal older ones on hover.
+              isLast && !isResponding ? "opacity-100" : hovered ? "opacity-100" : "opacity-100 md:opacity-0",
+            )}
+          >
+            <div className="flex items-center gap-2 shrink-0">
+              <CopyButton markdown={textContent} className="h-4 w-4" />
+              <ConvertButton markdown={textContent} className="h-4 w-4" />
+              {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
+            </div>
+            {isLast && !isResponding && message.usage && <UsageInfo usage={message.usage} />}
           </div>
-          {isLast && !isResponding && message.usage && <UsageInfo usage={message.usage} />}
-        </div>
+        )}
       </div>
     </div>
   );

@@ -202,132 +202,136 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
   return tools;
 }
 
+type Config = ReturnType<typeof getConfig>;
+
+function createInternetProvider(client: Client, internet: Config["internet"]): ToolProvider | null {
+  if (!internet?.searcher && !internet?.scraper) {
+    return null;
+  }
+
+  const searchAgent: Tool = {
+    name: "search_agent",
+    description:
+      "Research the web. Provide instructions covering everything you need looked up this turn (multiple topics fine — the agent decomposes internally and runs searches in parallel). Returns curated findings with sources. **Make at most one `search_agent` call per turn**: if you have multiple research questions, put them all into a single `instructions` value rather than issuing parallel calls. The agent has no access to this conversation, so include all needed context.",
+    parameters: {
+      type: "object",
+      properties: {
+        instructions: {
+          type: "string",
+          description:
+            "A clear, self-contained research task with all needed context. Combine every topic you need researched this turn into one instructions value — the agent decomposes internally.",
+        },
+      },
+      required: ["instructions"],
+      additionalProperties: false,
+    },
+    function: async (args, context) => {
+      const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
+      if (!instructions) {
+        return [{ type: "text" as const, text: "Error: instructions are required" }];
+      }
+
+      const request = `${instructions}\n\n${captureRequestContext()}`;
+
+      const model = context?.model;
+      if (!model) {
+        return [{ type: "text" as const, text: "Error: no active model available" }];
+      }
+
+      if (internet?.elicitation && context?.elicit) {
+        const result = await context.elicit({
+          message:
+            "The assistant wants to research the web. The following instructions will be sent to external search/fetch services:\n\n" +
+            request,
+        });
+        if (result.action !== "accept") {
+          return [{ type: "text" as const, text: "Cancelled by user." }];
+        }
+      }
+
+      let guard;
+      try {
+        guard = await client.guard(internet?.guard ?? "", request, { signal: context?.signal });
+      } catch {
+        return [
+          {
+            type: "text" as const,
+            text: "The Guardrail system is not available. Please try again later.",
+          },
+        ];
+      }
+
+      if (guard.flagged) {
+        const categories = guard.categories.map((c) => c.name).join(", ");
+        return [
+          {
+            type: "text" as const,
+            text: `Request blocked by content guard${categories ? ` (flagged: ${categories})` : ""}.`,
+          },
+        ];
+      }
+
+      const innerTools = buildWebTools(client, internet, context);
+
+      try {
+        context?.updateMeta?.({ status: "Planning research…" });
+        const runResult = await agentRun(
+          client,
+          model,
+          internetInstructionsText,
+          [{ role: Role.User, content: [{ type: "text", text: request }] }],
+          innerTools,
+          {
+            agentName: "research",
+            invocationContext: context?.invocationContext?.fork("research"),
+            options: { signal: context?.signal },
+            createToolContext: () => ({ model }),
+            // Nest the inner research agent under the outer execute_tool span
+            // explicitly — the elicitation `await` above has already dropped
+            // the active context.
+            parentContext: context?.agentContext,
+          },
+        );
+        if (runResult.status === "aborted") {
+          return [{ type: "text" as const, text: "Research interrupted before finishing." }];
+        }
+        if (runResult.status === "failed") {
+          return [
+            {
+              type: "text" as const,
+              text: `Search agent error: ${runResult.error?.message ?? "Unknown error"}`,
+            },
+          ];
+        }
+        const conversation = runResult.messages;
+        const last = conversation[conversation.length - 1];
+        const text = last ? getFinalTextFromContent(last.content).trim() : "";
+        const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
+        return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
+      } catch (error) {
+        return [
+          {
+            type: "text" as const,
+            text: `Search agent error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ];
+      }
+    },
+  };
+
+  return {
+    id: "internet",
+    name: "Web Search",
+    description: "Access up-to-date information",
+    icon: Globe,
+    tools: [searchAgent],
+  };
+}
+
 export function useInternetProvider(): ToolProvider | null {
   const config = getConfig();
   const internet = config.internet;
   const client = config.client;
 
-  return useMemo<ToolProvider | null>(() => {
-    if (!internet?.searcher && !internet?.scraper) {
-      return null;
-    }
-
-    const searchAgent: Tool = {
-      name: "search_agent",
-      description:
-        "Research the web. Provide instructions covering everything you need looked up this turn (multiple topics fine — the agent decomposes internally and runs searches in parallel). Returns curated findings with sources. **Make at most one `search_agent` call per turn**: if you have multiple research questions, put them all into a single `instructions` value rather than issuing parallel calls. The agent has no access to this conversation, so include all needed context.",
-      parameters: {
-        type: "object",
-        properties: {
-          instructions: {
-            type: "string",
-            description:
-              "A clear, self-contained research task with all needed context. Combine every topic you need researched this turn into one instructions value — the agent decomposes internally.",
-          },
-        },
-        required: ["instructions"],
-        additionalProperties: false,
-      },
-      function: async (args, context) => {
-        const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
-        if (!instructions) {
-          return [{ type: "text" as const, text: "Error: instructions are required" }];
-        }
-
-        const request = `${instructions}\n\n${captureRequestContext()}`;
-
-        const model = context?.model;
-        if (!model) {
-          return [{ type: "text" as const, text: "Error: no active model available" }];
-        }
-
-        if (internet?.elicitation && context?.elicit) {
-          const result = await context.elicit({
-            message:
-              "The assistant wants to research the web. The following instructions will be sent to external search/fetch services:\n\n" +
-              request,
-          });
-          if (result.action !== "accept") {
-            return [{ type: "text" as const, text: "Cancelled by user." }];
-          }
-        }
-
-        let guard;
-        try {
-          guard = await client.guard(internet?.guard ?? "", request, { signal: context?.signal });
-        } catch {
-          return [
-            {
-              type: "text" as const,
-              text: "The Guardrail system is not available. Please try again later.",
-            },
-          ];
-        }
-
-        if (guard.flagged) {
-          const categories = guard.categories.map((c) => c.name).join(", ");
-          return [
-            {
-              type: "text" as const,
-              text: `Request blocked by content guard${categories ? ` (flagged: ${categories})` : ""}.`,
-            },
-          ];
-        }
-
-        const innerTools = buildWebTools(client, internet, context);
-
-        try {
-          context?.updateMeta?.({ status: "Planning research…" });
-          const runResult = await agentRun(
-            client,
-            model,
-            internetInstructionsText,
-            [{ role: Role.User, content: [{ type: "text", text: request }] }],
-            innerTools,
-            {
-              agentName: "research",
-              invocationContext: context?.invocationContext?.fork("research"),
-              options: { signal: context?.signal },
-              createToolContext: () => ({ model }),
-              // Nest the inner research agent under the outer execute_tool span
-              // explicitly — the elicitation `await` above has already dropped
-              // the active context.
-              parentContext: context?.agentContext,
-            },
-          );
-          if (runResult.status === "aborted") {
-            return [{ type: "text" as const, text: "Research interrupted before finishing." }];
-          }
-          if (runResult.status === "failed") {
-            return [
-              {
-                type: "text" as const,
-                text: `Search agent error: ${runResult.error?.message ?? "Unknown error"}`,
-              },
-            ];
-          }
-          const conversation = runResult.messages;
-          const last = conversation[conversation.length - 1];
-          const text = last ? getFinalTextFromContent(last.content).trim() : "";
-          const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
-          return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
-        } catch (error) {
-          return [
-            {
-              type: "text" as const,
-              text: `Search agent error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ];
-        }
-      },
-    };
-
-    return {
-      id: "internet",
-      name: "Web Search",
-      description: "Access up-to-date information",
-      icon: Globe,
-      tools: [searchAgent],
-    };
-  }, [client, internet]);
+  return useMemo(() => createInternetProvider(client, internet), [client, internet]);
 }

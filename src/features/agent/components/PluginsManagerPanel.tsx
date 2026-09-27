@@ -1,5 +1,5 @@
 import { Loader2, Plus, Puzzle, RefreshCw, Server, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { loadHubPlugins } from "@/features/plugins/lib/hub";
@@ -110,9 +110,11 @@ export function PluginsManagerPanel({
       .finally(() => setStoreLoading(false));
   }, [hubUrl]);
 
-  useEffect(() => {
+  const loadStoreOnMount = useEffectEvent(() => {
     if (hubUrl) loadStore();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    loadStoreOnMount();
   }, []);
 
   useEffect(() => {
@@ -122,12 +124,13 @@ export function PluginsManagerPanel({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!requestedPluginId || !isOpen) return;
-    const target = plugins.find((p) => p.id === requestedPluginId);
+  // Resolves against the plugins at the moment the request changes.
+  const openRequestedPlugin = useEffectEvent((id: string) => {
+    const target = plugins.find((p) => p.id === id);
     if (target) setView({ kind: "installed-detail", plugin: target });
-    // plugins intentionally omitted — resolves at the moment the request changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    if (requestedPluginId && isOpen) openRequestedPlugin(requestedPluginId);
   }, [requestedPluginId, isOpen]);
 
   useEffect(() => {
@@ -154,14 +157,14 @@ export function PluginsManagerPanel({
     if (!hubUrl) return;
     setInstallingId(plugin.id);
     setInstallError(null);
+    const label = plugin.title || plugin.id;
     try {
       await installPlugin(hubUrl, plugin);
-      notify.success(`Installed "${plugin.title || plugin.id}"`);
+      notify.success(`Installed "${label}"`);
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : "Failed to install plugin");
-    } finally {
-      setInstallingId(null);
     }
+    setInstallingId(null);
   };
 
   const handleUpdate = async (plugin: InstalledPlugin) => {
@@ -170,15 +173,15 @@ export function PluginsManagerPanel({
     if (!hubPlugin) return;
     setInstallingId(plugin.id);
     setInstallError(null);
+    const label = plugin.title || plugin.id;
     try {
       const updated = await installPlugin(hubUrl, hubPlugin);
-      notify.success(`Updated "${plugin.title || plugin.id}"`);
+      notify.success(`Updated "${label}"`);
       setView({ kind: "installed-detail", plugin: updated });
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : "Failed to update plugin");
-    } finally {
-      setInstallingId(null);
     }
+    setInstallingId(null);
   };
 
   const handleUninstall = async (plugin: InstalledPlugin) => {

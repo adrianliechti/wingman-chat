@@ -100,6 +100,7 @@ export interface OoxmlXmlElement {
 }
 
 type NamespaceFilter = string | readonly string[] | null;
+type OoxmlXmlLimits = Pick<OoxmlReaderLimits, "maxXmlNodes" | "maxXmlDepth">;
 
 function namespaceMatches(actual: string | undefined, expected: NamespaceFilter | undefined): boolean {
   if (expected === undefined) return true;
@@ -111,12 +112,33 @@ function namespaceMatches(actual: string | undefined, expected: NamespaceFilter 
 export function parseOoxmlXml(
   xml: string,
   label = "XML part",
-  limits: Pick<OoxmlReaderLimits, "maxXmlNodes" | "maxXmlDepth"> = DEFAULT_OOXML_READER_LIMITS,
+  limits: OoxmlXmlLimits = DEFAULT_OOXML_READER_LIMITS,
 ): OoxmlXmlElement {
+  return readOoxmlXml(xml, label, limits, true);
+}
+
+/** Validate before DOMParser without retaining a second tree of the XML part. */
+export function validateOoxmlXml(
+  xml: string,
+  label = "XML part",
+  limits: OoxmlXmlLimits = DEFAULT_OOXML_READER_LIMITS,
+): void {
+  readOoxmlXml(xml, label, limits, false);
+}
+
+function readOoxmlXml(xml: string, label: string, limits: OoxmlXmlLimits, buildTree: true): OoxmlXmlElement;
+function readOoxmlXml(xml: string, label: string, limits: OoxmlXmlLimits, buildTree: false): void;
+function readOoxmlXml(
+  xml: string,
+  label: string,
+  limits: OoxmlXmlLimits,
+  buildTree: boolean,
+): OoxmlXmlElement | undefined {
   let nodeCount = 0;
+  let depth = 0;
   let root: OoxmlXmlElement | undefined;
   let pendingAttributes: OoxmlXmlAttribute[] = [];
-  let pendingAttributeNames = new Set<string>();
+  const pendingAttributeNames = new Set<string>();
   const stack: OoxmlXmlElement[] = [];
   const parser = createSaxParser(true, { strictEntities: true, xmlns: true });
 
@@ -136,7 +158,7 @@ export function parseOoxmlXml(
       malformed(`duplicate attribute ${attribute.name}`);
     }
     pendingAttributeNames.add(expandedName);
-    if (attribute.name === "xmlns" || attribute.prefix === "xmlns") return;
+    if (!buildTree || attribute.name === "xmlns" || attribute.prefix === "xmlns") return;
     pendingAttributes.push({
       name: attribute.name,
       localName: attribute.local,
@@ -149,10 +171,13 @@ export function parseOoxmlXml(
     if (nodeCount > limits.maxXmlNodes) {
       throw new OoxmlResourceLimitError(`${label} exceeds the ${limits.maxXmlNodes}-node XML limit`);
     }
-    const depth = stack.length + 1;
+    depth++;
     if (depth > limits.maxXmlDepth) {
       throw new OoxmlResourceLimitError(`${label} exceeds the ${limits.maxXmlDepth}-level XML depth limit`);
     }
+    if (depth === 1 && nodeCount > 1) malformed("multiple root elements");
+    pendingAttributeNames.clear();
+    if (!buildTree) return;
     const element: OoxmlXmlElement = {
       name: tag.name,
       localName: tag.local,
@@ -162,27 +187,25 @@ export function parseOoxmlXml(
       content: [],
     };
     pendingAttributes = [];
-    pendingAttributeNames = new Set();
     const parent = stack.at(-1);
     if (parent) {
       parent.children.push(element);
       parent.content.push(element);
-    } else if (root) malformed("multiple root elements");
-    else root = element;
+    } else root = element;
     stack.push(element);
   };
   parser.onclosetag = () => {
-    stack.pop();
+    depth--;
+    if (buildTree) stack.pop();
   };
   parser.ontext = (text) => {
-    const current = stack.at(-1);
-    if (current) current.content.push(text);
-    else if (text.trim()) malformed("text outside the root element");
+    if (depth === 0) {
+      if (text.trim()) malformed("text outside the root element");
+    } else if (buildTree) stack[depth - 1].content.push(text);
   };
   parser.oncdata = (text) => {
-    const current = stack.at(-1);
-    if (current) current.content.push(text);
-    else malformed("CDATA outside the root element");
+    if (depth === 0) malformed("CDATA outside the root element");
+    if (buildTree) stack[depth - 1].content.push(text);
   };
 
   try {
@@ -191,7 +214,7 @@ export function parseOoxmlXml(
     if (error instanceof OoxmlResourceLimitError || error instanceof OoxmlXmlError) throw error;
     throw new OoxmlXmlError(`${label} is malformed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!root) throw new OoxmlXmlError(`${label} must contain exactly one root element`);
+  if (nodeCount === 0) throw new OoxmlXmlError(`${label} must contain exactly one root element`);
   return root;
 }
 
@@ -305,7 +328,7 @@ export const OFFICE_PREVIEW_CSP =
 export function parseXml(xml: string, label = "XML part"): Document {
   // DOMParser does not expose depth/node controls. Preflight with the bounded
   // streaming parser before constructing the browser DOM used by renderers.
-  parseOoxmlXml(xml, label);
+  validateOoxmlXml(xml, label);
   const document = new DOMParser().parseFromString(xml, "application/xml");
   const parserError = document.getElementsByTagNameNS("*", "parsererror")[0];
   if (parserError) throw new OoxmlXmlError(parserError.textContent?.trim() || "XML is malformed");

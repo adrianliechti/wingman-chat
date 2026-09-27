@@ -40,7 +40,7 @@ import { MediaPlayer } from "./MediaPlayer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
-import { RendererFrame } from "./renderers/RendererFrame";
+import { RendererActionsContext, RendererFrame } from "./renderers/RendererFrame";
 import { SvgRenderer } from "./renderers/SvgRenderer";
 
 const markdownLinkClassName =
@@ -225,6 +225,57 @@ type ResizableTableProps = {
   onTableElement?: (table: HTMLTableElement | null) => void;
 } & React.TableHTMLAttributes<HTMLTableElement>;
 
+// Measures the width a column needs on an off-screen, unconstrained clone.
+function measureColumnWidth(table: HTMLTableElement, index: number): number | null {
+  const columnCount =
+    table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *").length ||
+    table.querySelectorAll<HTMLTableCellElement>("tr:first-child > *").length;
+  if (columnCount === 0 || index >= columnCount) return null;
+
+  const clone = table.cloneNode(true) as HTMLTableElement;
+  clone.querySelectorAll("colgroup").forEach((colgroup) => {
+    colgroup.remove();
+  });
+  clone.classList.remove("w-full");
+  clone.style.position = "absolute";
+  clone.style.left = "-10000px";
+  clone.style.top = "0";
+  clone.style.visibility = "hidden";
+  clone.style.pointerEvents = "none";
+  clone.style.width = "max-content";
+  clone.style.minWidth = "0";
+  clone.style.tableLayout = "auto";
+
+  clone.querySelectorAll<HTMLElement>("th,td").forEach((cell) => {
+    cell.style.width = "auto";
+    cell.style.minWidth = "0";
+    cell.style.maxWidth = "none";
+    cell.style.whiteSpace = "nowrap";
+  });
+
+  document.body.appendChild(clone);
+  try {
+    let neededWidth = MIN_COLUMN_WIDTH;
+
+    Array.from(clone.rows).forEach((row) => {
+      let columnIndex = 0;
+      Array.from(row.cells).some((cell) => {
+        const colSpan = Math.max(1, cell.colSpan || 1);
+        const containsTarget = index >= columnIndex && index < columnIndex + colSpan;
+        columnIndex += colSpan;
+        if (!containsTarget) return false;
+
+        neededWidth = Math.max(neededWidth, Math.ceil(cell.getBoundingClientRect().width / colSpan));
+        return true;
+      });
+    });
+
+    return neededWidth;
+  } finally {
+    clone.remove();
+  }
+}
+
 function ResizableTable({
   children,
   className,
@@ -241,7 +292,8 @@ function ResizableTable({
     startX: number;
     widthsAtStart: number[];
   } | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
+  const [resizingIndex, setResizingIndex] = useState<number | null>(null);
+  const isResizing = resizingIndex !== null;
 
   const setTableElement = useCallback(
     (table: HTMLTableElement | null) => {
@@ -292,7 +344,7 @@ function ResizableTable({
     };
     const onUp = () => {
       resizingRef.current = null;
-      setIsResizing(false);
+      setResizingIndex(null);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -318,61 +370,8 @@ function ResizableTable({
       widthsAtStart: currentWidths,
     };
     setWidths(currentWidths);
-    setIsResizing(true);
+    setResizingIndex(index);
   };
-
-  const measureNeededColumnWidth = useCallback((index: number): number | null => {
-    const table = tableRef.current;
-    if (!table) return null;
-
-    const columnCount =
-      table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *").length ||
-      table.querySelectorAll<HTMLTableCellElement>("tr:first-child > *").length;
-    if (columnCount === 0 || index >= columnCount) return null;
-
-    const clone = table.cloneNode(true) as HTMLTableElement;
-    clone.querySelectorAll("colgroup").forEach((colgroup) => {
-      colgroup.remove();
-    });
-    clone.classList.remove("w-full");
-    clone.style.position = "absolute";
-    clone.style.left = "-10000px";
-    clone.style.top = "0";
-    clone.style.visibility = "hidden";
-    clone.style.pointerEvents = "none";
-    clone.style.width = "max-content";
-    clone.style.minWidth = "0";
-    clone.style.tableLayout = "auto";
-
-    clone.querySelectorAll<HTMLElement>("th,td").forEach((cell) => {
-      cell.style.width = "auto";
-      cell.style.minWidth = "0";
-      cell.style.maxWidth = "none";
-      cell.style.whiteSpace = "nowrap";
-    });
-
-    document.body.appendChild(clone);
-    try {
-      let neededWidth = MIN_COLUMN_WIDTH;
-
-      Array.from(clone.rows).forEach((row) => {
-        let columnIndex = 0;
-        Array.from(row.cells).some((cell) => {
-          const colSpan = Math.max(1, cell.colSpan || 1);
-          const containsTarget = index >= columnIndex && index < columnIndex + colSpan;
-          columnIndex += colSpan;
-          if (!containsTarget) return false;
-
-          neededWidth = Math.max(neededWidth, Math.ceil(cell.getBoundingClientRect().width / colSpan));
-          return true;
-        });
-      });
-
-      return neededWidth;
-    } finally {
-      clone.remove();
-    }
-  }, []);
 
   const fitColumnToContent = (index: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -381,7 +380,7 @@ function ResizableTable({
     const table = tableRef.current;
     if (!table) return;
 
-    const neededWidth = measureNeededColumnWidth(index);
+    const neededWidth = measureColumnWidth(table, index);
     if (!neededWidth) return;
 
     const headers = table.querySelectorAll<HTMLTableCellElement>("thead tr:first-child > *");
@@ -390,7 +389,7 @@ function ResizableTable({
     next[index] = Math.max(MIN_COLUMN_WIDTH, neededWidth);
 
     resizingRef.current = null;
-    setIsResizing(false);
+    setResizingIndex(null);
     setWidths(next);
   };
 
@@ -427,7 +426,7 @@ function ResizableTable({
             <div
               className={cn(
                 "absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors",
-                isResizing && resizingRef.current?.index === i
+                resizingIndex === i
                   ? "bg-neutral-950 dark:bg-neutral-100"
                   : "bg-transparent group-hover/handle:bg-neutral-800 dark:group-hover/handle:bg-neutral-300",
               )}
@@ -968,6 +967,7 @@ const NonMemoizedMarkdown = ({
   basePath,
   onOpenArtifact,
 }: MarkdownProps) => {
+  const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
   const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
@@ -1012,7 +1012,11 @@ const NonMemoizedMarkdown = ({
     };
   }, [hasMath, mathPlugins]);
 
-  return <MarkdownRenderContext value={renderOptions}>{result}</MarkdownRenderContext>;
+  return (
+    <RendererActionsContext value={actionsEnabled}>
+      <MarkdownRenderContext value={renderOptions}>{result}</MarkdownRenderContext>
+    </RendererActionsContext>
+  );
 };
 
 export const Markdown = memo(

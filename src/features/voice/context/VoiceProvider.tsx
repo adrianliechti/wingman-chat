@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChatActions, useChatList, useChatModel } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -67,6 +67,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     inputDevices,
     outputDevices,
     micPermission,
+    devicesEnumerated,
     requestPermission,
   } = useAudioDevices();
   const { start, stop, sendText, updateSession, pauseAudio } = useVoiceWebSockets(
@@ -80,17 +81,19 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   );
 
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
-  setVoiceToolCallRef.current = setVoiceToolCall;
   const requestElicitationRef = useRef(requestElicitation);
-  requestElicitationRef.current = requestElicitation;
   const updateToolMetaRef = useRef(updateToolMeta);
-  updateToolMetaRef.current = updateToolMeta;
   const pauseAudioRef = useRef(pauseAudio);
-  pauseAudioRef.current = pauseAudio;
   const setModelRef = useRef(setModel);
-  setModelRef.current = setModel;
   const modelsRef = useRef(models);
-  modelsRef.current = models;
+  useLayoutEffect(() => {
+    setVoiceToolCallRef.current = setVoiceToolCall;
+    requestElicitationRef.current = requestElicitation;
+    updateToolMetaRef.current = updateToolMeta;
+    pauseAudioRef.current = pauseAudio;
+    setModelRef.current = setModel;
+    modelsRef.current = models;
+  });
 
   function onUserTranscriptCallback(text: string) {
     if (text.trim() && voiceChatIdRef.current) {
@@ -186,12 +189,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
             // Pause the mic during the elicitation, but let buffered playback finish naturally.
             const resume = await pauseAudioRef.current(false);
-            try {
-              requireOwner();
-              return await requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
-            } finally {
-              await resume();
-            }
+            return await Promise.resolve()
+              .then(() => {
+                requireOwner();
+                return requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
+              })
+              .finally(resume);
           },
         };
       };
@@ -261,17 +264,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     const session = { chatId: chatId ?? null, inputDeviceId, outputDeviceId };
     sessionRef.current = session;
     const isCurrent = () => sessionRef.current === session;
+    const voiceModel = config.voice?.model;
+    // Realtime transcription has its own model contract; file STT models
+    // (including non-OpenAI providers) are not interchangeable with it.
+    const transcribeModel = config.voice?.transcriber;
     try {
       setIsConnecting(true);
       const { chat: sessionChat } = await ensureChat();
       if (!isCurrent()) return;
       session.chatId = sessionChat.id;
       voiceChatIdRef.current = sessionChat.id;
-      const realtimeModel = await resolveModel(config.voice?.model, "realtime");
+      const realtimeModel = await resolveModel(voiceModel, "realtime");
       if (!isCurrent()) return;
-      // Realtime transcription has its own model contract; file STT models
-      // (including non-OpenAI providers) are not interchangeable with it.
-      const transcribeModel = config.voice?.transcriber;
       const tools = await chatTools();
       if (!isCurrent()) return;
       const instructions = chatInstructions();
@@ -373,6 +377,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     if (
       isRealtimeSelected &&
       micPermission === "granted" &&
+      devicesEnumerated &&
       inputDevices.length === 0 &&
       outputDevices.length === 0
     ) {
@@ -381,6 +386,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, [
     isRealtimeSelected,
     micPermission,
+    devicesEnumerated,
     inputDevices.length,
     outputDevices.length,
     requestPermission,

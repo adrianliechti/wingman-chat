@@ -46,7 +46,8 @@ function RevisionList({ fs, path, onPeek, onPin, close }: RevisionListProps) {
   useEffect(() => {
     let version = 0;
     const load = async () => {
-      const request = ++version;
+      version += 1;
+      const request = version;
       try {
         const listed = await fs.listRevisions(path);
         if (request === version) setEntries(listed);
@@ -67,7 +68,7 @@ function RevisionList({ fs, path, onPeek, onPin, close }: RevisionListProps) {
     ];
     void load();
     return () => {
-      version++;
+      version += 1;
       subscriptions.forEach((unsubscribe) => unsubscribe());
     };
   }, [fs, path]);

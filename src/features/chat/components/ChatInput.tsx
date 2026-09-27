@@ -45,6 +45,24 @@ import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { formatArtifactReference } from "./chatMessageUtils";
 
+async function captureScreenAttachment(
+  captureFrame: () => Promise<Blob | null>,
+): Promise<{ content: ImageContent; file: File } | null> {
+  try {
+    const blob = await captureFrame();
+    if (!blob) return null;
+    const dataUrl = await readAsDataURL(blob);
+    const name = `screen-capture-${Date.now()}.png`;
+    return {
+      content: { type: "image", name, data: dataUrl },
+      file: new File([blob], name, { type: blob.type || "image/png" }),
+    };
+  } catch (error) {
+    console.error("Error capturing screen during message send:", error);
+    return null;
+  }
+}
+
 export function ChatInput() {
   const config = getConfig();
 
@@ -269,23 +287,10 @@ export function ChatInput() {
         let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
-          try {
-            const blob = await captureFrame();
-            if (blob) {
-              const dataUrl = await readAsDataURL(blob);
-              const name = `screen-capture-${Date.now()}.png`;
-              const screenContent: ImageContent = {
-                type: "image",
-                name,
-                data: dataUrl,
-              };
-              finalAttachments = [screenContent, ...finalAttachments];
-              if (artifactsAvailable) {
-                screenCaptureFile = new File([blob], name, { type: blob.type || "image/png" });
-              }
-            }
-          } catch (error) {
-            console.error("Error capturing screen during message send:", error);
+          const capture = await captureScreenAttachment(captureFrame);
+          if (capture) {
+            finalAttachments = [capture.content, ...finalAttachments];
+            if (artifactsAvailable) screenCaptureFile = capture.file;
           }
         }
 
@@ -359,30 +364,28 @@ export function ChatInput() {
       const names = files.map((f) => f.name);
       setExtractingAttachments((prev) => new Set([...prev, ...names]));
 
-      try {
-        const fetched = await Promise.all(
-          files.map(async (f) => {
-            const effectiveType =
-              f.mime && f.mime !== "application/octet-stream"
-                ? f.mime
-                : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
-            const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
-              ? config.vision?.maxFileSize
-              : artifactsAvailable
-                ? config.artifacts?.maxFileSize
-                : undefined;
-            return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
+      await Promise.all(
+        files.map(async (f) => {
+          const effectiveType =
+            f.mime && f.mime !== "application/octet-stream"
+              ? f.mime
+              : (inferContentTypeFromPath(f.name) ?? f.mime ?? "");
+          const maxBytes = (config.vision?.files ?? []).includes(effectiveType)
+            ? config.vision?.maxFileSize
+            : artifactsAvailable
+              ? config.artifacts?.maxFileSize
+              : undefined;
+          return downloadDriveFile(f, maxBytes ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES);
+        }),
+      )
+        .then((fetched) => void handleFiles(fetched))
+        .finally(() =>
+          setExtractingAttachments((prev) => {
+            const next = new Set(prev);
+            for (const n of names) next.delete(n);
+            return next;
           }),
         );
-
-        void handleFiles(fetched);
-      } finally {
-        setExtractingAttachments((prev) => {
-          const next = new Set(prev);
-          for (const n of names) next.delete(n);
-          return next;
-        });
-      }
     },
     [
       artifactsAvailable,
@@ -454,18 +457,16 @@ export function ChatInput() {
   const handleTranscriptionClick = useCallback(async () => {
     if (isTranscribing) {
       setTranscribingContent(true);
-      try {
-        const text = await stopTranscription();
-        if (text.trim()) {
-          setContent((previous) => (previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text));
-          contentInputRef.current?.focus();
-        }
-      } catch (error) {
+      const text = await stopTranscription().catch((error: unknown) => {
         console.error("Transcription failed:", error);
         notify.error("Transcription failed", "The recording couldn't be transcribed. Please try again.");
-      } finally {
-        setTranscribingContent(false);
+        return "";
+      });
+      if (text.trim()) {
+        setContent((previous) => (previous.trim() ? `${previous.trimEnd()} ${text.trim()}` : text));
+        contentInputRef.current?.focus();
       }
+      setTranscribingContent(false);
     } else {
       try {
         await startTranscription();

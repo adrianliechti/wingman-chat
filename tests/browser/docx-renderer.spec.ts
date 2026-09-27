@@ -35,9 +35,95 @@ async function renderDocx(page: Page, bytes: number[]) {
   }, bytes);
 }
 
+async function profileDocx(page: Page, bytes: number[]) {
+  return page.evaluate(async (data: number[]) => {
+    // @ts-expect-error The module is resolved by the browser's Vite dev server.
+    const { docxToHtml } = await import("/src/shared/lib/docxToHtml.ts");
+    const html = await docxToHtml(new File([new Uint8Array(data)], "pagination.docx"));
+    const frame = document.createElement("iframe");
+    // Bound layout reads so a non-terminating pagination loop fails the test
+    // without hanging the browser or exhausting memory.
+    frame.srcdoc = html.replace(
+      "<head>",
+      `<head><script>
+      window.paginationStats={runs:0,layoutReads:0,error:null};
+      var paginate;
+      Object.defineProperty(window,'__ooxmlPaginate',{
+        get:function(){return paginate},
+        set:function(run){paginate=function(){
+          window.paginationStats.runs++;
+          try{return run()}catch(error){window.paginationStats.error=error.message;throw error}
+        }}
+      });
+      var height=Object.getOwnPropertyDescriptor(Element.prototype,'scrollHeight');
+      Object.defineProperty(Element.prototype,'scrollHeight',{get:function(){
+        if(++window.paginationStats.layoutReads>2000)throw Error('Pagination exceeded its layout budget');
+        return height.get.call(this);
+      }});
+    </script>`,
+    );
+    document.body.appendChild(frame);
+    await new Promise<void>((resolve) => frame.addEventListener("load", () => resolve(), { once: true }));
+    await frame.contentDocument?.fonts.ready;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const rendered = frame.contentDocument;
+    if (!rendered) throw new Error("DOCX iframe did not load");
+    const stats = (
+      frame.contentWindow as Window & {
+        paginationStats: { runs: number; layoutReads: number; error: string | null };
+      }
+    ).paginationStats;
+    return {
+      ...stats,
+      pages: Array.from(rendered.querySelectorAll<HTMLElement>("body > .pg")).map((item) => ({
+        body: item.querySelector<HTMLElement>(".pg-body")?.innerText.trim() ?? "",
+        rows: Array.from(item.querySelectorAll<HTMLElement>(".pg-body > table > tbody > tr"), (row) =>
+          row.innerText.trim(),
+        ),
+      })),
+    };
+  }, bytes);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/browser/fixtures/interpreter.html");
 });
+
+test("paginates once after the initial document resources settle", async ({ page }) => {
+  const bytes = await archive({
+    "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>One opening pagination</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+  });
+
+  const result = await profileDocx(page, bytes);
+
+  expect(result.error).toBeNull();
+  expect(result.runs).toBe(1);
+  expect(result.pages).toHaveLength(1);
+  expect(result.pages[0].body).toBe("One opening pagination");
+});
+
+for (const headerCount of [0, 1, 2]) {
+  test(`splits long tables with ${headerCount} header rows within a bounded layout budget`, async ({ page }) => {
+    const labels = Array.from({ length: 120 }, (_, index) => `Row ${index + 1}`);
+    const headers = Array.from({ length: headerCount }, (_, index) => `Header ${index + 1}`);
+    const row = (label: string, header = false) =>
+      `<w:tr><w:trPr>${header ? "<w:tblHeader/>" : ""}<w:trHeight w:val="360"/></w:trPr><w:tc><w:p><w:r><w:t>${label}</w:t></w:r></w:p></w:tc></w:tr>`;
+    const bytes = await archive({
+      "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>${headers.map((label) => row(label, true)).join("")}${labels.map((label) => row(label)).join("")}</w:tbl><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr></w:body></w:document>`,
+    });
+
+    const result = await profileDocx(page, bytes);
+
+    expect(result.error).toBeNull();
+    expect(result.pages.length).toBeGreaterThan(1);
+    for (const item of result.pages) {
+      expect(item.rows.slice(0, headerCount)).toEqual(headers);
+      expect(item.rows.length).toBeGreaterThan(headerCount);
+    }
+    expect(result.pages.flatMap((item) => item.rows.slice(headerCount))).toEqual(labels);
+    expect(result.layoutReads).toBeLessThan(100);
+  });
+}
 
 test("places authored breaks and footnotes on their physical pages", async ({ page }) => {
   const bytes = await archive({

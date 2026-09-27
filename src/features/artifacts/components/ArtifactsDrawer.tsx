@@ -1,6 +1,6 @@
 import { lazyRouteComponent } from "@tanstack/react-router";
 import { Code, Download, Eye, File as FileIcon2, Loader2, PanelRight, Play, Shapes, Upload } from "lucide-react";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactEntries, useArtifactFile } from "@/features/artifacts/hooks/useArtifactFiles";
 import {
@@ -20,7 +20,7 @@ import { notify } from "@/shared/lib/notify";
 import { locateInSource } from "@/shared/ui/selection/locateInSource";
 import { SelectionActionPopover } from "@/shared/ui/selection/SelectionActionPopover";
 import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/selection/useTextSelection";
-import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import { downloadMarkdownAsDocx, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import {
@@ -99,6 +99,20 @@ interface RevisionView {
   entry: ArtifactRevisionListing;
   content: string;
   contentType?: string;
+}
+
+/** Processes uploads into one ingestion batch; returns the last ingested path. */
+async function ingestUploads(
+  fs: FileSystemManager,
+  source: globalThis.File[] | (() => Promise<globalThis.File[]>),
+): Promise<string | undefined> {
+  const fileList = typeof source === "function" ? await source() : source;
+  const batch: ProcessedFile[] = [];
+  for (const file of fileList) {
+    batch.push(...(await processUploadedFile(file)));
+  }
+  const ingestion = await fs.ingestFiles(batch, { origin: { actor: "user", reason: "upload" } });
+  return ingestion.paths.at(-1);
 }
 
 export function ArtifactsDrawer() {
@@ -252,9 +266,8 @@ export function ArtifactsDrawer() {
         "Restore failed",
         error instanceof Error ? error.message : "The revision couldn't be restored.",
       );
-    } finally {
-      setRestoringRevision(false);
     }
+    setRestoringRevision(false);
   }, [pinnedRevision, closeRevision]);
 
   const shownRevision =
@@ -310,15 +323,7 @@ export function ArtifactsDrawer() {
       setPendingUploads((count) => count + 1);
       try {
         const activeFs = await ensureFs();
-        const fileList = typeof source === "function" ? await source() : source;
-        const batch: ProcessedFile[] = [];
-        for (const file of fileList) {
-          batch.push(...(await processUploadedFile(file)));
-        }
-        const ingestion = await activeFs.ingestFiles(batch, {
-          origin: { actor: "user", reason: "upload" },
-        });
-        const lastPath = ingestion.paths.at(-1);
+        const lastPath = await ingestUploads(activeFs, source);
         if (lastPath) openFile(lastPath, activeFs);
       } catch (error) {
         console.error("Error uploading files:", error);
@@ -328,9 +333,8 @@ export function ArtifactsDrawer() {
             ? error.message
             : "The files couldn't be added; the workspace was left unchanged.",
         );
-      } finally {
-        setPendingUploads((count) => count - 1);
       }
+      setPendingUploads((count) => count - 1);
     },
     [ensureFs, openFile],
   );
@@ -402,19 +406,18 @@ export function ArtifactsDrawer() {
   // Otherwise a deletion flow races: clearing `activeFile` re-runs this effect
   // before `loadFiles()` finishes, so `files` is still stale with the deleted
   // entry and we'd immediately reopen it.
-  const activeFileRef = useRef(activeFile);
-  activeFileRef.current = activeFile;
-  useEffect(() => {
-    if (!activeFileRef.current && files.length > 0) {
-      const best = files.reduce((prev, curr) => {
+  const autoOpenFile = useEffectEvent((available: typeof files, currentFs: typeof fs) => {
+    if (!activeFile && available.length > 0) {
+      const best = available.reduce((prev, curr) => {
         const prevTime = prev.lastModified ?? 0;
         const currTime = curr.lastModified ?? 0;
         if (currTime !== prevTime) return currTime > prevTime ? curr : prev;
         return curr.path < prev.path ? curr : prev;
       });
-      if (fs) openFile(best.path, fs);
+      if (currentFs) openFile(best.path, currentFs);
     }
-  }, [files, fs, openFile]);
+  });
+  useEffect(() => autoOpenFile(files, fs), [files, fs]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
@@ -958,15 +961,9 @@ export function ArtifactsDrawer() {
                               <button
                                 type="button"
                                 onClick={async () => {
+                                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
                                   try {
-                                    const { markdownToDocx } =
-                                      await import("@/shared/lib/markdownToDocx");
-                                    const blob = await markdownToDocx(activeFileData.content);
-                                    const baseName = getFileName(activeFileData.path).replace(
-                                      /\.(md|markdown)$/i,
-                                      "",
-                                    );
-                                    await downloadBlob(blob, `${baseName}.docx`);
+                                    await downloadMarkdownAsDocx(activeFileData.content, `${baseName}.docx`);
                                   } catch (error) {
                                     console.error("Failed to convert to Word:", error);
                                   }

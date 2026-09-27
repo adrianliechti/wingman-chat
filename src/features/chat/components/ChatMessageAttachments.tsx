@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type FragmentInstance, type ReactNode } from "react";
 import { getTextFromContent, type Message } from "@/shared/types/chat";
 import { useChatList } from "../hooks/useChat";
 import { createAttachmentLoader } from "../lib/chatAttachments";
@@ -12,16 +12,18 @@ export function ChatMessageAttachments({
   children: (loaded: Message) => ReactNode;
 }) {
   const { chatId } = useChatList();
-  const container = useRef<HTMLDivElement>(null);
+  const container = useRef<FragmentInstance>(null);
   const [result, setResult] = useState<{ source: Message; chatId: string; message?: Message; error?: string } | null>(
     null,
   );
   useEffect(() => {
     if (!chatId || !container.current) return;
+    const fragment = container.current;
     const controller = new AbortController();
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
+        fragment.unobserveUsing(observer);
         observer.disconnect();
         void createAttachmentLoader(chatId)([message], controller.signal)
           .then(([loaded]) => {
@@ -38,15 +40,16 @@ export function ChatMessageAttachments({
       },
       { rootMargin: "400px" },
     );
-    observer.observe(container.current);
+    fragment.observeUsing(observer);
     return () => {
       controller.abort();
+      fragment.unobserveUsing(observer);
       observer.disconnect();
     };
   }, [chatId, message]);
   const current = result?.source === message && result.chatId === chatId ? result : null;
   return (
-    <div ref={container}>
+    <Fragment ref={container}>
       {current?.message ? (
         children(current.message)
       ) : (
@@ -55,6 +58,6 @@ export function ChatMessageAttachments({
           <p role={current?.error ? "alert" : "status"}>{current?.error ?? "Loading attachments…"}</p>
         </div>
       )}
-    </div>
+    </Fragment>
   );
 }

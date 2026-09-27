@@ -222,9 +222,10 @@ describe("voice request context and tool lifecycle", () => {
     socket.message(done);
     socket.message(done);
     release();
-    await gate;
-    await Promise.resolve();
+    await vi.waitFor(() => expect(socket.sent.filter((event) => event.type === "response.create")).toHaveLength(1));
     expect(handler).toHaveBeenCalledTimes(2);
+    // A duplicate terminal event must not fire a second response.create.
+    await new Promise((resolve) => setTimeout(resolve));
     expect(socket.sent.filter((event) => event.type === "response.create")).toHaveLength(1);
     await hook.stop();
   });

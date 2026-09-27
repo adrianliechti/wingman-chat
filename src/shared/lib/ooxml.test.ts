@@ -5,8 +5,11 @@ import {
   loadMediaDataUrl,
   normalizeHexColor,
   OoxmlPackageReader,
+  ooxmlText,
+  parseOoxmlXml,
   sanitizeCssColor,
   sanitizeHyperlinkUrl,
+  validateOoxmlXml,
 } from "./ooxml";
 
 async function loadedZip(entries: Record<string, Uint8Array | string>): Promise<JSZip> {
@@ -24,6 +27,44 @@ function pngHeader(width: number, height: number): Uint8Array {
   view.setUint32(20, height);
   return bytes;
 }
+
+describe.each([
+  ["tree", parseOoxmlXml],
+  ["preflight", validateOoxmlXml],
+] as const)("OOXML XML %s parser", (_, parse) => {
+  it.each([
+    ["", "root element"],
+    ["<!-- empty -->", "root element"],
+    ["<one/><two/>", "multiple root"],
+    ["<root>unclosed", "malformed"],
+    ["<root/>trailing", "malformed"],
+    ["<![CDATA[outside]]><root/>", "malformed"],
+    ["<root>&unknown;</root>", "malformed"],
+    ['<!DOCTYPE root SYSTEM "file:///etc/passwd"><root/>', "forbidden"],
+    ['<root value="one" value="two"/>', "duplicate attribute"],
+    ['<root xmlns:a="urn:test" xmlns:b="urn:test" a:value="one" b:value="two"/>', "duplicate attribute"],
+    ["<unbound:root/>", "malformed"],
+  ])("rejects invalid XML: %s", (xml, message) => {
+    expect(() => parse(xml, "sample.xml")).toThrow(message);
+  });
+
+  it("enforces node and depth limits before constructing the browser DOM", () => {
+    expect(() => parse("<root><child/></root>", "depth.xml", { maxXmlNodes: 10, maxXmlDepth: 1 })).toThrow(
+      "depth limit",
+    );
+    expect(() => parse("<root><one/><two/></root>", "nodes.xml", { maxXmlNodes: 2, maxXmlDepth: 10 })).toThrow(
+      "node XML limit",
+    );
+    expect(() => parse("<root><one/><two/></root>", "exact.xml", { maxXmlNodes: 3, maxXmlDepth: 2 })).not.toThrow();
+  });
+
+  it("accepts mixed content, namespace aliases, and CDATA", () => {
+    const xml =
+      '<root xmlns:a="urn:a" xmlns:b="urn:b" a:value="1" b:value="2">before<a:child><![CDATA[inside]]></a:child>after</root>';
+    expect(() => parse(xml)).not.toThrow();
+    expect(ooxmlText(parseOoxmlXml(xml))).toBe("beforeinsideafter");
+  });
+});
 
 describe("OOXML preview resource policy", () => {
   it("rejects oversized compressed input before archive parsing", () => {

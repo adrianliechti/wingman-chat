@@ -13,6 +13,30 @@ function supportsScreenCapture(): boolean {
   return "mediaDevices" in navigator && "getDisplayMedia" in navigator.mediaDevices;
 }
 
+function captureVideoFrame(video: HTMLVideoElement): Promise<Blob | null> {
+  // Create canvas with video dimensions
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Failed to get canvas context");
+  }
+
+  // Draw current video frame to canvas
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Convert canvas to blob
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob),
+      "image/png",
+      1.0, // Maximum quality
+    );
+  });
+}
+
 export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) {
   const [isActive, setIsActive] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
@@ -123,27 +147,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
     }
 
     try {
-      // Create canvas with video dimensions
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        throw new Error("Failed to get canvas context");
-      }
-
-      // Draw current video frame to canvas
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      // Convert canvas to blob
-      return new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(
-          (blob) => resolve(blob),
-          "image/png",
-          1.0, // Maximum quality
-        );
-      });
+      return captureVideoFrame(video);
     } catch (error) {
       console.error("Failed to capture frame:", error);
       return null;

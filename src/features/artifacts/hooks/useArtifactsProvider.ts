@@ -1,11 +1,10 @@
 import { Braces, Shapes, SquareCode } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
 import {
   JAVASCRIPT_EXECUTION_PARAMETERS,
   PYTHON_EXECUTION_PARAMETERS,
 } from "@/features/artifacts/lib/executionToolSchemas";
-import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
 import { useArtifactEntries } from "./useArtifactFiles";
@@ -67,16 +66,15 @@ export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable, readWriteManager } = useArtifacts();
   const entries = useArtifactEntries(fs);
   const duckdbEnabled = getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false;
-  const queryable = duckdbEnabled ? queryableMountNames(entries.map((entry) => entry.path)) : [];
-  const queryableKey = queryable.join("\n");
+  // Keyed by content so the provider only changes when the queryable set does.
+  const queryableKey = JSON.stringify(duckdbEnabled ? queryableMountNames(entries.map((entry) => entry.path)) : []);
+  const queryable = useMemo(() => JSON.parse(queryableKey) as string[], [queryableKey]);
 
-  // Direct/UI calls can use the latest fs. Model calls carry their originating
+  // Direct/UI calls use the active fs. Model calls carry their originating
   // chatId so neither a draft-chat render nor navigation can redirect a write.
-  const fsRef = useRef<FileSystemManager | null>(fs);
-  fsRef.current = fs;
   const artifactsTools = useCallback((): Tool[] => {
     const fileTools = readWriteManager.createTools(
-      (context) => resolveArtifactFileSystem(fsRef.current, context?.chatId),
+      (context) => resolveArtifactFileSystem(fs, context?.chatId),
       {
         namespace: "artifacts",
         spaceName: "artifact workspace",
@@ -84,7 +82,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
     );
     const runCode = async (options: Omit<Parameters<typeof executeArtifactCode>[0], "fs">) => {
-      const workspace = resolveArtifactFileSystem(fsRef.current, options.context?.chatId);
+      const workspace = resolveArtifactFileSystem(fs, options.context?.chatId);
       const result = await executeArtifactCode({
         ...options,
         fs: workspace,
@@ -168,10 +166,7 @@ export function useArtifactsProvider(): ToolProvider | null {
     ];
 
     return [...fileTools, ...executionTools];
-    // Refs are intentionally not dependencies — the callback needs to produce
-    // a stable tool array so downstream memoization doesn't thrash. Tool
-    // functions read the latest filesystem via a ref at execution time.
-  }, [readWriteManager]);
+  }, [readWriteManager, fs]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
@@ -220,9 +215,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       ].join("\n"),
       tools: artifactsTools(),
     };
-    // queryableKey stands in for the derived array so the memo only changes with its content.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryableKey]);
+  }, [isAvailable, activeFile, artifactsTools, duckdbEnabled, queryable]);
 
   return provider;
 }

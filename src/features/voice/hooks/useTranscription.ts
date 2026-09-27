@@ -23,6 +23,19 @@ interface Dictation {
   stopping?: Promise<string>;
 }
 
+async function transcribe(session: Dictation): Promise<string> {
+  await session.recorder.end();
+  session.scope.signal.throwIfAborted();
+  if (!session.chunks.length) throw new Error("No audio recorded");
+  const audio = pcm16ToWav(mergePcm16Chunks(session.chunks), 24000);
+  session.chunks = [];
+  const config = getConfig();
+  const model = await session.scope.wait(resolveModel(config.stt?.model, "transcriber"));
+  const text = await session.scope.wait(config.client.transcribe(model, audio, { signal: session.scope.signal }));
+  session.scope.signal.throwIfAborted();
+  return text;
+}
+
 export function useTranscription(ownerKey?: string, enabled = true): UseTranscriptionReturn {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const current = useRef<Dictation | null>(null);
@@ -93,26 +106,15 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
       cancel();
       return Promise.resolve("");
     }
-    session.stopping = (async () => {
-      try {
-        await session.recorder.end();
-        session.scope.signal.throwIfAborted();
-        if (!session.chunks.length) throw new Error("No audio recorded");
-        const audio = pcm16ToWav(mergePcm16Chunks(session.chunks), 24000);
-        session.chunks = [];
-        const config = getConfig();
-        const model = await session.scope.wait(resolveModel(config.stt?.model, "transcriber"));
-        const text = await session.scope.wait(config.client.transcribe(model, audio, { signal: session.scope.signal }));
-        session.scope.signal.throwIfAborted();
-        return text;
-      } catch (error) {
+    session.stopping = transcribe(session)
+      .catch((error: unknown) => {
         if (session.scope.signal.aborted) return "";
         throw error;
-      } finally {
+      })
+      .finally(async () => {
         if (current.current === session) current.current = null;
         await session.scope.close();
-      }
-    })();
+      });
     return session.stopping;
   }, [cancel]);
 

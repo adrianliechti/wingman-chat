@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useChatActions, useChatList } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { createAttachmentLoader } from "../lib/chatAttachments";
@@ -9,6 +9,9 @@ import { cn } from "@/shared/lib/cn";
 import { type ChatEntry } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+
+type SidebarGroup = { category: string; chats: ChatEntry[] };
+type FlatSidebarItem = { type: "header"; group: SidebarGroup; groupIndex: number } | { type: "item"; chat: ChatEntry };
 
 export function ChatSidebar() {
   const { chats, chatId } = useChatList();
@@ -199,10 +202,6 @@ export function ChatSidebar() {
   }, [unpinnedChats, getDateCategory]);
 
   // Flatten grouped chats into a single list for virtualization (unpinned only)
-  type FlatSidebarItem =
-    | { type: "header"; group: (typeof groupedChats)[0]; groupIndex: number }
-    | { type: "item"; chat: ChatEntry };
-
   const flatSidebarItems = useMemo<FlatSidebarItem[]>(() => {
     const items: FlatSidebarItem[] = [];
     groupedChats.forEach((group, groupIndex) => {
@@ -213,17 +212,6 @@ export function ChatSidebar() {
     });
     return items;
   }, [groupedChats]);
-
-  const sidebarScrollRef = useRef<HTMLDivElement>(null);
-
-  const sidebarVirtualizer = useVirtualizer({
-    count: flatSidebarItems.length,
-    getScrollElement: () => sidebarScrollRef.current,
-    estimateSize: (i) => (flatSidebarItems[i].type === "header" ? 28 : 34),
-    overscan: 15,
-  });
-
-  const sidebarVirtualItems = sidebarVirtualizer.getVirtualItems();
 
   // Function to fork a chat (create a new chat with copied messages)
   const forkChat = useCallback(
@@ -455,7 +443,42 @@ export function ChatSidebar() {
       </div>
 
       {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={sidebarScrollRef}>
+      <VirtualChatList
+        items={flatSidebarItems}
+        hasPinned={pinnedChats.length > 0}
+        renderItem={(item) => {
+          if (item.type === "item") return renderChatItem(item.chat);
+          const group = item.group;
+          return (
+            <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+              <span>{group.category}</span>
+              <DropdownMenu
+                anchor="bottom end"
+                trigger={
+                  <MenuButton
+                    className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical size={16} />
+                  </MenuButton>
+                }
+              >
+                <DropdownMenuItem
+                  icon={<Trash size={14} />}
+                  destructive
+                  onClick={() => {
+                    const hasActive = group.chats.some((c) => c.id === chatId);
+                    group.chats.forEach((chatItem) => deleteChat(chatItem.id));
+                    if (hasActive) newChat();
+                  }}
+                >
+                  Delete All
+                </DropdownMenuItem>
+              </DropdownMenu>
+            </div>
+          );
+        }}
+      >
         {/* Pinned chats section (non-virtualized, drag-and-drop) */}
         {pinnedChats.length > 0 && (
           <div className="px-3 pt-2">
@@ -489,67 +512,54 @@ export function ChatSidebar() {
             ))}
           </div>
         )}
+      </VirtualChatList>
+    </div>
+  );
+}
 
-        {/* Unpinned chats (virtualized) */}
-        <div
-          className={cn("relative pb-1", pinnedChats.length > 0 ? "pt-3" : "pt-2")}
-          style={{ height: sidebarVirtualizer.getTotalSize() }}
-        >
-          <div
-            className="absolute inset-x-0 top-0 px-3"
-            style={{ transform: `translateY(${sidebarVirtualItems[0]?.start ?? 0}px)` }}
-          >
-            {sidebarVirtualItems.map((virtualRow) => {
-              const item = flatSidebarItems[virtualRow.index];
-              if (item.type === "header") {
-                const group = item.group;
-                return (
-                  <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
-                    ref={sidebarVirtualizer.measureElement}
-                    className={cn(item.groupIndex > 0 && "pt-3")}
-                  >
-                    <div className="flex items-center justify-between pl-3 pr-0.5 py-1 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
-                      <span>{group.category}</span>
-                      <DropdownMenu
-                        anchor="bottom end"
-                        trigger={
-                          <MenuButton
-                            className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-neutral-200/60 dark:hover:bg-white/10"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreVertical size={16} />
-                          </MenuButton>
-                        }
-                      >
-                        <DropdownMenuItem
-                          icon={<Trash size={14} />}
-                          destructive
-                          onClick={() => {
-                            const hasActive = group.chats.some((c) => c.id === chatId);
-                            group.chats.forEach((chatItem) => {
-                              deleteChat(chatItem.id);
-                            });
-                            if (hasActive) newChat();
-                          }}
-                        >
-                          Delete All
-                        </DropdownMenuItem>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                );
-              }
-
-              const chatItem = item.chat;
-              return (
-                <div key={virtualRow.key} data-index={virtualRow.index} ref={sidebarVirtualizer.measureElement}>
-                  {renderChatItem(chatItem)}
-                </div>
-              );
-            })}
-          </div>
+/** Keep the mutable virtualizer outside the compiler's memoized sidebar. */
+function VirtualChatList({
+  items,
+  hasPinned,
+  renderItem,
+  children,
+}: {
+  items: FlatSidebarItem[];
+  hasPinned: boolean;
+  renderItem: (item: FlatSidebarItem) => ReactNode;
+  children: ReactNode;
+}) {
+  "use no memo";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => {
+      const item = items[index];
+      return item.type === "header" ? `group:${item.group.category}` : item.chat.id;
+    },
+    estimateSize: (index) => (items[index].type === "header" ? 28 : 34),
+    overscan: 15,
+  });
+  const rows = virtualizer.getVirtualItems();
+  return (
+    <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={scrollRef}>
+      {children}
+      <div className={cn("relative pb-1", hasPinned ? "pt-3" : "pt-2")} style={{ height: virtualizer.getTotalSize() }}>
+        <div className="absolute inset-x-0 top-0 px-3" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
+          {rows.map((row) => {
+            const item = items[row.index];
+            return (
+              <div
+                key={row.key}
+                data-index={row.index}
+                ref={virtualizer.measureElement}
+                className={cn(item.type === "header" && item.groupIndex > 0 && "pt-3")}
+              >
+                {renderItem(item)}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

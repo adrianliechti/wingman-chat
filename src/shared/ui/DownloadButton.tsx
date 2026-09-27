@@ -13,10 +13,11 @@ export const DownloadButton = ({ url, filename, className }: DownloadButtonProps
   const [downloaded, setDownloaded] = useState(false);
 
   const handleDownload = async () => {
+    const name = filename || "download";
     try {
       const response = await fetch(url);
       const blob = await response.blob();
-      await downloadBlob(blob, filename || "download");
+      await downloadBlob(blob, name);
 
       setDownloaded(true);
       setTimeout(() => setDownloaded(false), 2000);

@@ -103,6 +103,26 @@ function saveCompanionEnabled(enabled: boolean): void {
   }
 }
 
+// Mutating these external MCP client objects is the purpose of the wiring effect.
+function wireMcpClient(
+  client: MCPClient,
+  updateState: (id: string, state?: ProviderState) => void,
+  onToolsChanged: () => void,
+) {
+  client.onDisconnected = () => {
+    const state = client.isAuthBlocked() ? ProviderState.Unauthorized : ProviderState.Failed;
+    updateState(client.id, state);
+  };
+  client.onAuthenticating = () => {
+    updateState(client.id, ProviderState.Authenticating);
+  };
+  client.onAuthComplete = () => {
+    // Transition back to Initializing while the reconnection is in flight
+    updateState(client.id, ProviderState.Initializing);
+  };
+  client.onToolsChanged = onToolsChanged;
+}
+
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
 
@@ -489,23 +509,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }
     }
     managedClientsRef.current = next;
-    for (const client of allMcpClients) {
-      // Mutating these external MCP client objects is the purpose of this effect.
-      client.onDisconnected = () => {
-        const state = client.isAuthBlocked() ? ProviderState.Unauthorized : ProviderState.Failed;
-        updateMcpState(client.id, state);
-      };
-      client.onAuthenticating = () => {
-        updateMcpState(client.id, ProviderState.Authenticating);
-      };
-      client.onAuthComplete = () => {
-        // Transition back to Initializing while the reconnection is in flight
-        updateMcpState(client.id, ProviderState.Initializing);
-      };
-      client.onToolsChanged = () => {
-        setToolsVersion((v) => v + 1);
-      };
-    }
+    const onToolsChanged = () => setToolsVersion((v) => v + 1);
+    for (const client of allMcpClients) wireMcpClient(client, updateMcpState, onToolsChanged);
   }, [allMcpClients, releaseMcp, updateMcpState]);
 
   // Reconcile MCP connections with desired state (idempotent — safe to re-run)

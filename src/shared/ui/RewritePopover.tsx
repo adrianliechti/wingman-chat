@@ -46,9 +46,10 @@ export function RewritePopover({
 
     const loadAlternatives = async () => {
       setIsLoading(true);
+      const model = config.translator?.model || "";
       try {
         const result = await config.client.rewriteSelection(
-          config.translator?.model || "",
+          model,
           fullText,
           selectionStart,
           selectionEnd,
@@ -63,10 +64,9 @@ export function RewritePopover({
         }
       } catch (error) {
         console.error("Error loading alternatives:", error);
-      } finally {
-        setIsLoading(false);
-        setHasLoaded(true);
       }
+      setIsLoading(false);
+      setHasLoaded(true);
     };
 
     void loadAlternatives();

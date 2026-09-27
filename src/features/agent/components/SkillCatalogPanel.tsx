@@ -1,5 +1,5 @@
 import { Code, Download, Eye, Loader2, MoreVertical, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
 import {
@@ -80,6 +80,16 @@ const FIELD_BASE =
 const FIELD_NEUTRAL =
   "border-neutral-200/70 focus:border-neutral-300 focus:ring-neutral-500/15 dark:border-neutral-700/50 dark:focus:border-neutral-600";
 const FIELD_ERROR = "border-red-400/60 focus:border-red-400 focus:ring-red-500/15";
+
+/** Parses an uploaded `.zip` bundle or single skill file. */
+async function readSkillFile(file: File) {
+  if (file.name.endsWith(".zip")) {
+    const JSZip = (await import("jszip")).default;
+    return parseSkillsFromZip(await JSZip.loadAsync(file));
+  }
+  const result = parseSkillFile(await file.text());
+  return result.success ? [result.skill] : [];
+}
 
 export function SkillCatalogPanel({
   isOpen,
@@ -190,35 +200,29 @@ export function SkillCatalogPanel({
     setEditMode(true);
   }, []);
 
+  // allSkills is read only to resolve a requested skill at that moment, not to
+  // keep re-syncing while the dialog stays open and skills are edited/saved.
+  const findSkill = useEffectEvent((name: string) => allSkills.find((s) => s.name === name) ?? null);
+
+  // Runs once per dialog open (and when the requested initial view/skill changes).
   useEffect(() => {
     if (!isOpen) return;
     if (initialView === "new") {
       openEditor("new");
-    } else if (initialSkillName) {
-      const target = allSkills.find((s) => s.name === initialSkillName);
-      setSelectedSkill(target ?? null);
-      setEditMode(false);
     } else {
-      setSelectedSkill(null);
+      setSelectedSkill(initialSkillName ? findSkill(initialSkillName) : null);
       setEditMode(false);
     }
-    // Runs once per dialog open (and when the requested initial view/skill
-    // changes) — allSkills is read only to resolve initialSkillName at that
-    // moment, not to keep re-syncing while the dialog stays open and skills
-    // are edited/saved.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialView, initialSkillName]);
+  }, [isOpen, initialView, initialSkillName, openEditor]);
 
   // Sidebar navigation: jump to a skill detail without closing/reopening the dialog.
   useEffect(() => {
     if (!requestedSkillName || !isOpen) return;
-    const target = allSkills.find((s) => s.name === requestedSkillName);
+    const target = findSkill(requestedSkillName);
     if (target) {
       setSelectedSkill(target);
       setEditMode(false);
     }
-    // allSkills intentionally omitted — resolves at the moment the request changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSkillName, isOpen]);
 
   useEffect(() => {
@@ -299,9 +303,10 @@ export function SkillCatalogPanel({
   const handleOptimize = async () => {
     if (isOptimizing) return;
     setIsOptimizing(true);
+    const config = getConfig();
+    const optimizer = config.chat?.optimizer || "";
     try {
-      const config = getConfig();
-      const result = await config.client.optimizeSkill(config.chat?.optimizer || "", edName, edDescription, edContent);
+      const result = await config.client.optimizeSkill(optimizer, edName, edDescription, edContent);
       if (!selectedSkill) {
         setEdName(result.name);
       }
@@ -309,9 +314,8 @@ export function SkillCatalogPanel({
       setEdContent(result.content);
     } catch (error) {
       console.error("Failed to optimize skill:", error);
-    } finally {
-      setIsOptimizing(false);
     }
+    setIsOptimizing(false);
   };
 
   const canOptimize = (edDescription.trim().length > 0 || edContent.trim().length > 0) && !isOptimizing;
@@ -330,25 +334,9 @@ export function SkillCatalogPanel({
     async (files: File[]) => {
       const newNames: string[] = [];
       for (const file of files) {
-        try {
-          if (file.name.endsWith(".zip")) {
-            const JSZip = (await import("jszip")).default;
-            const zip = await JSZip.loadAsync(file);
-            for (const parsed of await parseSkillsFromZip(zip)) {
-              const s = addSkill(parsed);
-              newNames.push(s.name);
-            }
-          } else {
-            const content = await file.text();
-            const result = parseSkillFile(content);
-            if (result.success) {
-              const s = addSkill(result.skill);
-              newNames.push(s.name);
-            }
-          }
-        } catch {
-          /* skip */
-        }
+        // Unreadable or invalid files are skipped.
+        const parsed = await readSkillFile(file).catch(() => []);
+        for (const skill of parsed) newNames.push(addSkill(skill).name);
       }
       if (newNames.length > 0) {
         onImported(newNames);

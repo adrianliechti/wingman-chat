@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { ArtifactBridge, resolveCapabilities } from "@/features/artifacts/lib/artifactBridge";
 import { ToolsContext } from "@/features/tools/context/ToolsContext";
@@ -41,7 +41,9 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
       .flatMap((provider) => provider.tools);
   }, [toolsContext]);
   const toolsRef = useRef(tools);
-  toolsRef.current = tools;
+  useLayoutEffect(() => {
+    toolsRef.current = tools;
+  });
 
   const hasTools = tools.length > 0;
   const capabilities = useMemo(() => resolveCapabilities(config, { tools: hasTools }), [config, hasTools]);

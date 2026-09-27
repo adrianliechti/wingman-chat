@@ -39,6 +39,7 @@ interface ChatProviderProps {
 
 export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
+  const [chatId, setChatId] = useState<string | null>(null);
   const {
     chats,
     isLoaded: chatsLoaded,
@@ -48,7 +49,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     getChat,
     loadChat,
     searchChats,
-  } = useChats();
+    selectedChat: chat,
+  } = useChats(chatId);
   const {
     isAvailable: artifactsEnabled,
     setFileSystem: setArtifactsFileSystem,
@@ -56,7 +58,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   } = useArtifacts();
   const { closeApp } = useApp();
   const { currentAgent } = useAgents();
-  const [chatId, setChatId] = useState<string | null>(null);
+  // Updated together with every setChatId so async work sees the selection immediately.
+  const chatIdRef = useRef<string | null>(null);
   const selectionVersionRef = useRef(0);
   const [loadError, setLoadError] = useState<{ id: string; error: string } | null>(null);
   useEffect(() => {
@@ -71,7 +74,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       cancelled = true;
     };
   }, [chatId, loadChat]);
-  const chat = chatId ? (getChat(chatId) ?? null) : null;
   const chatError = !chat && loadError?.id === chatId ? loadError.error : null;
   const chatLoading = !!chatId && !chat && !chatError;
   const createChatOnce = useMemo(() => createChatCreationGate(), []);
@@ -119,23 +121,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Own the FileSystemManager lifecycle: one instance per active chat, pushed
   // into the artifacts context. The artifacts feature has no chat knowledge;
   // it just receives the filesystem and reacts to its identity changes.
-  // The ref lets ensureChat eagerly create an instance that the next render's
-  // useMemo will pick up, so both paths share the same object.
-  const fsRef = useRef<FileSystemManager | null>(null);
+  // ensureChat can create the instance eagerly (before the chat renders); it is
+  // reused once its chat is shown, so both paths share the same object.
+  const [eagerFs, setEagerFs] = useState<FileSystemManager | null>(null);
+  const shownChatId = chat?.id;
   const fs = useMemo(() => {
-    if (!artifactsEnabled || !chat?.id) {
-      fsRef.current = null;
-      return null;
-    }
-    if (fsRef.current?.chatId === chat.id) {
-      return fsRef.current;
-    }
-    const next = new FileSystemManager(chat.id);
-    fsRef.current = next;
-    return next;
-  }, [artifactsEnabled, chat?.id]);
+    if (!artifactsEnabled || !shownChatId) return null;
+    return eagerFs?.chatId === shownChatId ? eagerFs : new FileSystemManager(shownChatId);
+  }, [artifactsEnabled, shownChatId, eagerFs]);
+  // Synchronous handle for async callers that can't wait for a re-render.
+  const fsRef = useRef<FileSystemManager | null>(null);
 
   useLayoutEffect(() => {
+    fsRef.current = fs;
     setArtifactsFileSystem(fs);
   }, [fs, setArtifactsFileSystem]);
 
@@ -148,9 +146,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
     return newChat;
   }, [createChatHook]);
-
-  const chatIdRef = useRef(chatId);
-  chatIdRef.current = chatId;
 
   const selectChat = useCallback(
     (id: string | null) => {
@@ -248,6 +243,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const fsForChat = fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
     if (chatIdRef.current === chatItem.id) {
       fsRef.current = fsForChat;
+      setEagerFs(fsForChat);
       // Uploads can finish before React renders the newly created chat.
       // Bind eagerly so selecting their result uses this same workspace.
       if (artifactsEnabled) setArtifactsFileSystem(fsForChat);

@@ -1,6 +1,6 @@
 import { Transition } from "@headlessui/react";
 import { ChevronLeft } from "lucide-react";
-import type { MouseEventHandler, ReactNode } from "react";
+import { Activity, useState, type MouseEventHandler, type ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
 interface PanelShellProps {
@@ -15,6 +15,8 @@ interface PanelShellProps {
   compact: boolean;
   /** Keep the content mounted while closed (for iframes); otherwise it mounts only while open. */
   keepMounted?: boolean;
+  /** Retain local UI state but stop effects after the closing animation. */
+  preserveState?: boolean;
   /** Stacking class for the shell, e.g. "z-20". */
   className?: string;
   resizeLabel: string;
@@ -42,6 +44,7 @@ export function PanelShell({
   resizing,
   compact,
   keepMounted,
+  preserveState,
   className,
   resizeLabel,
   onResizeStart,
@@ -49,6 +52,7 @@ export function PanelShell({
   latch,
   children,
 }: PanelShellProps) {
+  const [closed, setClosed] = useState(!open);
   const away = open ? "0%" : "100%";
   const translate = offsetVw ? `calc(${away} - ${offsetVw}vw) 0` : `${away} 0`;
   const fade = !resizing && "transition-opacity duration-500 ease-in-out";
@@ -103,10 +107,15 @@ export function PanelShell({
       }}
     >
       {keepMounted ? (
-        <div className={cn("h-full", fade, open ? "opacity-100" : "pointer-events-none opacity-0")}>{content}</div>
+        <div inert={!open} className={cn("h-full", fade, open ? "opacity-100" : "pointer-events-none opacity-0")}>
+          {content}
+        </div>
       ) : (
         <Transition
           show={open}
+          unmount={!preserveState}
+          beforeEnter={() => setClosed(false)}
+          afterLeave={() => setClosed(true)}
           as="div"
           className="h-full"
           enter={cn(fade)}
@@ -116,7 +125,7 @@ export function PanelShell({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          {content}
+          {preserveState ? <Activity mode={open || !closed ? "visible" : "hidden"}>{content}</Activity> : content}
         </Transition>
       )}
       {latch}

@@ -19,6 +19,17 @@ import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageEditor } from "./ChatMessageEditor";
 import { formatArtifactReference, parseArtifactReference } from "./chatMessageUtils";
 
+// Re-append attached artifact paths that aren't referenced by the editable parts.
+function withArtifactReferences(parts: TextContent[], paths: string[]): TextContent[] {
+  try {
+    const existingPaths = parts.flatMap((p) => parseArtifactReference(p.text));
+    const toAdd = paths.filter((p) => !existingPaths.includes(p));
+    return toAdd.length ? [...parts, { type: "text", text: formatArtifactReference(toAdd) }] : parts;
+  } catch {
+    return parts;
+  }
+}
+
 type ChatUserMessageProps = {
   message: Message;
   index: number;
@@ -104,17 +115,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     if (isResponding) return;
     setEditContent(textContent);
     // Preserve `artifact_ref` paths so attachments aren't lost.
-    try {
-      const existingPaths = editableAdditionalText.flatMap((p) => parseArtifactReference(p.text));
-      const toAdd = attachedArtifactPaths.filter((p) => !existingPaths.includes(p));
-      setEditAdditionalTextContent(
-        toAdd.length
-          ? [...editableAdditionalText, { type: "text", text: formatArtifactReference(toAdd) }]
-          : editableAdditionalText,
-      );
-    } catch {
-      setEditAdditionalTextContent(editableAdditionalText);
-    }
+    setEditAdditionalTextContent(withArtifactReferences(editableAdditionalText, attachedArtifactPaths));
     setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
@@ -123,17 +124,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     setIsEditing(false);
     setEditContent(textContent);
     // Restore original text and artifact refs.
-    try {
-      const existingPaths = editableAdditionalText.flatMap((p) => parseArtifactReference(p.text));
-      const toAdd = attachedArtifactPaths.filter((p) => !existingPaths.includes(p));
-      setEditAdditionalTextContent(
-        toAdd.length
-          ? [...editableAdditionalText, { type: "text", text: formatArtifactReference(toAdd) }]
-          : editableAdditionalText,
-      );
-    } catch {
-      setEditAdditionalTextContent(editableAdditionalText);
-    }
+    setEditAdditionalTextContent(withArtifactReferences(editableAdditionalText, attachedArtifactPaths));
     setEditMediaContent(mediaContent);
   };
 

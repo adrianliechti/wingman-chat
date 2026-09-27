@@ -311,6 +311,8 @@ function Flyout({
     ],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const hover = useHover(context, { handleClose: safePolygon(), delay: { close: 150 } });
   const click = useClick(context, { event: "mousedown", toggle: false, ignoreMouse: true });
@@ -335,7 +337,7 @@ function Flyout({
   return (
     <FloatingNode id={nodeId}>
       <button
-        ref={refs.setReference}
+        ref={setReference}
         type="button"
         data-open={isOpen ? "" : undefined}
         className="group flex w-full items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-neutral-800 dark:text-neutral-200 transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none data-open:bg-neutral-100/60 dark:hover:bg-white/5 dark:focus:bg-white/5 dark:data-open:bg-white/5"
@@ -350,7 +352,7 @@ function Flyout({
       </button>
       {isMounted && (
         <FloatingPortal>
-          <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+          <div ref={setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
             <div style={transitionStyles} className={cn(PANEL_CLASS, panelClassName)}>
               {children}
             </div>
@@ -564,7 +566,7 @@ function ModelDropdownRoot({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const hasPresets = !!presets && presets.steps.length > 1;
-  const showHiddenRef = useRef(false);
+  const [showHidden, setShowHidden] = useState(false);
 
   const tree = useFloatingTree();
   const nodeId = useFloatingNodeId();
@@ -591,6 +593,8 @@ function ModelDropdownRoot({
     ],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const click = useClick(context);
   const role = useRole(context, { role: "menu" });
@@ -747,7 +751,7 @@ function ModelDropdownRoot({
 
         {filteredVisible.map(renderModel)}
 
-        {showHiddenRef.current && filteredHidden.length > 0 && (
+        {showHidden && filteredHidden.length > 0 && (
           <>
             <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
             <SectionLabel>Hidden</SectionLabel>
@@ -769,11 +773,11 @@ function ModelDropdownRoot({
       {trigger({
         getProps: (overrides) =>
           getReferenceProps({
-            ref: refs.setReference,
+            ref: setReference,
             ...overrides,
             onPointerDownCapture: (e: React.PointerEvent) => {
               flushSync(() => {
-                showHiddenRef.current = e.altKey;
+                setShowHidden(e.altKey);
                 setQuery("");
               });
               (overrides?.onPointerDownCapture as ((e: React.PointerEvent) => void) | undefined)?.(
@@ -794,7 +798,7 @@ function ModelDropdownRoot({
           <FloatingPortal>
             <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
               <div
-                ref={refs.setFloating}
+                ref={setFloating}
                 style={floatingStyles}
                 className="z-9999"
                 {...getFloatingProps()}

@@ -211,6 +211,7 @@ export function SettingsDrawer({
     inputDevices,
     outputDevices,
     micPermission,
+    devicesEnumerated,
     setInputDevice,
     setOutputDevice,
     requestPermission,
@@ -240,11 +241,8 @@ export function SettingsDrawer({
         error: null,
       });
     } catch (error) {
-      setStorageInfo((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to load storage info",
-      }));
+      const message = error instanceof Error ? error.message : "Failed to load storage info";
+      setStorageInfo((prev) => ({ ...prev, isLoading: false, error: message }));
     }
   }, []);
 
@@ -261,6 +259,7 @@ export function SettingsDrawer({
       isOpen &&
       section === "audio" &&
       micPermission === "granted" &&
+      devicesEnumerated &&
       inputDevices.length === 0 &&
       outputDevices.length === 0
     ) {
@@ -271,6 +270,7 @@ export function SettingsDrawer({
     isOpen,
     section,
     micPermission,
+    devicesEnumerated,
     inputDevices.length,
     outputDevices.length,
     requestPermission,
@@ -350,9 +350,8 @@ export function SettingsDrawer({
         window.location.reload();
       } catch (error) {
         notify.error("Couldn't restore backup", error);
-      } finally {
-        setIsRestoring(false);
       }
+      setIsRestoring(false);
     };
     input.click();
   };
@@ -378,9 +377,8 @@ export function SettingsDrawer({
     } catch (error) {
       console.error("Rebuild indexes failed:", error);
       notify.error("Couldn't rebuild indexes", "Check the console for details.");
-    } finally {
-      setIsRebuildingIndexes(false);
     }
+    setIsRebuildingIndexes(false);
   };
 
   const exportSelectedBackup = async () => {
@@ -405,9 +403,8 @@ export function SettingsDrawer({
     } catch (error) {
       console.error("Export failed:", error);
       notify.error("Couldn't export data", error);
-    } finally {
-      setIsExporting(false);
     }
+    setIsExporting(false);
   };
 
   const exportEverythingBackup = async () => {
@@ -422,9 +419,8 @@ export function SettingsDrawer({
     } catch (error) {
       console.error("Export failed:", error);
       notify.error("Couldn't export data", error);
-    } finally {
-      setIsExporting(false);
     }
+    setIsExporting(false);
   };
 
   const deleteAgents = async () => {
@@ -438,10 +434,11 @@ export function SettingsDrawer({
       return;
     }
 
+    const deleteAll = async () => {
+      for (const agent of agents) await deleteAgent(agent.id);
+    };
     try {
-      for (const agent of agents) {
-        await deleteAgent(agent.id);
-      }
+      await deleteAll();
       notify.success("Agents deleted", "Reloading to apply changes…");
       setTimeout(() => window.location.reload(), 1200);
     } catch (error) {

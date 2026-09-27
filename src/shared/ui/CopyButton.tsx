@@ -14,10 +14,10 @@ export const CopyButton = ({ text, markdown, html, className, label }: CopyButto
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    // Copy the best available content as plain text on Alt+click
+    const content = markdown || html || text || "";
     try {
       if (event.altKey) {
-        // Copy the best available content as plain text
-        const content = markdown || html || text || "";
         await navigator.clipboard.writeText(content);
       } else {
         await copyToClipboard({ text, markdown, html });

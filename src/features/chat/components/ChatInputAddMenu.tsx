@@ -116,6 +116,8 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
     middleware: [offset(8), flip({ fallbackPlacements: ["bottom-start"] }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const click = useClick(context);
   const role = useRole(context, { role: "menu" });
@@ -157,7 +159,7 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
     <FloatingNode id={nodeId}>
       <Tooltip content="Add files, tools and more" side="bottom">
         <button
-          ref={refs.setReference}
+          ref={setReference}
           type="button"
           aria-label="Add"
           className="p-2.5 md:pl-1.5 md:pr-0.5 md:py-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
@@ -172,7 +174,7 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
             <FloatingPortal>
               <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
                 <div
-                  ref={refs.setFloating}
+                  ref={setFloating}
                   style={floatingStyles}
                   className="z-50"
                   {...getFloatingProps()}
@@ -214,12 +216,12 @@ function MenuRow({
   children,
 }: MenuRowProps) {
   const menu = useContext(MenuContext);
-  const item = useListItem({ label: disabled ? null : label });
-  const isActive = item.index === menu.activeIndex;
+  const { ref: setItemElement, index } = useListItem({ label: disabled ? null : label });
+  const isActive = index === menu.activeIndex;
 
   return (
     <button
-      ref={item.ref}
+      ref={setItemElement}
       type="button"
       role="menuitem"
       tabIndex={isActive ? 0 : -1}
@@ -255,8 +257,8 @@ interface SubmenuProps {
  */
 function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
   const parent = useContext(MenuContext);
-  const item = useListItem({ label });
-  const isActive = item.index === parent.activeIndex;
+  const { ref: setItemElement, index } = useListItem({ label });
+  const isActive = index === parent.activeIndex;
 
   const [isOpen, setIsOpen] = useState(false);
 
@@ -276,6 +278,8 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
     ],
     whileElementsMounted: autoUpdate,
   });
+  const setReference = (node: Element | null) => refs.setReference(node);
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
 
   const hover = useHover(context, { handleClose: safePolygon(), delay: { close: 150 } });
   const click = useClick(context, { event: "mousedown", toggle: false, ignoreMouse: true });
@@ -283,7 +287,7 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
   const role = useRole(context, { role: "menu" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, click, dismiss, role]);
 
-  const triggerRef = useMergeRefs([refs.setReference, item.ref]);
+  const triggerRef = useMergeRefs([setReference, setItemElement]);
 
   // Collapse when a sibling submenu opens.
   useEffect(() => {
@@ -318,7 +322,7 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
       {isOpen && (
         <FloatingPortal>
           <div
-            ref={refs.setFloating}
+            ref={setFloating}
             style={floatingStyles}
             className="z-9999"
             {...getFloatingProps()}

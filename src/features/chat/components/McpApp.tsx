@@ -77,9 +77,9 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   // Fullscreen: track the drawer's content rect so the fixed iframe overlays it.
   const overlay = useOverlayRect(isFullscreen ? drawerTarget : null);
 
-  // Used inside the (stable) bridge callbacks to read the latest mode.
-  const isFullscreenRef = useRef(isFullscreen);
-  isFullscreenRef.current = isFullscreen;
+  const onSizeChange = useEffectEvent((height: number) => {
+    if (!isFullscreen) setInlineHeight(Math.min(height, INLINE_MAX_HEIGHT));
+  });
 
   // Render the bridge once on mount. An Effect Event so it always reads the latest
   // props/state without forcing the mount Effect below to re-run — the bridge is
@@ -89,6 +89,7 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
     if (!iframe) return;
     setIsLoading(true);
     setError(null);
+    const displayMode = isFullscreen || isFullscreenOnly ? "fullscreen" : "inline";
     try {
       const args = parseToolArguments(toolResult.arguments);
       await setProviderEnabled(providerId, true);
@@ -104,12 +105,10 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
             if (modes?.length) setBridgeDisplayModes(modes);
           },
         },
-        displayMode: isFullscreen || isFullscreenOnly ? "fullscreen" : "inline",
+        displayMode,
         onDisplayModeRequested: requestDisplayMode,
         // Host owns the iframe height; only relevant inline (fullscreen fills the drawer).
-        onSizeChange: (height) => {
-          if (!isFullscreenRef.current) setInlineHeight(Math.min(height, INLINE_MAX_HEIGHT));
-        },
+        onSizeChange,
       });
 
       if (signal.aborted) {

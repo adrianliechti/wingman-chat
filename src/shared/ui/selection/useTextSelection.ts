@@ -17,6 +17,14 @@ interface SelectionContext {
   iframe: HTMLIFrameElement | null;
 }
 
+function clearDocumentSelection(root: SelectionRoot) {
+  try {
+    resolveContext(root)?.win.getSelection()?.removeAllRanges();
+  } catch {
+    // Nothing to clear when the frame's document is unreachable.
+  }
+}
+
 function resolveContext(root: SelectionRoot): SelectionContext | null {
   if (!root) return null;
   if (root instanceof HTMLIFrameElement) {
@@ -99,11 +107,7 @@ export function useTextSelection(
 
   const clear = useCallback(() => {
     setSelection(null);
-    try {
-      resolveContext(root)?.win.getSelection()?.removeAllRanges();
-    } catch {
-      // Nothing to clear when the frame's document is unreachable.
-    }
+    clearDocumentSelection(root);
   }, [root]);
 
   useEffect(() => {

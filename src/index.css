@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+::view-transition-group(.navigation-highlight) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(.navigation-highlight),
+  ::view-transition-old(.navigation-highlight),
+  ::view-transition-new(.navigation-highlight) {
+    animation: none;
+  }
+}
+
 /* While dragging a resizable panel, cover the page with a transparent overlay
    so iframes don't swallow the drag. We intentionally do NOT set
    `pointer-events: none` on the iframes themselves: toggling that on a

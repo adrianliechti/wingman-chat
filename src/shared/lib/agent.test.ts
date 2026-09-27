@@ -49,14 +49,24 @@ describe("agent run controller", () => {
       function: async () => [{ type: "text", text: "ok" }],
     };
     const events: Array<{ sequence: number }> = [];
+    const started: Message[] = [];
+    const ended: Message[] = [];
     const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool], {
       maxTurns: 2,
       onEvent: (event) => events.push(event),
+      onTurnStart: (message) => started.push(message),
+      onTurnEnd: (message) => ended.push(message),
     });
 
     expect(result.status).toBe("max_turns");
     expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
     expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index));
+    expect(new Set(started.map((message) => message.id)).size).toBe(2);
+    expect(started.every((message) => !!message.id && message.content.length === 0)).toBe(true);
+    expect(ended.map((message) => message.id)).toEqual(started.map((message) => message.id));
+    expect(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).toEqual(
+      started.map((message) => message.id),
+    );
   });
 
   it("does not call the model when already aborted", async () => {

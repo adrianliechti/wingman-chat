@@ -6,19 +6,21 @@ import { BackgroundContext } from "./BackgroundContext";
 
 const STORAGE_KEY = "app_background";
 
+function loadBackgroundPacks(): BackgroundPack[] {
+  try {
+    const cfg = getConfig();
+    return Object.entries(cfg.backgrounds || {}).map(([name, items]) => ({ name, items }));
+  } catch (error) {
+    console.warn("Failed to load background packs:", error);
+    return [];
+  }
+}
+
 /**
  * Provides background packs and current background selection across the app.
  */
 export const BackgroundProvider = ({ children }: React.PropsWithChildren) => {
-  const backgroundPacks = useMemo<BackgroundPack[]>(() => {
-    try {
-      const cfg = getConfig();
-      return Object.entries(cfg.backgrounds || {}).map(([name, items]) => ({ name, items }));
-    } catch (error) {
-      console.warn("Failed to load background packs:", error);
-      return [];
-    }
-  }, []);
+  const backgroundPacks = useMemo(() => loadBackgroundPacks(), []);
 
   const [backgroundSetting, setBackgroundSetting] = useState<BackgroundSetting>(() => {
     try {

@@ -3,10 +3,13 @@ import { reportPersistenceError, usePersistenceQueue } from "@/shared/hooks/useP
 import { notify } from "@/shared/lib/notify";
 import { ChatStore } from "../lib/chatStore";
 
-export function useChats() {
+/** `selectedId` subscribes to that conversation's record, not just the index. */
+export function useChats(selectedId: string | null = null) {
   const queue = usePersistenceQueue();
   const [store] = useState(() => new ChatStore(queue));
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const getSelected = () => (selectedId ? (store.getChat(selectedId) ?? null) : null);
+  const selectedChat = useSyncExternalStore(store.subscribe, getSelected, getSelected);
   useEffect(() => {
     void store.initialize().catch((error) => notify.error("Couldn't load saved chats", error));
   }, [store]);
@@ -26,6 +29,7 @@ export function useChats() {
   );
   return {
     ...state,
+    selectedChat,
     createChat,
     deleteChat,
     updateChat: store.updateChat,

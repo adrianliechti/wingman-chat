@@ -6,6 +6,7 @@ import { useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 
 const state = vi.hoisted(() => ({
+  client: { listModels: vi.fn(async () => []) },
   activeFile: "/first.md",
   providers: [] as ToolProvider[],
   coreProviders: [] as ToolProvider[],
@@ -18,7 +19,7 @@ vi.mock("@/features/settings/hooks/useProfile", () => ({
 }));
 vi.mock("@/features/tools/lib/llmCommand", () => ({ setModel: vi.fn() }));
 vi.mock("@/shared/config", () => ({
-  getConfig: () => ({ chat: {}, renderer: state.renderer, models: [] }),
+  getConfig: () => ({ client: state.client, chat: {}, renderer: state.renderer, models: [] }),
 }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({
@@ -41,10 +42,7 @@ vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({
   }),
 }));
 
-function context(
-  model: Model = { id: "test", name: "Test" },
-  mode: "chat" | "voice" = "chat",
-): ChatContext {
+function context(model: Model = { id: "test", name: "Test" }, mode: "chat" | "voice" = "chat"): ChatContext {
   let result!: ChatContext;
   function Harness() {
     result = useChatContext(mode, model);
@@ -109,9 +107,7 @@ describe("chat prompt context", () => {
       tools: { enabled: [], disabled: ["skill-builder"] },
     });
     expect(disabled.instructions()).toContain("Skill Builder instructions");
-    expect(await disabled.tools()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "list_skills" })]),
-    );
+    expect(await disabled.tools()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "list_skills" })]));
   });
 
   it.each(["chat", "voice"] as const)(
@@ -147,9 +143,7 @@ describe("chat prompt context", () => {
           },
         },
       });
-      expect(result).toEqual([
-        { type: "text", text: JSON.stringify({ answered: true, answers: { format: "html" } }) },
-      ]);
+      expect(result).toEqual([{ type: "text", text: JSON.stringify({ answered: true, answers: { format: "html" } }) }]);
     },
   );
 

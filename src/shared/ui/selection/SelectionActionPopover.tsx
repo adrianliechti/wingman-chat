@@ -60,6 +60,7 @@ export function SelectionActionPopover({
     middleware: [offset(6), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   });
+  const setFloating = (node: HTMLElement | null) => refs.setFloating(node);
   const dismiss = useDismiss(context, { escapeKey: true, outsidePress: true });
   const { getFloatingProps } = useInteractions([dismiss]);
 
@@ -101,7 +102,7 @@ export function SelectionActionPopover({
 
   return (
     <FloatingPortal>
-      <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps()} className={cn(surface, "p-1")}>
+      <div ref={setFloating} style={floatingStyles} {...getFloatingProps()} className={cn(surface, "p-1")}>
         {latched ? (
           <form
             onSubmit={(event) => {
