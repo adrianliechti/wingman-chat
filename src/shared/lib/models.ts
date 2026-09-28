@@ -58,6 +58,8 @@ const MODEL_PROFILES: ModelProfile[] = [
   [/\b(?:fable|mythos)-5(?:\.1)?(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
   // Unlike Opus 5, Opus 5.5 documents medium as its default effort.
   [/\bopus-5\.5(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
+  // Sonnet 5.5 can turn off up-front thinking (between_tools), unlike Opus 5.5.
+  [/\bsonnet-5\.5(?=$|[-/:])/, ["none", "low", "medium", "high", "xhigh", "max"], "high", 128_000],
   [/\b(?:opus-4\.[78]|(?:opus|sonnet)-5)(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
   [/\banthropic\.claude-sonnet-4\.6(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 64_000],
   [/\b(?:(?:opus|sonnet)-4\.6|mythos-preview)(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 128_000],

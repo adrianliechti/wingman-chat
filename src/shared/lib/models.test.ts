@@ -96,6 +96,7 @@ describe("model output budgets", () => {
     ["claude-opus-4-6", 64_000],
     ["claude-fable-5-1", 64_000],
     ["claude-opus-5-5", 64_000],
+    ["claude-sonnet-5-5", 64_000],
     ["claude-haiku-4.5", 64_000],
     ["google/gemini-3.1-pro-preview", 64_000],
     ["gemini-3.8-flash", 64_000],
@@ -249,6 +250,12 @@ describe("reasoning effort levels", () => {
     expect(defaultEffort("claude-opus-5-5")).toBe("medium");
     expect(minimalEffort("claude-opus-5-5")).toBe("low");
     expect(modelMaxOutputTokens("claude-opus-5-5")).toBe(128_000);
+    // Sonnet 5.5 keeps high as its default and can turn thinking off.
+    expect(supportedEfforts("claude-sonnet-5-5")).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+    expect(supportedEfforts("anthropic.claude-sonnet-5-5")).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+    expect(defaultEffort("claude-sonnet-5-5")).toBe("high");
+    expect(minimalEffort("claude-sonnet-5-5")).toBe("none");
+    expect(modelMaxOutputTokens("claude-sonnet-5-5")).toBe(128_000);
     // OpenAI documents medium for gpt-5.5 and gpt-5.6, not the smaller variants.
     expect(defaultEffort("gpt-5.5")).toBe("medium");
     expect(defaultEffort("gpt-5-5")).toBe("medium");

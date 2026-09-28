@@ -81,7 +81,9 @@ own supported efforts instead of inheriting a vendor profile.
 - [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort):
   Fable/Mythos 5.1 include xhigh and max. [Opus 5.5](https://www.anthropic.com/claude-opus-5-5)
   has low through max with a medium default (Opus 5 defaults to high); its
-  thinking cannot be disabled, so low is its minimal effort. Mythos Preview and Opus/Sonnet 4.6 have
+  thinking cannot be disabled, so low is its minimal effort. [Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview)
+  has low through max with a high default, plus none, which the gateway sends as
+  `between_tools` to turn off up-front thinking. Mythos Preview and Opus/Sonnet 4.6 have
   max but no xhigh. Haiku and older Sonnet models do not inherit Opus's efforts.
 - [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
   3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
