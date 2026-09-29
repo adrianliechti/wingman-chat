@@ -560,7 +560,7 @@ function PresetSlider({
   const last = steps.length - 1;
   // Presets define the Faster → Smarter scale, including each model's effort.
   const position = last > 0 ? index / last : 0;
-  const accent = position >= 2 / 3 ? "red" : position >= 1 / 2 ? "amber" : "neutral";
+  const isTopTier = position >= 2 / 3;
 
   const indexAt = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -637,11 +637,7 @@ function PresetSlider({
             <div
               className={cn(
                 "absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none",
-                accent === "red"
-                  ? "bg-red-500/75 dark:bg-red-400/80"
-                  : accent === "amber"
-                    ? "bg-amber-500/80 dark:bg-amber-400/80"
-                    : "bg-neutral-800 dark:bg-neutral-200",
+                isTopTier ? "bg-red-500/75 dark:bg-red-400/80" : "bg-neutral-800 dark:bg-neutral-200",
               )}
               style={{ width: stepOffset(index, steps.length) }}
             />
@@ -660,11 +656,9 @@ function PresetSlider({
             <div
               className={cn(
                 "absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-sm transition-[left,background-color,border-color] duration-150 ease-out group-focus-visible/slider:ring-2 motion-reduce:transition-none",
-                accent === "red"
+                isTopTier
                   ? "border-red-400 bg-red-50 group-focus-visible/slider:ring-red-500/40 dark:border-red-400 dark:bg-red-100 dark:group-focus-visible/slider:ring-red-400/40"
-                  : accent === "amber"
-                    ? "border-amber-400 bg-amber-50 group-focus-visible/slider:ring-amber-500/40 dark:border-amber-400 dark:bg-amber-100 dark:group-focus-visible/slider:ring-amber-400/40"
-                    : "border-neutral-300 bg-white group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50",
+                  : "border-neutral-300 bg-white group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50",
               )}
               style={{ left: stepOffset(index, steps.length) }}
             />

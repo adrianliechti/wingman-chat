@@ -77,6 +77,38 @@ test("a renderer-only config leaves chat models visible", async ({ page }) => {
   expect(state.chat.every((model) => !model.hidden)).toBe(true);
 });
 
+test("restores a replaced app default without rewriting local storage", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("app_model", "claude-fable-5-1@max");
+    localStorage.setItem("app_model_verbosity", "high");
+  });
+  const { errors } = await open(page, {
+    models: [
+      {
+        id: "gpt-6-astra",
+        name: "Replacement",
+        replaces: ["claude-fable-5-1"],
+        supportedEfforts: ["low", "high"],
+        effort: "low",
+        verbosity: "low",
+      },
+    ],
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.modelsE2E.state().selected))
+    .toMatchObject({
+      id: "gpt-6-astra",
+      name: "Replacement",
+      supportedEfforts: ["low", "high"],
+      effort: "low",
+      defaultEffort: "low",
+      verbosity: "high",
+    });
+  expect(await page.evaluate(() => localStorage.getItem("app_model"))).toBe("claude-fable-5-1@max");
+  expect(await page.evaluate(() => localStorage.getItem("app_model_verbosity"))).toBe("high");
+  expect(errors).toEqual([]);
+});
+
 for (const selection of ["realtime", "clear"] as const) {
   test(`a delayed initial response preserves the user's ${selection} choice`, async ({ page }) => {
     const { release, api } = await open(page, {}, true);

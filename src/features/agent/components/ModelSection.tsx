@@ -5,7 +5,7 @@ import type { Agent } from "@/features/agent/types/agent";
 import { useChatModel } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { cn } from "@/shared/lib/cn";
-import { defaultModelId } from "@/shared/lib/models";
+import { defaultModelId, findModel } from "@/shared/lib/models";
 import { EFFORT_LABEL, ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Section } from "./Section";
 
@@ -23,7 +23,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
   useEffect(() => {
     if (isRealtimeAgent) return;
     if (models.length === 0) return;
-    const valid = agent.model && models.some((m) => m.id === agent.model);
+    const valid = findModel(models, agent.model);
     if (!valid) {
       updateAgent(agent.id, { model: defaultModelId(models, getSavedModelId()) });
     }
@@ -32,9 +32,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
   const effectiveModel =
     agent.model === "realtime"
       ? "realtime"
-      : agent.model && models.some((m) => m.id === agent.model)
-        ? agent.model
-        : defaultModelId(models, getSavedModelId());
+      : (findModel(models, agent.model)?.id ?? defaultModelId(models, getSavedModelId()));
   const selectedModel = models.find((m) => m.id === effectiveModel);
   const effectiveModelName =
     effectiveModel === "realtime" ? "Real-time Voice" : (selectedModel?.name ?? effectiveModel);
@@ -42,9 +40,9 @@ export function ModelSection({ agent }: ModelSectionProps) {
   const efforts = selectedModel?.supportedEfforts ?? [];
   // Keep the agent's effort only while the chosen model still supports it.
   const selectModel = (modelId: string) => {
-    const next = models.find((m) => m.id === modelId);
+    const next = findModel(models, modelId);
     const keepEffort = agent.effort && next?.supportedEfforts?.includes(agent.effort);
-    updateAgent(agent.id, { model: modelId, effort: keepEffort ? agent.effort : undefined });
+    updateAgent(agent.id, { model: next?.id ?? modelId, effort: keepEffort ? agent.effort : undefined });
   };
 
   return (
@@ -58,7 +56,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
           efforts.length
             ? {
                 options: efforts,
-                value: agent.effort ?? null,
+                value: agent.effort && efforts.includes(agent.effort) ? agent.effort : null,
                 defaultValue: selectedModel?.defaultEffort,
                 onChange: (effort) => updateAgent(agent.id, { effort }),
               }

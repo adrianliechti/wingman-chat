@@ -3,6 +3,8 @@ import {
   compactThreshold,
   configureModels,
   defaultEffort,
+  defaultModelId,
+  findModel,
   modelMaxOutputTokens,
   outputTokenAllowance,
   minimalEffort,
@@ -12,6 +14,52 @@ import {
   shortModelName,
   supportedEfforts,
 } from "./models";
+import type { Model } from "@/shared/types/chat";
+
+describe("model replacements", () => {
+  const old: Model = { id: "gpt-4o", name: "GPT-4o" };
+  const replacement: Model = { id: "gpt-6-sol", name: "GPT-6 Sol", replaces: ["gpt-4o", "gpt-4-turbo"] };
+
+  it("redirects retired IDs even when the original is still available", () => {
+    for (const models of [[replacement], [old, replacement], [replacement, old]]) {
+      expect(findModel(models, "gpt-4o")).toBe(replacement);
+      expect(findModel(models, "gpt-4-turbo")).toBe(replacement);
+      expect(defaultModelId(models, "gpt-4o")).toBe(replacement.id);
+      expect(defaultModelId(models)).toBe(replacement.id);
+    }
+  });
+
+  it("uses only available replacement targets and preserves ordinary fallback selection", () => {
+    const models = configureModels([old], [replacement]);
+    expect(findModel(models, old.id)?.id).toBe(old.id);
+    expect(findModel(models, "gpt-4-turbo")).toBeUndefined();
+    expect(defaultModelId(models, "missing")).toBe(old.id);
+    expect(defaultModelId([], old.id)).toBe("");
+  });
+
+  it("follows replacement chains to their current available target", () => {
+    const latest: Model = { id: "current", name: "Current", replaces: [replacement.id] };
+    expect(findModel([old, replacement, latest], old.id)).toBe(latest);
+    expect(findModel([latest, replacement, old], old.id)).toBe(latest);
+    expect(findModel([latest, replacement, old], latest.id)).toBe(latest);
+  });
+
+  it("ignores conflicting rules instead of depending on inventory order", () => {
+    const conflict: Model = { id: "another", name: "Another", replaces: [old.id] };
+    expect(findModel([replacement, old, conflict], old.id)).toBe(old);
+    expect(findModel([conflict, old, replacement], old.id)).toBe(old);
+    expect(findModel([replacement, conflict], old.id)).toBeUndefined();
+  });
+
+  it("ignores cycles and self references without hanging or alternating models", () => {
+    const cyclic = { ...old, replaces: [replacement.id] };
+    expect(findModel([cyclic, replacement], old.id)).toBe(cyclic);
+    expect(findModel([cyclic, replacement], replacement.id)).toBe(replacement);
+    expect(findModel([cyclic, replacement], "gpt-4-turbo")).toBeUndefined();
+    const self = { ...replacement, replaces: [old.id, replacement.id] };
+    expect(findModel([self], old.id)).toBe(self);
+  });
+});
 
 describe("model endpoint detection", () => {
   it.each([

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { Agent } from "@/features/agent/types/agent";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { buildSelectionEditMessage } from "@/features/chat/lib/selectionMessage";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
@@ -11,6 +10,7 @@ import { useChatRun } from "../hooks/useChatRun";
 import { createChatCreationGate } from "../lib/chatCreation";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import type { Model } from "@/shared/types/chat";
+import { findModel } from "@/shared/lib/models";
 import { useApp } from "@/shell/hooks/useApp";
 import { type ChatContextType } from "./ChatContext";
 
@@ -20,16 +20,16 @@ import { ChatContextProviders } from "./ChatContextProviders";
 // change never sends a level the model no longer supports.
 function supportedEffort(model: Model, effort: Model["effort"]): Model["effort"] {
   const supported = model.supportedEfforts;
-  return effort && supported?.length && !supported.includes(effort) ? undefined : effort;
+  return effort && supported && !supported.includes(effort) ? undefined : effort;
 }
 
-// An agent's effort and verbosity override its model's defaults.
-function withAgentSettings(model: Model, agent: Agent): Model {
-  const effort = supportedEffort(model, agent.effort);
+// Keep compatible user settings when applying a model's current defaults.
+function withModelSettings(model: Model, settings: Pick<Model, "effort" | "verbosity">): Model {
+  const effort = supportedEffort(model, settings.effort);
   return {
     ...model,
     ...(effort ? { effort } : {}),
-    ...(agent.verbosity ? { verbosity: agent.verbosity } : {}),
+    ...(settings.verbosity ? { verbosity: settings.verbosity } : {}),
   };
 }
 
@@ -86,9 +86,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // The catalog can be loading or omit a previously selected model. Keep
     // applying agent settings to a matching cached model in either case.
     const found =
-      models.find((m) => m.id === currentAgent.model) ??
+      findModel(models, currentAgent.model) ??
       [currentChatModel, selectedModel].find((m) => m?.id === currentAgent.model);
-    return found ? withAgentSettings(found, currentAgent) : null;
+    return found ? withModelSettings(found, currentAgent) : null;
   }, [models, currentAgent, currentChatModel, selectedModel]);
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
   // current, but keep the chat's stored `effort` and `verbosity` (the per-chat
@@ -98,7 +98,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // (which would thrash useChatContext and other model-keyed memos on each token).
   const chatModel = useMemo(() => {
     if (!currentChatModel) return null;
-    const resolved = models.find((m) => m.id === currentChatModel.id) ?? currentChatModel;
+    const resolved = findModel(models, currentChatModel.id) ?? currentChatModel;
+    if (resolved.id !== currentChatModel.id) return withModelSettings(resolved, currentChatModel);
     return {
       ...resolved,
       ...("effort" in currentChatModel ? { effort: supportedEffort(resolved, currentChatModel.effort) } : {}),
@@ -184,7 +185,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const setModel = useCallback(
-    (model: Model | null) => {
+    (selection: Model | null) => {
+      const resolved = findModel(models, selection?.id);
+      const model =
+        selection && resolved && resolved.id !== selection.id ? withModelSettings(resolved, selection) : selection;
       if (chatIdRef.current) {
         updateChat(chatIdRef.current, () => ({ model }));
         // Also remember the last chat model globally so new chats / mode
@@ -194,7 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setSelectedModel(model);
       }
     },
-    [updateChat, setSelectedModel],
+    [models, updateChat, setSelectedModel],
   );
 
   // Per-chat reasoning effort selection. Stored as `effort` on the chat's model

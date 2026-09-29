@@ -11,6 +11,7 @@ import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
 import { getConfig } from "@/shared/config";
+import { findModel } from "@/shared/lib/models";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
@@ -56,7 +57,7 @@ export function useChatContext(
       // Further filter based on model configuration
       const filterModel: Pick<Model, "tools"> | null | undefined =
         mode === "voice" && (model?.id === "realtime" || !model?.tools) && currentAgent?.model
-          ? (models.find((m) => m.id === currentAgent.model) ?? model)
+          ? (findModel(models, currentAgent.model) ?? model)
           : model;
 
       if (filterModel?.tools) {

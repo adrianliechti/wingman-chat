@@ -19,6 +19,9 @@ export type Model = {
   id: string;
   name: string;
 
+  /** Older model IDs whose saved selections should use this model instead. */
+  replaces?: string[];
+
   /** Short subdued text shown inline after `name`, e.g. the underlying model. */
   caption?: string;
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
-import { defaultModelId } from "@/shared/lib/models";
+import { defaultModelId, findModel } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
@@ -44,7 +44,7 @@ export function getSavedModel(models: readonly Model[]): Model | null {
   } catch {
     // Ignore localStorage errors.
   }
-  const model = models.find((model) => model.id === saved?.id);
+  const model = findModel(models, saved?.id);
   if (!model) return null;
   const effort = saved?.effort;
   return {

@@ -297,3 +297,6 @@ YAML files loaded from the working directory (when present) configure models, to
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+
+Model entries can list retired IDs in `replaces` to redirect saved agents and
+chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

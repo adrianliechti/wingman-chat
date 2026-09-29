@@ -1,5 +1,6 @@
 import type { ModelPresetConfig } from "@/shared/config";
 import type { Model, ReasoningEffort } from "@/shared/types/chat";
+import { findModel } from "./models";
 
 /** A slider step resolved against the model catalog. */
 export interface ModelPreset {
@@ -18,9 +19,8 @@ export interface ModelPreset {
  */
 export function resolveModelPresets(configured: readonly ModelPresetConfig[] | undefined, models: readonly Model[]) {
   if (!configured?.length) return [];
-  const byId = new Map(models.map((model) => [model.id, model]));
   return configured.flatMap((preset): ModelPreset[] => {
-    const model = byId.get(preset.model);
+    const model = findModel(models, preset.model);
     if (!model) return [];
     const supported = model.supportedEfforts;
     const effort =

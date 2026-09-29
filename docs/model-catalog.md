@@ -62,6 +62,32 @@ loading also wins over the late response.
 Speech calls use their configured model or backend default. They do not choose
 the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
 
+## Model replacements
+
+Add `replaces` to the target entry in `models.yaml` (or `config.models`) to move
+saved selections to a newer model:
+
+```yaml
+- id: gpt-6-sol
+  name: GPT-6 Sol
+  replaces:
+    - gpt-4o
+    - gpt-4-turbo
+```
+
+Saved agents, chats, the app default, and slider presets resolve these old IDs
+to the replacement, even if the old model is still available. The target must
+be in the backend inventory. Its current capabilities, instructions, tool
+policy, and defaults apply. Compatible saved effort and verbosity choices are
+kept; unsupported effort falls back to the target's default.
+
+Resolution does not rewrite saved agents, chats, or local storage on load.
+Selecting a model explicitly saves the current selection as usual. Without an
+available replacement, existing selection and fallback behavior is unchanged.
+Replacement chains follow available targets; list all retired IDs on the final
+target when removing intermediate models. Conflicting targets and cycles are
+ignored, retaining the original ID when available.
+
 ## Capability sources and limits
 
 Reviewed September 23, 2026. Profiles are fallbacks, not an API guarantee, and do

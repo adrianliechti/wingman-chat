@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, Tool, ToolContext } from "@/shared/types/chat";
-import type { Chat } from "@/shared/types/chat";
+import type { Chat, Model } from "@/shared/types/chat";
+import type { Agent } from "@/features/agent/types/agent";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
 import type { verifyArtifacts } from "@/features/artifacts/lib/artifact-verifier";
@@ -18,7 +19,9 @@ import { createAgentTool } from "@/features/tools/lib/subagent";
 const fixture = vi.hoisted(() => ({
   chats: [] as Chat[],
   tools: [] as Tool[],
-  model: { id: "model", name: "Model", compactThreshold: 1000 },
+  model: { id: "model", name: "Model", compactThreshold: 1000 } as Model,
+  extraModels: [] as Model[],
+  agent: null as Agent | null,
   chat: {} as { compaction?: { threshold?: number } },
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
   classify: vi.fn(),
@@ -36,7 +39,7 @@ vi.mock("@/shared/config", () => ({
   categorySlug: (name: string) => name,
   riskSlug: (name: string) => name,
 }));
-vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
+vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: fixture.agent }) }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
   useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn(), setEditRequestHandler: vi.fn() }),
 }));
@@ -62,7 +65,7 @@ vi.mock("@/features/chat/hooks/useChatContext", () => {
 });
 vi.mock("@/features/chat/hooks/useModels", () => ({
   useModels: () => ({
-    models: [fixture.model],
+    models: [fixture.model, ...fixture.extraModels],
     selectedModel: fixture.model,
     setSelectedModel: vi.fn(),
     getSavedModelId: () => "model",
@@ -152,6 +155,9 @@ beforeEach(() => {
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
   fixture.chats.length = 0;
   fixture.tools = [];
+  fixture.model = { id: "model", name: "Model", compactThreshold: 1000 };
+  fixture.extraModels = [];
+  fixture.agent = null;
   fixture.chat = {};
   fixture.artifacts = false;
   fixture.memory = undefined;
@@ -167,6 +173,91 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("saved model replacements", () => {
+  beforeEach(() => {
+    fixture.model = {
+      id: "replacement",
+      name: "Replacement",
+      replaces: ["legacy"],
+      supportedEfforts: ["low", "high"],
+      effort: "low",
+      defaultEffort: "low",
+      verbosity: "low",
+      instructions: "Current model instructions",
+      compactThreshold: 100_000,
+      tools: { enabled: [], disabled: ["canvas"] },
+    };
+    fixture.complete.mockResolvedValue(assistant("Answer"));
+  });
+
+  it.each([
+    { effort: "high", verbosity: "high", expectedEffort: "high", expectedVerbosity: "high" },
+    { effort: "max", verbosity: undefined, expectedEffort: "low", expectedVerbosity: "low" },
+    { effort: undefined, verbosity: undefined, expectedEffort: "low", expectedVerbosity: "low" },
+  ] as const)("restores a legacy chat's compatible settings: $effort / $verbosity", async (settings) => {
+    const saved: Model = {
+      id: "legacy",
+      name: "Legacy",
+      effort: settings.effort,
+      verbosity: settings.verbosity,
+      instructions: "Obsolete instructions",
+      compactThreshold: 1000,
+      tools: { enabled: ["canvas"], disabled: [] },
+    };
+    // A configured replacement wins even when the old model is still listed.
+    fixture.extraModels = [saved];
+    fixture.chats = [{ id: "saved", title: "Saved", model: saved, messages: [], created: null, updated: null }];
+    const context = await harness();
+    await act(async () => {
+      context.selectChat("saved");
+    });
+    expect(context.model).toEqual({
+      ...fixture.model,
+      effort: settings.expectedEffort,
+      verbosity: settings.expectedVerbosity,
+    });
+    expect(fixture.chats[0].model).toBe(saved);
+    await act(() => context.sendMessage(user("Continue")));
+    expect(fixture.complete.mock.calls[0][0]).toMatchObject({ model: "replacement" });
+  });
+
+  it("uses a retired agent's replacement without rewriting the agent", async () => {
+    fixture.agent = {
+      id: "agent",
+      name: "Saved agent",
+      model: "legacy",
+      effort: "max",
+      skills: [],
+      plugins: [],
+      tools: [],
+      servers: [],
+    };
+    const context = await harness();
+    expect(context.model).toEqual(fixture.model);
+    expect(fixture.agent.model).toBe("legacy");
+    await act(() => context.sendMessage(user("Hello")));
+    expect(fixture.complete.mock.calls[0][0]).toMatchObject({ model: "replacement" });
+    expect(fixture.agent.model).toBe("legacy");
+  });
+
+  it("drops a stored agent effort when the replacement has no effort levels", async () => {
+    fixture.model = { id: "plain", name: "Plain", replaces: ["legacy"], supportedEfforts: [] };
+    fixture.agent = {
+      id: "agent",
+      name: "Saved agent",
+      model: "legacy",
+      effort: "high",
+      skills: [],
+      plugins: [],
+      tools: [],
+      servers: [],
+    };
+    const context = await harness();
+    expect(context.model?.effort).toBeUndefined();
+    expect(context.model?.id).toBe("plain");
+  });
 });
 
 describe("chat run integration", () => {
@@ -212,7 +303,9 @@ describe("chat run integration", () => {
     });
     await storeChat(fixture.chats[0]);
     const saved = await readJson<Record<string, unknown>>(`chats/${id}/chat.json`);
-    expect(saved).toMatchObject({ pendingRun: { interrupts: [{ reason: "tool_call", toolCallId: expect.any(String) }] } });
+    expect(saved).toMatchObject({
+      pendingRun: { interrupts: [{ reason: "tool_call", toolCallId: expect.any(String) }] },
+    });
     expect(JSON.stringify(saved)).not.toMatch(/pendingInterrupts|resumeState|aiResume|runtime/);
     fixture.chats = [(await loadChat(id, false))!];
     const restored = await harness();

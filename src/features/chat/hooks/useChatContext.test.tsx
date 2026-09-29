@@ -12,8 +12,9 @@ const state = vi.hoisted(() => ({
   coreProviders: [] as ToolProvider[],
   studio: false,
   renderer: undefined as { model: string } | undefined,
+  agent: null as { model: string } | null,
 }));
-vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: null }) }));
+vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: state.agent }) }));
 vi.mock("@/features/settings/hooks/useProfile", () => ({
   useProfile: () => ({ generateInstructions: () => "Profile instructions" }),
 }));
@@ -42,10 +43,14 @@ vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({
   }),
 }));
 
-function context(model: Model = { id: "test", name: "Test" }, mode: "chat" | "voice" = "chat"): ChatContext {
+function context(
+  model: Model = { id: "test", name: "Test" },
+  mode: "chat" | "voice" = "chat",
+  models: Model[] = [],
+): ChatContext {
   let result!: ChatContext;
   function Harness() {
-    result = useChatContext(mode, model);
+    result = useChatContext(mode, model, models);
     return null;
   }
   renderToString(<Harness />);
@@ -59,6 +64,21 @@ describe("chat prompt context", () => {
     state.coreProviders = [];
     state.studio = false;
     state.renderer = undefined;
+    state.agent = null;
+  });
+
+  it("uses a retired agent model's replacement tool policy in voice mode", () => {
+    state.agent = { model: "legacy" };
+    const voice = context({ id: "realtime", name: "Voice" }, "voice", [
+      {
+        id: "replacement",
+        name: "Replacement",
+        replaces: ["legacy"],
+        tools: { enabled: [], disabled: ["artifacts"] },
+      },
+    ]);
+    expect(voice.instructions()).not.toContain("Static artifact instructions");
+    expect(voice.runtimeContext()).toBe("");
   });
 
   it("changing the active file leaves the complete static system instructions unchanged", () => {

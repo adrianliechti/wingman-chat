@@ -1,10 +1,53 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"reflect"
 	"testing"
 )
+
+func TestModelReplacementsReachBrowserConfig(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile("models.yaml", []byte(`
+- id: current
+  replaces:
+    - legacy
+    - older
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	loadConfigFiles(&cfg)
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Models []struct {
+			ID       string   `json:"id"`
+			Replaces []string `json:"replaces"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if len(browser.Models) != 1 || browser.Models[0].ID != "current" ||
+		!reflect.DeepEqual(browser.Models[0].Replaces, []string{"legacy", "older"}) {
+		t.Fatalf("unexpected browser config: %s", data)
+	}
+}
 
 func TestLoadAccountLinks(t *testing.T) {
 	previous, err := os.Getwd()

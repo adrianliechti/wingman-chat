@@ -62,6 +62,7 @@ type ModelTools struct {
 type Model struct {
 	ID                string      `json:"id,omitempty" yaml:"id,omitempty"`
 	Name              string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Replaces          []string    `json:"replaces,omitempty" yaml:"replaces,omitempty"`
 	Caption           string      `json:"caption,omitempty" yaml:"caption,omitempty"`
 	Description       string      `json:"description,omitempty" yaml:"description,omitempty"`
 	Instructions      string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
