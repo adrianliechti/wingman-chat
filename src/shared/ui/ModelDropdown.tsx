@@ -24,7 +24,7 @@ import {
   type Placement,
   type Side,
 } from "@floating-ui/react";
-import { AlignLeft, Boxes, Check, ChevronRight, Gauge, Mic, Search } from "lucide-react";
+import { AlignLeft, Bot, Boxes, Check, ChevronRight, Gauge, Mic, Search, Settings2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
@@ -120,12 +120,35 @@ interface PresetsConfig {
   onChange: (index: number) => void;
 }
 
+export interface AgentAction {
+  icon?: React.ReactNode;
+  label: string;
+  /** Highlights a row that needs attention, e.g. a pending sign-in. */
+  warning?: boolean;
+  onSelect: () => void;
+}
+
+/** Agents offered next to the models; picking one replaces the model selection. */
+interface AgentsConfig {
+  items: { id: string; name: string; caption?: string }[];
+  /** Active agent id, or null when chatting with a plain model. */
+  value: string | null;
+  /** Picking the active agent again passes null to turn it off. */
+  onChange: (id: string | null) => void;
+  /** Opens an agent's settings from the gear on its row. */
+  onOpen: (id: string) => void;
+  /** Rows after the list, e.g. a pending sign-in. */
+  actions?: AgentAction[];
+}
+
 interface ModelDropdownProps {
   models: Model[];
   value: string;
   onChange: (modelId: string) => void;
   includeRealtime?: boolean;
   dropdownClassName?: string;
+  /** When set, renders an agent submenu before the model and other settings. */
+  agents?: AgentsConfig;
   /** When set, renders a reasoning-effort submenu at the bottom of the model list. */
   effort?: EffortConfig;
   /** When set, renders a verbosity submenu after the effort one. */
@@ -276,6 +299,10 @@ function usePanelTransition(context: FloatingContext, duration: { open: number; 
 
 const TreeCloseContext = createContext<() => void>(() => {});
 
+// The root panel fades out before it unmounts; flyouts follow its open state so
+// they close with it instead of lingering until the fade ends.
+const RootOpenContext = createContext(false);
+
 // ─── Flyout submenu ───────────────────────────────────────────────────────────
 
 /** A menu row that opens a side panel on hover or click. */
@@ -293,7 +320,9 @@ function Flyout({
   panelClassName?: string;
   children: React.ReactNode;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [openState, setIsOpen] = useState(false);
+  const rootOpen = useContext(RootOpenContext);
+  const isOpen = openState && rootOpen;
 
   const tree = useFloatingTree();
   const nodeId = useFloatingNodeId();
@@ -410,6 +439,102 @@ function OptionSubmenu({
           }}
         />
       ))}
+    </Flyout>
+  );
+}
+
+function AgentSubmenu({ items, value, onChange, onOpen, actions }: AgentsConfig) {
+  const closeAll = useContext(TreeCloseContext);
+
+  return (
+    <Flyout
+      icon={<Bot size={14} />}
+      label="Agent"
+      detail={items.find((a) => a.id === value)?.name ?? "None"}
+      panelClassName="flex w-auto min-w-48 max-w-72 flex-col overflow-hidden"
+    >
+      <div className="min-h-0 overflow-y-auto scrollbar-thin" style={{ maxHeight: "min(60vh, 24rem)" }}>
+        {items.map((a) => {
+          const selected = a.id === value;
+          return (
+            <div
+              key={a.id}
+              className={cn(
+                "group/agent flex items-center gap-1 pr-2 rounded-lg transition-colors",
+                selected
+                  ? "bg-neutral-100/70 text-neutral-900 dark:bg-white/10 dark:text-neutral-100"
+                  : "text-neutral-800 hover:bg-neutral-100/60 has-focus-visible:bg-neutral-100/60 dark:text-neutral-200 dark:hover:bg-white/5 dark:has-focus-visible:bg-white/5",
+              )}
+            >
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => {
+                  onChange(selected ? null : a.id);
+                  closeAll();
+                }}
+                className="flex flex-1 min-w-0 items-center gap-2 py-2 pl-3 text-left focus:outline-none"
+              >
+                <span className={cn("flex-1 truncate text-[13px] leading-tight", selected ? "font-semibold" : "font-medium")}>
+                  {a.name}
+                </span>
+                {a.caption && (
+                  <span className="truncate text-[11px] leading-tight text-neutral-500 dark:text-neutral-400">{a.caption}</span>
+                )}
+              </button>
+              {/* One slot: the check marks the active agent and gives way to the
+                  settings gear on hover. Touch has no hover, so it shows the gear. */}
+              <span className="relative flex size-6 shrink-0 items-center justify-center">
+                <Check
+                  size={14}
+                  className={cn(
+                    "text-neutral-500 transition-opacity group-hover/agent:opacity-0 pointer-coarse:hidden dark:text-neutral-400",
+                    selected ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                <button
+                  type="button"
+                  aria-label={`Open ${a.name} settings`}
+                  title="Agent settings"
+                  onClick={() => {
+                    onOpen(a.id);
+                    closeAll();
+                  }}
+                  className="absolute inset-0 flex items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 hover:bg-neutral-200/70 focus-visible:opacity-100 focus:outline-none group-hover/agent:opacity-100 pointer-coarse:opacity-100 dark:hover:text-neutral-200 dark:hover:bg-white/10"
+                >
+                  <Settings2 size={14} />
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {actions && actions.length > 0 && (
+        <>
+          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                action.onSelect();
+                closeAll();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-2 rounded-lg text-left text-[13px] font-medium transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5",
+                action.warning
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-neutral-800 dark:text-neutral-200",
+              )}
+            >
+              {action.icon && <span className="shrink-0 flex justify-center text-current opacity-70">{action.icon}</span>}
+              <span className="truncate">{action.label}</span>
+            </button>
+          ))}
+        </>
+      )}
     </Flyout>
   );
 }
@@ -557,6 +682,7 @@ function ModelDropdownRoot({
   onChange,
   includeRealtime,
   dropdownClassName,
+  agents,
   effort,
   verbosity,
   submenus,
@@ -787,6 +913,7 @@ function ModelDropdownRoot({
           }),
       })}
 
+      <RootOpenContext.Provider value={isOpen}>
       <TreeCloseContext.Provider value={closeAll}>
         {isOverlayMounted && (
           <FloatingPortal>
@@ -813,6 +940,7 @@ function ModelDropdownRoot({
                     <>
                       <PresetSlider {...presets} fallbackLabel={selectedName} onPreview={setPreviewIndex} />
                       <div className="mb-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                      {agents && <AgentSubmenu {...agents} />}
                       <Flyout
                         icon={<Boxes size={14} />}
                         label="Model"
@@ -828,9 +956,10 @@ function ModelDropdownRoot({
                   ) : (
                     <div className="flex flex-col overflow-hidden" style={{ maxHeight: "var(--panel-max-h, 24rem)" }}>
                       {modelList}
-                      {allSubmenus.length > 0 && !q && (
+                      {(agents || allSubmenus.length > 0) && !q && (
                         <>
                           <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                          {agents && <AgentSubmenu {...agents} />}
                           {allSubmenus.map((cfg) => (
                             <OptionSubmenu key={cfg.label} {...cfg} />
                           ))}
@@ -844,6 +973,7 @@ function ModelDropdownRoot({
           </FloatingPortal>
         )}
       </TreeCloseContext.Provider>
+      </RootOpenContext.Provider>
     </FloatingNode>
   );
 }

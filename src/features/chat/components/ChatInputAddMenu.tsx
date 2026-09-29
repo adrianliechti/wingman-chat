@@ -371,8 +371,7 @@ export function ChatInputAddMenu({
   onDriveSelect,
 }: ChatInputAddMenuProps) {
   const config = getConfig();
-  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } =
-    useAgents();
+  const { currentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { skills, openSkillCatalog } = useSkills();
   const { plugins } = usePlugins();
   const openPluginsManager = () => openSkillCatalog(undefined, false, "plugins");
@@ -645,38 +644,6 @@ export function ChatInputAddMenu({
           >
             {(close) => (
               <>
-                {agents.length === 0 && (
-                  <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">
-                    No agents configured
-                  </p>
-                )}
-                <div className="overflow-y-auto">
-                  {agents.map((agent) => (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentAgent(agent);
-                        setAgentDrawerView("details");
-                        setShowAgentDrawer(true);
-                        close();
-                      }}
-                      className={ROW_CLASS}
-                    >
-                      <Bot size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left truncate">
-                        {agent.name}
-                      </span>
-                      {currentAgent?.id === agent.id && (
-                        <Check
-                          size={13}
-                          className="shrink-0 ml-1 text-neutral-600 dark:text-neutral-400"
-                        />
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="border-t border-neutral-200 dark:border-neutral-700 mt-1" />
                 <button
                   type="button"
                   onClick={() => {
@@ -1081,9 +1048,8 @@ export function ChatInputAddMenu({
                 </>
               )}
 
-              {/* Agents section */}
-              {agents.length > 0 && (
-                <>
+              {/* Agents section; selecting one happens in the model chooser. */}
+              <>
                   <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
                   <div className="px-4 pb-1 flex items-center justify-between">
                     <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
@@ -1115,49 +1081,7 @@ export function ChatInputAddMenu({
                       </button>
                     </div>
                   </div>
-                  <div className="px-2 pb-2">
-                    {agents.map((agent) => (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        onClick={() => {
-                          setCurrentAgent(agent);
-                          setShowMobileSheet(false);
-                        }}
-                        className={`group flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
-                          currentAgent?.id === agent.id
-                            ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                            : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                        }`}
-                      >
-                        <Bot size={16} className="shrink-0" />
-                        <span className="font-medium text-sm flex-1 text-left truncate">
-                          {agent.name}
-                        </span>
-                        {currentAgent?.id === agent.id && (
-                          <>
-                            <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
-                              Active
-                            </span>
-                            <button
-                              type="button"
-                              title="Deselect agent"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCurrentAgent(null);
-                                setShowMobileSheet(false);
-                              }}
-                              className="shrink-0 p-0.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-700 dark:hover:text-neutral-200 transition-colors"
-                            >
-                              <X size={13} />
-                            </button>
-                          </>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+              </>
             </div>
           </DialogPanel>
         </div>

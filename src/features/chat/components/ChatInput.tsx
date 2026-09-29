@@ -27,7 +27,6 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
@@ -71,7 +70,10 @@ export function ChatInput() {
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
   const { isResponding, queuedSends, interruptState } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
-  const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  // An agent pinned to a model also owns its effort and verbosity; without one
+  // it runs on the chat's model, which stays switchable.
+  const agentOwnsModel = !!currentAgent?.model;
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
@@ -247,8 +249,6 @@ export function ChatInput() {
     [visibleProviders, getProviderState],
   );
 
-  // Touch devices have no hover, so the agent badge opens a dropdown instead.
-  const isTouchDevice = useMediaQuery("(pointer: coarse)");
 
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
@@ -720,16 +720,54 @@ export function ChatInput() {
                   onDriveSelect={setActiveDrive}
                 />
               )}
-              {models.length > 0 && !isRealtimeSelected && !currentAgent && (
+              {models.length > 0 && !(isRealtimeSelected && (!currentAgent || isListening)) && (
                 <ModelDropdown
                   models={models}
-                  value={model?.id ?? ""}
+                  // An agent with its own model owns the selection, so no model row is
+                  // checked; picking one switches back to a plain model chat.
+                  value={agentOwnsModel ? "" : (model?.id ?? "")}
                   onChange={(modelId) => {
                     const m = models.find((m) => m.id === modelId);
-                    if (m) onModelChange(m);
+                    if (!m) return;
+                    if (agentOwnsModel) setCurrentAgent(null);
+                    onModelChange(m);
                   }}
+                  agents={
+                    agents.length > 0 || currentAgent
+                      ? {
+                          items: agents.map((a) => ({ id: a.id, name: a.name })),
+                          value: currentAgent?.id ?? null,
+                          onChange: (id) => {
+                            setCurrentAgent(agents.find((a) => a.id === id) ?? null);
+                            if (!id) setShowAgentDrawer(false);
+                          },
+                          // The drawer shows the active agent, so opening one selects it.
+                          onOpen: (id) => {
+                            setCurrentAgent(agents.find((a) => a.id === id) ?? null);
+                            setAgentDrawerView("details");
+                            setShowAgentDrawer(true);
+                          },
+                          actions:
+                            currentAgent && unauthorizedProviders.length > 0
+                              ? [
+                                  {
+                                    icon: <Lock size={14} />,
+                                    label: `Sign in (${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})`,
+                                    warning: true,
+                                    onSelect: () => {
+                                      for (const provider of unauthorizedProviders) {
+                                        void setProviderEnabled(provider.id, true);
+                                      }
+                                    },
+                                  },
+                                ]
+                              : undefined,
+                        }
+                      : undefined
+                  }
+                  // The agent's own effort and verbosity apply while it owns the model.
                   effort={
-                    model?.supportedEfforts?.length
+                    !agentOwnsModel && model?.supportedEfforts?.length
                       ? {
                           options: model.supportedEfforts,
                           value: effort ?? null,
@@ -738,18 +776,23 @@ export function ChatInput() {
                         }
                       : undefined
                   }
-                  verbosity={{
-                    value: verbosity ?? null,
-                    defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
-                    onChange: setVerbosity,
-                  }}
+                  verbosity={
+                    agentOwnsModel
+                      ? undefined
+                      : {
+                          value: verbosity ?? null,
+                          defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                          onChange: setVerbosity,
+                        }
+                  }
                   presets={
                     presets.length > 1
                       ? {
                           steps: presets,
-                          value: modelPresetIndex(presets, model),
+                          value: agentOwnsModel ? -1 : modelPresetIndex(presets, model),
                           onChange: (index) => {
                             const { model: next, effort, verbosity } = presets[index];
+                            if (agentOwnsModel) setCurrentAgent(null);
                             onModelChange({ ...next, effort, verbosity });
                           },
                         }
@@ -760,137 +803,47 @@ export function ChatInput() {
                     <button
                       type="button"
                       {...getProps()}
-                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                      className={cn(
+                        "flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56",
+                        currentAgent && unauthorizedProviders.length > 0
+                          ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
+                      )}
                     >
-                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                      <Tooltip
+                        content={
+                          currentAgent && unauthorizedProviders.length > 0
+                            ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
+                            : currentAgent
+                              ? "Switch agent or model"
+                              : "Switch model"
+                        }
+                        side="bottom"
+                        className="flex items-center gap-1.5 min-w-0"
+                      >
+                        <span className="shrink-0 flex justify-center">
+                          {!currentAgent ? (
+                            toolIndicator
+                          ) : authenticatingProviders.length > 0 ? (
+                            <LoaderCircle size={14} className="animate-spin" />
+                          ) : unauthorizedProviders.length > 0 ? (
+                            <Lock size={14} />
+                          ) : (
+                            <Bot size={14} />
+                          )}
+                        </span>
+                        <span className="truncate min-w-0">
+                          {currentAgent
+                            ? agentOwnsModel
+                              ? currentAgent.name
+                              : `${currentAgent.name} · ${model?.name ?? model?.id ?? "Select Model"}`
+                            : (model?.name ?? model?.id ?? "Select Model")}
+                        </span>
                       </Tooltip>
                     </button>
                   )}
                 />
               )}
-
-              {/* Agent picker badge: shows a lock icon and retries sign-in when auth is needed. */}
-              {currentAgent &&
-                !(isRealtimeSelected && isListening) &&
-                (isTouchDevice ? (
-                  <DropdownMenu
-                    anchor="bottom start"
-                    trigger={
-                      <MenuButton
-                        className={cn(
-                          "flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          unauthorizedProviders.length > 0
-                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-                        )}
-                      >
-                        {authenticatingProviders.length > 0 ? (
-                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
-                        ) : unauthorizedProviders.length > 0 ? (
-                          <Lock size={14} className="shrink-0" />
-                        ) : (
-                          <Bot size={14} className="shrink-0" />
-                        )}
-                        <span className="truncate max-w-28">{currentAgent.name}</span>
-                      </MenuButton>
-                    }
-                  >
-                    {unauthorizedProviders.length > 0 && (
-                      <DropdownMenuItem
-                        icon={<Lock size={14} />}
-                        render={({ className, children }) => (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              for (const provider of unauthorizedProviders) {
-                                void setProviderEnabled(provider.id, true);
-                              }
-                            }}
-                            className={cn(className, "text-amber-600 dark:text-amber-400")}
-                          >
-                            {children}
-                          </button>
-                        )}
-                      >
-                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      icon={<Bot size={14} />}
-                      onClick={() => {
-                        setAgentDrawerView("details");
-                        setShowAgentDrawer(true);
-                      }}
-                    >
-                      Open agent
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      icon={<X size={14} />}
-                      destructive
-                      onClick={() => {
-                        setCurrentAgent(null);
-                        setShowAgentDrawer(false);
-                      }}
-                    >
-                      Deselect agent
-                    </DropdownMenuItem>
-                  </DropdownMenu>
-                ) : (
-                  <div className="group flex items-center gap-0.5">
-                    <Tooltip
-                      content={
-                        unauthorizedProviders.length > 0
-                          ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
-                          : `${currentAgent.name} is active`
-                      }
-                      side="bottom"
-                    >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (unauthorizedProviders.length > 0) {
-                            for (const provider of unauthorizedProviders) {
-                              void setProviderEnabled(provider.id, true);
-                            }
-                            return;
-                          }
-                          setAgentDrawerView("details");
-                          setShowAgentDrawer(true);
-                        }}
-                        className={cn(
-                          "flex items-center gap-1 pl-1 pr-0.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          unauthorizedProviders.length > 0
-                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-                        )}
-                      >
-                        {authenticatingProviders.length > 0 ? (
-                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
-                        ) : unauthorizedProviders.length > 0 ? (
-                          <Lock size={14} className="shrink-0" />
-                        ) : (
-                          <Bot size={14} className="shrink-0" />
-                        )}
-                        <span className="truncate max-w-28">{currentAgent.name}</span>
-                      </button>
-                    </Tooltip>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setCurrentAgent(null);
-                        setShowAgentDrawer(false);
-                      }}
-                      className="p-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      title="Deselect agent"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
                   type="button"
