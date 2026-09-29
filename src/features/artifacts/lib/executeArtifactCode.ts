@@ -101,11 +101,14 @@ export async function executeArtifactCode(options: {
   limits?: CodeExecutionRequest["limits"];
   mountSkills?: boolean;
 }): Promise<CodeExecutionResult> {
-  const { args, context, executor, extension, mountSkills = false } = options;
+  const { args, context, executor, extension, mountSkills = true } = options;
   const inlineCode = typeof args.code === "string" ? args.code : "";
 
   const run = async (fs: ArtifactWorkspaceAccess | null): Promise<CodeExecutionResult> => {
     context?.signal?.throwIfAborted();
+    if (args.args !== undefined && (!Array.isArray(args.args) || args.args.some((arg) => typeof arg !== "string"))) {
+      return failure("Script args must be an array of strings.");
+    }
     const hasCode = inlineCode.trim().length > 0;
     const path = hasCode ? undefined : normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
 
@@ -118,20 +121,19 @@ export async function executeArtifactCode(options: {
 
     // Prefer inline code: providers sometimes append `path` as if it were a
     // working-directory hint even though the schema describes a selector.
+    const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
+    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
     let script = inlineCode;
     if (!hasCode && path) {
-      if (!fs) return failure("Error executing code: file system not available.");
-      const file = await fs.getFile(path);
+      const file = artifactFiles[path];
       if (!file) return failure(`Error executing code: file not found: ${path}`);
       script = file.content;
     }
 
-    const artifactFiles: SandboxFiles = fs ? await fs.getOverlaySnapshot() : {};
-    const skillKeys = mountSkills ? mergeSkillFiles(artifactFiles, await mountSkillFiles()) : new Set<string>();
     context?.signal?.throwIfAborted();
     const result = await executeCancellable(
       executor,
-      { code: script, files: artifactFiles, limits: options.limits },
+      { code: script, path, args: args.args as string[] | undefined, files: artifactFiles, limits: options.limits },
       { signal: context?.signal, context },
     );
     if (!result.success) {

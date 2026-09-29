@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Client } from "./client";
 import { run, runMessages } from "./agent";
 import { loadConfig } from "../config";
-import type { Tool } from "../types/chat";
+import type { Message, Tool } from "../types/chat";
 import { response, textItem, callItem, sse, finished } from "./test-support/ai";
 import type { ChatMiddleware } from "@tanstack/ai";
 
@@ -398,6 +398,45 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         }),
       ]),
     );
+  });
+
+  it("continues after a failed tool with prepared history and replays it without empty user turns", async () => {
+    fetchMock
+      .mockResolvedValueOnce(finished(response([callItem()])))
+      .mockResolvedValueOnce(finished(response([textItem("Recovered")], { id: "resp_recovered" })))
+      .mockResolvedValueOnce(finished(response([textItem("Continued")], { id: "resp_continued" })));
+    const error = { code: "PYTHON_EXECUTION_ERROR", message: "AssertionError on line 31" };
+    const execute = vi.fn<Tool["function"]>(async (_args, context) => {
+      context?.setError?.(error);
+      return [{ type: "text", text: error.message }];
+    });
+    const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
+    const client = new Client();
+    const hooks = { prepareMessages: (messages: Message[]) => messages };
+    const first = await run(client, "model", "", prompt, tools, hooks);
+    expect(first.error).toBeUndefined();
+    expect(first.status).toBe("completed");
+    expect(first.messages.at(-1)?.content).toEqual([{ type: "text", text: "Recovered" }]);
+
+    const restored: Message[] = JSON.parse(JSON.stringify(first.messages));
+    const next = await run(client, "model", "", [...restored, ...prompt], tools, hooks);
+    expect(next.status).toBe("completed");
+    expect(next.messages.at(-1)?.content).toEqual([{ type: "text", text: "Continued" }]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(new Set(next.messages.map((message) => message.id)).size).toBe(next.messages.length);
+    expect(next.messages.filter((message) => message.id === "result-call_test")).toMatchObject([
+      { error, content: [{ type: "tool_result", id: "call_test" }] },
+    ]);
+    for (const request of fetchMock.mock.calls.slice(1)) {
+      const input = JSON.parse(request[1].body).input;
+      expect(input.filter((item: { type: string }) => item.type === "function_call_output")).toEqual([
+        expect.objectContaining({ call_id: "call_test", output: expect.stringContaining(error.message) }),
+      ]);
+      expect(input.filter((item: { role?: string }) => item.role === "user")).toEqual(
+        expect.arrayContaining([expect.objectContaining({ content: [{ type: "input_text", text: "Go" }] })]),
+      );
+    }
   });
 
   it.each(["incomplete", "failed"])("does not execute tools from a %s response", async (status) => {

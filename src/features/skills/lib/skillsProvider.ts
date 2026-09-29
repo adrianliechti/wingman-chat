@@ -106,7 +106,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   const instructions = [
     skillsPrompt,
     hasResources
-      ? "Selected skill files are mounted read-only in the code interpreter under skills/<skill-name>/. Run scripts from that exact path instead of pasting their bodies."
+      ? "Selected skill files are available in both code interpreters under /skills/<skill-name>/ (Python: /home/user/skills/<skill-name>/). Run a compatible script with the executor's path and optional args instead of pasting its body. Treat bundled resources as read-only; save outputs elsewhere in the workspace."
       : "",
   ]
     .filter(Boolean)

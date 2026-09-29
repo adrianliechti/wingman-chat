@@ -105,7 +105,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
         },
         description:
-          "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. The user's selected skills have bundled resources mounted read-only under /home/user/skills/<name>/ (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
+          "Execute Python for computation, file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass an inline script in `code`, or `path` to an existing .py artifact or selected skill resource (e.g. `/skills/pdf/scripts/extract.py`). For long scripts, prefer `path` to avoid JSON-escaping mistakes. Pass script arguments in `args`; they become sys.argv[1:]. File scripts run as __main__, with __file__ and sibling imports available. Bundled packages used by the script and its static local imports load automatically. Working directory and artifacts are under /home/user/; created, modified, or deleted artifacts sync back. Selected skill resources are available under /home/user/skills/<name>/; treat them as read-only and save outputs elsewhere in the workspace.",
         parameters: PYTHON_EXECUTION_PARAMETERS,
         // Hold the workspace lock through snapshot, execution and commit.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
@@ -114,7 +114,6 @@ export function useArtifactsProvider(): ToolProvider | null {
             context,
             executor: executeCode,
             extension: "py",
-            mountSkills: true,
           }),
       },
       {
@@ -145,7 +144,10 @@ export function useArtifactsProvider(): ToolProvider | null {
           "Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also reads the VFS (remote URLs are blocked). " +
           "Anything you write or delete via `vfs` is synced back as artifacts. Use top-level `await` directly, and " +
           "`return` a value or `console.log(...)` to produce output. Pass the full script in `code`, or `path` to run an " +
-          "existing .js artifact. For heavy data/number crunching or document libraries, Python (`execute_python_code`) " +
+          "existing .js artifact or selected skill resource under `/skills/<name>/`. Pass script arguments in `args`; " +
+          "read them with `process.argv.slice(2)`. `__filename` and `__dirname` identify the script in VFS. " +
+          "Skill resources are available through VFS; treat them as read-only and save outputs elsewhere. " +
+          "For heavy data/number crunching or document libraries, Python (`execute_python_code`) " +
           "is usually the stronger fit — they share the filesystem, so you can do that step there and read the result back here.",
         parameters: JAVASCRIPT_EXECUTION_PARAMETERS,
         function: (args: Record<string, unknown>, context?: ToolContext) =>

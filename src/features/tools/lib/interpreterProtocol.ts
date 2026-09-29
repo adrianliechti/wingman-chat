@@ -22,6 +22,10 @@ export interface CodeExecutionLimits {
 
 export interface CodeExecutionRequest {
   code: string;
+  /** Canonical artifact/resource path when running a script file. */
+  path?: string;
+  /** Script arguments, excluding the executable and script path. */
+  args?: string[];
   files?: ArtifactFiles;
   limits?: CodeExecutionLimits;
 }

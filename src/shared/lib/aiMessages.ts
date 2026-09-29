@@ -155,7 +155,7 @@ export function toAIMessages(
               content: part.result.every((item) => item.type === "text")
                 ? part.result.map((item) => item.text).join("\n")
                 : toAIContent(part.result),
-              metadata: { wingman: part },
+              metadata: { wingman: part, wingmanError: message.error },
             },
           ];
         case "image":
@@ -191,7 +191,9 @@ export function toAIMessages(
         if (part.type === "tool-call") owners.set(part.id, next);
       }
     }
-    if (next.parts.length || message.metadata?.wingman?.error) native.push(next);
+    // A moved tool result carries its own error. Keeping its empty user turn
+    // would duplicate the result's ID on replay and send an invalid request.
+    if (next.parts.length || (message.role === "assistant" && message.metadata?.wingman?.error)) native.push(next);
   }
   return native;
 }
@@ -374,8 +376,9 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
       for (const part of converted.content) {
         if (part.type === "tool_result") {
           flush();
-          const failed = message.parts.some(
-            (item) => item.type === "tool-result" && item.toolCallId === part.id && item.state === "error",
+          const failed = message.parts.find(
+            (item): item is Extract<MessagePart, { type: "tool-result" }> =>
+              item.type === "tool-result" && item.toolCallId === part.id && item.state === "error",
           );
           turns.push({
             id: `result-${part.id}`,
@@ -384,9 +387,10 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
             content: [part],
             ...(failed
               ? {
-                  error: {
+                  error: (failed.metadata?.wingmanError as Message["error"] | undefined) ?? {
                     code: "TOOL_EXECUTION_ERROR",
                     message:
+                      failed.error ??
                       "The tool could not complete the requested action. Please try again or use a different approach.",
                   },
                 }
@@ -395,6 +399,6 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
         } else body.push(part);
       }
       flush();
-      return turns.length ? turns : converted.error ? [converted] : [];
+      return turns.length ? turns : converted.role === "assistant" && converted.error ? [converted] : [];
     });
 }

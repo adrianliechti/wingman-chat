@@ -107,6 +107,24 @@ already-loaded markers. Saved `read_skill` results remain readable; their plugin
 argument is used to distinguish legacy identities. New calls use `load_skill`
 with `name`, and `read_skill_resource` with `skill` and `path`.
 
+Both `execute_python_code` and `execute_javascript_code` accept inline `code`,
+or `path` to an artifact or selected skill resource (including qualified plugin
+resources). Optional `args` supplies script arguments without shell parsing.
+Resource resolution happens after mounting the selected files; an existing
+artifact at the same path retains precedence. Mounted resource files are removed
+from the committed snapshot, so execution does not edit the skill bundle.
+
+Python file scripts receive `__file__`, their own `__main__` module, `sys.argv`,
+and sibling imports. The loader inspects the entry script and its static local
+imports for bundled dependencies before execution; it does not execute modules
+to discover imports or install packages. Relative file I/O remains rooted at
+`/home/user/`. Local modules, argument lists and import paths are reset between
+runs; bundled library imports remain cached. Successful `sys.exit(0)` completes
+normally, while a nonzero exit fails without committing workspace changes.
+JavaScript scripts receive `process.argv`, `__filename` and `__dirname`, with
+resources available through `vfs`. They retain the existing browser runtime:
+no Node module loader, shell or Code Mode dependency is involved.
+
 MCP tools use [lazy tool discovery](https://tanstack.com/ai/latest/docs/tools/lazy-tool-discovery).
 Chat initially sends the native discovery tool with a short catalog (tool names
 and their first description sentence). TanStack supplies schemas on demand,

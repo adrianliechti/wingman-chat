@@ -29,6 +29,53 @@ it("round trips persisted tool media and metadata in native part order", () => {
   );
 });
 
+it("round trips failed tool results once without empty user turns or lost error details", () => {
+  const error = { code: "PYTHON_EXECUTION_ERROR", message: "AssertionError on line 31" };
+  let saved: Message[] = [
+    { id: "prompt", role: "user", content: [{ type: "text", text: "Run the script" }] },
+    { id: "assistant", role: "assistant", content: [call] },
+    { id: "result-call", role: "user", content: [result], error },
+  ];
+
+  for (let i = 0; i < 3; i++) {
+    const native = toAIMessages(saved);
+    expect(native.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(native[1].parts[1]).toMatchObject({ type: "tool-result", state: "error", error: error.message });
+    const wire = convertMessagesToModelMessages(native);
+    expect(wire.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(wire[2]).toMatchObject({ toolCallId: "call", error: error.message });
+
+    saved = fromAIMessages(JSON.parse(JSON.stringify(native)));
+    expect(saved.map((message) => message.id)).toEqual(["prompt", "assistant", "result-call"]);
+    expect(saved[2]).toMatchObject({ content: [result], error });
+  }
+});
+
+it("drops stale empty user error turns while preserving assistant completion errors", () => {
+  const error = { code: "TOOL_EXECUTION_ERROR", message: "Script failed" };
+  const completion: Message = {
+    id: "completion-error",
+    role: "assistant",
+    content: [],
+    error: { code: "COMPLETION_ERROR", message: "Request failed" },
+  };
+  const saved: Message[] = [
+    { id: "assistant", role: "assistant", content: [call] },
+    { id: "result-call", role: "user", content: [result], error },
+    { id: "result-call", role: "user", content: [], error },
+    { id: "orphan", role: "user", content: [{ ...result, id: "orphan" }], error },
+    completion,
+  ];
+  const native = toAIMessages(saved);
+  expect(native.map((message) => message.id)).toEqual(["assistant", "completion-error"]);
+  const restored = fromAIMessages(native);
+  expect(restored.map((message) => message.id)).toEqual(["assistant", "result-call", "completion-error"]);
+  expect(restored.at(-1)).toMatchObject(completion);
+  expect(
+    fromAIMessages([...native, { id: "result-call", role: "user", parts: [], metadata: { wingman: { error } } }]),
+  ).toEqual(restored);
+});
+
 it("splits a native message containing several tool rounds into ordered stored turns", () => {
   const message: UIMessage = {
     id: "native",

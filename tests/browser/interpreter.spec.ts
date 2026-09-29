@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 type ExecutionResult = {
   success: boolean;
@@ -11,9 +12,18 @@ type TextToolResult = Array<{ type: "text"; text: string }>;
 
 declare global {
   interface Window {
+    interpreterMemoryWorkspace?: boolean;
     interpreterE2E: {
       executePython(request: unknown, options?: unknown): Promise<ExecutionResult>;
       executeJavaScript(request: unknown, options?: unknown): Promise<ExecutionResult>;
+      runScript(
+        engine: "python" | "javascript",
+        chatId: string,
+        args: { code?: string; path?: string; args?: string[] },
+        files?: Record<string, { content: string; contentType?: string }>,
+        resources?: Record<string, string>,
+        plugin?: string,
+      ): Promise<ExecutionResult>;
       executeWorkspace(engine: "python" | "javascript", chatId: string, code: string): Promise<ExecutionResult>;
       queryWorkspace(chatId: string, query: string): Promise<{ rows: Record<string, unknown>[] }>;
       initializeLlm(): Promise<void>;
@@ -33,9 +43,175 @@ declare global {
   }
 }
 
+test.beforeEach(async ({ page, browserName }) => {
+  await page.addInitScript((memory) => {
+    window.interpreterMemoryWorkspace = memory;
+  }, browserName === "webkit");
+});
+
 async function openFixture(page: Page): Promise<void> {
   await page.goto("/tests/browser/fixtures/interpreter.html");
   await page.waitForFunction(() => Boolean(window.interpreterE2E));
+}
+
+test("a bundled PDF skill script runs directly by path with arguments and cold dependencies", async ({ page }) => {
+  const source = readFileSync("skills/studio/pdf/scripts/check_fillable_fields.py", "utf8");
+  const { jsPDF } = await import("jspdf");
+  const pdf = `data:application/pdf;base64,${Buffer.from(new jsPDF().output("arraybuffer")).toString("base64")}`;
+  await openFixture(page);
+  const result = await page.evaluate(
+    ({ source, pdf }) =>
+      window.interpreterE2E.runScript(
+        "python",
+        "bundled-skill-script",
+        { path: "/skills/test-script/scripts/check.py", args: ["input with spaces.pdf"] },
+        { "/input with spaces.pdf": { content: pdf, contentType: "application/pdf" } },
+        { "scripts/check.py": source },
+      ),
+    { source, pdf },
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toContain("does not have fillable form fields");
+  expect(Object.keys(result.files ?? {})).toEqual(["/input with spaces.pdf"]);
+});
+
+test("plugin Python scripts resolve local imports, bundled dependencies, arguments and adjacent resources", async ({
+  page,
+}) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.runScript(
+      "python",
+      "plugin-python-script",
+      {
+        path: "/home/user/skills/acme%2Fdocuments:test-script/scripts/run.py",
+        args: ["output with spaces.json", "hello world"],
+      },
+      {},
+      {
+        "scripts/run.py": `import json, sys, os, __main__
+from dataclasses import dataclass
+from pathlib import Path
+from helpers import size
+@dataclass
+class Report:
+    message: str
+assert __main__.Report is Report
+if __name__ == "__main__":
+    data = {"message": Report(sys.argv[2]).message, "size": size(), "cwd": os.getcwd(), "file": __file__, "adjacent": Path(__file__).with_name("label.txt").read_text()}
+    Path(sys.argv[1]).write_text(json.dumps(data))
+    sys.exit(0)`,
+        "scripts/helpers/__init__.py": "from .image import size",
+        "scripts/helpers.py": "invalid shadowed module that must not be scanned !!!",
+        "scripts/helpers/image.py":
+          "from PIL import Image\ndef size():\n    return list(Image.new('RGB', (7, 9)).size)",
+        "scripts/label.txt": "resource label",
+        "scripts/unused.py": "invalid Python that must not be scanned !!!",
+      },
+      "acme/documents",
+    ),
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(Object.keys(result.files ?? {})).toEqual(["/output with spaces.json"]);
+  expect(JSON.parse(result.files!["/output with spaces.json"].content)).toEqual({
+    message: "hello world",
+    size: [7, 9],
+    cwd: "/home/user",
+    adjacent: "resource label",
+    file: "/home/user/skills/acme%2Fdocuments:test-script/scripts/run.py",
+  });
+});
+
+test("ordinary Python file runs refresh local modules and reset argv, paths and main between runs", async ({
+  page,
+}) => {
+  await openFixture(page);
+  const results = await page.evaluate(async () => {
+    const run = (value: string) =>
+      window.interpreterE2E.runScript(
+        "python",
+        `script-${value}`,
+        { path: "/scripts/run.py", args: [value] },
+        {
+          "/scripts/run.py": { content: "import sys\nfrom helper import value\nprint(__file__, sys.argv[1], value)" },
+          "/scripts/helper.py": { content: `value = '${value}'` },
+        },
+      );
+    const first = await run("first");
+    const second = await run("second");
+    const inline = await window.interpreterE2E.executePython({
+      code: `import sys, json
+print(json.dumps({"argv": sys.argv, "helper": "helper" in sys.modules, "oldPath": "/home/user/scripts" in sys.path, "file": "__file__" in globals()}))`,
+    });
+    return { first, second, inline };
+  });
+  expect(results.first.success, results.first.error).toBe(true);
+  expect(results.first.output).toBe("/home/user/scripts/run.py first first");
+  expect(results.second.success, results.second.error).toBe(true);
+  expect(results.second.output).toBe("/home/user/scripts/run.py second second");
+  expect(Object.keys(results.second.files ?? {}).sort()).toEqual(["/scripts/helper.py", "/scripts/run.py"]);
+  expect(JSON.parse(results.inline.output)).toEqual({ argv: ["-c"], helper: false, oldPath: false, file: false });
+});
+
+test("Python script errors include the filename and failed exits never commit files", async ({ page }) => {
+  await openFixture(page);
+  const results = await page.evaluate(async () => {
+    const failing = await window.interpreterE2E.runScript(
+      "python",
+      "failed-script",
+      { path: "/scripts/fail.py" },
+      {
+        "/scripts/fail.py": {
+          content:
+            "from pathlib import Path\nPath('discard.txt').write_text('discard')\nraise ValueError('script failure')",
+        },
+      },
+    );
+    const exit = await window.interpreterE2E.runScript("python", "failed-exit", {
+      code: "import sys\nfrom pathlib import Path\nPath('discard.txt').write_text('discard')\nsys.exit(2)",
+    });
+    return { failing, exit };
+  });
+  expect(results.failing.success).toBe(false);
+  expect(results.failing.error).toContain("/home/user/scripts/fail.py");
+  expect(results.failing.files?.["/discard.txt"]).toBeUndefined();
+  expect(results.exit.success).toBe(false);
+  expect(results.exit.error).toContain("Script exited with status 2");
+  expect(results.exit.files).toEqual({});
+});
+
+for (const source of ["artifact", "plugin"] as const) {
+  test(`JavaScript ${source} scripts receive arguments and read adjacent resources through VFS`, async ({ page }) => {
+    await openFixture(page);
+    const result = await page.evaluate((source) => {
+      const code = `const [output, message] = process.argv.slice(2);
+vfs.writeJSON(output, {message, file: __filename, directory: __dirname, label: vfs.read(__dirname + '/label.txt')});
+return 'script complete';`;
+      return window.interpreterE2E.runScript(
+        "javascript",
+        `js-${source}-script`,
+        {
+          path: source === "plugin" ? "/skills/acme:test-script/scripts/run.js" : "/scripts/run.js",
+          args: ["/output.json", "hello world"],
+        },
+        source === "artifact"
+          ? { "/scripts/run.js": { content: code }, "/scripts/label.txt": { content: "resource label" } }
+          : {},
+        source === "plugin" ? { "scripts/run.js": code, "scripts/label.txt": "resource label" } : {},
+        source === "plugin" ? "acme" : undefined,
+      );
+    }, source);
+    expect(result.success, result.error).toBe(true);
+    expect(result.output).toBe("script complete");
+    const directory = source === "plugin" ? "/skills/acme:test-script/scripts" : "/scripts";
+    expect(JSON.parse(result.files!["/output.json"].content)).toEqual({
+      message: "hello world",
+      file: `${directory}/run.js`,
+      directory,
+      label: "resource label",
+    });
+    if (source === "plugin") expect(Object.keys(result.files ?? {})).toEqual(["/output.json"]);
+  });
 }
 
 for (const runtime of ["executeJavaScript", "executePython"] as const) {
