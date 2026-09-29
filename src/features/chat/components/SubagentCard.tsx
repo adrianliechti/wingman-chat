@@ -2,6 +2,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { SubagentContent } from "@/shared/types/chat";
 import { Markdown } from "@/shared/ui/Markdown";
+import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { findTool, resolveToolHeader } from "./toolDisplay";
 import { subagentToolCallIds } from "./chatMessageUtils";
@@ -31,7 +32,7 @@ export function SubagentCard({ name, status, messages, error }: SubagentContent)
           <div key={message.id ?? messageIndex}>
             {message.content.some(
               (part) => part.type === "tool_result" && (!delegated.has(part.id) || message.error),
-            ) && <ChatToolMessage message={message} index={messageIndex} messages={messages} />}
+            ) && <ChatToolMessage message={message} index={messageIndex} messages={messages} nested />}
             {message.content.map((part, index) => {
               if (part.type === "text" && message.role === "assistant")
                 return (
@@ -42,16 +43,14 @@ export function SubagentCard({ name, status, messages, error }: SubagentContent)
               if (part.type === "tool_call" && !answered.has(part.id) && !delegated.has(part.id)) {
                 const tool = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, { running });
                 return (
-                  <p
+                  <ActivityRow
                     key={part.id}
-                    className="flex min-w-0 items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400"
-                  >
-                    {running && <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />}
-                    <span className="shrink-0 font-medium">{tool.label}</span>
-                    {tool.preview && (
-                      <span className="truncate text-neutral-400 dark:text-neutral-500">{tool.preview}</span>
-                    )}
-                  </p>
+                    running={running}
+                    label={tool.label}
+                    detail={tool.preview}
+                    mono={tool.mono}
+                    className="pb-1"
+                  />
                 );
               }
               if (part.type === "subagent") return <SubagentCard key={part.id} {...part} />;

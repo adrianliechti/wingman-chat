@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, Tool, ToolContext } from "@/shared/types/chat";
-import type { ChatRecord as Chat } from "../lib/chatRuntime";
+import type { Chat } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
 import type { verifyArtifacts } from "@/features/artifacts/lib/artifact-verifier";
@@ -205,13 +205,15 @@ describe("chat run integration", () => {
     await act(() => original.sendMessage(user("Work")));
     expect(execute).not.toHaveBeenCalled();
     const id = fixture.chats[0].id;
-    expect(fixture.chats[0].runtime?.resume?.pendingInterrupts).toHaveLength(1);
+    expect(fixture.chats[0].pendingRun?.interrupts).toHaveLength(1);
     await act(async () => {
       root?.unmount();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     await storeChat(fixture.chats[0]);
-    expect(JSON.stringify(await readJson(`chats/${id}/chat.json`))).not.toMatch(/pendingInterrupts|aiResume|runtime/);
+    const saved = await readJson<Record<string, unknown>>(`chats/${id}/chat.json`);
+    expect(saved).toMatchObject({ pendingRun: { interrupts: [{ reason: "tool_call", toolCallId: expect.any(String) }] } });
+    expect(JSON.stringify(saved)).not.toMatch(/pendingInterrupts|resumeState|aiResume|runtime/);
     fixture.chats = [(await loadChat(id, false))!];
     const restored = await harness();
     await act(async () => restored.selectChat(id));
@@ -225,7 +227,7 @@ describe("chat run integration", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
-  it("resumes a child's approval from ordinary saved messages and separate runtime state", async () => {
+  it("resumes a child's approval from the saved chat alone", async () => {
     const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Evidence" }]);
     fixture.tools = [
       createAgentTool("research", "Research a topic", {
@@ -255,7 +257,9 @@ describe("chat run integration", () => {
     await storeChat(fixture.chats[0]);
     const saved = JSON.stringify(await readJson(`chats/${id}/chat.json`));
     expect(saved).toContain('"type":"subagent"');
-    expect(saved).not.toMatch(/"parts"|pendingInterrupts|interruptIds|tanstack/);
+    // Runtime-only fields stay inside tagged signatures, never as readable keys.
+    expect(saved).not.toMatch(/"parts"|pendingInterrupts|resumeState|[{,]"(interruptIds|tanstack:)/);
+    expect(saved).toContain('"subagentId":"');
     fixture.chats = [(await loadChat(id, false))!];
     const restored = await harness();
     await act(async () => restored.selectChat(id));
@@ -281,7 +285,7 @@ describe("chat run integration", () => {
     await act(() => context.sendMessage(user("Work")));
     const approval = context.interruptState!.interrupts[0];
     act(() => context.stopStreaming());
-    expect(fixture.chats[0].runtime?.resume).toBeUndefined();
+    expect(fixture.chats[0].pendingRun).toBeUndefined();
     expect(context.interruptState?.interrupts).toHaveLength(0);
     if (approval.kind !== "unbound") expect(() => approval.resolveInterrupt(true)).toThrow("Unknown interrupt");
     await act(() => context.sendMessage(user("Different request")));
@@ -418,7 +422,9 @@ describe("chat run integration", () => {
     });
     await storeChat(fixture.chats[0]);
     fixture.chats = [(await loadChat(id, false))!];
-    expect(fixture.chats[0].runtime?.metadata).toBeDefined();
+    expect(fixture.chats[0].compactions).toEqual([
+      { text: "The evidence was checked.", signature: expect.stringMatching(/^@tanstack:/) },
+    ]);
     const restored = await harness();
     await act(async () => restored.selectChat(id));
     fixture.complete.mockImplementationOnce(async ({ messages }) => {

@@ -1,6 +1,6 @@
 import { convertMessagesToModelMessages, type UIMessage } from "@tanstack/ai";
 import { expect, it } from "vitest";
-import { aiMessageState, fromAIMessages, toAIMessages } from "./aiMessages";
+import { fromAIMessages, toAIMessages } from "./aiMessages";
 import type { Message } from "../types/chat";
 
 const call = { type: "tool_call" as const, id: "call", name: "work", arguments: "{}" };
@@ -173,20 +173,19 @@ it("keeps subagent messages agnostic and restores native routing from separate s
   ];
   const messages = fromAIMessages(native);
   const saved = JSON.stringify(messages);
-  expect(saved).not.toMatch(/"parts"|interruptIds|tanstack|parentToolCallId/);
+  expect(saved).not.toMatch(/"parts"|parentToolCallId/);
   expect(messages[0].content[0]).toMatchObject({
     type: "subagent",
     id: "child",
     toolCallId: "delegate",
+    signature: expect.stringMatching(/^@tanstack:/),
     messages: [
       { content: [{ type: "tool_call" }] },
       { content: [{ type: "tool_result" }] },
       { content: [{ type: "subagent", id: "nested" }] },
     ],
   });
-  const restored = toAIMessages(JSON.parse(saved), undefined, {
-    state: JSON.parse(JSON.stringify(aiMessageState(native))),
-  });
+  const restored = toAIMessages(JSON.parse(saved));
   expect(restored[0].parts[0]).toMatchObject({
     type: "subagent",
     subagent: {

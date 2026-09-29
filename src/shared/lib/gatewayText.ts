@@ -60,6 +60,28 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     }
   }
 
+  /**
+   * The gateway translates tools for every provider, so they keep their own
+   * JSON Schema. OpenAI strict mode would widen optional fields to
+   * `["string", "null"]`, which Anthropic rejects next to an `enum`.
+   */
+  protected override mapOptionsToRequest(...args: Parameters<OpenAITextAdapter<TModel>["mapOptionsToRequest"]>) {
+    const request = super.mapOptionsToRequest(...args);
+    const schemas = new Map(args[0].tools?.map((tool) => [tool.name, tool.inputSchema]));
+    return {
+      ...request,
+      tools: request.tools?.map((tool) =>
+        tool.type === "function"
+          ? {
+              ...tool,
+              parameters: schemas.get(tool.name) ?? { type: "object", properties: {}, required: [] },
+              strict: false,
+            }
+          : tool,
+      ),
+    };
+  }
+
   protected override convertMessagesToInput(...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>) {
     const phased = new Map<string, GatewayTextSegment[][]>();
     for (const message of args[0]) {

@@ -22,7 +22,7 @@ export function chatSession(
         store.value = JSON.parse(
           JSON.stringify({
             ...state,
-            messages: toAIMessages(metadata.read(state.messages), undefined, { state: metadata.state }),
+            messages: toAIMessages(metadata.read(state.messages)),
           }),
         );
       },

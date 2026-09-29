@@ -65,9 +65,10 @@ export function resolveToolHeader(
     };
   }
   const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
+  const label = tool?.title ?? getToolDisplayName(name);
   return {
     Icon: h?.icon,
-    label: h?.label ?? tool?.title ?? getToolDisplayName(name),
+    label: h?.label ?? (state.error ? `${label} failed` : label),
     mono: h?.mono ?? false,
     preview: h?.suppressPreview ? null : (h?.preview ?? getToolCallPreview(args)),
   };

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { PersistenceQueue } from "@/shared/lib/persistence";
 import * as opfs from "@/shared/lib/opfs";
-import type { ChatRecord as Chat } from "./chatRuntime";
+import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
 
@@ -59,9 +59,11 @@ describe("chat persistence", () => {
   });
   it("round-trips message identity, usage, phases, nested media MIME and tool metadata", async () => {
     const value = chat();
-    value.runtime = {
-      metadata: { "@tanstack/ai-compaction": { checkpoint: { schemaVersion: 1, sourceHash: "opaque" } } },
+    value.pendingRun = {
+      id: "run",
+      interrupts: [{ id: "approval", reason: "tool_call", toolCallId: "call", metadata: { toolName: "vision" } }],
     };
+    value.compactions = [{ subagentId: "child", text: "Earlier work", signature: "@tanstack:{}" }];
     value.messages = [
       {
         id: "message",
@@ -84,12 +86,14 @@ describe("chat persistence", () => {
     ];
     await storeChat(value);
     expect(await loadChat(value.id)).toMatchObject(value);
-    expect((await loadChat(value.id, false))?.runtime).toEqual(value.runtime);
+    expect(await loadChat(value.id, false)).toMatchObject({
+      pendingRun: value.pendingRun,
+      compactions: value.compactions,
+    });
     const stored = await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json");
     expect(JSON.stringify(stored)).not.toContain("base64");
     expect(JSON.stringify(stored)).toContain("image/jpeg");
-    expect(JSON.stringify(stored)).not.toMatch(/runtime|aiMetadata|tanstack/);
-    expect(await opfs.readJson("chats/chat/tanstack.json")).toMatchObject(value.runtime!);
+    expect(stored).toMatchObject({ pendingRun: value.pendingRun, compactions: value.compactions });
   });
 
   it("a failed manifest save keeps the last committed attachments readable", async () => {
@@ -163,113 +167,6 @@ describe("chat persistence", () => {
     expect((await loadChat(value.id))?.messages).toMatchObject(value.messages);
     await storeChat({ ...manifest, messages: [] });
     expect(await opfs.listChatBlobs(value.id)).toHaveLength(0);
-  });
-
-  it("reads the earlier inline TanStack format and removes it on save", async () => {
-    const legacy = {
-      ...chat(),
-      aiMetadata: { "@tanstack/ai-compaction": { checkpoint: { summary: "Earlier work" } } },
-      messages: [
-        {
-          id: "parent",
-          role: "assistant",
-          content: [
-            {
-              type: "subagent",
-              subagent: {
-                id: "child",
-                name: "research",
-                status: "suspended",
-                parentToolCallId: "delegate",
-                interruptIds: ["approval"],
-                metadata: { tanstack: { subagentPlan: { agent: "research" } } },
-                messages: [
-                  {
-                    id: "child-answer",
-                    role: "assistant",
-                    parts: [
-                      {
-                        type: "thinking",
-                        content: "Plan",
-                        signature: JSON.stringify({ id: "reason", encrypted_content: "private" }),
-                      },
-                      { type: "text", content: "Evidence" },
-                    ],
-                  },
-                ],
-              },
-            },
-            {
-              type: "reasoning",
-              id: "old",
-              text: "Plan",
-              signature: JSON.stringify({ id: "reason-parent", encrypted_content: "secret" }),
-            },
-          ],
-        },
-      ],
-    };
-    memory.put("chats/chat/chat.json", JSON.stringify(legacy));
-    const loaded = (await loadChat("chat", false))!;
-    expect(loaded.runtime?.metadata).toEqual(legacy.aiMetadata);
-    expect(loaded.runtime?.subagents?.child.interruptIds).toEqual(["approval"]);
-    expect(loaded.messages[0].content).toMatchObject([
-      {
-        type: "subagent",
-        id: "child",
-        toolCallId: "delegate",
-        messages: [
-          {
-            content: [
-              { type: "reasoning", id: "reason", encryptedContent: "private" },
-              { type: "text", text: "Evidence" },
-            ],
-          },
-        ],
-      },
-      { type: "reasoning", id: "reason-parent", encryptedContent: "secret" },
-    ]);
-    await storeChat(loaded);
-    const saved = JSON.stringify(await opfs.readJson("chats/chat/chat.json"));
-    expect(saved).not.toMatch(/aiMetadata|aiResume|signature|interruptIds|tanstack|"parts"/);
-    expect(await loadChat("chat", false)).toEqual(loaded);
-  });
-
-  it("rolls back the conversation and runtime together if the runtime write fails", async () => {
-    const before = { ...chat(), title: "Before", runtime: { metadata: { test: { checkpoint: "before" } } } };
-    await storeChat(before);
-    let failed = false;
-    memory.beforeWrite = async (path) => {
-      if (!failed && path.endsWith("tanstack.json")) {
-        failed = true;
-        throw new Error("disk full");
-      }
-    };
-    await expect(
-      storeChat({ ...before, title: "After", runtime: { metadata: { test: { checkpoint: "after" } } } }),
-    ).rejects.toThrow("disk full");
-    expect(await loadChat("chat")).toMatchObject(before);
-  });
-
-  it("ignores runtime from a different transcript or unsupported version without losing the chat", async () => {
-    const value = { ...chat(), runtime: { metadata: { test: { checkpoint: "old" } } } };
-    await storeChat(value);
-    const stored = (await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json"))!;
-    await opfs.writeJson("chats/chat/chat.json", {
-      ...stored,
-      messages: [{ id: "new", role: "user", content: [{ type: "text", text: "Restored conversation" }] }],
-    });
-    const restored = (await loadChat("chat"))!;
-    expect(restored.runtime).toBeUndefined();
-    expect(restored.messages[0].content).toEqual([{ type: "text", text: "Restored conversation" }]);
-    await storeChat(value);
-    const runtime = (await opfs.readJson<Record<string, unknown>>("chats/chat/tanstack.json"))!;
-    await opfs.writeJson("chats/chat/tanstack.json", { ...runtime, version: 99 });
-    expect((await loadChat("chat"))?.runtime).toBeUndefined();
-    memory.put("chats/chat/tanstack.json", "broken JSON");
-    expect((await loadChat("chat"))?.messages).toEqual([]);
-    await storeChat({ ...value, runtime: undefined });
-    expect(await opfs.fileExists("chats/chat/tanstack.json")).toBe(false);
   });
 
   it("finishes sibling blob writes before a failed save releases the lock to deletion", async () => {

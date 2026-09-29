@@ -51,6 +51,21 @@ describe("chat output allowances", () => {
     expect(body.tools).toMatchObject([{ type: "function", name: "write" }]);
   });
 
+  it("sends tool schemas unchanged instead of OpenAI's null-widened strict form", async () => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
+    const parameters = {
+      type: "object",
+      properties: { pattern: { type: "string" }, mode: { type: "string", enum: ["content", "count"] } },
+      required: ["pattern"],
+      additionalProperties: false,
+    };
+    const tool: Tool = { name: "grep", parameters, function: async () => [] };
+    await runMessages(new Client(), "claude-sonnet-5-5", "", prompt, [tool]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.tools[0]).toMatchObject({ name: "grep", strict: false, parameters });
+    expect(JSON.stringify(body.tools)).not.toContain("null");
+  });
+
   it.each([
     ["gpt-5.6-sol", 64_000],
     ["gpt-6-sol", 64_000],

@@ -26,7 +26,7 @@ import {
 import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { combineAbortSignals } from "./abortSignals";
-import { aiMessageState, fromAIMessages, toAIMessages, type AIMessageState } from "./aiMessages";
+import { fromAIMessages, toAIMessages } from "./aiMessages";
 import { artifactDelta, artifactDeltaFromMeta } from "../types/artifact";
 import { captureRequestContext, injectRequestContext } from "./requestContext";
 import { aiDebug } from "./aiStream";
@@ -96,7 +96,6 @@ export interface RunHooks {
 
 /** Rich workspace results and provider usage are presentation metadata, not a second transcript. */
 export class AgentMessageMetadata {
-  state: AIMessageState = {};
   private results = new Map<string, Message>();
   private usage = new Map<string, Message["usage"]>();
   private runs = new Map<string, string>();
@@ -116,7 +115,6 @@ export class AgentMessageMetadata {
   }
 
   read(messages: UIMessage[], model?: string): Message[] {
-    this.state = { subagents: { ...this.state.subagents, ...aiMessageState(messages).subagents } };
     return this.enrich(fromAIMessages(messages, undefined, model));
   }
 
@@ -420,10 +418,7 @@ export async function* streamRun(
       adapter,
       // Outstanding calls belong to an explicit interrupt continuation.
       // A fresh send must not execute a tool abandoned by Stop or reload.
-      messages: toAIMessages(messages, model, {
-        pendingToolCalls: !!hooks.resume?.length,
-        state: hooks.metadata.state,
-      }),
+      messages: toAIMessages(messages, model, { pendingToolCalls: !!hooks.resume?.length }),
       systemPrompts: [instructions],
       tools: nativeTools,
       ...(agents.length ? { subagents: { agents } } : {}),

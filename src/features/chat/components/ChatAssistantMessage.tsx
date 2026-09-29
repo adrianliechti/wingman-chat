@@ -1,5 +1,5 @@
 import { SubagentCard } from "./SubagentCard";
-import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, RotateCcw } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
@@ -9,12 +9,13 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
-import type { Content, Message } from "@/shared/types/chat";
+import type { Content, Message, ToolIcon } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
+import { ActivityRow } from "./ActivityRow";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd, subagentToolCallIds } from "./chatMessageUtils";
 import { getThinkingWord } from "./thinkingWord";
@@ -98,7 +99,7 @@ function ErrorMessage({
   );
 }
 
-/** Spinner + label "working" indicator — identical box to a running tool row. */
+/** The "working" row shown before any reasoning or tool call arrives. */
 function ThinkingIndicator({
   status,
   runKey,
@@ -108,14 +109,7 @@ function ThinkingIndicator({
 }) {
   const word = getThinkingWord(runKey);
   const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
-  return (
-    <div role="status" aria-label="Assistant is working" className="rounded-lg overflow-hidden max-w-full">
-      <div className="flex items-center gap-2 min-w-0">
-        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}…</span>
-      </div>
-    </div>
-  );
+  return <ActivityRow running label={`${label}…`} />;
 }
 
 // Reasoning/Thinking display component - shows model's thinking process in collapsible UI
@@ -129,7 +123,6 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
   // Track the previous streaming state to detect transitions
   const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
-  const label = isStreaming ? "Thinking..." : isExpanded ? "Hide Thoughts" : "Expand Thoughts";
 
   // Adjust state during render when isStreaming prop changes
   // This is React's recommended pattern for updating state based on props
@@ -144,17 +137,12 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
 
   return (
     <div className={cn(isExpanded ? "mb-1" : "mb-0")}>
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="grid w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-      >
-        <ChevronRight className={cn("w-3 h-3 transition-transform duration-200", isExpanded && "rotate-90")} />
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="font-medium">{label}</span>
-          {isStreaming && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
-        </span>
-      </button>
+      <ActivityRow
+        label={isStreaming ? "Thinking…" : "Thought"}
+        running={isStreaming}
+        expanded={isExpanded}
+        onToggle={() => setIsExpanded(!isExpanded)}
+      />
 
       {isExpanded && (
         <div className="mt-1 ml-4.5">
@@ -203,37 +191,27 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
   }
 }
 
-/** Compact row shown while a tool call is still running (spinner + label + status/preview). */
+/** A tool call still running at the top level of the turn. */
 function RunningToolRow({
   header,
+  icon,
   status,
   className,
 }: {
   header: ResolvedToolHeader;
+  icon?: ToolIcon;
   status?: string | null;
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-lg overflow-hidden max-w-full", className)}>
-      <div className="flex items-center gap-2 min-w-0">
-        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-        <span
-          className={cn(
-            "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
-            header.mono ? "font-mono truncate" : "font-medium",
-          )}
-        >
-          {header.label}
-        </span>
-        {status ? (
-          <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
-        ) : header.preview ? (
-          <span className={cn("text-xs text-neutral-400 dark:text-neutral-500 truncate", header.mono && "font-mono")}>
-            {header.preview}
-          </span>
-        ) : null}
-      </div>
-    </div>
+    <ActivityRow
+      running
+      label={header.label}
+      detail={status ?? header.preview}
+      mono={header.mono}
+      icon={header.Icon ?? icon}
+      className={className}
+    />
   );
 }
 
@@ -367,11 +345,15 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
               const meta = toolMeta[part.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
-              const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
-                running: true,
-              });
+              const tool = findTool(providers, part.name);
+              const header = resolveToolHeader(tool, part.name, part.arguments, { running: true });
               return (
-                <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
+                <RunningToolRow
+                  key={getMessagePartKey(part, i, "loading-tool-call")}
+                  header={header}
+                  icon={tool?.icon}
+                  status={status}
+                />
               );
             })
           : !hasReasoning && (
@@ -435,9 +417,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
-            const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
-              running: true,
-            });
+            const tool = findTool(providers, part.name);
+            const header = resolveToolHeader(tool, part.name, part.arguments, { running: true });
             // Only the first tool call in a run gets top spacing (to match the
             // committed result's gap); consecutive concurrent calls stay tight.
             const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
@@ -445,7 +426,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               <RunningToolRow
                 key={partKey}
                 header={header}
-                className={cn("mb-0", isFirstToolCall ? "mt-2" : "mt-0.5")}
+                icon={tool?.icon}
+                className={isFirstToolCall ? "mt-2" : "mt-1"}
               />
             );
           }

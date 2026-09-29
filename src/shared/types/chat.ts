@@ -278,10 +278,15 @@ export type SubagentContent = {
   type: "subagent";
   id: string;
   name: string;
+  description?: string;
+  /** Parent run that started this invocation. */
+  runId?: string;
   toolCallId?: string;
   status: "running" | "finished" | "error" | "suspended";
   messages: Message[];
   error?: { message: string; code?: string };
+  /** Runtime-owned routing state; see {@link Signature}. */
+  signature?: Signature;
 };
 
 // Content is the union of all content types used in messages
@@ -380,6 +385,48 @@ export const Role = {
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
 
+/**
+ * Opaque runtime state tagged with the realm that produced it:
+ * `"@<realm>:<data>"`. Only that realm replays it; any other runtime ignores
+ * it and falls back to the readable fields beside it.
+ */
+export type Signature = string;
+
+/** A question the paused run waits on: a tool approval, form, or client tool. */
+export type Interrupt = {
+  id: string;
+  reason: string;
+  message?: string;
+  toolCallId?: string;
+  /** Subagent invocation that raised it; absent for the chat's own run. */
+  subagentId?: string;
+  /** JSON Schema of the expected answer. */
+  schema?: Record<string, unknown>;
+  expiresAt?: string;
+  /** Descriptive data such as the tool name, input, or form payload. */
+  metadata?: Record<string, unknown>;
+  /** Runtime binding that validates the answer on resume. */
+  signature?: Signature;
+};
+
+/** A run that stopped for input and continues once its interrupts are answered. */
+export type PendingRun = {
+  id: string;
+  interrupts: Interrupt[];
+  /** Runtime session the run belongs to. */
+  signature?: Signature;
+};
+
+/** Model-context compaction; the transcript itself always stays complete. */
+export type Compaction = {
+  /** Subagent invocation whose context was compacted; absent for the chat itself. */
+  subagentId?: string;
+  /** Readable summary of the compacted prefix. */
+  text?: string;
+  /** The runtime's checkpoint, reused while the compacted prefix is unchanged. */
+  signature: Signature;
+};
+
 export type Chat = {
   id: string;
   title?: string;
@@ -391,6 +438,10 @@ export type Chat = {
 
   model: Model | null;
   messages: Array<Message>;
+
+  /** Present only while a run waits for input. */
+  pendingRun?: PendingRun;
+  compactions?: Compaction[];
 };
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */
@@ -410,6 +461,16 @@ export function updateToolResultMeta(messages: Message[], callId: string, meta: 
     };
   });
   return changed ? updated : messages;
+}
+
+export function tagSignature(realm: string, data: string): Signature {
+  return `@${realm}:${data}`;
+}
+
+/** The raw data when `signature` was produced by `realm`. */
+export function readSignature(signature: Signature | undefined, realm: string): string | undefined {
+  const prefix = `@${realm}:`;
+  return signature?.startsWith(prefix) ? signature.slice(prefix.length) : undefined;
 }
 
 export function getTextFromContent(content: Content[]): string {

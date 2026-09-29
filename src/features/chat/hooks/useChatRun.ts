@@ -7,7 +7,6 @@ import {
   type StreamChunk,
   type UIMessage,
   type ModelMessage,
-  type MetadataStore,
 } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
@@ -19,13 +18,13 @@ import { historyForRetry, prepareChatMessages } from "../lib/chatHistory";
 import { chatCompaction, preserveSkillContext } from "../lib/chatCompaction";
 import { getConfig } from "@/shared/config";
 import { AgentMessageMetadata, approvalTools, streamRun } from "@/shared/lib/agent";
-import { aiMessageState, toAIMessages } from "@/shared/lib/aiMessages";
+import { toAIMessages } from "@/shared/lib/aiMessages";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { captureRequestContext, isUserMessage } from "@/shared/lib/requestContext";
-import type { Content, Message, Model } from "@/shared/types/chat";
-import type { ChatRecord as Chat } from "../lib/chatRuntime";
+import type { Chat, Content, Message, Model } from "@/shared/types/chat";
+import { compactionStore, fromResume, toResume } from "../lib/chatRuntime";
 import type { ChatStore } from "../lib/chatStore";
 import { Role, updateToolResultMeta, withMessageIdentity } from "@/shared/types/chat";
 import { useChatClassification } from "./useChatClassification";
@@ -197,44 +196,22 @@ export function useChatRun({
           sharedMiddleware: (runSignal, context) =>
             threshold > 0
               ? [
-                  chatCompaction(client, threshold, config.chat?.summarizer || model.id, runSignal, {
-                    get: async (namespace, key) =>
-                      getChat(id)?.runtime?.metadata?.[namespace]?.[JSON.stringify([key, context.subagentRunId])] ??
-                      null,
-                    set: async (namespace, key, value) => {
-                      if (runSignal.aborted) return;
-                      updateChat(
-                        id,
-                        (prev) => ({
-                          runtime: {
-                            ...prev.runtime,
-                            metadata: {
-                              ...prev.runtime?.metadata,
-                              [namespace]: {
-                                ...prev.runtime?.metadata?.[namespace],
-                                [JSON.stringify([key, context.subagentRunId])]: value,
-                              },
-                            },
-                          },
-                        }),
-                        { preserveDates: true },
-                      );
-                    },
-                    delete: async (namespace, key) => {
-                      if (runSignal.aborted) return;
-                      updateChat(
-                        id,
-                        (prev) => {
-                          const entries = { ...prev.runtime?.metadata?.[namespace] };
-                          delete entries[JSON.stringify([key, context.subagentRunId])];
-                          return {
-                            runtime: { ...prev.runtime, metadata: { ...prev.runtime?.metadata, [namespace]: entries } },
-                          };
-                        },
-                        { preserveDates: true },
-                      );
-                    },
-                  } satisfies MetadataStore),
+                  chatCompaction(
+                    client,
+                    threshold,
+                    config.chat?.summarizer || model.id,
+                    runSignal,
+                    compactionStore(
+                      () => getChat(id)?.compactions,
+                      (update) => {
+                        if (runSignal.aborted) return;
+                        updateChat(id, (prev) => ({ compactions: update(prev.compactions ?? []) }), {
+                          preserveDates: true,
+                        });
+                      },
+                      context.subagentRunId,
+                    ),
+                  ),
                   preserveSkillContext(),
                 ]
               : [],
@@ -313,8 +290,8 @@ export function useChatRun({
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
         return saved
           ? {
-              messages: toAIMessages(saved.messages, undefined, { state: saved.runtime }),
-              resume: saved.runtime?.resume,
+              messages: toAIMessages(saved.messages),
+              resume: toResume(saved.id, saved.pendingRun),
             }
           : null;
       },
@@ -325,20 +302,16 @@ export function useChatRun({
         if (storageOwnerRef.current !== session || !getChat(session.id)) return;
         updateChat(
           session.id,
-          (prev) => ({
+          () => ({
             messages: session.metadata.read(state.messages),
-            runtime: {
-              ...prev.runtime,
-              subagents: aiMessageState(state.messages).subagents,
-              resume: state.resume?.pendingInterrupts?.length ? state.resume : undefined,
-            },
+            pendingRun: fromResume(state.resume),
           }),
           { preserveDates: true },
         );
       },
       removeItem: () => {
         if (storageOwnerRef.current === session && getChat(session.id))
-          updateChat(session.id, () => ({ messages: [], runtime: undefined }));
+          updateChat(session.id, () => ({ messages: [], pendingRun: undefined, compactions: undefined }));
       },
     },
     onChunk: (chunk) => {
@@ -397,7 +370,7 @@ export function useChatRun({
       // Voice and externally produced messages enter the same live transcript.
       // A callback for an inactive conversation only updates its stored record.
       if (id === session.id && chatIdRef.current === id) {
-        setMessages(toAIMessages(messages, undefined, { state: chat.runtime }));
+        setMessages(toAIMessages(messages));
         updateChat(id, () => ({}));
       } else updateChat(id, () => ({ messages }));
     },
@@ -453,7 +426,7 @@ export function useChatRun({
       }
       if (!getChat(id) || chatIdRef.current !== id) return;
       if (session.id !== id) return;
-      if (historyOverride) setMessages(toAIMessages(historyOverride, undefined, { state: getChat(id)?.runtime }));
+      if (historyOverride) setMessages(toAIMessages(historyOverride));
       const context = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
       await sendNativeMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
@@ -467,7 +440,7 @@ export function useChatRun({
     if (chat.id !== session.id || isLoading) return;
     const history = historyForRetry(chat.messages);
     if (!history) return;
-    const native = toAIMessages(history, undefined, { state: chat.runtime });
+    const native = toAIMessages(history);
     setMessages(native.slice(0, -1));
     await append(native.at(-1)!);
   }, [getChat, chatIdRef, session.id, isLoading, setMessages, append]);

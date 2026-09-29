@@ -182,6 +182,11 @@ export async function rehydrateMessageBlobsForChat(
  * Returns a StoredChat suitable for JSON serialization.
  * Note: Artifacts should be saved separately via saveArtifacts().
  */
+/** Run state is kept only while it has content, so idle chats keep main's shape. */
+function runtimeFields({ pendingRun, compactions }: Pick<Chat, "pendingRun" | "compactions">) {
+  return { ...(pendingRun ? { pendingRun } : {}), ...(compactions?.length ? { compactions } : {}) };
+}
+
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   const extractedMessages = await finishBlobWrites(chat.messages.map((m) => extractMessageBlobsForChat(chat.id, m)));
 
@@ -194,6 +199,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
     updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
     model: chat.model,
     messages: extractedMessages,
+    ...runtimeFields(chat),
   };
 }
 
@@ -231,12 +237,14 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
     updated: stored.updated ? new Date(stored.updated) : null,
     model: stored.model,
     messages: rehydratedMessages,
+    ...runtimeFields(stored),
   };
 }
 
 /** Restore dates and stable legacy identities without reading attachment bytes. */
 export function restoreChatManifest(stored: StoredChat): Chat {
   return {
+    ...runtimeFields(stored),
     id: stored.id,
     title: stored.title,
     customTitle: stored.customTitle,

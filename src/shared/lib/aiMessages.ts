@@ -1,34 +1,54 @@
 import type { ContentPart, MessagePart, SubagentPart, UIMessage } from "@tanstack/ai";
 import type { GatewayTextSegment } from "./gatewayText";
-import type { Content, Message, ReasoningContent, ToolResultContent } from "../types/chat";
+import {
+  readSignature,
+  tagSignature,
+  type Content,
+  type Message,
+  type ReasoningContent,
+  type Signature,
+  type ToolResultContent,
+} from "../types/chat";
 
-/** Native routing/interrupt bindings, separate from the saved conversation. */
-export interface AIMessageState {
-  subagents?: Record<
-    string,
-    Omit<SubagentPart["subagent"], "id" | "name" | "status" | "messages" | "error" | "parentToolCallId">
-  >;
+/** Realm tag for state only this runtime can replay. */
+const AI_REALM = "tanstack";
+
+/** Runtime-only data as a {@link Signature}; empty data needs none. */
+export function aiSignature(data: Record<string, unknown>): Signature | undefined {
+  return Object.values(data).some((value) => value !== undefined)
+    ? tagSignature(AI_REALM, JSON.stringify(data))
+    : undefined;
 }
 
-export function aiMessageState(messages: UIMessage[]): AIMessageState {
-  const subagents: NonNullable<AIMessageState["subagents"]> = {};
-  for (const message of messages) {
-    for (const part of message.parts) {
-      if (part.type !== "subagent") continue;
-      const {
-        id,
-        name: _name,
-        status: _status,
-        messages: children,
-        error: _error,
-        parentToolCallId: _call,
-        ...state
-      } = part.subagent;
-      subagents[id] = state;
-      Object.assign(subagents, aiMessageState(children).subagents);
-    }
+/** Data this runtime signed; another realm's or a corrupt signature reads as absent. */
+export function readAISignature<T>(signature: Signature | undefined): T | undefined {
+  const data = readSignature(signature, AI_REALM);
+  if (!data) return undefined;
+  try {
+    return JSON.parse(data) as T;
+  } catch {
+    return undefined;
   }
-  return Object.keys(subagents).length ? { subagents } : {};
+}
+
+type SubagentRouting = Omit<
+  SubagentPart["subagent"],
+  "id" | "name" | "description" | "status" | "messages" | "error" | "parentToolCallId" | "parentRunId"
+>;
+
+function subagentSignature(subagent: SubagentPart["subagent"]) {
+  const {
+    id: _id,
+    name: _name,
+    description: _description,
+    status: _status,
+    messages: _messages,
+    error: _error,
+    parentToolCallId: _call,
+    parentRunId: _run,
+    ...routing
+  } = subagent;
+  return aiSignature(routing satisfies SubagentRouting);
 }
 
 /** The gateway's native adapter packs these existing reasoning fields as JSON. */
@@ -52,7 +72,7 @@ export function reasoningState(signature?: string): Partial<Pick<ReasoningConten
 export function toAIMessages(
   messages: Message[],
   model?: string,
-  options?: { pendingToolCalls?: boolean; state?: AIMessageState },
+  options?: { pendingToolCalls?: boolean },
 ): UIMessage[] {
   const answeredCalls = new Set(
     messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
@@ -77,9 +97,11 @@ export function toAIMessages(
             {
               type: "subagent",
               subagent: {
-                ...options?.state?.subagents?.[part.id],
+                ...readAISignature<SubagentRouting>(part.signature),
                 id: part.id,
                 name: part.name,
+                description: part.description,
+                parentRunId: part.runId,
                 parentToolCallId: part.toolCallId,
                 status: part.status,
                 error: part.error,
@@ -271,10 +293,13 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                   type: "subagent",
                   id: part.subagent.id,
                   name: part.subagent.name,
+                  description: part.subagent.description,
+                  runId: part.subagent.parentRunId,
                   toolCallId: part.subagent.parentToolCallId,
                   status: part.subagent.status,
                   error: part.subagent.error,
                   messages: fromAIMessages(part.subagent.messages, runId, model, richResults),
+                  signature: subagentSignature(part.subagent),
                 },
               ];
             case "text":

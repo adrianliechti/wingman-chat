@@ -1,14 +1,12 @@
-import { AlertCircle, ChevronRight, Wrench } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { useChatConversation } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { cn } from "@/shared/lib/cn";
 import type { Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { Markdown } from "@/shared/ui/Markdown";
-import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { ActivityRow } from "./ActivityRow";
 import { McpApp } from "./McpApp";
 import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
 
@@ -16,12 +14,15 @@ type ChatToolMessageProps = {
   message: Message;
   index: number;
   messages?: Message[];
+  /** Inside a group or subagent: no icon, the parent row already names the activity. */
+  nested?: boolean;
 };
 
 export const ChatToolMessage = memo(function ChatToolMessage({
   message,
   index,
   messages: scope,
+  nested,
 }: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const { chat, messages: chatMessages } = useChatConversation();
@@ -33,10 +34,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({
   const toolResult = toolResultParts[0]; // Usually just one
 
   const toolDef = useMemo(() => findTool(providers, toolResult?.name), [providers, toolResult?.name]);
-  const toolIcon = toolDef?.icon;
   const isToolError = !!message.error;
-  const isExecutionError = message.error?.code === "EXECUTION_ERROR";
-  const errorTextColor = isExecutionError ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400";
   // When a result carries an MCP UI app, the app is the primary renderer; per the
   // MCP Apps spec the `content` blocks are for model context / text-only fallback,
   // so we don't also render the (redundant) media inline.
@@ -59,58 +57,17 @@ export const ChatToolMessage = memo(function ChatToolMessage({
   );
 
   return (
-    <div className="pb-2 max-w-full">
-      <div
-        className={cn(
-          "rounded-lg overflow-hidden max-w-full",
-          isToolError && (isExecutionError ? "bg-amber-50/30 dark:bg-amber-950/5" : "bg-red-50/30 dark:bg-red-950/5"),
-        )}
-      >
-        <button
-          onClick={() => setToolResultExpanded(!toolResultExpanded)}
-          className="w-full text-left transition-colors"
-          type="button"
-        >
-          <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
-            <ChevronRight
-              className={cn(
-                "w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform",
-                toolResultExpanded && "rotate-90",
-              )}
-            />
-            <div className="flex items-center gap-2 min-w-0">
-              {isToolError ? (
-                <AlertCircle className={cn("w-3 h-3 shrink-0", errorTextColor)} />
-              ) : header.Icon ? (
-                <header.Icon className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-              ) : toolIcon ? (
-                <McpProviderIcon
-                  src={toolIcon}
-                  size={12}
-                  className="shrink-0 w-3 h-3 object-contain text-neutral-400 dark:text-neutral-500"
-                />
-              ) : (
-                <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-              )}
-              <span
-                className={cn(
-                  "text-xs whitespace-nowrap truncate",
-                  header.mono ? "font-mono" : "font-medium",
-                  isToolError ? errorTextColor : "text-neutral-500 dark:text-neutral-400",
-                )}
-              >
-                {isToolError && !header.Icon ? "Tool Error" : header.label}
-              </span>
-              {header.preview && (
-                <span
-                  className={cn("text-xs text-neutral-400 dark:text-neutral-500 truncate", header.mono && "font-mono")}
-                >
-                  {header.preview}
-                </span>
-              )}
-            </div>
-          </div>
-        </button>
+    <div className={nested ? "max-w-full pb-1" : "max-w-full pb-2"}>
+      <div className="max-w-full">
+        <ActivityRow
+          label={header.label}
+          detail={header.preview}
+          mono={header.mono}
+          error={isToolError}
+          icon={nested ? undefined : (header.Icon ?? toolDef?.icon)}
+          expanded={toolResultExpanded}
+          onToggle={() => setToolResultExpanded(!toolResultExpanded)}
+        />
 
         {toolResultExpanded && (
           <div className="mt-1">
