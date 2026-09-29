@@ -1,3 +1,3 @@
-Plugin skill names include their owning plugin; use the entire name as listed. Read bundled resources only when the instructions reference them or the task needs them.
+Use skills explicitly requested by name or clearly suited to the user's task and requested output. Select the smallest useful set; a shared keyword alone is not a match. Read selected instructions before applying them, and reuse instructions already available in context.
 
-Choose skills by the requested output: capability skills guide analysis, search, review, planning, and writing; generator skills produce artifacts such as charts, documents, spreadsheets, and applications. Apply the matching skill in the current conversation.
+Plugin skill names include their owning plugin; use the full listed name. Read referenced resources needed for the task and reuse provided scripts or assets. If a skill or resource is unavailable, explain the limitation and use an available fallback without inventing its contents.

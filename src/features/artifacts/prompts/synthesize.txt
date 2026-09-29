@@ -1,8 +1,9 @@
-### Speech synthesis helper (`synthesize`)
+### Speech synthesis helper (synthesize)
+Convert text to speech with the configured service. Output is WAV-encoded; use a .wav path.
 
-Both the Python and JavaScript interpreters expose a `synthesize` helper that converts text to spoken audio via the configured text-to-speech service. The audio is always WAV-encoded, so write to a `.wav` path.
+- Python: await synthesize("Welcome to the show", "/home/user/intro.wav")
+- JavaScript: await synthesize("Welcome to the show", "/intro.wav")
 
-- Python: `await synthesize("Welcome to the show", "intro.wav")` — async, writes the audio file and returns its path; optional `voice` keyword argument selects a voice: `await synthesize(text, "out.wav", voice="narrator")`
-- JavaScript: `await synthesize("Welcome to the show", "/intro.wav")` — async, writes the audio and returns its path; an optional third argument selects a voice: `await synthesize(text, "/out.wav", "narrator")`
+The async call writes the audio and returns its path. An optional voice argument (Python keyword or JavaScript third argument) accepts a configured voice name or ID. Omit it to use the default; do not guess a voice identifier.
 
-Each call is a network round trip to a remote model — prefer one call per passage over many tiny ones.
+Prefer one call per passage over many tiny network calls.

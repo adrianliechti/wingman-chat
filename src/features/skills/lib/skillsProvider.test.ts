@@ -2,11 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
 import { mountSkillFiles, setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { run } from "@/shared/lib/agent";
-import { testClient } from "@/shared/lib/test-support/ai";
+import { Client } from "@/shared/lib/client";
+import { testClient, response, callItem, textItem, finished } from "@/shared/lib/test-support/ai";
 import type { Message } from "@/shared/types/chat";
 import { createSkillsProvider } from "./skillsProvider";
 
-afterEach(() => setSkillResourceResolver("test-skills", null));
+afterEach(() => {
+  setSkillResourceResolver("test-skills", null);
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const meta = { id: "test-skills", name: "Skills", description: "Fixture" };
 const skill = {
@@ -25,6 +30,58 @@ const call = (id: string, name: string, args: object): Message => ({
 });
 
 describe("native skills", () => {
+  it("reads a bundled resource through the gateway without a strict-mode fallback warning", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(finished(response([callItem('{"name":"reports"}', "load_skill", "load")])))
+      .mockResolvedValueOnce(
+        finished(
+          response([callItem('{"skill":"reports","path":"scripts/check.py"}', "read_skill_resource", "resource")]),
+        ),
+      )
+      .mockResolvedValueOnce(finished(response([textItem("The resource contains print('ok').")])));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: new URL("http://localhost") });
+    const loadResource = vi.fn(skill.loadResource);
+    const provider = createSkillsProvider([{ ...skill, loadResource }], meta)!;
+    const result = await run(new Client(), "model", provider.chat!.instructions!, prompt, provider.chat!.tools, {
+      middleware: provider.chat!.middleware,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(loadResource).toHaveBeenCalledExactlyOnceWith("scripts/check.py");
+    const firstRequest = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(firstRequest.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "read_skill_resource",
+          strict: false,
+          parameters: expect.objectContaining({
+            properties: { skill: { type: "string" }, path: { type: "string" } },
+            required: ["skill", "path"],
+          }),
+        }),
+      ]),
+    );
+    const finalRequest = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(finalRequest.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "function_call_output",
+          call_id: "resource",
+          output: JSON.stringify({
+            skill: "reports",
+            path: "scripts/check.py",
+            content: "print('ok')",
+            encoding: "utf8",
+          }),
+        }),
+      ]),
+    );
+    expect(warning.mock.calls.flat().join("\n")).not.toContain("sent with strict: false");
+  });
+
   it("lets middleware own discovery, loading, and deduplication in the real chat loop", async () => {
     const loadContent = vi.fn(skill.loadContent);
     const provider = createSkillsProvider([{ ...skill, loadContent }], meta)!;

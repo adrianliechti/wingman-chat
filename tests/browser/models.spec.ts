@@ -161,7 +161,7 @@ test("a failed refresh retains the working inventory and a retry recovers", asyn
   const { api, errors } = await open(page);
   const before = await page.evaluate(() => window.modelsE2E.state());
   api.status = 503;
-  await expect(page.evaluate(() => window.modelsE2E.refresh())).rejects.toThrow("Offline");
+  await expect(page.evaluate(() => window.modelsE2E.refresh())).rejects.toThrow("503");
   expect(await page.evaluate(() => window.modelsE2E.state())).toEqual(before);
   api.status = 200;
   api.data = [];

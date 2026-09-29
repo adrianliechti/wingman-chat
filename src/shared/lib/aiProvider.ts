@@ -14,7 +14,9 @@ function createGatewayChat<TModel extends OpenAIChatModel>(
   apiKey: string,
   config?: Omit<OpenAITextConfig, "apiKey">,
 ) {
-  return new GatewayTextAdapter({ apiKey, ...config }, model);
+  // The gateway deliberately preserves tool schemas with strict: false across
+  // providers, so OpenAI's strict-mode fallback diagnostic is expected here.
+  return new GatewayTextAdapter({ apiKey, strictFallbackWarning: false, ...config }, model);
 }
 
 // Model ids are discovered from the Wingman gateway, including deployment aliases.

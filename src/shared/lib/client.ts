@@ -459,8 +459,8 @@ export class Client {
     const result = await this.parse(
       model,
       instructionsRewriteText
-        .replace("{languageInstruction}", languageInstruction)
-        .replace("{finalInstructions}", finalInstructions),
+        .replace("{languageInstruction}", () => languageInstruction)
+        .replace("{finalInstructions}", () => finalInstructions),
       text,
       z.object({ rewrittenText: z.string() }).strict(),
       "rewrite_text",
@@ -607,14 +607,10 @@ export class Client {
     description: string,
     content: string,
   ): Promise<{ name: string; description: string; content: string }> {
-    const instructions = instructionsOptimizeSkill
-      .replace("{name}", name || "")
-      .replace("{description}", description || "")
-      .replace("{content}", content || "");
     const result = await this.parse(
       model,
-      instructions,
-      `Optimize this skill: "${name}"`,
+      instructionsOptimizeSkill,
+      JSON.stringify({ name, description, content }),
       z.object({ name: z.string(), description: z.string(), content: z.string() }).strict(),
       "optimize_skill",
     );

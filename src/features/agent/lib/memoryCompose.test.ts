@@ -5,7 +5,8 @@ import { addMemory, type ComposedMemories } from "./memoryCompose";
 import { parseMemoryDocument } from "./memoryDocument";
 import { MemoryManager } from "./memoryManager";
 
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ models: [], chat: {} }) }));
+const parse = vi.hoisted(() => vi.fn());
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ models: [], chat: {}, client: { parse } }) }));
 const disk = new MemoryOpfs();
 const manager = new MemoryManager("a");
 const settings = "---\nname: Agent\nmemory: true\nmodel: text-model\n---\n";
@@ -26,6 +27,7 @@ const output = (): ComposedMemories => ({
 
 beforeEach(() => {
   disk.reset();
+  parse.mockReset();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
   disk.put("agents/a/AGENTS.md", settings);
 });
@@ -86,7 +88,9 @@ describe("plain text memory additions", () => {
     await manager.write("/.memory/original.md", "Keep this memory.");
     const before = (await manager.snapshot()).files;
     await expect(addMemory(manager, "Remember this.", async () => null)).rejects.toThrow("could not be organized");
-    await expect(addMemory(manager, "Remember this.", async () => ({ notes: [] }))).rejects.toThrow();
+    await expect(addMemory(manager, "Remember this.", async () => ({ notes: [] }))).rejects.toThrow(
+      "could not be organized",
+    );
     const invalid = output();
     invalid.notes.push({ ...invalid.notes[0], path: "index.md" });
     await expect(addMemory(manager, "Remember this.", async () => invalid)).rejects.toThrow("incomplete");
@@ -98,6 +102,15 @@ describe("plain text memory additions", () => {
       }
     };
     await expect(addMemory(manager, "Remember this.", async () => output())).rejects.toThrow("Quota exceeded");
+    expect((await manager.snapshot()).files).toEqual(before);
+  });
+
+  it("lets the structured model decline a conversion without changing memory", async () => {
+    await manager.write("/.memory/original.md", "Keep this memory.");
+    const before = (await manager.snapshot()).files;
+    parse.mockImplementationOnce((_model, _instructions, _input, schema) => schema.parse({ notes: [] }));
+    await expect(addMemory(manager, "[REDACTED_SECRET]")).rejects.toThrow("could not be organized");
+    expect(parse).toHaveBeenCalledOnce();
     expect((await manager.snapshot()).files).toEqual(before);
   });
 

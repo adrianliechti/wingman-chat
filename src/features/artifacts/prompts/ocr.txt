@@ -1,22 +1,11 @@
-### OCR helper (`ocr`)
+### OCR helper (ocr)
+Extract text and layout from scanned PDFs, document images, or Office files through the configured remote service.
 
-Both the Python and JavaScript interpreters expose an `ocr` helper that sends a document file to a cloud extraction service (OCR + layout analysis) and returns the recognized text. It handles scanned PDFs, images of documents, and Office files.
+- Python: text = await ocr("/home/user/scan.pdf")
+- JavaScript: const text = await ocr("/scan.pdf")
 
-- Python: `text = await ocr("/home/user/scan.pdf")` — async, returns `str`
-- JavaScript: `const text = await ocr("/scan.pdf")` — async, returns a string
+For ordinary text PDFs and Office documents, try local extraction first using the document libraries. Use OCR when the user requests it, the document is image-based, or local extraction misses or garbles relevant content. Judge coverage and readability; a short but valid text is not evidence that extraction failed. Mixed documents may need OCR even when some text extracts correctly.
 
-When to use it:
-- PDFs and Office files: ALWAYS try local extraction first (`pdfminer.six`/`pdfplumber`, `docx2txt`, `python-pptx` — see Office Documents); it is faster and runs offline. Fall back to `ocr` only when the result is empty, near-empty, or garbled — typical for scanned or image-only documents.
-- Images included in the user's message: use built-in vision by default. Use `ocr` only when the user requests high-fidelity extraction, direct reading is insufficient, or batch/structured extraction requires it.
-- Images available only as workspace files: use `ocr` for precise transcription and `vision` for general understanding.
-- One call per document: it is a network round trip — pass the whole file, never loop over pages.
+Read images already included in the message directly when that suffices. Use OCR for precise transcription or batch extraction; use vision, when available, for visual interpretation.
 
-Typical fallback pattern:
-
-```python
-from pdfminer.high_level import extract_text
-
-text = extract_text("/home/user/scan.pdf")
-if len(text.strip()) < 50:  # empty or near-empty → likely scanned
-    text = await ocr("/home/user/scan.pdf")
-```
+Pass the whole document in one call by default. Follow actual service limits or errors if a smaller input is required; avoid a separate network call per page.

@@ -7,7 +7,7 @@ In Python use local DuckDB unless you need read_xlsx or full-text search. JavaSc
 
 - HTML: `const conn = await wingman.duckdb.connect(); const { rows } = await conn.query(sql, params?); await conn.close();`, or `wingman.duckdb.query(sql, params?)` on the page's default connection. `wingman.duckdb.files()` lists mounted names.
 - Interpreters: `await sql(query, params?)` returns the same shape (Python: a dict; `pandas.DataFrame(result["rows"])` for a frame).
-- Dashboards and explorers over workspace data load through DuckDB at runtime; never paste the dataset or precomputed numbers into the page or a companion script when the file is in the workspace. Prepare heavy transformations in Python and save Parquet for the page to query. Prefer SQL over hand-written aggregation.
+- Dashboards and explorers in the preview load workspace data through DuckDB at runtime. Prepare heavy transformations in Python and save Parquet for the page to query. Prefer SQL over hand-written aggregation. For a requested standalone export, embed the needed data instead: workspace DuckDB is unavailable outside the preview.
 
 Dashboard pattern:
 ```

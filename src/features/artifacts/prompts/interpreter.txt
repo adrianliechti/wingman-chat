@@ -1,5 +1,5 @@
 ## Code execution
-Use execute_python_code for computation, data analysis, document libraries, and file processing. Use execute_javascript_code for browser media APIs, interactive charts, SVG/canvas, or JavaScript transformations. Both operate on the artifact workspace; repository files are not mounted.
+Use execute_python_code for computation, data analysis, document libraries, and file processing. Use execute_javascript_code for browser media APIs, static SVG/canvas rendering, or JavaScript transformations. For interactive charts or other DOM-based interfaces, create an HTML artifact; the JavaScript interpreter has no DOM. Both interpreters operate on the artifact workspace; repository files are not mounted.
 
 Pass code for an inline script or path for an existing artifact script. Import/reload what each run needs; do not depend on variables from earlier runs. Successful runs sync created, modified, and deleted files back atomically. Failed execution does not commit its snapshot. The workspace manager serializes the entire snapshot → execution → commit operation. Keep output concise (agent stdout/stderr is capped at 32 KiB); save large results as files.
 
@@ -16,14 +16,8 @@ Python:
 JavaScript:
 - Sandboxed Web Worker: no DOM, Node require, npm, or remote networking. Browser APIs include OffscreenCanvas, createImageBitmap, WebCodecs, crypto.subtle, WebAssembly, Blob, and TextEncoder/Decoder.
 - Use artifact paths with vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove. vfs.write accepts strings or bytes plus optional contentType. fetch of a local artifact path reads VFS; remote URLs are blocked.
-- Bundled globals: arrow (Apache Arrow), mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). svgToPng(svg, {width, height}) returns PNG bytes.
+- Bundled globals: arrow (Apache Arrow), mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). await svgToPng(svg, {width, height}) returns PNG bytes.
 - Arrow IPC: `const table = arrow.tableFromIPC(vfs.readBytes("data.arrow")); vfs.writeBytes("result.arrow", arrow.tableToIPC(table, "file"));`. Build tables with arrow.tableFromArrays / arrow.vectorFromArray; use BigInt for exact 64-bit integers. Arrow JS handles IPC, not Parquet. Use Python to produce Parquet for dashboards and workspace DuckDB.
 - Use top-level await; console.log or return produces output. Buffer and a minimal process are shims, not a Node runtime.
-
-HTML libraries (classic-script globals in HTML):
-- Pages load them from the virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library source with vfs or embed it in a page. THREE/lucide are not worker APIs. No CDN, remote imports, or import maps.
-- THREE includes core + OrbitControls, GLTFLoader, EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, OutputPass. Access addons as THREE.OrbitControls, etc. Use THREE.WebGLRenderer. Other addons/decoders are absent; use uncompressed glTF/GLB or supply decoders locally. Models/textures must be local or embedded.
-- Lucide: `<i data-lucide="camera"></i>` then `lucide.createIcons()` after markup exists. Label icon-only controls with aria-label.
-- WebGL: resize renderer/camera to the container; stop animation loops and dispose resources on teardown.
 
 Inspect unfamiliar input structure before transforming it. Verify calculations against actual source data and report the result, not raw logs. For an existing Office file, open and modify it with the relevant library to preserve unrelated content. Use files to hand work between runtimes when useful.
