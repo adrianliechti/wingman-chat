@@ -221,6 +221,7 @@ pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compi
 supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
+The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
 
 ### Docker
 

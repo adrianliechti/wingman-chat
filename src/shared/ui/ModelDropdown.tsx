@@ -62,12 +62,12 @@ const VERBOSITY_OPTIONS: { value: Verbosity; label: string }[] = [
   { value: "high", label: "High" },
 ];
 
-const VERBOSITY_HINT = "How long and detailed responses are. Not every model supports this.";
+const VERBOSITY_HINT = "How long and detailed responses are.";
 
 interface VerbosityConfig {
   /** Current override, or null for the model default. */
   value: Verbosity | null;
-  /** The model's configured verbosity, named on the default row. */
+  /** The model's configured verbosity, badged on its option. */
   defaultValue?: Verbosity;
   onChange: (verbosity: Verbosity | null) => void;
 }
@@ -104,12 +104,10 @@ export interface SubmenuConfig {
   value: string | null;
   /** Pass null to clear back to the default. */
   onChange: (value: string | null) => void;
-  /**
-   * Reset row that clears the selection. Omit for menus where every level is
-   * explicit and one of them is badged as the default instead.
-   */
+  /** Selecting the checked option again clears the selection. */
+  allowDeselect?: boolean;
+  /** Optional label shown on the trigger when unset. */
   defaultLabel?: string;
-  defaultDescription?: string;
 }
 
 interface PresetsConfig {
@@ -399,8 +397,8 @@ function OptionSubmenu({
   options,
   value,
   onChange,
+  allowDeselect = false,
   defaultLabel,
-  defaultDescription,
 }: SubmenuConfig) {
   const closeAll = useContext(TreeCloseContext);
 
@@ -412,20 +410,6 @@ function OptionSubmenu({
       panelClassName="w-auto min-w-44 max-w-64"
     >
       {hint && <p className="px-3 pt-1.5 pb-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{hint}</p>}
-      {defaultLabel && (
-        <>
-          <OptionRow
-            name={defaultLabel}
-            description={defaultDescription}
-            selected={value === null}
-            onSelect={() => {
-              onChange(null);
-              closeAll();
-            }}
-          />
-          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-        </>
-      )}
       {options.map((opt) => (
         <OptionRow
           key={opt.value}
@@ -434,7 +418,7 @@ function OptionSubmenu({
           badge={opt.badge}
           selected={opt.value === value}
           onSelect={() => {
-            onChange(opt.value);
+            onChange(allowDeselect && opt.value === value ? null : opt.value);
             closeAll();
           }}
         />
@@ -574,6 +558,9 @@ function PresetSlider({
   const index = dragIndex ?? value;
   const current = steps[index];
   const last = steps.length - 1;
+  // Presets define the Faster → Smarter scale, including each model's effort.
+  const position = last > 0 ? index / last : 0;
+  const accent = position >= 2 / 3 ? "red" : position >= 1 / 2 ? "amber" : "neutral";
 
   const indexAt = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -648,7 +635,14 @@ function PresetSlider({
           <div className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-neutral-200 dark:bg-white/10" />
           {index >= 0 && (
             <div
-              className="absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-neutral-800 dark:bg-neutral-200 transition-[width] duration-150 ease-out"
+              className={cn(
+                "absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none",
+                accent === "red"
+                  ? "bg-red-500/75 dark:bg-red-400/80"
+                  : accent === "amber"
+                    ? "bg-amber-500/80 dark:bg-amber-400/80"
+                    : "bg-neutral-800 dark:bg-neutral-200",
+              )}
               style={{ width: stepOffset(index, steps.length) }}
             />
           )}
@@ -664,7 +658,14 @@ function PresetSlider({
           ))}
           {index >= 0 && (
             <div
-              className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-300 bg-white shadow-sm transition-[left] duration-150 ease-out group-focus-visible/slider:ring-2 group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50"
+              className={cn(
+                "absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-sm transition-[left,background-color,border-color] duration-150 ease-out group-focus-visible/slider:ring-2 motion-reduce:transition-none",
+                accent === "red"
+                  ? "border-red-400 bg-red-50 group-focus-visible/slider:ring-red-500/40 dark:border-red-400 dark:bg-red-100 dark:group-focus-visible/slider:ring-red-400/40"
+                  : accent === "amber"
+                    ? "border-amber-400 bg-amber-50 group-focus-visible/slider:ring-amber-500/40 dark:border-amber-400 dark:bg-amber-100 dark:group-focus-visible/slider:ring-amber-400/40"
+                    : "border-neutral-300 bg-white group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50",
+              )}
               style={{ left: stepOffset(index, steps.length) }}
             />
           )}
@@ -820,21 +821,22 @@ function ModelDropdownRoot({
           },
         ]
       : []),
-    // Unlike effort, verbosity keeps a reset row: a model without a configured
-    // level leaves it to the backend, which has no level to badge.
+    // Only explicit overrides are checked; selecting one again restores the
+    // configured verbosity or leaves the choice to the backend.
     ...(shownVerbosity
       ? [
           {
             icon: <AlignLeft size={14} />,
             label: "Verbosity",
             hint: VERBOSITY_HINT,
-            options: VERBOSITY_OPTIONS,
+            options: VERBOSITY_OPTIONS.map((option) => ({
+              ...option,
+              badge: option.value === shownVerbosity.defaultValue ? "Default" : undefined,
+            })),
             value: shownVerbosity.value,
             onChange: (v: string | null) => shownVerbosity.onChange(v as Verbosity | null),
+            allowDeselect: true,
             defaultLabel: "Default",
-            defaultDescription: shownVerbosity.defaultValue
-              ? `Model setting (${shownVerbosity.defaultValue})`
-              : "Model setting",
           },
         ]
       : []),
