@@ -7,7 +7,7 @@ import {
 } from "@tanstack/ai-client";
 import type { ContentPart, StreamChunk } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
-import { applyArtifactStopPolicy } from "@/features/artifacts/lib/artifact-stop-policy";
+import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { parseArtifactReference } from "../components/chatMessageUtils";
 import type { ChatContextType } from "../context/ChatContext";
@@ -155,7 +155,29 @@ export function useChatRun({
           resume: runContext?.resume,
           agentName: "chat",
           metadata,
-          middleware: chatMiddleware(),
+          middleware: [
+            ...chatMiddleware(),
+            ...(runFs ? [artifactVerification(runFs, metadata, conversation)] : []),
+            {
+              onIteration: () => {
+                if (active()) setRunPhase("thinking");
+              },
+              onBeforeToolCall: () => {
+                if (active()) setRunPhase("running_tool");
+              },
+              onToolPhaseComplete: (_ctx, { results }) => {
+                if (!active()) return;
+                setRunPhase("thinking");
+                if (!results.length) return;
+                clearElicitation();
+                setToolMeta((prev) => {
+                  const next = { ...prev };
+                  for (const { toolCallId } of results) delete next[toolCallId];
+                  return next;
+                });
+              },
+            },
+          ],
           sharedMiddleware: (runSignal) =>
             threshold > 0
               ? [
@@ -165,18 +187,6 @@ export function useChatRun({
               : [],
           options: { effort: model.effort, summary: model.summary, verbosity: model.verbosity, signal },
           prepareMessages: (messages) => loadAttachments(prepareChatMessages(messages, requestContext), signal),
-          onEvent: (event) => {
-            if (!active()) return;
-            if (
-              event.type === "model.started" ||
-              event.type === "tool.completed" ||
-              event.type === "verification.completed"
-            )
-              setRunPhase("thinking");
-            else if (event.type === "model.streaming") setRunPhase("responding");
-            else if (event.type === "tool.started" || event.type === "verification.started")
-              setRunPhase("running_tool");
-          },
           createToolContext: (call) => ({
             model: model.id,
             chatId: id,
@@ -192,19 +202,6 @@ export function useChatRun({
               if (active()) completeElicitation(elicitationId);
             },
           }),
-          onToolResult: (result) => {
-            if (!active()) return;
-            clearElicitation();
-            setToolMeta((prev) => {
-              const next = { ...prev };
-              for (const part of result.content) if (part.type === "tool_result") delete next[part.id];
-              return next;
-            });
-          },
-          beforeFinish: ({ runId: activeRunId, messages, signal: runSignal }) =>
-            runFs
-              ? applyArtifactStopPolicy({ chatId: id, runId: activeRunId, messages, fs: runFs, signal: runSignal })
-              : Promise.resolve({ action: "finish" }),
           onToolMeta: (callId, meta) => {
             if (signal?.aborted) return;
             if (active()) updateToolMeta(callId, meta);
@@ -296,7 +293,9 @@ export function useChatRun({
         onQueueChange: setQueuedSends,
         onInterruptStateChange: setInterruptState,
         onChunk: (chunk) => {
-          if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
+          if (sessionRef.current !== session) return;
+          if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
+          else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
           else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
         },
         onError: (error) => {
@@ -406,12 +405,6 @@ export function useChatRun({
     await ai.append(native.at(-1)!);
   }, [getChat, chatIdRef, ensureClient]);
 
-  const continueRun = useCallback(async () => {
-    const chat = getChat(chatIdRef.current ?? "");
-    if (!chat || chat.messages.at(-1)?.error?.code !== "MAX_TURNS") return;
-    await sendMessage({ role: Role.User, content: [{ type: "text", text: "Continue." }] }, chat.messages.slice(0, -1));
-  }, [getChat, chatIdRef, sendMessage]);
-
   const removeQueuedMessage = useCallback((id: string) => {
     sessionRef.current?.ai.cancelQueued(id);
   }, []);
@@ -453,7 +446,6 @@ export function useChatRun({
     toolMeta,
     sendMessage,
     retryMessage,
-    continueRun,
     setVoiceToolCall,
     removeQueuedMessage,
     stopStreaming,

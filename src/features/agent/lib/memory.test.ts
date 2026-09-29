@@ -347,7 +347,7 @@ describe("existing file tools at the memory mount", () => {
         ],
       }),
     ).toContain("cannot span");
-    const child = { invocationContext: { branch: "child" } } as unknown as ToolContext;
+    const child = { invocationContext: { subagentRunId: "child" } } as unknown as ToolContext;
     expect(await fileTool(tools, "create", { file_path: "/.memory/a.md", content: "Memory" }, child)).toContain(
       "read-only",
     );

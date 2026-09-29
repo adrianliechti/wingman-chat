@@ -3,7 +3,6 @@ import subagentDescription from "@/features/tools/prompts/subagent-description.t
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
@@ -54,7 +53,7 @@ export function createSubagentTool(
             agentName: "subagent",
             middleware,
             parentContext: ctx?.agentContext,
-            invocationContext: (ctx?.invocationContext ?? new AgentInvocationContext()).fork("subagent"),
+            context: { ...ctx?.invocationContext, subagentRunId: crypto.randomUUID() },
             options: { signal: ctx?.signal },
             createToolContext: () => ({
               model,
@@ -88,8 +87,7 @@ export function createSubagentTool(
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
         const text = last ? getFinalTextFromContent(last.content).trim() : "";
-        const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
-        return [{ type: "text", text: `${text || "Subagent completed but produced no output."}${suffix}` }];
+        return [{ type: "text", text: text || "Subagent completed but produced no output." }];
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return [{ type: "text", text: `Subagent error: ${message}` }];

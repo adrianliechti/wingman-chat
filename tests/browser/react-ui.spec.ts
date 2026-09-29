@@ -90,6 +90,29 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
   });
 }
 
+for (const existingChat of [false, true]) {
+  test(`shows activity before the first token in ${existingChat ? "an existing" : "a new"} chat`, async ({ page }) => {
+    await open(page, existingChat ? "?seed" : "");
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Please think about this");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    const activity = page.getByRole("status", { name: "Assistant is working" });
+    await expect(activity).toBeVisible();
+    await expect(activity).not.toBeEmpty();
+    await page.evaluate(() => window.reactUiE2E.stream("Here is my answer"));
+    await expect(activity).toHaveCount(0);
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is my answer");
+    await page.evaluate(() => window.reactUiE2E.finish("Here is my answer"));
+    await input.fill("Think again");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(activity).toBeVisible();
+    await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+    await expect(activity).toHaveCount(0);
+  });
+}
+
 test("compiled chat keeps stream DOM stable, measures the composer and updates virtualized search", async ({
   page,
 }) => {

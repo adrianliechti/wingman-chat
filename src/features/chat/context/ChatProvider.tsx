@@ -302,13 +302,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const messages = useMemo(() => {
     const baseMessages = chat?.messages ?? [];
 
-    // Attach transient streaming content without persisting it on every token
+    // Realtime tool calls are transient; text chat uses TanStack's transcript.
     if (streamingMessage && chat?.id === streamingMessage.chatId) {
       return [...baseMessages, streamingMessage.message];
     }
 
+    // TanStack can be loading before it has an assistant message, including
+    // between tool execution and the next model response. Keep this UI-only.
+    const last = baseMessages.at(-1);
+    if (run.isResponding && chat?.id === chatId && last?.role === "user") {
+      return [...baseMessages, { id: `pending-${last.id}`, role: "assistant" as const, content: [] }];
+    }
+
     return baseMessages;
-  }, [chat?.messages, chat?.id, streamingMessage]);
+  }, [chat?.messages, chat?.id, chatId, streamingMessage, run.isResponding]);
 
   const value: ChatContextType = {
     // Models

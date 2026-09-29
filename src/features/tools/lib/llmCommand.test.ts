@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testClient } from "@/shared/lib/test-support/ai";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { runLlm, setModel } from "./llmCommand";
 import { runVision } from "./visionCommand";
 
@@ -30,7 +29,7 @@ describe("interpreter model calls", () => {
   });
 
   it("starts every LLM and vision call with fresh history, including calls sharing an invocation", async () => {
-    const context = { model: "run-model", invocationContext: new AgentInvocationContext() };
+    const context = { model: "run-model", invocationContext: {} };
     await runLlm("First private question", { system: "First private instructions" }, { context });
     await runVision(new Uint8Array([1]), "/first.png", "First image question", { context });
     await runLlm("Independent question", {}, { context });
@@ -83,10 +82,10 @@ describe("interpreter model calls", () => {
     expect(complete.mock.calls[0][0].model).toBe("vision-specialist");
   });
 
-  it.each(["llm", "vision"])("honors invocation-only cancellation for %s without spending budget", async (helper) => {
+  it.each(["llm", "vision"])("honors parent cancellation for %s", async (helper) => {
     const parent = new AbortController();
     parent.abort();
-    const invocationContext = new AgentInvocationContext({ signal: parent.signal, maxModelCalls: 1 });
+    const invocationContext = { signal: parent.signal };
     const request = { context: { invocationContext }, signal: new AbortController().signal };
     await expect(
       helper === "llm"
@@ -94,7 +93,6 @@ describe("interpreter model calls", () => {
         : runVision(new Uint8Array([1]), "/image.png", "Describe", request),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(complete).not.toHaveBeenCalled();
-    expect(invocationContext.budgetSnapshot().used).toBe(0);
   });
 
   it("cancels an in-flight helper when its parent invocation stops", async () => {
@@ -110,38 +108,34 @@ describe("interpreter model calls", () => {
         {},
         {
           signal: new AbortController().signal,
-          context: { invocationContext: new AgentInvocationContext({ signal: parent.signal }) },
+          context: { invocationContext: { signal: parent.signal } },
         },
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("uses the captured run model even after the UI selection changes", async () => {
-    const context = { model: "run-model", invocationContext: new AgentInvocationContext({ maxModelCalls: 2 }) };
+    const context = { model: "run-model", invocationContext: {} };
     await runLlm("Question", {}, { context });
     await runVision(new Uint8Array([1]), "/image.png", "Describe", { context });
     expect(complete.mock.calls.map(([options]) => options.model)).toEqual(["run-model", "run-model"]);
-    expect(context.invocationContext.budgetSnapshot()).toEqual({ used: 2, limit: 2 });
   });
 
-  it("shares the parent's budget across LLM and vision requests", async () => {
-    const context = { model: "run-model", invocationContext: new AgentInvocationContext({ maxModelCalls: 1 }) };
+  it("allows independent LLM and vision requests in the same parent context", async () => {
+    const context = { model: "run-model", invocationContext: {} };
     await runLlm("Question", { model: "override" }, { context });
-    await expect(runVision(new Uint8Array([1]), "/image.png", "Describe", { context })).rejects.toMatchObject({
-      code: "MAX_TURNS",
-    });
-    expect(complete).toHaveBeenCalledTimes(1);
+    await expect(runVision(new Uint8Array([1]), "/image.png", "Describe", { context })).resolves.toBe("Answer");
+    expect(complete).toHaveBeenCalledTimes(2);
     expect(complete.mock.calls[0][0].model).toBe("override");
   });
 
-  it("does not consume budget or call the model after cancellation", async () => {
+  it("does not call the model after cancellation", async () => {
     const controller = new AbortController();
     controller.abort();
-    const context = { invocationContext: new AgentInvocationContext({ maxModelCalls: 1 }) };
+    const context = { invocationContext: {} };
     await expect(runLlm("Question", {}, { context, signal: controller.signal })).rejects.toMatchObject({
       name: "AbortError",
     });
-    expect(context.invocationContext.budgetSnapshot().used).toBe(0);
     expect(complete).not.toHaveBeenCalled();
   });
 });

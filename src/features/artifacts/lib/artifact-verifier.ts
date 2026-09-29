@@ -10,18 +10,14 @@ import { ooxmlDescendants, SPREADSHEETML_NAMESPACES } from "@/shared/lib/ooxml";
 import { validateArtifactFile } from "./artifactValidators";
 import { validateOoxmlPackage, type OoxmlIssue } from "./ooxmlPackage";
 import { validateXlsxIntegrity } from "./xlsxIntegrity";
-import {
-  ArtifactManifestSchema,
-  VerificationReportSchema,
-  artifactChecksum,
-  artifactRevision,
-  type ArtifactJob,
-  type ArtifactManifest,
-  type ArtifactUnitResult,
-  type VerificationReport,
-} from "@/shared/types/artifact";
+export interface ArtifactVerificationCheck {
+  id: string;
+  scope: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+}
 
-type Check = VerificationReport["checks"][number];
+type Check = ArtifactVerificationCheck;
 
 function check(id: string, scope: string, status: Check["status"], message: string): Check {
   return { id, scope, status, message };
@@ -74,13 +70,12 @@ function relativeArtifactPath(basePath: string, reference: string): string | nul
   return normalizeArtifactPath(`/${resolved.join("/")}`) ?? null;
 }
 
-async function verifyHtml(
+function verifyHtml(
   path: string,
   content: string,
   existingPaths: Set<string>,
   checks: Check[],
-): Promise<Set<string>> {
-  const dependencies = new Set<string>();
+): void {
   const document = new DOMParser().parseFromString(content, "text/html");
   checks.push(
     document.documentElement
@@ -117,7 +112,6 @@ async function verifyHtml(
     if (!existingPaths.has(resolved)) {
       checks.push(check("html.local-ref", path, "fail", `Missing local reference: ${reference} (${resolved})`));
     } else {
-      dependencies.add(resolved);
       checks.push(check("html.local-ref", path, "pass", `Resolved local reference: ${reference}`));
     }
   }
@@ -137,15 +131,13 @@ async function verifyHtml(
       ),
     );
   }
-  return dependencies;
 }
 
 async function verifyBinaryPackage(
-  job: ArtifactJob,
   path: string,
   content: string,
   checks: Check[],
-): Promise<ArtifactUnitResult[] | undefined> {
+): Promise<void> {
   const lower = path.toLowerCase();
   const bytes = dataUrlToBytes(content)?.bytes;
   if (!bytes) {
@@ -160,11 +152,6 @@ async function verifyBinaryPackage(
       checks.push(
         check("pdf.pages", path, pdf.numPages > 0 ? "pass" : "fail", `PDF contains ${pdf.numPages} page(s).`),
       );
-      if (job.expected?.units && pdf.numPages !== job.expected.units) {
-        checks.push(
-          check("pdf.expected-pages", path, "fail", `Expected ${job.expected.units} pages, found ${pdf.numPages}.`),
-        );
-      }
       await loadingTask.destroy();
     } catch (error) {
       checks.push(
@@ -217,24 +204,6 @@ async function verifyBinaryPackage(
             `PPTX declares ${slides.length} logical slide(s)${missingSlides ? `; ${missingSlides} are missing` : ""}.`,
           ),
         );
-        if (job.expected?.units && slides.length !== job.expected.units) {
-          checks.push(
-            check(
-              "pptx.expected-slides",
-              path,
-              "fail",
-              `Expected ${job.expected.units} slides, found ${slides.length}.`,
-            ),
-          );
-        }
-        if (job.expected?.units) {
-          return Array.from({ length: job.expected.units }, (_, index) => ({
-            ordinal: index + 1,
-            ...(slides[index]?.path ? { path: slides[index].path } : {}),
-            status: slides[index]?.present ? ("ready" as const) : ("missing" as const),
-            ...(slides[index]?.present ? {} : { message: `Slide ${index + 1} is missing.` }),
-          }));
-        }
       } else {
         const workbook = packageValidation.mainPart
           ? await packageValidation.reader.text(packageValidation.mainPart)
@@ -285,130 +254,46 @@ async function verifyBinaryPackage(
   return undefined;
 }
 
-export async function verifyArtifactJob(fs: FileSystemManager, job: ArtifactJob): Promise<ArtifactManifest> {
-  const files = await fs.listFiles();
-  const existingPaths = new Set(files.map((file) => file.path));
+/** Read only changed files; the workspace index is enough to check HTML dependencies. */
+export async function verifyArtifacts(
+  fs: Pick<FileSystemManager, "listEntries" | "getFile">,
+  paths: Iterable<string>,
+  signal?: AbortSignal,
+): Promise<ArtifactVerificationCheck[]> {
+  signal?.throwIfAborted();
+  const existingPaths = new Set((await fs.listEntries()).map((file) => file.path));
   const checks: Check[] = [];
-  const primary = files.find((file) => file.path === normalizeArtifactPath(job.primaryPath));
-  const manifestPaths = new Set(
-    job.sourceRefs.flatMap((source) => {
-      if (/^https?:\/\//i.test(source)) return [];
-      const path = normalizeArtifactPath(source);
-      return path ? [path] : [];
-    }),
-  );
-  let units: ArtifactUnitResult[] | undefined;
-
-  if (!primary) {
-    checks.push(check("manifest.primary", job.primaryPath, "fail", "The primary artifact does not exist."));
-  } else {
-    manifestPaths.add(primary.path);
-    checks.push(check("manifest.primary", primary.path, "pass", "The primary artifact exists."));
-    const validation = await validateArtifactFile(primary);
-    checks.push(
-      ...validation.errors.map((issue) => check(`syntax.${issue.validator}`, primary.path, "fail", issue.message)),
-    );
-    checks.push(
-      ...validation.warnings.map((issue) => check(`syntax.${issue.validator}`, primary.path, "warn", issue.message)),
-    );
-
-    if (/\.html?$/i.test(primary.path)) {
-      const dependencies = await verifyHtml(primary.path, primary.content, existingPaths, checks);
-      for (const path of dependencies) manifestPaths.add(path);
-    }
-    const primaryContentType = primary.contentType ?? inferContentTypeFromPath(primary.path);
-    if (isBinaryContentType(primaryContentType)) {
-      units = await verifyBinaryPackage(job, primary.path, primary.content, checks);
-    }
-
-    if (/\.(png|jpe?g|webp|gif)$/i.test(primary.path)) {
-      try {
-        const bitmap = await createImageBitmap(contentToBlob(primary.content, primary.contentType));
-        checks.push(
-          check(
-            "image.decode",
-            primary.path,
-            bitmap.width > 0 && bitmap.height > 0 ? "pass" : "fail",
-            `Image decodes at ${bitmap.width}×${bitmap.height}.`,
-          ),
-        );
-        if (job.expected?.width && bitmap.width !== job.expected.width)
-          checks.push(
-            check("image.width", primary.path, "fail", `Expected width ${job.expected.width}, found ${bitmap.width}.`),
-          );
-        if (job.expected?.height && bitmap.height !== job.expected.height)
-          checks.push(
-            check(
-              "image.height",
-              primary.path,
-              "fail",
-              `Expected height ${job.expected.height}, found ${bitmap.height}.`,
-            ),
-          );
-        bitmap.close();
-      } catch (error) {
-        checks.push(
-          check(
-            "image.decode",
-            primary.path,
-            "fail",
-            `Image could not be decoded: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
+  for (const path of paths) {
+    signal?.throwIfAborted();
+    try {
+      const file = await fs.getFile(path);
+      if (!file) {
+        checks.push(check("artifact.exists", path, "fail", "The artifact does not exist."));
+        continue;
       }
+      const validation = await validateArtifactFile(file);
+      checks.push(
+        ...validation.errors.map((issue) => check(`syntax.${issue.validator}`, path, "fail", issue.message)),
+        ...validation.warnings.map((issue) => check(`syntax.${issue.validator}`, path, "warn", issue.message)),
+      );
+      if (/\.html?$/i.test(path)) verifyHtml(path, file.content, existingPaths, checks);
+      if (isBinaryContentType(file.contentType ?? inferContentTypeFromPath(path))) {
+        await verifyBinaryPackage(path, file.content, checks);
+      }
+      if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+        const bitmap = await createImageBitmap(contentToBlob(file.content, file.contentType));
+        checks.push(
+          check("image.decode", path, bitmap.width > 0 && bitmap.height > 0 ? "pass" : "fail",
+            `Image decodes at ${bitmap.width}×${bitmap.height}.`),
+        );
+        bitmap.close();
+      }
+    } catch (error) {
+      signal?.throwIfAborted();
+      checks.push(check("artifact.verify", path, "fail",
+        `Verification could not complete: ${error instanceof Error ? error.message : String(error)}`));
     }
   }
-
-  for (const source of job.sourceRefs) {
-    if (/^https?:\/\//i.test(source)) {
-      checks.push(check("sources.recorded", job.primaryPath, "pass", `Recorded source URL: ${source}`));
-      continue;
-    }
-    const sourcePath = normalizeArtifactPath(source);
-    checks.push(
-      sourcePath && existingPaths.has(sourcePath)
-        ? check("sources.present", job.primaryPath, "pass", `Resolved source artifact: ${sourcePath}`)
-        : check("sources.present", job.primaryPath, "fail", `Missing source artifact: ${source}`),
-    );
-  }
-
-  const status = checks.some((item) => item.status === "fail")
-    ? "blocked"
-    : checks.some((item) => item.status === "warn")
-      ? "warnings"
-      : "clean";
-  const verification = VerificationReportSchema.parse({ status, checks, verifiedAt: new Date().toISOString() });
-  const manifestFiles = await Promise.all(
-    files
-      .filter((file) => manifestPaths.has(file.path))
-      .map(async (file) => {
-        const checksum = await artifactChecksum(file.content, file.contentType);
-        return {
-          path: file.path,
-          role:
-            file.path === primary?.path
-              ? ("primary" as const)
-              : job.sourceRefs.includes(file.path)
-                ? ("source" as const)
-                : ("asset" as const),
-          contentType: file.contentType,
-          size: new TextEncoder().encode(file.content).byteLength,
-          revision: await artifactRevision(file.content, file.contentType),
-          checksum,
-        };
-      }),
-  );
-
-  return ArtifactManifestSchema.parse({
-    jobId: job.id,
-    primaryPath: normalizeArtifactPath(job.primaryPath) ?? job.primaryPath,
-    files: manifestFiles,
-    units,
-    sources: job.sourceRefs.map((source, index) => ({
-      id: `source-${index + 1}`,
-      ...(source.startsWith("http") ? { url: source } : { path: source }),
-    })),
-    skillRefs: job.skillRefs,
-    verification,
-  });
+  signal?.throwIfAborted();
+  return checks;
 }

@@ -33,11 +33,18 @@ execution requirement. The installed package sources define the precise APIs.
 
 Chat connects `ChatClient` directly to browser-local `streamRun`, which calls
 native `chat()`. The connection forwards TanStack's run, parent, thread, and
-resume context. There is no separate application `StreamProcessor`, token
-buffer, tool-execution loop, queue controller, or recursive queue drain.
+resume context. There is no application token buffer, tool-execution loop,
+queue controller, or recursive queue drain.
 Delegation uses `defineAgent` and native nested streams. One-shot interpreter
 `llm`/`vision` calls use the same stream through a short `run` helper, with only
-their own prompt and no tools.
+their own prompt and no tools. Noninteractive callers collect messages using
+TanStack's `StreamProcessor`; they do not create an interactive `ChatClient`.
+
+`AgentRunController` and its parallel lifecycle event protocol have been removed.
+Chat progress follows native middleware callbacks and stream chunks. Tool-result
+cleanup uses `onToolPhaseComplete.results` instead of scanning the transcript.
+Run results contain only status, messages, and an optional error. Plain runtime
+context carries cancellation and child workspace identity; it has no counters.
 
 `Client.complete()` and `Client.summarizeHistory()` have been deleted. `Client`
 retains provider configuration, structured-output tasks, media activities, and
@@ -98,7 +105,7 @@ Chat initially sends the native discovery tool with a short catalog (tool names
 and their first description sentence). TanStack supplies schemas on demand,
 executes discovered tools, and restores discoveries from saved history. Built-in
 workspace tools remain eager. Discovery adds a model round trip the first time a
-tool is needed, counted against the existing run budget. Realtime voice continues
+tool is needed, counted as one native model iteration. Realtime voice continues
 to receive full tool definitions; isolated interpreter calls receive no tools.
 
 Text-only results retain TanStack's JSON string representation across storage
@@ -154,8 +161,8 @@ replacement, the summarizer client method, and overflow retry branches are gone.
 Old saved summary markers remain readable.
 
 [Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
-handles provider-only request preparation, model-call budgets, lifecycle events,
-and rich tool metadata. A small policy keeps loaded skill instructions when
+handles provider-only request preparation, progress display, and rich tool
+metadata. A small policy keeps loaded skill instructions when
 compaction removes their original tool result: native skill activation is
 deduplicated within a run. Compaction and this policy also run in native children,
 with each child's cancellation signal. Compaction uses the framework's estimates
@@ -163,17 +170,21 @@ and recent-message retention; it does not guarantee that an oversized latest
 request fits, and no reactive overflow retry is performed.
 
 The [agentic cycle](https://tanstack.com/ai/latest/docs/chat/agentic-cycle) is
-TanStack's `chat()` loop with `maxIterations`, tool validation, and execution.
+TanStack's `chat()` loop with `maxIterations(100)`, tool validation, and execution.
+The limit applies independently to each parent, child, and repair invocation.
+The application no longer maintains a shared model-call budget, custom turn
+counter, or synthetic `MAX_TURNS` failure/Continue action. Native iteration-limit
+completion keeps the produced messages and follows TanStack's normal outcome.
 One bounded application wrapper remains for workspace verification after a
-final answer. It can provide repair feedback and restart `chat()`, sharing the
-same invocation budget. `onShouldContinue` can veto tool-loop continuation, but
+final answer. The artifact policy allows at most two repairs and can provide
+feedback to restart `chat()`. `onShouldContinue` can veto tool-loop continuation, but
 cannot restart a finished answer; putting that retry into an observer hook would
 not remove the need for the wrapper. Paused interrupts skip verification.
 
 [Native subagents](https://tanstack.com/ai/latest/docs/chat/subagents) receive
 parent context and a delegated task, stream nested message parts, and can pause
 for input. They inherit selected capabilities, attachment preparation, workspace
-access, cancellation, and the shared model-call budget. Their artifact mutations
+access, and cancellation. Their artifact mutations
 reach parent verification. Realtime's `agent` tool uses the same one-shot runner
 and returns the final text because the voice protocol has no nested chat cards.
 
@@ -191,7 +202,7 @@ Native messages can include several model/tool rounds, so the storage projection
 splits them into ordered assistant and tool-result turns with durable identities.
 Existing media, reasoning payloads, artifacts, and tool display metadata remain
 readable. `agent.ts` supplies native tool definitions, application middleware,
-shared invocation budgets, and the bounded workspace verification wrapper.
+and the bounded workspace verification wrapper.
 
 `aiProvider.ts` selects dynamic gateway model aliases with `extendAdapter`, keeps
 cancellation attached to provider requests, and omits an empty multipart model

@@ -2,7 +2,6 @@ import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { ChatMiddleware, SubagentPart } from "@tanstack/ai";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
-import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -183,11 +182,18 @@ export type ToolDisplay = {
   output?: (result: Content[]) => ToolDisplayBlock | null;
 };
 
+/** Application context passed through native chat middleware and tool execution. */
+export interface AgentRunContext {
+  signal?: AbortSignal;
+  /** A child keeps separate workspace observations and read-only memory access. */
+  subagentRunId?: string;
+}
+
 export interface ToolContext {
   model?: string;
   chatId?: string;
   runId?: string;
-  invocationContext?: AgentInvocationContext;
+  invocationContext?: AgentRunContext;
   signal?: AbortSignal;
   /** Native chat tools can pause and receive an answer on their resumed execution. */
   interruptible?: boolean;

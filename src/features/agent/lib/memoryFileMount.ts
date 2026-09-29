@@ -60,9 +60,9 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
         if (!paths.every(isMemoryPath))
           return fail("A file operation cannot span memory and conversation artifacts. Use separate operations.");
         const mutation = !["read", "grep", "glob"].includes(operation);
-        if (mutation && context?.invocationContext?.branch)
+        if (mutation && context?.invocationContext?.subagentRunId)
           return fail("Subagents have read-only memory access. Return proposed changes to the parent.");
-        const session = `${context?.chatId ?? "local"}/${context?.invocationContext?.branch ?? "root"}`;
+        const session = `${context?.chatId ?? "local"}/${context?.invocationContext?.subagentRunId ?? "root"}`;
         const observed = observations.get(session) ?? new Map<string, string | undefined>();
         observations.set(session, observed);
         const source =

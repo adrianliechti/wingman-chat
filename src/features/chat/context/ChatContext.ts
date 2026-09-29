@@ -62,7 +62,6 @@ export interface ChatContextType {
     deletedPaths?: string[],
   ) => Promise<void>;
   retryMessage: () => Promise<void>;
-  continueRun: () => Promise<void>;
   queuedSends: QueuedMessage[];
   interruptState: ChatInterruptState | null;
   removeQueuedMessage: (id: string) => void;
@@ -118,7 +117,6 @@ export type ChatActionsContextType = Pick<
   | "addMessage"
   | "sendMessage"
   | "retryMessage"
-  | "continueRun"
   | "removeQueuedMessage"
   | "setVoiceToolCall"
   | "resolveElicitation"

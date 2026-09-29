@@ -31,7 +31,7 @@ export async function completeIsolated(
     [{ role: Role.User, content }],
     [],
     {
-      invocationContext: requestOptions.context?.invocationContext,
+      context: requestOptions.context?.invocationContext,
       parentContext: requestOptions.context?.agentContext,
       options: { effort: options.effort, signal: requestOptions.signal },
     },

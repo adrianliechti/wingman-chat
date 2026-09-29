@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import type { ToolContext } from "@/shared/types/chat";
 import { testClient } from "@/shared/lib/test-support/ai";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { createSubagentTool } from "./subagent";
 
 const state = vi.hoisted(() => ({ complete: vi.fn() }));
@@ -52,7 +51,7 @@ describe("subagent invocation identity", () => {
     const child = await invoke({ runId: "voice-parent", chatId: "origin-chat" });
     expect(child.chatId).toBe("origin-chat");
     expect(child.runId).not.toBe("voice-parent");
-    expect(child.invocationContext?.branch).toBe("subagent");
+    expect(child.invocationContext?.subagentRunId).toBeTruthy();
   });
 
   it("applies provider middleware independently to each delegated run", async () => {
@@ -91,13 +90,12 @@ describe("subagent invocation identity", () => {
     expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", text: "Done" }]);
   });
 
-  it("retains the parent's invocation budget but gives the child its own branch and run ID", async () => {
-    const invocationContext = new AgentInvocationContext({ maxModelCalls: 5 });
+  it("gives the child its own workspace context and run ID", async () => {
+    const invocationContext = {};
     const child = await invoke({ runId: "chat-parent", invocationContext });
     expect(child.runId).not.toBe("chat-parent");
-    expect(child.invocationContext?.invocationId).toBe(invocationContext.invocationId);
-    expect(child.invocationContext?.branch).toBe("subagent");
-    expect(invocationContext.budgetSnapshot()).toEqual({ used: 2, limit: 5 });
+    expect(child.invocationContext).not.toBe(invocationContext);
+    expect(child.invocationContext?.subagentRunId).toBeTruthy();
   });
 
   it("preserves attached image references and elicitation for delegated tools", async () => {

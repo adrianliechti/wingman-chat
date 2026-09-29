@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
+import { DISCOVERY_TOOL_NAME, maxIterations } from "@tanstack/ai";
 import { run } from "./agent";
-import { AgentInvocationContext, AgentRunController } from "./agent-run-controller";
 import { testClient } from "./test-support/ai";
 import type { Message, Tool } from "../types/chat";
 
@@ -70,13 +69,12 @@ describe("TanStack agent lifecycle", () => {
     expect(result.status).toBe("completed");
     expect(execute).toHaveBeenCalledOnce();
     expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("must be discovered first");
-    expect(result.modelCalls.used).toBe(4);
+    expect(complete).toHaveBeenCalledTimes(4);
   });
 
   it("streams and commits turns, results, metadata and usage with stable identities", async () => {
     const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
     const resultHook = vi.fn();
-    const events: { sequence: number; type: string }[] = [];
     const result = await run(
       testClient(complete),
       "model",
@@ -90,15 +88,14 @@ describe("TanStack agent lifecycle", () => {
         }),
       ],
       {
-        onToolResult: resultHook,
-        onEvent: (event) => events.push(event),
+        middleware: [{ onToolPhaseComplete: (_ctx, info) => resultHook(info.results) }],
       },
     );
     expect(result.status).toBe("completed");
     expect(
       new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
     ).toBe(2);
-    expect(result.modelCalls.used).toBe(2);
+    expect(complete).toHaveBeenCalledTimes(2);
     expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
     expect(result.messages[2].content[0]).toMatchObject({
       type: "tool_result",
@@ -108,17 +105,25 @@ describe("TanStack agent lifecycle", () => {
     });
     expect(result.messages.at(-1)?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
     expect(resultHook).toHaveBeenCalledOnce();
-    expect(events.map((event) => event.sequence)).toEqual(events.map((_, i) => i));
+    expect(resultHook).toHaveBeenCalledWith([expect.objectContaining({ toolCallId: "call" })]);
     expect(complete.mock.calls[1][0].messages).toEqual(
       expect.arrayContaining([expect.objectContaining({ role: "tool", toolCallId: "call" })]),
     );
   });
 
-  it("stops a repeated tool cycle at the shared model budget", async () => {
+  it("bounds repeated tool cycles with TanStack's configured iteration limit", async () => {
     const complete = vi.fn(async () => call(crypto.randomUUID()));
-    const result = await run(testClient(complete), "model", "", prompt, [tool()], { maxTurns: 2 });
-    expect(result.status).toBe("max_turns");
-    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
+    const result = await run(testClient(complete), "model", "", prompt, [tool()]);
+    expect(result.status).toBe("completed");
+    expect(complete).toHaveBeenCalledTimes(100);
+  });
+
+  it("accepts a native loop strategy without creating a synthetic failure", async () => {
+    const complete = vi.fn(async () => call(crypto.randomUUID()));
+    const result = await run(testClient(complete), "model", "", prompt, [tool()], {
+      agentLoopStrategy: maxIterations(2),
+    });
+    expect(result.status).toBe("completed");
     expect(complete).toHaveBeenCalledTimes(2);
   });
 
@@ -144,7 +149,7 @@ describe("TanStack agent lifecycle", () => {
     controller.abort();
     const complete = vi.fn();
     const result = await run(testClient(complete), "model", "", prompt, [], {
-      invocationContext: new AgentInvocationContext({ signal: controller.signal }),
+      context: { signal: controller.signal },
       options: { signal: new AbortController().signal },
     });
     expect(result.status).toBe("aborted");
@@ -188,13 +193,11 @@ describe("TanStack agent lifecycle", () => {
           parameters: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] },
         },
       ],
-      { onToolResult: resultHook },
+      { middleware: [{ onToolPhaseComplete: (_ctx, info) => resultHook(info.results) }] },
     );
     expect(result.status).toBe("completed");
     expect(execute).not.toHaveBeenCalled();
-    expect(resultHook).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.objectContaining({ code: "TOOL_EXECUTION_ERROR" }) }),
-    );
+    expect(resultHook).toHaveBeenCalledWith([expect.objectContaining({ toolCallId: "bad" })]);
     expect(result.messages.flatMap((m) => m.content)).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "tool_result", id: "bad" })]),
     );
@@ -253,9 +256,9 @@ describe("TanStack agent lifecycle", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
-  it("charges delegated calls to the same invocation budget", async () => {
+  it("gives each delegated run its own native iteration limit", async () => {
     const child = vi.fn().mockResolvedValue(done);
-    const parent = vi.fn().mockResolvedValue(call());
+    const parent = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
     const result = await run(
       testClient(parent),
       "model",
@@ -264,17 +267,17 @@ describe("TanStack agent lifecycle", () => {
       [
         tool(async (_args, ctx) => {
           const result = await run(testClient(child), "model", "", prompt, [], {
-            invocationContext: ctx?.invocationContext?.fork("child"),
+            context: { ...ctx?.invocationContext, subagentRunId: "child" },
+            agentLoopStrategy: maxIterations(1),
           });
           expect(result.status).toBe("completed");
           return [{ type: "text", text: "Done" }];
         }),
       ],
-      { maxModelCalls: 2 },
+      { agentLoopStrategy: maxIterations(2) },
     );
-    expect(result.status).toBe("max_turns");
-    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
-    expect(parent).toHaveBeenCalledOnce();
+    expect(result.status).toBe("completed");
+    expect(parent).toHaveBeenCalledTimes(2);
     expect(child).toHaveBeenCalledOnce();
   });
 
@@ -295,25 +298,8 @@ describe("TanStack agent lifecycle", () => {
     expect(
       new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
     ).toBe(2);
-    expect(result.modelCalls.used).toBe(2);
+    expect(complete).toHaveBeenCalledTimes(2);
     expect(result.messages.at(-1)?.content.at(-1)).toMatchObject({ type: "artifact_ref", path: "/a.html" });
     expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Verify /a.html");
-  });
-
-  it("isolates lifecycle observer failures and finalizes before reentrant observers", async () => {
-    const observer = vi.fn(() => {
-      throw new Error("Observer failed");
-    });
-    expect(
-      (await run(testClient(vi.fn().mockResolvedValue(done)), "model", "", prompt, [], { onEvent: observer })).status,
-    ).toBe("completed");
-    const nested = vi.fn();
-    const controller = new AgentRunController({
-      onEvent: (event) => {
-        if (event.type === "run.completed") nested(controller.finish("failed", "error", []));
-      },
-    });
-    const result = controller.finish("completed", "end_turn", prompt);
-    expect(nested).toHaveBeenCalledExactlyOnceWith(result);
   });
 });

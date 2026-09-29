@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { maxIterations } from "@tanstack/ai";
 import { after, before, describe, test } from "node:test";
 import {
   GATEWAY_URL,
   createResponseFaultInjector,
-  lifecycleTypes,
+  contentParts,
+  chunkTypes,
+  observeRun,
   messageText,
   REQUEST_TIMEOUT_MS,
   resultDetail,
@@ -61,8 +64,14 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         [{ role: Role.User, content: [{ type: "text", text: "Run the recovery fixture." }] }],
         [],
         {
-          maxTurns: 1,
-          onStream: (content) => snapshots.push(content),
+          agentLoopStrategy: maxIterations(1),
+          middleware: [
+            {
+              onChunk: (_ctx, chunk) => {
+                if (chunk.type === "TEXT_MESSAGE_CONTENT") snapshots.push(chunk.delta);
+              },
+            },
+          ],
           options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
         },
       );
@@ -79,7 +88,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         `Reply with exactly ${marker}.`,
         [{ role: Role.User, content: [{ type: "text", text: "Retry the request." }] }],
         [],
-        { maxTurns: 1, options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+        { agentLoopStrategy: maxIterations(1), options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
       );
       assert.equal(retry.status, "completed", resultDetail(retry));
       assert.equal(messageText(retry.messages.slice(-1)).trim(), marker);
@@ -90,9 +99,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
   void test(
     "compacts history with a real summarizer and continues from the summary",
     async () => {
-      const { compactIfNeeded, prepareChatMessages } = await harness.vite.ssrLoadModule(
-        "/src/features/chat/lib/chatHistory.ts",
-      );
+      const { chatCompaction } = await harness.vite.ssrLoadModule("/src/features/chat/lib/chatCompaction.ts");
       const marker = "WINGMAN_COMPACT_91B7";
       const messages = [
         { role: Role.User, content: [{ type: "text", text: `Remember this exact marker for later: ${marker}` }] },
@@ -102,31 +109,31 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         },
         { role: Role.User, content: [{ type: "text", text: "Return the exact marker from earlier. Nothing else." }] },
       ];
-      const compacted = await compactIfNeeded(messages, {
-        threshold: 1,
-        client,
-        summarizerModel: selectedModel,
-        fallbackModel: selectedModel,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      assert.notEqual(compacted, messages, "The real summary did not reduce the context");
-      assert.equal(compacted.length, messages.length + 1, "Original history must be retained");
-      const prepared = prepareChatMessages(compacted);
-      assert(prepared[0].content.some((part) => part.type === "summary"));
-      assert(!JSON.stringify(prepared).includes("Redundant background material. The marker"));
-      const result = await run(client, selectedModel, "Follow the user's instructions.", compacted, [], {
-        prepareMessages: prepareChatMessages,
-        maxTurns: 1,
-        options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+      const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      let prepared;
+      const result = await run(client, selectedModel, "Follow the user's instructions.", messages, [], {
+        middleware: [
+          chatCompaction(client, 512, selectedModel, signal),
+          {
+            onConfig: (ctx, config) => {
+              if (ctx.phase === "beforeModel") prepared = config.providerMessages;
+            },
+          },
+        ],
+        agentLoopStrategy: maxIterations(1),
+        options: { signal },
       });
       assert.equal(result.status, "completed", resultDetail(result));
+      assert(prepared, "Native compaction did not prepare a smaller provider context");
+      assert(!JSON.stringify(prepared).includes("Redundant background material. The marker"));
+      assert.deepEqual(result.messages[1].content, messages[1].content, "Original history must be retained");
       assert.match(messageText(result.messages.slice(-1)), new RegExp(marker));
     },
     { timeout: REQUEST_TIMEOUT_MS * 2 },
   );
 
   void test(
-    "streams a complete agent turn with ordered lifecycle events",
+    "streams a complete agent turn with native lifecycle events",
     async () => {
       const events = [];
       const result = await run(
@@ -135,23 +142,15 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         "This is a transport test. Reply with exactly WINGMAN_E2E_OK and no other text.",
         [{ role: Role.User, content: [{ type: "text", text: "Run the transport test." }] }],
         [],
-        { agentName: "gateway-e2e", onEvent: (event) => events.push(event), maxTurns: 1 },
+        { agentName: "gateway-e2e", middleware: [observeRun(events)], agentLoopStrategy: maxIterations(1) },
       );
 
       assert.equal(result.status, "completed", resultDetail(result));
       assert.match(messageText(result.messages), /WINGMAN_E2E_OK/i);
-      assert.deepEqual(lifecycleTypes(events), [
-        "run.started",
-        "model.started",
-        "model.streaming",
-        "model.completed",
-        "run.completed",
-      ]);
-      assert.deepEqual(
-        events.map((event) => event.sequence),
-        events.map((_, index) => index),
-      );
-      assert.equal(result.modelCalls.used, 1);
+      assert.equal(events[0]?.type, "RUN_STARTED");
+      assert.equal(events.at(-1)?.type, "RUN_FINISHED");
+      assert(chunkTypes(events).includes("TEXT_MESSAGE_CONTENT"));
+      assert.equal(events.modelCalls, 1);
     },
     { timeout: REQUEST_TIMEOUT_MS },
   );
@@ -186,12 +185,12 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         `You are running an end-to-end tool protocol test. You MUST call lookup_e2e_fixture exactly once with key "wingman". After receiving its result, reply with exactly that result and no other text.`,
         [{ role: Role.User, content: [{ type: "text", text: "Look up the E2E fixture now." }] }],
         [tool],
-        { agentName: "gateway-tool-e2e", onEvent: (event) => events.push(event), maxTurns: 3 },
+        { agentName: "gateway-tool-e2e", middleware: [observeRun(events)], agentLoopStrategy: maxIterations(3) },
       );
 
       assert.equal(result.status, "completed", resultDetail(result));
       assert.deepEqual(calls, [{ key: "wingman" }]);
-      assert.equal(contexts[0]?.runId, result.runId);
+      assert.equal(contexts[0]?.runId, events.find((event) => event.type === "RUN_STARTED")?.runId);
       assert(contexts[0]?.invocationContext);
       assert.match(messageText(result.messages), new RegExp(marker));
 
@@ -205,10 +204,10 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       assert(toolResult, "The persisted transcript is missing the tool result");
       assert.equal(toolResult.id, toolCall.id);
       assert.deepEqual(
-        lifecycleTypes(events).filter((type) => type.startsWith("tool.")),
-        ["tool.started", "tool.completed"],
+        chunkTypes(events).filter((type) => type === "TOOL_CALL_START" || type === "TOOL_CALL_RESULT"),
+        ["TOOL_CALL_START", "TOOL_CALL_RESULT"],
       );
-      assert.equal(result.modelCalls.used, 2);
+      assert.equal(events.modelCalls, 2);
     },
     { timeout: REQUEST_TIMEOUT_MS * 2 },
   );
@@ -342,7 +341,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         tools,
         {
           agentName: "gateway-artifact-e2e",
-          maxTurns: 3,
+          agentLoopStrategy: maxIterations(3),
           beforeFinish: async ({ runId }) => {
             const now = new Date().toISOString();
             const job = artifactModule.ArtifactJobSchema.parse({
@@ -399,7 +398,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
   );
 
   void test(
-    "cancels an in-flight streamed run without committing a partial assistant turn",
+    "cancels an in-flight streamed run and preserves its native partial transcript",
     async () => {
       const controller = new AbortController();
       const prompt = { role: Role.User, content: [{ type: "text", text: "Write several sentences." }] };
@@ -411,15 +410,21 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         [],
         {
           agentName: "gateway-cancel-e2e",
-          maxTurns: 1,
+          agentLoopStrategy: maxIterations(1),
           options: { signal: controller.signal },
-          onStream: () => controller.abort("E2E stream cancellation"),
+          middleware: [
+            {
+              onChunk: (_ctx, chunk) => {
+                if (chunk.type === "TEXT_MESSAGE_CONTENT") controller.abort("E2E stream cancellation");
+              },
+            },
+          ],
         },
       );
 
       assert.equal(result.status, "aborted");
-      assert.equal(result.stopReason, "abort");
-      assert.deepEqual(result.messages, [prompt]);
+      assert.deepEqual(result.messages[0]?.content, prompt.content);
+      assert.equal(contentParts(result.messages, "tool_result").length, 0);
     },
     { timeout: REQUEST_TIMEOUT_MS },
   );
@@ -433,11 +438,10 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         "Reply briefly.",
         [{ role: Role.User, content: [{ type: "text", text: "hello" }] }],
         [],
-        { agentName: "gateway-error-e2e", maxTurns: 1 },
+        { agentName: "gateway-error-e2e", agentLoopStrategy: maxIterations(1) },
       );
 
       assert.equal(result.status, "failed");
-      assert.equal(result.stopReason, "error");
       assert(result.error?.code);
       assert(result.error?.message);
     },

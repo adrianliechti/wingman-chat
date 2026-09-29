@@ -20,12 +20,25 @@ export function lastAssistantText(messages) {
     .join("\n");
 }
 
-export function lifecycleTypes(events) {
+export function chunkTypes(events) {
   return events.map((event) => event.type);
 }
 
+/** Record native middleware events and iteration counts for gateway assertions. */
+export function observeRun(events) {
+  events.modelCalls = 0;
+  return {
+    onIteration() {
+      events.modelCalls++;
+    },
+    onChunk(_ctx, chunk) {
+      events.push(chunk);
+    },
+  };
+}
+
 export function resultDetail(result) {
-  return result.error ? JSON.stringify(result.error) : `${result.status}/${result.stopReason}`;
+  return result.error ? JSON.stringify(result.error) : result.status;
 }
 
 export function contentParts(messages, type) {
@@ -165,7 +178,6 @@ export async function startGatewayHarness(options = {}) {
   });
   let clientModule;
   let agentModule;
-  let controllerModule;
   let chatModule;
   let client;
   let availableModels;
@@ -176,7 +188,6 @@ export async function startGatewayHarness(options = {}) {
     globalThis.window = { location: { origin: `http://127.0.0.1:${address.port}` } };
     clientModule = await vite.ssrLoadModule("/src/shared/lib/client.ts");
     agentModule = await vite.ssrLoadModule("/src/shared/lib/agent.ts");
-    controllerModule = await vite.ssrLoadModule("/src/shared/lib/agent-run-controller.ts");
     chatModule = await vite.ssrLoadModule("/src/shared/types/chat.ts");
     client = new clientModule.Client();
     availableModels = await client.listModels();
@@ -190,7 +201,6 @@ export async function startGatewayHarness(options = {}) {
     vite,
     client,
     run: agentModule.run,
-    AgentInvocationContext: controllerModule.AgentInvocationContext,
     Role: chatModule.Role,
     availableModels,
     async close() {

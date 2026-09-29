@@ -17,7 +17,6 @@ vi.mock("@/shared/lib/opfs", () => opfs);
 
 import { FileSystemManager, resolveArtifactFileSystem } from "./fs";
 import { ArtifactReadWriteManager } from "./artifactFileTools";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { executeArtifactCode, type SandboxExecutor } from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactRevision } from "@/shared/types/artifact";
@@ -406,7 +405,7 @@ describe("coordinated artifact tools", () => {
       { file_path: "/a.txt" },
       {
         runId: "child",
-        invocationContext: new AgentInvocationContext().fork("subagent"),
+        invocationContext: { subagentRunId: crypto.randomUUID() },
       },
     );
     const result = await tools
@@ -427,7 +426,7 @@ describe("coordinated artifact tools", () => {
         { file_path: "/a.txt" },
         {
           runId: `child-${i}`,
-          invocationContext: new AgentInvocationContext().fork("subagent"),
+          invocationContext: { subagentRunId: crypto.randomUUID() },
         },
       );
     }
@@ -446,7 +445,7 @@ describe("coordinated artifact tools", () => {
       { file_path: "/new.txt", content: "first" },
       {
         runId: "chat-turn",
-        invocationContext: new AgentInvocationContext(),
+        invocationContext: {},
       },
     );
     const edit = tools.find((tool) => tool.name === "artifacts_edit")!;
@@ -458,7 +457,7 @@ describe("coordinated artifact tools", () => {
     await fs.createFile("/new.txt", "second external");
     const result = await edit.function(
       { edits: [{ file_path: "/new.txt", old_string: "second", new_string: "third" }] },
-      { runId: "next-chat-turn", invocationContext: new AgentInvocationContext() },
+      { runId: "next-chat-turn", invocationContext: {} },
     );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/new.txt")?.content).toBe("second external");

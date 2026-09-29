@@ -283,7 +283,7 @@ function createInternetProvider(client: Client, internet: Config["internet"]): T
           innerTools,
           {
             agentName: "research",
-            invocationContext: context?.invocationContext?.fork("research"),
+            context: { ...context?.invocationContext, subagentRunId: crypto.randomUUID() },
             options: { signal: context?.signal },
             createToolContext: () => ({ model }),
             // Nest the inner research agent under the outer execute_tool span
@@ -306,8 +306,7 @@ function createInternetProvider(client: Client, internet: Config["internet"]): T
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
         const text = last ? getFinalTextFromContent(last.content).trim() : "";
-        const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
-        return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
+        return [{ type: "text" as const, text: text || "No answer produced." }];
       } catch (error) {
         return [
           {

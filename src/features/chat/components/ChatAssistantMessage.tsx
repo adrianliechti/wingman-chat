@@ -109,7 +109,7 @@ function ThinkingIndicator({
   const word = getThinkingWord(runKey);
   const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
   return (
-    <div className="rounded-lg overflow-hidden max-w-full">
+    <div role="status" aria-label="Assistant is working" className="rounded-lg overflow-hidden max-w-full">
       <div className="flex items-center gap-2 min-w-0">
         <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
         <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}…</span>
@@ -243,7 +243,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 }: ChatAssistantMessageProps) {
   const { messages, toolMeta } = useChatConversation();
   const { pendingElicitation, status } = useChatRunState();
-  const { resolveElicitation, retryMessage, continueRun } = useChatActions();
+  const { resolveElicitation, retryMessage } = useChatActions();
   const { providers } = useToolsContext();
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
 
@@ -290,14 +290,12 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
   // Handle error messages
   if (message.error) {
-    const isMaxTurns = message.error.code === "MAX_TURNS";
     return (
       <ErrorMessage
         title={message.error.code || "Error"}
         message={message.error.message}
-        variant={isMaxTurns ? "neutral" : "error"}
-        actionLabel={isMaxTurns ? "Continue" : "Retry"}
-        onAction={isLast && !isResponding ? (isMaxTurns ? continueRun : retryMessage) : undefined}
+        actionLabel="Retry"
+        onAction={isLast && !isResponding ? retryMessage : undefined}
       />
     );
   }

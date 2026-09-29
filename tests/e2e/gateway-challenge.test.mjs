@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { maxIterations } from "@tanstack/ai";
 import { execFile } from "node:child_process";
 import { after, before, describe, test } from "node:test";
 import { promisify } from "node:util";
@@ -8,7 +9,8 @@ import {
   contentParts,
   createResponseFaultInjector,
   lastAssistantText,
-  lifecycleTypes,
+  chunkTypes,
+  observeRun,
   REQUEST_TIMEOUT_MS,
   resultDetail,
   startGatewayHarness,
@@ -49,15 +51,9 @@ function user(text) {
 }
 
 function assertEventContract(events, result) {
-  assert.equal(events[0]?.type, "run.started");
-  assert.equal(events.at(-1)?.type, "run.completed");
-  assert.equal(events.at(-1)?.status, result.status);
-  assert.deepEqual(
-    events.map((event) => event.sequence),
-    events.map((_, index) => index),
-  );
-  assert(events.every((event) => event.runId === result.runId));
-  assert(events.every((event) => !Number.isNaN(Date.parse(event.at))));
+  assert.equal(events[0]?.type, "RUN_STARTED");
+  if (result.status === "completed") assert.equal(events.at(-1)?.type, "RUN_FINISHED");
+  if (result.status === "failed") assert(chunkTypes(events).includes("RUN_ERROR"));
 }
 
 function resultTexts(messages, toolName) {
@@ -146,9 +142,15 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             [],
             {
               agentName: "challenge-stream-retry",
-              maxTurns: 1,
-              onEvent: (event) => events.push(event),
-              onStream: (content) => streamSnapshots.push(content.map((part) => ({ ...part }))),
+              agentLoopStrategy: maxIterations(1),
+              middleware: [
+                observeRun(events),
+                {
+                  onChunk: (_ctx, chunk) => {
+                    if (chunk.type === "TEXT_MESSAGE_CONTENT") streamSnapshots.push(chunk.delta);
+                  },
+                },
+              ],
             },
           );
 
@@ -164,7 +166,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             streamSnapshots.some((content) => content.length > 0),
             "The injected attempt did not stream a partial response",
           );
-          assert.equal(result.modelCalls.used, 1);
+          assert.equal(events.modelCalls, 1);
 
           const retry = await run(
             client,
@@ -172,14 +174,13 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             `Begin with exactly ${partialMarker}, write two short sentences, and end with exactly STREAM_RETRY_OK.`,
             [user("Retry the interrupted request.")],
             [],
-            { maxTurns: 1 },
+            { agentLoopStrategy: maxIterations(1) },
           );
           assert.equal(retry.status, "completed", resultDetail(retry));
           const finalText = lastAssistantText(retry.messages);
           assert.match(finalText, /STREAM_RETRY_OK/);
           assert.equal(finalText.split(partialMarker).length - 1, 1, "The failed run's text leaked into a fresh run");
           assertEventContract(events, result);
-          assert.equal(lifecycleTypes(events).filter((type) => type === "model.started").length, 1);
         },
         { timeout: REQUEST_TIMEOUT_MS * 3 },
       );
@@ -191,7 +192,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const marker = `RECOVERY_${model.replaceAll(/[^A-Za-z0-9]/g, "_").toUpperCase()}_OK`;
           const attempts = [];
           const events = [];
-          const runtimeFeedback = [];
+          const metaUpdates = [];
           let verificationCount = 0;
           const tool = {
             name: "unstable_fixture",
@@ -224,8 +225,8 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             [tool],
             {
               agentName: "challenge-tool-recovery",
-              maxTurns: 6,
-              onEvent: (event) => events.push(event),
+              agentLoopStrategy: maxIterations(6),
+              middleware: [observeRun(events)],
               beforeFinish: async () => {
                 verificationCount++;
                 if (attempts.length < 2) {
@@ -239,7 +240,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 }
                 return { action: "finish" };
               },
-              onRuntimeFeedback: (message) => runtimeFeedback.push(message),
+              onToolMeta: (_id, meta) => metaUpdates.push(meta),
             },
           );
 
@@ -247,21 +248,26 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           assert.deepEqual(attempts, [1, 2]);
           assert.match(lastAssistantText(result.messages), new RegExp(marker));
           assert.equal(verificationCount, 2);
-          assert.equal(runtimeFeedback.length, 1);
+          assert(
+            result.messages.some(
+              (message) =>
+                message.role === "user" &&
+                message.content.some((part) => part.type === "text" && part.text.includes("Verifier correction")),
+            ),
+          );
           const results = contentParts(result.messages, "tool_result").filter((part) => part.name === tool.name);
           assert.equal(results.length, 2);
           assert.equal(result.messages.find((message) => message.error)?.error?.code, "TOOL_EXECUTION_ERROR");
           assert.equal(results[0].id, contentParts(result.messages, "tool_call")[0].id);
           assert.equal(results[1].id, contentParts(result.messages, "tool_call")[1].id);
-          assert(lifecycleTypes(events).includes("tool.updated"));
-          assert.equal(lifecycleTypes(events).filter((type) => type === "verification.started").length, 2);
+          assert(metaUpdates.some((meta) => meta.phase === "recovered"));
           assertEventContract(events, result);
         },
         { timeout: REQUEST_TIMEOUT_MS * 4 },
       );
 
       void test(
-        "shares cancellation and model-call budget with a nested agent",
+        "shares cancellation while using independent native limits for a nested agent",
         async () => {
           const model = modelIds[modelIndex];
           const parentEvents = [];
@@ -288,9 +294,9 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 [],
                 {
                   agentName: "challenge-child",
-                  invocationContext: context.invocationContext.fork("delegate"),
-                  maxTurns: 1,
-                  onEvent: (event) => childEvents.push(event),
+                  context: { ...context.invocationContext, subagentRunId: crypto.randomUUID() },
+                  agentLoopStrategy: maxIterations(1),
+                  middleware: [observeRun(childEvents)],
                 },
               );
               assert.equal(childResult.status, "completed", resultDetail(childResult));
@@ -306,20 +312,16 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             [delegate],
             {
               agentName: "challenge-parent",
-              maxTurns: 3,
-              maxModelCalls: 3,
-              onEvent: (event) => parentEvents.push(event),
+              agentLoopStrategy: maxIterations(3),
+              middleware: [observeRun(parentEvents)],
             },
           );
 
           assert.equal(result.status, "completed", resultDetail(result));
           assert.match(lastAssistantText(result.messages), new RegExp(childMarker));
-          assert.equal(result.modelCalls.used, 3);
-          assert.equal(result.modelCalls.limit, 3);
-          assert.equal(childResult?.modelCalls.used, 2, "The child snapshot should include parent + child calls");
-          assert.equal(parentEvents[0].invocationId, childEvents[0].invocationId);
-          assert(childEvents.every((event) => event.branch === "delegate"));
-          assert(parentEvents.every((event) => event.branch === undefined));
+          assert.equal(parentEvents.modelCalls, 2);
+          assert.equal(childEvents.modelCalls, 1);
+          assert.notEqual(parentEvents[0].runId, childEvents[0].runId);
           assertEventContract(parentEvents, result);
           assertEventContract(childEvents, childResult);
         },
@@ -365,21 +367,18 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             [waitTool],
             {
               agentName: "challenge-tool-abort",
-              maxTurns: 2,
+              agentLoopStrategy: maxIterations(2),
               options: { signal: controller.signal },
-              onEvent: (event) => events.push(event),
+              middleware: [observeRun(events)],
             },
           );
 
           assert(toolStarted, "The model did not select the required tool");
           assert.equal(result.status, "aborted");
-          assert.equal(result.stopReason, "abort");
           assert.equal(contentParts(result.messages, "tool_result").length, 0);
           assert.equal(contentParts(result.messages, "tool_call").length, 1);
-          assert.deepEqual(
-            lifecycleTypes(events).filter((type) => type.startsWith("tool.")),
-            ["tool.started"],
-          );
+          assert.equal(chunkTypes(events).filter((type) => type === "TOOL_CALL_START").length, 1);
+          assert(!chunkTypes(events).includes("TOOL_CALL_RESULT"));
           assertEventContract(events, result);
         },
         { timeout: REQUEST_TIMEOUT_MS * 2 },
@@ -414,13 +413,11 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             "Start continue_loop at step 1 and ALWAYS call it again with the next step after every result. Never finish with text.",
             [user("Start the bounded loop.")],
             [loopTool],
-            { agentName: "challenge-loop-budget", maxTurns: 2 },
+            { agentName: "challenge-loop-budget", agentLoopStrategy: maxIterations(2) },
           );
 
-          assert.equal(result.status, "max_turns");
-          assert.equal(result.stopReason, "max_turns");
+          assert.equal(result.status, "completed");
           assert.deepEqual(calls, [1, 2]);
-          assert.equal(result.modelCalls.used, 2);
           assert.equal(contentParts(result.messages, "tool_result").length, 2);
         },
         { timeout: REQUEST_TIMEOUT_MS * 3 },
@@ -482,7 +479,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               `Call execute_python_code exactly once with inline Python that constructs this object and prints json.dumps(value, ensure_ascii=False, sort_keys=True): ${JSON.stringify(expected)}. The code must include an import, a multiline object literal, nested quotes, backslashes, and Unicode. Omit path because it is unused. Do not call any file or JavaScript tools. After execution, reply with exactly the printed JSON.`,
               [user("Run the quote-heavy Python JSON fixture.")],
               tools,
-              { agentName: "challenge-python-schema", maxTurns: 3 },
+              { agentName: "challenge-python-schema", agentLoopStrategy: maxIterations(3) },
             );
 
             assert.equal(result.status, "completed", resultDetail(result));
@@ -524,8 +521,8 @@ Do not skip the intentional invalid write or its edit repair.`,
               tools,
               {
                 agentName: "challenge-artifact-workflow",
-                maxTurns: 10,
-                onEvent: (event) => events.push(event),
+                agentLoopStrategy: maxIterations(10),
+                middleware: [observeRun(events)],
               },
             );
 
@@ -568,7 +565,7 @@ Do not skip the intentional invalid write or its edit repair.`,
 
             const manifest = await verifierModule.verifyArtifactJob(
               workspace.artifactFs,
-              artifactJob("data", "/result.json", result.runId, ["/sources/note.txt"]),
+              artifactJob("data", "/result.json", events[0].runId, ["/sources/note.txt"]),
             );
             assert.equal(manifest.verification.status, "clean", JSON.stringify(manifest.verification));
             assert.equal(manifest.files.find((file) => file.path === "/result.json")?.role, "primary");
@@ -600,15 +597,15 @@ Do not skip the intentional invalid write or its edit repair.`,
         [],
         {
           agentName: "challenge-retry-abort",
-          maxTurns: 1,
+          agentLoopStrategy: maxIterations(1),
           options: { signal: controller.signal },
         },
       );
 
       const afterFault = faults.snapshot();
       assert.equal(result.status, "aborted");
-      assert.equal(result.stopReason, "abort");
-      assert.deepEqual(result.messages, [prompt]);
+      assert.deepEqual(result.messages[0]?.content, prompt.content);
+      assert.equal(contentParts(result.messages, "tool_result").length, 0);
       assert.equal(afterFault.droppedCount - beforeFault.droppedCount, 1);
       assert.equal(afterFault.requestCount - beforeFault.requestCount, 1, "An aborted retry issued another request");
     },

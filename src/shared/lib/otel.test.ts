@@ -153,7 +153,7 @@ it("uses one native tool span and parents delegated calls to it without an async
           await runMessages(testClient(complete), "child", "", [], [], {
             agentName: "child",
             parentContext: context?.agentContext,
-            invocationContext: context?.invocationContext,
+            context: context?.invocationContext,
           });
           return [{ type: "text", text: "Private tool result" }];
         },

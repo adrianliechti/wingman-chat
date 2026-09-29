@@ -1,3 +1,4 @@
+import { maxIterations } from "@tanstack/ai";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { after, before, describe, test } from "node:test";
@@ -222,10 +223,10 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
           `This is a schema transport probe. Call artifacts_create exactly once and emit no prose. Use file_path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
           [user("Create the exact fixture now.")],
           [createFile],
-          { agentName: "bedrock-create-soak", maxTurns: 1 },
+          { agentName: "bedrock-create-soak", agentLoopStrategy: maxIterations(1) },
         );
 
-        assert.equal(result.status, "max_turns", resultDetail(result));
+        assert.equal(result.status, "completed", resultDetail(result));
         const observed = recordArguments(result, "artifacts_create", "content");
         assert.equal(
           (await workspace.read(fixture.path))?.content,
@@ -266,10 +267,10 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
           `This is a schema transport probe. Call execute_python_code exactly once and emit no prose. Omit path.\n${exactBlock("PYTHON_CODE", fixture.code)}`,
           [user("Execute the exact Python fixture now.")],
           [pythonTool],
-          { agentName: "bedrock-python-soak", maxTurns: 1 },
+          { agentName: "bedrock-python-soak", agentLoopStrategy: maxIterations(1) },
         );
 
-        assert.equal(result.status, "max_turns", resultDetail(result));
+        assert.equal(result.status, "completed", resultDetail(result));
         const observed = recordArguments(result, "execute_python_code", "code");
         assert.equal(parsedCalls.length, 1);
         const toolResult = contentParts(result.messages, "tool_result").find(
