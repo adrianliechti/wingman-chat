@@ -239,7 +239,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // sticky after trackpad taps, so the buttons wouldn't reliably hide.
   const [hovered, setHovered] = useState(false);
 
-  // Files written during this turn (create + python/javascript), surfaced as
+  // Files written during this turn (file tools + execute_script), surfaced as
   // clickable chips on the turn's completion message rather than auto-opening
   // the artifacts drawer.
   const turnArtifactPaths = useMemo(
@@ -346,7 +346,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               const meta = toolMeta[part.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
               const tool = findTool(providers, part.name);
-              const header = resolveToolHeader(tool, part.name, part.arguments, { running: true });
+              const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
               return (
                 <RunningToolRow
                   key={getMessagePartKey(part, i, "loading-tool-call")}
@@ -418,7 +418,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
             const tool = findTool(providers, part.name);
-            const header = resolveToolHeader(tool, part.name, part.arguments, { running: true });
+            const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
             // Only the first tool call in a run gets top spacing (to match the
             // committed result's gap); consecutive concurrent calls stay tight.
             const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";

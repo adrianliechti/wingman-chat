@@ -9,7 +9,7 @@ export const STUDIO_PROVIDER_ID = "studio";
  * "Studio" — the single creative-output capability, merging the former Office,
  * Designer, and Image entries. It injects one system prompt (studio.txt):
  * produce real document/slide/sheet/PDF/audio files and visual/interactive
- * artifacts with the Python/JavaScript executors, reading the matching format
+ * artifacts with execute_script, reading the matching format
  * skill before building.
  *
  * Execution uses the default chat tools and artifacts workspace. Enabling Studio

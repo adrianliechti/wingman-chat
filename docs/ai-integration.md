@@ -107,9 +107,12 @@ already-loaded markers. Saved `read_skill` results remain readable; their plugin
 argument is used to distinguish legacy identities. New calls use `load_skill`
 with `name`, and `read_skill_resource` with `skill` and `path`.
 
-Both `execute_python_code` and `execute_javascript_code` accept inline `code`,
-or `path` to an artifact or selected skill resource (including qualified plugin
-resources). Optional `args` supplies script arguments without shell parsing.
+`execute_script` accepts inline `code` with an explicit `language` (`python`,
+`javascript`, or `bash`), or `path` to an artifact or selected skill resource
+(including qualified plugin resources). File scripts detect the runtime from a
+recognized shebang, then the extension (`.py`, `.js`/`.mjs`/`.cjs`, `.sh`/`.bash`);
+`language` overrides detection. Source syntax is never guessed. Optional `args`
+supplies script arguments without shell parsing.
 Resource resolution happens after mounting the selected files; an existing
 artifact at the same path retains precedence. Mounted resource files are removed
 from the committed snapshot, so execution does not edit the skill bundle.
@@ -123,7 +126,20 @@ runs; bundled library imports remain cached. Successful `sys.exit(0)` completes
 normally, while a nonzero exit fails without committing workspace changes.
 JavaScript scripts receive `process.argv`, `__filename` and `__dirname`, with
 resources available through `vfs`. They retain the existing browser runtime:
-no Node module loader, shell or Code Mode dependency is involved.
+no Node module loader or Code Mode dependency is involved.
+
+Bash uses just-bash in a fresh worker with its virtual filesystem rooted at
+`/home/user/`. File scripts receive `$0` and literal positional arguments and can
+invoke `bash`/`sh` scripts. Use `$(dirname "$0")` for adjacent resources; the
+current just-bash version does not reliably populate `BASH_SOURCE`. Shell
+state resets each run. Successful snapshots commit text and binary file
+creations, modifications and deletions through the same workspace transaction
+as Python and JavaScript; failed or cancelled runs do not commit. Native
+programs, Python/Node subprocesses, package installation and direct networking
+are unavailable. `ocr` and `extract` read virtual files and use the configured
+extraction bridge; `llm` accepts prompts and piped text and uses the owning
+run's model by default. These service commands support stdout redirection and
+`-o` output files. LLM calls have fresh context, as in Python and JavaScript.
 
 MCP tools use [lazy tool discovery](https://tanstack.com/ai/latest/docs/tools/lazy-tool-discovery).
 Chat initially sends the native discovery tool with a short catalog (tool names

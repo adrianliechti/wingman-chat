@@ -23,14 +23,7 @@ import { useTextSelection, type TextSelectionSnapshot } from "@/shared/ui/select
 import { downloadMarkdownAsDocx, getFileName } from "@/shared/lib/utils";
 import { DriveIcon } from "@/shared/ui/DriveIcon";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import {
-  DropdownMenu,
-  DropdownMenuItem,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-} from "@/shared/ui/DropdownMenu";
+import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
 import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
 import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
@@ -46,36 +39,22 @@ const DataEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DataEdit
 const DocxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/DocxEditor"), "DocxEditor");
 const HtmlEditor = lazyRouteComponent(() => import("@/shared/ui/editors/HtmlEditor"), "HtmlEditor");
 const JsEditor = lazyRouteComponent(() => import("@/shared/ui/editors/JsEditor"), "JsEditor");
-const MarkdownEditor = lazyRouteComponent(
-  () => import("@/shared/ui/editors/MarkdownEditor"),
-  "MarkdownEditor",
-);
-const MediaEditor = lazyRouteComponent(
-  () => import("@/shared/ui/editors/MediaEditor"),
-  "MediaEditor",
-);
-const MermaidEditor = lazyRouteComponent(
-  () => import("@/shared/ui/editors/MermaidEditor"),
-  "MermaidEditor",
-);
+const BashEditor = lazyRouteComponent(() => import("@/shared/ui/editors/BashEditor"), "BashEditor");
+const MarkdownEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MarkdownEditor"), "MarkdownEditor");
+const MediaEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MediaEditor"), "MediaEditor");
+const MermaidEditor = lazyRouteComponent(() => import("@/shared/ui/editors/MermaidEditor"), "MermaidEditor");
 const OfficeMarkdownEditor = lazyRouteComponent(
   () => import("@/shared/ui/editors/OfficeMarkdownEditor"),
   "OfficeMarkdownEditor",
 );
 const PdfEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PdfEditor"), "PdfEditor");
 const PptxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PptxEditor"), "PptxEditor");
-const PythonEditor = lazyRouteComponent(
-  () => import("@/shared/ui/editors/PythonEditor"),
-  "PythonEditor",
-);
+const PythonEditor = lazyRouteComponent(() => import("@/shared/ui/editors/PythonEditor"), "PythonEditor");
 const SvgEditor = lazyRouteComponent(() => import("@/shared/ui/editors/SvgEditor"), "SvgEditor");
 const TextEditor = lazyRouteComponent(() => import("@/shared/ui/editors/TextEditor"), "TextEditor");
 const XlsxEditor = lazyRouteComponent(() => import("@/shared/ui/editors/XlsxEditor"), "XlsxEditor");
 
-const ArtifactRevisionDiff = lazyRouteComponent(
-  () => import("./ArtifactRevisionDiff"),
-  "ArtifactRevisionDiff",
-);
+const ArtifactRevisionDiff = lazyRouteComponent(() => import("./ArtifactRevisionDiff"), "ArtifactRevisionDiff");
 
 const WIDE_DRAWER_PX = 680;
 /** Remembers whether a wide drawer shows the file column beside the editor. */
@@ -213,9 +192,7 @@ export function ArtifactsDrawer() {
     async (entry: ArtifactRevisionListing): Promise<RevisionView | null> => {
       if (!fs || !activeFile) return null;
       const file = await fs.readRevision(activeFile, entry.revision);
-      return file
-        ? { fs, path: activeFile, entry, content: file.content, contentType: file.contentType }
-        : null;
+      return file ? { fs, path: activeFile, entry, content: file.content, contentType: file.contentType } : null;
     },
     [fs, activeFile],
   );
@@ -262,17 +239,13 @@ export function ArtifactsDrawer() {
       closeRevision();
     } catch (error) {
       console.error("Failed to restore revision:", error);
-      notify.error(
-        "Restore failed",
-        error instanceof Error ? error.message : "The revision couldn't be restored.",
-      );
+      notify.error("Restore failed", error instanceof Error ? error.message : "The revision couldn't be restored.");
     }
     setRestoringRevision(false);
   }, [pinnedRevision, closeRevision]);
 
   const shownRevision =
-    [hoverRevision, pinnedRevision].find((view) => view && view.fs === fs && view.path === activeFile) ??
-    null;
+    [hoverRevision, pinnedRevision].find((view) => view && view.fs === fs && view.path === activeFile) ?? null;
   const canCompareRevision =
     !!activeFileData && DIFFABLE_KINDS.has(artifactKind(activeFileData.path, activeFileData.contentType));
 
@@ -329,9 +302,7 @@ export function ArtifactsDrawer() {
         console.error("Error uploading files:", error);
         notify.error(
           "Upload failed",
-          error instanceof Error
-            ? error.message
-            : "The files couldn't be added; the workspace was left unchanged.",
+          error instanceof Error ? error.message : "The files couldn't be added; the workspace was left unchanged.",
         );
       }
       setPendingUploads((count) => count - 1);
@@ -345,12 +316,7 @@ export function ArtifactsDrawer() {
       return uploadFiles(async () => {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          fetched.push(
-            await downloadDriveFile(
-              f,
-              config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES,
-            ),
-          );
+          fetched.push(await downloadDriveFile(f, config.artifacts?.maxFileSize ?? DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES));
         }
         return fetched;
       });
@@ -460,9 +426,7 @@ export function ArtifactsDrawer() {
       if (files.length > 0) {
         return (
           <div className="h-full flex items-center justify-center p-8">
-            <p className="text-sm text-neutral-400 dark:text-neutral-500">
-              Select a file from the sidebar
-            </p>
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">Select a file from the sidebar</p>
           </div>
         );
       }
@@ -470,9 +434,7 @@ export function ArtifactsDrawer() {
         <div className="h-full flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center">
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
-            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-              No artifacts yet
-            </h3>
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
               Drop files here or use Upload. Anything you create in the chat appears here too.
             </p>
@@ -510,11 +472,7 @@ export function ArtifactsDrawer() {
           contentType: shownRevision.contentType ?? activeFileData.contentType,
         }
       : activeFileData;
-    const editorKey = JSON.stringify([
-      fs?.chatId,
-      shownFile.path,
-      shownRevision?.entry.revision ?? "current",
-    ]);
+    const editorKey = JSON.stringify([fs?.chatId, shownFile.path, shownRevision?.entry.revision ?? "current"]);
     const kind = artifactKind(shownFile.path, shownFile.contentType);
 
     switch (kind) {
@@ -584,13 +542,8 @@ export function ArtifactsDrawer() {
         return (
           <div className="h-full flex items-center justify-center p-8">
             <div className="max-w-md text-center">
-              <FileIcon2
-                size={32}
-                className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600"
-              />
-              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-                Binary File
-              </h3>
+              <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
               <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
                 This file is stored as binary data and cannot be edited as plain text here.
               </p>
@@ -613,12 +566,7 @@ export function ArtifactsDrawer() {
         );
       case "svg":
         return (
-          <SvgEditor
-            key={editorKey}
-            content={shownFile.content}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
+          <SvgEditor key={editorKey} content={shownFile.content} viewMode={viewMode} onViewModeChange={setViewMode} />
         );
       case "mermaid":
         return (
@@ -666,19 +614,23 @@ export function ArtifactsDrawer() {
             />
           );
         }
+        if (lang === "sh" || lang === "bash") {
+          return (
+            <BashEditor
+              key={editorKey}
+              content={shownFile.content}
+              onRunReady={onRunReady}
+              onRunningChange={onRunningChange}
+              onSelectionRoot={onSelectionRoot}
+            />
+          );
+        }
         return (
-          <CodeEditor
-            key={editorKey}
-            content={shownFile.content}
-            language={lang}
-            onSelectionRoot={onSelectionRoot}
-          />
+          <CodeEditor key={editorKey} content={shownFile.content} language={lang} onSelectionRoot={onSelectionRoot} />
         );
       }
       default:
-        return (
-          <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />
-        );
+        return <TextEditor key={editorKey} content={shownFile.content} onSelectionRoot={onSelectionRoot} />;
     }
   };
 
@@ -735,12 +687,8 @@ export function ArtifactsDrawer() {
         <div className="absolute inset-0 bg-neutral-500/10 border-2 border-dashed border-neutral-400 dark:border-neutral-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
             <FileIcon2 size={48} className="text-neutral-500 mx-auto mb-3" />
-            <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-              Drop files here
-            </p>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              Files will be added to the project
-            </p>
+            <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-1">Drop files here</p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">Files will be added to the project</p>
           </div>
         </div>
       )}
@@ -803,10 +751,7 @@ export function ArtifactsDrawer() {
                     </MenuButton>
                   }
                 >
-                  <DropdownMenuItem
-                    icon={<Upload size={16} />}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
+                  <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
                     Upload
                   </DropdownMenuItem>
                   {config.drives.map((drive) => (
@@ -835,7 +780,7 @@ export function ArtifactsDrawer() {
             {(runHandler || activeFileData) && (
               <>
                 <div className="flex items-center gap-0.5">
-                      {/* Preview / code toggle, grouped with the other file actions */}
+                  {/* Preview / code toggle, grouped with the other file actions */}
                   {supportsPreview() && (
                     <div
                       ref={viewSliderRef}
@@ -880,11 +825,7 @@ export function ArtifactsDrawer() {
                             : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                         )}
                       >
-                        <Code
-                          size={11}
-                          strokeWidth={2.25}
-                          className="w-3.5 h-3.5 md:w-2.75 md:h-2.75"
-                        />
+                        <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
                       </button>
                     </div>
                   )}
@@ -918,9 +859,7 @@ export function ArtifactsDrawer() {
                   {activeFileData &&
                     fs &&
                     (() => {
-                      const isMarkdown =
-                        artifactKind(activeFileData.path, activeFileData.contentType) ===
-                        "markdown";
+                      const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
                       if (!isMarkdown) {
                         return (
                           <button

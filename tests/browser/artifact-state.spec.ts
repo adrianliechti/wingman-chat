@@ -261,16 +261,23 @@ if __name__ == "__main__":
   await expect(page.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
 });
 
-for (const language of ["javascript", "python"] as const) {
+for (const language of ["javascript", "python", "bash"] as const) {
   test(`${language} editor cancels on file and chat switches and releases the next Run button`, async ({ page }) => {
     await openFixture(page);
     const id = await ensureChat(page);
-    const extension = language === "python" ? "py" : "js";
+    const extension = { python: "py", javascript: "js", bash: "sh" }[language];
     const loop =
       language === "python"
         ? 'from pathlib import Path\nPath("discard.txt").write_text("discard")\nwhile True: pass'
-        : 'vfs.write("/discard.txt", "discard"); while (true) {}';
-    const safe = language === "python" ? 'print("Recovered")' : 'console.log("Recovered");';
+        : language === "bash"
+          ? "echo discard > discard.txt; sleep 30"
+          : 'vfs.write("/discard.txt", "discard"); while (true) {}';
+    const safe =
+      language === "python"
+        ? 'print("Recovered")'
+        : language === "bash"
+          ? "echo Recovered"
+          : 'console.log("Recovered");';
     await page.evaluate(
       async ({ id, extension, loop, safe }) => {
         await window.artifactsE2E.write(id, `/loop.${extension}`, loop);
@@ -295,7 +302,7 @@ for (const language of ["javascript", "python"] as const) {
     await expect(page.getByRole("button", { name: /^(Run|Running\.\.\.)$/ })).toHaveCount(0);
     const other = await ensureChat(page);
     const result = await page.evaluate(
-      ({ id, language, code }) => window.artifactsE2E.tool(`execute_${language}_code`, { code }, id),
+      ({ id, language, code }) => window.artifactsE2E.tool("execute_script", { code, language }, id),
       { id: other, language, code: safe },
     );
     expect(JSON.stringify(result)).toContain("Recovered");
@@ -305,11 +312,13 @@ for (const language of ["javascript", "python"] as const) {
   test(`${language} editor runs save generated files and share them with interpreter tools`, async ({ page }) => {
     await openFixture(page);
     const id = await ensureChat(page);
-    const path = language === "python" ? "/main.py" : "/main.js";
+    const path = `/main.${{ python: "py", javascript: "js", bash: "sh" }[language]}`;
     const code =
       language === "python"
         ? 'from pathlib import Path\nPath("output.txt").write_text("editor result")\nprint("editor done")'
-        : 'vfs.write("/output.txt", "editor result"); console.log("editor done");';
+        : language === "bash"
+          ? 'printf "editor result" > output.txt; echo "editor done"'
+          : 'vfs.write("/output.txt", "editor result"); console.log("editor done");';
     await page.evaluate(
       async ({ id, path, code }) => {
         await window.artifactsE2E.write(id, path, code);
@@ -326,12 +335,15 @@ for (const language of ["javascript", "python"] as const) {
     const result = await page.evaluate(
       ({ id, language }) =>
         window.artifactsE2E.tool(
-          `execute_${language}_code`,
+          "execute_script",
           {
+            language,
             code:
               language === "python"
                 ? 'from pathlib import Path\nprint(Path("output.txt").read_text())'
-                : 'console.log(vfs.read("/output.txt"));',
+                : language === "bash"
+                  ? "cat output.txt"
+                  : 'console.log(vfs.read("/output.txt"));',
           },
           id,
         ),

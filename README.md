@@ -19,8 +19,10 @@ conversations, retrieval over your own files, and a library of reusable skills.
 
 ### Tools & Agents
 
-- **In-browser code interpreters** — sandboxed Python (Pyodide) and JavaScript workers with bundled
-  data, document and media libraries. The model writes and runs real code; charts, files, and results
+- **In-browser code interpreters** — one `execute_script` tool for sandboxed Python (Pyodide), JavaScript,
+  and Bash (just-bash) workers, sharing artifact files and selected skill resources. File scripts select
+  their runtime by shebang or extension; inline code specifies `language`. Bundled libraries and
+  Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
   land back in the workspace.
 - **Web search & browsing** for grounded, up-to-date answers.
 - **Sub-agents** for delegating focused, multi-step work.
@@ -46,7 +48,7 @@ and download. Browse, preview, and iterate on artifacts side-by-side with the ch
 ### Data analysis & workflows
 
 Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
-Apache Arrow as the `arrow` global. Both interpreters can also query saved workspace files through
+Apache Arrow as the `arrow` global. Python and JavaScript can also query saved workspace files through
 `await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
 
 | Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
@@ -132,7 +134,7 @@ or a **local** directory.
 | Layer          | Stack                                                                                          |
 | -------------- | ---------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack AI/Router/Table/Virtual, React Compiler |
-| Code execution | Python/Pyodide + DuckDB/PyArrow; JavaScript workers + Arrow; DuckDB-Wasm preview bridge        |
+| Code execution | `execute_script`: Python/Pyodide, JavaScript and Bash workers; DuckDB-Wasm preview bridge        |
 | Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry                 |
 | Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                                |
 
@@ -186,7 +188,7 @@ many real model requests and requires `python3`; use the smoke suite for
 quick checks.
 
 The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
-`execute_python_code` calls using the production schemas. It reports raw JSON/AntML failures separately from calls
+`execute_script` calls with `language: "python"` using the production schemas. It reports raw JSON/AntML failures separately from calls
 that succeeded through TanStack's provider normalization, making gateway/model quality measurable separately
 from the framework's handling.
 

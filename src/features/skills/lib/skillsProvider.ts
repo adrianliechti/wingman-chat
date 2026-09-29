@@ -106,7 +106,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   const instructions = [
     skillsPrompt,
     hasResources
-      ? "Selected skill files are available in both code interpreters under /skills/<skill-name>/ (Python: /home/user/skills/<skill-name>/). Run a compatible script with the executor's path and optional args instead of pasting its body. Treat bundled resources as read-only; save outputs elsewhere in the workspace."
+      ? "Selected skill files are available to execute_script under /skills/<skill-name>/ (Python and Bash: /home/user/skills/<skill-name>/; JavaScript: VFS paths). Run a compatible script with path and optional args instead of pasting its body; the interpreter is detected from its shebang or extension. Inline code requires language: python, javascript, or bash. Treat bundled resources as read-only; save outputs elsewhere in the workspace."
       : "",
   ]
     .filter(Boolean)

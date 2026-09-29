@@ -7,11 +7,12 @@
   <body>
     <script type="module">
       import { FileSystemManager } from "/src/features/artifacts/lib/fs.ts";
-      import { executeArtifactCode } from "/src/features/artifacts/lib/executeArtifactCode.ts";
+      import { executeScript } from "/src/features/artifacts/lib/executeScript.ts";
       import { createDuckDbWorkspace } from "/src/features/artifacts/lib/duckdbWorkspace.ts";
       import { ArtifactReadWriteManager } from "/src/features/artifacts/lib/artifactFileTools.ts";
       import { executeCode } from "/src/features/tools/lib/interpreter.ts";
       import { executeJavaScript } from "/src/features/tools/lib/javascript.ts";
+      import { executeBash } from "/src/features/tools/lib/bash.ts";
       import { createSkillsProvider } from "/src/features/skills/lib/skillsProvider.ts";
       import { setSkillResourceResolver } from "/src/features/tools/lib/skillResourceMount.ts";
       import { loadConfig } from "/src/shared/config.ts";
@@ -35,7 +36,18 @@
       window.interpreterE2E = {
         executePython: executeCode,
         executeJavaScript,
+        executeBash,
         async runScript(engine, chatId, args, files = {}, resources = {}, plugin) {
+          const results = await this.runScripts(
+            chatId,
+            [{ ...args, ...(engine === "auto" ? {} : { language: engine }) }],
+            files,
+            resources,
+            plugin,
+          );
+          return results[0];
+        },
+        async runScripts(chatId, requests, files = {}, resources = {}, plugin) {
           const fs = window.interpreterMemoryWorkspace ? memoryWorkspace() : new FileSystemManager(chatId);
           await fs.applyOverlaySnapshot(files, { deleteMissing: true });
           const providerId = "browser-script-skills";
@@ -53,24 +65,20 @@
             { id: providerId, name: "Script fixture", description: "Script fixture" },
           );
           try {
-            const result = await executeArtifactCode({
-              args,
-              context: { chatId },
-              executor: engine === "python" ? executeCode : executeJavaScript,
-              extension: engine === "python" ? "py" : "js",
-              fs,
-            });
-            return { ...result, files: await fs.getOverlaySnapshot() };
+            const results = [];
+            for (const args of requests) {
+              const result = await executeScript({ args, context: { chatId }, fs });
+              results.push({ ...result, files: await fs.getOverlaySnapshot() });
+            }
+            return results;
           } finally {
             setSkillResourceResolver(providerId, null);
           }
         },
         executeWorkspace(engine, chatId, code) {
-          return executeArtifactCode({
-            args: { code },
+          return executeScript({
+            args: { code, language: engine },
             context: { chatId },
-            executor: engine === "python" ? executeCode : executeJavaScript,
-            extension: engine === "python" ? "py" : "js",
             fs: new FileSystemManager(chatId),
           });
         },

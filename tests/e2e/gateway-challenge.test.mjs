@@ -420,13 +420,15 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const parsedCalls = [];
           try {
             const pythonTool = {
-              name: "execute_python_code",
-              description: "Execute inline Python. Pass code as one JSON string and omit path when unused.",
+              name: "execute_script",
+              description:
+                "Execute inline Python. Set language to python, pass code as one JSON string and omit path when unused.",
 
-              parameters: executionSchemasModule.PYTHON_EXECUTION_PARAMETERS,
+              parameters: executionSchemasModule.SCRIPT_EXECUTION_PARAMETERS,
               function: async (args, context) => {
                 parsedCalls.push(args);
                 assert.equal(typeof args.code, "string");
+                assert.equal(args.language, "python");
                 assert(args.path === undefined || args.path === "");
                 assert.equal(args.skills, undefined);
                 const { stdout, stderr } = await execFileAsync(PYTHON, ["-I", "-c", args.code], {
@@ -437,20 +439,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 return [{ type: "text", text: stdout.trim() }];
               },
             };
-            const schemaOnlyTools = [
-              {
-                name: "execute_javascript_code",
-                description: "Schema compatibility fixture. Do not call this tool.",
-
-                parameters: executionSchemasModule.JAVASCRIPT_EXECUTION_PARAMETERS,
-              },
-            ].map((tool) => ({ ...tool, function: async () => [{ type: "text", text: "UNUSED" }] }));
-            const tools = [
-              ...productionFileTools(workspace),
-              pythonTool,
-              ...schemaOnlyTools,
-              questionsToolModule.ASK_QUESTIONS_TOOL,
-            ];
+            const tools = [...productionFileTools(workspace), pythonTool, questionsToolModule.ASK_QUESTIONS_TOOL];
             assert.equal(
               tools.reduce((count, tool) => count + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
               0,
@@ -465,7 +454,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             const result = await run(
               client,
               model,
-              `Call execute_python_code exactly once with inline Python that constructs this object and prints json.dumps(value, ensure_ascii=False, sort_keys=True): ${JSON.stringify(expected)}. The code must include an import, a multiline object literal, nested quotes, backslashes, and Unicode. Omit path because it is unused. Do not call any file or JavaScript tools. After execution, reply with exactly the printed JSON.`,
+              `Call execute_script exactly once with language="python" and inline Python that constructs this object and prints json.dumps(value, ensure_ascii=False, sort_keys=True): ${JSON.stringify(expected)}. The code must include an import, a multiline object literal, nested quotes, backslashes, and Unicode. Omit path because it is unused. Do not call any file or JavaScript tools. After execution, reply with exactly the printed JSON.`,
               [user("Run the quote-heavy Python JSON fixture.")],
               tools,
               { agentName: "challenge-python-schema", agentLoopStrategy: maxIterations(3) },
@@ -473,10 +462,10 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
 
             assert.equal(result.status, "completed", resultDetail(result));
             assert.equal(parsedCalls.length, 1);
-            const output = resultTexts(result.messages, "execute_python_code").at(-1);
+            const output = resultTexts(result.messages, "execute_script").at(-1);
             assert.deepEqual(JSON.parse(output), expected);
             assert.deepEqual(JSON.parse(lastAssistantText(result.messages)), expected);
-            const call = contentParts(result.messages, "tool_call").find((part) => part.name === "execute_python_code");
+            const call = contentParts(result.messages, "tool_call").find((part) => part.name === "execute_script");
             assert(call, "The transcript is missing the Python tool call");
             assert.doesNotThrow(() => JSON.parse(call.arguments), "The provider emitted malformed tool-call JSON");
           } finally {

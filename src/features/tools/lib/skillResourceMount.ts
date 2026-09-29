@@ -10,7 +10,7 @@ const resolvers = new Map<string, Resolver>();
  * plugin) registers a resolver under its own provider id so a skill's bundled
  * resources (scripts, references, assets) can be mounted into the sandbox on
  * demand — this is what makes the agentskills spec's tier-3 `scripts/`
- * executable through either code executor's `path` argument.
+ * executable through execute_script's `path` argument in any supported runtime.
  *
  * Multiple providers can be enabled at once, so resolvers are keyed and merged.
  */

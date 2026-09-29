@@ -14,6 +14,8 @@ const ARTIFACT_WRITE_TOOLS = new Set([
   "edit",
   "move",
   "delete",
+  "execute_script",
+  // Interpreter names retained only for persisted conversations.
   "execute_python_code",
   "execute_javascript_code",
   // Render artifacts from conversations saved before the concise tool rename.
@@ -69,7 +71,7 @@ function toolResultArtifactPaths(result: ToolResultContent): string[] {
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
     return path ? [path] : [];
   }
-  // execute_python_code / execute_javascript_code report written files via meta.
+  // Code execution tools report written files via meta (including historical names).
   const files = result.meta?.artifactFiles;
   return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
 }
@@ -316,6 +318,8 @@ const TOOL_FAMILIES: Record<string, ToolFamily> = {
   edit: "edit",
   move: "edit",
   delete: "edit",
+  execute_script: "run",
+  // Interpreter names retained only for persisted conversations.
   execute_python_code: "run",
   execute_javascript_code: "run",
   // Historical names can still occur in persisted message content.

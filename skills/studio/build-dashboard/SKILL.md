@@ -6,7 +6,7 @@ description: Build a self-contained interactive HTML dashboard with ECharts, fil
 # Build Dashboard — interactive, self-contained, offline
 
 One self-contained `.html` file with embedded data and **ECharts** for live hover, filters, and
-responsive charts. Build it with `execute_javascript_code`: the provided `echartsSource` global is the
+responsive charts. Build it with `execute_script` with `language: "javascript"`: the provided `echartsSource` global is the
 minified browser bundle to embed in the file. No CDN or runtime network access.
 
 A dashboard is for **slicing multi-dimensional data interactively** (KPIs + filters + several views).

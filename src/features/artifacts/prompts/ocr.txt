@@ -3,6 +3,7 @@ Extract text and layout from scanned PDFs, document images, or Office files thro
 
 - Python: text = await ocr("/home/user/scan.pdf")
 - JavaScript: const text = await ocr("/scan.pdf")
+- Bash: `ocr scan.pdf > extracted.txt` or `extract -o extracted.txt scan.pdf`. Both commands use the same extraction service, read from the shared virtual filesystem, and accept one document path. Use `--` before a filename starting with a dash.
 
 For ordinary text PDFs and Office documents, try local extraction first using the document libraries. Use OCR when the user requests it, the document is image-based, or local extraction misses or garbles relevant content. Judge coverage and readability; a short but valid text is not evidence that extraction failed. Mixed documents may need OCR even when some text extracts correctly.
 

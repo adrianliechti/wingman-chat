@@ -41,7 +41,10 @@ export function SubagentCard({ name, status, messages, error }: SubagentContent)
                   </Markdown>
                 );
               if (part.type === "tool_call" && !answered.has(part.id) && !delegated.has(part.id)) {
-                const tool = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, { running });
+                const tool = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
+                  running,
+                  toolCallId: part.id,
+                });
                 return (
                   <ActivityRow
                     key={part.id}

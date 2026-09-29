@@ -1,13 +1,13 @@
 /**
  * Sandbox path helpers.
  *
- * All sandbox runtimes (Pyodide, the JS worker) mount user files under a single
+ * All sandbox runtimes (Pyodide, JavaScript, Bash) mount user files under a single
  * home directory. These helpers normalize paths that cross the sandbox
  * boundary so that LLM-supplied paths map to the canonical artifact paths
  * used in storage.
  */
 
-/** Shared home directory used by all sandbox runtimes (Pyodide, the JS worker). */
+/** Shared home directory used by all sandbox runtimes (Pyodide, JavaScript, Bash). */
 export const SANDBOX_HOME = "/home/user";
 
 // Sandbox mount prefixes that LLMs may include in artifact paths.

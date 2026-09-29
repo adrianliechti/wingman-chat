@@ -342,7 +342,7 @@ describe("coordinated artifact tools", () => {
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
   });
 
-  it.each(["py", "js"] as const)(
+  it.each(["py", "js", "sh"] as const)(
     "resolves a selected %s resource by path and preserves its arguments",
     async (extension) => {
       const path = `/skills/plugin__sample/scripts/run.${extension}`;

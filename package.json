@@ -71,6 +71,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
+    "just-bash": "^3.4.2",
     "katex": "^0.18.9",
     "lucide": "^1.48.0",
     "lucide-react": "^1.48.0",
@@ -119,19 +120,19 @@
     "vitest": "5.0.1"
   },
   "overrides": {
-    "vite": "$vite",
-    "vitest": "$vitest",
     "chevrotain": {
       "lodash-es": "^4.18.1"
-    }
+    },
+    "vite": "$vite",
+    "vitest": "$vitest"
+  },
+  "engines": {
+    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
   },
   "packageManager": "npm@11.17.0",
   "allowScripts": {
     "@mongodb-js/zstd@7.0.0": true,
     "core-js@3.50.0": true,
     "fsevents@2.3.3": true
-  },
-  "engines": {
-    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
   }
 }

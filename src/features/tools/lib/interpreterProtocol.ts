@@ -1,7 +1,7 @@
 /**
- * Message protocol between the main thread and the Pyodide interpreter worker.
- * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate/
- * rasterize_pdf) need the main thread, so the worker calls back over RPC.
+ * Shared message protocol between the main thread and the interpreter workers.
+ * Helpers (llm/ocr/vision/render/synthesize/transcribe/translate/rasterize_pdf)
+ * and Bash service commands call back to the main thread over RPC.
  */
 
 import type { ImageRenderOptions } from "@/shared/lib/client";

@@ -1,9 +1,9 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { executeArtifactCode } from "@/features/artifacts/lib/executeArtifactCode";
-import { executeCode, type CodeExecutionResult } from "@/features/tools/lib/interpreter";
-import { executeJavaScript } from "@/features/tools/lib/javascript";
+import { executeScript } from "@/features/artifacts/lib/executeScript";
+import type { CodeExecutionResult } from "@/features/tools/lib/interpreterProtocol";
+import type { ScriptLanguage } from "@/features/tools/lib/scriptLanguage";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { CodeEditor } from "./CodeEditor";
 
@@ -21,7 +21,7 @@ export function ExecutionEditor({
   onRunReady,
   onRunningChange,
   onSelectionRoot,
-}: ExecutionEditorProps & { language: "python" | "javascript" }) {
+}: ExecutionEditorProps & { language: ScriptLanguage }) {
   const { fs } = useArtifacts();
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<CodeExecutionResult | null>(null);
@@ -41,11 +41,9 @@ export function ExecutionEditor({
     running.current = controller;
     setIsRunning(true);
     setResult(null);
-    const result = await executeArtifactCode({
+    const result = await executeScript({
       fs,
-      args: { code: content },
-      executor: language === "python" ? executeCode : executeJavaScript,
-      extension: language === "python" ? "py" : "js",
+      args: { code: content, language },
       context: { signal: controller.signal, chatId: fs.chatId },
     });
     // Unmount/navigation cancels both execution and committing its snapshot.

@@ -152,7 +152,12 @@ export type Tool = {
 /** A type icon for a tool's chat presentation (e.g. a lucide icon component). */
 export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
-export type ToolDisplayState = { running?: boolean; error?: boolean };
+export type ToolDisplayState = {
+  running?: boolean;
+  error?: boolean;
+  /** Stable identity while arguments stream and the tool runs. */
+  toolCallId?: string;
+};
 
 /** A code/text block rendered in a tool call's expanded view. */
 export type ToolDisplayBlock = {

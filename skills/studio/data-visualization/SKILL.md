@@ -14,7 +14,7 @@ illustrative chart that _teaches a concept_, use `visualize`.
 Load the data into a pandas DataFrame (clean types and nulls). Note the **purpose & audience** — a chart
 that states an insight to executives differs from one exploring a distribution. Save static charts as
 **PNG/SVG** (`savefig(..., dpi=180, bbox_inches='tight')`). For interactive output, hand cleaned data
-to `execute_javascript_code` through JSON and embed `echartsSource` in one HTML file. Saving the file
+to `execute_script` with `language: "javascript"` through JSON and embed `echartsSource` in one HTML file. Saving the file
 renders it in the side panel.
 
 ## Pick the chart — by what you're showing
@@ -73,7 +73,7 @@ The others follow the same conventions: **line** → `ax.plot` per series + `fig
 
 ## Interactive → ECharts (offline)
 
-Write the cleaned series to JSON in Python, then use `execute_javascript_code`:
+Write the cleaned series to JSON in Python, then use `execute_script` with `language: "javascript"`:
 
 ```javascript
 const rows = await vfs.readJSON("/chart-data.json");

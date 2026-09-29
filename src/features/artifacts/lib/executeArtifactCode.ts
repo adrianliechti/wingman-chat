@@ -95,7 +95,7 @@ export async function executeArtifactCode(options: {
   args: Record<string, unknown>;
   context?: ToolContext;
   executor: SandboxExecutor;
-  extension: "py" | "js";
+  extension?: "py" | "js" | "sh";
   fs: FileSystemManager | null;
   onCommit?: (access: ArtifactWorkspaceAccess, mutations: ArtifactMutation[]) => Promise<void>;
   limits?: CodeExecutionRequest["limits"];
@@ -115,7 +115,7 @@ export async function executeArtifactCode(options: {
     if (!hasCode && !path) {
       return failure(
         "Error executing code: no `code` was received. If inline code failed to parse, escape quotes and " +
-          `backslashes or write it to a \`.${extension}\` artifact and run it with \`path\`.`,
+          `backslashes or write it to ${extension ? `a \`.${extension}\` artifact` : "a script artifact"} and run it with \`path\`.`,
       );
     }
 

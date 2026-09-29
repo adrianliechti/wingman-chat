@@ -8,6 +8,8 @@ type ExecutionResult = {
   files?: Record<string, { content: string; contentType?: string }>;
 };
 
+type ScriptArgs = { code?: string; path?: string; language?: "python" | "javascript" | "bash"; args?: string[] };
+
 type TextToolResult = Array<{ type: "text"; text: string }>;
 
 declare global {
@@ -16,15 +18,27 @@ declare global {
     interpreterE2E: {
       executePython(request: unknown, options?: unknown): Promise<ExecutionResult>;
       executeJavaScript(request: unknown, options?: unknown): Promise<ExecutionResult>;
+      executeBash(request: unknown, options?: unknown): Promise<ExecutionResult>;
       runScript(
-        engine: "python" | "javascript",
+        engine: "python" | "javascript" | "bash" | "auto",
         chatId: string,
-        args: { code?: string; path?: string; args?: string[] },
+        args: ScriptArgs,
         files?: Record<string, { content: string; contentType?: string }>,
         resources?: Record<string, string>,
         plugin?: string,
       ): Promise<ExecutionResult>;
-      executeWorkspace(engine: "python" | "javascript", chatId: string, code: string): Promise<ExecutionResult>;
+      runScripts(
+        chatId: string,
+        requests: ScriptArgs[],
+        files?: Record<string, { content: string; contentType?: string }>,
+        resources?: Record<string, string>,
+        plugin?: string,
+      ): Promise<ExecutionResult[]>;
+      executeWorkspace(
+        engine: "python" | "javascript" | "bash" | "auto",
+        chatId: string,
+        code: string,
+      ): Promise<ExecutionResult>;
       queryWorkspace(chatId: string, query: string): Promise<{ rows: Record<string, unknown>[] }>;
       initializeLlm(): Promise<void>;
       runToolFlow(chatId: string): Promise<{
@@ -53,6 +67,209 @@ async function openFixture(page: Page): Promise<void> {
   await page.goto("/tests/browser/fixtures/interpreter.html");
   await page.waitForFunction(() => Boolean(window.interpreterE2E));
 }
+
+test("execute_script detects Bash skill files and commits outputs without persisting the mount", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.runScript(
+      "auto",
+      "bash-plugin-script",
+      {
+        path: "/skills/acme:test-script/scripts/run.sh",
+        args: ["output with spaces.txt", "$(touch injected); 'quoted' *"],
+      },
+      { "/obsolete.txt": { content: "delete" } },
+      {
+        "scripts/run.sh":
+          '#!/bin/bash\nset -e\nsource "$(dirname "$0")/helper.sh"\nprintf "%s\\n%s\\n" "$label" "$2" > "$1"\nrm obsolete.txt\necho temporary > "$(dirname "$0")/helper.sh"\necho complete',
+        "scripts/helper.sh": 'label="skill resource"',
+      },
+      "acme",
+    ),
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toBe("complete");
+  expect(Object.keys(result.files ?? {})).toEqual(["/output with spaces.txt"]);
+  expect(result.files?.["/output with spaces.txt"].content).toBe("skill resource\n$(touch injected); 'quoted' *\n");
+});
+
+test("execute_script detects shebangs, requires an inline language and shares files across all runtimes", async ({
+  page,
+}) => {
+  await openFixture(page);
+  const results = await page.evaluate(() =>
+    window.interpreterE2E.runScripts(
+      "three-script-runtimes",
+      [
+        { code: "echo ambiguous" },
+        { path: "/scripts/generate" },
+        { path: "/scripts/transform" },
+        { path: "/scripts/finish" },
+        {
+          language: "bash",
+          code: "cat result.txt; rm values.json intermediate.txt; echo discarded > result.txt; exit 9",
+        },
+        { language: "bash", code: "cat result.txt; rm values.json intermediate.txt" },
+      ],
+      {
+        "/scripts/generate": {
+          content: '#!/usr/bin/env python3\nfrom pathlib import Path\nPath("values.json").write_text("[1,2,3]")',
+        },
+        "/scripts/transform": {
+          content:
+            '#!/usr/bin/env node\nvfs.write("intermediate.txt", String(vfs.readJSON("values.json").reduce((a, b) => a + b, 0)));',
+        },
+        "/scripts/finish": { content: '#!/bin/sh\ncat intermediate.txt > result.txt; printf "\\n" >> result.txt' },
+      },
+    ),
+  );
+  expect(results[0].success).toBe(false);
+  expect(results[0].error).toContain("Inline code requires language");
+  for (const index of [1, 2, 3, 5]) expect(results[index].success, results[index].error).toBe(true);
+  expect(results[4].success).toBe(false);
+  expect(results[4].error).toContain("status 9");
+  expect(results[4].files?.["/result.txt"].content).toBe("6\n");
+  expect(results[4].files?.["/values.json"]).toBeDefined();
+  expect(results[5].output).toBe("6");
+  expect(results[5].files?.["/values.json"]).toBeUndefined();
+  expect(results[5].files?.["/intermediate.txt"]).toBeUndefined();
+});
+
+test("Bash cancellation terminates the worker and the next run starts cleanly", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(async () => {
+    const controller = new AbortController();
+    const pending = window.interpreterE2E.executeBash(
+      { code: "sleep 30; echo late > late.txt" },
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 250);
+    return pending;
+  });
+  expect(result.success).toBe(false);
+  expect(result.error).toMatch(/abort|cancel/i);
+  const next = await page.evaluate(() =>
+    window.interpreterE2E.executeBash({ code: "test ! -e late.txt && echo recovered" }),
+  );
+  expect(next.success, next.error).toBe(true);
+  expect(next.output).toBe("recovered");
+});
+
+test("Bash writes text and binary files that Python reads, and reads Python outputs back", async ({ page }) => {
+  await openFixture(page);
+  const results = await page.evaluate(() =>
+    window.interpreterE2E.runScripts("bash-python-shared-files", [
+      {
+        language: "bash",
+        code: "printf 'name,value\\nalpha,21\\n' > input.csv; printf 'AP+AQg==' | base64 -d > input.bin",
+      },
+      {
+        language: "python",
+        code: `import csv, json
+from pathlib import Path
+row = next(csv.DictReader(Path("input.csv").open()))
+Path("result.json").write_text(json.dumps({"name": row["name"], "value": int(row["value"]) * 2}))
+assert Path("input.bin").read_bytes() == bytes([0, 255, 128, 66])
+Path("result.bin").write_bytes(Path("input.bin").read_bytes()[::-1])
+print(row["name"])`,
+      },
+      { language: "bash", code: "jq -r '.value' result.json; base64 result.bin" },
+      {
+        language: "javascript",
+        code: 'return JSON.stringify({value: vfs.readJSON("result.json").value, bytes: Array.from(vfs.readBytes("result.bin"))});',
+      },
+    ]),
+  );
+  for (const result of results) expect(result.success, result.error).toBe(true);
+  expect(results[1].output).toBe("alpha");
+  expect(results[2].output).toBe("42\nQoD/AA==");
+  expect(JSON.parse(results[3].output)).toEqual({ value: 42, bytes: [66, 128, 255, 0] });
+});
+
+test("Bash OCR/extract and llm commands bridge file bytes, Unicode pipes and the owning model", async ({ page }) => {
+  const requests: Array<{ model: string; instructions: string; input: unknown[]; tools?: unknown[] }> = [];
+  let extractions = 0;
+  await page.route("**/config.json", (route) => route.fulfill({ json: { extractor: {} } }));
+  await page.route("**/api/v1/extract", async (route) => {
+    extractions++;
+    const body = route.request().postDataBuffer()!;
+    expect(body.toString()).toContain('filename="input.pdf"');
+    expect(body.toString()).toContain("application/pdf");
+    await route.fulfill({ contentType: "text/plain", body: "Grüezi 🪽\nextracted text" });
+  });
+  await page.route("**/api/v1/responses", async (route) => {
+    requests.push(route.request().postDataJSON());
+    const response = {
+      id: `bash-response-${requests.length}`,
+      object: "response",
+      created_at: 0,
+      model: "fixture",
+      status: "completed",
+      error: null,
+      incomplete_details: null,
+      output: [
+        {
+          id: "message",
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: "Résumé 🪽", annotations: [] }],
+        },
+      ],
+    };
+    await route.fulfill({
+      contentType: "text/event-stream",
+      body: [
+        { type: "response.created", response: { ...response, status: "in_progress", output: [] } },
+        { type: "response.completed", response },
+      ]
+        .map((event, sequence_number) => `data: ${JSON.stringify({ ...event, sequence_number })}\n\n`)
+        .join(""),
+    });
+  });
+  await openFixture(page);
+  const { result, uploads } = await page.evaluate(async () => {
+    await window.interpreterE2E.initializeLlm();
+    const uploads: number[][] = [];
+    const originalFetch = window.fetch;
+    // WebKit's network inspector omits multipart file bodies. Inspect the
+    // native File being sent, then let the real bridge perform its HTTP request.
+    window.fetch = async (input, init) => {
+      if (init?.body instanceof FormData) {
+        const file = init.body.get("file");
+        if (file instanceof Blob) uploads.push(Array.from(new Uint8Array(await file.arrayBuffer())));
+      }
+      return originalFetch.call(window, input, init);
+    };
+    try {
+      const result = await window.interpreterE2E.executeBash(
+        {
+          code: 'set -e; set -o pipefail; ocr -o raw.txt input.pdf; extract input.pdf | llm -m specialist -s "Summarize" > summary.md; llm "Independent question"',
+          files: { "/input.pdf": { content: "data:application/pdf;base64,AP+AQg==", contentType: "application/pdf" } },
+        },
+        { context: { model: "owning-model" } },
+      );
+      return { result, uploads };
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+  expect(result.success, result.error).toBe(true);
+  expect(result.files?.["/raw.txt"].content).toBe("Grüezi 🪽\nextracted text");
+  expect(result.files?.["/summary.md"].content).toBe("Résumé 🪽\n");
+  expect(result.output).toBe("Résumé 🪽");
+  expect(extractions).toBe(2);
+  expect(uploads).toEqual([
+    [0, 255, 128, 66],
+    [0, 255, 128, 66],
+  ]);
+  expect(requests.map((request) => request.model)).toEqual(["specialist", "owning-model"]);
+  expect(requests.map((request) => request.instructions)).toEqual(["Summarize", ""]);
+  expect(JSON.stringify(requests[0].input)).toContain("Grüezi 🪽");
+  expect(JSON.stringify(requests[1].input)).toContain("Independent question");
+  expect(JSON.stringify(requests[1].input)).not.toContain("Grüezi");
+  expect(requests.every((request) => !request.tools?.length)).toBe(true);
+});
 
 test("a bundled PDF skill script runs directly by path with arguments and cold dependencies", async ({ page }) => {
   const source = readFileSync("skills/studio/pdf/scripts/check_fillable_fields.py", "utf8");

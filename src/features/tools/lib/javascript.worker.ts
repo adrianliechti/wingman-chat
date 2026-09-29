@@ -483,7 +483,10 @@ const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }
 
 async function executeJs(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
   patchNetwork();
-  const { code, files = {} } = request;
+  const { files = {} } = request;
+  // Function bodies do not accept a file's hashbang. Keep its newline so error
+  // locations still match the script selected by execute_script.
+  const code = request.code.replace(/^\uFEFF?#![^\r\n]*/, "");
 
   // `import()` invokes the browser module loader directly and would bypass the
   // fetch shim. Libraries supported by this runtime are injected explicitly.

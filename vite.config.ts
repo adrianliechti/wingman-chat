@@ -195,6 +195,9 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["pyodide"],
+    // Discover the lazy Bash worker dependency before a run starts; otherwise
+    // cold runs can invalidate chunks already being loaded by another page.
+    include: ["just-bash/browser"],
   },
   worker: {
     // Pyodide 314 (ES-module-only) requires a module worker — classic workers
