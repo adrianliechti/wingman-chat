@@ -153,14 +153,14 @@ Hashed assets keep their one-year immutable browser cache; other files revalidat
 
 ### Prerequisites
 
-- Node.js (LTS) and npm
+- Node.js 24.11+ (LTS) and npm (see `package.json` for other supported Node versions)
 - Go 1.x (only to run the server locally)
 - Access to a Wingman or OpenAI-compatible API endpoint
 
 ### Development
 
 ```bash
-npm install
+npm ci
 
 # Point at your platform
 export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
@@ -215,6 +215,12 @@ npm run build
 PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
+
+Keep `vite-plus`, its core package and the `vite` alias at the same version, and
+pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
+supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
+The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
+local and Docker installs use `npm ci` with normal peer-dependency resolution.
 
 ### Docker
 
