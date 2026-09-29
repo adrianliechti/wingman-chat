@@ -108,9 +108,10 @@ export type Tool = {
   description?: string;
   icon?: string;
 
-  parameters: Record<string, unknown>;
+  /** Let TanStack discover this tool's schema on demand in chat runs. */
+  lazy?: boolean;
 
-  strict?: boolean;
+  parameters: Record<string, unknown>;
 
   function: (
     args: Record<string, unknown>,
@@ -189,6 +190,8 @@ export type ReasoningContent = {
   text: string;
   summary?: string;
   encryptedContent?: string;
+  /** Opaque reasoning state produced and consumed by the TanStack adapter. */
+  signature?: string;
   model?: string;
   prefix?: string;
 };

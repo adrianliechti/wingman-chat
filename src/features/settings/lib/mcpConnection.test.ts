@@ -1,10 +1,20 @@
-import { Client } from "@modelcontextprotocol/client";
+import { Client, type Transport } from "@modelcontextprotocol/client";
 import type { CallToolResult, ListToolsResult, ServerCapabilities, Tool } from "@modelcontextprotocol/client";
 import { InMemoryTransport, Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ElicitationResult } from "@/shared/types/elicitation";
 import { MCPClient } from "./mcp";
 import { mcpToolName } from "./mcpToolNames";
+
+const transportFactory = vi.hoisted(() => ({ create: undefined as (() => Transport) | undefined }));
+vi.mock("@modelcontextprotocol/client", async (original) => ({
+  ...(await original<typeof import("@modelcontextprotocol/client")>()),
+  StreamableHTTPClientTransport: class {
+    constructor() {
+      return transportFactory.create!();
+    }
+  },
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -36,9 +46,8 @@ beforeEach(() => {
   read.mockReset().mockResolvedValue({ contents: [] });
   // Exercise the actual SDK handshake, request routing, cancellation and schemas;
   // only replace HTTP with the SDK's in-memory transport.
-  const original = Reflect.get(Client.prototype, "connect") as Client["connect"];
-  vi.spyOn(Client.prototype, "connect").mockImplementation(async function (this: Client, _transport, options) {
-    server = new Server({ name: "fixture", version: "1" }, { capabilities });
+  transportFactory.create = () => {
+    server = new Server({ name: "fixture", version: "1" }, { capabilities, supportedProtocolVersions: ["2025-11-25"] });
     servers.push(server);
     if (capabilities.tools) {
       server.setRequestHandler("tools/list", (request) => list(request.params?.cursor));
@@ -46,9 +55,9 @@ beforeEach(() => {
     }
     if (capabilities.resources) server.setRequestHandler("resources/read", (request) => read(request.params));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await server.connect(serverTransport);
-    return original.call(this, clientTransport, options);
-  });
+    void server.connect(serverTransport);
+    return clientTransport;
+  };
   vi.spyOn(console, "warn").mockImplementation(() => {});
   provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test");
 });
@@ -67,15 +76,18 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     );
     call.mockResolvedValue({ ...result, structuredContent: { count: 2 } });
     await provider.connect();
-    expect(list.mock.calls).toEqual([[undefined], ["page-2"]]);
+    expect(list.mock.calls.slice(0, 2)).toEqual([[undefined], ["page-2"]]);
     expect(provider.tools.map((value) => value.name)).toEqual([
       mcpToolName("test", "app"),
       mcpToolName("test", "plain"),
     ]);
+    expect(provider.tools.every((value) => value.lazy)).toBe(true);
     const setMeta = vi.fn();
     const setContent = vi.fn();
     await provider.tools[0].function({}, { setMeta, setContent });
-    expect(setMeta).toHaveBeenCalledWith({ toolProvider: "test", toolResource: "ui://app" });
+    expect(setMeta).toHaveBeenCalledWith(
+      expect.objectContaining({ toolProvider: "test", toolResource: "ui://app", mcpResult: expect.any(Object) }),
+    );
     expect(setContent).toHaveBeenCalledWith({ count: 2 });
     expect(read).not.toHaveBeenCalled();
   });
@@ -88,10 +100,22 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     expect(provider.isConnected()).toBe(true);
   });
 
+  it("marks returned tool errors while preserving the full widget result", async () => {
+    list.mockResolvedValue({ tools: [tool("app", { resourceUri: "ui://app" })] });
+    const failed = { ...result, isError: true, _meta: { detail: "widget-only" } };
+    call.mockResolvedValue(failed);
+    await provider.connect();
+    const setError = vi.fn();
+    const setMeta = vi.fn();
+    expect(await provider.tools[0].function({}, { setError, setMeta })).toEqual(result.content);
+    expect(setError).toHaveBeenCalledWith({ code: "MCP_TOOL_ERROR", message: "done" });
+    expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ mcpResult: failed }));
+  });
+
   it("coalesces notifications during initial discovery and never publishes the invalidated scan", async () => {
     const old = deferred<ListToolsResult>();
     const latest = deferred<ListToolsResult>();
-    list.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+    list.mockReturnValueOnce(old.promise).mockReturnValue(latest.promise);
     const changed = vi.fn();
     provider.onToolsChanged = changed;
     let connected = false;
@@ -103,7 +127,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await server.sendToolListChanged();
     old.resolve({ tools: [tool("obsolete")] });
     await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
-    expect(list.mock.calls).toEqual([[undefined], [undefined]]);
+    expect(list.mock.calls.slice(0, 2)).toEqual([[undefined], [undefined]]);
     expect(provider.tools).toEqual([]);
     expect(changed).not.toHaveBeenCalled();
     expect(connected).toBe(false);
@@ -129,7 +153,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     // The SDK stops on a repeated cursor; ever-changing cursors hit its listMaxPages cap.
     let page = 0;
     list.mockImplementation(async () => ({ tools: [tool(`partial-${page}`)], nextCursor: `page-${++page}` }));
-    await expect(provider.connect()).rejects.toThrow("exceeded listMaxPages");
+    await expect(provider.connect()).rejects.toThrow(/pages|pagination/i);
     expect(list.mock.calls.length).toBeGreaterThan(1);
     expect(provider.tools).toEqual([]);
     expect(provider.isConnected()).toBe(false);

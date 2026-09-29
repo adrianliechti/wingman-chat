@@ -112,7 +112,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
       executionSchemasModule = await harness.vite.ssrLoadModule("/src/features/artifacts/lib/executionToolSchemas.ts");
       questionsToolModule = await harness.vite.ssrLoadModule("/src/features/chat/lib/questionsTool.ts");
       artifactModule = await harness.vite.ssrLoadModule("/src/shared/types/artifact.ts");
-      toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
+      toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/test-support/toolSchemas.ts");
 
       await execFileAsync(PYTHON, ["--version"], { timeout: 10_000 });
     },
@@ -129,7 +129,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
   for (const [modelIndex, modelCase] of modelCases.entries()) {
     void describe(modelCase.label, { concurrency: false }, () => {
       void test(
-        "recovers from a dropped real response stream without duplicating partial output",
+        "reports an interrupted native stream and permits a fresh run without duplicated output",
         async () => {
           const model = modelIds[modelIndex];
           const partialMarker = "STREAM_RETRY_PARTIAL_SENTINEL";
@@ -153,26 +153,31 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           );
 
           const afterFault = faults.snapshot();
-          assert.equal(result.status, "completed", resultDetail(result));
-          const finalText = lastAssistantText(result.messages);
-          assert.match(finalText, /STREAM_RETRY_OK/);
-          assert.equal(
-            finalText.split(partialMarker).length - 1,
-            1,
-            "The failed attempt's partial text was duplicated",
-          );
+          assert.equal(result.status, "failed", resultDetail(result));
           assert.equal(afterFault.droppedCount - beforeFault.droppedCount, 1);
-          assert(
-            afterFault.requestCount - beforeFault.requestCount >= 2,
-            "The client did not retry the dropped stream",
+          assert.equal(
+            afterFault.requestCount - beforeFault.requestCount,
+            1,
+            "A partially streamed request must not be silently replayed",
           );
-          const firstPartial = streamSnapshots.findIndex((content) => content.length > 0);
-          assert(firstPartial >= 0, "The injected attempt did not stream a partial response");
           assert(
-            streamSnapshots.slice(firstPartial + 1).some((content) => content.length === 0),
-            "The retry did not clear the failed attempt's partial response",
+            streamSnapshots.some((content) => content.length > 0),
+            "The injected attempt did not stream a partial response",
           );
-          assert.equal(result.modelCalls.used, 1, "Transport retries must not spend another agent-loop turn");
+          assert.equal(result.modelCalls.used, 1);
+
+          const retry = await run(
+            client,
+            model,
+            `Begin with exactly ${partialMarker}, write two short sentences, and end with exactly STREAM_RETRY_OK.`,
+            [user("Retry the interrupted request.")],
+            [],
+            { maxTurns: 1 },
+          );
+          assert.equal(retry.status, "completed", resultDetail(retry));
+          const finalText = lastAssistantText(retry.messages);
+          assert.match(finalText, /STREAM_RETRY_OK/);
+          assert.equal(finalText.split(partialMarker).length - 1, 1, "The failed run's text leaked into a fresh run");
           assertEventContract(events, result);
           assert.equal(lifecycleTypes(events).filter((type) => type === "model.started").length, 1);
         },
@@ -192,7 +197,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "unstable_fixture",
             description:
               "Fetch a deterministic fixture. Start with attempt 1; if it reports a transient failure, increment attempt and retry.",
-            strict: true,
+
             parameters: {
               type: "object",
               properties: { attempt: { type: "integer" } },
@@ -266,7 +271,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const delegate = {
             name: "delegate_fixture",
             description: "Delegate the deterministic fixture lookup to a child agent.",
-            strict: true,
+
             parameters: {
               type: "object",
               properties: { task: { type: "string" } },
@@ -331,7 +336,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const waitTool = {
             name: "wait_for_release",
             description: "Wait until the caller releases or cancels this operation.",
-            strict: true,
+
             parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
             function: async (_args, context) => {
               toolStarted = true;
@@ -388,7 +393,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const loopTool = {
             name: "continue_loop",
             description: "Return the next loop step. The test requires another call after every result.",
-            strict: true,
+
             parameters: {
               type: "object",
               properties: { step: { type: "integer" } },
@@ -431,7 +436,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             const pythonTool = {
               name: "execute_python_code",
               description: "Execute inline Python. Pass code as one JSON string and omit path when unused.",
-              strict: false,
+
               parameters: executionSchemasModule.PYTHON_EXECUTION_PARAMETERS,
               function: async (args, context) => {
                 parsedCalls.push(args);
@@ -450,7 +455,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               {
                 name: "execute_javascript_code",
                 description: "Schema compatibility fixture. Do not call this tool.",
-                strict: false,
+
                 parameters: executionSchemasModule.JAVASCRIPT_EXECUTION_PARAMETERS,
               },
             ].map((tool) => ({ ...tool, function: async () => [{ type: "text", text: "UNUSED" }] }));
@@ -464,7 +469,6 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               tools.reduce((count, tool) => count + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
               0,
             );
-            assert(tools.filter((tool) => tool.strict).length <= 8);
 
             const expected = {
               lines: ["alpha", "beta"],
@@ -580,7 +584,7 @@ Do not skip the intentional invalid write or its edit repair.`,
   }
 
   void test(
-    "aborting during retry backoff prevents a second gateway request",
+    "aborting an interrupted stream prevents a second gateway request",
     async () => {
       const model = modelIds[0];
       const controller = new AbortController();

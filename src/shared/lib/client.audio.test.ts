@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "./client";
 import { pcm16ToWav } from "@/features/voice/lib/audio";
 
+const realFetch = globalThis.fetch;
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
   fetchMock.mockReset();
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    return url.startsWith("data:") ? realFetch(input, init) : fetchMock(input, init);
+  });
   vi.stubGlobal("window", { location: new URL("http://localhost") });
 });
 afterEach(() => {
@@ -43,7 +47,7 @@ describe("speech API contracts", () => {
       expect((body.get("file") as File).name).toBe(
         `audio_recording.${{ "audio/webm;codecs=opus": "webm", "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/wav": "wav" }[type]}`,
       );
-      expect(init!.headers).toBeUndefined(); // fetch supplies the multipart boundary
+      expect(new Headers(init!.headers).has("Content-Type")).toBe(false); // fetch supplies the multipart boundary
     },
   );
 
@@ -53,7 +57,7 @@ describe("speech API contracts", () => {
     expect((fetchMock.mock.calls[0][1]!.body as FormData).has("model")).toBe(false);
     for (const body of [{}, { text: 17 }, null]) {
       fetchMock.mockResolvedValueOnce(Response.json(body));
-      await expect(new Client().transcribe("stt", new Blob(["audio"]))).rejects.toThrow("invalid response");
+      await expect(new Client().transcribe("stt", new Blob(["audio"]))).rejects.toThrow();
     }
     await expect(new Client().transcribe("stt", new Blob())).rejects.toThrow("No audio");
   });

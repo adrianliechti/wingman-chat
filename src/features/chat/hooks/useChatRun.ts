@@ -232,6 +232,7 @@ export function useChatRun({
 
         const runResult = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           runId,
+          threadId: id,
           agentName: "chat",
           options: {
             effort: currentModel.effort,

@@ -201,7 +201,6 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         .createFileTools(workspace.source, { namespace: "artifacts", validators: validatorsModule.ARTIFACT_VALIDATORS })
         .find((tool) => tool.name === "artifacts_create");
       assert(createFile);
-      assert.equal(createFile.strict, false);
       pythonParameters = executionSchemas.PYTHON_EXECUTION_PARAMETERS;
       await execFileAsync(PYTHON, ["--version"], { timeout: 10_000 });
     },
@@ -248,7 +247,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         const pythonTool = {
           name: "execute_python_code",
           description: "Execute inline Python code. Omit path when using code.",
-          strict: false,
+
           parameters: pythonParameters,
           function: async (args) => {
             parsedCalls.push(args);

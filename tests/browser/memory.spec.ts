@@ -1,3 +1,4 @@
+import { finished, response, textItem } from "../../src/shared/lib/test-support/ai";
 import { expect, test, type Page } from "@playwright/test";
 import type { ComposedMemories } from "../../src/features/agent/lib/memoryCompose";
 
@@ -20,28 +21,23 @@ function composed(body: string): ComposedMemories {
 
 async function open(page: Page, output?: ComposedMemories | null) {
   await page.route("**/config.json", (route) => route.fulfill({ json: { models: [], memory: {} } }));
-  await page.route("**/api/v1/responses", (route) => {
+  await page.route("**/api/v1/responses", async (route) => {
     const request = route.request().postDataJSON();
     expect(request.model).toBe("memory-test");
-    expect(request.text.format).toMatchObject({ type: "json_schema", name: "add_memory", strict: true });
-    const result = output === undefined ? composed(JSON.parse(request.input).memory) : output;
-    return route.fulfill({
-      json: {
-        id: "memory-response",
-        model: "memory-test",
-        status: "completed",
-        output: result
-          ? [
-              {
-                type: "message",
-                role: "assistant",
-                phase: "final_answer",
-                content: [{ type: "output_text", text: JSON.stringify(result), annotations: [] }],
-              },
-            ]
-          : [],
-      },
-    });
+    expect(request.text.format).toMatchObject({ type: "json_schema", name: "structured_output", strict: true });
+    const result =
+      output === undefined
+        ? composed(
+            JSON.parse(
+              request.input
+                .find((message: { role: string }) => message.role === "user")
+                .content.map((part: { text?: string }) => part.text ?? "")
+                .join(""),
+            ).memory,
+          )
+        : output;
+    const stream = finished(response(result ? [textItem(JSON.stringify(result))] : [], { model: "memory-test" }));
+    return route.fulfill({ contentType: "text/event-stream", body: await stream.text() });
   });
   await page.goto("/tests/browser/fixtures/memory.html");
   await expect(page.getByRole("button", { name: "Disable memory" })).toBeVisible();

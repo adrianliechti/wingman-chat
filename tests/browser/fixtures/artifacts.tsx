@@ -1,3 +1,4 @@
+import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../../../src/index.css";
@@ -22,7 +23,8 @@ const config = await loadConfig();
 if (!config) throw new Error("Missing fixture config");
 const model = { id: "fixture", name: "Fixture" };
 config.client.listModels = async () => [model];
-config.client.complete = async () => ({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+const provider = testClient(async () => ({ role: "assistant", content: [{ type: "text", text: "Done" }] }));
+config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
 
 const releaseReads: Array<() => void> = [];

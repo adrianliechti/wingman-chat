@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import { getConfig } from "@/shared/config";
 import { flushPersistence } from "@/shared/lib/persistence";
 import { bytes, isMemoryIndex, MEMORY_ROOT, memoryPath, serializeMemoryDocument } from "./memoryDocument";

@@ -1,31 +1,347 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Client } from "./client";
+import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
 import { run } from "./agent";
 import { AgentInvocationContext, AgentRunController } from "./agent-run-controller";
-import { APIError, BadRequestError } from "openai/error";
+import { testClient } from "./test-support/ai";
 import type { Message, Tool } from "../types/chat";
-import { reasoningPrefix } from "./reasoning";
-import { toResponseTools } from "./toolSchemas";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
+const done: Message = { role: "assistant", content: [{ type: "text", text: "Done" }] };
+const call = (id = "call", args = "{}"): Message => ({
+  role: "assistant",
+  content: [{ type: "tool_call", name: "write", id, arguments: args }],
+});
+const tool = (execute: Tool["function"] = async () => [{ type: "text", text: "Written" }]): Tool => ({
+  name: "write",
+  parameters: { type: "object", properties: {} },
+  function: execute,
+});
+const overflow = () => Object.assign(new Error("Too much context"), { code: "context_length_exceeded", status: 400 });
 
-function fakeClient(complete: Client["complete"]): Client {
-  return { complete } as Client;
-}
+describe("TanStack agent lifecycle", () => {
+  it("discovers deferred tools natively and restores them from saved history", async () => {
+    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Written" }]);
+    const deferredTool = { ...tool(execute), lazy: true, description: "Write a file. Extended guidance." };
+    const discovery: Message = {
+      role: "assistant",
+      content: [{ type: "tool_call", name: DISCOVERY_TOOL_NAME, id: "discover", arguments: '{"toolNames":["write"]}' }],
+    };
+    const complete = vi.fn().mockResolvedValueOnce(discovery).mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
+    const first = await run(testClient(complete), "model", "", prompt, [deferredTool]);
+    expect(first.status).toBe("completed");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0][0].tools.map((entry: Tool) => entry.name)).toEqual([DISCOVERY_TOOL_NAME]);
+    expect(complete.mock.calls[0][0].tools[0].description).toContain("write — Write a file.");
+    expect(complete.mock.calls[0][0].tools[0].description).not.toContain("Extended guidance");
+    expect(complete.mock.calls[1][0].tools.map((entry: Tool) => entry.name)).toEqual(["write"]);
 
-describe("agent run controller", () => {
-  it("does not let lifecycle observers turn committed work into a failed run", async () => {
-    const observer = vi.fn(() => {
-      throw new Error("Observer failed");
-    });
-    const complete = vi.fn().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Done" }] });
-    const result = await run(fakeClient(complete), "model", "", prompt, [], { onEvent: observer });
+    // JSON storage drops prototypes and object identities; TanStack must still
+    // recognize its own discovery result without a separate cache in Wingman.
+    const restored: Message[] = JSON.parse(JSON.stringify([...first.messages, ...prompt]));
+    const next = vi.fn().mockResolvedValue(done);
+    await run(testClient(next), "model", "", restored, [deferredTool]);
+    expect(next.mock.calls[0][0].tools.map((entry: Tool) => entry.name)).toEqual(["write"]);
+
+    // Old discoveries cannot re-enable a tool removed from the current selection.
+    const disabled = vi.fn().mockResolvedValue(done);
+    await run(testClient(disabled), "model", "", restored, []);
+    expect(disabled.mock.calls[0][0].tools).toEqual([]);
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("does not execute a deferred tool before discovery and lets the model correct its call", async () => {
+    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Written" }]);
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(call("early"))
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            name: DISCOVERY_TOOL_NAME,
+            id: "discover",
+            arguments: '{"toolNames":["write"]}',
+          },
+        ],
+      })
+      .mockResolvedValueOnce(call("valid"))
+      .mockResolvedValueOnce(done);
+    const result = await run(testClient(complete), "model", "", prompt, [{ ...tool(execute), lazy: true }]);
     expect(result.status).toBe("completed");
-    expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("must be discovered first");
+    expect(result.modelCalls.used).toBe(4);
+  });
+
+  it("streams and commits turns, results, metadata and usage with stable identities", async () => {
+    const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
+    const started: Message[] = [],
+      ended: Message[] = [],
+      changes: Message[][] = [];
+    const resultHook = vi.fn();
+    const events: { sequence: number; type: string }[] = [];
+    const result = await run(
+      testClient(complete),
+      "model",
+      "Instructions",
+      prompt,
+      [
+        tool(async (_args, context) => {
+          context?.setMeta?.({ artifactDelta: { mutations: [{ path: "/a.txt" }] } });
+          context?.setContent?.({ saved: true });
+          return [{ type: "text", text: "Written" }];
+        }),
+      ],
+      {
+        onTurnStart: (message) => started.push(message),
+        onTurnEnd: (message) => ended.push(message),
+        onMessagesChange: (messages) => changes.push(messages),
+        onToolResult: resultHook,
+        onEvent: (event) => events.push(event),
+      },
+    );
+    expect(result.status).toBe("completed");
+    expect(result.modelCalls.used).toBe(2);
+    expect(started.map((m) => m.id)).toEqual(ended.map((m) => m.id));
+    expect(new Set(started.map((m) => m.id)).size).toBe(2);
+    expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    expect(result.messages[2].content[0]).toMatchObject({
+      type: "tool_result",
+      id: "call",
+      meta: { artifactDelta: { mutations: [{ path: "/a.txt" }] } },
+      content: { saved: true },
+    });
+    expect(result.messages.at(-1)?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+    expect(resultHook).toHaveBeenCalledOnce();
+    expect(changes.at(-1)).toBe(result.messages);
+    expect(events.map((event) => event.sequence)).toEqual(events.map((_, i) => i));
+    expect(complete.mock.calls[1][0].messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ role: "tool", toolCallId: "call" })]),
+    );
+  });
+
+  it("stops a repeated tool cycle at the shared model budget", async () => {
+    const complete = vi.fn(async () => call(crypto.randomUUID()));
+    const result = await run(testClient(complete), "model", "", prompt, [tool()], { maxTurns: 2 });
+    expect(result.status).toBe("max_turns");
+    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps streamed tokens out of durable history updates after a tool result", async () => {
+    const complete = vi
+      .fn<Parameters<typeof testClient>[0]>()
+      .mockResolvedValueOnce(call())
+      .mockImplementationOnce(async (_options, onStream) => {
+        onStream([{ type: "text", text: "D" }]);
+        onStream([{ type: "text", text: "Do" }]);
+        onStream(done.content);
+        return done;
+      });
+    const changes: Message[][] = [];
+    await run(testClient(complete), "model", "", prompt, [tool()], {
+      onMessagesChange: (messages) => changes.push(messages),
+    });
+    expect(changes.filter((messages) => messages.at(-1)?.content[0]?.type === "tool_result")).toHaveLength(1);
+  });
+
+  it("never invokes a model after parent cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const complete = vi.fn();
+    const result = await run(testClient(complete), "model", "", prompt, [], {
+      invocationContext: new AgentInvocationContext({ signal: controller.signal }),
+      options: { signal: new AbortController().signal },
+    });
+    expect(result.status).toBe("aborted");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("cancels an executing tool without persisting an error result", async () => {
+    const controller = new AbortController();
+    const complete = vi.fn().mockResolvedValue(call());
+    const result = await run(
+      testClient(complete),
+      "model",
+      "",
+      prompt,
+      [
+        tool(async (_args, context) => {
+          controller.abort();
+          context?.signal?.throwIfAborted();
+          return [];
+        }),
+      ],
+      { options: { signal: controller.signal } },
+    );
+    expect(result.status).toBe("aborted");
+    expect(result.messages.flatMap((m) => m.content).some((p) => p.type === "tool_result")).toBe(false);
     expect(complete).toHaveBeenCalledOnce();
   });
 
-  it("finalizes before publishing its terminal event, including reentrant observers", () => {
+  it("lets TanStack validate tool inputs without executing invalid arguments", async () => {
+    const execute = vi.fn();
+    const resultHook = vi.fn();
+    const complete = vi.fn().mockResolvedValueOnce(call("bad", '{"count":"many"}')).mockResolvedValueOnce(done);
+    const result = await run(
+      testClient(complete),
+      "model",
+      "",
+      prompt,
+      [
+        {
+          ...tool(execute),
+          parameters: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] },
+        },
+      ],
+      { onToolResult: resultHook },
+    );
+    expect(result.status).toBe("completed");
+    expect(execute).not.toHaveBeenCalled();
+    expect(resultHook).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ code: "TOOL_EXECUTION_ERROR" }) }),
+    );
+    expect(result.messages.flatMap((m) => m.content)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "tool_result", id: "bad" })]),
+    );
+  });
+
+  it("does not execute truncated tool arguments", async () => {
+    const execute = vi.fn();
+    const complete = vi
+      .fn()
+      .mockResolvedValue({ role: "assistant", content: [{ ...call().content[0], incomplete: true }] });
+    const result = await run(testClient(complete), "model", "", prompt, [tool(execute)]);
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("OUTPUT_TRUNCATED");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps rich error results and reports their failure through the native tool loop", async () => {
+    const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
+    const result = await run(testClient(complete), "model", "", prompt, [
+      tool(async (_args, context) => {
+        context?.setMeta?.({ toolResource: "ui://error", mcpResult: { isError: true } });
+        context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Remote operation failed" });
+        return [{ type: "text", text: "Failure details" }];
+      }),
+    ]);
+    expect(result.status).toBe("completed");
+    expect(result.messages[2]).toMatchObject({
+      error: { code: "MCP_TOOL_ERROR", message: "Remote operation failed" },
+      content: [
+        {
+          type: "tool_result",
+          result: [{ type: "text", text: "Failure details" }],
+          meta: { toolResource: "ui://error", mcpResult: { isError: true } },
+        },
+      ],
+    });
+    expect(complete.mock.calls[1][0].messages).toContainEqual(
+      expect.objectContaining({
+        role: "tool",
+        error: "Remote operation failed",
+        content: "Failure details",
+      }),
+    );
+  });
+
+  it("keeps committed tool work when a later request fails and does not replay it on resume", async () => {
+    const execute = vi.fn(async () => [{ type: "text" as const, text: "Saved" }]);
+    const complete = vi.fn().mockResolvedValueOnce(call()).mockRejectedValueOnce(new Error("Model failed"));
+    const result = await run(testClient(complete), "model", "", prompt, [tool(execute)]);
+    expect(result.status).toBe("failed");
+    expect(result.messages.at(-1)?.content[0]).toMatchObject({ type: "tool_result", id: "call" });
+    const resumed = await run(testClient(vi.fn().mockResolvedValue(done)), "model", "", result.messages, [
+      tool(execute),
+    ]);
+    expect(resumed.status).toBe("completed");
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("charges delegated calls to the same invocation budget", async () => {
+    const child = vi.fn().mockResolvedValue(done);
+    const parent = vi.fn().mockResolvedValue(call());
+    const result = await run(
+      testClient(parent),
+      "model",
+      "",
+      prompt,
+      [
+        tool(async (_args, ctx) => {
+          const result = await run(testClient(child), "model", "", prompt, [], {
+            invocationContext: ctx?.invocationContext?.fork("child"),
+          });
+          expect(result.status).toBe("completed");
+          return [{ type: "text", text: "Done" }];
+        }),
+      ],
+      { maxModelCalls: 2 },
+    );
+    expect(result.status).toBe("max_turns");
+    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
+    expect(parent).toHaveBeenCalledOnce();
+    expect(child).toHaveBeenCalledOnce();
+  });
+
+  it("retains artifact verification feedback within the same bounded run", async () => {
+    const complete = vi.fn().mockResolvedValue(done);
+    const verify = vi
+      .fn()
+      .mockResolvedValueOnce({
+        action: "continue",
+        feedback: {
+          role: "user",
+          content: [{ type: "runtime_feedback", source: "artifact_stop_policy", text: "Verify /a.html" }],
+        },
+      })
+      .mockResolvedValueOnce({ action: "finish", appendContent: [{ type: "artifact_ref", path: "/a.html" }] });
+    const result = await run(testClient(complete), "model", "", prompt, [], { beforeFinish: verify });
+    expect(result.status).toBe("completed");
+    expect(result.modelCalls.used).toBe(2);
+    expect(result.messages.at(-1)?.content.at(-1)).toMatchObject({ type: "artifact_ref", path: "/a.html" });
+    expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Verify /a.html");
+  });
+
+  it("retries context overflow with compacted history and bounds recovery", async () => {
+    const compacted: Message[] = [
+      { role: "assistant", content: [{ type: "summary", text: "Previous work" }] },
+      ...prompt,
+    ];
+    const complete = vi.fn().mockRejectedValueOnce(overflow()).mockResolvedValueOnce(done);
+    const result = await run(testClient(complete), "model", "", prompt, [], {
+      onContextOverflow: async () => compacted,
+    });
+    expect(result.status).toBe("completed");
+    expect(result.modelCalls.used).toBe(2);
+    expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Previous work");
+    const repeat = vi.fn().mockRejectedValue(overflow());
+    const failed = await run(testClient(repeat), "model", "", prompt, [], {
+      onContextOverflow: async (messages) => [...messages],
+    });
+    expect(failed.error?.code).toBe("CONTEXT_EXHAUSTED");
+    expect(repeat).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops when compaction itself is cancelled", async () => {
+    const complete = vi.fn().mockRejectedValue(overflow());
+    const result = await run(testClient(complete), "model", "", prompt, [], {
+      onContextOverflow: async () => {
+        throw new DOMException("Cancelled", "AbortError");
+      },
+    });
+    expect(result.status).toBe("aborted");
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("isolates lifecycle observer failures and finalizes before reentrant observers", async () => {
+    const observer = vi.fn(() => {
+      throw new Error("Observer failed");
+    });
+    expect(
+      (await run(testClient(vi.fn().mockResolvedValue(done)), "model", "", prompt, [], { onEvent: observer })).status,
+    ).toBe("completed");
     const nested = vi.fn();
     const controller = new AgentRunController({
       onEvent: (event) => {
@@ -34,459 +350,5 @@ describe("agent run controller", () => {
     });
     const result = controller.finish("completed", "end_turn", prompt);
     expect(nested).toHaveBeenCalledExactlyOnceWith(result);
-    expect(result.status).toBe("completed");
-    expect(result.messages).toBe(prompt);
-  });
-
-  it("returns max_turns with ordered events and invocation-wide model usage", async () => {
-    const complete = vi.fn(async () => ({
-      role: "assistant" as const,
-      content: [{ type: "tool_call" as const, id: crypto.randomUUID(), name: "noop", arguments: "{}" }],
-    }));
-    const tool: Tool = {
-      name: "noop",
-      parameters: { type: "object", properties: {} },
-      function: async () => [{ type: "text", text: "ok" }],
-    };
-    const events: Array<{ sequence: number }> = [];
-    const started: Message[] = [];
-    const ended: Message[] = [];
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool], {
-      maxTurns: 2,
-      onEvent: (event) => events.push(event),
-      onTurnStart: (message) => started.push(message),
-      onTurnEnd: (message) => ended.push(message),
-    });
-
-    expect(result.status).toBe("max_turns");
-    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
-    expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index));
-    expect(new Set(started.map((message) => message.id)).size).toBe(2);
-    expect(started.every((message) => !!message.id && message.content.length === 0)).toBe(true);
-    expect(ended.map((message) => message.id)).toEqual(started.map((message) => message.id));
-    expect(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).toEqual(
-      started.map((message) => message.id),
-    );
-  });
-
-  it("does not call the model when already aborted", async () => {
-    const controller = new AbortController();
-    controller.abort();
-    const complete = vi.fn();
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [], {
-      options: { signal: controller.signal },
-    });
-    expect(result.status).toBe("aborted");
-    expect(complete).not.toHaveBeenCalled();
-  });
-
-  it("uses invocation cancellation even when request options provide another signal", async () => {
-    const parent = new AbortController();
-    parent.abort();
-    const complete = vi.fn();
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [], {
-      invocationContext: new AgentInvocationContext({ signal: parent.signal }),
-      options: { signal: new AbortController().signal },
-    });
-    expect(result.status).toBe("aborted");
-    expect(complete).not.toHaveBeenCalled();
-  });
-
-  it("treats a tool AbortError as terminal cancellation without persisting an error result", async () => {
-    const controller = new AbortController();
-    const complete = vi.fn(async () => ({
-      role: "assistant" as const,
-      content: [{ type: "tool_call" as const, id: "cancel-call", name: "cancel", arguments: "{}" }],
-    }));
-    const tool: Tool = {
-      name: "cancel",
-      parameters: { type: "object", properties: {} },
-      function: async (_args, context) => {
-        controller.abort();
-        context?.signal?.throwIfAborted();
-        return [{ type: "text", text: "unreachable" }];
-      },
-    };
-
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool], {
-      options: { signal: controller.signal },
-    });
-
-    expect(result.status).toBe("aborted");
-    expect(result.messages.some((message) => message.content.some((part) => part.type === "tool_result"))).toBe(false);
-  });
-
-  it("emits one streaming phase event and appends stop-policy content immutably", async () => {
-    const events: string[] = [];
-    const complete = vi.fn(async (...args: Parameters<Client["complete"]>) => {
-      const stream = args[4];
-      stream?.([{ type: "text", text: "a" }]);
-      stream?.([{ type: "text", text: "ab" }]);
-      return { role: "assistant" as const, content: [{ type: "text" as const, text: "done" }] };
-    });
-    const result = await run(fakeClient(complete), "model", "instructions", prompt, [], {
-      onEvent: (event) => events.push(event.type),
-      beforeFinish: async () => ({
-        action: "finish",
-        appendContent: [{ type: "artifact_ref", path: "/result.md" }],
-      }),
-    });
-
-    expect(events.filter((type) => type === "model.streaming")).toHaveLength(1);
-    expect(result.messages.at(-1)?.content.at(-1)).toEqual({ type: "artifact_ref", path: "/result.md" });
-    expect(prompt).toEqual([{ role: "user", content: [{ type: "text", text: "go" }] }]);
-  });
-
-  it("continues from runtime policy feedback without exposing a second invocation", async () => {
-    const complete = vi
-      .fn()
-      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "draft" }] })
-      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "fixed" }] });
-    let checks = 0;
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [], {
-      beforeFinish: async () =>
-        checks++ === 0
-          ? {
-              action: "continue",
-              feedback: {
-                role: "user",
-                content: [{ type: "runtime_feedback", source: "verification", text: "Fix the file." }],
-              },
-            }
-          : { action: "finish" },
-    });
-    expect(result.status).toBe("completed");
-    expect(complete).toHaveBeenCalledTimes(2);
-    expect(result.messages.some((message) => message.content.some((part) => part.type === "runtime_feedback"))).toBe(
-      true,
-    );
-  });
-
-  it("rejects duplicate tool names before exposing an ambiguous registry to the model", async () => {
-    const complete = vi.fn();
-    const first: Tool = {
-      name: "duplicate",
-      parameters: { type: "object" },
-      function: vi.fn(),
-    };
-    const second: Tool = { ...first, function: vi.fn() };
-
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [
-      first,
-      second,
-    ]);
-
-    expect(result.status).toBe("failed");
-    expect(result.error?.message).toContain("Duplicate tool name: duplicate");
-    expect(complete).not.toHaveBeenCalled();
-  });
-
-  it("returns schema-invalid arguments to the model without invoking the tool", async () => {
-    const complete = vi
-      .fn()
-      .mockResolvedValueOnce({
-        role: "assistant",
-        content: [{ type: "tool_call", id: "bad-args", name: "typed", arguments: '{"count":"many"}' }],
-      })
-      .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "corrected" }] });
-    const execute = vi.fn();
-    const tool: Tool = {
-      name: "typed",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["count"],
-        properties: { count: { type: "integer" } },
-      },
-      function: execute,
-    };
-
-    const result = await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [tool]);
-
-    expect(result.status).toBe("completed");
-    expect(execute).not.toHaveBeenCalled();
-    const toolResult = result.messages
-      .flatMap((message) => message.content)
-      .find((part) => part.type === "tool_result" && part.id === "bad-args");
-    expect(toolResult).toMatchObject({ name: "typed" });
-    expect(toolResult && "result" in toolResult ? toolResult.result : []).toEqual(
-      expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("must be integer") })]),
-    );
-  });
-});
-
-describe("agent recovery", () => {
-  const overflow = () =>
-    new BadRequestError(400, { code: "context_length_exceeded" }, "Too much context", new Headers());
-  const done: Message = { role: "assistant", content: [{ type: "text", text: "Done" }] };
-
-  it("retries with compacted history and publishes the same history to observers", async () => {
-    const compacted: Message[] = [
-      { role: "assistant", content: [{ type: "summary", text: "Previous work" }] },
-      ...prompt,
-    ];
-    const complete = vi.fn().mockRejectedValueOnce(overflow()).mockResolvedValueOnce(done);
-    const changes: Message[][] = [];
-    const result = await run(fakeClient(complete), "model", "", prompt, [], {
-      onContextOverflow: async () => compacted,
-      onMessagesChange: (messages) => changes.push(messages),
-    });
-    expect(result.status).toBe("completed");
-    expect(complete.mock.calls[1][2]).toBe(compacted);
-    expect(changes[0]).toBe(compacted);
-    expect(changes.at(-1)).toBe(result.messages);
-    expect(result.modelCalls.used).toBe(2);
-  });
-
-  it("bounds repeated overflows and reports the original error if compaction cannot help", async () => {
-    const error = overflow();
-    const complete = vi.fn().mockRejectedValue(error);
-    const compact = vi.fn(async (messages: Message[]) => [...messages]);
-    const result = await run(fakeClient(complete), "model", "", prompt, [], { onContextOverflow: compact });
-    expect(result.status).toBe("failed");
-    expect(result.error?.code).toBe("CONTEXT_EXHAUSTED");
-    expect(complete).toHaveBeenCalledTimes(3);
-    expect(compact).toHaveBeenCalledTimes(2);
-
-    complete.mockClear();
-    const unchanged = await run(fakeClient(complete), "model", "", prompt, [], {
-      onContextOverflow: (messages) => messages,
-    });
-    expect(unchanged.status).toBe("failed");
-    expect(complete).toHaveBeenCalledTimes(1);
-  });
-
-  it("treats a summarizer AbortError as cancellation even without an aborted signal", async () => {
-    const complete = vi.fn().mockRejectedValue(overflow());
-    const result = await run(fakeClient(complete), "model", "", prompt, [], {
-      onContextOverflow: async () => {
-        throw new DOMException("Cancelled", "AbortError");
-      },
-    });
-    expect(result.status).toBe("aborted");
-    expect(complete).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not spend another model call after aborting during compaction", async () => {
-    const controller = new AbortController();
-    const complete = vi.fn().mockRejectedValue(overflow());
-    const result = await run(fakeClient(complete), "model", "", prompt, [], {
-      options: { signal: controller.signal },
-      onContextOverflow: async (messages) => {
-        controller.abort();
-        return [...messages];
-      },
-    });
-    expect(result.status).toBe("aborted");
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(result.modelCalls.used).toBe(1);
-  });
-
-  it("drops rejected reasoning payloads once, then treats a repeat as a genuine request error", async () => {
-    const rejected = () =>
-      new BadRequestError(400, { code: "invalid_encrypted_content" }, "Bad payload", new Headers());
-    const history: Message[] = [
-      ...prompt,
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "reasoning",
-            id: "rs_1",
-            text: "",
-            encryptedContent: "enc",
-            model: "model",
-            prefix: reasoningPrefix("", undefined),
-          },
-          { type: "tool_call", id: "c1", name: "read", arguments: "{}" },
-        ],
-      },
-      {
-        role: "user",
-        content: [
-          { type: "tool_result", id: "c1", name: "read", arguments: "{}", result: [{ type: "text", text: "OK" }] },
-        ],
-      },
-    ];
-    const complete = vi.fn().mockRejectedValueOnce(rejected()).mockResolvedValueOnce(done);
-    const changes: Message[][] = [];
-    const result = await run(fakeClient(complete), "model", "", history, [], {
-      onMessagesChange: (messages) => changes.push(messages),
-    });
-    expect(result.status).toBe("completed");
-    expect(complete).toHaveBeenCalledTimes(2);
-    const retried: Message[] = complete.mock.calls[1][2];
-    expect(retried[1].content[0]).toEqual({ type: "reasoning", id: "rs_1", text: "" });
-    expect(changes[0]).toBe(retried);
-
-    const repeated = vi.fn().mockRejectedValue(rejected());
-    expect((await run(fakeClient(repeated), "model", "", history, [])).status).toBe("failed");
-    expect(repeated).toHaveBeenCalledTimes(2);
-
-    const nothingReplayed = vi.fn().mockRejectedValue(rejected());
-    expect((await run(fakeClient(nothingReplayed), "model", "", prompt, [])).status).toBe("failed");
-    expect(nothingReplayed).toHaveBeenCalledOnce();
-  });
-
-  it("keeps reasoning payloads after completion and failure for subsequent requests", async () => {
-    const tools: Tool[] = [
-      { name: "read", parameters: { type: "object" }, function: async () => [{ type: "text", text: "OK" }] },
-    ];
-    const reasoning = {
-      type: "reasoning" as const,
-      id: "rs",
-      text: "",
-      summary: "Plan",
-      encryptedContent: "enc",
-      model: "model",
-      prefix: reasoningPrefix("", toResponseTools(tools)),
-    };
-    const finished = vi
-      .fn()
-      .mockResolvedValue({ role: "assistant", content: [reasoning, { type: "text", text: "Done" }] });
-    const completed = await run(fakeClient(finished), "model", "", prompt, tools);
-    expect(completed.status).toBe("completed");
-    expect(completed.messages.at(-1)?.content[0]).toEqual(reasoning);
-
-    const failing = vi
-      .fn()
-      .mockResolvedValueOnce({
-        role: "assistant",
-        content: [reasoning, { type: "tool_call", id: "c", name: "read", arguments: "{}" }],
-      })
-      .mockRejectedValueOnce(new APIError(500, {}, "Unavailable", undefined));
-    const failed = await run(fakeClient(failing), "model", "", prompt, tools);
-    expect(failed.status).toBe("failed");
-    expect(failed.messages[1].content[0]).toMatchObject({ encryptedContent: "enc" });
-  });
-
-  it("keeps completed tools after a later model failure so recovery need not rerun them", async () => {
-    const execute = vi.fn(async () => [{ type: "text" as const, text: "Written" }]);
-    const complete = vi
-      .fn()
-      .mockResolvedValueOnce({
-        role: "assistant",
-        content: [{ type: "tool_call", id: "once", name: "write", arguments: "{}" }],
-      })
-      .mockRejectedValueOnce(new APIError(500, {}, "Unavailable", undefined));
-    const result = await run(fakeClient(complete), "model", "", prompt, [
-      { name: "write", parameters: { type: "object" }, function: execute },
-    ]);
-    expect(result.status).toBe("failed");
-    expect(result.messages.at(-1)?.content[0]).toMatchObject({ type: "tool_result", id: "once" });
-    const resumed = await run(fakeClient(vi.fn().mockResolvedValue(done)), "model", "", result.messages, []);
-    expect(resumed.status).toBe("completed");
-    expect(execute).toHaveBeenCalledOnce();
-  });
-
-  it("rejects duplicate call IDs before any tool side effects", async () => {
-    const execute = vi.fn();
-    const call = { type: "tool_call", id: "duplicate", name: "write", arguments: "{}" };
-    const complete = vi.fn().mockResolvedValue({ role: "assistant", content: [call, call] });
-    const result = await run(fakeClient(complete), "model", "", prompt, [
-      { name: "write", parameters: { type: "object" }, function: execute },
-    ]);
-    expect(result.status).toBe("failed");
-    expect(result.error?.code).toBe("INVALID_TOOL_CALL");
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it("shares the model budget with nested agents and stops without another request", async () => {
-    const child = vi.fn().mockResolvedValue(done);
-    const parent = vi.fn().mockResolvedValue({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "child", name: "agent", arguments: "{}" }],
-    });
-    const tool: Tool = {
-      name: "agent",
-      parameters: { type: "object" },
-      function: async (_args, context) => {
-        const nested = await run(fakeClient(child), "model", "", prompt, [], {
-          invocationContext: context?.invocationContext?.fork("child"),
-        });
-        expect(nested.status).toBe("completed");
-        return [{ type: "text", text: "Child done" }];
-      },
-    };
-    const result = await run(fakeClient(parent), "model", "", prompt, [tool], { maxModelCalls: 2 });
-    expect(result.status).toBe("max_turns");
-    expect(result.modelCalls).toEqual({ used: 2, limit: 2 });
-    expect(parent).toHaveBeenCalledOnce();
-    expect(child).toHaveBeenCalledOnce();
-  });
-});
-
-describe("truncated tool calls", () => {
-  const truncatedArguments = '{"path": "/etl/pipeline.py"';
-
-  function writeTool(fn: () => Promise<unknown>): Tool {
-    return {
-      name: "create",
-      parameters: {
-        type: "object",
-        properties: { path: { type: "string" }, content: { type: "string" } },
-        required: ["path", "content"],
-        additionalProperties: false,
-      },
-      function: fn as Tool["function"],
-    };
-  }
-
-  // A response cut short by max_output_tokens finalizes the call with a
-  // truncated JSON prefix. Repairing it yields {"path": "..."} — valid, but
-  // missing the payload the model was mid-way through writing — so the tool
-  // would blame the model for omitting `content`.
-  it("reports the token limit instead of running the tool with a missing payload", async () => {
-    const invoked = vi.fn(async () => [{ type: "text" as const, text: "written" }]);
-    const complete = vi.fn(async () => ({
-      role: "assistant" as const,
-      content: [
-        {
-          type: "tool_call" as const,
-          id: "call_truncated",
-          name: "create",
-          arguments: truncatedArguments,
-          incomplete: true,
-        },
-      ],
-    }));
-
-    const result = await run(
-      fakeClient(complete as Client["complete"]),
-      "model",
-      "instructions",
-      prompt,
-      [writeTool(invoked)],
-      { maxTurns: 1 },
-    );
-
-    expect(invoked).not.toHaveBeenCalled();
-
-    const text = JSON.stringify(result);
-    expect(text).toContain("output token limit");
-    expect(text).not.toContain("content is required");
-  });
-
-  // Without the flag the same arguments must still take the ordinary repair
-  // path, so the fix does not change behaviour for complete calls.
-  it("still parses complete arguments normally", async () => {
-    const invoked = vi.fn(async () => [{ type: "text" as const, text: "written" }]);
-    const complete = vi.fn(async () => ({
-      role: "assistant" as const,
-      content: [
-        {
-          type: "tool_call" as const,
-          id: "call_ok",
-          name: "create",
-          arguments: '{"path": "/a.py", "content": "print(1)"}',
-        },
-      ],
-    }));
-
-    await run(fakeClient(complete as Client["complete"]), "model", "instructions", prompt, [writeTool(invoked)], {
-      maxTurns: 1,
-    });
-
-    expect(invoked).toHaveBeenCalled();
   });
 });

@@ -143,10 +143,6 @@ function resolvedMutations(
   return result === false ? [] : [fallback];
 }
 
-// Keep the shared file toolbox schema-guided so optional defaults can simply be
-// omitted. Every handler validates its required arguments defensively at runtime.
-const SCHEMA_GUIDED = false;
-
 // ---------------------------------------------------------------------------
 // Tool factories
 // ---------------------------------------------------------------------------
@@ -154,7 +150,6 @@ const SCHEMA_GUIDED = false;
 function createReadTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "read"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
         icon: FileText,
@@ -264,7 +259,6 @@ function createReadTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
 function createWriteTool(source: WritableFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "create"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({
         icon: FilePlus2,
@@ -669,7 +663,6 @@ function editPreview(args: Record<string, unknown> | null): string | undefined {
 function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "edit"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => {
         const preview = editPreview(args);
@@ -824,7 +817,6 @@ function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
 function createDeleteTool(source: WritableFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "delete"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
     },
@@ -856,7 +848,6 @@ function createDeleteTool(source: WritableFileSource, opts: ResolvedFileToolsOpt
 function createMoveTool(source: WritableFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "move"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => {
         const from = (typeof args?.from === "string" ? args.from : "").replace(/^\/+/, "");
@@ -1044,7 +1035,6 @@ function scanText(content: string, regex: RegExp, multiline: boolean): GrepScan 
 function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "grep"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
         icon: Search,
@@ -1245,7 +1235,6 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
 function createGlobTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "glob"),
-    strict: SCHEMA_GUIDED,
     display: {
       header: (args, state) => ({
         icon: FileSearch,

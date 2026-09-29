@@ -1,6 +1,6 @@
 /**
  * Union-free execution-tool schemas shared by the UI provider and compatibility
- * tests. These tools are schema-guided rather than strict, so mutually exclusive
+ * tests. TanStack handles provider strictness; mutually exclusive
  * selectors can be omitted instead of serialized as
  * fake empty values. Keeping the small selector fields before the large payload
  * also avoids a Bedrock/Anthropic parameter-boundary failure seen with multiline

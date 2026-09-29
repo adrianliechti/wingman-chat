@@ -48,7 +48,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
   });
 
   void test(
-    "recovers from a dropped real response stream without duplicating its partial answer",
+    "reports a dropped native response stream and accepts an explicit retry",
     async () => {
       const marker = "WINGMAN_RECOVERY_OK";
       const before = faults.snapshot();
@@ -66,14 +66,23 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
           options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
         },
       );
-      assert.equal(result.status, "completed", resultDetail(result));
-      assert.equal(messageText(result.messages.slice(-1)).trim(), marker);
+      assert.equal(result.status, "failed", resultDetail(result));
       assert.equal(faults.snapshot().droppedCount - before.droppedCount, 1);
-      assert.equal(faults.snapshot().requestCount - before.requestCount, 2);
+      assert.equal(faults.snapshot().requestCount - before.requestCount, 1);
       assert(
-        snapshots.some((content) => content.length === 0),
-        "Retry did not clear the partial answer",
+        snapshots.some((content) => content.length > 0),
+        "No partial answer was observed",
       );
+      const retry = await run(
+        client,
+        selectedModel,
+        `Reply with exactly ${marker}.`,
+        [{ role: Role.User, content: [{ type: "text", text: "Retry the request." }] }],
+        [],
+        { maxTurns: 1, options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+      );
+      assert.equal(retry.status, "completed", resultDetail(retry));
+      assert.equal(messageText(retry.messages.slice(-1)).trim(), marker);
     },
     { timeout: REQUEST_TIMEOUT_MS },
   );
@@ -157,7 +166,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       const tool = {
         name: "lookup_e2e_fixture",
         description: "Return the deterministic value required by the gateway end-to-end test.",
-        strict: true,
+
         parameters: {
           type: "object",
           properties: { key: { type: "string" } },
@@ -224,7 +233,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       );
       const questionsToolModule = await harness.vite.ssrLoadModule("/src/features/chat/lib/questionsTool.ts");
       const artifactModule = await harness.vite.ssrLoadModule("/src/shared/types/artifact.ts");
-      const toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/toolSchemas.ts");
+      const toolSchemasModule = await harness.vite.ssrLoadModule("/src/shared/lib/test-support/toolSchemas.ts");
 
       const files = new Map();
       const source = {
@@ -302,13 +311,13 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         {
           name: "execute_python_code",
           description: "Production schema compatibility fixture. Do not call this tool in this test.",
-          strict: false,
+
           parameters: executionSchemasModule.PYTHON_EXECUTION_PARAMETERS,
         },
         {
           name: "execute_javascript_code",
           description: "Production schema compatibility fixture. Do not call this tool in this test.",
-          strict: false,
+
           parameters: executionSchemasModule.JAVASCRIPT_EXECUTION_PARAMETERS,
         },
       ].map((tool) => ({
@@ -318,14 +327,10 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       const tools = [...fileTools, ...schemaOnlyTools, questionsToolModule.ASK_QUESTIONS_TOOL];
 
       // Keep the production file, execution, and default question schemas
-      // union-free and schema-guided for predictable provider behavior.
+      // union-free for predictable provider behavior; TanStack controls strictness.
       assert.equal(
         tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
         0,
-      );
-      assert.deepEqual(
-        tools.filter((tool) => tool.strict).map((tool) => tool.name),
-        [],
       );
 
       let manifest;

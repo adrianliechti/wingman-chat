@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolContext } from "@/shared/types/chat";
+import { testClient } from "@/shared/lib/test-support/ai";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { createSubagentTool } from "./subagent";
 
 const state = vi.hoisted(() => ({ complete: vi.fn() }));
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: { complete: state.complete } }) }));
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(state.complete) }) }));
 
 describe("subagent invocation identity", () => {
   beforeEach(() => {
@@ -41,8 +42,8 @@ describe("subagent invocation identity", () => {
     expect(child?.runId).toBeTruthy();
     expect(state.complete).toHaveBeenCalledTimes(2);
     const request = state.complete.mock.calls[0];
-    expect(request[1]).not.toContain("active_file");
-    expect(JSON.stringify(request[2])).toContain("active_file: /current.md");
+    expect(request[0].systemPrompts).not.toContain("active_file");
+    expect(JSON.stringify(request[0].messages)).toContain("active_file: /current.md");
     return child!;
   }
 

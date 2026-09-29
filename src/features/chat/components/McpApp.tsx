@@ -1,10 +1,10 @@
 import { Loader2, Maximize2 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { McpAppSession } from "@/features/settings/lib/mcpAppSession";
+import { AppFrame, type AppBridge } from "@mcp-ui/client";
+import { buildHostContext, createAppBridge, type McpAppData } from "@/features/settings/lib/mcpAppSession";
 import { isAbortError } from "@/shared/lib/errors";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { parseToolArguments } from "@/shared/lib/toolArguments";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";
 import type { ToolResultContent } from "@/shared/types/chat";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
@@ -38,13 +38,15 @@ function getAppDisplayModes(toolResult: ToolResultContent): AppDisplayMode[] {
  * (setDisplayMode) — no teardown, no reload.
  */
 export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const sessionRef = useRef<McpAppSession | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const sessionRef = useRef<AppBridge | null>(null);
+  const [frame, setFrame] = useState<{ data: McpAppData; bridge: AppBridge } | null>(null);
+  const [sandboxUrl] = useState(() => new URL("/mcp-app-sandbox-proxy.html", window.location.origin));
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [inlineHeight, setInlineHeight] = useState(0);
   const [bridgeReady, setBridgeReady] = useState(false);
-  const { renderAppInto, showAppDrawer, closeApp, showDrawer, activeAppKey, setActiveAppKey, drawerTarget } = useApp();
+  const { showAppDrawer, closeApp, showDrawer, activeAppKey, setActiveAppKey, drawerTarget } = useApp();
   const { setProviderEnabled, restoreToolUI } = useToolsContext();
 
   const providerId = toolResult.meta?.toolProvider as string;
@@ -81,47 +83,61 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
     if (!isFullscreen) setInlineHeight(Math.min(height, INLINE_MAX_HEIGHT));
   });
 
-  // Render the bridge once on mount. An Effect Event so it always reads the latest
-  // props/state without forcing the mount Effect below to re-run — the bridge is
-  // persistent across mode changes.
+  const displayMode = isFullscreen || isFullscreenOnly ? "fullscreen" : "inline";
+  const updateHostContext = useEffectEvent(() => {
+    if (bridgeReady && sessionRef.current && frameRef.current && frame) {
+      sessionRef.current.setHostContext(buildHostContext(frame.data.tool, frameRef.current, displayMode));
+    }
+  });
+  const getDisplayMode = useEffectEvent(() => displayMode);
   const renderApp = useEffectEvent(async (signal: AbortSignal) => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
     setIsLoading(true);
     setError(null);
-    const displayMode = isFullscreen || isFullscreenOnly ? "fullscreen" : "inline";
     try {
-      const args = parseToolArguments(toolResult.arguments);
+      const args = JSON.parse(toolResult.arguments || "{}");
       await setProviderEnabled(providerId, true);
       signal.throwIfAborted();
-      await renderAppInto(iframe, signal);
-
-      const session = await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, content, {
-        iframe,
+      const data = await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, content, {
         signal,
-        context: {
-          updateMeta: (meta) => {
-            const modes = meta.appDisplayModes as AppDisplayMode[] | undefined;
-            if (modes?.length) setBridgeDisplayModes(modes);
-          },
-        },
-        displayMode,
-        onDisplayModeRequested: requestDisplayMode,
-        // Host owns the iframe height; only relevant inline (fullscreen fills the drawer).
-        onSizeChange,
+        initialResult: toolResult.meta?.mcpResult as import("@modelcontextprotocol/client").CallToolResult | undefined,
       });
-
-      if (signal.aborted) {
-        await session.close();
-        return;
-      }
-      sessionRef.current = session;
-      setIsLoading(false);
-      setBridgeReady(true);
+      signal.throwIfAborted();
+      const bridge = createAppBridge(data, {
+        getDisplayMode,
+        onDisplayModeRequested: requestDisplayMode,
+        hostContext: frameRef.current ? buildHostContext(data.tool, frameRef.current, displayMode) : undefined,
+      });
+      const unsubscribe = data.subscribe((kind) => {
+        if (kind === "disconnect") {
+          sessionRef.current = null;
+          setError("MCP server disconnected. Reopen this app to reconnect.");
+          void bridge.close();
+        } else if (bridge.getAppCapabilities()) {
+          const notify =
+            kind === "tools"
+              ? bridge.sendToolListChanged()
+              : kind === "resources"
+                ? bridge.sendResourceListChanged()
+                : bridge.sendPromptListChanged();
+          void notify.catch(console.error);
+        }
+      });
+      signal.addEventListener(
+        "abort",
+        () => {
+          unsubscribe();
+          void bridge
+            .teardownResource({}, { timeout: 1000 })
+            .catch(() => {})
+            .finally(() => bridge.close());
+        },
+        { once: true },
+      );
+      sessionRef.current = bridge;
+      setFrame({ data, bridge });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setError(error instanceof Error ? error.message : "Could not open this app");
-      console.error("Failed to render MCP app:", error);
       setIsLoading(false);
     }
   });
@@ -131,11 +147,22 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
     void renderApp(controller.signal);
     return () => {
       controller.abort();
-      const session = sessionRef.current;
       sessionRef.current = null;
-      if (session) void session.close().catch(console.error);
     };
   }, []);
+
+  useEffect(() => {
+    if (!frame || !frameRef.current) return;
+    const resize = new ResizeObserver(updateHostContext);
+    const theme = new MutationObserver(updateHostContext);
+    resize.observe(frameRef.current);
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    updateHostContext();
+    return () => {
+      resize.disconnect();
+      theme.disconnect();
+    };
+  }, [frame]);
 
   useEffect(() => {
     if (bridgeReady && isFullscreenOnly && isLastFullscreenApp) {
@@ -154,7 +181,7 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   useEffect(() => {
     if (!bridgeReady) return;
     if (isFullscreen && overlayWidth === undefined) return;
-    sessionRef.current?.setDisplayMode(isFullscreen || isFullscreenOnly ? "fullscreen" : "inline");
+    updateHostContext();
   }, [bridgeReady, isFullscreen, isFullscreenOnly, overlayWidth]);
 
   const iframeStyle: CSSProperties =
@@ -212,13 +239,35 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
             <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
           </div>
         )}
-        <iframe
-          ref={iframeRef}
-          style={iframeStyle}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-          title={`MCP App: ${toolResult.name}`}
-        />
+        <div ref={frameRef} style={iframeStyle} className="[&_iframe]:!w-full [&_iframe]:!h-full">
+          {frame && (
+            <AppFrame
+              appBridge={frame.bridge}
+              html={frame.data.html}
+              sandbox={{ url: sandboxUrl, permissions: "allow-scripts", csp: frame.data.resource.meta?.csp }}
+              toolInput={frame.data.input}
+              toolResult={frame.data.result}
+              onInitialized={({ appCapabilities }) => {
+                const modes = appCapabilities?.availableDisplayModes?.filter(
+                  (mode): mode is AppDisplayMode => mode === "inline" || mode === "fullscreen",
+                );
+                if (modes?.length) {
+                  setBridgeDisplayModes(modes);
+                  if (!modes.includes(displayMode)) requestDisplayMode(modes[0]);
+                }
+                setIsLoading(false);
+                setBridgeReady(true);
+              }}
+              onSizeChanged={({ height }) => {
+                if (height && Number.isFinite(height)) onSizeChange(height);
+              }}
+              onError={(error) => {
+                setError(error.message);
+                setIsLoading(false);
+              }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

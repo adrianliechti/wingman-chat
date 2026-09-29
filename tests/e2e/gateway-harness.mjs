@@ -56,8 +56,8 @@ function partialSseThroughTextDelta(buffer, waitForText) {
  * One-shot fault injector for `/v1/responses` streams. The first armed request
  * is forwarded to the real gateway until a text delta arrives, then the client
  * connection is cut without a terminal SSE event. The next request falls
- * through to the normal Vite proxy, exercising the application's real retry
- * path while keeping the failure deterministic.
+ * through to the normal Vite proxy so an explicit retry can be tested while
+ * keeping the failure deterministic.
  */
 export function createResponseFaultInjector() {
   let armed;

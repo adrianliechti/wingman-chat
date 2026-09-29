@@ -73,14 +73,11 @@ export function useArtifactsProvider(): ToolProvider | null {
   // Direct/UI calls use the active fs. Model calls carry their originating
   // chatId so neither a draft-chat render nor navigation can redirect a write.
   const artifactsTools = useCallback((): Tool[] => {
-    const fileTools = readWriteManager.createTools(
-      (context) => resolveArtifactFileSystem(fs, context?.chatId),
-      {
-        namespace: "artifacts",
-        spaceName: "artifact workspace",
-        validators: ARTIFACT_VALIDATORS,
-      },
-    );
+    const fileTools = readWriteManager.createTools((context) => resolveArtifactFileSystem(fs, context?.chatId), {
+      namespace: "artifacts",
+      spaceName: "artifact workspace",
+      validators: ARTIFACT_VALIDATORS,
+    });
     const runCode = async (options: Omit<Parameters<typeof executeArtifactCode>[0], "fs">) => {
       const workspace = resolveArtifactFileSystem(fs, options.context?.chatId);
       const result = await executeArtifactCode({
@@ -109,9 +106,6 @@ export function useArtifactsProvider(): ToolProvider | null {
         },
         description:
           "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. The user's selected skills have bundled resources mounted read-only under /home/user/skills/<name>/ (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
-        // Keep this schema-guided rather than provider-compiled: the combined
-        // artifact toolbox otherwise exceeds Anthropic's strict-schema budget.
-        strict: false,
         parameters: PYTHON_EXECUTION_PARAMETERS,
         // Hold the workspace lock through snapshot, execution and commit.
         function: (args: Record<string, unknown>, context?: ToolContext) =>
@@ -153,7 +147,6 @@ export function useArtifactsProvider(): ToolProvider | null {
           "`return` a value or `console.log(...)` to produce output. Pass the full script in `code`, or `path` to run an " +
           "existing .js artifact. For heavy data/number crunching or document libraries, Python (`execute_python_code`) " +
           "is usually the stronger fit — they share the filesystem, so you can do that step there and read the result back here.",
-        strict: false,
         parameters: JAVASCRIPT_EXECUTION_PARAMETERS,
         function: (args: Record<string, unknown>, context?: ToolContext) =>
           runCode({

@@ -1,4 +1,4 @@
-import { toolArgumentHints, tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type {
   Content,
@@ -10,6 +10,8 @@ import type {
 } from "@/shared/types/chat";
 import { getToolCallPreview } from "./chatMessageUtils";
 import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
+import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
+import { Search } from "lucide-react";
 
 export interface ResolvedToolHeader {
   Icon?: ToolDisplayIcon;
@@ -39,10 +41,21 @@ export function resolveToolHeader(
   rawArgs: string | undefined,
   state: ToolDisplayState,
 ): ResolvedToolHeader {
-  // Parsed once with the tool's schema hints and reused for both the header and
-  // the preview fallback below — without hints, a still-streaming payload field
-  // (e.g. `content` on create) makes recovery flaky and the preview flicker.
-  const args = tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters));
+  // TanStack supplies the same partial JSON parsing used by its streaming UI.
+  const args = tryParseToolArguments(rawArgs ?? "");
+  if (name === DISCOVERY_TOOL_NAME) {
+    return {
+      Icon: Search,
+      label: state.error ? "Tool discovery failed" : "Find tools",
+      mono: false,
+      preview: Array.isArray(args?.toolNames)
+        ? args.toolNames
+            .filter((item): item is string => typeof item === "string")
+            .map(getToolDisplayName)
+            .join(", ")
+        : null,
+    };
+  }
   const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
   return {
     Icon: h?.icon,
@@ -55,9 +68,7 @@ export function resolveToolHeader(
 /** Expanded input blocks: the tool's `display.input`, else a best-effort arguments block. */
 export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undefined): ToolDisplayBlock[] {
   const input = tool?.display?.input;
-  return input
-    ? input(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)))
-    : defaultInputBlocks(rawArgs);
+  return input ? input(tryParseToolArguments(rawArgs ?? "")) : defaultInputBlocks(rawArgs);
 }
 
 /**

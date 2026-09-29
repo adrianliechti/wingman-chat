@@ -1,7 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
-import { compileToolRegistry } from "@/shared/lib/toolRegistry";
 import { useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 
@@ -115,7 +114,7 @@ describe("chat prompt context", () => {
     async (mode) => {
       const tools = await context(undefined, mode).tools();
       expect(tools.map((tool) => tool.name)).toEqual(["ask_questions"]);
-      const questions = compileToolRegistry(tools).get("ask_questions")!;
+      const questions = tools.find((tool) => tool.name === "ask_questions")!;
       const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { format: "html" } });
       const result = await questions.function(
         {
@@ -154,7 +153,7 @@ describe("chat prompt context", () => {
     state.renderer = { model: "image" };
     const available = await context({ id: "test", name: "Test", tools }).tools();
     expect(available.map((tool) => tool.name)).toEqual(["create_image", "ask_questions", "agent"]);
-    expect(() => compileToolRegistry(available)).not.toThrow();
+    expect(new Set(available.map((tool) => tool.name)).size).toBe(available.length);
   });
 
   it("enabling Studio adds its instructions without duplicating default tools", async () => {
@@ -164,7 +163,7 @@ describe("chat prompt context", () => {
     const studio = context();
     const tools = await studio.tools();
     expect(tools.map((tool) => tool.name)).toEqual(defaults.map((tool) => tool.name));
-    expect(() => compileToolRegistry(tools)).not.toThrow();
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
     expect(studio.instructions()).toContain("## Studio");
   });
 });

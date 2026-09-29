@@ -4,7 +4,6 @@ export interface AppContextType {
   showAppDrawer: boolean;
   setShowAppDrawer: (show: boolean) => void;
   toggleAppDrawer: () => void;
-  renderAppInto: (iframe: HTMLIFrameElement, signal?: AbortSignal) => Promise<void>;
   closeApp: () => Promise<void>;
   hasAppContent: boolean;
   showDrawer: () => void;

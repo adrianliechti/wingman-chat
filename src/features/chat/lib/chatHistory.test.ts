@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Message, ReasoningContent } from "@/shared/types/chat";
-import { toResponseInput } from "@/shared/lib/responses";
+import { toAIMessages } from "@/shared/lib/aiMessages";
+const nativeParts = (messages: Message[], model?: string) =>
+  toAIMessages(messages, model).flatMap((message) => message.parts);
 import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { compactIfNeeded, historyForRetry, prepareChatMessages, sanitizeForSummary } from "./chatHistory";
 
@@ -143,7 +145,7 @@ describe("chat history and compaction", () => {
         .mockResolvedValue("The tool returned 42; continue using that evidence to finish the requested work.");
       const compacted = await compactIfNeeded(messages, { ...options(summarize), threshold: 10000, force: true });
       expect(compacted).not.toBe(messages);
-      expect(JSON.stringify(toResponseInput(prepareChatMessages(compacted))).length).toBeLessThan(1000);
+      expect(JSON.stringify(nativeParts(prepareChatMessages(compacted))).length).toBeLessThan(1000);
       expect(messages).toEqual(original);
     },
   );
@@ -180,9 +182,12 @@ describe("chat history and compaction", () => {
       expect(summarize).toHaveBeenCalledOnce();
       expect(JSON.stringify(summarize.mock.calls[0][1])).not.toContain("encryptedContent");
       expect(compacted[1].content[0]).toEqual({ type: "reasoning", id: "rs_old", text: "", summary: "Plan" });
-      const input = toResponseInput(prepareChatMessages(compacted), { reasoning: binding });
-      expect(input.filter((item) => item.type === "reasoning")).toEqual([
-        expect.objectContaining({ id: "rs_current", encrypted_content: "current-payload" }),
+      const input = nativeParts(prepareChatMessages(compacted), binding.model);
+      expect(input.filter((item) => item.type === "thinking")).toEqual([
+        expect.objectContaining({
+          stepId: "rs_current",
+          signature: JSON.stringify({ id: "rs_current", encrypted_content: "current-payload" }),
+        }),
       ]);
       expect(messages).toEqual(original);
       const again = await compactIfNeeded(compacted, { ...options(summarize), threshold: 1000 });
@@ -198,7 +203,7 @@ describe("chat history and compaction", () => {
     const prepared = prepareChatMessages(compacted);
     expect(prepared.slice(1)).toEqual(messages.slice(2));
     expect(
-      toResponseInput(prepared).filter((item) => item.type === "function_call" || item.type === "function_call_output"),
+      nativeParts(prepared).filter((item) => item.type === "tool-call" || item.type === "tool-result"),
     ).toHaveLength(2);
     expect(opts.client.summarizeHistory.mock.calls[0][1]).toEqual(sanitizeForSummary(messages.slice(0, 2)));
     expect(compacted.filter((message) => !message.content.some((part) => part.type === "summary"))).toEqual(messages);
@@ -219,7 +224,7 @@ describe("chat history and compaction", () => {
     expect(prepared[0].content).toEqual([{ type: "summary", text: "Earlier work is done." }]);
     expect(prepared[1].content).toEqual([...messages[0].content, { type: "text", text: "<context>Now</context>" }]);
     expect(prepared[2]).toEqual(feedback);
-    expect(toResponseInput(prepared).some((item) => item.type === "function_call_output")).toBe(false);
+    expect(nativeParts(prepared).some((item) => item.type === "tool-result")).toBe(false);
     expect(JSON.stringify(opts.client.summarizeHistory.mock.calls[0][1]).length).toBeLessThan(2000);
   });
 
@@ -350,7 +355,7 @@ describe("chat history and compaction", () => {
     );
     const prepared = prepareChatMessages(second);
     expect(JSON.stringify(prepared).match(/Always verify the report\./g)).toHaveLength(1);
-    expect(toResponseInput(prepared).some((item) => item.type === "function_call_output")).toBe(false);
+    expect(nativeParts(prepared).some((item) => item.type === "tool-result")).toBe(false);
   });
 
   it("keeps current-turn images after tool results and strips only older images", () => {

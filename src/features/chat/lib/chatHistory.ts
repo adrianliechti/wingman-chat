@@ -128,7 +128,12 @@ function estimateTokens(messages: Message[], reasoningFrom = reasoningStart(mess
           : Math.ceil(
               reasoning.reduce(
                 (total, part) =>
-                  total + Math.max(part.text.length, part.summary?.length ?? 0, part.encryptedContent.length),
+                  total +
+                  Math.max(
+                    part.text.length,
+                    part.summary?.length ?? 0,
+                    (part.signature ?? part.encryptedContent ?? "").length,
+                  ),
                 0,
               ) / 4,
             );

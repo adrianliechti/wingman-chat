@@ -9,6 +9,10 @@ waiting, and any stream granted later is immediately stopped.
 
 ## Realtime voice
 
+TanStack `RealtimeClient` manages conversation state and client tools.
+`gatewayRealtime.ts` implements its adapter contract for the existing gateway
+WebSocket and browser audio devices. See [AI integration](ai-integration.md).
+
 - The recorder and player coalesce duplicate initialization. Every failure
   releases acquired streams, nodes, ports, contexts and worklet blob URLs.
 - A session includes pending startup, not just an open socket. Stopping,

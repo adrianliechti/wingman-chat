@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 
 export const ArtifactMutationSchema = z.object({
   operation: z.enum(["create", "update", "move", "delete"]),
@@ -141,9 +141,7 @@ export type ArtifactManifest = z.infer<typeof ArtifactManifestSchema>;
 export const RevisionOriginSchema = z.object({
   actor: z.enum(["assistant", "user", "system"]),
   runId: z.string().optional(),
-  reason: z
-    .enum(["create", "edit", "upload", "restore", "execution", "rename", "delete", "bridge"])
-    .optional(),
+  reason: z.enum(["create", "edit", "upload", "restore", "execution", "rename", "delete", "bridge"]).optional(),
 });
 export type RevisionOrigin = z.infer<typeof RevisionOriginSchema>;
 

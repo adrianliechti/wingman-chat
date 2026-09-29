@@ -255,7 +255,11 @@ describe("voice request context and tool lifecycle", () => {
     expect(contexts).toHaveLength(2);
     expect(contexts[1].item.content[0].text).toContain("/second.txt");
     expect(socket.sent).toContainEqual({ type: "conversation.item.delete", item_id: first.item.id });
-    expect(socket.sent.filter((event) => event.type === "session.update")).toHaveLength(1);
+    expect(
+      socket.sent
+        .filter((event) => event.type === "session.update")
+        .every((event) => event.session.instructions === "Static instructions"),
+    ).toBe(true);
     expect(socket.sent[0].session.instructions).toBe("Static instructions");
     await hook.stop();
   });

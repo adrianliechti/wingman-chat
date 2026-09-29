@@ -6,7 +6,6 @@ import {
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
 import {
-  Client,
   ProtocolError,
   ProtocolErrorCode,
   StreamableHTTPClientTransport as ClientTransport,
@@ -15,12 +14,17 @@ import {
 import type {
   CallToolRequest,
   CallToolResult,
+  ElicitRequest,
   ElicitResult,
+  Transport,
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/client";
+import { createMCPClient, type MCPClient as NativeMCPClient } from "@tanstack/ai-mcp";
+import { browserMcpTransport } from "./mcpTransport";
 import { trace } from "@opentelemetry/api";
+import { withAbort } from "@/shared/lib/abortSignals";
 import { textToDataUrl } from "@/shared/lib/fileContent";
 import {
   type AudioContent,
@@ -38,64 +42,55 @@ import { mcpToolName } from "./mcpToolNames";
 
 import {
   buildHostCapabilities,
-  McpAppSession,
+  toAppToolResult,
+  type McpAppData,
   MCP_HOST_INFO as HOST_INFO,
   type McpAppOptions,
   type UiResourceEntry,
+  getHtmlContent,
+  type AppNotification,
 } from "./mcpAppSession";
 
 const MCP_UI_EXTENSION = "io.modelcontextprotocol/ui";
 
-/** A response may contain several resources; only render the requested one. */
 function toUiResourceEntry(uri: string, contents: MCPResourceContents[]): UiResourceEntry | null {
   const content = contents.find((entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri === uri);
   if (!content) return null;
   return { uri, content, meta: content._meta?.ui as McpUiResourceMeta | undefined };
 }
 
-type McpIcon = { src: string; mimeType?: string; sizes?: string[]; theme?: "light" | "dark" };
+type McpIcon = { src: string; theme?: "light" | "dark" };
 type ActiveToolCall = { context?: ToolContext };
-
-function pickIcon(icons: McpIcon[] | undefined): string | undefined {
-  if (!icons || icons.length === 0) return undefined;
-  return (icons.find((i) => i.theme === "light") ?? icons.find((i) => !i.theme) ?? icons[0]).src;
+function pickIcon(icons?: McpIcon[]): string | undefined {
+  return (icons?.find((icon) => icon.theme === "light") ?? icons?.find((icon) => !icon.theme) ?? icons?.[0])?.src;
 }
 
+/** Browser authentication and Wingman's tool/storage boundary around TanStack MCP. */
 export class MCPClient implements ToolProvider {
-  readonly id: string;
-  readonly url: string;
-
-  readonly name: string;
-  readonly description?: string;
-
   icon?: ToolIcon;
-
-  readonly headers?: Record<string, string>;
-
-  private readonly _configIcon?: ToolIcon;
-  private client: Client | null = null;
-  private pendingClient: Client | null = null;
+  instructions?: string;
+  tools: Tool[] = [];
+  toolDefinitions = new Map<string, MCPTool>();
+  onAuthenticating: (() => void) | null = null;
+  onAuthComplete: (() => void) | null = null;
+  onToolsChanged: (() => void) | null = null;
+  onDisconnected: (() => void) | null = null;
+  private client: NativeMCPClient | null = null;
+  private pendingTransport?: Transport;
   private connectionVersion = 0;
   private connecting?: Promise<void>;
-  private readonly appSessions = new Set<McpAppSession>();
-  private authProvider: BrowserOAuthClientProvider;
+  private readonly authProvider: BrowserOAuthClientProvider;
   private readonly activeToolCalls = new Set<ActiveToolCall>();
   private readonly elicitations = new Map<string, ActiveToolCall>();
-  private discovery?: { client: Client; dirty: boolean; promise: Promise<void> };
+  private readonly appListeners = new Set<(kind: AppNotification) => void>();
+  private discovery?: { client: NativeMCPClient; dirty: boolean; promise: Promise<void> };
 
-  private pingInterval: ReturnType<typeof setInterval> | undefined;
-
-  instructions?: string;
-
-  tools: Tool[] = [];
-  toolDefinitions: Map<string, MCPTool> = new Map();
-
-  /** Called when the OAuth flow starts (popup opened) */
-  onAuthenticating: (() => void) | null = null;
-  /** Called when the OAuth flow completes (success or failure) */
-  onAuthComplete: (() => void) | null = null;
-  /** Called when the server notifies that its tool list has changed and tools have been reloaded */
-  onToolsChanged: (() => void) | null = null;
+  readonly id: string;
+  readonly url: string;
+  readonly name: string;
+  readonly description: string;
+  readonly headers?: Record<string, string>;
+  private readonly configIcon?: ToolIcon;
 
   constructor(
     id: string,
@@ -103,22 +98,16 @@ export class MCPClient implements ToolProvider {
     name: string,
     description: string,
     headers?: Record<string, string>,
-    icon?: ToolIcon,
+    configIcon?: ToolIcon,
   ) {
     this.id = id;
     this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
-    this._configIcon = icon;
-    this.icon = icon ?? this.iconUrl();
+    this.configIcon = configIcon;
+    this.icon = configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
     this.authProvider = new BrowserOAuthClientProvider(id);
-  }
-
-  /** Resolve the server's default icon, ensuring a trailing slash so the path isn't dropped. */
-  private iconUrl(): string {
-    const base = this.url.endsWith("/") ? this.url : `${this.url}/`;
-    return new URL("icon", base).href;
   }
 
   connect(): Promise<void> {
@@ -133,227 +122,151 @@ export class MCPClient implements ToolProvider {
   }
 
   private async connectInternal(allowAuth: boolean, version: number): Promise<void> {
-    const opts = {
-      reconnectionOptions: {
-        maxReconnectionDelay: 30000,
-        initialReconnectionDelay: 1000,
-        reconnectionDelayGrowFactor: 1.5,
-        maxRetries: -1,
-      },
-      requestInit: this.headers ? { headers: this.headers } : undefined,
-      authProvider: this.authProvider,
-    };
-
-    const url = new URL(this.url);
-    const transport = new ClientTransport(url, opts);
-
-    const client = new Client(HOST_INFO, {
-      capabilities: {
-        elicitation: {
-          form: {},
-          url: {},
-        },
-        extensions: {
-          [MCP_UI_EXTENSION]: {
-            mimeTypes: [RESOURCE_MIME_TYPE],
-          },
-        },
-      } as never,
-    });
-    this.pendingClient = client;
     const assertCurrent = () => {
       if (this.connectionVersion !== version) throw new DOMException("MCP connection cancelled", "AbortError");
     };
-
-    client.setRequestHandler("elicitation/create", async (request): Promise<ElicitResult> => {
-      assertCurrent();
-      // The SDK does not expose which outgoing call an incoming elicitation belongs
-      // to. Never send a concurrent call's request to whichever context ran last.
-      const [call] = this.activeToolCalls;
-      const context = call?.context;
-      if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
-        throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Elicitation requires a single active tool context");
-      }
-
-      if (request.params.mode === "url") {
-        const { elicitationId } = request.params;
-        this.elicitations.set(elicitationId, call);
-        try {
-          const result = await context.elicit({
-            mode: "url",
-            message: request.params.message,
-            url: request.params.url,
-            elicitationId,
-          });
-          return { action: result.action };
-        } finally {
-          if (this.elicitations.get(elicitationId) === call) this.elicitations.delete(elicitationId);
-        }
-      }
-
-      const requestedSchema = normalizeRequestedSchema(request.params.requestedSchema);
-
-      const result = await context.elicit({
-        message: request.params.message,
-        requestedSchema,
-      });
-
-      if (result.action !== "accept") {
-        return { action: result.action };
-      }
-
-      return {
-        action: "accept",
-        ...(result.content ? { content: result.content } : {}),
-      };
+    const transport = new ClientTransport(new URL(this.url), {
+      authProvider: this.authProvider,
+      requestInit: this.headers ? { headers: this.headers } : undefined,
     });
-
-    // Log only — the transport auto-reconnects (reconnectionOptions) and the ping
-    // loop calls handleDisconnect() on a genuine failure.
-    client.onclose = () => {
-      console.warn("MCP client connection closed");
-    };
-
-    client.onerror = (error) => {
-      console.error("MCP client connection error:", error);
-    };
-
+    this.pendingTransport = transport;
+    const definitions = new Map<string, MCPTool>();
+    let client: NativeMCPClient;
     try {
-      await client.connect(transport);
-      assertCurrent();
+      client = await createMCPClient({
+        name: HOST_INFO.name,
+        version: HOST_INFO.version,
+        transport: browserMcpTransport(transport, {
+          elicit: (params) => {
+            assertCurrent();
+            return this.elicit(params);
+          },
+          initialized: (result) => {
+            if (this.connectionVersion !== version) return;
+            this.instructions = result.instructions;
+            if (!this.configIcon) this.icon = pickIcon(result.serverInfo.icons) ?? this.icon;
+          },
+          notification: (method, params) => {
+            if (this.connectionVersion !== version) return;
+            if (method === "notifications/tools/list_changed") {
+              void this.loadTools(client, definitions)
+                .then(() => this.notifyApps("tools"))
+                .catch(console.error);
+            } else if (method === "notifications/resources/list_changed") this.notifyApps("resources");
+            else if (method === "notifications/prompts/list_changed") this.notifyApps("prompts");
+            else if (method === "notifications/elicitation/complete" && typeof params?.elicitationId === "string") {
+              this.elicitations.get(params.elicitationId)?.context?.onElicitationComplete?.(params.elicitationId);
+            }
+          },
+          closed: () => {
+            if (this.connectionVersion === version && this.client) {
+              void this.disconnect();
+              this.onDisconnected?.();
+            }
+          },
+        }),
+        clientOptions: {
+          capabilities: {
+            elicitation: { form: {}, url: {} },
+            extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
+          },
+        },
+        // Retain the server's full app metadata; TanStack's public tool metadata
+        // intentionally contains only the fields needed for model execution.
+        toolFilter: (tool) => {
+          definitions.set(tool.name, tool);
+          return true;
+        },
+      });
+      if (this.connectionVersion !== version) {
+        await client.close();
+        assertCurrent();
+      }
     } catch (error) {
-      await client.close().catch(() => {});
-      if (this.pendingClient === client) this.pendingClient = null;
+      await transport.close().catch(() => {});
+      if (this.pendingTransport === transport) this.pendingTransport = undefined;
       assertCurrent();
-      if (error instanceof UnauthorizedError) {
-        if (!allowAuth) {
-          throw new McpAuthRequiredError(
-            this.id,
-            "expired",
-            `Authorization for "${this.name}" expired again after a fresh token exchange`,
-          );
-        }
-
-        // The transport has already called authProvider.redirectToAuthorization(),
-        // opening the OAuth popup. Notify listeners and wait for the auth code.
-        console.log(`[MCP OAuth] Authorization required for "${this.name}". Waiting for OAuth flow...`);
-        this.onAuthenticating?.();
-
-        let authCode: string;
-        try {
-          authCode = await this.authProvider.waitForAuthCode();
-          assertCurrent();
-        } catch (authError) {
-          assertCurrent();
-          this.onAuthComplete?.();
-          throw authError;
-        }
-
-        try {
-          await transport.finishAuth(authCode);
-          assertCurrent();
-        } catch (finishError) {
-          assertCurrent();
-          this.onAuthComplete?.();
-          throw new McpAuthRequiredError(
-            this.id,
-            "failed",
-            `Failed to complete authorization for "${this.name}": ${String(finishError)}`,
-          );
-        }
-        this.onAuthComplete?.();
-
-        console.log(`[MCP OAuth] Authorization complete for "${this.name}". Reconnecting...`);
-        // Reconnect without allowing another auth round, so a repeat 401 fails fast.
-        await this.connectInternal(false, version);
-        return;
+      const cause = error instanceof Error && error.cause ? error.cause : error;
+      if (!(cause instanceof UnauthorizedError)) throw error;
+      if (!allowAuth)
+        throw new McpAuthRequiredError(
+          this.id,
+          "expired",
+          `Authorization for "${this.name}" expired again after a fresh token exchange`,
+        );
+      this.onAuthenticating?.();
+      try {
+        const code = await this.authProvider.waitForAuthCode();
+        assertCurrent();
+        await transport.finishAuth(code);
+        assertCurrent();
+      } finally {
+        if (this.connectionVersion === version) this.onAuthComplete?.();
       }
-      throw error;
+      await this.connectInternal(false, version);
+      return;
     }
-
-    console.log("MCP client connected");
-
     this.client = client;
-    this.pendingClient = null;
-
-    // Pick up the server-published icon when no config/agent icon was provided.
-    if (!this._configIcon) {
-      const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? this.iconUrl();
-    }
-
-    // Listen before discovery so changes during the initial scan are not lost.
-    if (client.getServerCapabilities()?.tools?.listChanged) {
-      client.setNotificationHandler("notifications/tools/list_changed", async () => {
-        if (this.client !== client) return;
-        await this.loadToolsAndInstructions(client);
-        if (this.client === client) await this.notifyApps("tools");
-      });
-    }
-
-    if (client.getServerCapabilities()?.resources?.listChanged) {
-      client.setNotificationHandler("notifications/resources/list_changed", async () => {
-        if (this.client === client) await this.notifyApps("resources");
-      });
-    }
-    if (client.getServerCapabilities()?.prompts?.listChanged) {
-      client.setNotificationHandler("notifications/prompts/list_changed", async () => {
-        if (this.client === client) await this.notifyApps("prompts");
-      });
-    }
-
-    // Register elicitation complete notification handler
-    client.setNotificationHandler("notifications/elicitation/complete", (notification) => {
-      if (this.client !== client) return;
-      const { elicitationId } = notification.params;
-      this.elicitations.get(elicitationId)?.context?.onElicitationComplete?.(elicitationId);
-    });
-
+    this.pendingTransport = undefined;
     try {
-      await this.loadToolsAndInstructions(client);
+      await this.loadTools(client, definitions);
       assertCurrent();
-      this.startPing();
     } catch (error) {
       if (this.client === client) await this.disconnect();
       throw error;
     }
   }
 
+  private async elicit(params: ElicitRequest["params"]): Promise<ElicitResult> {
+    const [call] = this.activeToolCalls;
+    const context = call?.context;
+    if (this.activeToolCalls.size !== 1 || !context?.elicit || context.signal?.aborted) {
+      throw new Error("Elicitation requires a single active tool context");
+    }
+    if (params.mode === "url") {
+      this.elicitations.set(params.elicitationId, call);
+      try {
+        const result = await context.elicit({
+          mode: "url",
+          message: params.message,
+          url: params.url,
+          elicitationId: params.elicitationId,
+        });
+        return { action: result.action };
+      } finally {
+        this.elicitations.delete(params.elicitationId);
+      }
+    }
+    return context.elicit({
+      message: params.message,
+      requestedSchema: normalizeRequestedSchema(params.requestedSchema),
+    });
+  }
+
   async disconnect(): Promise<void> {
     ++this.connectionVersion;
     this.authProvider.cancelAuthorization();
     this.connecting = undefined;
-    this.stopPing();
-    const clients = [this.client, this.pendingClient];
+    const client = this.client;
+    const transport = this.pendingTransport;
     this.client = null;
-    this.pendingClient = null;
+    this.pendingTransport = undefined;
     this.tools = [];
+    this.instructions = undefined;
     this.discovery = undefined;
+    this.toolDefinitions.clear();
     this.activeToolCalls.clear();
     this.elicitations.clear();
-    this.toolDefinitions.clear();
-    this.instructions = undefined;
-    await this.closeApps();
-    await Promise.allSettled(clients.flatMap((client) => (client ? [client.close()] : [])));
+    this.notifyApps("disconnect");
+    this.appListeners.clear();
+    await Promise.allSettled([client?.close(), transport?.close()]);
   }
 
-  onDisconnected: (() => void) | null = null;
-
-  private handleDisconnect(): void {
-    void this.disconnect();
-    this.onDisconnected?.();
+  private notifyApps(kind: AppNotification): void {
+    for (const listener of this.appListeners) listener(kind);
   }
 
-  private async closeApps(): Promise<void> {
-    const sessions = [...this.appSessions];
-    await Promise.allSettled(sessions.map((session) => session.close()));
-  }
-
-  private async notifyApps(kind: "tools" | "resources" | "prompts"): Promise<void> {
-    await Promise.allSettled([...this.appSessions].map((session) => session.notify(kind)));
-  }
-
-  private loadToolsAndInstructions(client = this.client): Promise<void> {
+  private loadTools(client: NativeMCPClient | undefined, definitions: Map<string, MCPTool>): Promise<void> {
     if (!client || this.client !== client) return Promise.resolve();
     if (this.discovery?.client === client) {
       this.discovery.dirty = true;
@@ -365,20 +278,20 @@ export class MCPClient implements ToolProvider {
       .then(async () => {
         while (discovery.dirty && this.client === client) {
           discovery.dirty = false;
-          const tools: MCPTool[] = [];
-          if (client.getServerCapabilities()?.tools) {
-            // The SDK walks every page itself and rejects runaway pagination (listMaxPages).
-            const page = await client.listTools();
-            if (this.client !== client) return;
-            tools.push(...page.tools);
-          }
-          // A notification invalidates the entire scan, including earlier pages.
+          definitions.clear();
+          const nativeTools = client.capabilities.tools ? await client.tools({ lazy: true }) : [];
+          if (this.client !== client) return;
           if (discovery.dirty) continue;
           this.toolDefinitions = new Map(
-            tools.flatMap((tool) => [[tool.name, tool] as const, [mcpToolName(this.id, tool.name), tool] as const]),
+            [...definitions.values()].flatMap((tool) => [
+              [tool.name, tool],
+              [mcpToolName(this.id, tool.name), tool],
+            ]),
           );
-          this.tools = tools.filter((tool) => !isToolVisibilityAppOnly(tool)).map((tool) => this.toTool(tool, client));
-          this.instructions = client.getInstructions();
+          this.tools = nativeTools.flatMap((native) => {
+            const tool = definitions.get(native.metadata.mcp.serverToolName);
+            return tool && !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client, native.lazy)] : [];
+          });
           this.onToolsChanged?.();
         }
       })
@@ -387,8 +300,7 @@ export class MCPClient implements ToolProvider {
       });
     return discovery.promise;
   }
-
-  private toTool(tool: MCPTool, client: Client): Tool {
+  private toTool(tool: MCPTool, client: NativeMCPClient, lazy?: boolean): Tool {
     let resourceUri: string | undefined;
     try {
       resourceUri = getToolUiResourceUri(tool);
@@ -400,16 +312,26 @@ export class MCPClient implements ToolProvider {
       title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
+      lazy,
       parameters: tool.inputSchema || {},
       function: async (args, context) => {
         annotateMcpSpan(this.url, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
+        if (result.isError) {
+          context?.setError?.({
+            code: "MCP_TOOL_ERROR",
+            message:
+              result.content?.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ||
+              `MCP tool "${tool.name}" returned an error`,
+          });
+        }
         if (resourceUri) {
           const ui = tool._meta?.ui as { defaultDisplayMode?: string; availableDisplayModes?: string[] } | undefined;
           context?.setMeta?.({
             toolProvider: this.id,
             toolResource: resourceUri,
+            mcpResult: result,
             ...(ui?.defaultDisplayMode ? { defaultDisplayMode: ui.defaultDisplayMode } : {}),
             ...(ui?.availableDisplayModes ? { appDisplayModes: ui.availableDisplayModes } : {}),
           });
@@ -425,7 +347,7 @@ export class MCPClient implements ToolProvider {
   }
 
   private async callTool(
-    client: Client,
+    client: NativeMCPClient,
     params: CallToolRequest["params"],
     context?: ToolContext,
   ): Promise<CallToolResult> {
@@ -433,7 +355,7 @@ export class MCPClient implements ToolProvider {
     const call = { context };
     this.activeToolCalls.add(call);
     try {
-      const result = await client.callTool(params, { signal: context?.signal });
+      const result = await client.callTool(params.name, params.arguments, { signal: context?.signal });
       context?.signal?.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
       return "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
@@ -445,10 +367,6 @@ export class MCPClient implements ToolProvider {
     }
   }
 
-  /**
-   * Restore an MCP App UI from persisted chat data.
-   * Fetches the UI resource, renders the iframe, and replays stored tool input + result.
-   */
   async restoreToolUI(
     toolName: string,
     uiResourceUri: string,
@@ -456,13 +374,13 @@ export class MCPClient implements ToolProvider {
     storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
     content: Record<string, unknown> | undefined,
     options: McpAppOptions,
-  ): Promise<McpAppSession> {
+  ): Promise<McpAppData> {
     options.signal?.throwIfAborted();
     const client = this.client;
     if (!client) throw new Error("MCP client not connected");
 
     // Convert stored content back to MCP CallToolResult format
-    const result: CallToolResult = {
+    const result: CallToolResult = options.initialResult ?? {
       content: storedResult.map((c) => {
         if (c.type === "text") return { type: "text" as const, text: c.text };
         if (c.type === "image") {
@@ -483,18 +401,19 @@ export class MCPClient implements ToolProvider {
     if (!tool) throw new Error(`MCP tool definition not found for ${toolName}`);
     if (!uiResourceUri.startsWith("ui://")) throw new Error(`Invalid MCP UI resource URI: ${uiResourceUri}`);
     // Fetch per opening: HTML may depend on the current server session or tool result.
-    const readResult = await client.readResource({ uri: uiResourceUri }, { signal: options.signal });
+    const readResult = await readResource(client, uiResourceUri, options.signal);
     options.signal?.throwIfAborted();
     if (this.client !== client) throw new Error("MCP connection changed while opening app");
     const resource = toUiResourceEntry(uiResourceUri, readResult.contents);
     if (!resource) throw new Error(`Invalid UI resource for ${toolName}`);
-    const capabilities = client.getServerCapabilities();
-    const session = new McpAppSession({
-      ...options,
+    const capabilities = client.capabilities;
+    return {
       tool,
-      resource,
-      result,
       input: args,
+      result: toAppToolResult(result),
+      html: getHtmlContent(resource.content),
+      resource,
+      context: options.context,
       capabilities: buildHostCapabilities(
         resource.meta,
         capabilities,
@@ -502,80 +421,41 @@ export class MCPClient implements ToolProvider {
         !!options.context?.setContext,
       ),
       handlers: {
-        ...(capabilities?.tools
-          ? {
-              oncalltool: async (params, extra) => {
-                const definition = this.toolDefinitions.get(params.name);
-                if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition)) {
-                  throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
-                }
-                return this.callTool(client, params, { signal: extra.mcpReq.signal });
-              },
-            }
-          : {}),
-        ...(capabilities?.resources
-          ? {
-              onlistresources: (params, extra) => client.listResources(params, { signal: extra.mcpReq.signal }),
-              onreadresource: (params, extra) => client.readResource(params, { signal: extra.mcpReq.signal }),
-              onlistresourcetemplates: (params, extra) =>
-                client.listResourceTemplates(params, { signal: extra.mcpReq.signal }),
-            }
-          : {}),
-        ...(capabilities?.prompts
-          ? { onlistprompts: (params, extra) => client.listPrompts(params, { signal: extra.mcpReq.signal }) }
-          : {}),
+        oncalltool: async (params, extra) => {
+          const definition = this.toolDefinitions.get(params.name);
+          if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
+            throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
+          return toAppToolResult(await this.callTool(client, params, { ...options.context, signal: extra.signal }));
+        },
+        onlistresources: async () => ({ resources: await client.resources() }),
+        onreadresource: async ({ uri }) => client.readResource(uri),
+        onlistresourcetemplates: async () => ({ resourceTemplates: await client.resourceTemplates() }),
+        onlistprompts: async () => ({ prompts: await client.prompts() }),
       },
-      onClose: () => this.appSessions.delete(session),
-    });
-    this.appSessions.add(session);
-    try {
-      await session.connect();
-      return session;
-    } catch (error) {
-      await session.close();
-      throw error;
-    }
-  }
-
-  private startPing(): void {
-    // Clear any existing interval
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-
-    // Ping every 20 seconds
-    this.pingInterval = setInterval(async () => {
-      const client = this.client;
-      if (client) {
-        try {
-          await client.ping();
-        } catch (error) {
-          console.error("MCP client ping failed:", error);
-          if (this.client === client) this.handleDisconnect();
-        }
-      } else {
-        this.stopPing();
-      }
-    }, 20000);
-  }
-
-  private stopPing(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = undefined;
-    }
+      subscribe: (listener) => {
+        this.appListeners.add(listener);
+        return () => {
+          this.appListeners.delete(listener);
+        };
+      },
+    };
   }
 
   isConnected(): boolean {
     return this.client !== null;
   }
-
   isAuthBlocked(): boolean {
     return this.authProvider.isAuthBlocked();
   }
 }
 
 type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
+
+// TanStack's readResource currently has no signal parameter. Stop waiting and
+// prevent stale results from reaching the UI when the owning run is cancelled.
+function readResource(client: NativeMCPClient, uri: string, signal?: AbortSignal) {
+  return signal ? withAbort(signal, () => client.readResource(uri)) : client.readResource(uri);
+}
 
 /** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
 function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
@@ -618,7 +498,7 @@ function resourceToContent(res: MCPResourceContents, fallbackName?: string): Too
  */
 async function resolveResourceLink(
   block: Extract<MCPContentBlock, { type: "resource_link" }>,
-  client?: Client | null,
+  client?: NativeMCPClient | null,
   signal?: AbortSignal,
 ): Promise<ToolResultContent[]> {
   const label = block.name || block.uri;
@@ -626,7 +506,7 @@ async function resolveResourceLink(
     return [{ type: "text", text: `[Resource: ${label}]` }];
   }
   try {
-    const read = await client.readResource({ uri: block.uri }, { signal });
+    const read = await readResource(client, block.uri, signal);
     signal?.throwIfAborted();
     const mapped = ((read.contents ?? []) as MCPResourceContents[])
       .map((c) => resourceToContent(c, block.name))
@@ -642,7 +522,7 @@ async function resolveResourceLink(
 /** Map a single MCP content block to zero or more displayable blocks. */
 async function processBlock(
   block: MCPContentBlock,
-  client?: Client | null,
+  client?: NativeMCPClient | null,
   signal?: AbortSignal,
 ): Promise<ToolResultContent[]> {
   switch (block.type) {
@@ -665,7 +545,7 @@ async function processBlock(
 
 async function processContent(
   input: MCPContentBlock[],
-  client?: Client | null,
+  client?: NativeMCPClient | null,
   signal?: AbortSignal,
 ): Promise<ToolResultContent[]> {
   if (!input?.length) {

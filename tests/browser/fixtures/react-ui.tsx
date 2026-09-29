@@ -1,3 +1,4 @@
+import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { StrictMode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -65,12 +66,15 @@ if (parameters.has("panels")) {
   const model = { id: "fixture", name: "Fixture" };
   config.client.listModels = async () => [model];
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
-  config.client.complete = async (_model, _instructions, _input, _tools, handler) =>
-    new Promise<Message>((resolve) => {
-      state.calls++;
-      stream = (text) => handler?.([{ type: "text", text }]);
-      finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
-    });
+  const provider = testClient(
+    async (_options, handler) =>
+      new Promise<Message>((resolve) => {
+        state.calls++;
+        stream = (text) => handler?.([{ type: "text", text }]);
+        finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
+      }),
+  );
+  config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
   if (parameters.has("seed")) {
     for (let index = 0; index < 120; index++) {
       const id = `history-${index}`;

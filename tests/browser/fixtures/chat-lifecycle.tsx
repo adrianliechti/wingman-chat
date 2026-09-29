@@ -1,3 +1,5 @@
+import type { ModelMessage } from "@tanstack/ai";
+import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { memo, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentContext, type AgentContextType } from "../../../src/features/agent/context/AgentContext";
@@ -33,24 +35,31 @@ const calls: {
   model: string;
   effort?: Model["effort"];
   verbosity?: Model["verbosity"];
-  input: Message[];
+  input: ModelMessage[];
   stream: (text: string) => void;
   finish: (text: string) => void;
   signal?: AbortSignal;
 }[] = [];
-config.client.complete = async (model, _instructions, input, _tools, handler, options) =>
-  new Promise((resolve) => {
-    // Deliberately ignore cancellation in this fake service to exercise late callbacks.
-    calls.push({
-      model,
-      effort: options?.effort,
-      verbosity: options?.verbosity,
-      input,
-      signal: options?.signal,
-      stream: (text) => handler?.([{ type: "text", text }]),
-      finish: (text) => resolve({ role: "assistant", content: [{ type: "text", text }] }),
-    });
-  });
+config.client.textAdapter = (model, signal) =>
+  testClient(
+    async (options, handler) =>
+      new Promise((resolve) => {
+        // Deliberately ignore cancellation to exercise late provider events.
+        const settings = options.modelOptions as {
+          reasoning?: { effort?: Model["effort"] };
+          text?: { verbosity?: Model["verbosity"] };
+        };
+        calls.push({
+          model,
+          effort: settings.reasoning?.effort,
+          verbosity: settings.text?.verbosity,
+          input: options.messages,
+          signal,
+          stream: (text) => handler([{ type: "text", text }]),
+          finish: (text) => resolve({ role: "assistant", content: [{ type: "text", text }] }),
+        });
+      }),
+  ).textAdapter(model, signal);
 const reads: string[] = [];
 let heldRead: string | undefined;
 let releaseRead: (() => void) | undefined;
@@ -237,7 +246,7 @@ declare global {
           model: string;
           effort?: Model["effort"];
           verbosity?: Model["verbosity"];
-          input: Message[];
+          input: ModelMessage[];
           aborted?: boolean;
         }[];
       };

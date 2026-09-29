@@ -7,8 +7,6 @@ interface AppProviderProps {
   children: ReactNode;
 }
 
-const SANDBOX_PROXY_PATH = "/mcp-app-sandbox-proxy.html";
-
 export function AppProvider({ children }: AppProviderProps) {
   const [showAppDrawer, setShowAppDrawer] = useState(false);
   const [hasAppContent, setHasAppContent] = useState(false);
@@ -18,42 +16,6 @@ export function AppProvider({ children }: AppProviderProps) {
 
   const toggleAppDrawer = useCallback(() => {
     setShowAppDrawer((prev) => !prev);
-  }, []);
-
-  // Load the sandbox proxy into the (caller-owned, persistent) iframe. The app's
-  // bridge lives on this iframe and is cleaned up by the owning component (McpApp).
-  const renderAppInto = useCallback(async (iframe: HTMLIFrameElement, signal?: AbortSignal): Promise<void> => {
-    signal?.throwIfAborted();
-    const sessionId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`;
-
-    await new Promise<void>((resolve, reject) => {
-      const handleLoad = () => {
-        cleanup();
-        resolve();
-      };
-
-      const handleError = () => {
-        cleanup();
-        reject(new Error("Failed to load MCP app sandbox proxy."));
-      };
-
-      const onAbort = () => {
-        cleanup();
-        reject(signal?.reason ?? new DOMException("App closed", "AbortError"));
-      };
-      const timer = window.setTimeout(handleError, 15_000);
-      const cleanup = () => {
-        window.clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-        iframe.removeEventListener("load", handleLoad);
-        iframe.removeEventListener("error", handleError);
-      };
-
-      signal?.addEventListener("abort", onAbort, { once: true });
-      iframe.addEventListener("load", handleLoad);
-      iframe.addEventListener("error", handleError);
-      iframe.src = `${SANDBOX_PROXY_PATH}?session=${encodeURIComponent(sessionId)}`;
-    });
   }, []);
 
   const closeApp = useCallback(async () => {
@@ -71,7 +33,6 @@ export function AppProvider({ children }: AppProviderProps) {
     showAppDrawer,
     setShowAppDrawer,
     toggleAppDrawer,
-    renderAppInto,
     closeApp,
     hasAppContent,
     showDrawer,

@@ -129,16 +129,20 @@ or a **local** directory.
 
 ## Architecture
 
-| Layer          | Stack                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
-| Code execution | Python/Pyodide + DuckDB/PyArrow; JavaScript workers + Arrow; DuckDB-Wasm preview bridge     |
-| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry              |
-| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
+| Layer          | Stack                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack AI/Router/Table/Virtual, React Compiler |
+| Code execution | Python/Pyodide + DuckDB/PyArrow; JavaScript workers + Arrow; DuckDB-Wasm preview bridge        |
+| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry                 |
+| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                                |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
 prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
 the client can read.
+
+AI execution runs in the browser through TanStack AI. The Go server remains the
+existing proxy. See [AI integration](docs/ai-integration.md) for the framework
+boundaries and gateway compatibility adapters.
 
 Production builds generate Brotli and gzip variants of WASM, JavaScript, CSS, HTML, and other text
 assets. The Go server negotiates the encoding and serves those files directly, with no compression
@@ -174,7 +178,7 @@ terminal error contract, and a Sonnet 4.6 artifact create/validate/reference flo
 
 The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
 that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
-failure, checks transport retry and retry cancellation, exercises transient tool recovery, runtime verification,
+failure, checks interruption reporting, explicit retry and cancellation, exercises model-driven tool recovery, runtime verification,
 nested-agent budgets, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
 the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
 workspace to cover invalid structured-file repair, revision/delta metadata, multi-file manifests, and moves. It makes
@@ -183,8 +187,8 @@ quick checks.
 
 The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
 `execute_python_code` calls using the production schemas. It reports raw JSON/AntML failures separately from calls
-that succeeded through client-side recovery, which makes gateway/model improvements measurable rather than hidden by
-the workaround.
+that succeeded through TanStack's provider normalization, making gateway/model quality measurable separately
+from the framework's handling.
 
 ```bash
 npm run test:e2e

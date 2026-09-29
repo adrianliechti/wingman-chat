@@ -1,8 +1,7 @@
 import { useContext } from "react";
 import { renderToString } from "react-dom/server";
-import { BadRequestError } from "openai/error";
+import { testClient } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Client } from "@/shared/lib/client";
 import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
@@ -16,7 +15,7 @@ const fixture = vi.hoisted(() => ({
   tools: [] as Tool[],
   model: { id: "model", name: "Model", compactThreshold: 1000 },
   chat: {} as { compaction?: { threshold?: number } },
-  complete: vi.fn<Client["complete"]>(),
+  complete: vi.fn<Parameters<typeof testClient>[0]>(),
   summarize: vi.fn(),
   classify: vi.fn(),
   artifacts: false,
@@ -25,7 +24,10 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
-    client: { complete: fixture.complete, summarizeHistory: fixture.summarize, classifyChat: fixture.classify },
+    client: Object.assign(testClient(fixture.complete), {
+      summarizeHistory: fixture.summarize,
+      classifyChat: fixture.classify,
+    }),
     chat: fixture.chat,
   }),
   categorySlug: (name: string) => name,
@@ -98,12 +100,7 @@ const call: Message = {
   content: [{ type: "tool_call", id: "call", name: "work", arguments: "{}" }],
 };
 const overflow = () =>
-  new BadRequestError(
-    400,
-    { code: "context_length_exceeded", message: "Context is too large" },
-    undefined,
-    new Headers(),
-  );
+  Object.assign(new Error("Context is too large"), { status: 400, code: "context_length_exceeded" });
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -167,8 +164,8 @@ describe("chat run integration", () => {
     await harness().sendMessage(user("Please work on this task."));
     expect(fixture.complete).toHaveBeenCalledTimes(2);
     for (const request of fixture.complete.mock.calls) {
-      expect(JSON.stringify(request[2])).toContain("Prefer concise answers.");
-      expect(JSON.stringify(request[2])).not.toContain("A different preference.");
+      expect(JSON.stringify(request[0].messages)).toContain("Prefer concise answers.");
+      expect(JSON.stringify(request[0].messages)).not.toContain("A different preference.");
     }
     expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("<memory>");
     expect((await manager.snapshot()).state.jobs).toHaveLength(1);
@@ -250,8 +247,8 @@ describe("chat run integration", () => {
     fixture.complete
       .mockResolvedValueOnce(call)
       .mockRejectedValueOnce(overflow())
-      .mockImplementationOnce(async (_model, _instructions, messages) => {
-        expect(messages[0].content[0].type).toBe("summary");
+      .mockImplementationOnce(async ({ messages }) => {
+        expect(JSON.stringify(messages[0].content)).toContain("The tool gathered the evidence.");
         expect(
           fixture.chats[0].messages.some((message) => message.content.some((part) => part.type === "summary")),
         ).toBe(true);
@@ -279,13 +276,13 @@ describe("chat run integration", () => {
     const first = deferred();
     const second = deferred();
     fixture.complete
-      .mockImplementationOnce(async (_model, _instructions, _messages, _tools, onStream) => {
+      .mockImplementationOnce(async (_options, onStream) => {
         onStream?.(assistant("First partial").content);
         await first.promise;
         onStream?.(assistant("Stale late update").content);
         return assistant("Stale final answer");
       })
-      .mockImplementationOnce(async (_model, _instructions, _messages, _tools, onStream) => {
+      .mockImplementationOnce(async (_options, onStream) => {
         onStream?.(assistant("Second partial").content);
         await second.promise;
         return assistant("Second final");
@@ -299,7 +296,7 @@ describe("chat run integration", () => {
     first.resolve();
     await firstRun;
     context.stopStreaming();
-    expect(fixture.complete.mock.calls[1][5]?.signal?.aborted).toBe(true);
+    expect(fixture.complete.mock.calls[1][0].request?.signal?.aborted).toBe(true);
     second.resolve();
     await secondRun;
     const content = JSON.stringify(fixture.chats[0].messages);
@@ -361,8 +358,6 @@ describe("chat run integration", () => {
       "text",
     ]);
     expect(messages.at(-1)?.content).toEqual(assistant("Follow-up done").content);
-    expect(
-      fixture.complete.mock.calls[2][2].some((message) => message.content.some((part) => part.type === "tool_result")),
-    ).toBe(true);
+    expect(fixture.complete.mock.calls[2][0].messages.some((message) => message.role === "tool")).toBe(true);
   });
 });
