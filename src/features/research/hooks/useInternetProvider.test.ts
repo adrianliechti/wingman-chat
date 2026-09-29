@@ -56,7 +56,7 @@ it("streams research as a native child with a self-contained brief and child can
   expect(client.search).toHaveBeenCalledWith("search", "topic", { domains: ["example.com"] }, { signal });
   expect(client.scrape).toHaveBeenCalledWith("scrape", "https://example.com", { signal });
   const child = result.messages.flatMap((message) => message.content).find((part) => part.type === "subagent");
-  expect(child?.subagent.status).toBe("finished");
+  expect(child?.status).toBe("finished");
   expect(JSON.stringify(child)).toContain("web_search");
   expect(JSON.stringify(child)).toContain("Fetched evidence");
   expect(JSON.stringify(complete.mock.calls.at(-1)?.[0].messages)).toContain("Report with sources");

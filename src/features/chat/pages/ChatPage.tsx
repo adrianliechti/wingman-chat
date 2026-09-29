@@ -499,6 +499,7 @@ export function ChatPage() {
                       </div>
                     );
                   })}
+                  <ChatInterrupts />
                 </div>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
@@ -555,7 +556,6 @@ export function ChatPage() {
           )}
         >
           <div className="pointer-events-auto">
-            <ChatInterrupts />
             <ChatInput />
           </div>
         </div>

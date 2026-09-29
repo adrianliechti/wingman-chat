@@ -1,6 +1,6 @@
 import { ChatClient, type ChatPersistedState, type ChatInterrupt } from "@tanstack/ai-client";
 import { AgentMessageMetadata, approvalTools, streamRun, type AgentRunResult, type StreamRunHooks } from "../agent";
-import { fromAIMessages, toAIMessages } from "../aiMessages";
+import { toAIMessages } from "../aiMessages";
 import type { Client } from "../client";
 import type { Tool } from "../../types/chat";
 
@@ -19,7 +19,12 @@ export function chatSession(
       getItem: () => store.value ?? null,
       setItem: (_key, state) => {
         // Exercise the application's existing domain storage boundary too.
-        store.value = JSON.parse(JSON.stringify({ ...state, messages: toAIMessages(metadata.read(state.messages)) }));
+        store.value = JSON.parse(
+          JSON.stringify({
+            ...state,
+            messages: toAIMessages(metadata.read(state.messages), undefined, { state: metadata.state }),
+          }),
+        );
       },
       removeItem: () => {
         store.value = undefined;
@@ -27,7 +32,7 @@ export function chatSession(
     },
     connection: {
       connect: (_messages, _data, signal, context) =>
-        streamRun(client, "model", "", fromAIMessages(ai.getMessages()), tools, {
+        streamRun(client, "model", "", metadata.read(ai.getMessages()), tools, {
           ...hooks,
           metadata,
           options: { signal },

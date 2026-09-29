@@ -16,7 +16,7 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd, subagentToolCallIds } from "./chatMessageUtils";
 import { getThinkingWord } from "./thinkingWord";
 import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
@@ -228,7 +228,9 @@ function RunningToolRow({
         {status ? (
           <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
         ) : header.preview ? (
-          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{header.preview}</span>
+          <span className={cn("text-xs text-neutral-400 dark:text-neutral-500 truncate", header.mono && "font-mono")}>
+            {header.preview}
+          </span>
         ) : null}
       </div>
     </div>
@@ -272,7 +274,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     [messages, index],
   );
 
-  const toolCallParts = message.content.filter((p) => p.type === "tool_call");
+  const delegated = subagentToolCallIds(messages);
+  const toolCallParts = message.content.filter((p) => p.type === "tool_call" && !delegated.has(p.id));
   const hasToolCalls = toolCallParts.length > 0;
   const hasTextContent = message.content.some((p) => p.type === "text" && p.text);
 
@@ -385,12 +388,12 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="flex-1 py-3 [overflow-wrap:anywhere] min-w-0 overflow-hidden">
+      <div className={cn("flex-1 [overflow-wrap:anywhere] min-w-0 overflow-hidden", hasTextContent && "py-3")}>
         {/* Render content parts in order */}
         {message.content.map((part, index) => {
           const partKey = getMessagePartKey(part, index, "content");
 
-          if (part.type === "subagent") return <SubagentCard key={part.subagent.id} {...part} />;
+          if (part.type === "subagent") return <SubagentCard key={part.id} {...part} />;
           if (part.type === "reasoning") {
             return (
               <ReasoningDisplay
@@ -413,6 +416,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             );
           }
           if (part.type === "tool_call") {
+            if (delegated.has(part.id)) return null;
             const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
 
             if (isPendingElicitation) {
@@ -470,7 +474,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           </div>
         )}
 
-        {!(isLast && isResponding) && (
+        {hasTextContent && !(isLast && isResponding) && (
           <div
             className={cn(
               "flex items-center gap-3 mt-1 transition-opacity duration-200",

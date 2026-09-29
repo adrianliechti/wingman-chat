@@ -1,12 +1,58 @@
-import type { ContentPart, MessagePart, UIMessage } from "@tanstack/ai";
+import type { ContentPart, MessagePart, SubagentPart, UIMessage } from "@tanstack/ai";
 import type { GatewayTextSegment } from "./gatewayText";
-import type { Content, Message, ToolResultContent } from "../types/chat";
+import type { Content, Message, ReasoningContent, ToolResultContent } from "../types/chat";
+
+/** Native routing/interrupt bindings, separate from the saved conversation. */
+export interface AIMessageState {
+  subagents?: Record<
+    string,
+    Omit<SubagentPart["subagent"], "id" | "name" | "status" | "messages" | "error" | "parentToolCallId">
+  >;
+}
+
+export function aiMessageState(messages: UIMessage[]): AIMessageState {
+  const subagents: NonNullable<AIMessageState["subagents"]> = {};
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "subagent") continue;
+      const {
+        id,
+        name: _name,
+        status: _status,
+        messages: children,
+        error: _error,
+        parentToolCallId: _call,
+        ...state
+      } = part.subagent;
+      subagents[id] = state;
+      Object.assign(subagents, aiMessageState(children).subagents);
+    }
+  }
+  return Object.keys(subagents).length ? { subagents } : {};
+}
+
+/** The gateway's native adapter packs these existing reasoning fields as JSON. */
+export function reasoningState(signature?: string): Partial<Pick<ReasoningContent, "id" | "encryptedContent">> {
+  if (!signature) return {};
+  try {
+    const value: unknown = JSON.parse(signature);
+    if (!value || typeof value !== "object") return {};
+    return {
+      ...("id" in value && typeof value.id === "string" ? { id: value.id } : {}),
+      ...("encrypted_content" in value && typeof value.encrypted_content === "string"
+        ? { encryptedContent: value.encrypted_content }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
 
 /** Storage/UI boundary. Existing Wingman conversations stay readable; AI state is native TanStack. */
 export function toAIMessages(
   messages: Message[],
   model?: string,
-  options?: { pendingToolCalls?: boolean },
+  options?: { pendingToolCalls?: boolean; state?: AIMessageState },
 ): UIMessage[] {
   const answeredCalls = new Set(
     messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
@@ -27,7 +73,20 @@ export function toAIMessages(
     parts: message.content.flatMap((part): MessagePart[] => {
       switch (part.type) {
         case "subagent":
-          return [part];
+          return [
+            {
+              type: "subagent",
+              subagent: {
+                ...options?.state?.subagents?.[part.id],
+                id: part.id,
+                name: part.name,
+                parentToolCallId: part.toolCallId,
+                status: part.status,
+                error: part.error,
+                messages: toAIMessages(part.messages, model, options),
+              },
+            },
+          ];
         case "text":
           return [{ type: "text", content: part.text, metadata: part.phase ? { phase: part.phase } : undefined }];
         case "reasoning":
@@ -39,10 +98,9 @@ export function toAIMessages(
               signature:
                 (!model || part.model === model) &&
                 !message.content.some((item) => item.type === "tool_call" && !answeredCalls.has(item.id))
-                  ? (part.signature ??
-                    (part.encryptedContent
-                      ? JSON.stringify({ id: part.id, encrypted_content: part.encryptedContent })
-                      : undefined))
+                  ? part.encryptedContent
+                    ? JSON.stringify({ id: part.id, encrypted_content: part.encryptedContent })
+                    : undefined
                   : undefined,
             },
           ];
@@ -208,7 +266,17 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
         content: message.parts.flatMap((part): Content[] => {
           switch (part.type) {
             case "subagent":
-              return [part];
+              return [
+                {
+                  type: "subagent",
+                  id: part.subagent.id,
+                  name: part.subagent.name,
+                  toolCallId: part.subagent.parentToolCallId,
+                  status: part.subagent.status,
+                  error: part.subagent.error,
+                  messages: fromAIMessages(part.subagent.messages, runId, model, richResults),
+                },
+              ];
             case "text":
               return textContent(part);
             case "image":
@@ -222,7 +290,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                   type: "reasoning",
                   id: part.stepId ?? message.id,
                   text: part.content,
-                  signature: part.signature,
+                  ...reasoningState(part.signature),
                   model:
                     (message.metadata?.wingmanReasoningModels as Record<string, string> | undefined)?.[
                       part.stepId ?? message.id

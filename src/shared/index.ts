@@ -18,18 +18,7 @@ export { copyToClipboard } from "./lib/copy";
 export { isAudioUrl, isVideoUrl } from "./lib/mediaTypes";
 // Lib - Models
 export { modelName, modelType } from "./lib/models";
-export type {
-  BlobRefAudioContent,
-  BlobRefFileContent,
-  BlobRefImageContent,
-  IndexEntry,
-  StorageEntry,
-  StorageUsage,
-  StoredChat,
-  StoredContent,
-  StoredMessage,
-  StoredSkill,
-} from "./lib/opfs";
+export type { IndexEntry, StorageEntry, StorageUsage, StoredChat, StoredSkill } from "./lib/opfs";
 // Lib - OPFS (Origin Private File System)
 export {
   blobToDataUrl,

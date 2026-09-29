@@ -7,6 +7,7 @@ import { cn } from "@/shared/lib/cn";
 import type { Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
+import { Markdown } from "@/shared/ui/Markdown";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { McpApp } from "./McpApp";
 import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
@@ -14,11 +15,17 @@ import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from
 type ChatToolMessageProps = {
   message: Message;
   index: number;
+  messages?: Message[];
 };
 
-export const ChatToolMessage = memo(function ChatToolMessage({ message, index }: ChatToolMessageProps) {
+export const ChatToolMessage = memo(function ChatToolMessage({
+  message,
+  index,
+  messages: scope,
+}: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
-  const { chat, messages } = useChatConversation();
+  const { chat, messages: chatMessages } = useChatConversation();
+  const messages = scope ?? chatMessages;
   const { providers } = useToolsContext();
   const toolResultParts = message.content.filter((p) => p.type === "tool_result") as ToolResultContent[];
   const isLastFullscreenApp = useLastFullscreenApp(messages, index, toolResultParts);
@@ -95,7 +102,9 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
                 {isToolError && !header.Icon ? "Tool Error" : header.label}
               </span>
               {header.preview && (
-                <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                <span
+                  className={cn("text-xs text-neutral-400 dark:text-neutral-500 truncate", header.mono && "font-mono")}
+                >
                   {header.preview}
                 </span>
               )}
@@ -119,9 +128,14 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
             {message.error ? (
               <CodeRenderer code={message.error.message} language="text" name="Error" subtle />
             ) : (
-              outputBlock && (
+              outputBlock &&
+              (outputBlock.language === "markdown" ? (
+                <div className="ml-4.5 text-sm text-neutral-600 dark:text-neutral-400">
+                  <Markdown compact>{outputBlock.code}</Markdown>
+                </div>
+              ) : (
                 <CodeRenderer code={outputBlock.code} language={outputBlock.language} name={outputBlock.name} subtle />
-              )
+              ))
             )}
           </div>
         )}

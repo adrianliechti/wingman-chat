@@ -1,5 +1,4 @@
-import type { ChatPersistedState } from "@tanstack/ai-client";
-import type { ChatMiddleware, SubagentPart } from "@tanstack/ai";
+import type { ChatMiddleware } from "@tanstack/ai";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
 
@@ -221,8 +220,6 @@ export type ReasoningContent = {
   text: string;
   summary?: string;
   encryptedContent?: string;
-  /** Opaque reasoning state produced and consumed by the TanStack adapter. */
-  signature?: string;
   model?: string;
   prefix?: string;
 };
@@ -276,6 +273,17 @@ export type RuntimeFeedbackContent = {
   text: string;
 };
 
+/** A child conversation uses the same messages and content as its parent. */
+export type SubagentContent = {
+  type: "subagent";
+  id: string;
+  name: string;
+  toolCallId?: string;
+  status: "running" | "finished" | "error" | "suspended";
+  messages: Message[];
+  error?: { message: string; code?: string };
+};
+
 // Content is the union of all content types used in messages
 export type Content =
   | TextContent
@@ -289,7 +297,7 @@ export type Content =
   | ArtifactRefContent
   | ArtifactSelectionContent
   | RuntimeFeedbackContent
-  | SubagentPart;
+  | SubagentContent;
 
 export type TextContent = {
   type: "text";
@@ -383,10 +391,6 @@ export type Chat = {
 
   model: Model | null;
   messages: Array<Message>;
-  /** Native pending-interrupt snapshot persisted with the transcript. */
-  aiResume?: ChatPersistedState["resume"];
-  /** Opaque middleware caches; the conversation itself remains provider-independent. */
-  aiMetadata?: Record<string, Record<string, unknown>>;
 };
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */

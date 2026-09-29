@@ -167,6 +167,22 @@ still clears it.
 Only paused interrupts retain a resume pointer: this browser-only application
 has no durable executor that could continue a running generation after reload.
 
+`chats/<id>/chat.json` contains only the application's `Chat`, `Message`, and
+`Content` data. A subagent is a flat content part with an id, name, optional tool
+call id, status, messages, and optional error. Its messages use the same format
+and blob extraction as the parent. Reasoning keeps the existing `id` and
+`encryptedContent` fields; the adapter translates its packed signatures.
+There are no native `UIMessage`/`SubagentPart` objects in the conversation file.
+
+Optional TanStack execution data lives in `chats/<id>/tanstack.json`: pending
+resume descriptors, child routing bindings, and middleware checkpoints. The
+existing persistence queue saves both files with write-failure rollback. A
+version and transcript hash prevent a partial restore or interrupted write from
+resuming tools against another conversation. The transcript remains readable
+without this file. Earlier inline runtime fields and native child messages are
+converted when loaded; the next save writes the separated format. Backups include
+both files, while the chat index and attachment layout stay unchanged.
+
 ## Compaction and application middleware
 
 [withCompaction](https://tanstack.com/ai/latest/docs/advanced/compaction) checks
@@ -177,8 +193,8 @@ threshold remain respected; disabling compaction disables these strategies.
 The full saved transcript stays intact. Custom context estimation, summary
 replacement, the summarizer client method, and overflow retry branches are gone.
 Old saved summary markers remain readable.
-The native metadata capability stores opaque checkpoints in an optional
-`Chat.aiMetadata` cache alongside the unchanged conversation format. TanStack
+The native metadata capability stores opaque checkpoints in the optional
+`tanstack.json` runtime file, separate from the conversation format. TanStack
 validates the source prefix and strategy identity before reuse, including the
 summarizer and threshold. Edited history invalidates the cache. Each child gets
 its own checkpoint scope, including parallel calls to the same agent.
@@ -228,9 +244,16 @@ and returns the final text because the voice protocol has no nested chat cards.
 Web research uses the same `defineAgent` path with its search/fetch tools and a
 content-guard middleware. It receives the model-written brief and its own resumed
 work, keeping unrelated parent history out of research requests. Search and fetch
-progress appear in native child parts, replacing the separate research runner
+progress use native child parts during execution and ordinary child messages in
+storage and the UI, replacing the separate research runner
 and manually maintained parent status. Realtime uses the shared text-result
 adapter and its live confirmation callback.
+The chat renders one disclosure per child conversation. A child's parent tool
+call/result stays in the saved history and model context but does not add a
+duplicate UI row. Research uses readable queries and Markdown sources in the
+existing tool display; delegation JSON and internal agent names stay out of the
+default view. Approvals and elicitation forms sit inline after the current turn,
+inside the scrolling transcript, so they cannot overlay earlier answers.
 Direct voice tools retain live confirmations. A delegated text run that pauses
 for native input or approval asks the user to continue in chat; the one-shot
 voice adapter cannot present and resume that child interrupt.

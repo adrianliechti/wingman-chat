@@ -1,5 +1,6 @@
 import type { PersistenceQueue } from "@/shared/lib/persistence";
-import { getTextFromContent, type Chat, type ChatEntry } from "@/shared/types/chat";
+import { getTextFromContent, type ChatEntry } from "@/shared/types/chat";
+import type { ChatRecord as Chat } from "./chatRuntime";
 import { chatEntry, loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 
 const defaultStorage = {

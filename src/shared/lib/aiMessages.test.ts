@@ -1,6 +1,6 @@
 import { convertMessagesToModelMessages, type UIMessage } from "@tanstack/ai";
 import { expect, it } from "vitest";
-import { fromAIMessages, toAIMessages } from "./aiMessages";
+import { aiMessageState, fromAIMessages, toAIMessages } from "./aiMessages";
 import type { Message } from "../types/chat";
 
 const call = { type: "tool_call" as const, id: "call", name: "work", arguments: "{}" };
@@ -74,7 +74,7 @@ it("pairs out-of-order results with the nearest preceding call without mutating 
   expect(JSON.stringify(saved)).toBe(before);
 });
 
-it("translates old reasoning only for the producing model and keeps native signatures", () => {
+it("keeps reasoning in existing fields and replays it only for the producing model", () => {
   const history: Message[] = [
     {
       role: "assistant",
@@ -87,11 +87,22 @@ it("translates old reasoning only for the producing model and keeps native signa
   });
   expect(toAIMessages(history, "different")[0].parts[0]).toMatchObject({ type: "thinking", signature: undefined });
   const stored = fromAIMessages(
-    [{ id: "native", role: "assistant", parts: [{ type: "thinking", content: "Plan", signature: "opaque-native" }] }],
+    [
+      {
+        id: "native",
+        role: "assistant",
+        parts: [
+          { type: "thinking", content: "Plan", signature: JSON.stringify({ id: "rs", encrypted_content: "opaque" }) },
+        ],
+      },
+    ],
     "run",
     "original",
   );
-  expect(toAIMessages(stored, "original")[0].parts[0]).toMatchObject({ signature: "opaque-native" });
+  expect(stored[0].content).toEqual(history[0].content);
+  expect(toAIMessages(stored, "original")[0].parts[0]).toMatchObject({
+    signature: JSON.stringify({ id: "rs", encrypted_content: "opaque" }),
+  });
 });
 
 it("preserves domain-only parts and identities through JSON persistence", () => {
@@ -120,6 +131,77 @@ it("preserves a completed pending tool call for interrupt resume", () => {
   expect(convertMessagesToModelMessages(native)[0].toolCalls?.[0].id).toBe(call.id);
 });
 
+it("keeps subagent messages agnostic and restores native routing from separate state", () => {
+  const native: UIMessage[] = [
+    {
+      id: "parent",
+      role: "assistant",
+      parts: [
+        {
+          type: "subagent",
+          subagent: {
+            id: "child",
+            name: "research",
+            status: "suspended",
+            parentToolCallId: "delegate",
+            interruptIds: ["approve"],
+            metadata: { tanstack: { subagentPlan: { agent: "research" } } },
+            messages: [
+              {
+                id: "child-message",
+                role: "assistant",
+                parts: [
+                  { type: "tool-call", id: "call", name: "work", arguments: "{}", state: "complete" },
+                  { type: "tool-result", toolCallId: "call", content: "Evidence", state: "complete" },
+                  {
+                    type: "subagent",
+                    subagent: {
+                      id: "nested",
+                      name: "inspect",
+                      status: "suspended",
+                      interruptIds: ["nested-approval"],
+                      messages: [],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  ];
+  const messages = fromAIMessages(native);
+  const saved = JSON.stringify(messages);
+  expect(saved).not.toMatch(/"parts"|interruptIds|tanstack|parentToolCallId/);
+  expect(messages[0].content[0]).toMatchObject({
+    type: "subagent",
+    id: "child",
+    toolCallId: "delegate",
+    messages: [
+      { content: [{ type: "tool_call" }] },
+      { content: [{ type: "tool_result" }] },
+      { content: [{ type: "subagent", id: "nested" }] },
+    ],
+  });
+  const restored = toAIMessages(JSON.parse(saved), undefined, {
+    state: JSON.parse(JSON.stringify(aiMessageState(native))),
+  });
+  expect(restored[0].parts[0]).toMatchObject({
+    type: "subagent",
+    subagent: {
+      id: "child",
+      parentToolCallId: "delegate",
+      interruptIds: ["approve"],
+      metadata: { tanstack: { subagentPlan: { agent: "research" } } },
+      messages: [
+        { parts: [{ type: "tool-call" }, { type: "tool-result" }] },
+        { parts: [{ type: "subagent", subagent: { interruptIds: ["nested-approval"] } }] },
+      ],
+    },
+  });
+});
+
 it("keeps media filenames and reasoning model identities through native persistence", () => {
   const messages: Message[] = [
     {
@@ -131,7 +213,7 @@ it("keeps media filenames and reasoning model identities through native persiste
     },
     {
       role: "assistant",
-      content: [{ type: "reasoning", id: "reason", text: "Plan", signature: "private-signature", model: "producer" }],
+      content: [{ type: "reasoning", id: "reason", text: "Plan", encryptedContent: "private", model: "producer" }],
     },
   ];
   const restored = fromAIMessages(JSON.parse(JSON.stringify(toAIMessages(messages))));

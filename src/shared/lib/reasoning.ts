@@ -1,8 +1,8 @@
 import type { Content, Message, ReasoningContent } from "../types/chat";
 
-/** Recognize current adapter signatures and reasoning stored before the migration. */
+/** Reasoning can be replayed only when its provider payload and identity are retained. */
 export function isReplayableReasoning(part: Content): part is ReasoningContent {
-  return part.type === "reasoning" && !!(part.signature || part.encryptedContent) && !!part.id;
+  return part.type === "reasoning" && !!part.encryptedContent && !!part.id;
 }
 
 /** Drop the payloads while keeping visible reasoning text. Returns the same array when nothing changed. */

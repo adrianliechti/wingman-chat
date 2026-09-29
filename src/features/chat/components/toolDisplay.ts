@@ -24,8 +24,16 @@ export interface ResolvedToolHeader {
 /** Find a tool definition by name across the active providers. */
 export function findTool(providers: readonly ToolProvider[], name: string | undefined): Tool | undefined {
   if (!name) return undefined;
+  const find = (tools: readonly Tool[]): Tool | undefined => {
+    for (const tool of tools) {
+      if (tool.name === name) return tool;
+      const nested = tool.subagent && find(tool.subagent.tools);
+      if (nested) return nested;
+    }
+    return undefined;
+  };
   for (const provider of providers) {
-    const tool = provider.tools.find((t) => t.name === name);
+    const tool = find(provider.tools);
     if (tool) return tool;
   }
   return undefined;

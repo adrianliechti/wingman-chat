@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/shared/types/chat";
-import { collectTurnArtifactPaths, summarizeToolGroup } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, groupRenderUnits, summarizeToolGroup } from "./chatMessageUtils";
 
 function result(id: string, name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): Message {
   return {
@@ -10,6 +10,26 @@ function result(id: string, name: string, args: Record<string, unknown>, meta?: 
 }
 
 describe("summarizeToolGroup", () => {
+  it("shows a delegated conversation once, while keeping other results and failures", () => {
+    const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "Research" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "subagent", id: "child", name: "research", toolCallId: "delegate", status: "finished", messages: [] },
+        ],
+      },
+      result("delegate", "research", {}),
+      result("other", "read", {}),
+      { role: "assistant", content: [{ type: "text", text: "Answer" }] },
+    ];
+    expect(groupRenderUnits(messages, false)).toEqual([0, 1, 3, 4].map((index) => ({ kind: "message", index })));
+    messages[2].error = { code: "EXECUTION_ERROR", message: "Could not return the report" };
+    expect(groupRenderUnits(messages, false)).toContainEqual({ kind: "message", index: 2 });
+    messages[1].content = [];
+    messages[2].error = undefined;
+    expect(groupRenderUnits(messages, false)).toContainEqual({ kind: "toolGroup", indices: [2, 3] });
+  });
   it("deduplicates file targets and preserves semantic ordering", () => {
     const messages = [
       result("1", "read", { path: "/a.ts" }),

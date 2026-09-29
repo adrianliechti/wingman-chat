@@ -3,13 +3,17 @@ import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
+import type { Message, Tool, ToolContext } from "@/shared/types/chat";
+import type { ChatRecord as Chat } from "../lib/chatRuntime";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
 import type { verifyArtifacts } from "@/features/artifacts/lib/artifact-verifier";
 import { MemoryManager } from "@/features/agent/lib/memoryManager";
 import { memoryRevision } from "@/features/agent/lib/memoryDocument";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
+import { loadChat, storeChat } from "../lib/chatStorage";
+import { readJson } from "@/shared/lib/opfs";
+import { createAgentTool } from "@/features/tools/lib/subagent";
 
 const fixture = vi.hoisted(() => ({
   chats: [] as Chat[],
@@ -126,6 +130,7 @@ function deferred() {
   return { promise, resolve };
 }
 let root: Root | undefined;
+const disk = new MemoryOpfs();
 async function harness() {
   let context!: ChatContextType;
   function Capture() {
@@ -143,6 +148,8 @@ async function harness() {
   return new Proxy({} as ChatContextType, { get: (_target, key) => Reflect.get(context, key) });
 }
 beforeEach(() => {
+  disk.reset();
+  vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
   fixture.chats.length = 0;
   fixture.tools = [];
   fixture.chat = {};
@@ -198,12 +205,14 @@ describe("chat run integration", () => {
     await act(() => original.sendMessage(user("Work")));
     expect(execute).not.toHaveBeenCalled();
     const id = fixture.chats[0].id;
-    expect(fixture.chats[0].aiResume?.pendingInterrupts).toHaveLength(1);
+    expect(fixture.chats[0].runtime?.resume?.pendingInterrupts).toHaveLength(1);
     await act(async () => {
       root?.unmount();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    fixture.chats = JSON.parse(JSON.stringify(fixture.chats));
+    await storeChat(fixture.chats[0]);
+    expect(JSON.stringify(await readJson(`chats/${id}/chat.json`))).not.toMatch(/pendingInterrupts|aiResume|runtime/);
+    fixture.chats = [(await loadChat(id, false))!];
     const restored = await harness();
     await act(async () => restored.selectChat(id));
     const approval = restored.interruptState?.interrupts[0];
@@ -216,6 +225,54 @@ describe("chat run integration", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
+  it("resumes a child's approval from ordinary saved messages and separate runtime state", async () => {
+    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Evidence" }]);
+    fixture.tools = [
+      createAgentTool("research", "Research a topic", {
+        instructions: "Research",
+        runtimeContext: "",
+        middleware: [],
+        inheritHistory: false,
+        tools: [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }],
+      }),
+    ];
+    fixture.complete
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "delegate", name: "research", arguments: '{"prompt":"Find evidence"}' }],
+      })
+      .mockResolvedValueOnce(call)
+      .mockResolvedValueOnce(assistant("Child finished"))
+      .mockResolvedValueOnce(assistant("Final answer"));
+    const original = await harness();
+    await act(() => original.sendMessage(user("Research this")));
+    expect(execute).not.toHaveBeenCalled();
+    const id = fixture.chats[0].id;
+    await act(async () => {
+      root?.unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await storeChat(fixture.chats[0]);
+    const saved = JSON.stringify(await readJson(`chats/${id}/chat.json`));
+    expect(saved).toContain('"type":"subagent"');
+    expect(saved).not.toMatch(/"parts"|pendingInterrupts|interruptIds|tanstack/);
+    fixture.chats = [(await loadChat(id, false))!];
+    const restored = await harness();
+    await act(async () => restored.selectChat(id));
+    const approval = restored.interruptState?.interrupts[0];
+    expect(approval?.kind).toBe("tool-approval");
+    if (!approval || approval.kind === "unbound") throw new Error("Expected the child's approval");
+    await act(async () => {
+      approval.resolveInterrupt(true);
+      await vi.waitFor(() =>
+        expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Final answer").content),
+      );
+    });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(fixture.complete).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(fixture.chats[0].messages)).toContain("Child finished");
+  });
+
   it("explicit Stop clears a saved approval without executing the tool", async () => {
     const execute = vi.fn<Tool["function"]>();
     fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
@@ -224,7 +281,7 @@ describe("chat run integration", () => {
     await act(() => context.sendMessage(user("Work")));
     const approval = context.interruptState!.interrupts[0];
     act(() => context.stopStreaming());
-    expect(fixture.chats[0].aiResume).toBeUndefined();
+    expect(fixture.chats[0].runtime?.resume).toBeUndefined();
     expect(context.interruptState?.interrupts).toHaveLength(0);
     if (approval.kind !== "unbound") expect(() => approval.resolveInterrupt(true)).toThrow("Unknown interrupt");
     await act(() => context.sendMessage(user("Different request")));
@@ -234,8 +291,6 @@ describe("chat run integration", () => {
 
   it("loads memory before the first request and keeps one snapshot throughout the tool loop", async () => {
     vi.useFakeTimers();
-    const disk = new MemoryOpfs();
-    vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
     disk.put("agents/agent/AGENTS.md", "---\nname: Agent\nmemory: true\n---\n");
     const manager = new MemoryManager("agent");
     fixture.memory = manager;
@@ -356,6 +411,24 @@ describe("chat run integration", () => {
     expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Done").content);
     expect(JSON.stringify(fixture.chats[0].messages)).toContain("Earlier evidence ".repeat(1000));
     expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("untrusted-conversation-summary");
+    const id = fixture.chats[0].id;
+    await act(async () => {
+      root?.unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await storeChat(fixture.chats[0]);
+    fixture.chats = [(await loadChat(id, false))!];
+    expect(fixture.chats[0].runtime?.metadata).toBeDefined();
+    const restored = await harness();
+    await act(async () => restored.selectChat(id));
+    fixture.complete.mockImplementationOnce(async ({ messages }) => {
+      expect(JSON.stringify(messages)).toContain("The evidence was checked.");
+      expect(JSON.stringify(messages)).not.toContain("Earlier evidence ".repeat(1000));
+      return assistant("Follow-up done");
+    });
+    await act(() => restored.sendMessage(user("Follow up")));
+    expect(fixture.complete).toHaveBeenCalledTimes(4);
+    expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Follow-up done").content);
   });
 
   it("honors disabled compaction on overflow and preserves the actionable error", async () => {

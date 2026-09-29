@@ -6,13 +6,19 @@ import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
 import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { getTextFromContent, type Tool, type ToolDisplay, type ToolProvider } from "@/shared/types/chat";
 
 // Caps prevent a few full-page web_fetch results from blowing past the
 // inner agent's input limit on the next turn.
 const MAX_SEARCH_RESULTS_PER_QUERY = 8;
 const MAX_SEARCH_RESULT_CHARS = 1500;
 const MAX_FETCH_CHARS_PER_URL = 12000;
+
+const webResultDisplay: Pick<ToolDisplay, "input" | "output"> = {
+  // Queries/URLs already appear in the readable result; no argument JSON.
+  input: () => [],
+  output: (result) => ({ code: getTextFromContent(result), language: "markdown" }),
+};
 
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -57,6 +63,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     tools.push({
       name: "web_search",
       display: {
+        ...webResultDisplay,
         header: (args, state) => {
           const queries = args?.queries;
           return {
@@ -119,6 +126,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     tools.push({
       name: "web_fetch",
       display: {
+        ...webResultDisplay,
         header: (args, state) => {
           const urls = args?.urls;
           return {
@@ -218,6 +226,14 @@ export function createInternetProvider(client: Client, internet: Config["interne
     },
     { client, needsApproval: internet.elicitation },
   );
+  searchAgent.title = "Web research";
+  searchAgent.display = {
+    ...webResultDisplay,
+    header: (_args, state) => ({
+      icon: Globe,
+      label: state.error ? "Research failed" : state.running ? "Researching the web…" : "Web research",
+    }),
+  };
 
   return {
     id: "internet",

@@ -138,6 +138,63 @@ test("activity labels vary across responses and stay stable while composing", as
   expect(labels.size).toBeGreaterThan(1);
 });
 
+test("research approvals and child tools use chat disclosures and remain operable on a narrow screen", async ({
+  page,
+}, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page, "?seed&research");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Research this topic");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("search_agent", { prompt: "Find evidence about the topic" }));
+  const requests = page.getByLabel("Agent requests");
+  await expect(requests.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  await expect(requests).toContainText("Approval required to run Web research");
+  await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
+  expect(
+    await requests.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
+    ),
+  ).toBe(true);
+  await requests.getByText("View details", { exact: true }).click();
+  await expect(requests.locator("details")).toContainText("Find evidence about the topic");
+  await expect(requests.locator("pre")).toHaveCount(0);
+  await requests.getByText("View details", { exact: true }).click();
+  await page.screenshot({ path: info.outputPath("approval.png") });
+  await requests.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  const child = page
+    .locator("details")
+    .filter({ has: page.locator("summary", { hasText: "Researching the web" }) })
+    .first();
+  await expect(child).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.callTool("web_search", { queries: ["A useful research query"] }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  const result = child.getByRole("button", { name: "Searched the web", exact: false });
+  await expect(result).toBeVisible();
+  await result.click();
+  await expect(child).toContainText("Research evidence");
+  await result.click();
+  await page.screenshot({ path: info.outputPath("research.png") });
+  await page.setViewportSize({ width: 390, height: 750 });
+  await expect(result).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.evaluate(() => window.reactUiE2E.finish("Findings with sources"));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
+  await expect(requests).toHaveCount(0);
+  await expect(page.getByText("Web research", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
+  await page.getByText("Web research", { exact: true }).click();
+  await expect(page.getByText("Findings with sources", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  expect(errors).toEqual([]);
+});
+
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
   test(`large text chunks render progressively and Stop retains the full text (${reducedMotion})`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion });

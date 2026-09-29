@@ -19,12 +19,14 @@ import { historyForRetry, prepareChatMessages } from "../lib/chatHistory";
 import { chatCompaction, preserveSkillContext } from "../lib/chatCompaction";
 import { getConfig } from "@/shared/config";
 import { AgentMessageMetadata, approvalTools, streamRun } from "@/shared/lib/agent";
-import { toAIMessages } from "@/shared/lib/aiMessages";
+import { aiMessageState, toAIMessages } from "@/shared/lib/aiMessages";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { captureRequestContext, isUserMessage } from "@/shared/lib/requestContext";
-import type { Chat, Content, Message, Model } from "@/shared/types/chat";
+import type { Content, Message, Model } from "@/shared/types/chat";
+import type { ChatRecord as Chat } from "../lib/chatRuntime";
+import type { ChatStore } from "../lib/chatStore";
 import { Role, updateToolResultMeta, withMessageIdentity } from "@/shared/types/chat";
 import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
@@ -53,7 +55,7 @@ interface Options {
   artifactsEnabled: boolean;
   getChat: (id: string) => Chat | undefined;
   loadChat: (id: string) => Promise<Chat>;
-  updateChat: ChatContextType["updateChat"];
+  updateChat: ChatStore["updateChat"];
   getOrCreateChat: () => Promise<{ id: string; chat: Chat; fs: FileSystemManager }>;
   chatTools: ReturnType<typeof useChatContext>["tools"];
   chatInstructions: ReturnType<typeof useChatContext>["instructions"];
@@ -197,17 +199,21 @@ export function useChatRun({
               ? [
                   chatCompaction(client, threshold, config.chat?.summarizer || model.id, runSignal, {
                     get: async (namespace, key) =>
-                      getChat(id)?.aiMetadata?.[namespace]?.[JSON.stringify([key, context.subagentRunId])] ?? null,
+                      getChat(id)?.runtime?.metadata?.[namespace]?.[JSON.stringify([key, context.subagentRunId])] ??
+                      null,
                     set: async (namespace, key, value) => {
                       if (runSignal.aborted) return;
                       updateChat(
                         id,
                         (prev) => ({
-                          aiMetadata: {
-                            ...prev.aiMetadata,
-                            [namespace]: {
-                              ...prev.aiMetadata?.[namespace],
-                              [JSON.stringify([key, context.subagentRunId])]: value,
+                          runtime: {
+                            ...prev.runtime,
+                            metadata: {
+                              ...prev.runtime?.metadata,
+                              [namespace]: {
+                                ...prev.runtime?.metadata?.[namespace],
+                                [JSON.stringify([key, context.subagentRunId])]: value,
+                              },
                             },
                           },
                         }),
@@ -219,9 +225,11 @@ export function useChatRun({
                       updateChat(
                         id,
                         (prev) => {
-                          const entries = { ...prev.aiMetadata?.[namespace] };
+                          const entries = { ...prev.runtime?.metadata?.[namespace] };
                           delete entries[JSON.stringify([key, context.subagentRunId])];
-                          return { aiMetadata: { ...prev.aiMetadata, [namespace]: entries } };
+                          return {
+                            runtime: { ...prev.runtime, metadata: { ...prev.runtime?.metadata, [namespace]: entries } },
+                          };
                         },
                         { preserveDates: true },
                       );
@@ -303,7 +311,12 @@ export function useChatRun({
     persistence: {
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
-        return saved ? { messages: toAIMessages(saved.messages), resume: saved.aiResume } : null;
+        return saved
+          ? {
+              messages: toAIMessages(saved.messages, undefined, { state: saved.runtime }),
+              resume: saved.runtime?.resume,
+            }
+          : null;
       },
       setItem: (_key, state) => {
         // A draft has no durable record until the first send or attachment.
@@ -312,16 +325,20 @@ export function useChatRun({
         if (storageOwnerRef.current !== session || !getChat(session.id)) return;
         updateChat(
           session.id,
-          () => ({
+          (prev) => ({
             messages: session.metadata.read(state.messages),
-            aiResume: state.resume?.pendingInterrupts?.length ? state.resume : undefined,
+            runtime: {
+              ...prev.runtime,
+              subagents: aiMessageState(state.messages).subagents,
+              resume: state.resume?.pendingInterrupts?.length ? state.resume : undefined,
+            },
           }),
           { preserveDates: true },
         );
       },
       removeItem: () => {
         if (storageOwnerRef.current === session && getChat(session.id))
-          updateChat(session.id, () => ({ messages: [], aiResume: undefined }));
+          updateChat(session.id, () => ({ messages: [], runtime: undefined }));
       },
     },
     onChunk: (chunk) => {
@@ -380,7 +397,7 @@ export function useChatRun({
       // Voice and externally produced messages enter the same live transcript.
       // A callback for an inactive conversation only updates its stored record.
       if (id === session.id && chatIdRef.current === id) {
-        setMessages(toAIMessages(messages));
+        setMessages(toAIMessages(messages, undefined, { state: chat.runtime }));
         updateChat(id, () => ({}));
       } else updateChat(id, () => ({ messages }));
     },
@@ -436,7 +453,7 @@ export function useChatRun({
       }
       if (!getChat(id) || chatIdRef.current !== id) return;
       if (session.id !== id) return;
-      if (historyOverride) setMessages(toAIMessages(historyOverride));
+      if (historyOverride) setMessages(toAIMessages(historyOverride, undefined, { state: getChat(id)?.runtime }));
       const context = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
       await sendNativeMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
@@ -450,7 +467,7 @@ export function useChatRun({
     if (chat.id !== session.id || isLoading) return;
     const history = historyForRetry(chat.messages);
     if (!history) return;
-    const native = toAIMessages(history);
+    const native = toAIMessages(history, undefined, { state: chat.runtime });
     setMessages(native.slice(0, -1));
     await append(native.at(-1)!);
   }, [getChat, chatIdRef, session.id, isLoading, setMessages, append]);

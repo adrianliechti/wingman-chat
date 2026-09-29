@@ -235,6 +235,15 @@ function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
 
 export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
 
+/** A delegated call is already represented by its child conversation. */
+export function subagentToolCallIds(messages: Message[]): Set<string> {
+  return new Set(
+    messages.flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "subagent" && part.toolCallId ? [part.toolCallId] : [])),
+    ),
+  );
+}
+
 /**
  * Partition messages into standalone messages and folded tool groups (runs of
  * groupable results/connectors with 2+ results). `pendingElicitationToolCallId`
@@ -246,6 +255,13 @@ export function groupRenderUnits(
   pendingElicitationToolCallId?: string | null,
 ): RenderUnit[] {
   const units: RenderUnit[] = [];
+  const delegated = subagentToolCallIds(messages);
+  const represented = (message: Message) =>
+    isGroupableToolResultMessage(message) &&
+    message.content.every((part) => part.type === "tool_result" && delegated.has(part.id));
+  const addMessage = (index: number) => {
+    if (!represented(messages[index])) units.push({ kind: "message", index });
+  };
   const limit = isResponding ? messages.length - 1 : messages.length;
   const groupable = (message: Message) =>
     !hostsToolCall(message, pendingElicitationToolCallId) &&
@@ -257,21 +273,21 @@ export function groupRenderUnits(
       let j = i;
       const indices: number[] = [];
       while (j < limit && groupable(messages[j])) {
-        if (isGroupableToolResultMessage(messages[j])) indices.push(j);
+        if (isGroupableToolResultMessage(messages[j]) && !represented(messages[j])) indices.push(j);
         j++;
       }
       if (indices.length >= 2) {
         units.push({ kind: "toolGroup", indices });
       } else {
-        for (let k = i; k < j; k++) units.push({ kind: "message", index: k });
+        for (let k = i; k < j; k++) addMessage(k);
       }
       i = j;
     } else {
-      units.push({ kind: "message", index: i });
+      addMessage(i);
       i++;
     }
   }
-  for (; i < messages.length; i++) units.push({ kind: "message", index: i });
+  for (; i < messages.length; i++) addMessage(i);
   return units;
 }
 
