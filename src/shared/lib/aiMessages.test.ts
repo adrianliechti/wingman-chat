@@ -57,6 +57,23 @@ it("uses the framework's incomplete state for saved cancelled calls and excludes
   expect(JSON.stringify(wire)).toContain("Try again");
 });
 
+it("pairs out-of-order results with the nearest preceding call without mutating stored history", () => {
+  const saved: Message[] = [
+    { role: "assistant", content: [call, { ...call, id: "other" }] },
+    { role: "user", content: [{ ...result, id: "other" }, result] },
+    { role: "assistant", content: [call] },
+    { role: "user", content: [{ ...result, meta: { file: "/later.png" } }] },
+  ];
+  const before = JSON.stringify(saved);
+  const native = toAIMessages(saved);
+  expect(native.map((message) => message.parts.map((part) => part.type))).toEqual([
+    ["tool-call", "tool-call", "tool-result", "tool-result"],
+    ["tool-call", "tool-result"],
+  ]);
+  expect(native[1].parts[1]).toMatchObject({ metadata: { wingman: { ...result, meta: { file: "/later.png" } } } });
+  expect(JSON.stringify(saved)).toBe(before);
+});
+
 it("translates old reasoning only for the producing model and keeps native signatures", () => {
   const history: Message[] = [
     {

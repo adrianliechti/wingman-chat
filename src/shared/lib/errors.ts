@@ -43,7 +43,12 @@ export function getErrorInfo(error: unknown): ErrorInfo {
       code: "CONTEXT_EXHAUSTED",
       message: message || "The conversation is too long for the model's context window.",
     };
-  if (/max_output_tokens|output.*(?:limit|truncat)/i.test(message) || value.code === "length")
+  if (
+    /max_output_tokens|output.*truncat|(?:reached|exceeded).*output.*limit|output.*limit.*(?:reached|exceeded)/i.test(
+      message,
+    ) ||
+    value.code === "length"
+  )
     return {
       code: "OUTPUT_TRUNCATED",
       message: "The response was truncated because the maximum token limit was reached.",

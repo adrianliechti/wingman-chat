@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "./client";
-import { run } from "./agent";
+import { run, runMessages } from "./agent";
 import { loadConfig } from "../config";
 import type { Tool } from "../types/chat";
 import { response, textItem, callItem, sse, finished } from "./test-support/ai";
@@ -28,7 +28,7 @@ describe("chat output allowances", () => {
       parameters: { type: "object", properties: {}, additionalProperties: false },
       function: async () => [{ type: "text", text: "done" }],
     };
-    await new Client().complete(model, "", prompt, [tool], undefined, { effort: "none" });
+    await runMessages(new Client(), model, "", prompt, [tool], { options: { effort: "none" } });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
       model,
@@ -47,7 +47,7 @@ describe("chat output allowances", () => {
     ["gemini-2.0-flash", 8_192],
   ])("sends the %s allowance in the Responses request", async (model, tokens) => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-    await new Client().complete(model, "", prompt, []);
+    await runMessages(new Client(), model, "", prompt, []);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(tokens);
   });
 
@@ -60,7 +60,7 @@ describe("chat output allowances", () => {
     const config = await loadConfig();
     expect(config).toBeDefined();
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-    await config!.client.complete(id, "", prompt, []);
+    await runMessages(config!.client, id, "", prompt, []);
     const body = JSON.parse(fetchMock.mock.calls[1][1].body);
     if (maxOutputTokens === 0) expect(body).not.toHaveProperty("max_output_tokens");
     else expect(body.max_output_tokens).toBe(maxOutputTokens);
@@ -71,7 +71,7 @@ describe("chat output allowances", () => {
     async (maxOutputTokens) => {
       fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
       const client = new Client(undefined, [{ id: "gpt-6-astra", outputTokenBudget: 32_000 }]);
-      await client.complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens });
+      await runMessages(client, "gpt-6-astra", "", prompt, [], { options: { maxOutputTokens } });
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
       if (maxOutputTokens === 0) expect(body).not.toHaveProperty("max_output_tokens");
       else expect(body.max_output_tokens).toBe(Math.min(maxOutputTokens, 128_000));
@@ -82,7 +82,7 @@ describe("chat output allowances", () => {
     fetchMock.mockResolvedValueOnce(Response.json({ models: [{ id: "gpt-6-astra", outputTokenBudget: 96_000 }] }));
     const config = await loadConfig();
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-    await config!.client.complete("gpt-6-astra", "", prompt, []);
+    await runMessages(config!.client, "gpt-6-astra", "", prompt, []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).max_output_tokens).toBe(96_000);
   });
 
@@ -92,14 +92,14 @@ describe("chat output allowances", () => {
       fetchMock.mockResolvedValueOnce(Response.json({ data: [{ id: "gpt-6-astra", max_output_tokens: capacity }] }));
       await client.listModels();
       fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-      await client.complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens: 96_000 });
+      await runMessages(client, "gpt-6-astra", "", prompt, [], { options: { maxOutputTokens: 96_000 } });
       expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body).max_output_tokens).toBe(capacity);
     }
   });
 
   it("omits the limit for unknown models", async () => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-    await new Client().complete("custom-deployment", "", prompt, []);
+    await runMessages(new Client(), "custom-deployment", "", prompt, []);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("max_output_tokens");
   });
 
@@ -107,14 +107,14 @@ describe("chat output allowances", () => {
     "rejects an invalid configured allowance (%s) before sending a request",
     async (maxOutputTokens) => {
       const client = new Client(undefined, [{ id: "team-chat", maxOutputTokens }]);
-      await expect(client.complete("team-chat", "", prompt, [])).rejects.toThrow(/Output token limits/);
+      await expect(runMessages(client, "team-chat", "", prompt, [])).rejects.toThrow(/Output token limits/);
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
 
   it("rejects an invalid request override before sending a request", async () => {
     await expect(
-      new Client().complete("gpt-6-astra", "", prompt, [], undefined, { maxOutputTokens: -1 }),
+      runMessages(new Client(), "gpt-6-astra", "", prompt, [], { options: { maxOutputTokens: -1 } }),
     ).rejects.toThrow(/Output token limits/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -271,7 +271,7 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       ]),
     );
     const onStream = vi.fn();
-    const result = await new Client().complete("model", "", prompt, [], onStream);
+    const result = (await runMessages(new Client(), "model", "", prompt, [], { onStream })).at(-1)!;
     expect(result.content).toEqual([{ type: "text", text: "Hello world!" }]);
     const updates = [
       ...new Set(
@@ -293,7 +293,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       finished(response([textItem("Hello")], { model: "resolved-model", reasoning: { context: "current_turn" } })),
     );
     const stream = vi.fn();
-    const answer = await new Client().complete("team-model", "Instructions", prompt, [], stream);
+    const answer = (await runMessages(new Client(), "team-model", "Instructions", prompt, [], { onStream: stream })).at(
+      -1,
+    )!;
     expect(answer.content).toEqual([{ type: "text", text: "Hello" }]);
     expect(stream).toHaveBeenCalledWith(expect.arrayContaining([{ type: "text", text: "Hello" }]));
     expect(answer.usage).toMatchObject({
@@ -322,12 +324,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       )
       .mockResolvedValueOnce(finished(response([textItem("Next")])));
     const client = new Client();
-    const answer = await client.complete("model", "", prompt, []);
+    const answer = (await runMessages(client, "model", "", prompt, [])).at(-1)!;
     expect(answer.content).toEqual([
       { type: "text", text: "Working", phase: "commentary" },
       { type: "text", text: "Done", phase: "final_answer" },
     ]);
-    await client.complete("model", "", [...prompt, answer], []);
+    await runMessages(client, "model", "", [...prompt, answer], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
@@ -399,6 +401,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     await expect(new Client().parse("model", "", "", z.object({ value: z.number() }), "test")).rejects.toThrow();
   });
 
+  it("returns the native schema output without trying to parse transformed values again", async () => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem('{"value":"42"}')])));
+    const schema = z.object({ value: z.string().transform(Number) });
+    expect(await new Client().parse("model", "", "", schema, "test")).toEqual({ value: 42 });
+  });
+
   it("stops an in-flight stream on cancellation", async () => {
     const controller = new AbortController();
     fetchMock.mockImplementationOnce(
@@ -412,7 +420,7 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
           { headers: { "content-type": "text/event-stream" } },
         ),
     );
-    const pending = new Client().complete("model", "", prompt, [], undefined, { signal: controller.signal });
+    const pending = runMessages(new Client(), "model", "", prompt, [], { options: { signal: controller.signal } });
     const rejected = expect(pending).rejects.toMatchObject({ name: expect.stringMatching(/Abort/) });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     controller.abort();

@@ -37,10 +37,14 @@ WebSocket and browser audio devices. See [AI integration](ai-integration.md).
 
 Dictation belongs to a composer/chat and its selected microphone. Its recording
 state includes pending permission so the button can cancel startup. Duplicate
-stops share one upload. Capture closes before submitting mono PCM16 WAV to STT.
+stops share one upload. TanStack's `AudioRecorder` owns microphone capture and
+browser encoding. Capture closes before its native blob is submitted to STT:
+WebM/Opus when supported, otherwise the browser's recording format. Dictation
+does not create an AudioContext or copy PCM samples into a hand-encoded WAV.
 Navigation, device changes, switching to realtime and unmount cancel pending
 capture/upload and suppress late transcripts. Permission and API failures reach
-the composer; device/processor failures stop capture and show a notification.
+the composer; recorder failures stop capture and show a notification. A device
+ending its own recording also releases the composer so another can start.
 
 File transcription passes cancellation through audio extraction and the HTTP
 request. Extraction releases its decoder, conversion and output on success,
@@ -73,7 +77,8 @@ message UI.
 Unit tests use the real recorder/player with controlled browser primitives,
 execute the actual worklet source, and cover HTTP payloads and cancellation.
 `tests/browser/voice.spec.ts` mounts the real provider/hooks/button in StrictMode
-and runs real AudioContexts, AudioWorklets, WAV playback and WebM conversion.
+and runs real AudioContexts, AudioWorklets, native dictation recording, WAV
+playback and WebM conversion.
 Chromium uses synthetic media devices and muted output. Native OS permission
 dialogs, physical unplugging and Safari/Firefox audio behavior still need manual
 device testing; injected delays/errors prove ownership and cleanup independently

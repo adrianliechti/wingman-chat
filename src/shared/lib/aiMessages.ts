@@ -78,23 +78,19 @@ export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
     }),
   }));
   const native: UIMessage[] = [];
+  const owners = new Map<string, UIMessage>();
   for (const message of converted) {
     // Wingman persisted tool outputs as user turns. TanStack anchors them to
     // the assistant that called the tool, including multimodal results.
-    const parts = message.parts.filter((part) => {
-      if (part.type !== "tool-result") return true;
-      const owner = native.findLast((candidate) =>
-        candidate.parts.some((call) => call.type === "tool-call" && call.id === part.toolCallId),
-      );
-      if (owner) owner.parts.push(part);
-      return false;
-    });
-    if (parts.length)
-      native.push({
-        ...message,
-        parts,
-        role: parts.every((part) => part.type === "tool-result") ? "assistant" : message.role,
-      });
+    const next = { ...message, parts: [] as MessagePart[] };
+    for (const part of message.parts) {
+      if (part.type === "tool-result") owners.get(part.toolCallId)?.parts.push(part);
+      else {
+        next.parts.push(part);
+        if (part.type === "tool-call") owners.set(part.id, next);
+      }
+    }
+    if (next.parts.length) native.push(next);
   }
   return native;
 }

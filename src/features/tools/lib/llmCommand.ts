@@ -1,5 +1,5 @@
 import { getConfig } from "@/shared/config";
-import { combineAbortSignals } from "@/shared/lib/abortSignals";
+import { runMessages } from "@/shared/lib/agent";
 import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { Role, type ImageContent, type TextContent } from "@/shared/types/chat";
 import type { LlmCallOptions } from "./interpreterProtocol";
@@ -24,30 +24,19 @@ export async function completeIsolated(
   options: Pick<LlmCallOptions, "system" | "effort">,
   requestOptions: BridgeRequestOptions,
 ): Promise<string> {
-  const invocation = requestOptions.context?.invocationContext;
-  const combined = combineAbortSignals(requestOptions.signal, invocation?.signal);
-  try {
-    combined.signal?.throwIfAborted();
-    if (invocation && !invocation.tryConsumeModelCall()) {
-      throw Object.assign(new Error("The invocation-wide model-call budget was exhausted."), { code: "MAX_TURNS" });
-    }
-    const result = await getConfig().client.complete(
-      model,
-      options.system ?? "",
-      [{ role: Role.User, content }],
-      [],
-      undefined,
-      {
-        ...(options.effort ? { effort: options.effort } : {}),
-        signal: combined.signal,
-        parentContext: requestOptions.context?.agentContext,
-      },
-    );
-    combined.signal?.throwIfAborted();
-    return getFinalTextFromContent(result.content);
-  } finally {
-    combined.cleanup();
-  }
+  const messages = await runMessages(
+    getConfig().client,
+    model,
+    options.system ?? "",
+    [{ role: Role.User, content }],
+    [],
+    {
+      invocationContext: requestOptions.context?.invocationContext,
+      parentContext: requestOptions.context?.agentContext,
+      options: { effort: options.effort, signal: requestOptions.signal },
+    },
+  );
+  return getFinalTextFromContent(messages.at(-1)?.content ?? []);
 }
 
 export async function runLlm(

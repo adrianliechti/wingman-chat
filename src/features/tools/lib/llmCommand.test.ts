@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Client } from "@/shared/lib/client";
+import { testClient } from "@/shared/lib/test-support/ai";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { runLlm, setModel } from "./llmCommand";
 import { runVision } from "./visionCommand";
 
 const { complete, vision } = vi.hoisted(() => ({
-  complete: vi.fn<Client["complete"]>(),
+  complete: vi.fn<Parameters<typeof testClient>[0]>(),
   vision: { files: [], model: undefined as string | undefined },
 }));
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: { complete }, vision }) }));
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(complete), vision }) }));
 beforeEach(() => {
   complete.mockReset().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
   vision.model = undefined;
@@ -36,36 +36,43 @@ describe("interpreter model calls", () => {
     await runLlm("Independent question", {}, { context });
     await runVision(new Uint8Array([2]), "/second.png", "Independent image question", { context });
 
-    expect(complete.mock.calls.map(([, system]) => system)).toEqual(["First private instructions", "", "", ""]);
-    expect(complete.mock.calls.map(([, , messages]) => messages)).toEqual([
-      [{ role: "user", content: [{ type: "text", text: "First private question" }] }],
+    expect(complete.mock.calls.map(([options]) => options.systemPrompts)).toEqual([
+      ["First private instructions"],
+      [""],
+      [""],
+      [""],
+    ]);
+    expect(
+      complete.mock.calls.map(([options]) => options.messages.map(({ role, content }) => ({ role, content }))),
+    ).toEqual([
+      [{ role: "user", content: "First private question" }],
       [
         {
           role: "user",
           content: [
-            { type: "image", name: "first.png", data: "data:image/png;base64,AQ==" },
-            { type: "text", text: "First image question" },
+            { type: "image", source: { type: "data", value: "AQ==", mimeType: "image/png" } },
+            { type: "text", content: "First image question" },
           ],
         },
       ],
-      [{ role: "user", content: [{ type: "text", text: "Independent question" }] }],
+      [{ role: "user", content: "Independent question" }],
       [
         {
           role: "user",
           content: [
-            { type: "image", name: "second.png", data: "data:image/png;base64,Ag==" },
-            { type: "text", text: "Independent image question" },
+            { type: "image", source: { type: "data", value: "Ag==", mimeType: "image/png" } },
+            { type: "text", content: "Independent image question" },
           ],
         },
       ],
     ]);
-    expect(complete.mock.calls.map(([, , , tools]) => tools)).toEqual([[], [], [], []]);
+    expect(complete.mock.calls.map(([options]) => options.tools)).toEqual([[], [], [], []]);
   });
 
   it("keeps the configured vision model independent of the parent model", async () => {
     vision.model = "vision-specialist";
     await runVision(new Uint8Array([1]), "/image.png", "Describe", { context: { model: "parent" } });
-    expect(complete.mock.calls[0][0]).toBe("vision-specialist");
+    expect(complete.mock.calls[0][0].model).toBe("vision-specialist");
   });
 
   it.each(["llm", "vision"])("honors invocation-only cancellation for %s without spending budget", async (helper) => {
@@ -84,9 +91,9 @@ describe("interpreter model calls", () => {
 
   it("cancels an in-flight helper when its parent invocation stops", async () => {
     const parent = new AbortController();
-    complete.mockImplementationOnce(async (_model, _system, _messages, _tools, _stream, options) => {
+    complete.mockImplementationOnce(async (options) => {
       parent.abort();
-      options?.signal?.throwIfAborted();
+      options.abortController?.signal.throwIfAborted();
       return { role: "assistant", content: [{ type: "text", text: "Should not finish" }] };
     });
     await expect(
@@ -105,7 +112,7 @@ describe("interpreter model calls", () => {
     const context = { model: "run-model", invocationContext: new AgentInvocationContext({ maxModelCalls: 2 }) };
     await runLlm("Question", {}, { context });
     await runVision(new Uint8Array([1]), "/image.png", "Describe", { context });
-    expect(complete.mock.calls.map(([model]) => model)).toEqual(["run-model", "run-model"]);
+    expect(complete.mock.calls.map(([options]) => options.model)).toEqual(["run-model", "run-model"]);
     expect(context.invocationContext.budgetSnapshot()).toEqual({ used: 2, limit: 2 });
   });
 
@@ -116,7 +123,7 @@ describe("interpreter model calls", () => {
       code: "MAX_TURNS",
     });
     expect(complete).toHaveBeenCalledTimes(1);
-    expect(complete.mock.calls[0][0]).toBe("override");
+    expect(complete.mock.calls[0][0].model).toBe("override");
   });
 
   it("does not consume budget or call the model after cancellation", async () => {

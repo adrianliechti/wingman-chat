@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "./client";
-import { pcm16ToWav } from "@/features/voice/lib/audio";
 
 const realFetch = globalThis.fetch;
 const fetchMock = vi.fn<typeof fetch>();
@@ -83,17 +82,5 @@ describe("speech API contracts", () => {
     const calls = fetchMock.mock.calls.length;
     await expect(invoke()).rejects.toMatchObject({ name: "AbortError" });
     expect(fetchMock).toHaveBeenCalledTimes(calls);
-  });
-
-  it("produces a mono PCM16 WAV with matching lengths, rate and signed samples", async () => {
-    const samples = new Int16Array([-32768, 0, 32767]);
-    const bytes = await pcm16ToWav(samples, 24000).arrayBuffer();
-    const view = new DataView(bytes);
-    expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe("RIFF");
-    expect(view.getUint32(4, true)).toBe(bytes.byteLength - 8);
-    expect(view.getUint16(22, true)).toBe(1);
-    expect(view.getUint32(24, true)).toBe(24000);
-    expect(view.getUint32(40, true)).toBe(6);
-    expect(Array.from(new Int16Array(bytes.slice(44)))).toEqual(Array.from(samples));
   });
 });

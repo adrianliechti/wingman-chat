@@ -8,10 +8,10 @@ export function testClient(
 ): Client {
   return {
     chatModelOptions: () => ({}),
-    textAdapter: () => ({
+    textAdapter: (model: string) => ({
       kind: "text",
       name: "test",
-      model: "test",
+      model,
       async *chatStream(options: TextOptions<Record<string, unknown>>) {
         const id = crypto.randomUUID();
         const pending: { type: "MESSAGES_SNAPSHOT"; messages: { id: string; role: "assistant"; content: string }[] }[] =

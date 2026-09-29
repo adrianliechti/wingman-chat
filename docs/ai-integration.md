@@ -11,7 +11,8 @@ frontend.
   middleware. `@tanstack/ai-openai` supplies the gateway's Responses and media
   adapters, including provider serialization and SDK retries. Interrupted response
   streams fail the run; there is no custom replay of partially streamed requests.
-- `@tanstack/ai-client` owns realtime conversation state and client tool execution.
+- `@tanstack/ai-client` owns realtime conversation state, client tool execution,
+  and dictation recording through its native `AudioRecorder`.
 - `@tanstack/ai-mcp` owns MCP initialization, discovery, calls, resources, prompts,
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
 - MCP apps use `AppFrame` and `AppBridge` from `@mcp-ui/client`, the renderer used
@@ -25,6 +26,38 @@ The integration follows [TanStack AI](https://tanstack.com/ai/latest),
 orchestration in a server route are adapted to the application's browser-only
 execution requirement. The installed package sources define the precise APIs.
 
+## Shared execution and removed code
+
+Chat, delegated agents, and interpreter `llm`/`vision` calls all use `agent.run`
+and the same native `chat()` loop. `Client.complete()` and its separate stream
+processor have been deleted. Isolated helper calls still receive only their
+own prompt and no tools; they share cancellation, invocation budgets, error
+handling, and final-answer selection with the main runner. `Client` retains
+provider configuration, structured-output tasks, media activities, and gateway
+endpoint contracts.
+
+The application no longer creates `invoke_agent` or `execute_tool` spans around
+TanStack's own spans. Native [OpenTelemetry middleware](https://tanstack.com/ai/latest/docs/advanced/otel)
+owns the root, model, and tool lifecycles and their metrics. A small tracer bridge
+passes the native tool context to delegated work and MCP annotations, including
+when the browser has no asynchronous context manager. This removes duplicate
+tool spans and duration reporting. Structured results also rely on TanStack's
+schema validation instead of parsing the validated value a second time.
+
+The storage projection converts each native message update once; lifecycle
+commits reuse that projection and attach current usage and display metadata.
+Restoring tool results uses a call-id index instead of repeatedly searching the
+entire preceding history. The persisted format and stable run/turn identities
+remain compatible with existing conversations.
+
+Dictation uses the native recorder's encoded blob directly, following the
+[audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
+It prefers WebM/Opus and falls back to the browser's supported recording format.
+Microphone selection, pending-permission cancellation, duplicate stops, and
+navigation cancellation remain at the composer boundary. The unused PCM/WAV
+encoding module and its exports have been deleted. Realtime voice keeps its
+PCM worklet because that is the gateway's streaming protocol.
+
 ## Additional native features
 
 MCP tools use [lazy tool discovery](https://tanstack.com/ai/latest/docs/tools/lazy-tool-discovery).
@@ -32,8 +65,8 @@ Chat initially sends the native discovery tool with a short catalog (tool names
 and their first description sentence). TanStack supplies schemas on demand,
 executes discovered tools, and restores discoveries from saved history. Built-in
 workspace tools remain eager. Discovery adds a model round trip the first time a
-tool is needed, counted against the existing run budget. Realtime voice and
-one-shot completions continue to receive their full tool definitions.
+tool is needed, counted against the existing run budget. Realtime voice continues
+to receive full tool definitions; isolated interpreter calls receive no tools.
 
 Text-only results retain TanStack's JSON string representation across storage
 round trips, so discovery does not require an application cache. Media results
@@ -67,6 +100,15 @@ migration opportunities, with specific behavior to preserve:
 | [Portable skills](https://tanstack.com/ai/latest/docs/skills/agent-skills) and [memory](https://tanstack.com/ai/latest/docs/memory/overview)                    | Both accept custom browser-backed sources/adapters. The workspace still owns plugin-qualified skills, script mounts, editable memory files, and learning rules. These need source adapters and saved-history migration, rather than a second catalog or memory store.                                                                                             |
 | [Subagents](https://tanstack.com/ai/latest/docs/chat/subagents)                                                                                                 | Native children stream nested parts and support interrupts. Adoption must carry shared invocation budgets, selected tools, workspace updates, and existing subagent result metadata into those parts.                                                                                                                                                             |
 | [Code Mode](https://tanstack.com/ai/latest/docs/code-mode/code-mode)                                                                                            | The QuickJS driver supports browsers. Tool batching is a possible addition, but is not a replacement for the existing Python/JavaScript interpreters' files, packages, and artifact output.                                                                                                                                                                       |
+
+The main remaining architectural duplication is the persisted Wingman message
+format alongside native UI messages. Removing that translation requires a
+storage/UI migration that preserves attachment references, artifact selections,
+summary markers, and saved MCP widget results. Wrapping `StreamProcessor` in a
+`ChatClient` while both formats still exist would add another state owner.
+Likewise, plugging the current summary policy into native compaction unchanged
+would add middleware without deleting the policy. These boundaries remain
+explicit rather than introducing parallel implementations.
 
 ## Compatibility boundaries
 

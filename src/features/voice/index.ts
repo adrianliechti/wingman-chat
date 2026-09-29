@@ -14,11 +14,3 @@ export type { AudioChunk, AudioRecorderOptions, ChunkCallback } from "./lib/Audi
 export { AudioRecorder } from "./lib/AudioRecorder";
 export type { AudioStreamPlayerOptions } from "./lib/AudioStreamPlayer";
 export { AudioStreamPlayer } from "./lib/AudioStreamPlayer";
-export {
-  audioBufferToWav,
-  float32ToPcm16,
-  float32ToWav,
-  mergePcm16Chunks,
-  pcm16Duration,
-  pcm16ToWav,
-} from "./lib/audio";

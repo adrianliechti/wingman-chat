@@ -1,14 +1,6 @@
 import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
-import {
-  chat,
-  embed,
-  generateSpeech,
-  generateTranscription,
-  maxIterations,
-  StreamProcessor,
-  toolDefinition,
-} from "@tanstack/ai";
+import { chat, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
 import { z } from "zod";
 import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
@@ -18,14 +10,13 @@ import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?ra
 import instructionsSummarizeHistory from "@/features/chat/prompts/summarize-history.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
-import type { Content, ImageQuality, Message, Model, ModelType, ReasoningEffort, Tool } from "@/shared/types/chat";
+import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
 import { aiTelemetry } from "./otel";
-import { fromAIMessages, toAIMessages } from "./aiMessages";
-import { aiDebug, textStreamStrategy } from "./aiStream";
+import { aiDebug } from "./aiStream";
 import {
   browserProviderConfig,
   gatewayEmbedding,
@@ -185,76 +176,6 @@ export class Client {
     }
 
     return body.data.map((mcp: { id: string }) => mcp.id);
-  }
-
-  async complete(
-    model: string,
-    instructions: string,
-    input: Message[],
-    tools: Tool[],
-    handler?: (content: Content[]) => void,
-    options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-      summary?: "auto" | "concise" | "detailed";
-      verbosity?: "low" | "medium" | "high";
-      maxOutputTokens?: number;
-      signal?: AbortSignal;
-      parentContext?: AgentContext;
-    },
-  ): Promise<Message> {
-    options?.signal?.throwIfAborted();
-    let failure: Error | undefined;
-    let usage: Message["usage"];
-    const adapter = this.textAdapter(model, options?.signal);
-    const processor = new StreamProcessor({
-      chunkStrategy: textStreamStrategy(),
-      events: {
-        onMessagesChange: (messages) =>
-          handler?.(fromAIMessages(messages, undefined, model).flatMap((message) => message.content)),
-        onError: (error) => {
-          failure = error;
-        },
-      },
-    });
-    await processor.process(
-      chat({
-        adapter,
-        debug: aiDebug,
-        messages: toAIMessages(input, model),
-        systemPrompts: [instructions],
-        tools: tools.map((tool) =>
-          toolDefinition({
-            name: tool.name,
-            description: tool.description ?? tool.name,
-            inputSchema: tool.parameters,
-          }),
-        ),
-        modelOptions: this.chatModelOptions(model, options),
-        agentLoopStrategy: maxIterations(1),
-        middleware: [
-          aiTelemetry("chat", options?.parentContext),
-          {
-            onUsage: (_ctx, value) => {
-              usage = {
-                model: adapter.responseInfo?.model ?? model,
-                reasoningContext: adapter.responseInfo?.reasoningContext,
-                inputTokens: value.promptTokens,
-                outputTokens: value.completionTokens,
-                cachedInputTokens: value.promptTokensDetails?.cachedTokens,
-                reasoningTokens: value.completionTokensDetails?.reasoningTokens,
-              };
-            },
-          },
-        ],
-      }),
-    );
-    options?.signal?.throwIfAborted();
-    if (failure) throw failure;
-    return {
-      role: "assistant",
-      content: fromAIMessages(processor.getMessages(), undefined, model).flatMap((message) => message.content),
-      usage,
-    };
   }
 
   chatModelOptions(
@@ -753,7 +674,8 @@ export class Client {
       throw error;
     });
     options.signal?.throwIfAborted();
-    return result === null ? null : schema.parse(result);
+    // TanStack validates the output; its public schema type infers the input.
+    return result as z.output<T> | null;
   }
 
   private outputTokenBudget(model: string, requested?: number, defaultBudget?: number): number | undefined {

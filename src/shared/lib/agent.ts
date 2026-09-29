@@ -5,7 +5,6 @@ import {
   StreamProcessor,
   toolDefinition,
   type ChatMiddleware,
-  type UIMessage,
 } from "@tanstack/ai";
 import { z } from "zod";
 import {
@@ -18,12 +17,12 @@ import {
   type ToolContext,
 } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
-import type { Client } from "./client";
+import type { Client, ClientRequestOptions } from "./client";
 import { combineAbortSignals } from "./abortSignals";
 import { fromAIMessages, toAIMessages } from "./aiMessages";
 import { aiDebug, textStreamStrategy } from "./aiStream";
 import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
-import { aiTelemetry, traceExecuteTool, traceInvokeAgent } from "./otel";
+import { aiTelemetry } from "./otel";
 import { serializeToolResultForApi } from "./utils";
 import {
   AgentInvocationContext,
@@ -40,8 +39,8 @@ const DEFAULT_MAX_TURNS = 100;
 /** How many times one turn may compact-and-retry after a context overflow. */
 const MAX_OVERFLOW_COMPACTIONS = 2;
 
-/** Model options shared by one-shot completions and TanStack chat runs. */
-export type CompleteOptions = Parameters<Client["complete"]>[5];
+/** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
+export type ChatOptions = NonNullable<Parameters<Client["chatModelOptions"]>[1]> & ClientRequestOptions;
 
 export interface AgentBeforeFinishContext {
   runId: string;
@@ -125,8 +124,8 @@ export interface RunHooks {
   /** Invocation-wide model-call budget shared with nested agents. Defaults to maxTurns. */
   maxModelCalls?: number | null;
 
-  /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
-  options?: CompleteOptions;
+  /** Provider settings and cancellation for this run. */
+  options?: ChatOptions;
 
   /**
    * Parent trace context for nested agents spawned from a tool.
@@ -169,287 +168,274 @@ export async function run(
   };
 
   try {
-    return await traceInvokeAgent(
-      hooks.agentName,
-      async (invokeCtx) => {
-        // Only application verification/context recovery can start another run.
-        // The tool/model cycle itself is entirely inside chat().
-        for (;;) {
-          abortController.signal.throwIfAborted();
-          const base = conversation;
-          const results = new Map<string, Message>();
-          const reportedResults = new Set<string>();
-          const completed = new Set<string>();
-          const usages = new Map<string, Message["usage"]>();
-          const cycleId = crypto.randomUUID();
-          const adapter = client.textAdapter(model, abortController.signal);
-          let current: Message | undefined;
-          let streamError: Error | undefined;
-          let streamed = false;
-          let lastHadTools = false;
-          let processor: StreamProcessor;
-          const project = (native: UIMessage[]): Message[] => {
+    // Only application verification/context recovery can start another run.
+    // The tool/model cycle itself is entirely inside chat().
+    for (;;) {
+      abortController.signal.throwIfAborted();
+      const base = conversation;
+      const results = new Map<string, Message>();
+      const reportedResults = new Set<string>();
+      const completed = new Set<string>();
+      const usages = new Map<string, Message["usage"]>();
+      const cycleId = crypto.randomUUID();
+      const adapter = client.textAdapter(model, abortController.signal);
+      const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
+      let current: Message | undefined;
+      let streamError: Error | undefined;
+      let streamed = false;
+      let lastHadTools = false;
+      let projected: Message[] = [];
+      const resolve = (message: Message): Message => {
+        if (message.role === "assistant") return { ...message, usage: usages.get(message.id!) ?? message.usage };
+        const result = message.content.find((part) => part.type === "tool_result");
+        return (result && results.get(result.id)) ?? message;
+      };
+      const snapshot = (): Message[] => [
+        ...base,
+        ...projected.filter((message) => message.role === "user" || completed.has(message.id!)).map(resolve),
+      ];
+      const finishTurn = () => {
+        if (streamError || abortController.signal.aborted) return;
+        const assistant = projected.findLast((message) => message.role === "assistant");
+        if (!assistant || completed.has(assistant.id!)) return;
+        completed.add(assistant.id!);
+        lastHadTools = assistant.content.some((part) => part.type === "tool_call");
+        commit(snapshot());
+        hooks.onTurnEnd?.(resolve(assistant));
+        controller.emit({ type: "model.completed", turn: modelCalls - 1 });
+      };
+      const processor = new StreamProcessor({
+        chunkStrategy: textStreamStrategy(),
+        events: {
+          onError: (error) => {
+            streamError = error;
+          },
+          onMessagesChange: (native) => {
+            // Project each native update once. Commits and usage updates reuse
+            // this view instead of converting the full stream history again.
             let turn = 0;
-            return fromAIMessages(native, controller.runId, model).map((message) => {
-              if (message.role === "assistant") {
-                // The processor may rename a pending tool-only native message
-                // when text starts. Logical turns retain their durable identity.
-                const id = `${cycleId}-${turn++}`;
-                return { ...message, id, usage: usages.get(id) ?? message.usage };
+            projected = fromAIMessages(native, controller.runId, model).map((message) =>
+              message.role === "assistant" ? { ...message, id: `${cycleId}-${turn++}` } : message,
+            );
+            const message = projected.findLast((item) => item.role === "assistant");
+            if (message && !completed.has(message.id!)) {
+              if (message.id !== current?.id) {
+                current = withMessageIdentity({ ...message, content: [] }, controller.runId);
+                hooks.onTurnStart?.(current);
               }
-              const result = message.content.find((part) => part.type === "tool_result");
-              return (result && results.get(result.id)) ?? message;
+              if (!streamed) {
+                streamed = true;
+                controller.emit({ type: "model.streaming", turn: modelCalls - 1 });
+              }
+              hooks.onStream?.(message.content.filter((part) => part.type !== "tool_result"));
+            }
+            const newResults = projected.filter((message) =>
+              message.content.some((part) => part.type === "tool_result" && !reportedResults.has(part.id)),
+            );
+            if (!abortController.signal.aborted && newResults.length) {
+              // Validation errors produce results without onBeforeToolCall.
+              // Commit their owning model turn before publishing the result.
+              finishTurn();
+              commit(snapshot());
+              for (const message of newResults) {
+                const output = message.content.find((part) => part.type === "tool_result");
+                if (output && !reportedResults.has(output.id)) {
+                  reportedResults.add(output.id);
+                  hooks.onToolResult?.(resolve(message));
+                }
+              }
+            }
+          },
+          onStreamEnd: finishTurn,
+        },
+      });
+      const middleware: ChatMiddleware = {
+        onConfig: async (ctx, config) => {
+          if (ctx.phase !== "beforeModel") return;
+          if (modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS) || !invocation.tryConsumeModelCall()) {
+            budgetExhausted = true;
+            ctx.abort("Model-call budget exhausted");
+            throw new Error("Model-call budget exhausted");
+          }
+          modelCalls++;
+          const prepared = hooks.prepareMessages ? await hooks.prepareMessages(conversation) : conversation;
+          return { ...config, providerMessages: convertMessagesToModelMessages(toAIMessages(prepared, model)) };
+        },
+        onIteration: () => {
+          finishTurn();
+          current = undefined;
+          streamed = false;
+          controller.emit({ type: "model.started", turn: modelCalls });
+        },
+        onUsage: (_ctx, usage) => {
+          const message = projected.findLast((item) => item.role === "assistant");
+          if (message)
+            usages.set(message.id!, {
+              model: adapter.responseInfo?.model ?? model,
+              reasoningContext: adapter.responseInfo?.reasoningContext,
+              inputTokens: usage.promptTokens,
+              outputTokens: usage.completionTokens,
+              cachedInputTokens: usage.promptTokensDetails?.cachedTokens,
+              reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
             });
+        },
+        onBeforeToolCall: (_ctx, call) => {
+          finishTurn();
+          controller.emit({
+            type: "tool.started",
+            turn: modelCalls - 1,
+            callId: call.toolCallId,
+            name: call.toolName,
+          });
+        },
+        onAfterToolCall: (_ctx, call) => {
+          controller.emit({
+            type: "tool.completed",
+            turn: modelCalls - 1,
+            callId: call.toolCallId,
+            name: call.toolName,
+          });
+        },
+        onToolPhaseComplete: () => {
+          finishTurn();
+        },
+      };
+      const nativeTools = tools.map((tool) =>
+        toolDefinition({
+          name: tool.name,
+          description: tool.description ?? tool.name,
+          inputSchema: z.fromJSONSchema(tool.parameters),
+          lazy: tool.lazy,
+        }).server(async (input, execution) => {
+          const call: ToolCallContent = {
+            type: "tool_call",
+            id: execution?.toolCallId ?? crypto.randomUUID(),
+            name: tool.name,
+            arguments: JSON.stringify(input),
           };
-          const snapshot = (native: UIMessage[]): Message[] => [
-            ...base,
-            ...project(native).filter((message) => message.role === "user" || completed.has(message.id!)),
-          ];
-          const finishTurn = () => {
-            if (streamError || abortController.signal.aborted) return;
-            const assistant = project(processor.getMessages()).findLast((message) => message.role === "assistant");
-            if (!assistant || completed.has(assistant.id!)) return;
-            completed.add(assistant.id!);
-            lastHadTools = assistant.content.some((part) => part.type === "tool_call");
-            commit(snapshot(processor.getMessages()));
-            hooks.onTurnEnd?.(assistant);
-            controller.emit({ type: "model.completed", turn: modelCalls - 1 });
+          let meta: Record<string, unknown> = {};
+          let content: Record<string, unknown> | undefined;
+          let error: Message["error"];
+          const updateMeta = (next: Record<string, unknown>) => {
+            meta = next;
+            const saved = results.get(call.id);
+            if (saved) results.set(call.id, updateToolResultMeta([saved], call.id, meta)[0]);
+            commit(updateToolResultMeta(conversation, call.id, meta));
+            hooks.onToolMeta?.(call.id, { ...meta });
           };
-          processor = new StreamProcessor({
-            chunkStrategy: textStreamStrategy(),
-            events: {
-              onError: (error) => {
-                streamError = error;
-              },
-              onMessagesChange: (native) => {
-                const projected = project(native);
-                const message = projected.findLast((item) => item.role === "assistant");
-                if (message && !completed.has(message.id!)) {
-                  if (message.id !== current?.id) {
-                    current = withMessageIdentity({ ...message, content: [] }, controller.runId);
-                    hooks.onTurnStart?.(current);
-                  }
-                  if (!streamed) {
-                    streamed = true;
-                    controller.emit({ type: "model.streaming", turn: modelCalls - 1 });
-                  }
-                  hooks.onStream?.(message.content.filter((part) => part.type !== "tool_result"));
-                }
-                const newResults = projected.filter((message) =>
-                  message.content.some((part) => part.type === "tool_result" && !reportedResults.has(part.id)),
-                );
-                if (!abortController.signal.aborted && newResults.length) {
-                  // Validation errors produce results without onBeforeToolCall.
-                  // Commit their owning model turn before publishing the result.
-                  finishTurn();
-                  commit(snapshot(native));
-                  for (const message of newResults) {
-                    const output = message.content.find((part) => part.type === "tool_result");
-                    if (output && !reportedResults.has(output.id)) {
-                      reportedResults.add(output.id);
-                      hooks.onToolResult?.(message);
-                    }
-                  }
-                }
-              },
-              onStreamEnd: finishTurn,
+          const result = await tool.function(input as Record<string, unknown>, {
+            ...hooks.createToolContext?.(call),
+            runId: controller.runId,
+            invocationContext: invocation,
+            signal: abortController.signal,
+            agentContext: telemetry.toolContext(call.id),
+            setMeta: updateMeta,
+            updateMeta: (next) => updateMeta({ ...meta, ...next }),
+            setContent: (next) => {
+              content = next;
+            },
+            setError: (next) => {
+              error = next;
             },
           });
-          const middleware: ChatMiddleware = {
-            onConfig: async (ctx, config) => {
-              if (ctx.phase !== "beforeModel") return;
-              if (modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS) || !invocation.tryConsumeModelCall()) {
-                budgetExhausted = true;
-                ctx.abort("Model-call budget exhausted");
-                throw new Error("Model-call budget exhausted");
-              }
-              modelCalls++;
-              const prepared = hooks.prepareMessages ? await hooks.prepareMessages(conversation) : conversation;
-              return { ...config, providerMessages: convertMessagesToModelMessages(toAIMessages(prepared, model)) };
-            },
-            onIteration: () => {
-              finishTurn();
-              current = undefined;
-              streamed = false;
-              controller.emit({ type: "model.started", turn: modelCalls });
-            },
-            onUsage: (_ctx, usage) => {
-              const message = project(processor.getMessages()).findLast((item) => item.role === "assistant");
-              if (message)
-                usages.set(message.id!, {
-                  model: adapter.responseInfo?.model ?? model,
-                  reasoningContext: adapter.responseInfo?.reasoningContext,
-                  inputTokens: usage.promptTokens,
-                  outputTokens: usage.completionTokens,
-                  cachedInputTokens: usage.promptTokensDetails?.cachedTokens,
-                  reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
-                });
-            },
-            onBeforeToolCall: (_ctx, call) => {
-              finishTurn();
-              controller.emit({
-                type: "tool.started",
-                turn: modelCalls - 1,
-                callId: call.toolCallId,
-                name: call.toolName,
-              });
-            },
-            onAfterToolCall: (_ctx, call) => {
-              controller.emit({
-                type: "tool.completed",
-                turn: modelCalls - 1,
-                callId: call.toolCallId,
-                name: call.toolName,
-              });
-            },
-            onToolPhaseComplete: () => {
-              finishTurn();
-            },
-          };
-          const nativeTools = tools.map((tool) =>
-            toolDefinition({
-              name: tool.name,
-              description: tool.description ?? tool.name,
-              inputSchema: z.fromJSONSchema(tool.parameters),
-              lazy: tool.lazy,
-            }).server(async (input, execution) => {
-              const call: ToolCallContent = {
-                type: "tool_call",
-                id: execution?.toolCallId ?? crypto.randomUUID(),
-                name: tool.name,
-                arguments: JSON.stringify(input),
-              };
-              let meta: Record<string, unknown> = {};
-              let content: Record<string, unknown> | undefined;
-              let error: Message["error"];
-              const updateMeta = (next: Record<string, unknown>) => {
-                meta = next;
-                const saved = results.get(call.id);
-                if (saved) results.set(call.id, updateToolResultMeta([saved], call.id, meta)[0]);
-                commit(updateToolResultMeta(conversation, call.id, meta));
-                hooks.onToolMeta?.(call.id, { ...meta });
-              };
-              const result = await traceExecuteTool(
-                tool.name,
-                { toolCallId: call.id, toolDescription: tool.description, parentContext: invokeCtx },
-                (agentContext) =>
-                  tool.function(input as Record<string, unknown>, {
-                    ...hooks.createToolContext?.(call),
-                    runId: controller.runId,
-                    invocationContext: invocation,
-                    signal: abortController.signal,
-                    agentContext,
-                    setMeta: updateMeta,
-                    updateMeta: (next) => updateMeta({ ...meta, ...next }),
-                    setContent: (next) => {
-                      content = next;
-                    },
-                    setError: (next) => {
-                      error = next;
-                    },
-                  }),
-              );
-              abortController.signal.throwIfAborted();
-              results.set(
-                call.id,
-                withMessageIdentity(
-                  {
-                    role: "user",
-                    content: [
-                      {
-                        type: "tool_result",
-                        id: call.id,
-                        name: call.name,
-                        arguments: call.arguments,
-                        result,
-                        meta,
-                        content,
-                      },
-                    ],
-                    error,
-                  },
-                  controller.runId,
-                ),
-              );
-              // Preserve display metadata above while letting TanStack report
-              // the failure to its tool lifecycle, diagnostics, and model loop.
-              if (error) throw Object.assign(new Error(error.message), { code: error.code });
-              return serializeToolResultForApi(result);
-            }),
-          );
-          try {
-            await processor.process(
-              chat({
-                adapter,
-                messages: toAIMessages(conversation, model),
-                systemPrompts: [instructions],
-                tools: nativeTools,
-                lazyToolsConfig: { includeDescription: "first-sentence" },
-                abortController,
-                runId: controller.runId,
-                threadId: hooks.threadId,
-                debug: aiDebug,
-                modelOptions: client.chatModelOptions(model, hooks.options),
-                agentLoopStrategy: maxIterations((hooks.maxTurns ?? DEFAULT_MAX_TURNS) - modelCalls),
-                middleware: [aiTelemetry(hooks.agentName ?? "chat", invokeCtx), middleware],
-              }),
-            );
-            if (streamError) throw streamError;
-            if (!abortController.signal.aborted) {
-              finishTurn();
-              commit(snapshot(processor.getMessages()));
-            }
-          } catch (error) {
-            if (
-              !abortController.signal.aborted &&
-              hooks.onContextOverflow &&
-              compactions < MAX_OVERFLOW_COMPACTIONS &&
-              isContextOverflowError(error)
-            ) {
-              compactions++;
-              controller.emit({ type: "compaction.started", turn: modelCalls });
-              const compacted = await hooks.onContextOverflow(conversation);
-              controller.emit({ type: "compaction.completed", turn: modelCalls });
-              if (compacted !== conversation) {
-                commit(compacted);
-                continue;
-              }
-            }
-            throw error;
-          }
-          if (budgetExhausted || (lastHadTools && modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS)))
-            return controller.finish("max_turns", "max_turns", conversation);
           abortController.signal.throwIfAborted();
-          if (hooks.beforeFinish) {
-            controller.emit({ type: "verification.started", turn: modelCalls });
-            const decision = await hooks.beforeFinish({
-              runId: controller.runId,
-              messages: conversation,
-              signal: abortController.signal,
-            });
-            controller.emit({ type: "verification.completed", turn: modelCalls });
-            abortController.signal.throwIfAborted();
-            if (decision.action === "continue") {
-              const feedback = withMessageIdentity(decision.feedback, controller.runId);
-              commit([...conversation, feedback]);
-              await hooks.onRuntimeFeedback?.(feedback);
-              continue;
-            }
-            if (decision.appendContent?.length) {
-              const index = conversation.findLastIndex((message) => message.role === "assistant");
-              if (index >= 0)
-                commit(
-                  conversation.map((message, i) =>
-                    i === index ? { ...message, content: [...message.content, ...decision.appendContent!] } : message,
-                  ),
-                );
-            }
-          }
-          return controller.finish("completed", "end_turn", conversation);
+          results.set(
+            call.id,
+            withMessageIdentity(
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "tool_result",
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                    result,
+                    meta,
+                    content,
+                  },
+                ],
+                error,
+              },
+              controller.runId,
+            ),
+          );
+          // Preserve display metadata above while letting TanStack report
+          // the failure to its tool lifecycle, diagnostics, and model loop.
+          if (error) throw Object.assign(new Error(error.message), { code: error.code });
+          return serializeToolResultForApi(result);
+        }),
+      );
+      try {
+        await processor.process(
+          chat({
+            adapter,
+            messages: toAIMessages(conversation, model),
+            systemPrompts: [instructions],
+            tools: nativeTools,
+            lazyToolsConfig: { includeDescription: "first-sentence" },
+            abortController,
+            runId: controller.runId,
+            threadId: hooks.threadId,
+            debug: aiDebug,
+            modelOptions: client.chatModelOptions(model, hooks.options),
+            agentLoopStrategy: maxIterations((hooks.maxTurns ?? DEFAULT_MAX_TURNS) - modelCalls),
+            middleware: [telemetry, middleware],
+          }),
+        );
+        if (streamError) throw streamError;
+        if (!abortController.signal.aborted) {
+          finishTurn();
+          commit(snapshot());
         }
-      },
-      hooks.parentContext,
-    );
+      } catch (error) {
+        if (
+          !abortController.signal.aborted &&
+          hooks.onContextOverflow &&
+          compactions < MAX_OVERFLOW_COMPACTIONS &&
+          isContextOverflowError(error)
+        ) {
+          compactions++;
+          controller.emit({ type: "compaction.started", turn: modelCalls });
+          const compacted = await hooks.onContextOverflow(conversation);
+          controller.emit({ type: "compaction.completed", turn: modelCalls });
+          if (compacted !== conversation) {
+            commit(compacted);
+            continue;
+          }
+        }
+        throw error;
+      }
+      if (budgetExhausted || (lastHadTools && modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS)))
+        return controller.finish("max_turns", "max_turns", conversation);
+      abortController.signal.throwIfAborted();
+      if (hooks.beforeFinish) {
+        controller.emit({ type: "verification.started", turn: modelCalls });
+        const decision = await hooks.beforeFinish({
+          runId: controller.runId,
+          messages: conversation,
+          signal: abortController.signal,
+        });
+        controller.emit({ type: "verification.completed", turn: modelCalls });
+        abortController.signal.throwIfAborted();
+        if (decision.action === "continue") {
+          const feedback = withMessageIdentity(decision.feedback, controller.runId);
+          commit([...conversation, feedback]);
+          await hooks.onRuntimeFeedback?.(feedback);
+          continue;
+        }
+        if (decision.appendContent?.length) {
+          const index = conversation.findLastIndex((message) => message.role === "assistant");
+          if (index >= 0)
+            commit(
+              conversation.map((message, i) =>
+                i === index ? { ...message, content: [...message.content, ...decision.appendContent!] } : message,
+              ),
+            );
+        }
+      }
+      return controller.finish("completed", "end_turn", conversation);
+    }
   } catch (error) {
     if (budgetExhausted) return controller.finish("max_turns", "max_turns", conversation);
     if (abortController.signal.aborted || isAbortError(error))
