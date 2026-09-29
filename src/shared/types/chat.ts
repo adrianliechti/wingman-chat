@@ -122,11 +122,14 @@ export type Tool = {
   needsApproval?: boolean;
   /** Chat uses a native defineAgent; function remains the realtime tool boundary. */
   subagent?: {
-    model: string;
+    /** Defaults to the caller's model. */
+    model?: string;
     instructions: string;
     tools: Tool[];
     runtimeContext: string;
     middleware: ChatMiddleware[];
+    /** Research receives its explicit brief instead of the parent conversation. */
+    inheritHistory?: boolean;
   };
 
   parameters: Record<string, unknown>;
@@ -382,6 +385,8 @@ export type Chat = {
   messages: Array<Message>;
   /** Native pending-interrupt snapshot persisted with the transcript. */
   aiResume?: ChatPersistedState["resume"];
+  /** Opaque middleware caches; the conversation itself remains provider-independent. */
+  aiMetadata?: Record<string, Record<string, unknown>>;
 };
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */

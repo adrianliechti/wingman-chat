@@ -161,7 +161,7 @@ function fromAIContent(part: ContentPart): Content[] {
   return [{ type: part.type, data, ...(name ? { name } : {}), ...stored }];
 }
 
-export function fromAIMessages(messages: UIMessage[], runId?: string, model?: string): Message[] {
+export function fromAIMessages(messages: UIMessage[], runId?: string, model?: string, richResults = true): Message[] {
   const calls = new Map(
     messages.flatMap((m) => m.parts.flatMap((p) => (p.type === "tool-call" ? [[p.id, p] as const] : []))),
   );
@@ -242,7 +242,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                 },
               ];
             case "tool-result": {
-              const original = part.metadata?.wingman as ToolResultContent | undefined;
+              const original = richResults ? (part.metadata?.wingman as ToolResultContent | undefined) : undefined;
               if (original) return [original];
               const call = calls.get(part.toolCallId);
               return [

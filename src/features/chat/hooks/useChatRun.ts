@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useChat as useNativeChat } from "@tanstack/ai-react";
+import type { ChatInterruptState, RunAgentInputContext } from "@tanstack/ai-client";
 import {
-  ChatClient,
-  type ChatInterruptState,
-  type QueuedMessage,
-  type RunAgentInputContext,
-} from "@tanstack/ai-client";
-import type { ContentPart, StreamChunk } from "@tanstack/ai";
+  normalizeToUIMessage,
+  type ContentPart,
+  type StreamChunk,
+  type UIMessage,
+  type ModelMessage,
+  type MetadataStore,
+} from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
@@ -32,7 +35,6 @@ import { memoryMessageText, reconcileMemorySources } from "@/features/agent/lib/
 
 interface Session {
   id: string;
-  ai: ChatClient;
   metadata: AgentMessageMetadata;
 }
 
@@ -45,11 +47,12 @@ interface Options {
   model: Model | null;
   models: Model[];
   chatId: string | null;
-  chatLoaded: boolean;
+  threadId: string;
   chatIdRef: RefObject<string | null>;
   fsRef: RefObject<FileSystemManager | null>;
   artifactsEnabled: boolean;
   getChat: (id: string) => Chat | undefined;
+  loadChat: (id: string) => Promise<Chat>;
   updateChat: ChatContextType["updateChat"];
   getOrCreateChat: () => Promise<{ id: string; chat: Chat; fs: FileSystemManager }>;
   chatTools: ReturnType<typeof useChatContext>["tools"];
@@ -63,11 +66,12 @@ export function useChatRun({
   model,
   models,
   chatId,
-  chatLoaded,
+  threadId,
   chatIdRef,
   fsRef,
   artifactsEnabled,
   getChat,
+  loadChat,
   updateChat,
   getOrCreateChat,
   chatTools,
@@ -78,17 +82,23 @@ export function useChatRun({
 }: Options) {
   const config = getConfig();
   const client = config.client;
-  const sessionRef = useRef<Session | null>(null);
+  const session = useMemo<Session>(() => ({ id: threadId, metadata: new AgentMessageMetadata() }), [threadId]);
+  const storageOwnerRef = useRef<Session | null>(session);
+  useLayoutEffect(() => {
+    storageOwnerRef.current = session;
+    return () => {
+      storageOwnerRef.current = null;
+    };
+  }, [session]);
+  const aiRef = useRef<ReturnType<typeof useNativeChat> | null>(null);
+  const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
   const pendingModelContextRef = useRef(new Map<string, string>());
   // Realtime and legacy MCP URL requests have a live transport callback.
   // Chat forms and tool approvals use ChatClient's durable interrupts below.
   const { pendingElicitation, requestElicitation, resolveElicitation, completeElicitation, clearElicitation } =
     useChatElicitation();
   const { classify, pendingConsent, resolveConsent } = useChatClassification({ models, chatId, chatIdRef, updateChat });
-  const [isResponding, setIsResponding] = useState(false);
   const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
-  const [queuedSends, setQueuedSends] = useState<QueuedMessage[]>([]);
-  const [interruptState, setInterruptState] = useState<ChatInterruptState | null>(null);
   const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const updateToolMeta = useCallback((id: string, meta: Record<string, unknown>) => {
@@ -102,24 +112,28 @@ export function useChatRun({
   const connect = useCallback(
     async function* (
       session: Session,
+      nativeMessages: UIMessage[] | ModelMessage[],
       signal?: AbortSignal,
       runContext?: RunAgentInputContext,
     ): AsyncGenerator<StreamChunk> {
       if (!model) throw new Error("No model selected");
-      const { id, ai, metadata } = session;
+      const { id, metadata } = session;
       const runId = runContext?.runId ?? crypto.randomUUID();
-      const read = () => metadata.read(ai.getMessages(), model.id);
-      const conversation = read();
+      const conversation = metadata.read(
+        nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
+        model.id,
+      );
       const outgoing = conversation.findLast(isUserMessage);
       const loadAttachments = createAttachmentLoader(id);
       const memory = chatMemory();
       const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
-      const active = () => sessionRef.current === session && !signal?.aborted;
+      const active = () => chatIdRef.current === id && !signal?.aborted;
       const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
       const startLength = conversation.length;
       try {
-        const tools = await chatTools();
-        ai.updateOptions({ tools: approvalTools(tools) });
+        if (active()) setRunPhase("thinking");
+        updateChat(id, () => ({}));
+        const tools = chatTools();
         signal?.throwIfAborted();
         const toolMessage = outgoing ? (await loadAttachments([outgoing], signal))[0] : undefined;
         let memoryContext = "";
@@ -178,10 +192,41 @@ export function useChatRun({
               },
             },
           ],
-          sharedMiddleware: (runSignal) =>
+          sharedMiddleware: (runSignal, context) =>
             threshold > 0
               ? [
-                  chatCompaction(client, threshold, config.chat?.summarizer || model.id, runSignal),
+                  chatCompaction(client, threshold, config.chat?.summarizer || model.id, runSignal, {
+                    get: async (namespace, key) =>
+                      getChat(id)?.aiMetadata?.[namespace]?.[JSON.stringify([key, context.subagentRunId])] ?? null,
+                    set: async (namespace, key, value) => {
+                      if (runSignal.aborted) return;
+                      updateChat(
+                        id,
+                        (prev) => ({
+                          aiMetadata: {
+                            ...prev.aiMetadata,
+                            [namespace]: {
+                              ...prev.aiMetadata?.[namespace],
+                              [JSON.stringify([key, context.subagentRunId])]: value,
+                            },
+                          },
+                        }),
+                        { preserveDates: true },
+                      );
+                    },
+                    delete: async (namespace, key) => {
+                      if (runSignal.aborted) return;
+                      updateChat(
+                        id,
+                        (prev) => {
+                          const entries = { ...prev.aiMetadata?.[namespace] };
+                          delete entries[JSON.stringify([key, context.subagentRunId])];
+                          return { aiMetadata: { ...prev.aiMetadata, [namespace]: entries } };
+                        },
+                        { preserveDates: true },
+                      );
+                    },
+                  } satisfies MetadataStore),
                   preserveSkillContext(),
                 ]
               : [],
@@ -194,7 +239,7 @@ export function useChatRun({
             content: () =>
               (toolMessage?.content ?? []).filter((p) => p.type === "text" || p.type === "image" || p.type === "file"),
             sendMessage: async (message) => {
-              if (sessionRef.current === session) await ai.sendMessage(userContent(message));
+              if (active()) await aiRef.current?.sendMessage(userContent(message));
             },
             setContext: (text) => updateModelContext(id, text),
             elicit: (elicitation) => requestElicitation(call.id, call.name, elicitation, signal),
@@ -222,6 +267,7 @@ export function useChatRun({
     },
     [
       model,
+      chatIdRef,
       chatMemory,
       artifactsEnabled,
       fsRef,
@@ -242,98 +288,103 @@ export function useChatRun({
       updateChat,
     ],
   );
-  const toolsRef = useRef(chatTools);
-  useLayoutEffect(() => {
-    toolsRef.current = chatTools;
-  }, [chatTools]);
   const connectRef = useRef(connect);
   useLayoutEffect(() => {
     connectRef.current = connect;
   }, [connect]);
 
-  const ensureClient = useCallback(
-    (id: string): Session => {
-      if (sessionRef.current?.id === id) return sessionRef.current;
-      sessionRef.current?.ai.dispose();
-      const metadata = new AgentMessageMetadata();
-      const session = { id, metadata } as Session;
-      const ai = new ChatClient({
-        threadId: id,
-        initialMessages: toAIMessages(getChat(id)?.messages ?? []),
-        queue: { whenBusy: "queue", drain: "batch" },
-        connection: { connect: (_messages, _data, signal, context) => connectRef.current(session, signal, context) },
-        persistence: {
-          getItem: async () => {
-            const tools = await toolsRef.current();
-            ai.updateOptions({ tools: approvalTools(tools) });
-            const saved = getChat(id);
-            return saved ? { messages: toAIMessages(saved.messages), resume: saved.aiResume } : null;
-          },
-          setItem: (_key, state) =>
-            updateChat(
-              id,
-              () => ({
-                messages: metadata.read(state.messages),
-                // Execution lives in this tab. A paused interrupt can resume after
-                // reload; an interrupted network stream cannot be replayed here.
-                aiResume: state.resume?.pendingInterrupts?.length ? state.resume : undefined,
-              }),
-              { preserveDates: true },
-            ),
-          removeItem: () => updateChat(id, () => ({ messages: [], aiResume: undefined })),
-        },
-        onLoadingChange: (loading) => {
-          if (loading) updateChat(id, () => ({}));
-          setIsResponding(loading);
-          if (!loading) setRunPhase("idle");
-        },
-        onStatusChange: (status) => {
-          if (status === "submitted") setRunPhase("thinking");
-        },
-        onQueueChange: setQueuedSends,
-        onInterruptStateChange: setInterruptState,
-        onChunk: (chunk) => {
-          if (sessionRef.current !== session) return;
-          if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
-          else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
-          else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
-        },
-        onError: (error) => {
-          if (isAbortError(error)) return;
-          const messages = metadata.read(ai.getMessages());
-          const info = getErrorInfo(error);
-          ai.setMessagesManually(
-            toAIMessages([...messages, withMessageIdentity({ role: Role.Assistant, content: [], error: info })]),
-          );
-        },
-      });
-      session.ai = ai;
-      sessionRef.current = session;
-      setQueuedSends(ai.getQueue());
-      setInterruptState(ai.getInterruptState());
-      return session;
+  const ai = useNativeChat({
+    threadId: session.id,
+    tools,
+    queue: { whenBusy: "queue", drain: "batch" },
+    connection: {
+      connect: (messages, _data, signal, context) => connectRef.current(session, messages, signal, context),
     },
-    [getChat, updateChat],
-  );
-
+    persistence: {
+      getItem: async () => {
+        const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
+        return saved ? { messages: toAIMessages(saved.messages), resume: saved.aiResume } : null;
+      },
+      setItem: (_key, state) => {
+        // A draft has no durable record until the first send or attachment.
+        // useChat stops disposed clients; their cleanup must not erase a saved
+        // approval or overwrite the conversation opened by their replacement.
+        if (storageOwnerRef.current !== session || !getChat(session.id)) return;
+        updateChat(
+          session.id,
+          () => ({
+            messages: session.metadata.read(state.messages),
+            aiResume: state.resume?.pendingInterrupts?.length ? state.resume : undefined,
+          }),
+          { preserveDates: true },
+        );
+      },
+      removeItem: () => {
+        if (storageOwnerRef.current === session && getChat(session.id))
+          updateChat(session.id, () => ({ messages: [], aiResume: undefined }));
+      },
+    },
+    onChunk: (chunk) => {
+      if (chatIdRef.current !== session.id) return;
+      if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
+      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
+      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
+    },
+    onError: (error) => {
+      if (isAbortError(error) || chatIdRef.current !== session.id) return;
+      const messages = getChat(session.id)?.messages ?? [];
+      ai.setMessages(
+        toAIMessages([
+          ...messages,
+          withMessageIdentity({ role: Role.Assistant, content: [], error: getErrorInfo(error) }),
+        ]),
+      );
+    },
+  });
+  useLayoutEffect(() => {
+    aiRef.current = ai;
+  }, [ai]);
   useEffect(() => {
-    if (sessionRef.current?.id !== chatId) {
-      sessionRef.current?.ai.dispose();
-      sessionRef.current = null;
-      setQueuedSends([]);
-      setInterruptState(null);
-      setStreamingMessage(null);
-      setToolMeta({});
-      clearElicitation();
-    }
-    if (chatId && chatLoaded) ensureClient(chatId);
-  }, [chatId, chatLoaded, ensureClient, clearElicitation]);
-  useEffect(
-    () => () => {
-      sessionRef.current?.ai.dispose();
-      sessionRef.current = null;
+    setStreamingMessage(null);
+    setToolMeta({});
+    clearElicitation();
+  }, [threadId, clearElicitation]);
+
+  const interruptState = useMemo<ChatInterruptState>(
+    () => ({
+      interrupts: ai.interrupts,
+      pendingInterrupts: ai.pendingInterrupts,
+      interruptErrors: ai.interruptErrors,
+      resuming: ai.resuming,
+    }),
+    [ai.interrupts, ai.pendingInterrupts, ai.interruptErrors, ai.resuming],
+  );
+  const { sendMessage: sendNativeMessage, setMessages, append, stop, isLoading } = ai;
+  const isResponding = ai.isLoading || !!streamingMessage;
+  const status: ChatContextType["status"] =
+    pendingElicitation || ai.interrupts.length
+      ? "waiting"
+      : isResponding
+        ? runPhase === "idle"
+          ? "thinking"
+          : runPhase
+        : "idle";
+
+  const addMessage = useCallback(
+    async (message: Message, targetChatId?: string) => {
+      const id = targetChatId ?? (await getOrCreateChat()).id;
+      await loadChat(id);
+      const chat = getChat(id);
+      if (!chat) return;
+      const messages = [...chat.messages, withMessageIdentity(message)];
+      // Voice and externally produced messages enter the same live transcript.
+      // A callback for an inactive conversation only updates its stored record.
+      if (id === session.id && chatIdRef.current === id) {
+        setMessages(toAIMessages(messages));
+        updateChat(id, () => ({}));
+      } else updateChat(id, () => ({ messages }));
     },
-    [],
+    [getOrCreateChat, loadChat, getChat, session.id, chatIdRef, setMessages, updateChat],
   );
 
   const sendMessage = useCallback(
@@ -384,42 +435,36 @@ export function useChatRun({
         }
       }
       if (!getChat(id) || chatIdRef.current !== id) return;
-      const session = ensureClient(id);
-      if (historyOverride) session.ai.setMessagesManually(toAIMessages(historyOverride));
+      if (session.id !== id) return;
+      if (historyOverride) setMessages(toAIMessages(historyOverride));
       const context = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
-      await session.ai.sendMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
+      await sendNativeMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
     },
-    [getOrCreateChat, getChat, chatIdRef, ensureClient],
+    [getOrCreateChat, getChat, chatIdRef, session.id, setMessages, sendNativeMessage],
   );
 
   const retryMessage = useCallback(async () => {
     const chat = getChat(chatIdRef.current ?? "");
     if (!chat) return;
-    const { ai } = ensureClient(chat.id);
-    if (ai.getIsLoading()) return;
+    if (chat.id !== session.id || isLoading) return;
     const history = historyForRetry(chat.messages);
     if (!history) return;
     const native = toAIMessages(history);
-    ai.setMessagesManually(native.slice(0, -1));
-    await ai.append(native.at(-1)!);
-  }, [getChat, chatIdRef, ensureClient]);
+    setMessages(native.slice(0, -1));
+    await append(native.at(-1)!);
+  }, [getChat, chatIdRef, session.id, isLoading, setMessages, append]);
 
-  const removeQueuedMessage = useCallback((id: string) => {
-    sessionRef.current?.ai.cancelQueued(id);
-  }, []);
   const stopStreaming = useCallback(() => {
-    sessionRef.current?.ai.stop();
+    stop();
     clearElicitation();
     setStreamingMessage(null);
     setToolMeta({});
-    setIsResponding(false);
     setRunPhase("idle");
-  }, [clearElicitation]);
+  }, [stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
     (name: string | null, callId?: string) => {
       const id = chatIdRef.current;
-      setIsResponding(!!name);
       setStreamingMessage(
         name && id
           ? {
@@ -438,16 +483,17 @@ export function useChatRun({
   return {
     streamingMessage,
     isResponding,
-    status: pendingElicitation || interruptState?.interrupts.length ? ("waiting" as const) : runPhase,
-    queuedSends,
+    status,
+    queuedSends: ai.queue,
     interruptState,
     pendingElicitation,
     pendingConsent,
     toolMeta,
+    addMessage,
     sendMessage,
     retryMessage,
     setVoiceToolCall,
-    removeQueuedMessage,
+    removeQueuedMessage: ai.cancelQueued,
     stopStreaming,
     resolveElicitation,
     requestElicitation,

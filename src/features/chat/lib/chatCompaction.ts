@@ -1,5 +1,13 @@
 import instructions from "../prompts/summarize-history.txt?raw";
-import { chat, convertMessagesToModelMessages, modelMessagesToUIMessages, type ChatMiddleware } from "@tanstack/ai";
+import {
+  chat,
+  convertMessagesToModelMessages,
+  modelMessagesToUIMessages,
+  MetadataCapability,
+  provideMetadata,
+  type MetadataStore,
+  type ChatMiddleware,
+} from "@tanstack/ai";
 import { clearToolResults, composeStrategies, summarizeOldest, withCompaction } from "@tanstack/ai-compaction";
 import type { Client } from "@/shared/lib/client";
 import { aiTelemetry } from "@/shared/lib/otel";
@@ -7,9 +15,16 @@ import { fromAIMessages, toAIMessages } from "@/shared/lib/aiMessages";
 import { preservedSkillMessages } from "./chatHistory";
 
 /** Native provider-context compaction; saved messages and tool results stay complete. */
-export function chatCompaction(client: Client, maxTokens: number, model: string, signal?: AbortSignal) {
-  return withCompaction({
+export function chatCompaction(
+  client: Client,
+  maxTokens: number,
+  model: string,
+  signal?: AbortSignal,
+  metadata?: MetadataStore,
+): ChatMiddleware {
+  const compaction = withCompaction({
     maxTokens,
+    strategyKey: `wingman-summary-v1:${model}:${instructions}`,
     strategy: composeStrategies(
       clearToolResults(),
       summarizeOldest({
@@ -34,6 +49,13 @@ export function chatCompaction(client: Client, maxTokens: number, model: string,
       }),
     ),
   });
+  return metadata
+    ? {
+        ...compaction,
+        provides: [MetadataCapability],
+        setup: (ctx) => provideMetadata(ctx, metadata),
+      }
+    : compaction;
 }
 
 /** withSkills deduplicates activation within a run, so cleared instructions must remain available. */

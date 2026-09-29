@@ -59,6 +59,7 @@ describe("chat persistence", () => {
   });
   it("round-trips message identity, usage, phases, nested media MIME and tool metadata", async () => {
     const value = chat();
+    value.aiMetadata = { "@tanstack/ai-compaction": { checkpoint: { schemaVersion: 1, sourceHash: "opaque" } } };
     value.messages = [
       {
         id: "message",
@@ -81,6 +82,7 @@ describe("chat persistence", () => {
     ];
     await storeChat(value);
     expect(await loadChat(value.id)).toMatchObject(value);
+    expect((await loadChat(value.id, false))?.aiMetadata).toEqual(value.aiMetadata);
     const stored = await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json");
     expect(JSON.stringify(stored)).not.toContain("base64");
     expect(JSON.stringify(stored)).toContain("image/jpeg");

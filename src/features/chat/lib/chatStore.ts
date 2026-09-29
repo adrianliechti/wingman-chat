@@ -98,8 +98,8 @@ export class ChatStore {
     return promise;
   };
 
-  createChat = async (): Promise<Chat> => {
-    const chat: Chat = { id: crypto.randomUUID(), created: new Date(), updated: new Date(), model: null, messages: [] };
+  createChat = async (id: string = crypto.randomUUID()): Promise<Chat> => {
+    const chat: Chat = { id, created: new Date(), updated: new Date(), model: null, messages: [] };
     this.put(chat);
     this.queue.schedule(chat.id, () => this.storage.store(chat));
     await this.queue.flushRecord(chat.id);

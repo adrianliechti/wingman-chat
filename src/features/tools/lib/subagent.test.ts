@@ -90,6 +90,22 @@ describe("subagent invocation identity", () => {
     expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", text: "Done" }]);
   });
 
+  it("asks voice callers to continue in chat when a delegated tool needs native approval", async () => {
+    const execute = vi.fn();
+    const tool = createSubagentTool("model", "", [
+      {
+        name: "inspect",
+        parameters: { type: "object" },
+        needsApproval: true,
+        function: execute,
+      },
+    ]);
+    const result = await tool.function({ prompt: "Inspect" }, { elicit: vi.fn() });
+    expect(result).toEqual([{ type: "text", text: "This task needs interactive input. Continue it in chat." }]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(state.complete).toHaveBeenCalledOnce();
+  });
+
   it("gives the child its own workspace context and run ID", async () => {
     const invocationContext = {};
     const child = await invoke({ runId: "chat-parent", invocationContext });

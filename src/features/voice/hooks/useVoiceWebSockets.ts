@@ -43,7 +43,7 @@ export function useVoiceWebSockets(
   onAssistant: (text: string) => void,
   onToolCall?: (toolName: string, callId: string) => void,
   onToolCallDone?: (callId: string) => void,
-  onToolResult?: (toolName: string, callId: string, result: ToolOutput) => void,
+  onToolResult?: (toolName: string, callId: string, result: ToolOutput, args: string) => void,
   onClosed?: (reason?: { fatal: boolean; message: string }) => void,
   getRuntimeContext?: () => string,
 ) {
@@ -159,8 +159,8 @@ export function useVoiceWebSockets(
         onAudioLevel,
         runtimeContext: () => callbacks.current.getRuntimeContext?.(),
         onToolCall: ({ name, id }) => callbacks.current.onToolCall?.(name, id),
-        onToolOutput: ({ name, id }, output) => {
-          callbacks.current.onToolResult?.(name, id, outputs.get(id) ?? [{ type: "text", text: output }]);
+        onToolOutput: ({ name, id, arguments: args }, output) => {
+          callbacks.current.onToolResult?.(name, id, outputs.get(id) ?? [{ type: "text", text: output }], args);
           outputs.delete(id);
           callbacks.current.onToolCallDone?.(id);
         },

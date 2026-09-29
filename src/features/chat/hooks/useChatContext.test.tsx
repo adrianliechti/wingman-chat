@@ -84,14 +84,14 @@ describe("chat prompt context", () => {
     const chat = context();
     expect(chat.middleware()).toHaveLength(1);
     expect(chat.instructions()).not.toContain("Create reports"); // Native middleware supplies the catalog.
-    expect((await chat.tools()).map((tool) => tool.name)).toEqual(["ask_questions", "agent"]);
+    expect(chat.tools().map((tool) => tool.name)).toEqual(["ask_questions", "agent"]);
     const voice = context(undefined, "voice");
     expect(voice.middleware()).toEqual([]);
     expect(voice.instructions()).toContain("Create reports");
-    expect((await voice.tools()).map((tool) => tool.name)).toContain("load_skill");
+    expect(voice.tools().map((tool) => tool.name)).toContain("load_skill");
     const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["skills"] } });
     expect(disabled.middleware()).toEqual([]);
-    expect((await disabled.tools()).map((tool) => tool.name)).toEqual(["ask_questions"]);
+    expect(disabled.tools().map((tool) => tool.name)).toEqual(["ask_questions"]);
     expect(disabled.instructions()).not.toContain("Plugin skill names");
   });
 
@@ -128,13 +128,13 @@ describe("chat prompt context", () => {
       tools: { enabled: [], disabled: ["skill-builder"] },
     });
     expect(disabled.instructions()).toContain("Skill Builder instructions");
-    expect(await disabled.tools()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "list_skills" })]));
+    expect(disabled.tools()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "list_skills" })]));
   });
 
   it.each(["chat", "voice"] as const)(
     "makes structured questions available in %s without optional capabilities",
     async (mode) => {
-      const tools = await context(undefined, mode).tools();
+      const tools = context(undefined, mode).tools();
       expect(tools.map((tool) => tool.name)).toEqual(["ask_questions"]);
       const questions = tools.find((tool) => tool.name === "ask_questions")!;
       const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { format: "html" } });
@@ -173,17 +173,17 @@ describe("chat prompt context", () => {
     { enabled: [], disabled: ["studio", "artifacts"] },
   ])("keeps default tools available with model provider filters %j", async (tools) => {
     state.renderer = { model: "image" };
-    const available = await context({ id: "test", name: "Test", tools }).tools();
+    const available = context({ id: "test", name: "Test", tools }).tools();
     expect(available.map((tool) => tool.name)).toEqual(["create_image", "ask_questions", "agent"]);
     expect(new Set(available.map((tool) => tool.name)).size).toBe(available.length);
   });
 
   it("enabling Studio adds its instructions without duplicating default tools", async () => {
     state.renderer = { model: "image" };
-    const defaults = await context().tools();
+    const defaults = context().tools();
     state.studio = true;
     const studio = context();
-    const tools = await studio.tools();
+    const tools = studio.tools();
     expect(tools.map((tool) => tool.name)).toEqual(defaults.map((tool) => tool.name));
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
     expect(studio.instructions()).toContain("## Studio");

@@ -17,6 +17,12 @@ test("a native question survives reload and resumes from the saved tool call", a
   );
   await expect(page.getByLabel("Which destination?", { exact: false })).toBeVisible();
   const id = await page.evaluate(() => window.chatE2E.state().chatId!);
+  // Switching views disposes the old native client. Its cleanup must retain
+  // the saved interrupt until the user answers it or explicitly presses Stop.
+  await page.evaluate(() => window.chatE2E.select(null));
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+  await page.evaluate((id) => window.chatE2E.select(id), id);
+  await expect(page.getByLabel("Which destination?", { exact: false })).toBeVisible();
   await page.evaluate(() => window.chatE2E.flush());
   await page.reload();
   await page.waitForFunction(() => window.chatE2E?.state().ready);

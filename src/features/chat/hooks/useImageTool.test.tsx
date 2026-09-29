@@ -2,6 +2,8 @@ import { renderToString } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useImageTool } from "./useImageTool";
 import type { Model } from "@/shared/types/chat";
+import { testClient } from "@/shared/lib/test-support/ai";
+import { chatSession, boundInterrupt } from "@/shared/lib/test-support/chatSession";
 
 const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
@@ -12,7 +14,10 @@ vi.mock("@/shared/config", () => ({ getConfig: () => config }));
 // Stands in for the live catalog, which already applies config.models overrides.
 vi.mock("@/shared/hooks/useModelCatalog", () => ({ useModelCatalog: () => config.models }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
-vi.mock("@/shared/lib/utils", () => ({ readAsDataURL: async () => "data:image/png;base64,aW1hZ2U=" }));
+vi.mock("@/shared/lib/utils", async (original) => ({
+  ...(await original<typeof import("@/shared/lib/utils")>()),
+  readAsDataURL: async () => "data:image/png;base64,aW1hZ2U=",
+}));
 
 beforeEach(() => {
   config.renderer = { model: "gpt-image-2" };
@@ -115,4 +120,40 @@ it("does not publish a late image result after cancellation", async () => {
   await expect(buildTool().function({ prompt: "A test image" }, { signal: controller.signal })).rejects.toMatchObject({
     name: "AbortError",
   });
+});
+
+it.each([true, false])("restores native image approval and does not prompt twice (approved=%s)", async (approved) => {
+  config.renderer.elicitation = true;
+  const tools = [buildTool()];
+  const complete = vi
+    .fn<Parameters<typeof testClient>[0]>()
+    .mockResolvedValueOnce({
+      role: "assistant",
+      content: [
+        {
+          type: "tool_call",
+          id: "image",
+          name: "create_image",
+          arguments: JSON.stringify({ prompt: "A test image" }),
+        },
+      ],
+    })
+    .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+  const client = testClient(complete);
+  const original = chatSession(client, tools);
+  await original.ai.sendMessage("Make an image");
+  expect(config.client.generateImage).not.toHaveBeenCalled();
+  await expect.poll(() => original.store.value?.resume?.pendingInterrupts?.length).toBe(1);
+  original.ai.dispose();
+  const elicit = vi.fn().mockRejectedValue(new Error("Must not ask again"));
+  const restored = chatSession(client, tools, original.store, { createToolContext: () => ({ elicit }) });
+  await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
+  const approval = boundInterrupt(restored.ai.getInterruptState().interrupts[0]);
+  expect(approval.kind).toBe("tool-approval");
+  approval.resolveInterrupt(approved);
+  await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
+  expect(config.client.generateImage).toHaveBeenCalledTimes(approved ? 1 : 0);
+  expect(elicit).not.toHaveBeenCalled();
+  if (approved) expect(JSON.stringify(restored.store.value)).toContain("data:image/png;base64,aW1hZ2U=");
+  restored.ai.dispose();
 });

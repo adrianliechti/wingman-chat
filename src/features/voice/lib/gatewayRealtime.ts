@@ -12,7 +12,7 @@ import { decodeBase64 } from "@/shared/lib/utils";
 import { getTextFromContent, type Message } from "@/shared/types/chat";
 
 type PendingResponse = { runId: string; calls: Set<string>; done: boolean; tools: boolean };
-export type VoiceToolIdentity = { id: string; name: string; runId: string };
+export type VoiceToolIdentity = { id: string; name: string; runId: string; arguments: string };
 interface GatewayOptions {
   model: string;
   transcriber: string;
@@ -349,7 +349,7 @@ export function gatewayRealtime(options: GatewayOptions) {
                   });
               }
               for (const [id, call] of toolCalls) {
-                const identity = { id, name: call.name, runId: pending.runId };
+                const identity = { id, name: call.name, runId: pending.runId, arguments: call.arguments };
                 calls.set(id, identity);
                 options.onToolCall(identity);
                 if (response.status !== "completed" || call.status === "incomplete" || call.status === "in_progress") {

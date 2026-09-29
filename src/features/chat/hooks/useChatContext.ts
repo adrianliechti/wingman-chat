@@ -9,7 +9,6 @@ import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
 import { getConfig } from "@/shared/config";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
@@ -18,7 +17,7 @@ import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 import { useImageTool } from "./useImageTool";
 
 export interface ChatContext {
-  tools: () => Promise<Tool[]>;
+  tools: () => Tool[];
   instructions: () => string;
   runtimeContext: () => string;
   memory: () => MemoryManager | undefined;
@@ -90,19 +89,13 @@ export function useChatContext(
       memory,
       middleware: () =>
         mode === "chat" ? getFilteredProviders().flatMap((provider) => provider.chat?.middleware ?? []) : [],
-      tools: async () => {
-        // Make the active chat model available to the python `llm` helper
-        // so it inherits whatever the user is currently chatting with.
-        setInterpreterModel(model?.id ?? null);
-
+      tools: () => {
         const filteredProviders = getFilteredProviders();
 
         // Extract tools from filtered providers
         const toolsArrays = filteredProviders.map(
           (provider) => (mode === "chat" ? (provider.chat ?? provider) : provider).tools,
         );
-
-        console.log("Compiled Tools from Providers:", toolsArrays);
 
         // Image generation follows renderer availability, independent of Studio.
         const baseTools = mountMemoryFiles([...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])], memory());

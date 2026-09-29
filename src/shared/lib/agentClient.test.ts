@@ -1,8 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { ChatClient, type ChatPersistedState, type ChatInterrupt } from "@tanstack/ai-client";
-import { AgentMessageMetadata, approvalTools, streamRun, type AgentRunResult } from "./agent";
-import { fromAIMessages, toAIMessages } from "./aiMessages";
 import { testClient } from "./test-support/ai";
+import { chatSession, boundInterrupt } from "./test-support/chatSession";
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
 import type { Message, Tool } from "../types/chat";
 
@@ -14,48 +12,11 @@ const calls = (...tools: Array<[string, string, object?]>): Message => ({
 const question = { questions: [{ id: "choice", label: "Which one?", type: "text", required: true }] };
 const response = { action: "accept", content: { choice: "A" } };
 
-function session(
+const session = (
   complete: Parameters<typeof testClient>[0],
   tools: Tool[],
-  store: { value?: ChatPersistedState } = {},
-) {
-  const metadata = new AgentMessageMetadata();
-  const finished: AgentRunResult[] = [];
-  const ai: ChatClient = new ChatClient({
-    threadId: "test-chat",
-    tools: approvalTools(tools),
-    persistence: {
-      getItem: () => store.value ?? null,
-      setItem: (_key, state) => {
-        // Exercise the application's existing domain storage boundary too.
-        store.value = JSON.parse(JSON.stringify({ ...state, messages: toAIMessages(metadata.read(state.messages)) }));
-      },
-      removeItem: () => {
-        store.value = undefined;
-      },
-    },
-    connection: {
-      connect: (_messages, _data, signal, context) =>
-        streamRun(testClient(complete), "model", "", fromAIMessages(ai.getMessages()), tools, {
-          metadata,
-          options: { signal },
-          threadId: context?.threadId,
-          runId: context?.runId,
-          parentRunId: context?.parentRunId,
-          resume: context?.resume,
-          onComplete: (result) => {
-            finished.push(result);
-          },
-        }),
-    },
-  });
-  return { ai, finished, metadata, store };
-}
-
-function bound(interrupt: ChatInterrupt) {
-  if (interrupt.kind === "unbound") throw new Error("Expected a bound interrupt");
-  return interrupt;
-}
+  store?: Parameters<typeof chatSession>[2],
+) => chatSession(testClient(complete), tools, store);
 
 it("does not replay an abandoned tool on a new send or let its late result replace the new answer", async () => {
   let release!: () => void;
@@ -105,7 +66,7 @@ it("persists paused questions and resumes without repeating completed sibling to
   original.ai.dispose();
   const restored = session(complete, tools, original.store);
   await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
-  bound(restored.ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
+  boundInterrupt(restored.ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
   await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
   expect(write).toHaveBeenCalledOnce();
   expect(complete).toHaveBeenCalledTimes(2);
@@ -123,9 +84,9 @@ it("waits for all questions in a native interrupt batch before resuming", async 
   const { ai } = session(complete, [ASK_QUESTIONS_TOOL]);
   await ai.sendMessage("Two questions");
   expect(ai.getInterruptState().interrupts).toHaveLength(2);
-  bound(ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
+  boundInterrupt(ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
   expect(complete).toHaveBeenCalledOnce();
-  bound(ai.getInterruptState().interrupts[1]).cancel();
+  boundInterrupt(ai.getInterruptState().interrupts[1]).cancel();
   await expect.poll(() => complete.mock.calls.length).toBe(2);
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain('\\"action\\":\\"cancel\\"');
   ai.dispose();
@@ -150,13 +111,13 @@ it.each([true, false])("restores native tool approval and executes only when app
   const approval = restored.ai.getInterruptState().interrupts[0];
   expect(approval.kind).toBe("tool-approval");
   expect(approval.canResolve).toBe(true);
-  bound(approval).resolveInterrupt(approved);
+  boundInterrupt(approval).resolveInterrupt(approved);
   await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
   expect(execute).toHaveBeenCalledTimes(approved ? 1 : 0);
   restored.ai.dispose();
 });
 
-it("streams native subagents and resumes a child's question with its completed work intact", async () => {
+it.each([true, false])("resumes a child with its completed work intact (inheritHistory=%s)", async (inheritHistory) => {
   const write = vi.fn<Tool["function"]>().mockImplementation(async (_args, ctx) => {
     ctx?.setMeta?.({ artifactDelta: { mutations: [{ operation: "create", path: "/child.txt" }] } });
     return [{ type: "text", text: "Child wrote once" }];
@@ -171,6 +132,7 @@ it("streams native subagents and resumes a child's question with its completed w
     parameters: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] },
     subagent: {
       model: "child-model",
+      inheritHistory,
       tools: childTools,
       instructions: "Child instructions",
       runtimeContext: "Workspace: /",
@@ -194,9 +156,12 @@ it("streams native subagents and resumes a child's question with its completed w
   original.ai.dispose();
   const restored = session(complete, [agent], original.store);
   await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
-  bound(restored.ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
+  boundInterrupt(restored.ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
   await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
   expect(write).toHaveBeenCalledOnce();
+  expect(write.mock.calls[0][1]?.model).toBe("child-model");
+  expect(JSON.stringify(complete.mock.calls[1][0].messages).includes("Please delegate this task")).toBe(inheritHistory);
+  expect(JSON.stringify(complete.mock.calls[2][0].messages).includes("Please delegate this task")).toBe(inheritHistory);
   expect(complete).toHaveBeenCalledTimes(4);
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Child wrote once");
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Build a report");

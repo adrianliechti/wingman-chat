@@ -10,7 +10,7 @@ import { getSavedModel, useModels } from "@/features/chat/hooks/useModels";
 import { useChatRun } from "../hooks/useChatRun";
 import { createChatCreationGate } from "../lib/chatCreation";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
-import type { Message, Model } from "@/shared/types/chat";
+import type { Model } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 import { type ChatContextType } from "./ChatContext";
 
@@ -40,6 +40,9 @@ interface ChatProviderProps {
 export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const [chatId, setChatId] = useState<string | null>(null);
+  // A draft already has its native thread identity; saving its first message
+  // promotes that same thread instead of replacing a client during a send.
+  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const {
     chats,
     isLoaded: chatsLoaded,
@@ -154,6 +157,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       selectionVersionRef.current++;
       chatIdRef.current = id;
+      if (!id) setDraftId(crypto.randomUUID());
       setChatId(id);
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       void closeApp();
@@ -172,6 +176,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       if (chatId === id) {
         selectionVersionRef.current++;
         chatIdRef.current = null;
+        setDraftId(crypto.randomUUID());
         setChatId(null);
       }
     },
@@ -230,7 +235,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const selectionVersion = selectionVersionRef.current;
     let chatItem = existingId ? await loadChat(existingId) : undefined;
     if (!chatItem) {
-      chatItem = await createChatOnce(createChatHook);
+      chatItem = await createChatOnce(() => createChatHook(draftId));
       chatItem = { ...chatItem, model };
       // Saving a new chat can outlast navigation. The caller still owns its
       // new workspace, but must not replace the user's newer selection.
@@ -251,7 +256,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };
-  }, [model, createChatHook, createChatOnce, updateChat, loadChat, artifactsEnabled, setArtifactsFileSystem]);
+  }, [model, createChatHook, createChatOnce, draftId, updateChat, loadChat, artifactsEnabled, setArtifactsFileSystem]);
 
   // Public alias for features (drawer, terminal, attachment sends) that need a
   // filesystem before the user's first message — same creation path as sending.
@@ -260,21 +265,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return { chat: ensuredChat, fs: ensuredFs };
   }, [getOrCreateChat]);
 
-  const addMessage = useCallback(
-    async (message: Message, targetChatId?: string) => {
-      const id = targetChatId ?? (await getOrCreateChat()).id;
-      await loadChat(id);
-
-      // Use the updater pattern to get fresh messages from the chat
-      updateChat(id, (currentChat) => ({
-        messages: [...(currentChat.messages || []), message],
-      }));
-    },
-    [getOrCreateChat, loadChat, updateChat],
-  );
-
   const run = useChatRun({
-    chatLoaded: !!chat,
+    threadId: chatId ?? draftId,
     model,
     models,
     chatId,
@@ -282,6 +274,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     fsRef,
     artifactsEnabled,
     getChat,
+    loadChat,
     updateChat,
     getOrCreateChat,
     chatTools,
@@ -341,7 +334,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     updateChat,
     ensureChat,
 
-    addMessage,
     chatId,
     chatLoading,
     chatError,

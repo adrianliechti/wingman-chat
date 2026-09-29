@@ -50,7 +50,7 @@ export interface RunHooks {
   /** Provider-owned native extensions, scoped by TanStack to this invocation. */
   middleware?: ChatMiddleware[];
   /** App policies instantiated for this run and each native child, with that run's cancellation. */
-  sharedMiddleware?: (signal: AbortSignal) => ChatMiddleware[];
+  sharedMiddleware?: (signal: AbortSignal, context: AgentRunContext) => ChatMiddleware[];
   /** Conversation identity shared by TanStack runs and diagnostics. */
   threadId?: string;
 
@@ -200,13 +200,31 @@ export async function* streamRun(
       onFinish: remember,
       onError: remember,
       onAbort: remember,
-      onConfig: async (ctx) => {
+      onConfig: async (ctx, config) => {
         remember(ctx);
+        if (ctx.phase === "init")
+          return {
+            tools: config.tools.map((native) =>
+              tools.some((tool) => tool.subagent && tool.name === native.name && tool.needsApproval)
+                ? { ...native, needsApproval: true }
+                : native,
+            ),
+          };
         if (ctx.phase !== "beforeModel") return;
         if (hooks.prepareMessages)
           return {
             providerMessages: convertMessagesToModelMessages(
-              toAIMessages(await hooks.prepareMessages(snapshot()), model),
+              toAIMessages(
+                await hooks.prepareMessages(
+                  fromAIMessages(
+                    modelMessagesToUIMessages(config.providerMessages ?? config.messages),
+                    undefined,
+                    model,
+                    false,
+                  ),
+                ),
+                model,
+              ),
             ),
           };
         return undefined;
@@ -289,6 +307,7 @@ export async function* streamRun(
           };
           const result = await tool.function(input as Record<string, unknown>, {
             ...hooks.createToolContext?.(call),
+            model,
             interruptible: true,
             inputResponse: execution?.inputResponse,
             runId,
@@ -336,19 +355,29 @@ export async function* streamRun(
         defineAgent({
           name: tool.name,
           description: tool.description ?? tool.name,
-          inputSchema: z.object({ prompt: z.string().min(1) }),
+          inputSchema: chatToolDefinition(tool).inputSchema,
           run: (ctx) => {
+            const { prompt } = ctx.input as { prompt: string };
+            const childModel = spec.model ?? model;
+            const history = hooks.metadata.read(
+              ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
+              childModel,
+            );
             const context = captureRequestContext(
-              [spec.runtimeContext, `Delegated task: ${ctx.input.prompt}`].filter(Boolean).join("\n\n"),
+              [spec.runtimeContext, `Delegated task: ${prompt}`].filter(Boolean).join("\n\n"),
             );
             return streamRun(
               client,
-              spec.model,
+              childModel,
               spec.instructions,
-              hooks.metadata.read(
-                ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
-                spec.model,
-              ),
+              spec.inheritHistory === false
+                ? [
+                    { id: `${ctx.subagentRunId}-prompt`, role: "user", content: [{ type: "text", text: prompt }] },
+                    // Native resume includes the parent prefix and the child's
+                    // work. A brief-only child retains just its own work.
+                    ...history.filter((message) => message.runId?.includes(ctx.subagentRunId)),
+                  ]
+                : history,
               spec.tools,
               {
                 metadata: hooks.metadata,
@@ -366,8 +395,8 @@ export async function* streamRun(
                 createToolContext: hooks.createToolContext,
                 onToolMeta: hooks.onToolMeta,
                 prepareMessages: async (messages) =>
-                  hooks.prepareMessages
-                    ? injectRequestContext(await hooks.prepareMessages(messages), `Delegated task: ${ctx.input.prompt}`)
+                  hooks.prepareMessages && spec.inheritHistory !== false
+                    ? injectRequestContext(await hooks.prepareMessages(messages), `Delegated task: ${prompt}`)
                     : injectRequestContext(messages, context),
                 onComplete: (result) => {
                   childResults.set(
@@ -402,8 +431,10 @@ export async function* streamRun(
       agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
       middleware: [
         telemetry,
+        // Checkpoints must see the canonical transcript. Request-only context
+        // and attachment loading then operate on the compacted provider view.
+        ...(hooks.sharedMiddleware?.(abortController.signal, invocation) ?? []),
         middleware,
-        ...(hooks.sharedMiddleware?.(abortController.signal) ?? []),
         ...(hooks.middleware ?? []),
       ],
     });

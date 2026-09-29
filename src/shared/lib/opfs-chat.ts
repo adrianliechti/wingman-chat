@@ -99,6 +99,7 @@ export interface StoredChat {
   model: Chat["model"];
   messages: StoredMessage[];
   aiResume?: Chat["aiResume"];
+  aiMetadata?: Chat["aiMetadata"];
 }
 
 /**
@@ -221,6 +222,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
     model: chat.model,
     messages: extractedMessages,
     aiResume: chat.aiResume,
+    aiMetadata: chat.aiMetadata,
   };
 }
 
@@ -259,6 +261,7 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
     model: stored.model,
     messages: rehydratedMessages,
     aiResume: stored.aiResume,
+    aiMetadata: stored.aiMetadata,
   };
 }
 

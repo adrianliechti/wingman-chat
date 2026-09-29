@@ -1,5 +1,6 @@
-import { useContext } from "react";
-import { renderToString } from "react-dom/server";
+// @vitest-environment happy-dom
+import { act, useContext } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
@@ -45,15 +46,16 @@ vi.mock("@/features/artifacts/lib/fs", () => ({
   },
   resolveArtifactFileSystem: (_fs: unknown, chatId: string) => ({ chatId }),
 }));
-vi.mock("@/features/chat/hooks/useChatContext", () => ({
-  useChatContext: () => ({
-    tools: async () => fixture.tools,
+vi.mock("@/features/chat/hooks/useChatContext", () => {
+  const context = {
+    tools: () => fixture.tools,
     instructions: () => "Instructions",
     middleware: () => [],
     runtimeContext: () => "",
     memory: () => fixture.memory,
-  }),
-}));
+  };
+  return { useChatContext: () => context };
+});
 vi.mock("@/features/chat/hooks/useModels", () => ({
   useModels: () => ({
     models: [fixture.model],
@@ -62,32 +64,48 @@ vi.mock("@/features/chat/hooks/useModels", () => ({
     getSavedModelId: () => "model",
   }),
 }));
-vi.mock("@/features/chat/hooks/useChats", () => ({
-  useChats: () => ({
-    chats: fixture.chats,
+vi.mock("@/features/chat/hooks/useChats", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const listeners = new Set<() => void>();
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+  const getSnapshot = () => fixture.chats;
+  const store = {
     getChat: (id: string) => fixture.chats.find((chat) => chat.id === id),
     loadChat: async (id: string) => fixture.chats.find((chat) => chat.id === id)!,
     searchChats: vi.fn(),
     isLoaded: true,
-    createChat: async () => {
+    createChat: async (id: string) => {
       const chat: Chat = {
-        id: "chat",
+        id,
         title: "Test",
         model: fixture.model,
         messages: [],
         created: null,
         updated: null,
       };
-      fixture.chats.push(chat);
+      fixture.chats = [...fixture.chats, chat];
+      listeners.forEach((listener) => listener());
       return chat;
     },
     updateChat: (id: string, updater: (chat: Chat) => Partial<Chat>) => {
       const chat = fixture.chats.find((item) => item.id === id)!;
       fixture.chats = fixture.chats.map((item) => (item.id === id ? { ...chat, ...updater(chat) } : item));
+      listeners.forEach((listener) => listener());
     },
     deleteChat: vi.fn(),
-  }),
-}));
+  };
+  return {
+    useChats: (id: string | null) => {
+      const chats = useSyncExternalStore(subscribe, getSnapshot);
+      return { ...store, chats, selectedChat: chats.find((chat) => chat.id === id) };
+    },
+  };
+});
 vi.mock("@/features/tools/lib/llmCommand", () => ({ setModel: vi.fn() }));
 vi.mock("@/shared/lib/notify", () => ({ notify: { error: vi.fn() } }));
 vi.mock("@/shell/hooks/useApp", () => ({ useApp: () => ({ closeApp: vi.fn() }) }));
@@ -107,18 +125,22 @@ function deferred() {
   });
   return { promise, resolve };
 }
-function harness() {
+let root: Root | undefined;
+async function harness() {
   let context!: ChatContextType;
   function Capture() {
     context = useContext(ChatContext)!;
     return null;
   }
-  renderToString(
-    <ChatProvider>
-      <Capture />
-    </ChatProvider>,
-  );
-  return context;
+  root = createRoot(document.createElement("div"));
+  await act(async () => {
+    root!.render(
+      <ChatProvider>
+        <Capture />
+      </ChatProvider>,
+    );
+  });
+  return new Proxy({} as ChatContextType, { get: (_target, key) => Reflect.get(context, key) });
 }
 beforeEach(() => {
   fixture.chats.length = 0;
@@ -129,9 +151,11 @@ beforeEach(() => {
   fixture.verify.mockReset().mockResolvedValue([]);
   fixture.complete.mockReset();
   fixture.classify.mockReset().mockResolvedValue({ title: "Test", categories: [], risks: [] });
-  vi.stubGlobal("window", { setTimeout, clearTimeout });
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -139,6 +163,75 @@ afterEach(() => {
 });
 
 describe("chat run integration", () => {
+  it("keeps voice messages in native history when a text turn follows", async () => {
+    fixture.complete.mockResolvedValue(assistant("Text answer"));
+    const context = await harness();
+    await act(() => context.addMessage(user("Voice question")));
+    await act(() => context.addMessage(assistant("Voice answer")));
+    await act(() =>
+      context.addMessage({
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "voice-call", name: "lookup", arguments: '{"query":"topic"}' },
+          {
+            type: "tool_result",
+            id: "voice-call",
+            name: "lookup",
+            arguments: '{"query":"topic"}',
+            result: [{ type: "text", text: "Voice evidence" }],
+          },
+        ],
+      }),
+    );
+    await act(() => context.sendMessage(user("Text follow-up")));
+    expect(JSON.stringify(fixture.complete.mock.calls[0][0].messages)).toContain("Voice question");
+    expect(JSON.stringify(fixture.complete.mock.calls[0][0].messages)).toContain("Voice answer");
+    expect(JSON.stringify(fixture.complete.mock.calls[0][0].messages)).toContain("Voice evidence");
+    expect(fixture.chats[0].messages).toHaveLength(6);
+  });
+
+  it("hydrates a saved tool approval with the native React hook", async () => {
+    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Done" }]);
+    fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
+    fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("Finished"));
+    const original = await harness();
+    await act(() => original.sendMessage(user("Work")));
+    expect(execute).not.toHaveBeenCalled();
+    const id = fixture.chats[0].id;
+    expect(fixture.chats[0].aiResume?.pendingInterrupts).toHaveLength(1);
+    await act(async () => {
+      root?.unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    fixture.chats = JSON.parse(JSON.stringify(fixture.chats));
+    const restored = await harness();
+    await act(async () => restored.selectChat(id));
+    const approval = restored.interruptState?.interrupts[0];
+    expect(approval?.kind).toBe("tool-approval");
+    if (!approval || approval.kind === "unbound") throw new Error("Expected a bound approval");
+    await act(async () => {
+      approval.resolveInterrupt(true);
+      await vi.waitFor(() => expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Finished").content));
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("explicit Stop clears a saved approval without executing the tool", async () => {
+    const execute = vi.fn<Tool["function"]>();
+    fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
+    fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("New answer"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Work")));
+    const approval = context.interruptState!.interrupts[0];
+    act(() => context.stopStreaming());
+    expect(fixture.chats[0].aiResume).toBeUndefined();
+    expect(context.interruptState?.interrupts).toHaveLength(0);
+    if (approval.kind !== "unbound") expect(() => approval.resolveInterrupt(true)).toThrow("Unknown interrupt");
+    await act(() => context.sendMessage(user("Different request")));
+    expect(execute).not.toHaveBeenCalled();
+    expect(fixture.complete).toHaveBeenCalledTimes(2);
+  });
+
   it("loads memory before the first request and keeps one snapshot throughout the tool loop", async () => {
     vi.useFakeTimers();
     const disk = new MemoryOpfs();
@@ -159,7 +252,8 @@ describe("chat run integration", () => {
       },
     ];
     fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("Finished"));
-    await harness().sendMessage(user("Please work on this task."));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Please work on this task.")));
     expect(fixture.complete).toHaveBeenCalledTimes(2);
     for (const request of fixture.complete.mock.calls) {
       expect(JSON.stringify(request[0].messages)).toContain("Prefer concise answers.");
@@ -187,9 +281,14 @@ describe("chat run integration", () => {
     fixture.complete
       .mockResolvedValueOnce(call)
       .mockResolvedValueOnce(assistant("The local script still needs fixing."));
-    await harness().sendMessage(user("Build a game"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Build a game")));
     expect(fixture.verify).toHaveBeenCalledOnce();
-    expect(fixture.verify).toHaveBeenCalledWith({ chatId: "chat" }, new Set(["/game.html"]), expect.any(AbortSignal));
+    expect(fixture.verify).toHaveBeenCalledWith(
+      { chatId: fixture.chats[0].id },
+      new Set(["/game.html"]),
+      expect.any(AbortSignal),
+    );
     expect(fixture.complete).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(fixture.complete.mock.calls[1][0].messages)).toContain("Fix the missing local script.");
     expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("Workspace verification findings");
@@ -213,7 +312,8 @@ describe("chat run integration", () => {
       toolContext?.updateMeta?.({ link: "/result" });
       return assistant("Final answer");
     });
-    await harness().sendMessage(user("Work"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Work")));
     const result = fixture.chats[0].messages
       .flatMap((message) => message.content)
       .find((part) => part.type === "tool_result");
@@ -230,9 +330,9 @@ describe("chat run integration", () => {
       })
       .mockResolvedValueOnce({ title: "Current title", categories: [], risks: [] });
     fixture.complete.mockResolvedValue(assistant("Done"));
-    const context = harness();
-    await context.sendMessage(user("First"));
-    await context.sendMessage(user("Second"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("First")));
+    await act(() => context.sendMessage(user("Second")));
     old.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -240,8 +340,8 @@ describe("chat run integration", () => {
   });
   it("compacts provider context natively while preserving the full saved transcript", async () => {
     fixture.complete.mockResolvedValueOnce(assistant("Earlier evidence ".repeat(1000)));
-    const context = harness();
-    await context.sendMessage(user("Remember the evidence"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Remember the evidence")));
     fixture.chat.compaction = {};
     fixture.complete
       .mockResolvedValueOnce(assistant("The evidence was checked."))
@@ -251,7 +351,7 @@ describe("chat run integration", () => {
         expect(JSON.stringify(messages)).toContain("Current request");
         return assistant("Done");
       });
-    await context.sendMessage(user("Current request"));
+    await act(() => context.sendMessage(user("Current request")));
     expect(fixture.complete).toHaveBeenCalledTimes(3);
     expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Done").content);
     expect(JSON.stringify(fixture.chats[0].messages)).toContain("Earlier evidence ".repeat(1000));
@@ -260,7 +360,8 @@ describe("chat run integration", () => {
 
   it("honors disabled compaction on overflow and preserves the actionable error", async () => {
     fixture.complete.mockRejectedValueOnce(overflow());
-    await harness().sendMessage(user("Work"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Work")));
     expect(fixture.chats[0].messages.at(-1)?.error).toEqual({
       code: "CONTEXT_EXHAUSTED",
       message: "Context is too large",
@@ -282,18 +383,22 @@ describe("chat run integration", () => {
         await second.promise;
         return assistant("Second final");
       });
-    const context = harness();
+    const context = await harness();
     const firstRun = context.sendMessage(user("First request"));
-    await vi.waitFor(() => expect(fixture.complete).toHaveBeenCalledTimes(1));
-    context.stopStreaming();
+    await act(async () => {
+      await vi.waitFor(() => expect(fixture.complete).toHaveBeenCalledTimes(1));
+    });
+    act(() => context.stopStreaming());
     const secondRun = context.sendMessage(user("Second request"));
-    await vi.waitFor(() => expect(fixture.complete).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await vi.waitFor(() => expect(fixture.complete).toHaveBeenCalledTimes(2));
+    });
     first.resolve();
-    await firstRun;
-    context.stopStreaming();
+    await act(() => firstRun);
+    act(() => context.stopStreaming());
     expect(fixture.complete.mock.calls[1][0].request?.signal?.aborted).toBe(true);
     second.resolve();
-    await secondRun;
+    await act(() => secondRun);
     const content = JSON.stringify(fixture.chats[0].messages);
     expect(content).toContain("First partial");
     expect(content).toContain("Second partial");
@@ -319,11 +424,13 @@ describe("chat run integration", () => {
       },
     ];
     fixture.complete.mockResolvedValueOnce(call);
-    const context = harness();
+    const context = await harness();
     const pending = context.sendMessage(user("Start"));
-    await vi.waitFor(() => expect(elicited).toHaveBeenCalled());
-    context.stopStreaming();
-    await pending;
+    await act(async () => {
+      await vi.waitFor(() => expect(elicited).toHaveBeenCalled());
+    });
+    act(() => context.stopStreaming());
+    await act(() => pending);
     expect(fixture.complete).toHaveBeenCalledTimes(1);
   });
 
@@ -342,7 +449,8 @@ describe("chat run integration", () => {
       .mockResolvedValueOnce(call)
       .mockResolvedValueOnce(assistant("First done"))
       .mockResolvedValueOnce(assistant("Follow-up done"));
-    await harness().sendMessage(user("Start"));
+    const context = await harness();
+    await act(() => context.sendMessage(user("Start")));
     const messages = fixture.chats[0].messages;
     expect(messages.map((message) => message.content[0].type)).toEqual([
       "text",

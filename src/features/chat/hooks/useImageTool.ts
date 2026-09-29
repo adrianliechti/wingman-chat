@@ -106,6 +106,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
 
   return {
     name: "create_image",
+    needsApproval: elicitation,
     display: {
       header: (_args, state) => ({
         icon: Image,
@@ -127,12 +128,9 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
       if (!prompt) return errorResult("`prompt` is required.", context);
 
       // Confirm before spending a generation when elicitation is enabled.
-      if (elicitation) {
+      if (elicitation && !context?.interruptible) {
         if (!context?.elicit) {
-          return errorResult(
-            "Image generation requires confirmation, which is unavailable in this context.",
-            context,
-          );
+          return errorResult("Image generation requires confirmation, which is unavailable in this context.", context);
         }
         const result = await context.elicit({ message: `Generate an image: ${prompt}` });
         context.signal?.throwIfAborted();
@@ -248,10 +246,7 @@ export function useImageTool(): Tool | null {
   const rendererModel = config.renderer?.model;
   const models = config.models;
   return useMemo<Tool | null>(
-    () =>
-      isAvailable
-        ? createImageTool({ client, catalog, models, rendererModel, elicitation, fs })
-        : null,
+    () => (isAvailable ? createImageTool({ client, catalog, models, rendererModel, elicitation, fs }) : null),
     [isAvailable, client, catalog, models, rendererModel, elicitation, fs],
   );
 }

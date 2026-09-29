@@ -13,6 +13,8 @@ frontend.
   streams fail the run; there is no custom replay of partially streamed requests.
 - `@tanstack/ai-client` owns chat messages, streaming, batch queueing, interrupts,
   client persistence, realtime state, and dictation through `AudioRecorder`.
+- `@tanstack/ai-react` owns the React chat lifecycle through `useChat`, including
+  loading, queue and interrupt subscriptions, thread changes, and cleanup.
 - `@tanstack/ai-compaction` owns provider-context trimming and summarization.
 - `@tanstack/ai-mcp` owns MCP initialization, discovery, calls, resources, prompts,
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
@@ -31,10 +33,14 @@ execution requirement. The installed package sources define the precise APIs.
 
 ## Shared execution and removed code
 
-Chat connects `ChatClient` directly to browser-local `streamRun`, which calls
+Chat connects native [`useChat`](https://tanstack.com/ai/latest/docs/ui/react)
+directly to browser-local `streamRun`, which calls
 native `chat()`. The connection forwards TanStack's run, parent, thread, and
 resume context. There is no application token buffer, tool-execution loop,
-queue controller, or recursive queue drain.
+queue controller, manual React client lifecycle, or recursive queue drain.
+A draft receives its thread ID before saving, so its first send keeps the same
+native client. Voice messages enter that transcript through `setMessages`;
+completed voice tools retain their call arguments alongside the result.
 Delegation uses `defineAgent` and native nested streams. One-shot interpreter
 `llm`/`vision` calls use the same stream through a short `run` helper, with only
 their own prompt and no tools. Noninteractive callers collect messages using
@@ -59,7 +65,8 @@ when the browser has no asynchronous context manager. This removes duplicate
 tool spans and duration reporting. Structured results also rely on TanStack's
 schema validation instead of parsing the validated value a second time.
 
-`aiMessages.ts` is a storage/UI projection, not another transcript owner.
+The existing `Message`/`Content` storage format remains framework-independent.
+`aiMessages.ts` is its storage/UI projection, not another transcript owner.
 `ChatClient` owns live messages; an adapter writes them to the existing chat
 store and OPFS persistence queue. A small metadata cache attaches rich workspace
 results, usage, and run identities. The boundary retains attachment names and
@@ -143,6 +150,10 @@ renders native generic form interrupts and opt-in
 native batching, cancellation, staging, and resume. Questions in a parallel tool
 batch wait for all answers. No blanket approval policy is added. The existing
 schema-driven form renders the controls; native interrupts own their lifecycle.
+Configured image and research confirmations use `needsApproval`, including
+approvals on research's synthetic subagent tool. Server and client share the same
+input schema so a saved approval remains bound after reload. Approval happens
+before image generation or starting research; the tool does not prompt again.
 Legacy MCP transport elicitation and realtime still use the small live-callback
 bridge because those requests cannot be resumed by replaying the tool.
 
@@ -150,6 +161,9 @@ bridge because those requests cannot be resumed by replaying the tool.
 saves messages and pending interrupt descriptors through the existing store.
 Approval definitions are registered before hydration. A reload can restore a
 question or approval and resume it without replaying completed sibling tools.
+The storage boundary accepts writes only from its mounted client, so native
+cleanup after a thread switch cannot erase a pending approval. Explicit Stop
+still clears it.
 Only paused interrupts retain a resume pointer: this browser-only application
 has no durable executor that could continue a running generation after reload.
 
@@ -163,6 +177,14 @@ threshold remain respected; disabling compaction disables these strategies.
 The full saved transcript stays intact. Custom context estimation, summary
 replacement, the summarizer client method, and overflow retry branches are gone.
 Old saved summary markers remain readable.
+The native metadata capability stores opaque checkpoints in an optional
+`Chat.aiMetadata` cache alongside the unchanged conversation format. TanStack
+validates the source prefix and strategy identity before reuse, including the
+summarizer and threshold. Edited history invalidates the cache. Each child gets
+its own checkpoint scope, including parallel calls to the same agent.
+Compaction runs on canonical messages before attachment loading and request
+context injection. Those later steps use the compacted provider view and cannot
+restore cleared outputs from presentation metadata.
 
 [Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
 handles provider-only request preparation, progress display, and rich tool
@@ -203,6 +225,15 @@ for input. They inherit selected capabilities, attachment preparation, workspace
 access, and cancellation. Their artifact mutations
 reach parent verification. Realtime's `agent` tool uses the same one-shot runner
 and returns the final text because the voice protocol has no nested chat cards.
+Web research uses the same `defineAgent` path with its search/fetch tools and a
+content-guard middleware. It receives the model-written brief and its own resumed
+work, keeping unrelated parent history out of research requests. Search and fetch
+progress appear in native child parts, replacing the separate research runner
+and manually maintained parent status. Realtime uses the shared text-result
+adapter and its live confirmation callback.
+Direct voice tools retain live confirmations. A delegated text run that pauses
+for native input or approval asks the user to continue in chat; the one-shot
+voice adapter cannot present and resume that child interrupt.
 
 The remaining optional integrations are the devtools panel (now that ChatClient
 owns state), native memory storage, and code mode. Modern MCP input-required

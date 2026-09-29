@@ -3,6 +3,7 @@ import subagentDescription from "@/features/tools/prompts/subagent-description.t
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
+import type { Client } from "@/shared/lib/client";
 import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
@@ -19,15 +20,33 @@ export function createSubagentTool(
   const extra = providerInstructions.trim();
   const instructions = extra ? `${baseInstructions}\n\n${extra}` : baseInstructions;
 
+  return createAgentTool("agent", subagentDescription.trim(), {
+    model,
+    instructions,
+    tools: baseTools,
+    runtimeContext,
+    middleware,
+  });
+}
+
+/** Native chat definition and the small text-result boundary required by realtime. */
+export function createAgentTool(
+  name: string,
+  description: string,
+  spec: NonNullable<Tool["subagent"]>,
+  options: { client?: Client; needsApproval?: boolean } = {},
+): Tool {
   return {
-    name: "agent",
-    subagent: { model, instructions, tools: baseTools, runtimeContext, middleware },
-    description: subagentDescription.trim(),
+    name,
+    subagent: spec,
+    description,
+    needsApproval: options.needsApproval,
     parameters: {
       type: "object",
       properties: {
         prompt: {
           type: "string",
+          minLength: 1,
           description:
             "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
         },
@@ -40,18 +59,27 @@ export function createSubagentTool(
       if (!prompt) {
         return [{ type: "text", text: "Error: prompt is required" }];
       }
+      const model = spec.model ?? ctx?.model;
+      if (!model) return [{ type: "text", text: "No model is available for this task." }];
+      if (options.needsApproval) {
+        if (!ctx?.elicit)
+          return [{ type: "text", text: "This task requires confirmation, which is unavailable in this context." }];
+        const answer = await ctx.elicit({ message: `${description}\n\n${prompt}` });
+        ctx.signal?.throwIfAborted();
+        if (answer.action !== "accept") return [{ type: "text", text: "Cancelled by user." }];
+      }
 
       try {
-        const requestContext = captureRequestContext(runtimeContext);
+        const requestContext = captureRequestContext(spec.runtimeContext);
         const runResult = await agentRun(
-          getConfig().client,
+          options.client ?? getConfig().client,
           model,
-          instructions,
+          spec.instructions,
           [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
-          baseTools,
+          spec.tools,
           {
-            agentName: "subagent",
-            middleware,
+            agentName: name,
+            middleware: spec.middleware,
             parentContext: ctx?.agentContext,
             context: { ...ctx?.invocationContext, subagentRunId: crypto.randomUUID() },
             options: { signal: ctx?.signal },
