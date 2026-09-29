@@ -13,7 +13,7 @@ export const STUDIO_PROVIDER_ID = "studio";
  * skill before building.
  *
  * Execution uses the default chat tools and artifacts workspace. Enabling Studio
- * also exposes its skill pack through `read_skill` in either agent or no-agent mode.
+ * also exposes its skill pack through `load_skill` in either agent or no-agent mode.
  */
 const studioProvider: ToolProvider = {
   id: STUDIO_PROVIDER_ID,

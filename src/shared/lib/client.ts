@@ -7,7 +7,6 @@ import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw"
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
-import instructionsSummarizeHistory from "@/features/chat/prompts/summarize-history.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
@@ -267,25 +266,6 @@ export class Client {
       categories: result?.categories ?? [],
       risks: result?.risks ?? [],
     };
-  }
-
-  /**
-   * Summarize a conversation history into a single dense text block.
-   * Used to condense older messages when the context window fills up.
-   * Returns plain text — caller wraps it into a SummaryContent part.
-   */
-  async summarizeHistory(model: string, input: Message[], requestOptions: ClientRequestOptions = {}): Promise<string> {
-    const history = input.map((m) => ({ role: m.role, content: m.content }));
-    const result = await this.parse(
-      model,
-      instructionsSummarizeHistory,
-      JSON.stringify({ history }),
-      z.object({ summary: z.string() }).strict(),
-      "summarize_history",
-      requestOptions,
-    );
-    if (!result?.summary?.trim()) throw new Error("The summarizer returned no summary.");
-    return result.summary.trim();
   }
 
   async convertCSV(model: string, text: string): Promise<string> {

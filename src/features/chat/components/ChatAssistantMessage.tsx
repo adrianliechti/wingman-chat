@@ -1,3 +1,4 @@
+import { SubagentCard } from "./SubagentCard";
 import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
@@ -302,7 +303,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   }
 
   // Handle loading states (no text content yet)
-  if (!hasTextContent) {
+  if (!hasTextContent && !message.content.some((part) => part.type === "subagent")) {
     const reasoningParts = message.content.filter((p) => p.type === "reasoning");
     const hasReasoning = reasoningParts.some((p) => p.text || p.summary);
 
@@ -391,6 +392,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         {message.content.map((part, index) => {
           const partKey = getMessagePartKey(part, index, "content");
 
+          if (part.type === "subagent") return <SubagentCard key={part.subagent.id} {...part} />;
           if (part.type === "reasoning") {
             return (
               <ReasoningDisplay

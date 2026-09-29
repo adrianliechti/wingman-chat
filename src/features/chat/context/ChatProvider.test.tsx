@@ -16,7 +16,6 @@ const fixture = vi.hoisted(() => ({
   model: { id: "model", name: "Model", compactThreshold: 1000 },
   chat: {} as { compaction?: { threshold?: number } },
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
-  summarize: vi.fn(),
   classify: vi.fn(),
   artifacts: false,
   verify: vi.fn<() => Promise<AgentBeforeFinishDecision>>(),
@@ -25,7 +24,6 @@ const fixture = vi.hoisted(() => ({
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
     client: Object.assign(testClient(fixture.complete), {
-      summarizeHistory: fixture.summarize,
       classifyChat: fixture.classify,
     }),
     chat: fixture.chat,
@@ -51,6 +49,7 @@ vi.mock("@/features/chat/hooks/useChatContext", () => ({
   useChatContext: () => ({
     tools: async () => fixture.tools,
     instructions: () => "Instructions",
+    middleware: () => [],
     runtimeContext: () => "",
     memory: () => fixture.memory,
   }),
@@ -129,7 +128,6 @@ beforeEach(() => {
   fixture.memory = undefined;
   fixture.verify.mockReset().mockResolvedValue({ action: "finish" });
   fixture.complete.mockReset();
-  fixture.summarize.mockReset().mockResolvedValue("The tool gathered the evidence.");
   fixture.classify.mockReset().mockResolvedValue({ title: "Test", categories: [], risks: [] });
   vi.stubGlobal("window", { setTimeout, clearTimeout });
 });
@@ -235,37 +233,29 @@ describe("chat run integration", () => {
     await Promise.resolve();
     expect(fixture.chats[0].title).not.toBe("Stale title");
   });
-  it("persists overflow compaction before subsequent turns and keeps the error code on failure", async () => {
+  it("compacts provider context natively while preserving the full saved transcript", async () => {
+    fixture.complete.mockResolvedValueOnce(assistant("Earlier evidence ".repeat(1000)));
+    const context = harness();
+    await context.sendMessage(user("Remember the evidence"));
     fixture.chat.compaction = {};
-    fixture.tools = [
-      {
-        name: "work",
-        parameters: { type: "object" },
-        function: async () => [{ type: "text", text: "Evidence ".repeat(1000) }],
-      },
-    ];
     fixture.complete
-      .mockResolvedValueOnce(call)
-      .mockRejectedValueOnce(overflow())
+      .mockResolvedValueOnce(assistant("The evidence was checked."))
       .mockImplementationOnce(async ({ messages }) => {
-        expect(JSON.stringify(messages[0].content)).toContain("The tool gathered the evidence.");
-        expect(
-          fixture.chats[0].messages.some((message) => message.content.some((part) => part.type === "summary")),
-        ).toBe(true);
+        expect(JSON.stringify(messages)).toContain("untrusted-conversation-summary");
+        expect(JSON.stringify(messages)).toContain("The evidence was checked.");
+        expect(JSON.stringify(messages)).toContain("Current request");
         return assistant("Done");
       });
-    await harness().sendMessage(user("Do this exactly"));
+    await context.sendMessage(user("Current request"));
     expect(fixture.complete).toHaveBeenCalledTimes(3);
     expect(fixture.chats[0].messages.at(-1)?.content).toEqual(assistant("Done").content);
-    expect(
-      fixture.chats[0].messages.flatMap((message) => message.content).filter((part) => part.type === "summary"),
-    ).toHaveLength(1);
+    expect(JSON.stringify(fixture.chats[0].messages)).toContain("Earlier evidence ".repeat(1000));
+    expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("untrusted-conversation-summary");
   });
 
   it("honors disabled compaction on overflow and preserves the actionable error", async () => {
     fixture.complete.mockRejectedValueOnce(overflow());
     await harness().sendMessage(user("Work"));
-    expect(fixture.summarize).not.toHaveBeenCalled();
     expect(fixture.chats[0].messages.at(-1)?.error).toEqual({
       code: "CONTEXT_EXHAUSTED",
       message: "Context is too large",

@@ -181,7 +181,12 @@ const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
 export default defineConfig({
   fmt: { printWidth: 120 },
   lint: { options: { typeAware: true, typeCheck: true } },
-  test: { exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/browser/**"] },
+  test: {
+    exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/browser/**"],
+    // Run the upstream source conformance suite against Vite Plus's Vitest
+    // instance instead of loading a second runner through the package's peer.
+    server: { deps: { inline: ["@tanstack/ai-skills"] } },
+  },
   resolve: {
     alias: {
       "@": src,

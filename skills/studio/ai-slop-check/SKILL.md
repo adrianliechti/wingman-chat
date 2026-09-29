@@ -33,7 +33,7 @@ motif. Use a labelled placeholder only for an explicit wireframe or design hando
 artifact.
 
 **Type.** Inter, Roboto, Arial, Fraunces, or a bare system stack used as a silent default (no brand or
-user reason) → a font chosen with intent for this subject; `read_skill frontend-design` for pairing
+user reason) → a font chosen with intent for this subject; `load_skill frontend-design` for pairing
 guidance.
 
 **Color values.** Five near-identical blues (`#0066CC`, `#0077DD`, `#3498DB`...) invented inline →

@@ -47,10 +47,18 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       isResponding: value.isResponding,
       status: value.status,
       queuedSends: value.queuedSends,
+      interruptState: value.interruptState,
       pendingElicitation: value.pendingElicitation,
       pendingConsent: value.pendingConsent,
     }),
-    [value.isResponding, value.status, value.queuedSends, value.pendingElicitation, value.pendingConsent],
+    [
+      value.isResponding,
+      value.status,
+      value.queuedSends,
+      value.interruptState,
+      value.pendingElicitation,
+      value.pendingConsent,
+    ],
   );
   const chatActions = useMemo(
     () => ({
@@ -67,7 +75,6 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       retryMessage: value.retryMessage,
       continueRun: value.continueRun,
       removeQueuedMessage: value.removeQueuedMessage,
-      sendHeldMessage: value.sendHeldMessage,
       setVoiceToolCall: value.setVoiceToolCall,
       resolveElicitation: value.resolveElicitation,
       requestElicitation: value.requestElicitation,
@@ -88,7 +95,6 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       value.retryMessage,
       value.continueRun,
       value.removeQueuedMessage,
-      value.sendHeldMessage,
       value.setVoiceToolCall,
       value.resolveElicitation,
       value.requestElicitation,

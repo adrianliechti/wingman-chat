@@ -3,7 +3,11 @@ import type { GatewayTextSegment } from "./gatewayText";
 import type { Content, Message, ToolResultContent } from "../types/chat";
 
 /** Storage/UI boundary. Existing Wingman conversations stay readable; AI state is native TanStack. */
-export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
+export function toAIMessages(
+  messages: Message[],
+  model?: string,
+  options?: { pendingToolCalls?: boolean },
+): UIMessage[] {
   const answeredCalls = new Set(
     messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
   );
@@ -16,9 +20,14 @@ export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
       wingmanTextSegments: message.content.flatMap((part) =>
         part.type === "text" ? [{ content: part.text, phase: part.phase }] : [],
       ),
+      wingmanReasoningModels: Object.fromEntries(
+        message.content.flatMap((part) => (part.type === "reasoning" ? [[part.id, part.model]] : [])),
+      ),
     },
     parts: message.content.flatMap((part): MessagePart[] => {
       switch (part.type) {
+        case "subagent":
+          return [part];
         case "text":
           return [{ type: "text", content: part.text, metadata: part.phase ? { phase: part.phase } : undefined }];
         case "reasoning":
@@ -44,7 +53,13 @@ export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
               id: part.id,
               name: part.name,
               arguments: part.arguments,
-              state: part.incomplete || !answeredCalls.has(part.id) ? "input-streaming" : "complete",
+              state: part.incomplete
+                ? "input-streaming"
+                : answeredCalls.has(part.id)
+                  ? "complete"
+                  : options?.pendingToolCalls === false
+                    ? "input-streaming"
+                    : "input-complete",
             },
           ];
         case "tool_result":
@@ -69,11 +84,17 @@ export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
           return toAIContent([part]);
         case "summary":
         case "runtime_feedback":
-          return [{ type: "text", content: part.text }];
+          return [{ type: "text", content: part.text, metadata: { wingmanContent: part } }];
         case "artifact_selection":
-          return [{ type: "text", content: `Selected text from ${part.path}:\n${part.text}` }];
+          return [
+            {
+              type: "text",
+              content: `Selected text from ${part.path}:\n${part.text}`,
+              metadata: { wingmanContent: part },
+            },
+          ];
         case "artifact_ref":
-          return [{ type: "text", content: `Workspace file: ${part.path}` }];
+          return [{ type: "text", content: `Workspace file: ${part.path}`, metadata: { wingmanContent: part } }];
       }
     }),
   }));
@@ -90,7 +111,7 @@ export function toAIMessages(messages: Message[], model?: string): UIMessage[] {
         if (part.type === "tool-call") owners.set(part.id, next);
       }
     }
-    if (next.parts.length) native.push(next);
+    if (next.parts.length || message.metadata?.wingman?.error) native.push(next);
   }
   return native;
 }
@@ -103,14 +124,21 @@ export function toAIContent(content: Content[]): ContentPart[] {
       const source = match
         ? { type: "data" as const, value: match[2], mimeType: match[1] }
         : { type: "url" as const, value: part.data };
-      if (part.type === "file") return [{ type: "document", source, metadata: { filename: part.name } }];
-      return [{ type: part.type, source }];
+      return [
+        {
+          type: part.type === "file" ? "document" : part.type,
+          source,
+          metadata: { filename: part.name, ...(part.contentType ? { contentType: part.contentType } : {}) },
+        },
+      ];
     }
     return [];
   });
 }
 
 function fromAIContent(part: ContentPart): Content[] {
+  const original = (part.metadata as { wingmanContent?: Content } | undefined)?.wingmanContent as Content | undefined;
+  if (original) return [original];
   if (part.type === "text") {
     const metadata = part.metadata as { phase?: "commentary" | "final_answer" } | undefined;
     return [{ type: "text", text: part.content, ...(metadata?.phase ? { phase: metadata.phase } : {}) }];
@@ -118,11 +146,19 @@ function fromAIContent(part: ContentPart): Content[] {
   if (part.type === "video" || part.source.type === "file") return [];
   const data =
     part.source.type === "url" ? part.source.value : `data:${part.source.mimeType};base64,${part.source.value}`;
+  const contentType = (part.metadata as { contentType?: string } | undefined)?.contentType;
+  const stored = contentType ? { contentType } : {};
   if (part.type === "document")
     return [
-      { type: "file", name: (part.metadata as { filename?: string } | undefined)?.filename ?? "attachment", data },
+      {
+        type: "file",
+        name: (part.metadata as { filename?: string } | undefined)?.filename ?? "attachment",
+        data,
+        ...stored,
+      },
     ];
-  return [{ type: part.type, data }];
+  const name = (part.metadata as { filename?: string } | undefined)?.filename;
+  return [{ type: part.type, data, ...(name ? { name } : {}), ...stored }];
 }
 
 export function fromAIMessages(messages: UIMessage[], runId?: string, model?: string): Message[] {
@@ -139,6 +175,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
       let phaseIndex = 0;
       let phaseOffset = 0;
       const textContent = (part: Extract<ContentPart, { type: "text" }>): Content[] => {
+        if ((part.metadata as { wingmanContent?: Content } | undefined)?.wingmanContent) return fromAIContent(part);
         if (!phases.length) return fromAIContent(part);
         const output: Content[] = [];
         let text = part.content;
@@ -165,11 +202,13 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
         id: message.id,
         role: message.role === "user" ? "user" : "assistant",
         runId: stored?.runId ?? runId,
-        createdAt: message.createdAt?.toISOString(),
+        createdAt: message.createdAt ? new Date(message.createdAt).toISOString() : undefined,
         usage: stored?.usage,
         error: stored?.error,
         content: message.parts.flatMap((part): Content[] => {
           switch (part.type) {
+            case "subagent":
+              return [part];
             case "text":
               return textContent(part);
             case "image":
@@ -184,7 +223,12 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                   id: part.stepId ?? message.id,
                   text: part.content,
                   signature: part.signature,
-                  model,
+                  model:
+                    (message.metadata?.wingmanReasoningModels as Record<string, string> | undefined)?.[
+                      part.stepId ?? message.id
+                    ] ??
+                    stored?.usage?.model ??
+                    model,
                 },
               ];
             case "tool-call":
@@ -230,7 +274,8 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
       const turns: Message[] = [];
       let body: Content[] = [];
       const flush = () => {
-        if (body.length) turns.push({ ...converted, id: `${message.id}-${turns.length}`, content: body });
+        if (body.length)
+          turns.push({ ...converted, id: turns.length ? `${message.id}-${turns.length}` : message.id, content: body });
         body = [];
       };
       for (const part of converted.content) {
@@ -257,6 +302,6 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
         } else body.push(part);
       }
       flush();
-      return turns.length ? turns : [converted];
+      return turns.length ? turns : converted.error ? [converted] : [];
     });
 }

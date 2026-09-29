@@ -1,3 +1,5 @@
+import type { ChatPersistedState } from "@tanstack/ai-client";
+import type { ChatMiddleware, SubagentPart } from "@tanstack/ai";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
 import type { AgentInvocationContext } from "../lib/agent-run-controller";
@@ -100,6 +102,13 @@ export interface ToolProvider {
   readonly runtimeContext?: string;
 
   readonly tools: Tool[];
+
+  /** Native chat setup when a provider uses middleware; tools above also serve realtime and display. */
+  readonly chat?: {
+    tools: Tool[];
+    instructions?: string;
+    middleware: ChatMiddleware[];
+  };
 }
 
 export type Tool = {
@@ -110,6 +119,16 @@ export type Tool = {
 
   /** Let TanStack discover this tool's schema on demand in chat runs. */
   lazy?: boolean;
+  /** Opt in to TanStack approval; no additional app approval lifecycle. */
+  needsApproval?: boolean;
+  /** Chat uses a native defineAgent; function remains the realtime tool boundary. */
+  subagent?: {
+    model: string;
+    instructions: string;
+    tools: Tool[];
+    runtimeContext: string;
+    middleware: ChatMiddleware[];
+  };
 
   parameters: Record<string, unknown>;
 
@@ -170,6 +189,9 @@ export interface ToolContext {
   runId?: string;
   invocationContext?: AgentInvocationContext;
   signal?: AbortSignal;
+  /** Native chat tools can pause and receive an answer on their resumed execution. */
+  interruptible?: boolean;
+  inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
@@ -257,7 +279,8 @@ export type Content =
   | SummaryContent
   | ArtifactRefContent
   | ArtifactSelectionContent
-  | RuntimeFeedbackContent;
+  | RuntimeFeedbackContent
+  | SubagentPart;
 
 export type TextContent = {
   type: "text";
@@ -273,6 +296,7 @@ export type ImageContent = {
 
   name?: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string; // Retained when data is a stored blob reference.
 };
 
 export type AudioContent = {
@@ -280,6 +304,7 @@ export type AudioContent = {
 
   name?: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string;
 };
 
 export type FileContent = {
@@ -287,6 +312,7 @@ export type FileContent = {
 
   name: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string;
 };
 
 export type Message = {
@@ -348,6 +374,8 @@ export type Chat = {
 
   model: Model | null;
   messages: Array<Message>;
+  /** Native pending-interrupt snapshot persisted with the transcript. */
+  aiResume?: ChatPersistedState["resume"];
 };
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */

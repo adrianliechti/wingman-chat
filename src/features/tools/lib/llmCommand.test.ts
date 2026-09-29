@@ -50,7 +50,11 @@ describe("interpreter model calls", () => {
         {
           role: "user",
           content: [
-            { type: "image", source: { type: "data", value: "AQ==", mimeType: "image/png" } },
+            {
+              type: "image",
+              source: { type: "data", value: "AQ==", mimeType: "image/png" },
+              metadata: { filename: "first.png" },
+            },
             { type: "text", content: "First image question" },
           ],
         },
@@ -60,7 +64,11 @@ describe("interpreter model calls", () => {
         {
           role: "user",
           content: [
-            { type: "image", source: { type: "data", value: "Ag==", mimeType: "image/png" } },
+            {
+              type: "image",
+              source: { type: "data", value: "Ag==", mimeType: "image/png" },
+              metadata: { filename: "second.png" },
+            },
             { type: "text", content: "Independent image question" },
           ],
         },

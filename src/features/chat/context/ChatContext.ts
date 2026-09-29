@@ -9,7 +9,7 @@ import type {
   PendingConsent,
   PendingElicitation,
 } from "@/shared/types/elicitation";
-import type { QueuedSend } from "../lib/chatQueue";
+import type { ChatInterruptState, QueuedMessage } from "@tanstack/ai-client";
 
 export type RunStatus = "idle" | "compacting" | "thinking" | "responding" | "running_tool" | "waiting";
 
@@ -63,9 +63,9 @@ export interface ChatContextType {
   ) => Promise<void>;
   retryMessage: () => Promise<void>;
   continueRun: () => Promise<void>;
-  queuedSends: QueuedSend[];
+  queuedSends: QueuedMessage[];
+  interruptState: ChatInterruptState | null;
   removeQueuedMessage: (id: string) => void;
-  sendHeldMessage: (id: string) => Promise<void>;
   setVoiceToolCall: (toolName: string | null, callId?: string) => void;
 
   // Elicitation state
@@ -101,7 +101,7 @@ export const ChatConversationContext = createContext<ChatConversationContextType
 
 export type ChatRunStateContextType = Pick<
   ChatContextType,
-  "isResponding" | "status" | "queuedSends" | "pendingElicitation" | "pendingConsent"
+  "isResponding" | "status" | "queuedSends" | "interruptState" | "pendingElicitation" | "pendingConsent"
 >;
 export const ChatRunStateContext = createContext<ChatRunStateContextType | undefined>(undefined);
 
@@ -120,7 +120,6 @@ export type ChatActionsContextType = Pick<
   | "retryMessage"
   | "continueRun"
   | "removeQueuedMessage"
-  | "sendHeldMessage"
   | "setVoiceToolCall"
   | "resolveElicitation"
   | "requestElicitation"

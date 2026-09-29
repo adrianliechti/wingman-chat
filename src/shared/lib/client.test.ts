@@ -5,6 +5,19 @@ import { run, runMessages } from "./agent";
 import { loadConfig } from "../config";
 import type { Tool } from "../types/chat";
 import { response, textItem, callItem, sse, finished } from "./test-support/ai";
+import type { ChatMiddleware } from "@tanstack/ai";
+
+function observeText(observer: (content: Array<{ type: "text"; text: string }>) => void): ChatMiddleware {
+  let text = "";
+  return {
+    onChunk: (_ctx, chunk) => {
+      if (chunk.type === "TEXT_MESSAGE_CONTENT") {
+        text += chunk.delta;
+        observer([{ type: "text", text }]);
+      }
+    },
+  };
+}
 
 const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Go" }] }];
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -254,7 +267,7 @@ describe("raw request lifetime", () => {
 });
 
 describe("TanStack OpenAI adapter over the browser gateway", () => {
-  it("batches token fragments and flushes the final text with the native chunk strategies", async () => {
+  it("streams each token fragment through the native client without a custom buffer", async () => {
     const deltas = ["Hel", "l", "o", " ", "wo", "rl", "d", "!"];
     fetchMock.mockResolvedValueOnce(
       sse([
@@ -271,7 +284,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       ]),
     );
     const onStream = vi.fn();
-    const result = (await runMessages(new Client(), "model", "", prompt, [], { onStream })).at(-1)!;
+    const result = (
+      await runMessages(new Client(), "model", "", prompt, [], { middleware: [observeText(onStream)] })
+    ).at(-1)!;
     expect(result.content).toEqual([{ type: "text", text: "Hello world!" }]);
     const updates = [
       ...new Set(
@@ -282,10 +297,10 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         ),
       ),
     ];
-    expect(updates[0]).toBe("Hello");
+    expect(updates[0]).toBe("Hel");
     expect(updates).toContain("Hello ");
     expect(updates.at(-1)).toBe("Hello world!");
-    expect(updates.length).toBeLessThan(deltas.length);
+    expect(updates.length).toBe(deltas.length);
   });
 
   it("streams text through the native processor", async () => {
@@ -293,9 +308,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       finished(response([textItem("Hello")], { model: "resolved-model", reasoning: { context: "current_turn" } })),
     );
     const stream = vi.fn();
-    const answer = (await runMessages(new Client(), "team-model", "Instructions", prompt, [], { onStream: stream })).at(
-      -1,
-    )!;
+    const answer = (
+      await runMessages(new Client(), "team-model", "Instructions", prompt, [], { middleware: [observeText(stream)] })
+    ).at(-1)!;
     expect(answer.content).toEqual([{ type: "text", text: "Hello" }]);
     expect(stream).toHaveBeenCalledWith(expect.arrayContaining([{ type: "text", text: "Hello" }]));
     expect(answer.usage).toMatchObject({
@@ -391,7 +406,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
 
   it("uses native structured output and validates the result", async () => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem('{"summary":"Compacted"}')])));
-    expect(await new Client().summarizeHistory("model", prompt)).toBe("Compacted");
+    expect(
+      await new Client().parse("model", "Summarize", "History", z.object({ summary: z.string() }), "summary"),
+    ).toEqual({ summary: "Compacted" });
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.text.format).toMatchObject({
       type: "json_schema",
@@ -454,9 +471,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       if (content.some((part: { type: string; text?: string }) => part.type === "text" && part.text === "Partial"))
         connection.error(new TypeError("Connection terminated"));
     });
-    const result = await run(new Client(), "model", "", prompt, [], { onStream });
+    const result = await run(new Client(), "model", "", prompt, [], { middleware: [observeText(onStream)] });
     expect(result.status).toBe("failed");
-    expect(result.messages).toEqual(prompt);
+    expect(result.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      ...prompt,
+      { role: "assistant", content: [{ type: "text", text: "Partial" }] },
+    ]);
     expect(onStream).toHaveBeenCalledWith([{ type: "text", text: "Partial" }]);
     expect(fetchMock).toHaveBeenCalledOnce();
   });

@@ -17,13 +17,13 @@ four checks in parallel. Each briefing must be self-contained: pass the file pat
 to read it before checking. Ask for concrete findings with severity and evidence, not speculative
 low-confidence lists.
 
-1. `read_skill accessibility-pass` and audit contrast, semantic HTML, keyboard/focus, and
+1. `load_skill accessibility-pass` and audit contrast, semantic HTML, keyboard/focus, and
    motion/forms.
-2. `read_skill ai-slop-check` and scan for gradients, emoji, trope cards, weak illustration,
+2. `load_skill ai-slop-check` and scan for gradients, emoji, trope cards, weak illustration,
    overused fonts, the cream/serif/terracotta house style.
-3. `read_skill hierarchy-rhythm-review` and check size/color/weight/position/density hierarchy plus
+3. `load_skill hierarchy-rhythm-review` and check size/color/weight/position/density hierarchy plus
    spacing/type-scale rhythm.
-4. `read_skill interaction-states-pass` and inventory every interactive element for
+4. `load_skill interaction-states-pass` and inventory every interactive element for
    hover/active/disabled/focus/loading plus transitions and action feedback.
 
 If `agent` is unavailable or the build is small, run the checks yourself. Delegation is an

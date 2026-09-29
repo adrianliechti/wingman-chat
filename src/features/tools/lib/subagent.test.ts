@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import type { ToolContext } from "@/shared/types/chat";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
@@ -52,6 +53,30 @@ describe("subagent invocation identity", () => {
     expect(child.chatId).toBe("origin-chat");
     expect(child.runId).not.toBe("voice-parent");
     expect(child.invocationContext?.branch).toBe("subagent");
+  });
+
+  it("applies provider middleware independently to each delegated run", async () => {
+    const tool = createSubagentTool("model", "", [], "", [
+      withSkills(
+        inlineSkill({
+          name: "reports",
+          description: "Create reports",
+          instructions: "Verify the report.",
+        }),
+      ),
+    ]);
+    for (const parent of [undefined, { runId: "voice-parent" }]) {
+      state.complete
+        .mockReset()
+        .mockResolvedValueOnce({
+          role: "assistant",
+          content: [{ type: "tool_call", id: "skill", name: "load_skill", arguments: '{"name":"reports"}' }],
+        })
+        .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "Verified" }] });
+      expect(await tool.function({ prompt: "Build a report" }, parent)).toEqual([{ type: "text", text: "Verified" }]);
+      expect(JSON.stringify(state.complete.mock.calls[0][0].systemPrompts)).toContain("Create reports");
+      expect(JSON.stringify(state.complete.mock.calls[1][0].messages)).toContain("Verify the report.");
+    }
   });
 
   it("returns the final answer without the child agent's commentary", async () => {

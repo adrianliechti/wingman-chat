@@ -1,3 +1,4 @@
+import { ChatInterrupts } from "../components/ChatInterrupts";
 import { useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,9 +40,7 @@ import { useSidebar } from "@/shell/hooks/useSidebar";
 function loadDisclaimer() {
   try {
     const config = getConfig();
-    return config.disclaimer?.trim()
-      ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
-      : null;
+    return config.disclaimer?.trim() ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" }) : null;
   } catch {
     return null;
   }
@@ -556,6 +555,7 @@ export function ChatPage() {
           )}
         >
           <div className="pointer-events-auto">
+            <ChatInterrupts />
             <ChatInput />
           </div>
         </div>

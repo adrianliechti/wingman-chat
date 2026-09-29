@@ -40,7 +40,7 @@ Build with the interpreter. The image generator makes far richer art than hand-d
 for it first:
 
 - **Rich / painterly / illustrative (default)** → write a detailed art-direction prompt and
-  `await render(prompt, "art.png", quality="medium")`. For a named look, `read_skill image-styles` and fold the matching
+  `await render(prompt, "art.png", quality="medium")`. For a named look, `load_skill image-styles` and fold the matching
   fragment in. This register is mostly visual, so keep words minimal anyway; modern renderers spell
   short titles fine, but if a specific title or label must be exact you can composite it over the
   result with `Pillow`.

@@ -6,6 +6,75 @@ async function open(page: Page) {
   await page.waitForFunction(() => window.chatE2E?.state().ready);
 }
 
+test("a native question survives reload and resumes from the saved tool call", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.chatE2E.send("Help me choose"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  await page.evaluate(() =>
+    window.chatE2E.callTool(0, "ask_questions", {
+      questions: [{ id: "destination", label: "Which destination?", type: "text", required: true }],
+    }),
+  );
+  await expect(page.getByLabel("Which destination?", { exact: false })).toBeVisible();
+  const id = await page.evaluate(() => window.chatE2E.state().chatId!);
+  await page.evaluate(() => window.chatE2E.flush());
+  await page.reload();
+  await page.waitForFunction(() => window.chatE2E?.state().ready);
+  await page.evaluate((id) => window.chatE2E.select(id), id);
+  await expect(page.getByLabel("Which destination?", { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => window.chatE2E.state().calls.length)).toBe(0);
+  await page.getByLabel("Which destination?", { exact: false }).fill("Vaduz");
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[0].input))).toContain("Vaduz");
+  await page.evaluate(() => window.chatE2E.finish(0, "Destination selected"));
+  await expect(page.getByTestId("messages")).toContainText("Destination selected");
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+});
+
+test("native skill middleware loads browser resources and persists results across chat runs", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.setChatSkills(true));
+  await page.evaluate(() => window.chatE2E.send("Build a report"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  const request = await page.evaluate(() => window.chatE2E.state().calls[0]);
+  expect(request.instructions).toContain("fixture:reports");
+  expect(request.tools).toContain("load_skill");
+  expect(request.tools).toContain("read_skill_resource");
+  await page.evaluate(() => window.chatE2E.callTool(0, "load_skill", { name: "fixture:reports" }));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[1].input))).toContain(
+    "Verify every report",
+  );
+  await page.evaluate(() =>
+    window.chatE2E.callTool(1, "read_skill_resource", { skill: "fixture:reports", path: "scripts/check.py" }),
+  );
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 3);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[2].input))).toContain(
+    "print('verified')",
+  );
+  await page.evaluate(() => window.chatE2E.callTool(2, "load_skill", { name: "fixture:reports" }));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 4);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[3].input))).toContain("already loaded");
+  await page.evaluate(() => window.chatE2E.finish(3, "Verified report"));
+  await expect(page.getByTestId("messages")).toContainText("Verified report");
+  await page.evaluate(() => window.chatE2E.flush());
+  const id = await page.evaluate(() => window.chatE2E.state().chatId!);
+  expect(await page.evaluate(async (id) => JSON.stringify((await window.chatE2E.load(id)).messages), id)).toContain(
+    "Verify every report",
+  );
+
+  await page.evaluate(() => window.chatE2E.send("Make another report"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 5);
+  await page.evaluate(() => window.chatE2E.callTool(4, "load_skill", { name: "fixture:reports" }));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 6);
+  expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[5].input.at(-1)))).toContain(
+    "Verify every report",
+  );
+  await page.evaluate(() => window.chatE2E.finish(5, "Another verified report"));
+  await expect(page.getByTestId("messages")).toContainText("Another verified report");
+});
+
 for (const existingChat of [false, true]) {
   test(`agent settings survive a missing catalog in ${existingChat ? "an existing" : "a new"} chat`, async ({
     page,
@@ -24,7 +93,7 @@ for (const existingChat of [false, true]) {
     if (existingChat) {
       await page.evaluate(() => window.chatE2E.send("Before selecting the agent"));
       await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
-      await page.evaluate(() => window.chatE2E.finish(0, "First answer"));
+      await page.evaluate(() => window.chatE2E.finish(0, "Draft updated. First answer"));
       await expect(page.getByTestId("messages")).toContainText("First answer");
     }
     await page.evaluate(() =>
@@ -107,18 +176,18 @@ test("streaming leaves list, action, and composer subscribers unchanged; queued 
   await open(page);
   await page.evaluate(() => window.chatE2E.send("First"));
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
-  await page.evaluate(() => window.chatE2E.stream(0, "Draft one"));
-  await expect(page.getByTestId("messages")).toContainText("Draft one");
+  await page.evaluate(() => window.chatE2E.stream(0, "Draft"));
+  await expect(page.getByTestId("messages")).toContainText("Draft");
   const before = await page.evaluate(() => window.chatE2E.state().renders);
-  await page.evaluate(() => window.chatE2E.stream(0, "Draft two"));
-  await expect(page.getByTestId("messages")).toContainText("Draft two");
+  await page.evaluate(() => window.chatE2E.stream(0, "Draft updated"));
+  await expect(page.getByTestId("messages")).toContainText("Draft updated");
   expect(await page.evaluate(() => window.chatE2E.state().renders)).toEqual(before);
   await page.evaluate(() => {
     window.chatE2E.send("Second");
     window.chatE2E.send("Third");
   });
   await page.waitForFunction(() => window.chatE2E.state().queue.length === 2);
-  await page.evaluate(() => window.chatE2E.finish(0, "First answer"));
+  await page.evaluate(() => window.chatE2E.finish(0, "Draft updated. First answer"));
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
   const input = await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[1].input));
   expect(input).toContain("First answer");
@@ -128,7 +197,7 @@ test("streaming leaves list, action, and composer subscribers unchanged; queued 
   await expect(page.getByTestId("messages")).toContainText("Done");
 });
 
-test("stop holds queued sends, and late callbacks cannot overwrite a restarted run", async ({ page }) => {
+test("stop discards queued sends, and late callbacks cannot overwrite a restarted run", async ({ page }) => {
   await open(page);
   await page.evaluate(() => window.chatE2E.send("First"));
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
@@ -137,9 +206,8 @@ test("stop holds queued sends, and late callbacks cannot overwrite a restarted r
   await page.evaluate(() => window.chatE2E.send("Queued"));
   await page.waitForFunction(() => window.chatE2E.state().queue.length === 1);
   await page.evaluate(() => window.chatE2E.stop());
-  const held = await page.evaluate(() => window.chatE2E.state().queue[0]);
-  expect(held.status).toBe("held");
-  await page.evaluate((id) => window.chatE2E.sendHeld(id), held.id);
+  expect(await page.evaluate(() => window.chatE2E.state().queue)).toEqual([]);
+  await page.evaluate(() => window.chatE2E.send("New request"));
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
   await page.evaluate(() => {
     window.chatE2E.stream(0, "Stale draft");
@@ -207,7 +275,7 @@ test("replacing or unmounting elicitation settles every pending promise", async 
   });
 });
 
-test("a send delayed by loading is held if the user navigates to another chat", async ({ page }) => {
+test("a send delayed by loading is discarded if the user navigates to another chat", async ({ page }) => {
   await open(page);
   await page.evaluate(async () => {
     await window.chatE2E.seed("first", [{ type: "text", text: "First history" }]);
@@ -228,8 +296,8 @@ test("a send delayed by loading is held if the user navigates to another chat", 
     await window.chatE2E.load("first");
   });
   await page.evaluate(() => window.chatE2E.select("first"));
-  await page.waitForFunction(() => window.chatE2E.state().queue.length === 1);
+  await page.waitForFunction(() => window.chatE2E.state().loadedId === "first");
   const state = await page.evaluate(() => window.chatE2E.state());
-  expect(state.queue[0].status).toBe("held");
+  expect(state.queue).toEqual([]);
   expect(state.calls).toHaveLength(0);
 });

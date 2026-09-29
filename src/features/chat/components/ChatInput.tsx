@@ -66,10 +66,10 @@ async function captureScreenAttachment(
 export function ChatInput() {
   const config = getConfig();
 
-  const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
+  const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
-  const { isResponding, queuedSends } = useChatRunState();
+  const { isResponding, queuedSends, interruptState } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
   const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
@@ -280,7 +280,7 @@ export function ChatInput() {
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (chatLoading || chatError) return;
+      if (chatLoading || chatError || interruptState?.interrupts.length) return;
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
@@ -333,7 +333,9 @@ export function ChatInput() {
           content: messageContent,
         };
 
-        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
+        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
+          notify.error("Message failed", error),
+        );
         setContent("");
         clearAttachments();
       }
@@ -349,6 +351,7 @@ export function ChatInput() {
       sendMessage,
       chatLoading,
       chatError,
+      interruptState,
       clearAttachments,
     ],
   );
@@ -482,30 +485,19 @@ export function ChatInput() {
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
-            const label = item.message.content.find((part) => part.type === "text")?.text.trim() || "Attachment";
+            const content = typeof item.content === "string" ? item.content : item.content.content;
+            const label =
+              (typeof content === "string" ? content : content.find((part) => part.type === "text")?.content)?.trim() ||
+              "Attachment";
             return (
               <div
                 key={item.id}
-                className={cn(
-                  "flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-                  item.status === "held"
-                    ? "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
-                    : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
-                )}
+                className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300"
               >
-                <span className="max-w-56 truncate">{item.status === "held" ? `Held: ${label}` : label}</span>
-                {item.status === "held" && (
-                  <button
-                    type="button"
-                    className="font-medium hover:underline"
-                    onClick={() => void sendHeldMessage(item.id)}
-                  >
-                    Send
-                  </button>
-                )}
+                <span className="max-w-56 truncate">{label}</span>
                 <button
                   type="button"
-                  aria-label={item.status === "held" ? "Discard held message" : "Remove queued message"}
+                  aria-label="Remove queued message"
                   className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => removeQueuedMessage(item.id)}
                 >
@@ -1023,12 +1015,16 @@ export function ChatInput() {
                     </button>
                   )}
                 </>
-              ) : isResponding ? (
+              ) : isResponding || interruptState?.interrupts.length ? (
                 <div className="flex items-center">
                   {content.trim() && (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
+                      disabled={!!interruptState?.interrupts.length}
+                      aria-label={
+                        interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
+                      }
                       title="Queue message"
                     >
                       <Send size={16} />

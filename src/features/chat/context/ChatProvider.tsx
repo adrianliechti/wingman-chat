@@ -110,6 +110,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const {
     tools: chatTools,
     instructions: chatInstructions,
+    middleware: chatMiddleware,
     runtimeContext: chatRuntimeContext,
     memory: chatMemory,
   } = useChatContext("chat", model, models);
@@ -273,6 +274,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const run = useChatRun({
+    chatLoaded: !!chat,
     model,
     models,
     chatId,
@@ -284,6 +286,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     getOrCreateChat,
     chatTools,
     chatInstructions,
+    chatMiddleware,
     chatRuntimeContext,
     chatMemory,
   });

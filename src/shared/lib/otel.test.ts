@@ -3,6 +3,8 @@ import { Client } from "./client";
 import { runMessages } from "./agent";
 import { finished, response, textItem, testClient } from "./test-support/ai";
 import { trace, type Span } from "@opentelemetry/api";
+import { chat } from "@tanstack/ai";
+import { aiTelemetry } from "./otel";
 
 const telemetry = vi.hoisted(() => ({
   spans: [] as {
@@ -86,7 +88,13 @@ it.each(["chat", "summarize_history"])(
         [{ role: "user", content: [{ type: "text", text: "Private input" }] }],
         [],
       );
-    else await client.summarizeHistory("model", [{ role: "user", content: [{ type: "text", text: "Private input" }] }]);
+    else
+      await chat({
+        adapter: client.textAdapter("model"),
+        messages: [{ role: "user", content: "Private input" }],
+        stream: false,
+        middleware: [aiTelemetry(operation)],
+      });
     expect(telemetry.spans.length).toBeGreaterThan(0);
     for (const span of telemetry.spans) expect(span.end).toHaveBeenCalledOnce();
     expect(

@@ -213,7 +213,13 @@ function isToolConnectorMessage(message: Message): boolean {
   if (message.role !== "assistant" || message.content.length === 0) return false;
   const hasToolCalls = message.content.some((p) => p.type === "tool_call");
   const hasReasoning = message.content.some((p) => p.type === "reasoning" && (p.text || p.summary));
-  return hasToolCalls && !hasReasoning && !messageHasText(message) && !messageHasMedia(message);
+  return (
+    hasToolCalls &&
+    !hasReasoning &&
+    !message.content.some((part) => part.type === "subagent") &&
+    !messageHasText(message) &&
+    !messageHasMedia(message)
+  );
 }
 
 function hostsToolCall(message: Message, toolCallId?: string | null): boolean {

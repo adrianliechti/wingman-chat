@@ -14,14 +14,13 @@ export function testClient(
       model,
       async *chatStream(options: TextOptions<Record<string, unknown>>) {
         const id = crypto.randomUUID();
-        const pending: { type: "MESSAGES_SNAPSHOT"; messages: { id: string; role: "assistant"; content: string }[] }[] =
-          [];
+        const pending: { type: "TEXT_MESSAGE_CONTENT"; messageId: string; delta: string }[] = [];
         let notify: (() => void) | undefined;
         let settled = false;
         let streamedText = "";
         const result = complete(options, (content) => {
           const text = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
-          pending.push({ type: "MESSAGES_SNAPSHOT", messages: [{ id, role: "assistant", content: text }] });
+          pending.push({ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text.slice(streamedText.length) });
           streamedText = text;
           notify?.();
         }).finally(() => {
@@ -39,17 +38,11 @@ export function testClient(
             });
         }
         const response = await result;
-        if (streamedText)
-          yield {
-            type: "MESSAGES_SNAPSHOT",
-            messages: [
-              {
-                id,
-                role: "assistant",
-                content: response.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(""),
-              },
-            ],
-          };
+        if (streamedText) {
+          const finalText = response.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+          if (finalText.startsWith(streamedText) && finalText.length > streamedText.length)
+            yield { type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: finalText.slice(streamedText.length) };
+        }
         for (const part of response.content) {
           if (part.type === "text" && !streamedText)
             yield {

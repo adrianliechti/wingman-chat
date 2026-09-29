@@ -1,7 +1,7 @@
 import type { Message } from "../types/chat";
 
-export type AgentRunStatus = "completed" | "aborted" | "failed" | "max_turns";
-export type AgentRunStopReason = "end_turn" | "abort" | "error" | "max_turns";
+export type AgentRunStatus = "completed" | "interrupted" | "aborted" | "failed" | "max_turns";
+export type AgentRunStopReason = "end_turn" | "interrupt" | "abort" | "error" | "max_turns";
 
 interface RunEventBase {
   runId: string;
@@ -13,11 +13,10 @@ interface RunEventBase {
 
 export type AgentRunEvent =
   | (RunEventBase & { type: "run.started" })
-  | (RunEventBase & { type: "compaction.started" | "compaction.completed"; turn: number })
-  | (RunEventBase & { type: "model.started" | "model.streaming" | "model.completed"; turn: number })
+  | (RunEventBase & { type: "model.started" | "model.streaming"; turn: number })
   | (RunEventBase & { type: "verification.started" | "verification.completed"; turn: number })
   | (RunEventBase & {
-      type: "tool.started" | "tool.updated" | "tool.completed";
+      type: "tool.started" | "tool.completed";
       turn: number;
       callId: string;
       name: string;

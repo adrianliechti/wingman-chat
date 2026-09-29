@@ -132,9 +132,9 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   await response.hover();
   await expect(response.getByRole("button")).toHaveCount(0);
   await response.evaluate((element) => element.setAttribute("data-stream-instance", "original"));
-  await page.evaluate(() => window.reactUiE2E.stream("Second draft"));
-  await expect(response).toContainText("Second draft");
-  await page.evaluate(() => window.reactUiE2E.finish("Final answer"));
+  await page.evaluate(() => window.reactUiE2E.stream("First draft updated"));
+  await expect(response).toContainText("First draft updated");
+  await page.evaluate(() => window.reactUiE2E.finish("First draft updated. Final answer"));
   await expect(response).toContainText("Final answer");
   await expect(response).toHaveAttribute("data-stream-instance", "original");
   await expect(response.getByRole("button", { name: "Copy to clipboard (Alt+click for raw markdown)" })).toBeVisible();

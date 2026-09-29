@@ -1,11 +1,17 @@
 import {
   chat,
+  defineAgent,
+  normalizeToUIMessage,
   convertMessagesToModelMessages,
+  modelMessagesToUIMessages,
   maxIterations,
-  StreamProcessor,
   toolDefinition,
   type ChatMiddleware,
+  type RunAgentResumeItem,
+  type StreamChunk,
+  type UIMessage,
 } from "@tanstack/ai";
+import { ChatClient } from "@tanstack/ai-client";
 import { z } from "zod";
 import {
   withMessageIdentity,
@@ -20,8 +26,10 @@ import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { combineAbortSignals } from "./abortSignals";
 import { fromAIMessages, toAIMessages } from "./aiMessages";
-import { aiDebug, textStreamStrategy } from "./aiStream";
-import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
+import { artifactDelta, artifactDeltaFromMeta } from "../types/artifact";
+import { captureRequestContext, injectRequestContext } from "./requestContext";
+import { aiDebug } from "./aiStream";
+import { getErrorInfo, isAbortError } from "./errors";
 import { aiTelemetry } from "./otel";
 import { serializeToolResultForApi } from "./utils";
 import {
@@ -35,9 +43,6 @@ export type { AgentRunEvent, AgentRunResult, AgentRunStatus } from "./agent-run-
 
 /** Safety bound on model calls in one run, guarding against a runaway tool loop. */
 const DEFAULT_MAX_TURNS = 100;
-
-/** How many times one turn may compact-and-retry after a context overflow. */
-const MAX_OVERFLOW_COMPACTIONS = 2;
 
 /** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
 export type ChatOptions = NonNullable<Parameters<Client["chatModelOptions"]>[1]> & ClientRequestOptions;
@@ -54,6 +59,10 @@ export type AgentBeforeFinishDecision =
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  /** Provider-owned native extensions, scoped by TanStack to this invocation. */
+  middleware?: ChatMiddleware[];
+  /** App policies instantiated for this run and each native child, with that run's cancellation. */
+  sharedMiddleware?: (signal: AbortSignal) => ChatMiddleware[];
   /** Conversation identity shared by TanStack runs and diagnostics. */
   threadId?: string;
 
@@ -73,18 +82,6 @@ export interface RunHooks {
    */
   agentName?: string;
 
-  /** Called with partial content as the model streams. */
-  onStream?: (content: Content[]) => void;
-
-  /** Called before each turn with the empty assistant message and its durable identity. */
-  onTurnStart?: (assistant: Message) => void;
-
-  /** Called after each LLM response is received with the new assistant message. */
-  onTurnEnd?: (assistant: Message) => void;
-
-  /** Authoritative history after each commit, including compaction and stop policies. */
-  onMessagesChange?: (messages: Message[]) => void;
-
   /**
    * Build a ToolContext for a given tool call (chat uses this for elicitation,
    * render, etc.). The harness injects tracing and metadata helpers.
@@ -100,22 +97,11 @@ export interface RunHooks {
   /** Runtime stop gate. Return feedback to continue the same bounded run. */
   beforeFinish?: (context: AgentBeforeFinishContext) => Promise<AgentBeforeFinishDecision>;
 
-  /** Persists wire-visible but UI-hidden feedback injected by a stop policy. */
-  onRuntimeFeedback?: (message: Message) => void | Promise<void>;
-
   /**
    * Transform messages before they're sent to the LLM. Used by chat to prune
    * at summary boundaries.
    */
   prepareMessages?: (messages: Message[]) => Message[] | Promise<Message[]>;
-
-  /**
-   * Called when a model request overflows the context window mid-run (e.g. tool
-   * results ballooned it after the proactive compaction). Return a compacted
-   * copy of the messages to retry with, or the same array to give up. Lets the
-   * loop recover instead of failing the whole turn.
-   */
-  onContextOverflow?: (messages: Message[]) => Message[] | Promise<Message[]>;
 
   /** Cap on model calls in one run. Defaults to a safety bound; a runaway
    * tool-calling loop stops here rather than never terminating. */
@@ -133,19 +119,78 @@ export interface RunHooks {
   parentContext?: AgentContext;
 }
 
-/**
- * Application lifecycle adapter around TanStack's agent loop. TanStack owns
- * streaming, tool argument parsing, dispatch, errors, and loop continuation.
- * Wingman owns durable workspace results and post-run artifact verification.
- */
-export async function run(
+/** Rich workspace results and provider usage are presentation metadata, not a second transcript. */
+export class AgentMessageMetadata {
+  private results = new Map<string, Message>();
+  private usage = new Map<string, Message["usage"]>();
+  private runs = new Map<string, string>();
+
+  result(message: Message) {
+    const part = message.content.find((item) => item.type === "tool_result");
+    if (part) this.results.set(part.id, message);
+  }
+
+  turn(id: string, runId: string, usage?: Message["usage"]) {
+    this.runs.set(id, runId);
+    if (usage) this.usage.set(id, usage);
+  }
+
+  read(messages: UIMessage[], model?: string): Message[] {
+    return fromAIMessages(messages, undefined, model).map((message) => {
+      const part = message.content.find((item) => item.type === "tool_result");
+      const saved = part && this.results.get(part.id);
+      if (saved) return saved;
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === "subagent"
+            ? {
+                ...part,
+                subagent: { ...part.subagent, messages: toAIMessages(this.read(part.subagent.messages, model), model) },
+              }
+            : part,
+        ),
+        runId: this.runs.get(message.id!) ?? message.runId,
+        usage: this.usage.get(message.id!) ?? message.usage,
+      };
+    });
+  }
+}
+
+export interface StreamRunHooks extends RunHooks {
+  metadata: AgentMessageMetadata;
+  parentRunId?: string;
+  resume?: RunAgentResumeItem[];
+  subagentRunId?: string;
+  onComplete?: (result: AgentRunResult) => void | Promise<void>;
+}
+
+export function chatToolDefinition(tool: Tool) {
+  return toolDefinition({
+    name: tool.name,
+    description: tool.description ?? tool.name,
+    inputSchema: z.fromJSONSchema(tool.parameters),
+    lazy: tool.lazy,
+    needsApproval: tool.needsApproval,
+  });
+}
+
+export function approvalTools(tools: Tool[]): ReturnType<typeof chatToolDefinition>[] {
+  return tools.flatMap((tool) => [
+    ...(tool.needsApproval ? [chatToolDefinition(tool)] : []),
+    ...(tool.subagent ? approvalTools(tool.subagent.tools) : []),
+  ]);
+}
+
+/** Browser-local connection stream. chat() owns every model/tool iteration. */
+export async function* streamRun(
   client: Client,
   model: string,
   instructions: string,
   messages: Message[],
   tools: Tool[],
-  hooks: RunHooks = {},
-): Promise<AgentRunResult> {
+  hooks: StreamRunHooks,
+): AsyncGenerator<StreamChunk> {
   const combined = combineAbortSignals(hooks.invocationContext?.signal, hooks.options?.signal);
   const abortController = new AbortController();
   const abort = () => abortController.abort(combined.signal?.reason);
@@ -158,119 +203,77 @@ export async function run(
     })
   ).withSignal(abortController.signal);
   const controller = new AgentRunController({ runId: hooks.runId, invocation, onEvent: hooks.onEvent });
-  let conversation = [...messages];
   let modelCalls = 0;
   let budgetExhausted = false;
-  let compactions = 0;
-  const commit = (next: Message[]) => {
-    conversation = next;
-    hooks.onMessagesChange?.(next);
+  let conversation = messages;
+  let resume = hooks.resume;
+  const reportedResults = new Set(
+    messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
+  );
+  const childCalls = new Map<string, string>();
+  const childResults = new Map<string, Message[]>();
+  let snapshot = () => conversation;
+  const finish = async (status: AgentRunResult["status"], error?: unknown, messages = snapshot()) => {
+    const reason =
+      status === "completed"
+        ? "end_turn"
+        : status === "aborted"
+          ? "abort"
+          : status === "max_turns"
+            ? "max_turns"
+            : status === "interrupted"
+              ? "interrupt"
+              : "error";
+    await hooks.onComplete?.(controller.finish(status, reason, messages, error ? getErrorInfo(error) : undefined));
   };
 
   try {
-    // Only application verification/context recovery can start another run.
-    // The tool/model cycle itself is entirely inside chat().
+    // Only a failed workspace verification can start another bounded chat().
+    // Context compaction is native middleware, not a second retry loop.
     for (;;) {
       abortController.signal.throwIfAborted();
-      const base = conversation;
-      const results = new Map<string, Message>();
-      const reportedResults = new Set<string>();
-      const completed = new Set<string>();
-      const usages = new Map<string, Message["usage"]>();
-      const cycleId = crypto.randomUUID();
       const adapter = client.textAdapter(model, abortController.signal);
       const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
-      let current: Message | undefined;
-      let streamError: Error | undefined;
-      let streamed = false;
       let lastHadTools = false;
-      let projected: Message[] = [];
-      const resolve = (message: Message): Message => {
-        if (message.role === "assistant") return { ...message, usage: usages.get(message.id!) ?? message.usage };
-        const result = message.content.find((part) => part.type === "tool_result");
-        return (result && results.get(result.id)) ?? message;
+      let terminal: Extract<StreamChunk, { type: "RUN_FINISHED" }> | undefined;
+      let failure: Error | undefined;
+      const remember = (ctx: Parameters<NonNullable<ChatMiddleware["onStart"]>>[0]) => {
+        snapshot = () => hooks.metadata.read(modelMessagesToUIMessages([...ctx.messages]), model);
+        for (const message of snapshot()) {
+          const result = message.content.find((part) => part.type === "tool_result");
+          if (result && !reportedResults.has(result.id)) {
+            reportedResults.add(result.id);
+            hooks.onToolResult?.(message);
+          }
+        }
       };
-      const snapshot = (): Message[] => [
-        ...base,
-        ...projected.filter((message) => message.role === "user" || completed.has(message.id!)).map(resolve),
-      ];
-      const finishTurn = () => {
-        if (streamError || abortController.signal.aborted) return;
-        const assistant = projected.findLast((message) => message.role === "assistant");
-        if (!assistant || completed.has(assistant.id!)) return;
-        completed.add(assistant.id!);
-        lastHadTools = assistant.content.some((part) => part.type === "tool_call");
-        commit(snapshot());
-        hooks.onTurnEnd?.(resolve(assistant));
-        controller.emit({ type: "model.completed", turn: modelCalls - 1 });
-      };
-      const processor = new StreamProcessor({
-        chunkStrategy: textStreamStrategy(),
-        events: {
-          onError: (error) => {
-            streamError = error;
-          },
-          onMessagesChange: (native) => {
-            // Project each native update once. Commits and usage updates reuse
-            // this view instead of converting the full stream history again.
-            let turn = 0;
-            projected = fromAIMessages(native, controller.runId, model).map((message) =>
-              message.role === "assistant" ? { ...message, id: `${cycleId}-${turn++}` } : message,
-            );
-            const message = projected.findLast((item) => item.role === "assistant");
-            if (message && !completed.has(message.id!)) {
-              if (message.id !== current?.id) {
-                current = withMessageIdentity({ ...message, content: [] }, controller.runId);
-                hooks.onTurnStart?.(current);
-              }
-              if (!streamed) {
-                streamed = true;
-                controller.emit({ type: "model.streaming", turn: modelCalls - 1 });
-              }
-              hooks.onStream?.(message.content.filter((part) => part.type !== "tool_result"));
-            }
-            const newResults = projected.filter((message) =>
-              message.content.some((part) => part.type === "tool_result" && !reportedResults.has(part.id)),
-            );
-            if (!abortController.signal.aborted && newResults.length) {
-              // Validation errors produce results without onBeforeToolCall.
-              // Commit their owning model turn before publishing the result.
-              finishTurn();
-              commit(snapshot());
-              for (const message of newResults) {
-                const output = message.content.find((part) => part.type === "tool_result");
-                if (output && !reportedResults.has(output.id)) {
-                  reportedResults.add(output.id);
-                  hooks.onToolResult?.(resolve(message));
-                }
-              }
-            }
-          },
-          onStreamEnd: finishTurn,
-        },
-      });
       const middleware: ChatMiddleware = {
-        onConfig: async (ctx, config) => {
+        onFinish: remember,
+        onError: remember,
+        onAbort: remember,
+        onConfig: async (ctx) => {
+          remember(ctx);
           if (ctx.phase !== "beforeModel") return;
           if (modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS) || !invocation.tryConsumeModelCall()) {
             budgetExhausted = true;
-            ctx.abort("Model-call budget exhausted");
-            throw new Error("Model-call budget exhausted");
+            throw Object.assign(new Error("This run reached its model-call limit."), { code: "MAX_TURNS" });
           }
           modelCalls++;
-          const prepared = hooks.prepareMessages ? await hooks.prepareMessages(conversation) : conversation;
-          return { ...config, providerMessages: convertMessagesToModelMessages(toAIMessages(prepared, model)) };
+          if (hooks.prepareMessages)
+            return {
+              providerMessages: convertMessagesToModelMessages(
+                toAIMessages(await hooks.prepareMessages(snapshot()), model),
+              ),
+            };
+          return undefined;
         },
-        onIteration: () => {
-          finishTurn();
-          current = undefined;
-          streamed = false;
+        onIteration: (ctx) => {
+          if (ctx.currentMessageId) hooks.metadata.turn(ctx.currentMessageId, controller.runId);
           controller.emit({ type: "model.started", turn: modelCalls });
         },
-        onUsage: (_ctx, usage) => {
-          const message = projected.findLast((item) => item.role === "assistant");
-          if (message)
-            usages.set(message.id!, {
+        onUsage: (ctx, usage) => {
+          if (ctx.currentMessageId)
+            hooks.metadata.turn(ctx.currentMessageId, controller.runId, {
               model: adapter.responseInfo?.model ?? model,
               reasoningContext: adapter.responseInfo?.reasoningContext,
               inputTokens: usage.promptTokens,
@@ -280,15 +283,46 @@ export async function run(
             });
         },
         onBeforeToolCall: (_ctx, call) => {
-          finishTurn();
-          controller.emit({
-            type: "tool.started",
-            turn: modelCalls - 1,
-            callId: call.toolCallId,
-            name: call.toolName,
-          });
+          controller.emit({ type: "tool.started", turn: modelCalls - 1, callId: call.toolCallId, name: call.toolName });
         },
         onAfterToolCall: (_ctx, call) => {
+          if (tools.some((tool) => tool.name === call.toolName && tool.subagent)) {
+            const child = [...childCalls].find(([, id]) => id === call.toolCallId)?.[0];
+            const mutations = (childResults.get(child ?? "") ?? [])
+              .flatMap((message) => message.content)
+              .flatMap((part) =>
+                part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : [],
+              );
+            hooks.metadata.result(
+              withMessageIdentity(
+                {
+                  id: `result-${call.toolCallId}`,
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      id: call.toolCallId,
+                      name: call.toolName,
+                      arguments: call.toolCall.function.arguments,
+                      result: [
+                        {
+                          type: "text",
+                          text: call.ok
+                            ? typeof call.result === "string"
+                              ? call.result
+                              : (JSON.stringify(call.result) ?? "")
+                            : getErrorInfo(call.error).message,
+                        },
+                      ],
+                      ...(mutations.length ? { meta: { artifactDelta: artifactDelta(mutations) } } : {}),
+                    },
+                  ],
+                  ...(!call.ok ? { error: getErrorInfo(call.error) } : {}),
+                },
+                controller.runId,
+              ),
+            );
+          }
           controller.emit({
             type: "tool.completed",
             turn: modelCalls - 1,
@@ -296,53 +330,56 @@ export async function run(
             name: call.toolName,
           });
         },
-        onToolPhaseComplete: () => {
-          finishTurn();
+        onToolPhaseComplete: (ctx) => {
+          remember(ctx);
+        },
+        onShouldContinue: (_ctx, state) => {
+          lastHadTools = state.lastTurnToolCallCount > 0;
         },
       };
-      const nativeTools = tools.map((tool) =>
-        toolDefinition({
-          name: tool.name,
-          description: tool.description ?? tool.name,
-          inputSchema: z.fromJSONSchema(tool.parameters),
-          lazy: tool.lazy,
-        }).server(async (input, execution) => {
-          const call: ToolCallContent = {
-            type: "tool_call",
-            id: execution?.toolCallId ?? crypto.randomUUID(),
-            name: tool.name,
-            arguments: JSON.stringify(input),
-          };
-          let meta: Record<string, unknown> = {};
-          let content: Record<string, unknown> | undefined;
-          let error: Message["error"];
-          const updateMeta = (next: Record<string, unknown>) => {
-            meta = next;
-            const saved = results.get(call.id);
-            if (saved) results.set(call.id, updateToolResultMeta([saved], call.id, meta)[0]);
-            commit(updateToolResultMeta(conversation, call.id, meta));
-            hooks.onToolMeta?.(call.id, { ...meta });
-          };
-          const result = await tool.function(input as Record<string, unknown>, {
-            ...hooks.createToolContext?.(call),
-            runId: controller.runId,
-            invocationContext: invocation,
-            signal: abortController.signal,
-            agentContext: telemetry.toolContext(call.id),
-            setMeta: updateMeta,
-            updateMeta: (next) => updateMeta({ ...meta, ...next }),
-            setContent: (next) => {
-              content = next;
-            },
-            setError: (next) => {
-              error = next;
-            },
-          });
-          abortController.signal.throwIfAborted();
-          results.set(
-            call.id,
-            withMessageIdentity(
+      const nativeTools = tools
+        .filter((tool) => !tool.subagent)
+        .map((tool) =>
+          chatToolDefinition(tool).server(async (input, execution) => {
+            const call: ToolCallContent = {
+              type: "tool_call",
+              id: execution?.toolCallId ?? crypto.randomUUID(),
+              name: tool.name,
+              arguments: JSON.stringify(input),
+            };
+            let meta: Record<string, unknown> = {};
+            let content: Record<string, unknown> | undefined;
+            let error: Message["error"];
+            let saved: Message | undefined;
+            const updateMeta = (next: Record<string, unknown>) => {
+              meta = next;
+              if (saved) {
+                saved = updateToolResultMeta([saved], call.id, meta)[0];
+                hooks.metadata.result(saved);
+              }
+              hooks.onToolMeta?.(call.id, { ...meta });
+            };
+            const result = await tool.function(input as Record<string, unknown>, {
+              ...hooks.createToolContext?.(call),
+              interruptible: true,
+              inputResponse: execution?.inputResponse,
+              runId: controller.runId,
+              invocationContext: invocation,
+              signal: abortController.signal,
+              agentContext: telemetry.toolContext(call.id),
+              setMeta: updateMeta,
+              updateMeta: (next) => updateMeta({ ...meta, ...next }),
+              setContent: (next) => {
+                content = next;
+              },
+              setError: (next) => {
+                error = next;
+              },
+            });
+            abortController.signal.throwIfAborted();
+            saved = withMessageIdentity(
               {
+                id: `result-${call.id}`,
                 role: "user",
                 content: [
                   {
@@ -358,58 +395,132 @@ export async function run(
                 error,
               },
               controller.runId,
-            ),
-          );
-          // Preserve display metadata above while letting TanStack report
-          // the failure to its tool lifecycle, diagnostics, and model loop.
-          if (error) throw Object.assign(new Error(error.message), { code: error.code });
-          return serializeToolResultForApi(result);
-        }),
-      );
-      try {
-        await processor.process(
-          chat({
-            adapter,
-            messages: toAIMessages(conversation, model),
-            systemPrompts: [instructions],
-            tools: nativeTools,
-            lazyToolsConfig: { includeDescription: "first-sentence" },
-            abortController,
-            runId: controller.runId,
-            threadId: hooks.threadId,
-            debug: aiDebug,
-            modelOptions: client.chatModelOptions(model, hooks.options),
-            agentLoopStrategy: maxIterations((hooks.maxTurns ?? DEFAULT_MAX_TURNS) - modelCalls),
-            middleware: [telemetry, middleware],
+            );
+            hooks.metadata.result(saved);
+            if (error) throw Object.assign(new Error(error.message), { code: error.code });
+            return serializeToolResultForApi(result);
           }),
         );
-        if (streamError) throw streamError;
-        if (!abortController.signal.aborted) {
-          finishTurn();
-          commit(snapshot());
-        }
-      } catch (error) {
+      const agents = tools.flatMap((tool) => {
+        const spec = tool.subagent;
+        if (!spec) return [];
+        return [
+          defineAgent({
+            name: tool.name,
+            description: tool.description ?? tool.name,
+            inputSchema: z.object({ prompt: z.string().min(1) }),
+            run: (ctx) => {
+              const context = captureRequestContext(
+                [spec.runtimeContext, `Delegated task: ${ctx.input.prompt}`].filter(Boolean).join("\n\n"),
+              );
+              return streamRun(
+                client,
+                spec.model,
+                spec.instructions,
+                hooks.metadata.read(
+                  ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
+                  spec.model,
+                ),
+                spec.tools,
+                {
+                  metadata: hooks.metadata,
+                  middleware: spec.middleware,
+                  sharedMiddleware: hooks.sharedMiddleware,
+                  agentName: tool.name,
+                  runId: ctx.runId,
+                  threadId: ctx.threadId,
+                  parentRunId: ctx.parentRunId,
+                  subagentRunId: ctx.subagentRunId,
+                  resume: ctx.resume,
+                  invocationContext: invocation.fork(tool.name),
+                  options: { signal: ctx.abortSignal },
+                  parentContext: telemetry.toolContext(childCalls.get(ctx.subagentRunId) ?? ctx.subagentRunId),
+                  createToolContext: hooks.createToolContext,
+                  onToolMeta: hooks.onToolMeta,
+                  prepareMessages: async (messages) =>
+                    hooks.prepareMessages
+                      ? injectRequestContext(
+                          await hooks.prepareMessages(messages),
+                          `Delegated task: ${ctx.input.prompt}`,
+                        )
+                      : injectRequestContext(messages, context),
+                  onComplete: (result) => {
+                    childResults.set(
+                      ctx.subagentRunId,
+                      result.messages.filter((message) => message.runId?.includes(ctx.subagentRunId)),
+                    );
+                  },
+                },
+              );
+            },
+          }),
+        ];
+      });
+      const stream = chat({
+        adapter,
+        // Outstanding calls belong to an explicit interrupt continuation.
+        // A fresh send must not execute a tool abandoned by Stop or reload.
+        messages: toAIMessages(conversation, model, { pendingToolCalls: !!resume?.length }),
+        systemPrompts: [instructions],
+        tools: nativeTools,
+        ...(agents.length ? { subagents: { agents } } : {}),
+        lazyToolsConfig: { includeDescription: "first-sentence" },
+        abortController,
+        runId: controller.runId,
+        threadId: hooks.threadId,
+        parentRunId: hooks.parentRunId,
+        resume,
+        subagentRunId: hooks.subagentRunId,
+        debug: aiDebug,
+        modelOptions: client.chatModelOptions(model, hooks.options),
+        agentLoopStrategy: maxIterations((hooks.maxTurns ?? DEFAULT_MAX_TURNS) - modelCalls),
+        middleware: [
+          telemetry,
+          middleware,
+          ...(hooks.sharedMiddleware?.(abortController.signal) ?? []),
+          ...(hooks.middleware ?? []),
+        ],
+      });
+      resume = undefined;
+      for await (const chunk of stream) {
+        abortController.signal.throwIfAborted();
+        if (chunk.type === "SUBAGENT_STARTED" && chunk.parentToolCallId)
+          childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
         if (
-          !abortController.signal.aborted &&
-          hooks.onContextOverflow &&
-          compactions < MAX_OVERFLOW_COMPACTIONS &&
-          isContextOverflowError(error)
+          chunk.type === "RUN_FINISHED" &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
         ) {
-          compactions++;
-          controller.emit({ type: "compaction.started", turn: modelCalls });
-          const compacted = await hooks.onContextOverflow(conversation);
-          controller.emit({ type: "compaction.completed", turn: modelCalls });
-          if (compacted !== conversation) {
-            commit(compacted);
-            continue;
-          }
+          terminal = chunk;
+          continue;
         }
-        throw error;
+        if (
+          chunk.type === "RUN_ERROR" &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+        ) {
+          failure = Object.assign(new Error(chunk.message), { code: chunk.code });
+        }
+        if (chunk.type === "TEXT_MESSAGE_CONTENT") controller.emit({ type: "model.streaming", turn: modelCalls - 1 });
+        yield chunk;
       }
-      if (budgetExhausted || (lastHadTools && modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS)))
-        return controller.finish("max_turns", "max_turns", conversation);
       abortController.signal.throwIfAborted();
-      if (hooks.beforeFinish) {
+      if (failure) {
+        await finish(budgetExhausted ? "max_turns" : "failed", failure);
+        return;
+      }
+      conversation = snapshot();
+      if (lastHadTools && modelCalls >= (hooks.maxTurns ?? DEFAULT_MAX_TURNS)) {
+        await finish("max_turns");
+        yield {
+          type: "RUN_ERROR",
+          message: "This run reached its model-call limit. Continue when you are ready.",
+          code: "MAX_TURNS",
+        } as StreamChunk;
+        return;
+      }
+      // A native interrupt is already a completed pause. Never verify or send
+      // feedback until the user has answered it and its tool has finished.
+      const interrupted = terminal?.outcome?.type === "interrupt";
+      if (!interrupted && hooks.beforeFinish) {
         controller.emit({ type: "verification.started", turn: modelCalls });
         const decision = await hooks.beforeFinish({
           runId: controller.runId,
@@ -420,30 +531,69 @@ export async function run(
         abortController.signal.throwIfAborted();
         if (decision.action === "continue") {
           const feedback = withMessageIdentity(decision.feedback, controller.runId);
-          commit([...conversation, feedback]);
-          await hooks.onRuntimeFeedback?.(feedback);
+          conversation = [...conversation, feedback];
+          yield { type: "MESSAGES_SNAPSHOT", messages: toAIMessages(conversation, model) } as StreamChunk;
           continue;
         }
         if (decision.appendContent?.length) {
           const index = conversation.findLastIndex((message) => message.role === "assistant");
-          if (index >= 0)
-            commit(
-              conversation.map((message, i) =>
-                i === index ? { ...message, content: [...message.content, ...decision.appendContent!] } : message,
-              ),
-            );
+          conversation = conversation.map((message, i) =>
+            i === index ? { ...message, content: [...message.content, ...decision.appendContent!] } : message,
+          );
+          yield { type: "MESSAGES_SNAPSHOT", messages: toAIMessages(conversation, model) } as StreamChunk;
         }
       }
-      return controller.finish("completed", "end_turn", conversation);
+      await finish(interrupted ? "interrupted" : "completed", undefined, conversation);
+      if (terminal) yield terminal;
+      return;
     }
   } catch (error) {
-    if (budgetExhausted) return controller.finish("max_turns", "max_turns", conversation);
-    if (abortController.signal.aborted || isAbortError(error))
-      return controller.finish("aborted", "abort", conversation);
-    return controller.finish("failed", "error", conversation, getErrorInfo(error));
+    const aborted = abortController.signal.aborted || isAbortError(error);
+    await finish(budgetExhausted ? "max_turns" : aborted ? "aborted" : "failed", error);
+    if (!aborted) {
+      const info = getErrorInfo(error);
+      yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
+    }
   } finally {
     combined.signal?.removeEventListener("abort", abort);
     combined.cleanup();
+  }
+}
+
+/** One-shot callers use the same native client and stream as the chat UI. */
+export async function run(
+  client: Client,
+  model: string,
+  instructions: string,
+  messages: Message[],
+  tools: Tool[],
+  hooks: RunHooks = {},
+): Promise<AgentRunResult> {
+  const metadata = new AgentMessageMetadata();
+  let result: AgentRunResult | undefined;
+  const initial = toAIMessages(messages, model);
+  const ai: ChatClient = new ChatClient({
+    initialMessages: initial.slice(0, -1),
+    tools: approvalTools(tools),
+    connection: {
+      connect: (_messages, _data, signal) =>
+        streamRun(client, model, instructions, messages, tools, {
+          ...hooks,
+          options: { ...hooks.options, signal: hooks.options?.signal ?? signal },
+          metadata,
+          onComplete: (value) => {
+            result = value;
+          },
+        }),
+    },
+  });
+  try {
+    await ai.append(initial.at(-1) ?? { id: crypto.randomUUID(), role: "user", parts: [] });
+    if (!result) throw new Error("Agent stream did not finish");
+    result.messages = metadata.read(ai.getMessages(), model);
+    return result;
+  } finally {
+    ai.dispose();
   }
 }
 
@@ -451,6 +601,7 @@ export async function runMessages(...args: Parameters<typeof run>): Promise<Mess
   const result = await run(...args);
   if (result.status === "failed")
     throw Object.assign(new Error(result.error?.message ?? "Agent run failed"), { code: result.error?.code });
+  if (result.status === "interrupted") throw new Error("This operation requires an interactive chat to continue.");
   if (result.status === "aborted") throw new DOMException("Agent run was cancelled.", "AbortError");
   if (result.status === "max_turns")
     throw Object.assign(new Error("Agent run reached its turn limit."), { code: "MAX_TURNS" });

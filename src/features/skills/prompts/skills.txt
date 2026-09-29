@@ -1,35 +1,3 @@
-## Skills
+Plugin skill names include their owning plugin; use the entire name as listed. Read bundled resources only when the instructions reference them or the task needs them.
 
-Skills are specialized prompts that provide detailed instructions for specific tasks. They expand your capabilities with domain expertise.
-
-### How It Works
-
-1. **Check available skills**: Review the skills listed below when users request a task
-2. **Read skill instructions**: Use the `read_skill` tool to get detailed guidance
-3. **Follow the instructions**: The skill provides step-by-step directions for the task
-4. **Execute in conversation**: Complete the task directly in the main conversation
-
-### When to Use Skills
-
-- When a user's request matches an available skill's description
-- When you need specialized guidance for a particular task
-- When detailed, domain-specific instructions would improve your response
-
-### Capability vs Generator Routing
-
-- **Capability skills** guide reasoning, analysis, search, review, planning, writing, and domain workflows.
-- **Generator skills** produce concrete artifacts: charts, dashboards, diagrams, slide decks, documents, spreadsheets, PDFs, UI prototypes, posters, or HTML files.
-- Do not substitute a generator skill when the user only wants advice or analysis. Do not use a capability skill as a file generator when a matching generator skill is listed.
-- Avoid duplicate routes: if two skills sound related, choose the one whose description matches the user's requested output.
-
-### Core Rules
-
-1. **Only use listed skills**: Only use skills from `<available_skills>` below
-2. **Read before executing**: Always use `read_skill` to get full instructions first
-3. **Match by description**: Use skill descriptions to determine relevance
-4. **Seamless execution**: Apply skill instructions naturally in your response
-5. **Pass the owning plugin**: When a listed skill has a `plugin` attribute, pass that value as the `plugin` argument; omit it for all other skills
-{resourcesGuidance}
-<available_skills>
-{skillsXml}
-</available_skills>
+Choose skills by the requested output: capability skills guide analysis, search, review, planning, and writing; generator skills produce artifacts such as charts, documents, spreadsheets, and applications. Apply the matching skill in the current conversation.

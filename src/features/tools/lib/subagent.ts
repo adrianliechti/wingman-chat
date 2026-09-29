@@ -1,3 +1,4 @@
+import type { ChatMiddleware } from "@tanstack/ai";
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
@@ -13,6 +14,7 @@ export function createSubagentTool(
   providerInstructions: string,
   baseTools: Tool[],
   runtimeContext = "",
+  middleware: ChatMiddleware[] = [],
 ): Tool {
   const baseInstructions = subagentSystem.trim();
   const extra = providerInstructions.trim();
@@ -20,6 +22,7 @@ export function createSubagentTool(
 
   return {
     name: "agent",
+    subagent: { model, instructions, tools: baseTools, runtimeContext, middleware },
     description: subagentDescription.trim(),
     parameters: {
       type: "object",
@@ -27,7 +30,7 @@ export function createSubagentTool(
         prompt: {
           type: "string",
           description:
-            "A clear, self-contained task description for the agent. Include all necessary context since it has no access to the current conversation.",
+            "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
         },
       },
       required: ["prompt"],
@@ -49,6 +52,7 @@ export function createSubagentTool(
           baseTools,
           {
             agentName: "subagent",
+            middleware,
             parentContext: ctx?.agentContext,
             invocationContext: (ctx?.invocationContext ?? new AgentInvocationContext()).fork("subagent"),
             options: { signal: ctx?.signal },
@@ -76,6 +80,9 @@ export function createSubagentTool(
         }
         if (runResult.status === "failed") {
           return [{ type: "text", text: `Subagent error: ${runResult.error?.message ?? "Unknown error"}` }];
+        }
+        if (runResult.status === "interrupted") {
+          return [{ type: "text", text: "This task needs interactive input. Continue it in chat." }];
         }
 
         const conversation = runResult.messages;

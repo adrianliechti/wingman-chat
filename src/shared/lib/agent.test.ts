@@ -16,7 +16,6 @@ const tool = (execute: Tool["function"] = async () => [{ type: "text", text: "Wr
   parameters: { type: "object", properties: {} },
   function: execute,
 });
-const overflow = () => Object.assign(new Error("Too much context"), { code: "context_length_exceeded", status: 400 });
 
 describe("TanStack agent lifecycle", () => {
   it("discovers deferred tools natively and restores them from saved history", async () => {
@@ -76,9 +75,6 @@ describe("TanStack agent lifecycle", () => {
 
   it("streams and commits turns, results, metadata and usage with stable identities", async () => {
     const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
-    const started: Message[] = [],
-      ended: Message[] = [],
-      changes: Message[][] = [];
     const resultHook = vi.fn();
     const events: { sequence: number; type: string }[] = [];
     const result = await run(
@@ -94,17 +90,15 @@ describe("TanStack agent lifecycle", () => {
         }),
       ],
       {
-        onTurnStart: (message) => started.push(message),
-        onTurnEnd: (message) => ended.push(message),
-        onMessagesChange: (messages) => changes.push(messages),
         onToolResult: resultHook,
         onEvent: (event) => events.push(event),
       },
     );
     expect(result.status).toBe("completed");
+    expect(
+      new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
+    ).toBe(2);
     expect(result.modelCalls.used).toBe(2);
-    expect(started.map((m) => m.id)).toEqual(ended.map((m) => m.id));
-    expect(new Set(started.map((m) => m.id)).size).toBe(2);
     expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
     expect(result.messages[2].content[0]).toMatchObject({
       type: "tool_result",
@@ -114,7 +108,6 @@ describe("TanStack agent lifecycle", () => {
     });
     expect(result.messages.at(-1)?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
     expect(resultHook).toHaveBeenCalledOnce();
-    expect(changes.at(-1)).toBe(result.messages);
     expect(events.map((event) => event.sequence)).toEqual(events.map((_, i) => i));
     expect(complete.mock.calls[1][0].messages).toEqual(
       expect.arrayContaining([expect.objectContaining({ role: "tool", toolCallId: "call" })]),
@@ -129,7 +122,7 @@ describe("TanStack agent lifecycle", () => {
     expect(complete).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps streamed tokens out of durable history updates after a tool result", async () => {
+  it("persists native partial messages without duplicating completed tool results", async () => {
     const complete = vi
       .fn<Parameters<typeof testClient>[0]>()
       .mockResolvedValueOnce(call())
@@ -139,11 +132,11 @@ describe("TanStack agent lifecycle", () => {
         onStream(done.content);
         return done;
       });
-    const changes: Message[][] = [];
-    await run(testClient(complete), "model", "", prompt, [tool()], {
-      onMessagesChange: (messages) => changes.push(messages),
-    });
-    expect(changes.filter((messages) => messages.at(-1)?.content[0]?.type === "tool_result")).toHaveLength(1);
+    const result = await run(testClient(complete), "model", "", prompt, [tool()]);
+    expect(
+      result.messages.flatMap((message) => message.content).filter((part) => part.type === "tool_result"),
+    ).toHaveLength(1);
+    expect(result.messages.at(-1)?.content).toEqual(done.content);
   });
 
   it("never invokes a model after parent cancellation", async () => {
@@ -242,7 +235,7 @@ describe("TanStack agent lifecycle", () => {
       expect.objectContaining({
         role: "tool",
         error: "Remote operation failed",
-        content: "Failure details",
+        content: JSON.stringify({ error: "Remote operation failed" }),
       }),
     );
   });
@@ -299,40 +292,12 @@ describe("TanStack agent lifecycle", () => {
       .mockResolvedValueOnce({ action: "finish", appendContent: [{ type: "artifact_ref", path: "/a.html" }] });
     const result = await run(testClient(complete), "model", "", prompt, [], { beforeFinish: verify });
     expect(result.status).toBe("completed");
+    expect(
+      new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
+    ).toBe(2);
     expect(result.modelCalls.used).toBe(2);
     expect(result.messages.at(-1)?.content.at(-1)).toMatchObject({ type: "artifact_ref", path: "/a.html" });
     expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Verify /a.html");
-  });
-
-  it("retries context overflow with compacted history and bounds recovery", async () => {
-    const compacted: Message[] = [
-      { role: "assistant", content: [{ type: "summary", text: "Previous work" }] },
-      ...prompt,
-    ];
-    const complete = vi.fn().mockRejectedValueOnce(overflow()).mockResolvedValueOnce(done);
-    const result = await run(testClient(complete), "model", "", prompt, [], {
-      onContextOverflow: async () => compacted,
-    });
-    expect(result.status).toBe("completed");
-    expect(result.modelCalls.used).toBe(2);
-    expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Previous work");
-    const repeat = vi.fn().mockRejectedValue(overflow());
-    const failed = await run(testClient(repeat), "model", "", prompt, [], {
-      onContextOverflow: async (messages) => [...messages],
-    });
-    expect(failed.error?.code).toBe("CONTEXT_EXHAUSTED");
-    expect(repeat).toHaveBeenCalledTimes(3);
-  });
-
-  it("stops when compaction itself is cancelled", async () => {
-    const complete = vi.fn().mockRejectedValue(overflow());
-    const result = await run(testClient(complete), "model", "", prompt, [], {
-      onContextOverflow: async () => {
-        throw new DOMException("Cancelled", "AbortError");
-      },
-    });
-    expect(result.status).toBe("aborted");
-    expect(complete).toHaveBeenCalledOnce();
   });
 
   it("isolates lifecycle observer failures and finalizes before reentrant observers", async () => {

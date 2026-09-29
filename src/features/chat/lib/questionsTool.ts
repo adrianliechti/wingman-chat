@@ -1,3 +1,5 @@
+import { MCPInputRequiredError } from "@tanstack/ai-mcp";
+import type { ElicitationResult } from "@/shared/types/elicitation";
 import { HelpCircle } from "lucide-react";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
 import type { ElicitationPrimitiveSchema, ElicitationSchema } from "@/shared/types/elicitation";
@@ -96,7 +98,7 @@ export const ASK_QUESTIONS_TOOL: Tool = {
   },
   function: async (args: Record<string, unknown>, context?: ToolContext) => {
     context?.signal?.throwIfAborted();
-    if (!context?.elicit) {
+    if (!context?.elicit && !context?.interruptible) {
       return errorResult(
         "Structured questions aren't available in this context — ask in plain chat text instead.",
         context,
@@ -134,19 +136,29 @@ export const ASK_QUESTIONS_TOOL: Tool = {
 
       switch (q.type) {
         case "boolean":
-          properties[id] = { type: "boolean", title: label, description };
+          properties[id] = { type: "boolean", title: label, ...(description !== undefined ? { description } : {}) };
           break;
         case "number":
-          properties[id] = { type: "number", title: label, description };
+          properties[id] = { type: "number", title: label, ...(description !== undefined ? { description } : {}) };
           break;
         case "select":
-          properties[id] = { type: "string", title: label, description, oneOf: options };
+          properties[id] = {
+            type: "string",
+            title: label,
+            ...(description !== undefined ? { description } : {}),
+            oneOf: options,
+          };
           break;
         case "multi_select":
-          properties[id] = { type: "array", title: label, description, items: { anyOf: options } };
+          properties[id] = {
+            type: "array",
+            title: label,
+            ...(description !== undefined ? { description } : {}),
+            items: { anyOf: options },
+          };
           break;
         default:
-          properties[id] = { type: "string", title: label, description };
+          properties[id] = { type: "string", title: label, ...(description !== undefined ? { description } : {}) };
       }
 
       if (q.required === true) required.push(id);
@@ -165,7 +177,14 @@ export const ASK_QUESTIONS_TOOL: Tool = {
     const message =
       typeof args.message === "string" && args.message.trim() ? args.message.trim() : "A few quick questions:";
 
-    const result = await context.elicit({ message, requestedSchema });
+    if (context.interruptible && !context.inputResponse) {
+      throw new MCPInputRequiredError("form", { message, requestedSchema });
+    }
+    const result: ElicitationResult = context.inputResponse
+      ? context.inputResponse.status === "cancelled"
+        ? { action: "cancel" }
+        : (context.inputResponse.payload as ElicitationResult)
+      : await context.elicit!({ message, requestedSchema });
 
     if (result.action !== "accept") {
       return [{ type: "text", text: JSON.stringify({ answered: false, action: result.action }) }];

@@ -48,7 +48,7 @@ it("splits a native message containing several tool rounds into ordered stored t
 
 it("uses the framework's incomplete state for saved cancelled calls and excludes orphan results", () => {
   const native = toAIMessages([
-    { role: "assistant", content: [call] },
+    { role: "assistant", content: [{ ...call, incomplete: true }] },
     { role: "user", content: [{ ...result, id: "orphan" }] },
     { role: "user", content: [{ type: "text", text: "Try again" }] },
   ]);
@@ -92,4 +92,50 @@ it("translates old reasoning only for the producing model and keeps native signa
     "original",
   );
   expect(toAIMessages(stored, "original")[0].parts[0]).toMatchObject({ signature: "opaque-native" });
+});
+
+it("preserves domain-only parts and identities through JSON persistence", () => {
+  const messages: Message[] = [
+    {
+      id: "user",
+      role: "user",
+      content: [
+        { type: "text", text: "Edit this" },
+        { type: "artifact_ref", path: "/draft.md", revision: "v1" },
+        { type: "artifact_selection", path: "/draft.md", text: "Selected text" },
+      ],
+    },
+    { id: "feedback", role: "user", content: [{ type: "runtime_feedback", source: "verification", text: "Fix it" }] },
+  ];
+  let restored = messages;
+  for (let i = 0; i < 3; i++) restored = fromAIMessages(JSON.parse(JSON.stringify(toAIMessages(restored))));
+  expect(restored.map(({ id, content }) => ({ id, content }))).toEqual(
+    messages.map(({ id, content }) => ({ id, content })),
+  );
+});
+
+it("preserves a completed pending tool call for interrupt resume", () => {
+  const native = toAIMessages([{ id: "assistant", role: "assistant", content: [call] }]);
+  expect(native[0].parts[0]).toMatchObject({ state: "input-complete" });
+  expect(convertMessagesToModelMessages(native)[0].toolCalls?.[0].id).toBe(call.id);
+});
+
+it("keeps media filenames and reasoning model identities through native persistence", () => {
+  const messages: Message[] = [
+    {
+      role: "user",
+      content: [
+        { type: "image", name: "photo.jpg", data: "blob:sha256-image", contentType: "image/jpeg" },
+        { type: "audio", name: "voice.wav", data: "blob:sha256-audio", contentType: "audio/wav" },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [{ type: "reasoning", id: "reason", text: "Plan", signature: "private-signature", model: "producer" }],
+    },
+  ];
+  const restored = fromAIMessages(JSON.parse(JSON.stringify(toAIMessages(messages))));
+  expect(restored[0].content).toEqual(messages[0].content);
+  expect(restored[1].content).toEqual(messages[1].content);
+  expect(toAIMessages(restored, "other-model")[1].parts[0]).toMatchObject({ signature: undefined });
 });

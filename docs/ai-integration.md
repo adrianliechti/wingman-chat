@@ -11,10 +11,13 @@ frontend.
   middleware. `@tanstack/ai-openai` supplies the gateway's Responses and media
   adapters, including provider serialization and SDK retries. Interrupted response
   streams fail the run; there is no custom replay of partially streamed requests.
-- `@tanstack/ai-client` owns realtime conversation state, client tool execution,
-  and dictation recording through its native `AudioRecorder`.
+- `@tanstack/ai-client` owns chat messages, streaming, batch queueing, interrupts,
+  client persistence, realtime state, and dictation through `AudioRecorder`.
+- `@tanstack/ai-compaction` owns provider-context trimming and summarization.
 - `@tanstack/ai-mcp` owns MCP initialization, discovery, calls, resources, prompts,
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
+- `@tanstack/ai-skills` owns skill catalogs, loading, resource tools, and per-run
+  activation through its portable skills API.
 - MCP apps use `AppFrame` and `AppBridge` from `@mcp-ui/client`, the renderer used
   by TanStack's `MCPAppResource`. It owns iframe initialization and delivery of
   initial tool input and results.
@@ -28,13 +31,18 @@ execution requirement. The installed package sources define the precise APIs.
 
 ## Shared execution and removed code
 
-Chat, delegated agents, and interpreter `llm`/`vision` calls all use `agent.run`
-and the same native `chat()` loop. `Client.complete()` and its separate stream
-processor have been deleted. Isolated helper calls still receive only their
-own prompt and no tools; they share cancellation, invocation budgets, error
-handling, and final-answer selection with the main runner. `Client` retains
-provider configuration, structured-output tasks, media activities, and gateway
-endpoint contracts.
+Chat connects `ChatClient` directly to browser-local `streamRun`, which calls
+native `chat()`. The connection forwards TanStack's run, parent, thread, and
+resume context. There is no separate application `StreamProcessor`, token
+buffer, tool-execution loop, queue controller, or recursive queue drain.
+Delegation uses `defineAgent` and native nested streams. One-shot interpreter
+`llm`/`vision` calls use the same stream through a short `run` helper, with only
+their own prompt and no tools.
+
+`Client.complete()` and `Client.summarizeHistory()` have been deleted. `Client`
+retains provider configuration, structured-output tasks, media activities, and
+gateway endpoint contracts. Unused per-turn/message callbacks were removed;
+observers use native middleware hooks.
 
 The application no longer creates `invoke_agent` or `execute_tool` spans around
 TanStack's own spans. Native [OpenTelemetry middleware](https://tanstack.com/ai/latest/docs/advanced/otel)
@@ -44,11 +52,11 @@ when the browser has no asynchronous context manager. This removes duplicate
 tool spans and duration reporting. Structured results also rely on TanStack's
 schema validation instead of parsing the validated value a second time.
 
-The storage projection converts each native message update once; lifecycle
-commits reuse that projection and attach current usage and display metadata.
-Restoring tool results uses a call-id index instead of repeatedly searching the
-entire preceding history. The persisted format and stable run/turn identities
-remain compatible with existing conversations.
+`aiMessages.ts` is a storage/UI projection, not another transcript owner.
+`ChatClient` owns live messages; an adapter writes them to the existing chat
+store and OPFS persistence queue. A small metadata cache attaches rich workspace
+results, usage, and run identities. The boundary retains attachment names and
+media types, reasoning model identity, artifact references, and widget results.
 
 Dictation uses the native recorder's encoded blob directly, following the
 [audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
@@ -59,6 +67,31 @@ encoding module and its exports have been deleted. Realtime voice keeps its
 PCM worklet because that is the gateway's streaming protocol.
 
 ## Additional native features
+
+Skills follow the [portable skills guide](https://tanstack.com/ai/latest/docs/skills/agent-skills)
+and [custom source contract](https://tanstack.com/ai/latest/docs/skills/writing-adapters).
+A bytes-only source connects the selected OPFS library, lazy Studio templates,
+and installed plugins to `withSkills`. The middleware adds the catalog and
+`load_skill`; `createResourceTool` supplies `read_skill_resource`. The handwritten
+catalog XML, loading schemas, resource tool implementation, and skill-content
+envelope have been removed. The default native catalog budget is 4,000 estimated
+tokens; exceeding it fails explicitly rather than silently dropping skills.
+
+Providers can supply native chat middleware through `ToolProvider.chat`. The
+same filtered selection reaches main chat and delegated runs, including agents
+invoked from voice. Realtime itself uses the native tool factories and catalog
+renderer because it has no chat middleware. Activation belongs to one run or
+voice tools instance, so duplicate loads return TanStack's short marker without
+suppressing a different conversation. The skill editor reuses instructions and
+edits already present in the current run.
+
+Plugin skill names are qualified (`plugin:skill`, with URL-encoded plugin ids)
+in both the catalog and interpreter mount paths. This fixes resource collisions
+between same-named plugin and personal skills. Compaction retains the full
+native skill result, including resources and compatibility, and ignores later
+already-loaded markers. Saved `read_skill` results remain readable; their plugin
+argument is used to distinguish legacy identities. New calls use `load_skill`
+with `name`, and `read_skill_resource` with `skill` and `path`.
 
 MCP tools use [lazy tool discovery](https://tanstack.com/ai/latest/docs/tools/lazy-tool-discovery).
 Chat initially sends the native discovery tool with a short catalog (tool names
@@ -73,12 +106,9 @@ round trips, so discovery does not require an application cache. Media results
 remain native content parts. Removed or disabled tools cannot be re-enabled by
 an old discovery result. The chat displays discovery as **Find tools**.
 
-Streaming uses TanStack's `CompositeStrategy`, combining word and punctuation
-boundaries with a three-chunk batch. This reduces partial-word UI updates, while
-the native processor flushes remaining text when the message ends. Tool and
-reasoning events retain their native timing. MCP `isError` results also reach
-TanStack's failure lifecycle while retaining the original widget result and
-display metadata.
+Streaming uses the native client's immediate strategy so Stop retains every
+received token. There is no custom text buffer to flush. MCP `isError` results
+reach TanStack's failure lifecycle while preserving widget and display data.
 
 Enable [native debug logging](https://tanstack.com/ai/latest/docs/advanced/debug-logging)
 with `VITE_AI_DEBUG=true npm run dev`. It covers chat, structured output, speech,
@@ -86,29 +116,73 @@ and transcription, including provider frames and tool arguments/results in the
 browser console. The switch is disabled in production builds. Chat runs now
 also pass the stable workspace chat id as TanStack's `threadId`.
 
-## Guide review and remaining boundaries
+## Queueing, interrupts, and persistence
 
-The following guides were reviewed against the installed APIs. These are further
-migration opportunities, with specific behavior to preserve:
+[Message queueing](https://tanstack.com/ai/latest/docs/chat/queueing) uses
+`whenBusy: "queue"` and `drain: "batch"`. Pending sends are displayed and can be
+removed using native queue IDs. Stop, failure, and switching conversations discard
+queued messages. The previous held-message policy and manual retry controls have
+been removed. Retry retains completed tool work and removes the failed answer.
+A fresh send excludes abandoned calls from model execution; only an explicit
+interrupt resume may execute an unanswered historical tool call.
 
-| Guide                                                                                                                                                           | Integration consideration                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Compaction](https://tanstack.com/ai/latest/docs/advanced/compaction)                                                                                           | Native strategies rewrite provider context and can preserve the full transcript. Replacing the current policy must also retain the exact active user request, active skill instructions, persisted summary markers, summarizer fallback, and encrypted reasoning handling. Adding a second compactor would give two policies control of the same history.         |
-| [Persistence](https://tanstack.com/ai/latest/docs/persistence/overview) and [resumable streams](https://tanstack.com/ai/latest/docs/resumable-streams/overview) | Native client persistence is viable with a workspace adapter. OPFS currently owns messages and attachment lifetimes. A reload terminates execution in this tab; storage alone cannot keep an in-flight model run alive.                                                                                                                                           |
-| [MCP client input](https://tanstack.com/ai/latest/docs/tools/mcp-input)                                                                                         | Modern form/sampling resume works through native tools and interrupts. The public raw `callTool` API does not accept an input response, while native tool execution normalizes away the complete result needed by saved widgets. Legacy form/URL elicitation remains supported by the existing transport boundary; modern input-required resume is not yet wired. |
-| [Devtools](https://tanstack.com/ai/latest/docs/getting-started/devtools)                                                                                        | The panel needs registered `ChatClient`/framework hook state. The current workspace uses `StreamProcessor` directly. Native console diagnostics work now; a panel requires moving client lifecycle ownership too.                                                                                                                                                 |
-| [Portable skills](https://tanstack.com/ai/latest/docs/skills/agent-skills) and [memory](https://tanstack.com/ai/latest/docs/memory/overview)                    | Both accept custom browser-backed sources/adapters. The workspace still owns plugin-qualified skills, script mounts, editable memory files, and learning rules. These need source adapters and saved-history migration, rather than a second catalog or memory store.                                                                                             |
-| [Subagents](https://tanstack.com/ai/latest/docs/chat/subagents)                                                                                                 | Native children stream nested parts and support interrupts. Adoption must carry shared invocation budgets, selected tools, workspace updates, and existing subagent result metadata into those parts.                                                                                                                                                             |
-| [Code Mode](https://tanstack.com/ai/latest/docs/code-mode/code-mode)                                                                                            | The QuickJS driver supports browsers. Tool batching is a possible addition, but is not a replacement for the existing Python/JavaScript interpreters' files, packages, and artifact output.                                                                                                                                                                       |
+`ask_questions` uses TanStack's resumable tool-input protocol. `ChatInterrupts`
+renders native generic form interrupts and opt-in
+[tool approvals](https://tanstack.com/ai/latest/docs/tools/tool-approval), with
+native batching, cancellation, staging, and resume. Questions in a parallel tool
+batch wait for all answers. No blanket approval policy is added. The existing
+schema-driven form renders the controls; native interrupts own their lifecycle.
+Legacy MCP transport elicitation and realtime still use the small live-callback
+bridge because those requests cannot be resumed by replaying the tool.
 
-The main remaining architectural duplication is the persisted Wingman message
-format alongside native UI messages. Removing that translation requires a
-storage/UI migration that preserves attachment references, artifact selections,
-summary markers, and saved MCP widget results. Wrapping `StreamProcessor` in a
-`ChatClient` while both formats still exist would add another state owner.
-Likewise, plugging the current summary policy into native compaction unchanged
-would add middleware without deleting the policy. These boundaries remain
-explicit rather than introducing parallel implementations.
+[Client persistence](https://tanstack.com/ai/latest/docs/persistence/client-persistence)
+saves messages and pending interrupt descriptors through the existing store.
+Approval definitions are registered before hydration. A reload can restore a
+question or approval and resume it without replaying completed sibling tools.
+Only paused interrupts retain a resume pointer: this browser-only application
+has no durable executor that could continue a running generation after reload.
+
+## Compaction and application middleware
+
+[withCompaction](https://tanstack.com/ai/latest/docs/advanced/compaction) checks
+provider context before each model call, including after tool output. Its
+`clearToolResults()` strategy runs first, followed by `summarizeOldest()` when
+needed. Summaries use native `chat()` and telemetry. The configured model and
+threshold remain respected; disabling compaction disables these strategies.
+The full saved transcript stays intact. Custom context estimation, summary
+replacement, the summarizer client method, and overflow retry branches are gone.
+Old saved summary markers remain readable.
+
+[Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
+handles provider-only request preparation, model-call budgets, lifecycle events,
+and rich tool metadata. A small policy keeps loaded skill instructions when
+compaction removes their original tool result: native skill activation is
+deduplicated within a run. Compaction and this policy also run in native children,
+with each child's cancellation signal. Compaction uses the framework's estimates
+and recent-message retention; it does not guarantee that an oversized latest
+request fits, and no reactive overflow retry is performed.
+
+The [agentic cycle](https://tanstack.com/ai/latest/docs/chat/agentic-cycle) is
+TanStack's `chat()` loop with `maxIterations`, tool validation, and execution.
+One bounded application wrapper remains for workspace verification after a
+final answer. It can provide repair feedback and restart `chat()`, sharing the
+same invocation budget. `onShouldContinue` can veto tool-loop continuation, but
+cannot restart a finished answer; putting that retry into an observer hook would
+not remove the need for the wrapper. Paused interrupts skip verification.
+
+[Native subagents](https://tanstack.com/ai/latest/docs/chat/subagents) receive
+parent context and a delegated task, stream nested message parts, and can pause
+for input. They inherit selected capabilities, attachment preparation, workspace
+access, cancellation, and the shared model-call budget. Their artifact mutations
+reach parent verification. Realtime's `agent` tool uses the same one-shot runner
+and returns the final text because the voice protocol has no nested chat cards.
+
+The remaining optional integrations are the devtools panel (now that ChatClient
+owns state), native memory storage, and code mode. Modern MCP input-required
+resume still needs a separate integration: the public raw `callTool` API does
+not accept input responses, while native tool execution normalizes away the full
+initial result required by saved widgets. Existing legacy MCP form/URL requests
+continue through the transport bridge.
 
 ## Compatibility boundaries
 
@@ -116,8 +190,8 @@ explicit rather than introducing parallel implementations.
 Native messages can include several model/tool rounds, so the storage projection
 splits them into ordered assistant and tool-result turns with durable identities.
 Existing media, reasoning payloads, artifacts, and tool display metadata remain
-readable. `agent.ts` supplies workspace lifecycle hooks, shared subagent budgets,
-context compaction, and artifact verification around the native loop.
+readable. `agent.ts` supplies native tool definitions, application middleware,
+shared invocation budgets, and the bounded workspace verification wrapper.
 
 `aiProvider.ts` selects dynamic gateway model aliases with `extendAdapter`, keeps
 cancellation attached to provider requests, and omits an empty multipart model

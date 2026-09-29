@@ -38,7 +38,7 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
       title,
       hasMessage,
       currentModel,
-      abortController,
+      signal,
     }: {
       id: string;
       runId: string;
@@ -46,7 +46,7 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
       title?: string;
       hasMessage: boolean;
       currentModel: Model;
-      abortController: AbortController;
+      signal?: AbortSignal;
     }) => {
       latestRunByChatRef.current.set(id, runId);
       // Kick off the combined title + classification call in parallel with the model turn so
@@ -75,10 +75,10 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
             sanitizeForClassification(conversation),
             categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
             riskConfigs.map((r) => ({ id: riskSlug(r.name), description: r.description })),
-            { effort: classificationEffort, signal: abortController.signal },
+            { effort: classificationEffort, signal },
           )
           .then(({ title, categories: detectedCategories, risks: detectedRisks }) => {
-            if (abortController.signal.aborted || latestRunByChatRef.current.get(id) !== runId) return;
+            if (signal?.aborted || latestRunByChatRef.current.get(id) !== runId) return;
             if (title) {
               updateChat(id, () => ({ title }));
             }

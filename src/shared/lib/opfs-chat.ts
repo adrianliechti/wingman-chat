@@ -98,6 +98,7 @@ export interface StoredChat {
   updated: string | null;
   model: Chat["model"];
   messages: StoredMessage[];
+  aiResume?: Chat["aiResume"];
 }
 
 /**
@@ -219,6 +220,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
     updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
     model: chat.model,
     messages: extractedMessages,
+    aiResume: chat.aiResume,
   };
 }
 
@@ -256,6 +258,7 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
     updated: stored.updated ? new Date(stored.updated) : null,
     model: stored.model,
     messages: rehydratedMessages,
+    aiResume: stored.aiResume,
   };
 }
 

@@ -2,6 +2,7 @@ import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
 import { useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
+import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 
 const state = vi.hoisted(() => ({
@@ -71,6 +72,27 @@ describe("chat prompt context", () => {
     expect(firstInstructions).not.toContain("active_file");
     expect(firstRuntime).toContain("/first.md");
     expect(second.runtimeContext()).toContain("/second.md");
+  });
+
+  it("selects native chat middleware and realtime tools under the same provider policy", async () => {
+    state.providers = [
+      createSkillsProvider(
+        [{ name: "reports", description: "Create reports", loadContent: () => "Verify every report." }],
+        { id: "skills", name: "Skills", description: "Fixture" },
+      )!,
+    ];
+    const chat = context();
+    expect(chat.middleware()).toHaveLength(1);
+    expect(chat.instructions()).not.toContain("Create reports"); // Native middleware supplies the catalog.
+    expect((await chat.tools()).map((tool) => tool.name)).toEqual(["ask_questions", "agent"]);
+    const voice = context(undefined, "voice");
+    expect(voice.middleware()).toEqual([]);
+    expect(voice.instructions()).toContain("Create reports");
+    expect((await voice.tools()).map((tool) => tool.name)).toContain("load_skill");
+    const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["skills"] } });
+    expect(disabled.middleware()).toEqual([]);
+    expect((await disabled.tools()).map((tool) => tool.name)).toEqual(["ask_questions"]);
+    expect(disabled.instructions()).not.toContain("Plugin skill names");
   });
 
   it("does not expose editor context when the model excludes artifact tools", () => {
