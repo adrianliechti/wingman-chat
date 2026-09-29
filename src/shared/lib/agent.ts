@@ -17,7 +17,6 @@ import { z } from "zod";
 import {
   withMessageIdentity,
   updateToolResultMeta,
-  type Content,
   type Message,
   type Tool,
   type ToolCallContent,
@@ -368,10 +367,7 @@ export async function* streamRun(
                 onToolMeta: hooks.onToolMeta,
                 prepareMessages: async (messages) =>
                   hooks.prepareMessages
-                    ? injectRequestContext(
-                        await hooks.prepareMessages(messages),
-                        `Delegated task: ${ctx.input.prompt}`,
-                      )
+                    ? injectRequestContext(await hooks.prepareMessages(messages), `Delegated task: ${ctx.input.prompt}`)
                     : injectRequestContext(messages, context),
                 onComplete: (result) => {
                   childResults.set(
@@ -422,10 +418,7 @@ export async function* streamRun(
         terminal = chunk;
         continue;
       }
-      if (
-        chunk.type === "RUN_ERROR" &&
-        (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
-      ) {
+      if (chunk.type === "RUN_ERROR" && (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)) {
         failure = Object.assign(new Error(chunk.message), { code: chunk.code });
       }
       yield chunk;

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, Message, Tool, ToolContext } from "@/shared/types/chat";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
-import type { AgentBeforeFinishDecision } from "@/shared/lib/agent";
+import type { verifyArtifacts } from "@/features/artifacts/lib/artifact-verifier";
 import { MemoryManager } from "@/features/agent/lib/memoryManager";
 import { memoryRevision } from "@/features/agent/lib/memoryDocument";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
@@ -18,7 +18,7 @@ const fixture = vi.hoisted(() => ({
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
   classify: vi.fn(),
   artifacts: false,
-  verify: vi.fn<() => Promise<AgentBeforeFinishDecision>>(),
+  verify: vi.fn<typeof verifyArtifacts>(),
   memory: undefined as MemoryManager | undefined,
 }));
 vi.mock("@/shared/config", () => ({
@@ -35,7 +35,7 @@ vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ current
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
   useArtifacts: () => ({ isAvailable: fixture.artifacts, setFileSystem: vi.fn(), setEditRequestHandler: vi.fn() }),
 }));
-vi.mock("@/features/artifacts/lib/artifact-stop-policy", () => ({ applyArtifactStopPolicy: fixture.verify }));
+vi.mock("@/features/artifacts/lib/artifact-verifier", () => ({ verifyArtifacts: fixture.verify }));
 vi.mock("@/features/artifacts/lib/fs", () => ({
   FileSystemManager: class {
     chatId: string;
@@ -126,7 +126,7 @@ beforeEach(() => {
   fixture.chat = {};
   fixture.artifacts = false;
   fixture.memory = undefined;
-  fixture.verify.mockReset().mockResolvedValue({ action: "finish" });
+  fixture.verify.mockReset().mockResolvedValue([]);
   fixture.complete.mockReset();
   fixture.classify.mockReset().mockResolvedValue({ title: "Test", categories: [], risks: [] });
   vi.stubGlobal("window", { setTimeout, clearTimeout });
@@ -169,25 +169,30 @@ describe("chat run integration", () => {
     expect((await manager.snapshot()).state.jobs).toHaveLength(1);
   });
 
-  it("repairs and references saved artifacts without a declaration tool", async () => {
+  it("gives workspace findings to the next native model turn", async () => {
     fixture.artifacts = true;
-    fixture.verify
-      .mockResolvedValueOnce({
-        action: "continue",
-        feedback: {
-          role: "user",
-          content: [{ type: "runtime_feedback", source: "verification", text: "Fix the missing local script." }],
+    fixture.tools = [
+      {
+        name: "work",
+        parameters: { type: "object" },
+        function: async (_args, context) => {
+          context?.setMeta?.({ artifactDelta: { mutations: [{ operation: "create", path: "/game.html" }] } });
+          return [{ type: "text", text: "Saved" }];
         },
-      })
-      .mockResolvedValueOnce({ action: "finish", appendContent: [{ type: "artifact_ref", path: "/game.html" }] });
-    fixture.complete.mockResolvedValue(assistant("Game created."));
+      },
+    ];
+    fixture.verify.mockResolvedValue([
+      { id: "html.local-ref", scope: "/game.html", status: "fail", message: "Fix the missing local script." },
+    ]);
+    fixture.complete
+      .mockResolvedValueOnce(call)
+      .mockResolvedValueOnce(assistant("The local script still needs fixing."));
     await harness().sendMessage(user("Build a game"));
-    expect(fixture.verify).toHaveBeenCalledTimes(2);
-    expect(fixture.verify).toHaveBeenCalledWith(
-      expect.objectContaining({ chatId: "chat", fs: { chatId: "chat" }, runId: expect.any(String) }),
-    );
+    expect(fixture.verify).toHaveBeenCalledOnce();
+    expect(fixture.verify).toHaveBeenCalledWith({ chatId: "chat" }, new Set(["/game.html"]), expect.any(AbortSignal));
     expect(fixture.complete).toHaveBeenCalledTimes(2);
-    expect(fixture.chats[0].messages.at(-1)?.content.at(-1)).toEqual({ type: "artifact_ref", path: "/game.html" });
+    expect(JSON.stringify(fixture.complete.mock.calls[1][0].messages)).toContain("Fix the missing local script.");
+    expect(JSON.stringify(fixture.chats[0].messages)).not.toContain("Workspace verification findings");
   });
 
   it("retains late tool metadata across later history commits", async () => {

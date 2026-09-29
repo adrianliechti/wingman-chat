@@ -113,6 +113,70 @@ for (const existingChat of [false, true]) {
   });
 }
 
+test("activity labels vary across responses and stay stable while composing", async ({ page }) => {
+  await page.addInitScript(() => {
+    let id = 0;
+    crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`;
+  });
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  const activity = page.getByRole("status", { name: "Assistant is working" });
+  const labels = new Set<string>();
+  for (let turn = 1; turn <= 4; turn++) {
+    await input.fill("Think about this");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(turn);
+    await expect(activity).toBeVisible();
+    const label = (await activity.textContent())!;
+    labels.add(label);
+    await input.fill("A draft while waiting");
+    await expect(activity).toHaveText(label);
+    await input.fill("");
+    await page.evaluate(() => window.reactUiE2E.finish("Done"));
+    await expect(activity).toHaveCount(0);
+  }
+  expect(labels.size).toBeGreaterThan(1);
+});
+
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`large text chunks render progressively and Stop retains the full text (${reducedMotion})`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Stream a response");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    const burst = "Hello 🌍. A received text chunk. ".repeat(30);
+    const lengths = await page.evaluate(async (text) => {
+      const sizes: number[] = [];
+      const observer = new MutationObserver(() => {
+        const value = [...document.querySelectorAll('[data-role="assistant"]')].at(-1)?.textContent?.trim() ?? "";
+        if (text.startsWith(value) && sizes.at(-1) !== value.length) sizes.push(value.length);
+      });
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+      window.reactUiE2E.stream(text);
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      observer.disconnect();
+      return sizes;
+    }, burst);
+    expect(lengths.some((length) => length > 0 && length < burst.trim().length)).toBe(
+      reducedMotion === "no-preference",
+    );
+    await expect(page.locator('[data-role="assistant"]').last()).toHaveText(burst.trim());
+
+    const final = burst + "More text that must survive Stop. ".repeat(30);
+    await page.evaluate((text) => {
+      window.reactUiE2E.stream(text);
+      // Stop while the newly received burst is still being revealed.
+      setTimeout(() => document.querySelector<HTMLButtonElement>('button[title="Stop generating (Esc)"]')?.click(), 30);
+    }, final);
+    await expect(page.getByRole("button", { name: "Stop generating (Esc)", exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
+    await page.evaluate(() => window.reactUiE2E.finish("Late provider completion"));
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
+  });
+}
+
 test("compiled chat keeps stream DOM stable, measures the composer and updates virtualized search", async ({
   page,
 }) => {
@@ -259,6 +323,9 @@ test("hi then long Markdown keeps the start readable; Latest follows until the r
   await scroll.hover();
   await page.mouse.wheel(0, 2000);
   await expect.poll(gap).toBeLessThan(3);
+  // WebKit can update scrollTop before delivering the scroll event that
+  // restores follow mode. Wait for the UI to observe reaching the end.
+  await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 650, height: 450 });
   await expect.poll(gap).toBeLessThan(3);
   await input.fill("Another question");

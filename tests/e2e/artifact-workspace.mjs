@@ -191,9 +191,8 @@ export async function createArtifactWorkspace(artifactModule, initial = {}) {
 
   const source = { list, read, write, writeBatch, remove, move };
   const artifactFs = {
-    async listFiles() {
-      return Promise.all((await list()).map((entry) => read(entry.path)));
-    },
+    listEntries: list,
+    getFile: read,
   };
 
   return {

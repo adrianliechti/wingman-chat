@@ -70,12 +70,7 @@ function relativeArtifactPath(basePath: string, reference: string): string | nul
   return normalizeArtifactPath(`/${resolved.join("/")}`) ?? null;
 }
 
-function verifyHtml(
-  path: string,
-  content: string,
-  existingPaths: Set<string>,
-  checks: Check[],
-): void {
+function verifyHtml(path: string, content: string, existingPaths: Set<string>, checks: Check[]): void {
   const document = new DOMParser().parseFromString(content, "text/html");
   checks.push(
     document.documentElement
@@ -133,11 +128,7 @@ function verifyHtml(
   }
 }
 
-async function verifyBinaryPackage(
-  path: string,
-  content: string,
-  checks: Check[],
-): Promise<void> {
+async function verifyBinaryPackage(path: string, content: string, checks: Check[]): Promise<void> {
   const lower = path.toLowerCase();
   const bytes = dataUrlToBytes(content)?.bytes;
   if (!bytes) {
@@ -283,15 +274,25 @@ export async function verifyArtifacts(
       if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
         const bitmap = await createImageBitmap(contentToBlob(file.content, file.contentType));
         checks.push(
-          check("image.decode", path, bitmap.width > 0 && bitmap.height > 0 ? "pass" : "fail",
-            `Image decodes at ${bitmap.width}×${bitmap.height}.`),
+          check(
+            "image.decode",
+            path,
+            bitmap.width > 0 && bitmap.height > 0 ? "pass" : "fail",
+            `Image decodes at ${bitmap.width}×${bitmap.height}.`,
+          ),
         );
         bitmap.close();
       }
     } catch (error) {
       signal?.throwIfAborted();
-      checks.push(check("artifact.verify", path, "fail",
-        `Verification could not complete: ${error instanceof Error ? error.message : String(error)}`));
+      checks.push(
+        check(
+          "artifact.verify",
+          path,
+          "fail",
+          `Verification could not complete: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
     }
   }
   signal?.throwIfAborted();

@@ -1,4 +1,5 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
 import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
 import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
@@ -81,7 +82,7 @@ function isUserPrompt(message: Message): boolean {
 /**
  * Collect the artifact files written during the assistant turn ending at
  * `assistantIndex` — gathered from every tool result since the preceding user
- * prompt. Deduplicated, in first-seen order. Used to show the created files as
+ * prompt. Deduplicated, respecting moves and deletions. Shows generated files as
  * chips on the assistant's completion message.
  */
 export function collectTurnArtifactPaths(messages: Message[], assistantIndex: number): string[] {
@@ -101,6 +102,11 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
         continue;
       }
       if (part.type !== "tool_result") continue;
+      const delta = artifactDeltaFromMeta(part.meta);
+      if (delta) {
+        updateArtifactPaths(seen, delta.mutations);
+        continue;
+      }
       if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
       for (const path of toolResultArtifactPaths(part)) seen.add(path);
     }

@@ -1,8 +1,7 @@
 import JSZip from "jszip";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ArtifactJobSchema } from "@/shared/types/artifact";
 import type { FileSystemManager } from "./fs";
-import { verifyArtifactJob } from "./artifact-verifier";
+import { verifyArtifacts } from "./artifact-verifier";
 
 const CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types";
 const PACKAGE_RELATIONSHIPS = "http://schemas.openxmlformats.org/package/2006/relationships";
@@ -40,38 +39,24 @@ async function pptxDataUrl(): Promise<string> {
 }
 
 describe("artifact OOXML verification", () => {
-  it("reports authored PPTX slide order and paths from relationships", async () => {
+  it("verifies authored PPTX slides through package relationships", async () => {
     const path = "/deck.pptx";
     const file = {
       path,
       content: await pptxDataUrl(),
       contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     };
-    const fs = { listFiles: async () => [file] } as unknown as FileSystemManager;
-    const now = new Date().toISOString();
-    const job = ArtifactJobSchema.parse({
-      id: "verify-pptx",
-      chatId: "chat",
-      kind: "slides",
-      primaryPath: path,
-      expected: { units: 2 },
-      phase: "validating",
-      sourceRefs: [],
-      skillRefs: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const manifest = await verifyArtifactJob(fs, job);
-
-    expect(manifest.verification.status).toBe("clean");
-    expect(manifest.verification.checks).toContainEqual(
-      expect.objectContaining({ id: "ooxml.package", status: "pass" }),
+    const fs = { listEntries: async () => [file], getFile: async () => file };
+    const checks = await verifyArtifacts(fs, [path]);
+    expect(checks.every((item) => item.status === "pass")).toBe(true);
+    expect(checks).toContainEqual(expect.objectContaining({ id: "ooxml.package", status: "pass" }));
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        id: "pptx.slides",
+        status: "pass",
+        message: "PPTX declares 2 logical slide(s).",
+      }),
     );
-    expect(manifest.units).toEqual([
-      { ordinal: 1, path: "ppt/slides/cover.xml", status: "ready" },
-      { ordinal: 2, path: "ppt/slides/closing.xml", status: "ready" },
-    ]);
   });
 });
 
@@ -101,61 +86,67 @@ describe("html library references", () => {
   beforeAll(() => vi.stubGlobal("DOMParser", FakeDOMParser));
   afterAll(() => vi.unstubAllGlobals());
 
-  function htmlJob(primaryPath: string) {
-    const now = new Date().toISOString();
-    return ArtifactJobSchema.parse({
-      id: "job",
-      chatId: "chat",
-      kind: "html",
-      primaryPath,
-      phase: "building",
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
   function htmlFs(files: Array<{ path: string; content: string }>): FileSystemManager {
     return {
-      listFiles: async () => files.map((file) => ({ ...file, contentType: "text/html" })),
+      listEntries: async () => files,
+      getFile: async (path: string) => files.find((file) => file.path === path),
     } as unknown as FileSystemManager;
   }
-  const ids = (checks: Array<{ id: string; status: string }>) =>
-    checks.map((item) => `${item.id}:${item.status}`);
+  const ids = (checks: Array<{ id: string; status: string }>) => checks.map((item) => `${item.id}:${item.status}`);
 
   it("accepts virtual .lib references that exist in no file", async () => {
-    const manifest = await verifyArtifactJob(
-      htmlFs([{ path: "/pages/a.html", content: '<html><body><script src="../.lib/echarts.js"></script></body></html>' }]),
-      htmlJob("/pages/a.html"),
+    const checks = await verifyArtifacts(
+      htmlFs([
+        { path: "/pages/a.html", content: '<html><body><script src="../.lib/echarts.js"></script></body></html>' },
+      ]),
+      ["/pages/a.html"],
     );
-    expect(ids(manifest.verification.checks)).toContain("html.library:pass");
-    expect(ids(manifest.verification.checks)).not.toContain("html.local-ref:fail");
-    expect(manifest.files.map((file) => file.path)).toEqual(["/pages/a.html"]);
+    expect(ids(checks)).toContain("html.library:pass");
+    expect(ids(checks)).not.toContain("html.local-ref:fail");
   });
 
   it("rejects unknown library names", async () => {
-    const manifest = await verifyArtifactJob(
+    const checks = await verifyArtifacts(
       htmlFs([{ path: "/a.html", content: '<script src=".lib/react.js"></script>' }]),
-      htmlJob("/a.html"),
+      ["/a.html"],
     );
-    const failure = manifest.verification.checks.find((item) => item.id === "html.library");
+    const failure = checks.find((item) => item.id === "html.library");
     expect(failure?.status).toBe("fail");
     expect(failure?.message).toContain(".lib/echarts.js");
   });
 
+  it("reads changed files only and checks local dependencies against the index", async () => {
+    const fs = htmlFs([
+      { path: "/game.html", content: '<script src="game.js"></script><img src="missing.png">' },
+      { path: "/game.js", content: "start()" },
+      { path: "/unrelated.html", content: '<script src="missing.js"></script>' },
+    ]);
+    const read = vi.spyOn(fs, "getFile");
+    const checks = await verifyArtifacts(fs, ["/game.html"]);
+    expect(read.mock.calls).toEqual([["/game.html"]]);
+    expect(checks).toContainEqual(expect.objectContaining({ id: "html.local-ref", status: "pass" }));
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        id: "html.local-ref",
+        status: "fail",
+        message: "Missing local reference: missing.png (/missing.png)",
+      }),
+    );
+    expect(checks.every((check) => check.scope === "/game.html")).toBe(true);
+  });
+
   it("flags inline library source", async () => {
-    const big = await verifyArtifactJob(
+    const big = await verifyArtifacts(
       htmlFs([{ path: "/a.html", content: `<script>${"x".repeat(150_000)}</script>` }]),
-      htmlJob("/a.html"),
+      ["/a.html"],
     );
-    expect(ids(big.verification.checks)).toContain("html.inline-library:fail");
-    const banner = await verifyArtifactJob(
+    expect(ids(big)).toContain("html.inline-library:fail");
+    const banner = await verifyArtifacts(
       htmlFs([{ path: "/a.html", content: "<script>/*! Apache ECharts */var e=1</script>" }]),
-      htmlJob("/a.html"),
+      ["/a.html"],
     );
-    expect(ids(banner.verification.checks)).toContain("html.inline-library:fail");
-    const small = await verifyArtifactJob(
-      htmlFs([{ path: "/a.html", content: "<script>init()</script>" }]),
-      htmlJob("/a.html"),
-    );
-    expect(ids(small.verification.checks)).not.toContain("html.inline-library:fail");
+    expect(ids(banner)).toContain("html.inline-library:fail");
+    const small = await verifyArtifacts(htmlFs([{ path: "/a.html", content: "<script>init()</script>" }]), ["/a.html"]);
+    expect(ids(small)).not.toContain("html.inline-library:fail");
   });
 });

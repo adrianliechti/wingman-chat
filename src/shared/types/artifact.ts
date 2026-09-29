@@ -36,6 +36,21 @@ export function artifactDeltaFromMeta(meta: Record<string, unknown> | undefined)
   return parsed.success ? parsed.data : null;
 }
 
+/** Keep generated-file paths current as tools update, move, or remove them. */
+export function updateArtifactPaths(paths: Set<string>, mutations: ArtifactMutation[]): void {
+  for (const mutation of mutations) {
+    for (const path of paths) {
+      if (
+        path === mutation.path ||
+        path.startsWith(`${mutation.path}/`) ||
+        (mutation.from && (path === mutation.from || path.startsWith(`${mutation.from}/`)))
+      )
+        paths.delete(path);
+    }
+    if (mutation.operation !== "delete") paths.add(mutation.path);
+  }
+}
+
 /** Who produced an artifact revision and why. Stored with the revision log. */
 export const RevisionOriginSchema = z.object({
   actor: z.enum(["assistant", "user", "system"]),

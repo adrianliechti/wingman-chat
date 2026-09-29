@@ -114,8 +114,12 @@ remain native content parts. Removed or disabled tools cannot be re-enabled by
 an old discovery result. The chat displays discovery as **Find tools**.
 
 Streaming uses the native client's immediate strategy so Stop retains every
-received token. There is no custom text buffer to flush. MCP `isError` results
-reach TanStack's failure lifecycle while preserving widget and display data.
+received token. Markdown reveals large incoming chunks across animation frames,
+catching up within 100 ms of the latest update. This affects presentation only:
+the native transcript and persistence receive complete chunks immediately.
+Finishing or stopping shows the full received text, and reduced-motion settings
+disable the reveal. MCP `isError` results reach TanStack's failure lifecycle while
+preserving widget and display data.
 
 Enable [native debug logging](https://tanstack.com/ai/latest/docs/advanced/debug-logging)
 with `VITE_AI_DEBUG=true npm run dev`. It covers chat, structured output, speech,
@@ -171,15 +175,27 @@ request fits, and no reactive overflow retry is performed.
 
 The [agentic cycle](https://tanstack.com/ai/latest/docs/chat/agentic-cycle) is
 TanStack's `chat()` loop with `maxIterations(100)`, tool validation, and execution.
-The limit applies independently to each parent, child, and repair invocation.
+The limit applies independently to each parent and child, including tool calls
+used to repair their work.
 The application no longer maintains a shared model-call budget, custom turn
 counter, or synthetic `MAX_TURNS` failure/Continue action. Native iteration-limit
 completion keeps the produced messages and follows TanStack's normal outcome.
-One bounded application wrapper remains for workspace verification after a
-final answer. The artifact policy allows at most two repairs and can provide
-feedback to restart `chat()`. `onShouldContinue` can veto tool-loop continuation, but
-cannot restart a finished answer; putting that retry into an observer hook would
-not remove the need for the wrapper. Paused interrupts skip verification.
+Workspace verification is middleware inside this cycle. `onToolPhaseComplete`
+collects changed paths from tool-result metadata; `onConfig` checks those files
+before the next model call and supplies provider-only findings. The model repairs
+failures through ordinary tool calls within the native iteration limit, or
+explains unresolved findings. Verification no longer restarts a finished answer
+or enforces a separate repair budget. Job/manifest persistence and readiness
+phases are gone. HTML dependency, Office, PDF, image, and syntax checks remain
+browser-local. Only changed files are read, with the workspace index used for
+dependency checks. Interrupted runs restore changed paths from saved tool
+results when continuing. Artifact chips also use those results, including
+subagent writes, moves, and deletions.
+
+The loading indicator derives from ChatClient's loading state. Before an
+assistant message exists, the UI projects a temporary placeholder without adding
+it to the saved transcript. Its message identity varies the label between
+responses while keeping it stable during a response.
 
 [Native subagents](https://tanstack.com/ai/latest/docs/chat/subagents) receive
 parent context and a delegated task, stream nested message parts, and can pause
@@ -201,8 +217,8 @@ continue through the transport bridge.
 Native messages can include several model/tool rounds, so the storage projection
 splits them into ordered assistant and tool-result turns with durable identities.
 Existing media, reasoning payloads, artifacts, and tool display metadata remain
-readable. `agent.ts` supplies native tool definitions, application middleware,
-and the bounded workspace verification wrapper.
+readable. `agent.ts` supplies native tool definitions and application middleware;
+TanStack owns the full model/tool cycle.
 
 `aiProvider.ts` selects dynamic gateway model aliases with `extendAdapter`, keeps
 cancellation attached to provider requests, and omits an empty multipart model

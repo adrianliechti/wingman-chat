@@ -64,21 +64,6 @@ function resultTexts(messages, toolName) {
     .map((part) => part.text);
 }
 
-function artifactJob(kind, primaryPath, runId, sourceRefs = []) {
-  const now = new Date().toISOString();
-  return artifactModule.ArtifactJobSchema.parse({
-    id: `challenge-${crypto.randomUUID()}`,
-    chatId: "gateway-challenge-chat",
-    runId,
-    kind,
-    primaryPath,
-    phase: "validating",
-    sourceRefs,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
 function productionFileTools(workspace) {
   return fileToolsModule.createFileTools(workspace.source, {
     namespace: "artifacts",
@@ -220,26 +205,31 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           const result = await run(
             client,
             model,
-            `Call unstable_fixture with attempt 1. If it fails, follow its retry instruction. After it succeeds, reply with its marker. A runtime verifier may request one final correction; follow that feedback exactly.`,
+            `Call unstable_fixture with attempt 1. If it fails, follow its retry instruction. After it succeeds, reply with its marker. Verification feedback follows tool execution; follow that feedback exactly.`,
             [user("Recover the unstable fixture.")],
             [tool],
             {
               agentName: "challenge-tool-recovery",
               agentLoopStrategy: maxIterations(6),
-              middleware: [observeRun(events)],
-              beforeFinish: async () => {
-                verificationCount++;
-                if (attempts.length < 2) {
-                  return { action: "continue", feedback: user("The fixture has not recovered. Retry its tool now.") };
-                }
-                if (verificationCount === 1) {
-                  return {
-                    action: "continue",
-                    feedback: user(`Verifier correction: reply with exactly ${marker} and no other text.`),
-                  };
-                }
-                return { action: "finish" };
-              },
+              middleware: [
+                observeRun(events),
+                {
+                  onConfig: (ctx, config) => {
+                    if (ctx.phase !== "beforeModel" || !attempts.length) return;
+                    verificationCount++;
+                    const feedback =
+                      attempts.length < 2
+                        ? "The fixture has not recovered. Retry its tool now."
+                        : `Verifier correction: reply with exactly ${marker} and no other text.`;
+                    return {
+                      providerMessages: [
+                        ...(config.providerMessages ?? config.messages),
+                        { role: "user", content: feedback },
+                      ],
+                    };
+                  },
+                },
+              ],
               onToolMeta: (_id, meta) => metaUpdates.push(meta),
             },
           );
@@ -249,11 +239,10 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           assert.match(lastAssistantText(result.messages), new RegExp(marker));
           assert.equal(verificationCount, 2);
           assert(
-            result.messages.some(
-              (message) =>
-                message.role === "user" &&
-                message.content.some((part) => part.type === "text" && part.text.includes("Verifier correction")),
+            !result.messages.some((message) =>
+              message.content.some((part) => part.type === "text" && part.text.includes("Verifier correction")),
             ),
+            "Provider-only verification must not become a user message",
           );
           const results = contentParts(result.messages, "tool_result").filter((part) => part.name === tool.name);
           assert.equal(results.length, 2);
@@ -498,7 +487,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
       );
 
       void test(
-        "repairs an invalid structured artifact and verifies a multi-file manifest",
+        "repairs an invalid structured artifact and verifies the resulting files",
         async () => {
           const model = modelIds[modelIndex];
           const workspace = await createArtifactWorkspace(artifactModule, {
@@ -563,13 +552,14 @@ Do not skip the intentional invalid write or its edit repair.`,
             assert(deltas.length >= 4);
             assert(deltas.flatMap((delta) => delta.mutations).every((mutation) => mutation.revision));
 
-            const manifest = await verifierModule.verifyArtifactJob(
-              workspace.artifactFs,
-              artifactJob("data", "/result.json", events[0].runId, ["/sources/note.txt"]),
+            const checks = await verifierModule.verifyArtifacts(workspace.artifactFs, [
+              "/result.json",
+              "/sources/note.txt",
+            ]);
+            assert(
+              checks.every((check) => check.status === "pass"),
+              JSON.stringify(checks),
             );
-            assert.equal(manifest.verification.status, "clean", JSON.stringify(manifest.verification));
-            assert.equal(manifest.files.find((file) => file.path === "/result.json")?.role, "primary");
-            assert.equal(manifest.files.find((file) => file.path === "/sources/note.txt")?.role, "source");
             assertEventContract(events, result);
           } finally {
             await workspace.cleanup();

@@ -1,7 +1,7 @@
 import type { ChatMiddleware } from "@tanstack/ai";
 import type { AgentMessageMetadata } from "@/shared/lib/agent";
 import { isUserMessage } from "@/shared/lib/requestContext";
-import { artifactDeltaFromMeta, type ArtifactMutation } from "@/shared/types/artifact";
+import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
 import type { Message } from "@/shared/types/chat";
 import { verifyArtifacts } from "./artifact-verifier";
 import type { FileSystemManager } from "./fs";
@@ -15,30 +15,24 @@ export function artifactVerification(
   const paths = new Set<string>();
   let dirty = false;
   let feedback = "";
-  const track = (mutations: ArtifactMutation[]) => {
-    for (const mutation of mutations) {
-      dirty = true;
-      for (const path of paths) {
-        if (
-          path === mutation.path || path.startsWith(`${mutation.path}/`) ||
-          (mutation.from && (path === mutation.from || path.startsWith(`${mutation.from}/`)))
-        ) paths.delete(path);
-      }
-      if (mutation.operation !== "delete") paths.add(mutation.path);
-    }
+  const track = (meta: Record<string, unknown> | undefined) => {
+    const mutations = artifactDeltaFromMeta(meta)?.mutations ?? [];
+    if (!mutations.length) return;
+    dirty = true;
+    updateArtifactPaths(paths, mutations);
   };
   // Restore the current turn once, including writes completed before an
   // interrupt/reload. Later tool phases use their result IDs, not history scans.
   for (const message of messages.slice(messages.findLastIndex(isUserMessage) + 1)) {
     for (const part of message.content) {
-      if (part.type === "tool_result") track(artifactDeltaFromMeta(part.meta)?.mutations ?? []);
+      if (part.type === "tool_result") track(part.meta);
     }
   }
   return {
     name: "workspace-verification",
     onToolPhaseComplete: (_ctx, { results }) => {
       for (const { toolCallId } of results) {
-        track(artifactDeltaFromMeta(metadata.toolMeta(toolCallId))?.mutations ?? []);
+        track(metadata.toolMeta(toolCallId));
       }
     },
     onConfig: async (ctx, config) => {
@@ -49,6 +43,7 @@ export function artifactVerification(
         if (paths.size) {
           try {
             const checks = await verifyArtifacts(fs, paths, ctx.signal);
+            ctx.signal?.throwIfAborted();
             const findings = checks.filter((item) => item.status !== "pass");
             feedback = findings.length
               ? "Workspace verification findings. Fix failed checks with the available tools before finishing. " +
@@ -62,7 +57,8 @@ export function artifactVerification(
         }
         dirty = false;
       }
-      if (feedback) return {
+      if (!feedback) return;
+      return {
         providerMessages: [...(config.providerMessages ?? config.messages), { role: "user", content: feedback }],
       };
     },

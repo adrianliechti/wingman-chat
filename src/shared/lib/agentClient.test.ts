@@ -1,12 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { ChatClient, type ChatPersistedState, type ChatInterrupt } from "@tanstack/ai-client";
-import {
-  AgentMessageMetadata,
-  approvalTools,
-  streamRun,
-  type AgentRunResult,
-  type AgentBeforeFinishDecision,
-} from "./agent";
+import { AgentMessageMetadata, approvalTools, streamRun, type AgentRunResult } from "./agent";
 import { fromAIMessages, toAIMessages } from "./aiMessages";
 import { testClient } from "./test-support/ai";
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
@@ -27,9 +21,6 @@ function session(
 ) {
   const metadata = new AgentMessageMetadata();
   const finished: AgentRunResult[] = [];
-  const verify = vi
-    .fn<(...args: unknown[]) => Promise<AgentBeforeFinishDecision>>()
-    .mockResolvedValue({ action: "finish" });
   const ai: ChatClient = new ChatClient({
     threadId: "test-chat",
     tools: approvalTools(tools),
@@ -55,11 +46,10 @@ function session(
           onComplete: (result) => {
             finished.push(result);
           },
-          beforeFinish: verify,
         }),
     },
   });
-  return { ai, finished, verify, metadata, store };
+  return { ai, finished, metadata, store };
 }
 
 function bound(interrupt: ChatInterrupt) {
@@ -110,7 +100,6 @@ it("persists paused questions and resumes without repeating completed sibling to
   const original = session(complete, tools);
   await original.ai.sendMessage("Do it");
   expect(original.finished.at(-1)?.status).toBe("interrupted");
-  expect(original.verify).not.toHaveBeenCalled();
   expect(original.ai.getInterruptState().interrupts).toHaveLength(1);
   await expect.poll(() => original.store.value?.resume?.pendingInterrupts?.length).toBe(1);
   original.ai.dispose();
@@ -123,7 +112,6 @@ it("persists paused questions and resumes without repeating completed sibling to
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Written once");
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain('\\"choice\\":\\"A\\"');
   expect(restored.ai.getInterruptState().interrupts).toHaveLength(0);
-  expect(restored.verify).toHaveBeenCalledOnce();
   restored.ai.dispose();
 });
 
@@ -205,10 +193,6 @@ it("streams native subagents and resumes a child's question with its completed w
   await expect.poll(() => original.store.value?.resume?.pendingInterrupts?.length).toBe(1);
   original.ai.dispose();
   const restored = session(complete, [agent], original.store);
-  restored.verify.mockResolvedValue({
-    action: "finish",
-    appendContent: [{ type: "artifact_ref", path: "/child.txt" }],
-  });
   await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
   bound(restored.ai.getInterruptState().interrupts[0]).resolveInterrupt(response);
   await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
@@ -223,6 +207,8 @@ it("streams native subagents and resumes a child's question with its completed w
   expect(children).toHaveLength(1);
   expect(children[0].subagent.status).toBe("finished");
   expect(JSON.stringify(children[0].subagent.messages)).toContain("Child finished");
-  expect(JSON.stringify(restored.verify.mock.calls)).toContain("/child.txt");
+  expect(restored.metadata.toolMeta("delegate")).toMatchObject({
+    artifactDelta: { mutations: [{ operation: "create", path: "/child.txt" }] },
+  });
   restored.ai.dispose();
 });

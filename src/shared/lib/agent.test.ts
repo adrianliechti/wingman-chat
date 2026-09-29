@@ -280,26 +280,4 @@ describe("TanStack agent lifecycle", () => {
     expect(parent).toHaveBeenCalledTimes(2);
     expect(child).toHaveBeenCalledOnce();
   });
-
-  it("retains artifact verification feedback within the same bounded run", async () => {
-    const complete = vi.fn().mockResolvedValue(done);
-    const verify = vi
-      .fn()
-      .mockResolvedValueOnce({
-        action: "continue",
-        feedback: {
-          role: "user",
-          content: [{ type: "runtime_feedback", source: "artifact_stop_policy", text: "Verify /a.html" }],
-        },
-      })
-      .mockResolvedValueOnce({ action: "finish", appendContent: [{ type: "artifact_ref", path: "/a.html" }] });
-    const result = await run(testClient(complete), "model", "", prompt, [], { beforeFinish: verify });
-    expect(result.status).toBe("completed");
-    expect(
-      new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
-    ).toBe(2);
-    expect(complete).toHaveBeenCalledTimes(2);
-    expect(result.messages.at(-1)?.content.at(-1)).toMatchObject({ type: "artifact_ref", path: "/a.html" });
-    expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Verify /a.html");
-  });
 });

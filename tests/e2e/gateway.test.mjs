@@ -298,8 +298,11 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         },
       };
       const artifactFs = {
-        async listFiles() {
-          return [...files.values()].map(({ path, content, contentType }) => ({ path, content, contentType }));
+        async listEntries() {
+          return [...files.values()];
+        },
+        async getFile(path) {
+          return files.get(path);
         },
       };
       const fileTools = fileToolsModule.createFileTools(source, {
@@ -332,7 +335,6 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         0,
       );
 
-      let manifest;
       const result = await run(
         client,
         artifactModel,
@@ -342,43 +344,16 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         {
           agentName: "gateway-artifact-e2e",
           agentLoopStrategy: maxIterations(3),
-          beforeFinish: async ({ runId }) => {
-            const now = new Date().toISOString();
-            const job = artifactModule.ArtifactJobSchema.parse({
-              id: "gateway-artifact-job",
-              chatId: "gateway-artifact-chat",
-              runId,
-              kind: "data",
-              primaryPath: "/result.json",
-              phase: "validating",
-              sourceRefs: [],
-              createdAt: now,
-              updatedAt: now,
-            });
-            manifest = await verifierModule.verifyArtifactJob(artifactFs, job);
-            const primary = manifest.files.find((file) => file.path === manifest.primaryPath);
-            return {
-              action: "finish",
-              appendContent: primary
-                ? [
-                    {
-                      type: "artifact_ref",
-                      jobId: job.id,
-                      path: primary.path,
-                      revision: primary.revision,
-                      displayName: "result.json",
-                    },
-                  ]
-                : [],
-            };
-          },
         },
       );
 
       assert.equal(result.status, "completed", resultDetail(result));
       assert.deepEqual(JSON.parse(files.get("/result.json")?.content ?? "null"), { status: "ok", value: 42 });
-      assert.equal(manifest?.verification.status, "clean", JSON.stringify(manifest?.verification));
-      assert.equal(manifest?.files[0]?.role, "primary");
+      const checks = await verifierModule.verifyArtifacts(artifactFs, ["/result.json"]);
+      assert(
+        checks.every((check) => check.status === "pass"),
+        JSON.stringify(checks),
+      );
 
       const toolResult = result.messages
         .flatMap((message) => message.content)
@@ -387,12 +362,6 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       assert.equal(delta?.mutations[0]?.operation, "create");
       assert.equal(delta?.mutations[0]?.path, "/result.json");
       assert(delta?.mutations[0]?.revision?.startsWith("sha256:"));
-
-      const artifactRef = result.messages
-        .flatMap((message) => message.content)
-        .find((part) => part.type === "artifact_ref");
-      assert.equal(artifactRef?.path, "/result.json");
-      assert.equal(artifactRef?.revision, delta?.mutations[0]?.revision);
     },
     { timeout: REQUEST_TIMEOUT_MS * 2 },
   );

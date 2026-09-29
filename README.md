@@ -174,14 +174,14 @@ npm run dev
 
 The opt-in E2E suites start the application development proxy and run the real `Client` and agent loop against a live
 Wingman gateway. The smoke suite covers model discovery, Responses streaming, tool-call correlation, cancellation, the
-terminal error contract, and a Sonnet 4.6 artifact create/validate/reference flow.
+terminal error contract, and a Sonnet 4.6 artifact creation, validation, and mutation metadata flow.
 
 The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
 that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
 failure, checks interruption reporting, explicit retry and cancellation, exercises model-driven tool recovery, runtime verification,
-nested-agent budgets, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
+nested-agent iteration limits, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
 the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
-workspace to cover invalid structured-file repair, revision/delta metadata, multi-file manifests, and moves. It makes
+workspace to cover invalid structured-file repair, revision/delta metadata, file verification, and moves. It makes
 many real model requests and requires `python3`; use the smoke suite for
 quick checks.
 

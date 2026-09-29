@@ -52,4 +52,37 @@ describe("summarizeToolGroup", () => {
     expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/legacy.txt"]);
     expect(summarizeToolGroup(messages, [1])).toBe("Edited 1 file");
   });
+
+  it("shows subagent outputs and retires moved or deleted files without appended references", () => {
+    const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "Build the files" }] },
+      result(
+        "child",
+        "agent",
+        {},
+        {
+          artifactDelta: {
+            mutations: [
+              { operation: "create", path: "/draft.html" },
+              { operation: "create", path: "/temp/a.txt" },
+            ],
+          },
+        },
+      ),
+      result(
+        "move",
+        "artifacts_move",
+        {},
+        { artifactDelta: { mutations: [{ operation: "move", from: "/draft.html", path: "/game.html" }] } },
+      ),
+      result(
+        "delete",
+        "artifacts_delete",
+        {},
+        { artifactDelta: { mutations: [{ operation: "delete", path: "/temp" }] } },
+      ),
+      { role: "assistant", content: [{ type: "text", text: "Done" }] },
+    ];
+    expect(collectTurnArtifactPaths(messages, 4)).toEqual(["/game.html"]);
+  });
 });
