@@ -184,7 +184,7 @@ that preferred budget; both are capped by the capacity. A zero budget omits the
 request field and lets the provider decide. A zero configured capacity disables
 the internal capacity fallback.
 
-Classification defaults to 8,000 tokens. Other structured helpers, including
+Title generation defaults to 8,000 tokens. Other structured helpers, including
 summarization, rewriting, and conversion, default to 16,000. They are capped by
 the model maximum and do not inherit the larger chat budget; `ParseOptions`
 supports an explicit override. Models with unknown capacity still use provider

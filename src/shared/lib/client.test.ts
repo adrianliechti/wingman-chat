@@ -291,6 +291,241 @@ describe("raw request lifetime", () => {
   });
 });
 
+describe("System One classification", () => {
+  it("asks one Choice over categories and one Noul per risk in a single request", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: "jev-1.13.0",
+          answers: {
+            category: {
+              type: "choice",
+              choice: "legal",
+              probabilities: { legal: 0.9, other: 0.1 },
+              confidence: 0.8,
+            },
+            risk_0: { type: "noul", noul: 0.12 },
+          },
+          usage: { input_tokens: 300, output_tokens: 20 },
+        }),
+      ),
+    );
+    const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "Hi" }] },
+      { role: "assistant", content: [{ type: "text", text: "Hello" }] },
+      { role: "user", content: [{ type: "text", text: "Review this NDA" }] },
+    ];
+
+    const result = await new Client().classifyChat(
+      "jev-latest",
+      messages,
+      [
+        { id: "legal", description: "Legal documents" },
+        { id: "other", description: "Anything else" },
+      ],
+      [
+        {
+          id: "pii",
+          name: "Personal data disclosure",
+          description: "Share personal data. Do not flag mentions of privacy policy.",
+        },
+      ],
+      { effort: "low" },
+    );
+
+    expect(result).toEqual({
+      categories: [{ id: "legal", confidence: 0.8 }],
+      risks: [{ id: "pii", confidence: 0.12 }],
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("http://localhost/api/v1/systemone");
+    const body = JSON.parse(init.body);
+    expect(body.model).toBe("jev-latest");
+    expect(body.effort).toBe("low");
+    expect(body.state).toEqual({
+      earlier_messages: [
+        { role: "user", content: [{ type: "text", text: "Hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "Hello" }] },
+      ],
+      latest_user_message: { role: "user", content: [{ type: "text", text: "Review this NDA" }] },
+    });
+    expect(body.questions.category).toMatchObject({
+      type: "choice",
+      criteria: { legal: "Legal documents", other: "Anything else" },
+    });
+    expect(body.questions.risk_0).toMatchObject({
+      type: "noul",
+      criteria: {
+        true: {
+          name: "Personal data disclosure",
+          description: "Share personal data. Do not flag mentions of privacy policy.",
+        },
+      },
+    });
+  });
+
+  it("uses the same structured state for a single-turn message", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ answers: { risk_0: { type: "noul", noul: 0 } } })));
+    await new Client().classifyChat(
+      "jev-latest",
+      [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+      [],
+      [{ id: "pii", description: "Share personal data" }],
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).state).toEqual({
+      latest_user_message: { role: "user", content: [{ type: "text", text: "Hi" }] },
+      earlier_messages: [],
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("effort");
+  });
+
+  it("skips the request without a user message", async () => {
+    const result = await new Client().classifyChat("jev-latest", [], [{ id: "legal", description: "Legal" }]);
+    expect(result).toEqual({ categories: [], risks: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips classification when neither categories nor risks are configured", async () => {
+    expect(await new Client().classifyChat("gpt-6-luna", prompt)).toEqual({ categories: [], risks: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves content parts in object state and strips saved message metadata", async () => {
+    fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.1 } } }));
+    const latest: Message = {
+      id: "saved-message",
+      runId: "saved-run",
+      createdAt: "2026-09-30T12:00:00Z",
+      role: "user",
+      content: [
+        { type: "text", text: "Explain this diagram." },
+        { type: "image", name: "diagram.png", data: "data:image/png;base64,binary" },
+        { type: "text", text: "Use it only as an educational example." },
+      ],
+    };
+    await new Client().classifyChat(
+      "gpt-6-luna",
+      [latest],
+      [],
+      [{ id: "financial", description: "Official financial calculations" }],
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).state).toEqual({
+      latest_user_message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Explain this diagram." },
+          { type: "text", text: "[image: diagram.png]" },
+          { type: "text", text: "Use it only as an educational example." },
+        ],
+      },
+      earlier_messages: [],
+    });
+    expect(latest.content[1]).toMatchObject({ type: "image", data: "data:image/png;base64,binary" });
+  });
+
+  it("skips a blank latest request instead of reclassifying an older one", async () => {
+    const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "Rank these candidates" }] },
+      { role: "user", content: [{ type: "text", text: " \n " }] },
+    ];
+    expect(
+      await new Client().classifyChat("gpt-6-luna", messages, [], [{ id: "hr", description: "Hiring decisions" }]),
+    ).toEqual({ categories: [], risks: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the human request after a long tool loop and excludes tool output and feedback", async () => {
+    fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.9 } } }));
+    const latest = "Background ".repeat(600) + "Rank these candidates for hiring.";
+    const toolResults: Message[] = Array.from({ length: 8 }, (_, i) => ({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          id: String(i),
+          name: "read",
+          arguments: "{}",
+          result: [{ type: "text", text: "Internal tool output" }],
+        },
+      ],
+    }));
+    await new Client().classifyChat(
+      "gpt-6-luna",
+      [
+        { role: "user", content: [{ type: "text", text: latest }] },
+        ...toolResults,
+        { role: "user", content: [{ type: "runtime_feedback", source: "verification", text: "Internal feedback" }] },
+        { role: "assistant", content: [{ type: "text", text: "Current assistant output" }] },
+      ],
+      [],
+      [{ id: "hr", description: "Hiring decisions" }],
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).state).toEqual({
+      latest_user_message: { role: "user", content: [{ type: "text", text: latest }] },
+      earlier_messages: [],
+    });
+  });
+
+  it("represents attachments as text without sending inline binary data", async () => {
+    fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.1 } } }));
+    await new Client().classifyChat(
+      "gpt-6-luna",
+      [
+        {
+          role: "user",
+          content: [{ type: "image", name: "chart.png", data: "data:image/png;base64,secret" }],
+        },
+      ],
+      [],
+      [{ id: "financial", description: "Official financial calculations" }],
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).state).toEqual({
+      latest_user_message: { role: "user", content: [{ type: "text", text: "[image: chart.png]" }] },
+      earlier_messages: [],
+    });
+    expect(fetchMock.mock.calls[0][1].body).not.toContain("base64");
+  });
+
+  it.each([
+    {},
+    { answers: {} },
+    {
+      answers: { category: { type: "choice", choice: "unknown", confidence: 0.9 }, risk_0: { type: "noul", noul: 0 } },
+    },
+    { answers: { category: { type: "choice", choice: "legal", confidence: 1.1 }, risk_0: { type: "noul", noul: 0 } } },
+    {
+      answers: { category: { type: "choice", choice: "legal", confidence: 0.8 }, risk_0: { type: "noul", noul: -0.1 } },
+    },
+    {
+      answers: {
+        category: { type: "choice", choice: "legal", confidence: 0.8 },
+        risk_0: { type: "choice", choice: "yes", confidence: 0.9 },
+      },
+    },
+  ])("rejects missing or malformed answers instead of reporting no risks: %j", async (body) => {
+    fetchMock.mockResolvedValue(Response.json(body));
+    await expect(
+      new Client().classifyChat(
+        "gpt-6-luna",
+        prompt,
+        [{ id: "legal", description: "Legal" }],
+        [{ id: "pii", description: "Share personal data" }],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("does not send a classification request after cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      new Client().classifyChat("gpt-6-luna", prompt, [{ id: "legal", description: "Legal" }], [], {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("streams each token fragment through the native client without a custom buffer", async () => {
     const deltas = ["Hel", "l", "o", " ", "wo", "rl", "d", "!"];

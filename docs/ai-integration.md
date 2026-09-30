@@ -343,6 +343,27 @@ endpoints keep their existing request helpers; TanStack has no equivalent for
 these endpoint contracts. Workspace persistence, file tools, memory, and audio
 device ownership remain application responsibilities.
 
+Chat classification uses the gateway's `/v1/systemone` endpoint. Each request
+passes one JSON object as `state`, with `latest_user_message` and
+`earlier_messages` containing sanitized message objects. This keeps content parts
+and conversation context structured, excludes tools and runtime feedback, and
+replaces binary attachments with text placeholders. The questions reference
+these fields explicitly: one Choice selects the main category and one independent
+Noul evaluates each risk. Category thresholds use the Choice's `confidence`;
+risk thresholds use the Noul's yes probability. Configured classification
+`effort` is forwarded for API compatibility, but the gateway currently ignores
+it. Its completion adapter explicitly disables reasoning.
+Each risk's true criterion includes its configured name and description:
+question IDs are application keys and are not sent to the underlying model.
+
+This follows the [TypeSafe state guidance](https://docs.typesafe.ai/concepts/state)
+and [OpenRouter classification example](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/jev-classification).
+JevBench's [native adapter](https://github.com/fstandhartinger/jevbench/blob/main/jevbench/adapters/typesafe.py)
+likewise passes the original structured state directly, with rubric definitions
+in the questions rather than encoding them into the content. Questions in one
+request cannot depend on each other's answers; risk warnings take precedence
+over category consent in application code.
+
 ## Verification
 
 Unit integration tests exercise the actual TanStack model loop, OpenAI adapter,
@@ -351,3 +372,14 @@ chat UI, queueing/cancellation, saved conversations, memory, voice devices and
 interruptions, and MCP sandbox behavior. Gateway end-to-end tests additionally
 require a configured live deployment; local mocked transport tests do not prove
 that every deployment alias accepts the native provider schema.
+
+`npm run test:e2e:classification` evaluates the example config against labelled
+synthetic prompts through the real gateway with `effort: "none"`. It checks
+categories above their configured threshold and exact risk sets, including exclusions, follow-ups, topic changes,
+multiple risks, long prompts and multilingual requests. Set
+`WINGMAN_CLASSIFICATION_CONFIG` to another config JSON file to compare wording,
+or `WINGMAN_CLASSIFICATION_REPEATS` to check repeat stability. The summary reports
+raw category accuracy, risk accuracy, accepted category errors and choices below
+the configured confidence threshold. These samples support regression checks; production
+threshold calibration needs representative labelled requests, as described in
+the [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence).

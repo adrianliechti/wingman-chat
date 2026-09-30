@@ -9,7 +9,7 @@ concrete failures.
 The shared chat prompt owns general response and completion behavior. Personas
 set conversational defaults; requested roles, languages, artifact styles, and
 output formats take precedence. Provider prompts own their tool-specific rules.
-Standalone classification, rewriting, optimization, and memory calls need their
+Standalone title, rewriting, optimization, and memory calls need their
 own instructions because they do not inherit the shared chat prompt.
 
 ## September 2026 review

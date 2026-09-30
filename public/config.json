@@ -43,6 +43,106 @@
     "researcher": "web"
   },
   "chat": {
+    "classification": {
+      "model": "gpt-6-luna",
+      "threshold": 0.6
+    },
+    "categories": [
+      {
+        "name": "Writing, Editing, or Translation",
+        "description": "General prose creation or transformation: drafting, rewriting, polishing, summarising supplied text, proofreading, simplifying, localising or translating. Use only when no specialist business or social category fits. Investment text belongs to Investment Content Support; employment text to HR; legal or policy text to Risk/Compliance/Legal; external relationship messages to Client/External Communication; personal greetings and social messages to Social/Personal/Informal."
+      },
+      {
+        "name": "Information Seeking or Explanation",
+        "description": "A direct factual answer, definition, background explanation or general understanding from existing knowledge. Includes explaining what creditworthiness means without assessing anyone. Prefer a specialist business category for domain-specific work, Practical Guidance for instructions, Research for synthesis across sources, and Learning for sustained teaching or practice."
+      },
+      {
+        "name": "Practical Guidance or Process Support",
+        "description": "General how-to help: steps, checklists, templates, methods or execution guidance for accomplishing a task. The requested output is an actionable process, rather than a fact, comparison or finished text. Prefer HR, investment, legal/compliance, business operations or coding when the process belongs to that specialist area."
+      },
+      {
+        "name": "Analysis or Decision Support",
+        "description": "General comparisons, pros and cons, trade-offs, scenarios and decision frameworks outside the specialist business domains. Excludes investment or portfolio recommendations and analysis, employment judgements, credit or underwriting assessments, and legal questions: use their corresponding business categories even when a risk fires. Numerical/table-focused analysis belongs to Data Analysis; gathering and synthesising sources belongs to Research."
+      },
+      {
+        "name": "Data Analysis or Reporting Support",
+        "description": "Analysing or transforming tables, spreadsheets, surveys, operational metrics, dashboards, trends, calculations or reporting outputs. Prefer Investment Content Support for portfolio or investment figures, and Operations, Finance, or Administrative Support for finance operations and credit assessments. Writing runnable code or debugging an analysis belongs to Coding."
+      },
+      {
+        "name": "Coding, Automation, or Technical Help",
+        "description": "The main deliverable is code, SQL, a script, automation, system logic, debugging, technical troubleshooting or architecture. Use this when implementing or fixing a technical system is the requested work, even if it serves a business domain. Independent risk checks still apply to what the implementation will do."
+      },
+      {
+        "name": "Research or Knowledge Work",
+        "description": "Gathering, checking and synthesising information across multiple sources: desk research, company or industry research, literature review or structured topic exploration. Use this when source discovery and evidence synthesis are central, rather than a quick factual answer. Prefer Investment Content Support when the requested result is investment analysis, market commentary or a portfolio action."
+      },
+      {
+        "name": "Client or External Communication Support",
+        "description": "Messages whose recipients are outside the organisation: clients, prospects, partners, regulators or other external parties. Includes meeting arrangements, service updates and relationship communication when the audience is the main purpose. Messages to employees or new colleagues, including welcomes and onboarding for client-facing staff, belong to HR, not this category. Investment substance belongs to Investment Content Support; legal or regulatory substance to Risk/Compliance/Legal."
+      },
+      {
+        "name": "Investment Content Support",
+        "description": "Investment and portfolio work, whether general or client-specific: market or macro commentary, investment education and illustrative portfolio-return examples, rewriting or translating approved investment text, portfolio summaries, investment performance, securities or product analysis, recommendations, allocation and rebalancing. These belong here even when phrased as writing, teaching or decision support, and even when a risk fires. Administrative billing, invoices and fee charging without portfolio analysis belong to Operations/Finance. Writing code belongs to Coding."
+      },
+      {
+        "name": "Risk, Compliance, or Legal Support",
+        "description": "Policies, controls, legal drafting or interpretation, policy summaries, audit support, regulatory wording, issue spotting and compliance communication. Includes requests for legal or compliance judgements; the category identifies the business domain, while risks are assessed separately. Prefer HR for employment assessments, Investment for portfolio actions, and Operations/Finance for credit underwriting."
+      },
+      {
+        "name": "HR or People Support",
+        "description": "Employment and people-management work: recruiting, job descriptions, CVs, interviews, hiring, employee performance, promotion, compensation, discipline, termination, onboarding and staff communications. Includes welcome messages to new colleagues or employees, even in client-facing teams. Includes assessing or ranking individuals even when the HR decision risk fires. Lending and insurance applicants belong to Operations/Finance, not HR."
+      },
+      {
+        "name": "Operations, Finance, or Administrative Support",
+        "description": "Business administration and finance operations: internal procedures, project coordination, budgets, meeting notes, reconciliations and planning. Includes client billing, invoicing, administrative charges and management-fee calculations; lending, creditworthiness, loan approvals, credit limits and insurance eligibility. Use this category for these business tasks even when a risk fires. Portfolio or investment analysis and performance belong to Investment; general metrics to Data Analysis; employment matters to HR."
+      },
+      {
+        "name": "Learning, Training, or Coaching",
+        "description": "An explicit tutoring, practice or coaching interaction: exercises, quizzes, language drills, role-play, training simulations or sustained skill-building. Merely explaining a concept with an example, or wording material for a training handout, is not this category. Investment concepts and fictional portfolio-return examples belong to Investment Content Support, even when intended for training; HR training content to HR; legal/compliance content to Risk/Compliance/Legal. General brief factual explanations belong to Information Seeking."
+      },
+      {
+        "name": "Brainstorming or Creative Ideation",
+        "description": "Generating multiple new ideas, names, campaign concepts, workshop or event concepts, innovations or creative alternatives. Use this for ideation before selecting or developing a deliverable. Prefer Writing for producing a finished text, Analysis for evaluating existing options, and a specialist business category for controlled assessments or recommendations."
+      },
+      {
+        "name": "Social, Personal, or Informal Use",
+        "description": "Personal or social conversation and messages: greetings, congratulations, birthday wishes, friendly chat, informal self-expression or emotional support. Drafting a personal greeting belongs here even though it involves writing. Use a task-specific category for substantive explanations, processes, comparisons, learning exercises or transformations of supplied text that go beyond a social exchange."
+      },
+      {
+        "name": "Other or Unclear",
+        "description": "The main request is missing, unintelligible, too ambiguous or outside every listed category. A request involving a controlled decision still belongs to its closest business category; the independent risk questions identify the concern. Use this only when no substantive category fits."
+      }
+    ],
+    "risks": [
+      {
+        "name": "Human Resources Decision",
+        "severity": "high",
+        "threshold": 0.65,
+        "description": "Employment or workforce judgements about individual people. Flag requests to evaluate, rank, score, compare, select or reject job candidates, CVs, interview performance or employees; recommend hiring, promotion, pay, discipline or termination; or assess an individual's job performance or suitability for a role. This applies even when a human will make the final decision. Do not flag drafting job descriptions, interview questions or evaluation frameworks without assessing individuals, factual CV extraction or summarisation without judgement, or wording a decision already made by a human. Loan applicants, credit scores, insurance applicants and investment clients are not HR subjects unless the request also asks for an employment judgement.",
+        "message": "HR decisions such as hiring, promotion, or disciplinary outcomes must be made by a qualified human decision-maker. Lumen can help draft materials or structure thinking, but cannot evaluate or rank individuals on your behalf."
+      },
+      {
+        "name": "Client-specific investment recommendation or portfolio decision",
+        "severity": "high",
+        "threshold": 0.7,
+        "description": "Creating or evaluating an investment action for a specific client, portfolio, mandate or suitability context. Flag security or product selection, buy/sell/hold recommendations, suitability assessments, proposed allocation changes, trade suggestions, optimisation or rebalancing, and justifications of such actions. Advice framed as a draft, research, preparation or input for a human still qualifies when it recommends or evaluates a client-specific action. Do not flag general market or macro commentary, investment education, or factual summarisation, extraction, translation or rewriting of supplied investment material, including approved client material, when no new recommendation, suitability judgement or portfolio action is requested.",
+        "message": "Investment recommendations and portfolio decisions must follow LGT's approved advisory process. Lumen can support research and preparation, but cannot make or materially influence client-specific investment decisions on your behalf. Please use tools approved by the Investment Solutions team."
+      },
+      {
+        "name": "Business-critical financial calculation",
+        "severity": "high",
+        "threshold": 0.6,
+        "description": "Producing or checking financial figures intended for official use or reliance in client, portfolio, reporting, valuation, risk or performance processes. Flag calculating, verifying, reproducing or producing investment performance, portfolio returns, attribution, P&L, benchmark comparisons, valuations, prices, NAV, yields, fees, exposures or risk metrics in that context. Calling the work a draft or asking for code or spreadsheet formulas does not exclude it when the output will produce or verify those relied-upon figures. Do not flag explanations of methods or formulas, fictional training examples, or clearly informal estimates that are not intended as official or business-critical figures. Merely mentioning financial data is insufficient; the request must ask for producing or checking the figures. For credit or mortgage recommendations, flag this financial-calculation risk only when a calculation or verification is explicitly requested. Recommending a credit limit or mortgage amount, approving credit or judging creditworthiness alone belongs to the credit-decision risk, even if the recommendation contains an amount.",
+        "message": "Business-critical financial calculations must be performed in approved systems. Lumen is not suited for producing official figures or sensitive calculations — use approved calculation, valuation, performance, reporting, or risk tools instead."
+      },
+      {
+        "name": "Credit or Creditworthiness Decision",
+        "severity": "high",
+        "threshold": 0.6,
+        "description": "Credit, underwriting or insurance eligibility judgements about a person or applicant. Flag assessing creditworthiness, producing or interpreting an individual's credit score, approving or denying a loan, setting a credit limit, ranking or risk-rating credit applicants, or determining eligibility for credit, financial products, insurance or essential financial services. A recommendation or preliminary assessment for a human decision-maker still qualifies. Do not flag general explanations of creditworthiness, lending or insurance, factual extraction or summarisation of supplied documents without a credit judgement, or drafting process guidance without assessing an individual. An applicant in a lending or insurance context is not a job candidate; HR risk applies only when an employment judgement is also requested.",
+        "message": "Credit and creditworthiness decisions must follow the formal underwriting process. Lumen cannot assess creditworthiness, score applicants, or determine eligibility — please use approved credit assessment tools and procedures."
+      }
+    ],
     "presets": [
       { "model": "gpt-6-luna", "effort": "low", "verbosity": "low", "label": "GPT-6 Luna" },
       { "model": "gpt-6-luna", "effort": "high", "label": "GPT-6 Luna" },

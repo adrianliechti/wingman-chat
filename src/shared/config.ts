@@ -135,7 +135,7 @@ export interface RiskConfig {
 export interface ClassificationConfig {
   /** Override the model used for classification (defaults to chat.summarizer or the current chat model). */
   model?: string;
-  /** Override classification reasoning effort. Defaults to the model's lowest known supported effort. */
+  /** Optional reasoning effort forwarded to the classification API; support depends on the gateway. */
   effort?: ReasoningEffort;
   /** Default threshold (0..1) applied when a category or risk does not set its own. */
   threshold?: number;

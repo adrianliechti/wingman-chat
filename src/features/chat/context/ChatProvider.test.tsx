@@ -15,6 +15,7 @@ import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { loadChat, storeChat } from "../lib/chatStorage";
 import { readJson } from "@/shared/lib/opfs";
 import { createAgentTool } from "@/features/tools/lib/subagent";
+import type { getConfig } from "@/shared/config";
 
 const fixture = vi.hoisted(() => ({
   chats: [] as Chat[],
@@ -22,9 +23,10 @@ const fixture = vi.hoisted(() => ({
   model: { id: "model", name: "Model", compactThreshold: 1000 } as Model,
   extraModels: [] as Model[],
   agent: null as Agent | null,
-  chat: {} as { compaction?: { threshold?: number } },
+  chat: {} as NonNullable<ReturnType<typeof getConfig>["chat"]>,
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
   classify: vi.fn(),
+  title: vi.fn(),
   artifacts: false,
   verify: vi.fn<typeof verifyArtifacts>(),
   memory: undefined as MemoryManager | undefined,
@@ -33,6 +35,7 @@ vi.mock("@/shared/config", () => ({
   getConfig: () => ({
     client: Object.assign(testClient(fixture.complete), {
       classifyChat: fixture.classify,
+      generateTitle: fixture.title,
     }),
     chat: fixture.chat,
   }),
@@ -163,7 +166,8 @@ beforeEach(() => {
   fixture.memory = undefined;
   fixture.verify.mockReset().mockResolvedValue([]);
   fixture.complete.mockReset();
-  fixture.classify.mockReset().mockResolvedValue({ title: "Test", categories: [], risks: [] });
+  fixture.classify.mockReset().mockResolvedValue({ categories: [], risks: [] });
+  fixture.title.mockReset().mockResolvedValue("Test");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
 afterEach(async () => {
@@ -257,6 +261,119 @@ describe("saved model replacements", () => {
     const context = await harness();
     expect(context.model?.effort).toBeUndefined();
     expect(context.model?.id).toBe("plain");
+  });
+});
+
+describe("chat classification integration", () => {
+  beforeEach(() => {
+    fixture.chat = {
+      classification: { model: "gpt-6-luna", threshold: 0.6, effort: "low" },
+      categories: [{ name: "Writing", description: "Drafting and rewriting" }],
+      risks: [
+        {
+          name: "HR",
+          description: "Hiring decisions",
+          threshold: 0.65,
+          severity: "high",
+          message: "Human decision required.",
+        },
+      ],
+    };
+    fixture.complete.mockResolvedValue(assistant("Done"));
+  });
+
+  it("classifies categories without consent on every turn and forwards configured effort", async () => {
+    fixture.classify.mockResolvedValue({ categories: [{ id: "Writing", confidence: 0.9 }], risks: [] });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Draft an email")));
+    await act(() => context.sendMessage(user("Polish it")));
+    expect(fixture.classify).toHaveBeenCalledTimes(2);
+    expect(fixture.classify).toHaveBeenLastCalledWith(
+      "gpt-6-luna",
+      expect.any(Array),
+      [{ id: "Writing", description: "Drafting and rewriting" }],
+      [{ id: "HR", name: "HR", description: "Hiring decisions" }],
+      expect.objectContaining({ effort: "low", signal: expect.any(AbortSignal) }),
+    );
+    expect(context.pendingConsent).toBeNull();
+    expect(fixture.title).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0.64, 0.65])("uses each risk's threshold, including the boundary (%s)", async (confidence) => {
+    fixture.classify.mockResolvedValue({ categories: [], risks: [{ id: "HR", confidence }] });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Evaluate this candidate")));
+    if (confidence < 0.65) expect(context.pendingConsent).toBeNull();
+    else
+      expect(context.pendingConsent).toMatchObject({
+        kind: "risk",
+        id: "HR",
+        consent: { severity: "high", message: "Human decision required." },
+      });
+  });
+
+  it.each([0.59, 0.6])("uses the default threshold for category consent (%s)", async (confidence) => {
+    fixture.chat.categories![0].consent = "Please acknowledge writing support.";
+    fixture.classify.mockResolvedValue({ categories: [{ id: "Writing", confidence }], risks: [] });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Draft an email")));
+    if (confidence < 0.6) expect(context.pendingConsent).toBeNull();
+    else
+      expect(context.pendingConsent).toMatchObject({
+        kind: "category",
+        id: "Writing",
+        consent: { message: "Please acknowledge writing support." },
+      });
+  });
+
+  it("replaces category consent with a new risk and clears it after a safe request", async () => {
+    fixture.chat.categories![0].consent = true;
+    fixture.classify
+      .mockResolvedValueOnce({ categories: [{ id: "Writing", confidence: 0.9 }], risks: [] })
+      .mockResolvedValueOnce({
+        categories: [{ id: "Writing", confidence: 0.9 }],
+        risks: [{ id: "HR", confidence: 0.9 }],
+      })
+      .mockResolvedValueOnce({ categories: [], risks: [] });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Draft an email")));
+    expect(context.pendingConsent?.kind).toBe("category");
+    await act(() => context.sendMessage(user("Rank these applicants")));
+    expect(context.pendingConsent?.kind).toBe("risk");
+    await act(() => context.sendMessage(user("Hello")));
+    expect(context.pendingConsent).toBeNull();
+  });
+
+  it("shows the highest-confidence risk and remembers acknowledgment within the chat", async () => {
+    fixture.chat.risks!.push({ name: "Credit", description: "Credit decisions" });
+    fixture.classify.mockResolvedValue({
+      categories: [],
+      risks: [
+        { id: "HR", confidence: 0.8 },
+        { id: "Credit", confidence: 0.9 },
+      ],
+    });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Review this application")));
+    expect(context.pendingConsent?.id).toBe("Credit");
+    await act(async () => context.resolveConsent({ action: "accept" }));
+    await act(() => context.sendMessage(user("Review another application")));
+    expect(context.pendingConsent?.id).toBe("HR");
+  });
+
+  it("ignores a late risk result from an older run", async () => {
+    const old = deferred();
+    fixture.classify
+      .mockImplementationOnce(async () => {
+        await old.promise;
+        return { categories: [], risks: [{ id: "HR", confidence: 0.9 }] };
+      })
+      .mockResolvedValueOnce({ categories: [], risks: [] });
+    const context = await harness();
+    await act(() => context.sendMessage(user("First")));
+    await act(() => context.sendMessage(user("Second")));
+    await act(async () => old.resolve());
+    expect(context.pendingConsent).toBeNull();
   });
 });
 
@@ -473,14 +590,14 @@ describe("chat run integration", () => {
     expect(result && "meta" in result && result.meta).not.toHaveProperty("obsolete");
   });
 
-  it("ignores a late classification from an older run", async () => {
+  it("ignores a late title from an older run", async () => {
     const old = deferred();
-    fixture.classify
+    fixture.title
       .mockImplementationOnce(async () => {
         await old.promise;
-        return { title: "Stale title", categories: [], risks: [] };
+        return "Stale title";
       })
-      .mockResolvedValueOnce({ title: "Current title", categories: [], risks: [] });
+      .mockResolvedValueOnce("Current title");
     fixture.complete.mockResolvedValue(assistant("Done"));
     const context = await harness();
     await act(() => context.sendMessage(user("First")));

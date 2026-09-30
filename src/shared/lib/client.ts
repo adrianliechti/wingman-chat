@@ -2,11 +2,18 @@ import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
 import { chat, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
 import { z } from "zod";
-import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
+import instructionsTitleChat from "@/features/chat/prompts/chat-title.txt?raw";
+import { sanitizeForClassification } from "@/features/chat/lib/chatHistory";
+import {
+  type ClassificationItem,
+  type ClassificationMatch,
+  classificationMatches,
+  classificationRequest,
+} from "@/features/chat/lib/classificationQuestions";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
@@ -201,71 +208,38 @@ export class Client {
     };
   }
 
+  async generateTitle(model: string, input: Message[], options: ParseOptions = {}): Promise<string | null> {
+    const history = sanitizeForClassification(input);
+    const result = await this.parse(
+      model,
+      instructionsTitleChat,
+      JSON.stringify({ history }),
+      z.object({ title: z.string().describe("Short, descriptive title. Less than 10 words, no quotes.") }).strict(),
+      "title_chat",
+      options,
+    );
+    return result?.title || null;
+  }
+
+  /** Classifies the latest user message into categories and risks with one System One request. */
   async classifyChat(
     model: string,
     input: Message[],
-    categories: Array<{ id: string; description: string }> = [],
-    risks: Array<{ id: string; description: string }> = [],
-    options: ParseOptions = {},
-  ): Promise<{
-    title: string | null;
-    categories: Array<{ id: string; confidence: number }>;
-    risks: Array<{ id: string; confidence: number }>;
-  }> {
-    const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-    const categoryIds = categories.map((c) => c.id);
-    const riskIds = risks.map((r) => r.id);
-
-    const categoryIdSchema = categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
-    const riskIdSchema = riskIds.length > 0 ? z.enum(riskIds as [string, ...string[]]) : z.string();
-
-    const confidenceSchema = z
-      .number()
-      .describe(
-        "Model confidence that this category or risk applies to the latest user message. " +
-          "A value between 0 and 1, where higher values denote higher confidence. " +
-          "Omit matches with confidence below ~0.5.",
-      );
-
-    const schema = z
-      .object({
-        title: z.string().describe("Short, descriptive title for the conversation. Less than 10 words, no quotes."),
-        categories: z
-          .array(
-            z
-              .object({
-                id: categoryIdSchema.describe("Id of a category from the provided list."),
-                confidence: confidenceSchema,
-              })
-              .strict(),
-          )
-          .describe("Categories that clearly apply to the latest user message. May be empty."),
-        risks: z
-          .array(
-            z
-              .object({
-                id: riskIdSchema.describe("Id of a risk from the provided list."),
-                confidence: confidenceSchema,
-              })
-              .strict(),
-          )
-          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
-      })
-      .strict();
-
-    const result = await this.parse(
-      model,
-      instructionsClassifyChat,
-      JSON.stringify({ categories, risks, history }),
-      schema,
-      "classify_chat",
-      options,
+    categories: ClassificationItem[] = [],
+    risks: ClassificationItem[] = [],
+    requestOptions: ClientRequestOptions & Pick<ParseOptions, "effort"> = {},
+  ): Promise<{ categories: ClassificationMatch[]; risks: ClassificationMatch[] }> {
+    const request = classificationRequest(input, categories, risks);
+    if (!request) return { categories: [], risks: [] };
+    const result = await this.postRaw(
+      "/api/v1/systemone",
+      JSON.stringify({ model, ...request, effort: requestOptions.effort }),
+      (resp) => resp.json(),
+      { "Content-Type": "application/json" },
+      30_000,
+      requestOptions,
     );
-    return {
-      title: result?.title ?? null,
-      categories: result?.categories ?? [],
-      risks: result?.risks ?? [],
-    };
+    return classificationMatches(result?.answers, categories, risks);
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
@@ -632,7 +606,7 @@ export class Client {
     const maxOutputTokens = this.outputTokenBudget(
       model,
       options.maxOutputTokens,
-      name === "classify_chat" ? 8_000 : 16_000,
+      name === "title_chat" ? 8_000 : 16_000,
     );
     options.signal?.throwIfAborted();
     const result = await chat({
