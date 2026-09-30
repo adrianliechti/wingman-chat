@@ -141,10 +141,10 @@ export class MCPClient implements ToolProvider {
             assertCurrent();
             return this.elicit(params);
           },
-          initialized: (result) => {
+          initialized: ({ instructions, serverInfo }) => {
             if (this.connectionVersion !== version) return;
-            this.instructions = result.instructions;
-            if (!this.configIcon) this.icon = pickIcon(result.serverInfo.icons) ?? this.icon;
+            this.instructions = instructions;
+            if (!this.configIcon) this.icon = pickIcon(serverInfo?.icons) ?? this.icon;
           },
           notification: (method, params) => {
             if (this.connectionVersion !== version) return;
@@ -168,6 +168,8 @@ export class MCPClient implements ToolProvider {
         clientOptions: {
           capabilities: {
             elicitation: { form: {}, url: {} },
+            // TanStack declares sampling by default; Wingman cannot answer it.
+            sampling: undefined,
             extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
           },
         },
@@ -279,7 +281,7 @@ export class MCPClient implements ToolProvider {
         while (discovery.dirty && this.client === client) {
           discovery.dirty = false;
           definitions.clear();
-          const nativeTools = client.capabilities.tools ? await client.tools({ lazy: true }) : [];
+          const nativeTools = client.capabilities.tools ? await client.tools() : [];
           if (this.client !== client) return;
           if (discovery.dirty) continue;
           this.toolDefinitions = new Map(
@@ -290,7 +292,7 @@ export class MCPClient implements ToolProvider {
           );
           this.tools = nativeTools.flatMap((native) => {
             const tool = definitions.get(native.metadata.mcp.serverToolName);
-            return tool && !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client, native.lazy)] : [];
+            return tool && !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [];
           });
           this.onToolsChanged?.();
         }
@@ -300,7 +302,7 @@ export class MCPClient implements ToolProvider {
       });
     return discovery.promise;
   }
-  private toTool(tool: MCPTool, client: NativeMCPClient, lazy?: boolean): Tool {
+  private toTool(tool: MCPTool, client: NativeMCPClient): Tool {
     let resourceUri: string | undefined;
     try {
       resourceUri = getToolUiResourceUri(tool);
@@ -312,7 +314,6 @@ export class MCPClient implements ToolProvider {
       title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
-      lazy,
       parameters: tool.inputSchema || {},
       function: async (args, context) => {
         annotateMcpSpan(this.url, context);

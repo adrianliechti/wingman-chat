@@ -81,7 +81,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
       mcpToolName("test", "app"),
       mcpToolName("test", "plain"),
     ]);
-    expect(provider.tools.every((value) => value.lazy)).toBe(true);
+    expect(provider.tools.some((value) => value.lazy)).toBe(false);
     const setMeta = vi.fn();
     const setContent = vi.fn();
     await provider.tools[0].function({}, { setMeta, setContent });
