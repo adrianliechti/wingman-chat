@@ -64,6 +64,22 @@ describe("Bash service commands", () => {
     expect(bridge.ocr).not.toHaveBeenCalled();
   });
 
+  it("forwards max effort to the LLM service", async () => {
+    const bridge = services();
+    const result = await runBash(
+      { code: 'llm --model gpt-6.1-sol --effort max "Solve this problem"' },
+      undefined,
+      createBashCommands(bridge),
+    );
+    expect(result.success, result.error).toBe(true);
+    expect(bridge.llm).toHaveBeenCalledWith(
+      "Solve this problem",
+      { model: "gpt-6.1-sol", system: undefined, effort: "max" },
+      undefined,
+    );
+    expect(result.output).toBe("Résumé 🪽");
+  });
+
   it("returns service errors without a committable snapshot", async () => {
     const bridge = services();
     bridge.llm.mockRejectedValueOnce(new Error("upstream unavailable"));

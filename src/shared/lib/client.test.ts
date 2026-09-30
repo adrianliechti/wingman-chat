@@ -33,7 +33,15 @@ afterEach(() => {
 });
 
 describe("chat output allowances", () => {
-  it.each(["gpt-6-sol", "gpt-6-luna"])("sends %s with reasoning and tools through Responses", async (model) => {
+  it.each([
+    ["gpt-6-sol", "none"],
+    ["gpt-6-luna", "none"],
+    ["gpt-6.1-sol", "low"],
+    ["gpt-6.1-sol", "medium"],
+    ["gpt-6.1-sol", "high"],
+    ["gpt-6.1-sol", "xhigh"],
+    ["gpt-6.1-sol", "max"],
+  ] as const)("sends %s at %s effort with tools through Responses", async (model, effort) => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
     const tool: Tool = {
       name: "write",
@@ -41,12 +49,13 @@ describe("chat output allowances", () => {
       parameters: { type: "object", properties: {}, additionalProperties: false },
       function: async () => [{ type: "text", text: "done" }],
     };
-    await runMessages(new Client(), model, "", prompt, [tool], { options: { effort: "none" } });
+    await runMessages(new Client(), model, "", prompt, [tool], { options: { effort } });
+    expect(String(fetchMock.mock.calls[0][0])).toBe("http://localhost/api/v1/responses");
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
       model,
       max_output_tokens: 64_000,
-      reasoning: { effort: "none" },
+      reasoning: { effort },
     });
     expect(body.tools).toMatchObject([{ type: "function", name: "write" }]);
   });
@@ -68,6 +77,7 @@ describe("chat output allowances", () => {
 
   it.each([
     ["gpt-5.6-sol", 64_000],
+    ["gpt-6.1-sol", 64_000],
     ["gpt-6-sol", 64_000],
     ["gpt-6-luna", 64_000],
     ["gpt-4.1", 32_768],

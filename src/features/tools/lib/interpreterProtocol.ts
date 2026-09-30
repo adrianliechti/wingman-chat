@@ -5,6 +5,7 @@
  */
 
 import type { ImageRenderOptions } from "@/shared/lib/client";
+import type { ReasoningEffort } from "@/shared/types/chat";
 
 export interface ArtifactFile {
   content: string;
@@ -53,7 +54,7 @@ export interface RenderInput {
 export interface LlmCallOptions {
   model?: string;
   system?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  effort?: ReasoningEffort;
 }
 
 // Every request carries a dedicated MessagePort for its reply, so no id

@@ -4,6 +4,6 @@ Calls a language model and returns text. Each call has fresh context: no chat hi
 - Python: await llm(text, system="Return one label: positive, negative, or neutral.")
 - JavaScript: await llm(text, { system: "Return one label: positive, negative, or neutral." })
 - Bash: `cat extracted.txt | llm -s "Summarize this report" > summary.md`. `llm "Summarize this" < extracted.txt` includes both the prompt and piped text; neither is discarded. Use `-m/--model`, `-s/--system`, `-e/--effort`, and optional `-o/--output` for a file instead of stdout. Use `--` before a prompt starting with a dash.
-- Optional settings: model (model ID), system (instructions), effort (none, minimal, low, medium, high, xhigh). Omit effort unless an override is needed and supported by that model.
+- Optional settings: model (model ID), system (instructions), effort (none, minimal, low, medium, high, xhigh, max). Omit effort unless an override is needed and supported by that model.
 
 Use this for language processing within a larger pipeline, such as classifying records or summarizing extracted text. Put fixed instructions in system and the data in the prompt. The result is model-generated text, not independently verified evidence or guaranteed schema-valid JSON. Avoid an extra call for work you can answer directly.

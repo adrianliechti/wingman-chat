@@ -6,7 +6,7 @@ export interface BashServices {
   llm(prompt: string, options: LlmCallOptions, signal?: AbortSignal): Promise<string>;
 }
 
-const EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+const EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const OUTPUT_FLAGS = { "-o": "output", "--output": "output" };
 const LLM_FLAGS = {
   ...OUTPUT_FLAGS,

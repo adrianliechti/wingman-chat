@@ -96,6 +96,11 @@ own supported efforts instead of inheriting a vendor profile.
 
 - [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra): low,
   medium, high, xhigh, max; no none/minimal.
+- [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol): low,
+  medium (default), high, xhigh, max; no none/minimal. Uses the Responses API
+  for tool calling, with a 128,000-token output capacity (reviewed September 30,
+  2026). The existing 272,000-token compaction budget stays below its higher
+  long-input pricing tier.
 - [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
   [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
   medium, high, xhigh, max; medium default. Both use the Responses API for tool
@@ -161,6 +166,7 @@ Examples of documented capacities (reviewed September 23, 2026):
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
+| [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |

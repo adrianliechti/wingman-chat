@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const inventory = [
   { id: "gpt-6-astra" },
+  { id: "gpt-6.1-sol" },
   { id: "claude-fable-5-1" },
   { id: "claude-mythos-5-1" },
   { id: "qwen3.8-max" },
@@ -51,6 +52,7 @@ test("all consumers share one request and use config type before API type and na
   const state = await page.evaluate(() => window.modelsE2E.state());
   expect(state.chat.map((model) => model.id)).toEqual([
     "gpt-6-astra",
+    "gpt-6.1-sol",
     "claude-fable-5-1",
     "claude-mythos-5-1",
     "qwen3.8-max",
@@ -73,7 +75,7 @@ test("all consumers share one request and use config type before API type and na
 test("a renderer-only config leaves chat models visible", async ({ page }) => {
   await open(page, { models: [{ id: "opaque", name: "Studio", type: "renderer" }] });
   const state = await page.evaluate(() => window.modelsE2E.state());
-  expect(state.chat).toHaveLength(4);
+  expect(state.chat).toHaveLength(5);
   expect(state.chat.every((model) => !model.hidden)).toBe(true);
 });
 
@@ -170,6 +172,22 @@ test("a failed refresh retains the working inventory and a retry recovers", asyn
   expect(api.requests).toBe(3);
   expect(errors).toEqual([]);
 });
+
+for (const effort of ["none", "minimal", "max"] as const) {
+  test(`restores GPT-6.1 Sol with saved ${effort} effort using its documented profile`, async ({ page }) => {
+    await page.addInitScript((effort) => localStorage.setItem("app_model", `gpt-6.1-sol@${effort}`), effort);
+    const { errors } = await open(page);
+    await page.waitForFunction(() => window.modelsE2E.state().selected?.id === "gpt-6.1-sol");
+    const selected = await page.evaluate(() => window.modelsE2E.state().selected);
+    expect(selected).toMatchObject({
+      supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "medium",
+      maxOutputTokens: 128_000,
+    });
+    expect(selected?.effort).toBe(effort === "max" ? "max" : undefined);
+    expect(errors).toEqual([]);
+  });
+}
 
 test("refreshes a stale catalogue on focus and removes timers and listeners on unmount", async ({ page }) => {
   await page.clock.install();
