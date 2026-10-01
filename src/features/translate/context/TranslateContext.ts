@@ -13,6 +13,18 @@ export interface SupportedFile {
 export interface Language {
   code: string;
   name: string;
+  /** The language's name in itself (e.g. "Deutsch"), when it differs. */
+  nativeName?: string;
+}
+
+export interface TranslatorProvider {
+  id: string;
+  name: string;
+  description?: string;
+  /** Resolved file types (provider override or translator-wide). */
+  files: string[];
+  /** Resolved language codes (provider override or translator-wide). */
+  languages: string[];
 }
 
 export interface ToneOption {
@@ -29,6 +41,7 @@ export interface TranslateContextType {
   // State
   sourceText: string;
   translatedText: string;
+  provider: string;
   targetLang: string;
   tone: string;
   style: string;
@@ -39,6 +52,8 @@ export interface TranslateContextType {
   error: string | null;
 
   // Data
+  selectedProvider: TranslatorProvider | undefined;
+  supportedProviders: TranslatorProvider[];
   selectedLanguage: Language | undefined;
   supportedFiles: SupportedFile[];
   supportedLanguages: Language[];
@@ -47,6 +62,7 @@ export interface TranslateContextType {
 
   // Actions
   setSourceText: (text: string) => void;
+  setProvider: (providerId: string) => void;
   setTargetLang: (langCode: string) => void;
   setTone: (tone: string) => void;
   setStyle: (style: string) => void;
@@ -58,47 +74,66 @@ export interface TranslateContextType {
 
 export const TranslateContext = createContext<TranslateContextType | undefined>(undefined);
 
-export const supportedLanguages = (): Language[] => {
+export const supportedProviders = (): TranslatorProvider[] => {
   try {
-    const config = getConfig();
-    if (!config.translator) return [];
-    const displayNames = new Intl.DisplayNames(["en"], { type: "language" });
-
-    return config.translator.languages.map((code) => ({
-      code,
-      name: displayNames.of(code) || code.toUpperCase(),
+    const translator = getConfig().translator;
+    if (!translator) return [];
+    return (translator.providers ?? []).map(({ id, name, description, files, languages }) => ({
+      id,
+      name: name || id,
+      description,
+      files: files ?? translator.files ?? [],
+      languages: languages ?? translator.languages,
     }));
   } catch {
-    // Return empty array if config is not loaded yet
     return [];
   }
 };
+
+// Without providers, the translator-wide lists apply.
+const providerLists = (providerId?: string): { files: string[]; languages: string[] } => {
+  try {
+    const translator = getConfig().translator;
+    if (!translator) return { files: [], languages: [] };
+    const provider = supportedProviders().find((p) => p.id === providerId);
+    return provider ?? { files: translator.files ?? [], languages: translator.languages };
+  } catch {
+    // Config is not loaded yet
+    return { files: [], languages: [] };
+  }
+};
+
+const displayName = (code: string, locale: string): string | undefined => {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(code);
+  } catch {
+    return undefined;
+  }
+};
+
+export const supportedLanguages = (providerId?: string): Language[] =>
+  providerLists(providerId).languages.map((code) => {
+    const name = displayName(code, "en") || code.toUpperCase();
+    const nativeName = displayName(code, code);
+    return { code, name, nativeName: nativeName && nativeName !== name ? nativeName : undefined };
+  });
+
+/** Keeps `current` when available, else prefers English, else the first language. */
+export const pickLanguage = (codes: string[], current?: string): string =>
+  (current && codes.includes(current) ? current : codes.includes("en") ? "en" : codes[0]) ?? "";
 
 // translator.files entries may be extensions (".pdf") or MIME types ("application/pdf").
-export const supportedFiles = (): SupportedFile[] => {
-  try {
-    const config = getConfig();
-    if (!config.translator) return [];
-    return (config.translator.files || []).flatMap((entry) => {
-      if (entry.startsWith(".")) {
-        return [{ ext: entry, mime: lookupContentType(entry) ?? "" }];
-      }
-      const ext = mime.getExtension(entry);
-      return [{ ext: ext ? `.${ext}` : entry, mime: entry }];
-    });
-  } catch {
-    return [];
-  }
-};
+export const supportedFiles = (providerId?: string): SupportedFile[] =>
+  providerLists(providerId).files.map((entry) => {
+    if (entry.startsWith(".")) {
+      return { ext: entry, mime: lookupContentType(entry) ?? "" };
+    }
+    const ext = mime.getExtension(entry);
+    return { ext: ext ? `.${ext}` : entry, mime: entry };
+  });
 
-export const isSupportedFile = (file: File): boolean => {
-  try {
-    const config = getConfig();
-    return !!config.translator && fileMatchesTypeList(file.name, file.type, config.translator.files || []);
-  } catch {
-    return false;
-  }
-};
+export const isSupportedFile = (file: File, providerId?: string): boolean =>
+  fileMatchesTypeList(file.name, file.type, providerLists(providerId).files);
 
 export const toneOptions = (): ToneOption[] => [
   { value: "", label: "Default" },

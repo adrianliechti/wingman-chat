@@ -178,6 +178,18 @@
     }
   ],
   "translator": {
+    "providers": [
+      {
+        "id": "llm",
+        "name": "AI",
+        "description": "GPT-5.4 mini"
+      },
+      {
+        "id": "google",
+        "name": "Google",
+        "description": "Google Cloud Translation"
+      }
+    ],
     "files": [
       ".pdf"
     ],

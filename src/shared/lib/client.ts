@@ -367,11 +367,14 @@ export class Client {
   }
 
   async translate(
+    model: string,
     lang: string,
     input: string | Blob,
     requestOptions: ClientRequestOptions = {},
   ): Promise<string | Blob> {
     const data = new FormData();
+    // An empty model lets the platform pick its default translator.
+    if (model) data.append("model", model);
     data.append("lang", lang);
     const headers: Record<string, string> = {};
 

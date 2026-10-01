@@ -228,7 +228,8 @@ describe("raw request lifetime", () => {
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
-    expect(await new Client().translate("de", "Greetings")).toBe("Grüsse");
+    expect(await new Client().translate("azure", "de", "Greetings")).toBe("Grüsse");
+    expect((fetchMock.mock.calls.at(-1)![1].body as FormData).get("model")).toBe("azure");
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ flagged: true, categories: [] })));
     expect(await new Client().guard("model", "Text")).toEqual({ flagged: true, categories: [] });
     fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { headers: { "content-type": "image/png" } }));

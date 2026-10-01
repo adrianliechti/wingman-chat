@@ -178,9 +178,21 @@ type Risk struct {
 }
 
 type Translator struct {
-	Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
-	Files     []string `json:"files,omitempty" yaml:"files,omitempty"`
-	Languages []string `json:"languages,omitempty" yaml:"languages,omitempty"`
+	Model     string               `json:"model,omitempty" yaml:"model,omitempty"`
+	Providers []TranslatorProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
+	Files     []string             `json:"files,omitempty" yaml:"files,omitempty"`
+	Languages []string             `json:"languages,omitempty" yaml:"languages,omitempty"`
+}
+
+// TranslatorProvider names a translator configured on the platform; ID is sent
+// as the translate request's model. Files and Languages override the
+// translator-wide lists when set.
+type TranslatorProvider struct {
+	ID          string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Files       []string `json:"files,omitempty" yaml:"files,omitempty"`
+	Languages   []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
 
 type Telemetry struct{}

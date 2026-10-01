@@ -101,8 +101,22 @@ interface RepositoryConfig {
   extractor?: string;
 }
 
+export interface TranslatorProviderConfig {
+  /** Platform translator id, sent as the translate request's model. */
+  id: string;
+  name?: string;
+  description?: string;
+  /** Overrides translator.files for this provider. */
+  files?: string[];
+  /** Overrides translator.languages for this provider. */
+  languages?: string[];
+}
+
 interface TranslatorConfig {
+  /** Model used to rewrite translations (tone, style, refinements). */
   model?: string;
+  /** Selectable translators; the first is the default. */
+  providers?: TranslatorProviderConfig[];
   files: string[];
   languages: string[];
   /** Max file size in bytes; unlimited if unset. */
@@ -358,6 +372,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       translator: cfg.translator
         ? {
             model: cfg.translator.model,
+            providers: (cfg.translator.providers ?? []).filter((provider) => provider.id),
             files: cfg.translator.files ?? [],
             languages: cfg.translator.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
             maxFileSize: cfg.translator.maxFileSize,

@@ -105,7 +105,21 @@ including live transcription.
 ### Translate
 
 A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
-across many languages.
+across many languages. When `translator.yaml` lists more than one provider, users can pick which
+translator to use; each `id` must match a translator configured on the platform. A provider's
+`files` and `languages` override the translator-wide lists:
+
+```yaml
+providers:
+  - id: azure-translator
+    name: Azure
+  - id: google-translator
+    name: Google
+    languages: [en, de, fr, ja, zh]
+
+files: [.pdf, .docx]
+languages: [en, de, fr, it, es]
+```
 
 ### Canvas
 
