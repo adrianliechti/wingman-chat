@@ -71,6 +71,12 @@ The existing `Message`/`Content` storage format remains framework-independent.
 store and OPFS persistence queue. A small metadata cache attaches rich workspace
 results, usage, and run identities. The boundary retains attachment names and
 media types, reasoning model identity, artifact references, and widget results.
+Rich tool results stay in presentation metadata; execution and history replay
+send the same text descriptions of binary outputs to the provider. Inline user
+files retain their filename, MIME type, and bytes as gateway `input_file` items,
+including Office documents and text files beyond the native adapter's PDF-only
+document contract. Upload preservation and text extraction remain independent
+of this request serialization.
 
 Dictation uses the native recorder's encoded blob directly, following the
 [audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
@@ -88,8 +94,10 @@ A bytes-only source connects the selected OPFS library, lazy Studio templates,
 and installed plugins to `withSkills`. The middleware adds the catalog and
 `load_skill`; `createResourceTool` supplies `read_skill_resource`. The handwritten
 catalog XML, loading schemas, resource tool implementation, and skill-content
-envelope have been removed. The default native catalog budget is 4,000 estimated
-tokens; exceeding it fails explicitly rather than silently dropping skills.
+envelope have been removed. Wingman disables TanStack's default 4,000-estimated-token
+catalog cap with `maxCatalogTokens: Infinity`, keeping every selected skill
+available. Model context limits still apply; history compaction does not shrink
+the skills catalog in the system prompt.
 
 Providers can supply native chat middleware through `ToolProvider.chat`. The
 same filtered selection reaches main chat and delegated runs, including agents
@@ -298,6 +306,38 @@ resume still needs a separate integration: the public raw `callTool` API does
 not accept input responses, while native tool execution normalizes away the full
 initial result required by saved widgets. Existing legacy MCP form/URL requests
 continue through the transport bridge.
+
+## Runtime limits
+
+The installed TanStack packages and Wingman's call sites were audited for runtime
+caps. The catalog cap is disabled; the following other bounds apply independently:
+
+| Area                        | Current bound                                                       | Owner and behavior                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected skills catalog     | Unlimited                                                           | Wingman passes `maxCatalogTokens: Infinity`; no skills are dropped. Portable loading/resource tools impose no separate skill-count or content-size cap.                                                                                                                                                               |
+| Skill metadata              | Name: 64 characters; description: 1,024 characters                  | Wingman's skill parser and shipped-skill validator enforce the file format.                                                                                                                                                                                                                                           |
+| Agent loop                  | 100 model turns per run                                             | `agent.ts` overrides TanStack's default of 5. One turn can contain multiple tool calls.                                                                                                                                                                                                                               |
+| Output tokens               | Chat: 64,000; titles: 8,000; other structured extraction: 16,000    | Wingman defaults for models with a known output capacity. Explicit budgets are clamped to that capacity; `0` omits the request budget.                                                                                                                                                                                |
+| History compaction          | Model-dependent threshold: 100,000–272,000 estimated tokens         | Enabled when `chat.compaction` is configured. Model/deployment overrides apply; `0` disables it. TanStack preserves about half the budget as recent messages and 3 recent tool results with our chosen strategies. This is not a hard context-window guarantee and does not count the system catalog or tool schemas. |
+| MCP tool discovery          | 100 pages                                                           | TanStack throws if tool-list pagination exceeds the cap or repeats a cursor. This limits pages, not the number of tools.                                                                                                                                                                                              |
+| MCP requests                | 60 seconds                                                          | MCP SDK default, also used explicitly by TanStack's raw tool-call bridge.                                                                                                                                                                                                                                             |
+| Text SDK requests           | 10-minute timeout; 2 automatic retries                              | Inherited from the OpenAI SDK through the gateway adapter. The timeout governs the request, not the total agent run. Embedding requests explicitly disable retries.                                                                                                                                                   |
+| Queued user messages        | Unlimited                                                           | Wingman's native `useChat` queue does not set `maxSize`.                                                                                                                                                                                                                                                              |
+| Voice context/configuration | 8,000 post-instruction tokens; 15-second configuration confirmation | Wingman's gateway realtime session requests truncation and bounds its audio-configuration handshake.                                                                                                                                                                                                                  |
+
+Other library bounds are narrower in scope: parent-run ancestry traversal stops
+after 64 hops to guard against cycles; compaction debug previews show at most 24
+messages with 4,000 characters each. These do not cap the saved transcript.
+
+Optional APIs that Wingman does not currently use have additional defaults:
+filesystem skill discovery walks at most 6 levels; HTTP stream reconnects allow
+5 attempts without progress with a 250 ms delay; reload rejoin waits 2 seconds;
+the in-memory durable stream retains up to 1,024 completed runs for 5 minutes and
+waits 100 ms for a missing run's first chunk; tool-cache storage holds 100 entries;
+video generation polls for up to 10 minutes. Native image-edit adapters enforce
+model-specific source-image counts (usually 16); Wingman image rendering instead
+uses its gateway endpoint. OpenTelemetry content capture has a 100,000-character
+default cap, but Wingman disables content capture.
 
 ## Compatibility boundaries
 

@@ -1,5 +1,6 @@
 import type { ContentPart, MessagePart, SubagentPart, UIMessage } from "@tanstack/ai";
 import type { GatewayTextSegment } from "./gatewayText";
+import { serializeToolResultForApi } from "./utils";
 import {
   readSignature,
   tagSignature,
@@ -150,11 +151,10 @@ export function toAIMessages(
               name: part.name,
               state: message.error ? "error" : "complete",
               error: message.error?.message,
-              // Native discovery restores its cache from JSON text. Keep the
-              // framework's string form for text-only results across reloads.
-              content: part.result.every((item) => item.type === "text")
-                ? part.result.map((item) => item.text).join("\n")
-                : toAIContent(part.result),
+              // Match live tool execution: rich files stay
+              // in presentation metadata; the provider receives descriptions.
+              // Native discovery also restores its cache from this JSON text.
+              content: serializeToolResultForApi(part.result),
               metadata: { wingman: part, wingmanError: message.error },
             },
           ];

@@ -5,7 +5,7 @@ import { buildSelectionEditMessage } from "@/features/chat/lib/selectionMessage"
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "../hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
-import { getSavedModel, useModels } from "@/features/chat/hooks/useModels";
+import { getConfiguredModel, getSavedModel, useModels } from "@/features/chat/hooks/useModels";
 import { useChatRun } from "../hooks/useChatRun";
 import { createChatCreationGate } from "../lib/chatCreation";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
@@ -163,9 +163,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       void closeApp();
 
-      // When starting a new chat, reset realtime model back to the last saved chat model
-      if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
-        setSelectedModel(getSavedModel(models) ?? models[0] ?? null);
+      // A new chat starts on the configured default model; without one it keeps
+      // the last choice, leaving realtime for the last saved chat model.
+      if (!id) {
+        const configured = getConfiguredModel(models);
+        if (configured) setSelectedModel(configured);
+        else if (selectedModel?.id === "realtime" || chatModel?.id === "realtime") {
+          setSelectedModel(getSavedModel(models) ?? models[0] ?? null);
+        }
       }
     },
     [closeApp, selectedModel, chatModel, models, setSelectedModel],

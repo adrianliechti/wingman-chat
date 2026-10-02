@@ -148,6 +148,16 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Optimizer = v
 	}
 
+	if v := os.Getenv("CHAT_MODEL"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Model = v
+	}
+
+	if v := os.Getenv("CHAT_EFFORT"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Effort = v
+	}
+
 	if envBool("CHAT_COMPACTION_ENABLED") {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.Compaction = ensurePtr(cfg.Chat.Compaction)

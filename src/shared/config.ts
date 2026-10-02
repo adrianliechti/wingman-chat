@@ -181,6 +181,12 @@ interface ChatConfig {
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
+  /** Model every new chat starts on; the picker's reset returns to it. */
+  model?: string;
+  /** Reasoning effort for the default model; unset uses the model's default. */
+  effort?: ReasoningEffort;
+  /** Response verbosity for the default model; unset uses the model's default. */
+  verbosity?: Model["verbosity"];
   compaction?: CompactionConfig;
   classification?: ClassificationConfig;
   categories?: CategoryConfig[];

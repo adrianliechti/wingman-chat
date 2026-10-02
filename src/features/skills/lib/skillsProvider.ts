@@ -139,7 +139,8 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
     get tools() {
       return [displaySkillTool(createLoadSkillTool({ source, skills, activated: new Set() })), ...resourceTools];
     },
-    chat: { tools: resourceTools, instructions, middleware: [withSkills(source)] },
+    // Selection owns catalog size; keep every selected skill available.
+    chat: { tools: resourceTools, instructions, middleware: [withSkills(source, { maxCatalogTokens: Infinity })] },
   };
 }
 

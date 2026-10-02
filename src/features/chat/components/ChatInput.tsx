@@ -6,6 +6,7 @@ import {
   Lock,
   Mic,
   Rocket,
+  RotateCcw,
   ScreenShare,
   Send,
   Sparkles,
@@ -19,7 +20,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
-import { getSavedModel } from "@/features/chat/hooks/useModels";
+import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -30,6 +31,7 @@ import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
+import { sameModelSettings } from "@/shared/lib/models";
 import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -37,7 +39,7 @@ import type { Content, ImageContent, Message, TextContent, ToolProvider } from "
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
-import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import { EFFORT_LABEL, ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
@@ -68,12 +70,15 @@ export function ChatInput() {
   const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
+  // The configured default for new chats; the reset next to the model returns to it.
+  const configuredModel = useMemo(() => getConfiguredModel(models), [models]);
   const { isResponding, queuedSends, interruptState } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
   const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
-  // An agent pinned to a model also owns its effort and verbosity; without one
-  // it runs on the chat's model, which stays switchable.
-  const agentOwnsModel = !!currentAgent?.model;
+  const deactivateAgent = useCallback(() => {
+    setCurrentAgent(null);
+    setShowAgentDrawer(false);
+  }, [setCurrentAgent, setShowAgentDrawer]);
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
@@ -248,7 +253,6 @@ export function ChatInput() {
       }),
     [visibleProviders, getProviderState],
   );
-
 
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
@@ -720,129 +724,133 @@ export function ChatInput() {
                   onDriveSelect={setActiveDrive}
                 />
               )}
-              {models.length > 0 && !(isRealtimeSelected && (!currentAgent || isListening)) && (
-                <ModelDropdown
-                  models={models}
-                  // An agent with its own model owns the selection, so no model row is
-                  // checked; picking one switches back to a plain model chat.
-                  value={agentOwnsModel ? "" : (model?.id ?? "")}
-                  onChange={(modelId) => {
-                    const m = models.find((m) => m.id === modelId);
-                    if (!m) return;
-                    if (agentOwnsModel) setCurrentAgent(null);
-                    onModelChange(m);
-                  }}
-                  agents={
-                    agents.length > 0 || currentAgent
-                      ? {
-                          items: agents.map((a) => ({ id: a.id, name: a.name })),
-                          value: currentAgent?.id ?? null,
-                          onChange: (id) => {
-                            setCurrentAgent(agents.find((a) => a.id === id) ?? null);
-                            if (!id) setShowAgentDrawer(false);
-                          },
-                          // The drawer shows the active agent, so opening one selects it.
-                          onOpen: (id) => {
-                            setCurrentAgent(agents.find((a) => a.id === id) ?? null);
-                            setAgentDrawerView("details");
-                            setShowAgentDrawer(true);
-                          },
-                          actions:
-                            currentAgent && unauthorizedProviders.length > 0
-                              ? [
-                                  {
-                                    icon: <Lock size={14} />,
-                                    label: `Sign in (${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})`,
-                                    warning: true,
-                                    onSelect: () => {
-                                      for (const provider of unauthorizedProviders) {
-                                        void setProviderEnabled(provider.id, true);
-                                      }
-                                    },
-                                  },
-                                ]
-                              : undefined,
-                        }
-                      : undefined
-                  }
-                  // The agent's own effort and verbosity apply while it owns the model.
-                  effort={
-                    !agentOwnsModel && model?.supportedEfforts?.length
-                      ? {
-                          options: model.supportedEfforts,
-                          value: effort ?? null,
-                          defaultValue: model.defaultEffort,
-                          onChange: setEffort,
-                        }
-                      : undefined
-                  }
-                  verbosity={
-                    agentOwnsModel
-                      ? undefined
-                      : {
-                          value: verbosity ?? null,
-                          defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
-                          onChange: setVerbosity,
-                        }
-                  }
-                  presets={
-                    presets.length > 1
-                      ? {
-                          steps: presets,
-                          value: agentOwnsModel ? -1 : modelPresetIndex(presets, model),
-                          onChange: (index) => {
-                            const { model: next, effort, verbosity } = presets[index];
-                            if (agentOwnsModel) setCurrentAgent(null);
-                            onModelChange({ ...next, effort, verbosity });
-                          },
-                        }
-                      : undefined
-                  }
-                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-                  trigger={({ getProps }) => (
+              {models.length > 0 && !isRealtimeSelected && !currentAgent && (
+                <div className="flex items-center gap-0.5 min-w-0">
+                  <ModelDropdown
+                    models={models}
+                    value={model?.id ?? ""}
+                    onChange={(modelId) => {
+                      const m = models.find((m) => m.id === modelId);
+                      if (m) onModelChange(m);
+                    }}
+                    agents={
+                      agents.length > 0
+                        ? {
+                            items: agents.map((a) => ({ id: a.id, name: a.name })),
+                            value: null,
+                            onChange: (id) => setCurrentAgent(agents.find((a) => a.id === id) ?? null),
+                            // The drawer shows the active agent, so opening one selects it.
+                            onOpen: (id) => {
+                              setCurrentAgent(agents.find((a) => a.id === id) ?? null);
+                              setAgentDrawerView("details");
+                              setShowAgentDrawer(true);
+                            },
+                          }
+                        : undefined
+                    }
+                    effort={
+                      model?.supportedEfforts?.length
+                        ? {
+                            options: model.supportedEfforts,
+                            value: effort ?? null,
+                            defaultValue: model.defaultEffort,
+                            onChange: setEffort,
+                          }
+                        : undefined
+                    }
+                    verbosity={{
+                      value: verbosity ?? null,
+                      defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                      onChange: setVerbosity,
+                    }}
+                    presets={
+                      presets.length > 1
+                        ? {
+                            steps: presets,
+                            value: modelPresetIndex(presets, model),
+                            onChange: (index) => {
+                              const { model: next, effort, verbosity } = presets[index];
+                              onModelChange({ ...next, effort, verbosity });
+                            },
+                          }
+                        : undefined
+                    }
+                    dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                    trigger={({ getProps }) => (
+                      <button
+                        type="button"
+                        {...getProps()}
+                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      >
+                        <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                          <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                          <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        </Tooltip>
+                      </button>
+                    )}
+                  />
+                  {configuredModel && model && !sameModelSettings(model, configuredModel) && (
+                    <Tooltip
+                      content={`Reset to ${[configuredModel.name ?? configuredModel.id, configuredModel.effort && EFFORT_LABEL[configuredModel.effort]].filter(Boolean).join(" ")}`}
+                      side="bottom"
+                      className="flex shrink-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onModelChange(configuredModel)}
+                        aria-label="Reset to the default model"
+                        className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
+              {/* Active agent: a plain label whose only action is turning the agent off.
+                  When a sign-in is pending, the label itself retries it. */}
+              {currentAgent && !(isRealtimeSelected && isListening) && (
+                <div className="flex items-center gap-0.5 min-w-0">
+                  {unauthorizedProviders.length > 0 ? (
+                    <Tooltip
+                      content={`${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`}
+                      side="bottom"
+                      className="min-w-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          for (const provider of unauthorizedProviders) {
+                            void setProviderEnabled(provider.id, true);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 rounded-lg text-xs font-medium transition-colors text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                      >
+                        {authenticatingProviders.length > 0 ? (
+                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                        ) : (
+                          <Lock size={14} className="shrink-0" />
+                        )}
+                        <span className="truncate min-w-0">{currentAgent.name}</span>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <span className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                      <Bot size={14} className="shrink-0" />
+                      <span className="truncate min-w-0">{currentAgent.name}</span>
+                    </span>
+                  )}
+                  <Tooltip content={`Turn off ${currentAgent.name}`} side="bottom" className="flex shrink-0">
                     <button
                       type="button"
-                      {...getProps()}
-                      className={cn(
-                        "flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56",
-                        currentAgent && unauthorizedProviders.length > 0
-                          ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
-                      )}
+                      onClick={deactivateAgent}
+                      aria-label={`Turn off ${currentAgent.name}`}
+                      className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
                     >
-                      <Tooltip
-                        content={
-                          currentAgent && unauthorizedProviders.length > 0
-                            ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
-                            : currentAgent
-                              ? "Switch agent or model"
-                              : "Switch model"
-                        }
-                        side="bottom"
-                        className="flex items-center gap-1.5 min-w-0"
-                      >
-                        <span className="shrink-0 flex justify-center">
-                          {!currentAgent ? (
-                            toolIndicator
-                          ) : authenticatingProviders.length > 0 ? (
-                            <LoaderCircle size={14} className="animate-spin" />
-                          ) : unauthorizedProviders.length > 0 ? (
-                            <Lock size={14} />
-                          ) : (
-                            <Bot size={14} />
-                          )}
-                        </span>
-                        <span className="truncate min-w-0">
-                          {currentAgent
-                            ? agentOwnsModel
-                              ? currentAgent.name
-                              : `${currentAgent.name} · ${model?.name ?? model?.id ?? "Select Model"}`
-                            : (model?.name ?? model?.id ?? "Select Model")}
-                        </span>
-                      </Tooltip>
+                      <X size={14} />
                     </button>
-                  )}
-                />
+                  </Tooltip>
+                </div>
               )}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button

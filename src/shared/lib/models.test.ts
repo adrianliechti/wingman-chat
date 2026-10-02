@@ -10,6 +10,7 @@ import {
   minimalEffort,
   modelName,
   modelType,
+  sameModelSettings,
   rendererCapabilities,
   shortModelName,
   supportedEfforts,
@@ -400,5 +401,19 @@ describe("configured model catalogue", () => {
     expect(rendererCapabilities("gemini-3.1-flash-image").resolutions).toEqual(["512", "1K", "2K", "4K"]);
     expect(rendererCapabilities("gemini-3-pro-image").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(rendererCapabilities("gpt-image-20").backgrounds).toBeUndefined();
+  });
+});
+
+describe("sameModelSettings", () => {
+  const luna: Model = { id: "luna", name: "Luna", defaultEffort: "medium", verbosity: "medium" };
+
+  it("treats an unset effort as the model default", () => {
+    expect(sameModelSettings(luna, { ...luna, effort: "medium" })).toBe(true);
+  });
+
+  it("tells apart effort, verbosity and model changes", () => {
+    expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
+    expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
+    expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
   });
 });

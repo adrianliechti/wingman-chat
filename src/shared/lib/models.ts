@@ -31,6 +31,13 @@ export function findModel(models: readonly Model[], id?: string | null): Model |
  * available (or replaced), otherwise the first visible model. Used by new
  * agents and other "no model chosen yet" spots to inherit the chosen default.
  */
+/** Whether two selections share model, effective effort and verbosity. */
+export function sameModelSettings(a: Model, b: Model) {
+  return (
+    a.id === b.id && (a.effort ?? a.defaultEffort) === (b.effort ?? b.defaultEffort) && a.verbosity === b.verbosity
+  );
+}
+
 export function defaultModelId(models: Model[], savedId?: string | null): string {
   const fallback = models.find((model) => !model.hidden) ?? models[0];
   return findModel(models, savedId)?.id ?? findModel(models, fallback?.id)?.id ?? "";

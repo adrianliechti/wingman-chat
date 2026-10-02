@@ -54,6 +54,34 @@ export function getSavedModel(models: readonly Model[]): Model | null {
   };
 }
 
+/**
+ * The configured default for new chats (`chat.model`) with its effort and
+ * verbosity, or null when none is configured or the model is unavailable.
+ */
+export function getConfiguredModel(models: readonly Model[]): Model | null {
+  const chat = getConfig().chat;
+  const model = findModel(models, chat?.model);
+  if (!model) return null;
+  return {
+    ...model,
+    ...(chat?.effort && (!model.supportedEfforts || model.supportedEfforts.includes(chat.effort))
+      ? { effort: chat.effort }
+      : {}),
+    ...(chat?.verbosity && VERBOSITIES.has(chat.verbosity) ? { verbosity: chat.verbosity } : {}),
+  };
+}
+
+/** The model a new chat starts on: the configured default, else the last saved choice. */
+export function getDefaultModel(models: readonly Model[]): Model | null {
+  return (
+    getConfiguredModel(models) ??
+    getSavedModel(models) ??
+    models.find((model) => model.id === defaultModelId([...models])) ??
+    models[0] ??
+    null
+  );
+}
+
 function saveSelectedModel(model: Model | null) {
   try {
     if (model && model.id !== "realtime") {
@@ -98,7 +126,7 @@ export function useModels() {
     if (!models.length) return;
     setSelectedModelState((current) => {
       if (current !== undefined) return current;
-      return getSavedModel(models) ?? models.find((model) => model.id === defaultModelId(models)) ?? models[0];
+      return getDefaultModel(models);
     });
   }, [models]);
 

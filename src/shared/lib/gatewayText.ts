@@ -82,6 +82,22 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     };
   }
 
+  /** The gateway accepts inline files beyond the native adapter's PDF-only contract. */
+  protected override convertContentPartToInput(
+    ...args: Parameters<OpenAITextAdapter<TModel>["convertContentPartToInput"]>
+  ): ReturnType<OpenAITextAdapter<TModel>["convertContentPartToInput"]> {
+    const [part] = args;
+    if (part.type !== "document" || part.source.type !== "data") return super.convertContentPartToInput(...args);
+    const metadata = part.metadata as { filename?: string; contentType?: string } | undefined;
+    return {
+      type: "input_file",
+      filename: metadata?.filename ?? "attachment",
+      file_data: part.source.value.startsWith("data:")
+        ? part.source.value
+        : `data:${part.source.mimeType ?? metadata?.contentType ?? "application/octet-stream"};base64,${part.source.value}`,
+    };
+  }
+
   protected override convertMessagesToInput(...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>) {
     const phased = new Map<string, GatewayTextSegment[][]>();
     for (const message of args[0]) {

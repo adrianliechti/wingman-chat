@@ -528,6 +528,101 @@ describe("System One classification", () => {
 });
 
 describe("TanStack OpenAI adapter over the browser gateway", () => {
+  it.each([
+    ["notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "UEsDBA=="],
+    ["data.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "UEsDBA=="],
+    ["slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "UEsDBA=="],
+    ["notes.txt", "text/plain", "bm90ZXM="],
+    ["notes.pdf", "application/pdf", "JVBERi0xLjQ="],
+  ])(
+    "forwards inline %s attachments to the gateway with their original MIME and bytes",
+    async (name, contentType, bytes) => {
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("Read")])));
+      const data = `data:${contentType};base64,${bytes}`;
+      const history: Message[] = [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Read this" },
+            { type: "file", name, data, contentType },
+          ],
+        },
+      ];
+      const before = JSON.stringify(history);
+      const result = await run(new Client(), "model", "", history, []);
+      expect(result.status).toBe("completed");
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).input).toEqual([
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: "Read this" },
+            { type: "input_file", filename: name, file_data: data },
+          ],
+        },
+      ]);
+      expect(JSON.stringify(history)).toBe(before);
+    },
+  );
+
+  it.each([false, true])(
+    "replays rich tool files as descriptions after saving (prepared history: %s)",
+    async (prepared) => {
+      fetchMock
+        .mockResolvedValueOnce(finished(response([callItem()])))
+        .mockResolvedValueOnce(finished(response([textItem("Saved")])))
+        .mockResolvedValueOnce(finished(response([textItem("Continued")])));
+      const media: Awaited<ReturnType<Tool["function"]>> = [
+        { type: "text", text: "Created the documents" },
+        {
+          type: "file",
+          name: "notes.docx",
+          data: "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDBA==",
+        },
+        { type: "file", name: "notes.pdf", data: "data:application/pdf;base64,JVBERi0xLjQ=" },
+        { type: "file", name: "archive.bin", data: "data:application/octet-stream;base64,AQ==" },
+        { type: "image", name: "chart.png", data: "data:image/png;base64,AQ==" },
+        { type: "audio", name: "speech.wav", data: "data:audio/wav;base64,AQ==" },
+      ];
+      const execute = vi.fn<Tool["function"]>(async (_args, context) => {
+        context?.setMeta?.({ files: ["/notes.docx", "/notes.pdf"] });
+        return media;
+      });
+      const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
+      const hooks = prepared ? { prepareMessages: (messages: Message[]) => messages } : {};
+      const client = new Client();
+      const first = await run(client, "model", "", prompt, tools, hooks);
+      expect(first.status).toBe("completed");
+      const restored: Message[] = JSON.parse(JSON.stringify(first.messages));
+      const next = await run(client, "model", "", [...restored, ...prompt], tools, hooks);
+      expect(next.status).toBe("completed");
+      expect(next.messages.at(-1)?.content).toEqual([{ type: "text", text: "Continued" }]);
+      expect(execute).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      for (const messages of [first.messages, next.messages]) {
+        expect(messages.find((message) => message.id === "result-call_test")?.content).toEqual([
+          expect.objectContaining({ result: media, meta: { files: ["/notes.docx", "/notes.pdf"] } }),
+        ]);
+      }
+      for (const request of fetchMock.mock.calls.slice(1)) {
+        const input = JSON.parse(request[1].body).input;
+        expect(input.find((item: { type: string }) => item.type === "function_call_output")).toMatchObject({
+          call_id: "call_test",
+          output: [
+            "Created the documents",
+            "[File: notes.docx - displayed to user]",
+            "[File: notes.pdf - displayed to user]",
+            "[File: archive.bin - displayed to user]",
+            "[Image: chart.png - displayed to user]",
+            "[Audio: speech.wav - displayed to user]",
+          ].join("\n"),
+        });
+        expect(JSON.stringify(input)).not.toContain("base64");
+      }
+    },
+  );
+
   it("streams each token fragment through the native client without a custom buffer", async () => {
     const deltas = ["Hel", "l", "o", " ", "wo", "rl", "d", "!"];
     fetchMock.mockResolvedValueOnce(

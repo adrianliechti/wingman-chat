@@ -30,6 +30,45 @@ const call = (id: string, name: string, args: object): Message => ({
 });
 
 describe("native skills", () => {
+  it("keeps the complete selected catalog available above the native default token cap", async () => {
+    const entries = Array.from({ length: 40 }, (_, index) => ({
+      name: `reports-${String(index).padStart(2, "0")}`,
+      description: "Create detailed reports and verify their contents. ".repeat(16),
+      loadContent: vi.fn(() => `Instructions for report ${index}.`),
+    }));
+    const selected = entries.at(-1)!;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(finished(response([callItem(JSON.stringify({ name: selected.name }), "load_skill")])))
+      .mockResolvedValueOnce(finished(response([textItem("Done")])));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: new URL("http://localhost") });
+    const provider = createSkillsProvider(entries, meta)!;
+    const result = await run(new Client(), "model", provider.chat!.instructions!, prompt, provider.chat!.tools, {
+      middleware: provider.chat!.middleware,
+    });
+
+    expect(result.status).toBe("completed");
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.instructions.length).toBeGreaterThan(4000 * 4);
+    for (const entry of entries) {
+      expect(request.instructions).toContain(`- **${entry.name}**: ${entry.description}`);
+      expect(entry.loadContent).toHaveBeenCalledTimes(entry === selected ? 1 : 0);
+    }
+    expect(
+      request.tools.find((tool: { name: string }) => tool.name === "load_skill").parameters.properties.name.enum,
+    ).toEqual(entries.map((entry) => entry.name));
+    const nextRequest = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(nextRequest.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "function_call_output",
+          output: expect.stringContaining("Instructions for report 39."),
+        }),
+      ]),
+    );
+  });
+
   it("reads a bundled resource through the gateway without a strict-mode fallback warning", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetchMock = vi
