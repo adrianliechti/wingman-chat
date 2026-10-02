@@ -46,20 +46,30 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
 ## Backup, restore, and compatibility
 
 Export flushes registered queues before taking a snapshot. Read errors fail the
-export; they do not produce an apparently successful partial ZIP.
+export; they do not produce an apparently successful partial ZIP. Downloads open
+the save-file picker before taking the snapshot when the browser supports it,
+then stream compressed ZIP chunks directly to disk with backpressure. Other
+browsers download a Blob assembled from those chunks. Cancelling the picker
+does no snapshot work; failed disk writes abort the output and report an error.
 
 Restore decodes and checks the archive before mutation. Matching file paths are
 replaced, while files absent from a partial backup remain untouched. Collection
 indexes are rebuilt from actual records; imported indexes provide only identity
 and timestamp hints. A reported write or rebuild failure restores prior bytes
-and indexes. Invalid paths, known malformed metadata, and malformed embeddings
-are rejected before writing. Artifact content is preserved as supplied.
+and indexes. Invalid JSON in known metadata skips the owning record, including
+its sibling files, while preserving any existing copy. Invalid profile JSON skips
+only the profile; invalid collection indexes are ignored and rebuilt. Valid
+records still import, and the UI reports skipped paths before offering a reload.
+Unsafe paths, structurally invalid metadata, and malformed embeddings are
+rejected before writing. Artifact content is preserved as supplied, including
+arbitrary JSON files.
 
-The settings drawer can restore a full or partial OPFS backup. Chat import also
-accepts a collection export, a single chat folder, or chats within a full backup.
-Agent import accepts full backups, collection exports, single agent packages,
-bundled skills, and older repository exports. JSON imports retain the older chat
-and repository conversion paths, but use the current persistence writers.
+The settings drawer restores full or partial OPFS ZIP backups, including chats.
+Agent import accepts ZIPs containing current `AGENTS.md` definitions: full
+backups, collection exports, or single agent packages, including bundled skills.
+Legacy agent/repository imports and pre-OPFS chat JSON imports are no longer
+supported. Existing saved agents remain readable, and agent exports use the
+current format without rewriting local data.
 
 One index scanner serves repair and restore. It preserves custom chat ordering,
 skill identities, and existing timestamps, and never deletes folders. Obsolete
@@ -71,11 +81,14 @@ as a side effect of reading.
 
 These are failure-recovery guarantees, not a multi-file transaction across a
 browser or operating-system crash. A hard shutdown can prevent pending writes or
-rollback from finishing. Rollback and ZIP decoding buffer data in memory, so large
-agent saves and backups have a memory cost. Edits to the same record from different
+rollback from finishing. Export snapshots, rollback, and the compressed input ZIP
+still buffer data in memory. ZIP entries are decoded into Blobs from chunks,
+avoiding an extra full byte-array copy, but imports are not fully streaming.
+Large agent saves and backups therefore still have a memory cost. Edits to the same record from different
 tabs remain last-writer-wins; Web Locks prevent interleaved transactions and lost
 index updates, but do not merge independently edited conversations. Restore UI
-reloads the page to replace its in-memory snapshots with restored data.
+reloads the page to replace its in-memory snapshots with restored data; a partial
+restore lets the user review the report and defer that reload.
 
 ## Verification
 

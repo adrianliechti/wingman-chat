@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { RealtimeClient } from "@tanstack/ai-client";
-import { toolDefinition } from "@tanstack/ai";
+import { toolDefinition, type JSONSchema } from "@tanstack/ai";
 import { z } from "zod";
 import { gatewayRealtime } from "@/features/voice/lib/gatewayRealtime";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
@@ -46,6 +46,7 @@ export function useVoiceWebSockets(
   onToolResult?: (toolName: string, callId: string, result: ToolOutput, args: string) => void,
   onClosed?: (reason?: { fatal: boolean; message: string }) => void,
   getRuntimeContext?: () => string,
+  onError?: (error: Error) => void,
 ) {
   const sessionRef = useRef<Session | null>(null);
   const callbacks = useRef({
@@ -56,9 +57,19 @@ export function useVoiceWebSockets(
     onToolResult,
     onClosed,
     getRuntimeContext,
+    onError,
   });
   useLayoutEffect(() => {
-    callbacks.current = { onUser, onAssistant, onToolCall, onToolCallDone, onToolResult, onClosed, getRuntimeContext };
+    callbacks.current = {
+      onUser,
+      onAssistant,
+      onToolCall,
+      onToolCallDone,
+      onToolResult,
+      onClosed,
+      getRuntimeContext,
+      onError,
+    };
   });
 
   const stop = useCallback(async () => {
@@ -70,60 +81,68 @@ export function useVoiceWebSockets(
     await session.gateway.disconnect();
   }, []);
 
-  const bindClient = useCallback(
-    (session: Session, capture: boolean, outputs: Map<string, ToolOutput>, onReady?: () => void) => {
-      const { tools, instructions, factory } = session;
-      const signal = session.controller.signal;
-      const nativeTools = tools.map((tool) => {
-        const schema = z.fromJSONSchema(tool.parameters);
-        return toolDefinition({
-          name: tool.name,
-          description: tool.description ?? tool.name,
-          inputSchema: schema,
-        }).client(async (input) => {
-          signal.throwIfAborted();
-          const identity = session.gateway.toolIdentity(input);
-          if (!identity) throw new Error("Voice tool arguments must be an object");
-          // RealtimeClient currently forwards parsed inputs without Standard Schema
-          // validation; enforce the same schema used by the chat engine.
-          const args = schema.parse(input) as Record<string, unknown>;
-          const result = await tool.function(args, { ...factory?.(identity), runId: identity.runId, signal });
-          signal.throwIfAborted();
-          outputs.set(identity.id, result);
-          return serializeToolResultForApi(result);
+  const bindClient = useCallback((session: Session, capture: boolean, onReady?: () => void) => {
+    const { tools, instructions, factory, outputs } = session;
+    const signal = session.controller.signal;
+    const nativeTools = tools.map((tool) => {
+      const schema = z.fromJSONSchema(tool.parameters);
+      return toolDefinition({
+        name: tool.name,
+        description: tool.description ?? tool.name,
+        // RealtimeClient forwards this schema to the session verbatim. The
+        // original JSON Schema keeps voice and chat tool contracts identical.
+        inputSchema: tool.parameters as JSONSchema,
+      }).client(async (input) => {
+        signal.throwIfAborted();
+        const identity = session.gateway.toolIdentity(input);
+        if (!identity) throw new Error("Voice tool arguments must be an object");
+        // RealtimeClient currently forwards parsed inputs without Standard Schema
+        // validation; enforce the same schema used by the chat engine.
+        const args = schema.parse(input) as Record<string, unknown>;
+        const result = await tool.function(args, { ...factory?.(identity), runId: identity.runId, signal });
+        signal.throwIfAborted();
+        outputs.set(identity.id, result);
+        return serializeToolResultForApi(result);
+      });
+    });
+    const client = new RealtimeClient({
+      adapter: session.gateway.adapter(),
+      // The same-origin Go gateway authenticates this connection. No provider
+      // credential or ephemeral-token service is needed in the browser.
+      getToken: async () => ({ provider: "wingman", token: "", expiresAt: Date.now() + 86_400_000, config: {} }),
+      tools: nativeTools,
+      instructions,
+      vadMode: "semantic",
+      autoCapture: capture,
+      onConnect: () => {
+        if (!signal.aborted && capture) onReady?.();
+      },
+      onError: (error) => {
+        // connect() marks failures before rejecting; the binding's catch reports
+        // those through onClosed. Gateway failures close after emitting an error.
+        queueMicrotask(() => {
+          if (sessionRef.current !== session || signal.aborted || client.status === "error") return;
+          console.warn("[voice] realtime error:", error);
+          callbacks.current.onError?.(error);
         });
-      });
-      const client = new RealtimeClient({
-        adapter: session.gateway.adapter(),
-        // The same-origin Go gateway authenticates this connection. No provider
-        // credential or ephemeral-token service is needed in the browser.
-        getToken: async () => ({ provider: "wingman", token: "", expiresAt: Date.now() + 86_400_000, config: {} }),
-        tools: nativeTools,
-        instructions,
-        vadMode: "semantic",
-        autoCapture: capture,
-        onConnect: () => {
-          if (!signal.aborted && capture) onReady?.();
-        },
-        onMessage: (message) => {
-          if (signal.aborted) return;
-          const text = message.parts
-            .map((part) => (part.type === "audio" ? part.transcript : part.type === "text" ? part.content : ""))
-            .join("");
-          // sendText is already persisted by chat before it reaches voice.
-          if (message.role === "user" && message.parts.some((part) => part.type === "audio"))
-            callbacks.current.onUser(text);
-          else if (message.role === "assistant" && text) callbacks.current.onAssistant(text);
-        },
-      });
-      session.clients.add(client);
-      session.client = client;
-      return client.connect().then(async () => {
-        if (signal.aborted) await client.disconnect();
-      });
-    },
-    [],
-  );
+      },
+      onMessage: (message) => {
+        if (signal.aborted) return;
+        const text = message.parts
+          .map((part) => (part.type === "audio" ? part.transcript : part.type === "text" ? part.content : ""))
+          .join("");
+        // sendText is already persisted by chat before it reaches voice.
+        if (message.role === "user" && message.parts.some((part) => part.type === "audio"))
+          callbacks.current.onUser(text);
+        else if (message.role === "assistant" && text) callbacks.current.onAssistant(text);
+      },
+    });
+    session.clients.add(client);
+    session.client = client;
+    return client.connect().then(async () => {
+      if (signal.aborted) await client.disconnect();
+    });
+  }, []);
 
   const start = useCallback(
     async (
@@ -141,17 +160,11 @@ export function useVoiceWebSockets(
       if (sessionRef.current) return;
       const controller = new AbortController();
       const outputs = new Map<string, ToolOutput>();
+      // Instructions and tools reach the session through RealtimeClient's own
+      // configuration; the gateway only supplies transport and audio settings.
       const gateway = gatewayRealtime({
         model: realtimeModel,
         transcriber: transcribeModel,
-        config: {
-          instructions,
-          tools: tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description ?? tool.name,
-            inputSchema: tool.parameters,
-          })),
-        },
         history: messages,
         signal: controller.signal,
         inputDeviceId,
@@ -184,7 +197,7 @@ export function useVoiceWebSockets(
       try {
         await gateway.prepare();
         if (controller.signal.aborted) return;
-        session.binding = bindClient(session, true, outputs, onReady).catch((error: unknown) => {
+        session.binding = bindClient(session, true, onReady).catch((error: unknown) => {
           if (controller.signal.aborted) return;
           void stop();
           callbacks.current.onClosed?.({
@@ -192,6 +205,9 @@ export function useVoiceWebSockets(
             message: error instanceof Error ? error.message : "Couldn't start voice mode",
           });
         });
+        // The client configures the session before the socket opens, so the
+        // first session.update already carries instructions and tools.
+        await Promise.race([gateway.configured, session.binding]);
       } catch (error) {
         if (controller.signal.aborted) return;
         await stop();
@@ -210,7 +226,7 @@ export function useVoiceWebSockets(
       if (factory !== undefined) session.factory = factory;
       session.binding = session.binding
         .then(async () => {
-          if (!session.controller.signal.aborted) await bindClient(session, false, session.outputs);
+          if (!session.controller.signal.aborted) await bindClient(session, false);
         })
         .catch((error: unknown) => {
           if (!session.controller.signal.aborted) {

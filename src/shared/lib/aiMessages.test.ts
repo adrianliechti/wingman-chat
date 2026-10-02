@@ -142,7 +142,6 @@ it("keeps reasoning in existing fields and replays it only for the producing mod
         ],
       },
     ],
-    "run",
     "original",
   );
   expect(stored[0].content).toEqual(history[0].content);

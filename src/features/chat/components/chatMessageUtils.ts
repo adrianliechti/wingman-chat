@@ -54,18 +54,6 @@ function parsePathFromJson(raw: string | undefined): string | null {
 
 /** Artifact file paths a single tool result wrote, if any. */
 function toolResultArtifactPaths(result: ToolResultContent): string[] {
-  const delta = result.meta?.artifactDelta;
-  if (delta && typeof delta === "object" && "mutations" in delta && Array.isArray(delta.mutations)) {
-    return delta.mutations.flatMap((mutation) =>
-      mutation &&
-      typeof mutation === "object" &&
-      "path" in mutation &&
-      typeof mutation.path === "string" &&
-      (!("operation" in mutation) || mutation.operation !== "delete")
-        ? [mutation.path]
-        : [],
-    );
-  }
   if (result.name === "artifacts_create" || result.name === "create" || result.name === "create_file") {
     const resultText = result.result?.find((c): c is TextContent => c.type === "text");
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
@@ -335,14 +323,7 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
 }
 
 function deltaPaths(result: ToolResultContent): string[] {
-  const delta = result.meta?.artifactDelta;
-  if (!delta || typeof delta !== "object" || !("mutations" in delta) || !Array.isArray(delta.mutations)) return [];
-  return delta.mutations.flatMap((mutation) => {
-    if (!mutation || typeof mutation !== "object" || !("path" in mutation) || typeof mutation.path !== "string") {
-      return [];
-    }
-    return [mutation.path];
-  });
+  return artifactDeltaFromMeta(result.meta)?.mutations.map((mutation) => mutation.path) ?? [];
 }
 
 /** Past-tense semantic summary for a completed group of tool result messages. */

@@ -28,9 +28,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
   const filtered = useMemo(() => {
     if (!search.trim()) return skills;
     const q = search.toLowerCase();
-    return skills.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-    );
+    return skills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [skills, search]);
 
   return (
@@ -51,10 +49,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
         </button>
         {searchOpen ? (
           <div className="relative flex-1">
-            <Search
-              size={12}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400"
-            />
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               ref={searchInputRef}
               type="text"
@@ -129,9 +124,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {skill.description}
-                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
                 </div>
               </button>
             );

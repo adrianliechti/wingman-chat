@@ -71,7 +71,6 @@ vi.mock("@/features/chat/hooks/useModels", () => ({
     models: [fixture.model, ...fixture.extraModels],
     selectedModel: fixture.model,
     setSelectedModel: vi.fn(),
-    getSavedModelId: () => "model",
   }),
 }));
 vi.mock("@/features/chat/hooks/useChats", async () => {
@@ -577,8 +576,7 @@ describe("chat run integration", () => {
       },
     ];
     fixture.complete.mockResolvedValueOnce(call).mockImplementationOnce(async () => {
-      toolContext?.setMeta?.({ progress: "finished" });
-      toolContext?.updateMeta?.({ link: "/result" });
+      toolContext?.setMeta?.({ progress: "finished", link: "/result" });
       return assistant("Final answer");
     });
     const context = await harness();
@@ -721,35 +719,5 @@ describe("chat run integration", () => {
     act(() => context.stopStreaming());
     await act(() => pending);
     expect(fixture.complete).toHaveBeenCalledTimes(1);
-  });
-
-  it("queues tool-originated follow-ups until the current tool exchange finishes", async () => {
-    fixture.tools = [
-      {
-        name: "work",
-        parameters: { type: "object" },
-        function: async (_args, context) => {
-          await context!.sendMessage!(user("Follow-up"));
-          return [{ type: "text", text: "Tool finished" }];
-        },
-      },
-    ];
-    fixture.complete
-      .mockResolvedValueOnce(call)
-      .mockResolvedValueOnce(assistant("First done"))
-      .mockResolvedValueOnce(assistant("Follow-up done"));
-    const context = await harness();
-    await act(() => context.sendMessage(user("Start")));
-    const messages = fixture.chats[0].messages;
-    expect(messages.map((message) => message.content[0].type)).toEqual([
-      "text",
-      "tool_call",
-      "tool_result",
-      "text",
-      "text",
-      "text",
-    ]);
-    expect(messages.at(-1)?.content).toEqual(assistant("Follow-up done").content);
-    expect(fixture.complete.mock.calls[2][0].messages.some((message) => message.role === "tool")).toBe(true);
   });
 });

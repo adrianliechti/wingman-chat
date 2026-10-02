@@ -1,11 +1,7 @@
 import JSZip from "jszip";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import {
-  exportAgentsAsZip,
-  exportSingleAgentAsZip,
-  importAgentsFromZip,
-} from "@/features/settings/lib/agentImportExport";
+import { exportSingleAgentAsZip, importAgentsFromZip } from "@/features/settings/lib/agentImportExport";
 import { MemoryManager } from "./memoryManager";
 import { emptyMemoryState } from "./memoryState";
 
@@ -35,13 +31,11 @@ describe("memory exchange", () => {
     expect(Object.keys((await exported()).files).some((name) => name.startsWith("memory"))).toBe(false);
   });
 
-  it("includes notes only on request and reserves runtime state for backups", async () => {
+  it("includes notes only on request", async () => {
     await exportSingleAgentAsZip("agent", { includeMemory: true });
     const shared = await exported();
     expect(await shared.file("memory/preferences.md")?.async("string")).toContain("Private preference");
     expect(shared.file("memory-state.json")).toBeNull();
-    await exportAgentsAsZip();
-    expect((await exported()).file("agents/agent/memory-state.json")).not.toBeNull();
   });
 
   it("normalizes imported notes and derives indexes instead of trusting archived listings", async () => {

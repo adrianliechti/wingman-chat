@@ -5,6 +5,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
+import type { McpAppOptions } from "@/features/settings/lib/mcpAppSession";
 import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
 import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -548,7 +549,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       args: Record<string, unknown>,
       result: (TextContent | ImageContent | AudioContent | FileContent)[],
       content: Record<string, unknown> | undefined,
-      options: import("@/features/settings/lib/mcpAppSession").McpAppOptions,
+      options: McpAppOptions,
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
       if (!client) {

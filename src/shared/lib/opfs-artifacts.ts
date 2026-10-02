@@ -2,11 +2,7 @@
  * OPFS Artifacts — Artifact file CRUD within chat folders.
  */
 
-import {
-  ArtifactRevisionEntrySchema,
-  type ArtifactRevisionEntry,
-  type RevisionOrigin,
-} from "@/shared/types/artifact";
+import { ArtifactRevisionEntrySchema, type ArtifactRevisionEntry, type RevisionOrigin } from "@/shared/types/artifact";
 import { contentToBlob, dataUrlDecodedByteLength } from "./fileContent";
 import { isBinaryContentType } from "./fileTypes";
 import {

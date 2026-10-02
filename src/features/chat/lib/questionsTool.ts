@@ -1,8 +1,7 @@
 import { MCPInputRequiredError } from "@tanstack/ai-mcp";
-import type { ElicitationResult } from "@/shared/types/elicitation";
 import { HelpCircle } from "lucide-react";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
-import type { ElicitationPrimitiveSchema, ElicitationSchema } from "@/shared/types/elicitation";
+import type { ElicitationPrimitiveSchema, ElicitationResult, ElicitationSchema } from "@/shared/types/elicitation";
 
 type QuestionOption = { value?: unknown; label?: unknown };
 

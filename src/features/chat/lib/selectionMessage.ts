@@ -11,9 +11,7 @@ export function buildSelectionEditMessage(request: ArtifactEditRequest): Message
         type: "artifact_selection",
         path: request.path,
         text: request.text,
-        ...(request.startLine
-          ? { startLine: request.startLine, endLine: request.endLine ?? request.startLine }
-          : {}),
+        ...(request.startLine ? { startLine: request.startLine, endLine: request.endLine ?? request.startLine } : {}),
       },
     ],
   };

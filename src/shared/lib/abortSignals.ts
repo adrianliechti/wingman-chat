@@ -18,6 +18,16 @@ export async function withAbort<T>(signal: AbortSignal, operation: () => Promise
   }
 }
 
+/** A controller that follows `signal`, for APIs that take a controller instead of a signal. */
+export function followAbortSignal(signal?: AbortSignal): { controller: AbortController; cleanup: () => void } {
+  const controller = new AbortController();
+  if (!signal) return { controller, cleanup() {} };
+  const abort = () => controller.abort(signal.reason);
+  if (signal.aborted) abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  return { controller, cleanup: () => signal.removeEventListener("abort", abort) };
+}
+
 /** Combine cancellation sources while retaining cleanup for the listener fallback. */
 export function combineAbortSignals(...values: Array<AbortSignal | undefined>): CombinedAbortSignal {
   const signals = [...new Set(values.filter((value): value is AbortSignal => value !== undefined))];

@@ -44,15 +44,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
@@ -173,12 +165,7 @@ function AddMenuRoot({ children }: { children: ReactNode }) {
           {isMounted && (
             <FloatingPortal>
               <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
-                <div
-                  ref={setFloating}
-                  style={floatingStyles}
-                  className="z-50"
-                  {...getFloatingProps()}
-                >
+                <div ref={setFloating} style={floatingStyles} className="z-50" {...getFloatingProps()}>
                   <div
                     style={transitionStyles}
                     className={cn(MENU_PANEL_CLASS, "max-h-[60vh] overflow-y-auto min-w-40")}
@@ -207,14 +194,7 @@ interface MenuRowProps {
 }
 
 /** A focusable leaf row in the Add menu, wired for keyboard list navigation. */
-function MenuRow({
-  label,
-  closeOnClick = true,
-  disabled,
-  onSelect,
-  className,
-  children,
-}: MenuRowProps) {
+function MenuRow({ label, closeOnClick = true, disabled, onSelect, className, children }: MenuRowProps) {
   const menu = useContext(MenuContext);
   const { ref: setItemElement, index } = useListItem({ label: disabled ? null : label });
   const isActive = index === menu.activeIndex;
@@ -321,12 +301,7 @@ function Submenu({ label, icon, panelClassName, children }: SubmenuProps) {
       </button>
       {isOpen && (
         <FloatingPortal>
-          <div
-            ref={setFloating}
-            style={floatingStyles}
-            className="z-9999"
-            {...getFloatingProps()}
-          >
+          <div ref={setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
             <div className={cn(MENU_PANEL_CLASS, panelClassName)}>{children(close)}</div>
           </div>
         </FloatingPortal>
@@ -403,16 +378,14 @@ export function ChatInputAddMenu({
 
   function renderProviderIcon(provider: ToolProvider, state: ProviderState) {
     const icon = provider.icon || Sparkles;
-    const providerConnecting =
-      state === ProviderState.Initializing || state === ProviderState.Authenticating;
+    const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
     const providerUnauthorized = state === ProviderState.Unauthorized;
     const providerFailed = state === ProviderState.Failed;
 
     if (providerConnecting) return <LoaderCircle size={16} className="animate-spin" />;
     if (providerUnauthorized) return <Lock size={16} className="text-amber-500" />;
     if (providerFailed) return <TriangleAlert size={16} />;
-    if (typeof icon === "string")
-      return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
+    if (typeof icon === "string") return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
     const Icon = icon;
     return <Icon size={16} />;
   }
@@ -439,11 +412,7 @@ export function ChatInputAddMenu({
               <span className="font-medium text-sm flex-1 text-left">Add File</span>
             </MenuRow>
           ) : (
-            <Submenu
-              label="Add File"
-              icon={<Paperclip size={16} className="shrink-0" />}
-              panelClassName="min-w-40"
-            >
+            <Submenu label="Add File" icon={<Paperclip size={16} className="shrink-0" />} panelClassName="min-w-40">
               {(close) => (
                 <>
                   <button
@@ -503,9 +472,7 @@ export function ChatInputAddMenu({
               <MenuRow
                 label={isContinuousCaptureActive ? "Stop Screen Capture" : "Share Screen"}
                 onSelect={onContinuousCaptureToggle}
-                className={
-                  isContinuousCaptureActive ? "text-green-600 dark:text-green-400" : undefined
-                }
+                className={isContinuousCaptureActive ? "text-green-600 dark:text-green-400" : undefined}
               >
                 <ScreenShare size={16} className="shrink-0" />
                 <span className="font-medium text-sm">
@@ -524,22 +491,12 @@ export function ChatInputAddMenu({
                 <div className="overflow-y-auto flex flex-col">
                   {showSkillsMenu && (
                     <>
-                      <Tooltip
-                        content="Skills you've created — editable in Manage"
-                        side="right"
-                        className="w-full"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleSkillSource("personal")}
-                          className={ROW_CLASS}
-                        >
+                      <Tooltip content="Skills you've created — editable in Manage" side="right" className="w-full">
+                        <button type="button" onClick={() => toggleSkillSource("personal")} className={ROW_CLASS}>
                           <User size={16} className="shrink-0" />
                           <span className="font-medium text-sm flex-1 text-left">
                             All my skills{" "}
-                            <span className="text-neutral-400 dark:text-neutral-500">
-                              ({skills.length})
-                            </span>
+                            <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
                           </span>
                           <span className="shrink-0 w-4 flex justify-center">
                             {skillSources.personal && (
@@ -587,11 +544,7 @@ export function ChatInputAddMenu({
                                   }}
                                 >
                                   {plugin.icon ? (
-                                    <img
-                                      src={plugin.icon}
-                                      alt=""
-                                      className="h-4 w-4 shrink-0 rounded object-contain"
-                                    />
+                                    <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
                                   ) : (
                                     <Puzzle size={16} className="shrink-0" />
                                   )}
@@ -600,17 +553,9 @@ export function ChatInputAddMenu({
                                   </span>
                                   <span className="shrink-0 w-4 flex justify-center">
                                     {required ? (
-                                      <Lock
-                                        size={12}
-                                        className="text-neutral-400 dark:text-neutral-500"
-                                      />
+                                      <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
                                     ) : (
-                                      enabled && (
-                                        <Check
-                                          size={13}
-                                          className="text-neutral-600 dark:text-neutral-400"
-                                        />
-                                      )
+                                      enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
                                     )}
                                   </span>
                                 </MenuRow>
@@ -670,14 +615,11 @@ export function ChatInputAddMenu({
               </>
             )}
           </Submenu>
-          {otherProviders.length > 0 && (
-            <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />
-          )}
+          {otherProviders.length > 0 && <div className="border-t border-neutral-200 dark:border-neutral-700 my-1" />}
           {otherProviders.map((provider: ToolProvider) => {
             const state = getProviderState(provider.id);
             const providerEnabled = state === ProviderState.Connected;
-            const providerConnecting =
-              state === ProviderState.Initializing || state === ProviderState.Authenticating;
+            const providerConnecting = state === ProviderState.Initializing || state === ProviderState.Authenticating;
             const providerUnauthorized = state === ProviderState.Unauthorized;
             const providerFailed = state === ProviderState.Failed;
             const providerRequired = getProviderPolicy(provider.id) === "required";
@@ -716,18 +658,14 @@ export function ChatInputAddMenu({
                   className={cn(providerConnecting && !providerRequired && "opacity-50")}
                 >
                   {renderProviderIcon(provider, state)}
-                  <span className="font-medium text-sm flex-1 text-left truncate">
-                    {provider.name}
-                  </span>
+                  <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
                   <span className="shrink-0 w-4 flex justify-center">
                     {providerRequired ? (
                       <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
                     ) : (
                       providerEnabled &&
                       !providerConnecting &&
-                      !providerFailed && (
-                        <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
-                      )
+                      !providerFailed && <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
                     )}
                   </span>
                 </MenuRow>
@@ -740,11 +678,7 @@ export function ChatInputAddMenu({
       <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} />
 
       {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
-      <Dialog
-        open={showMobileSheet}
-        onClose={setShowMobileSheet}
-        className="relative z-50 md:hidden"
-      >
+      <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
         <DialogBackdrop
           transition
           className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
@@ -848,9 +782,7 @@ export function ChatInputAddMenu({
                     className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
                   >
                     <Mic size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">
-                      Start Recording
-                    </span>
+                    <span className="text-xs font-medium leading-tight text-center">Start Recording</span>
                   </button>
                 )}
               </div>
@@ -869,8 +801,7 @@ export function ChatInputAddMenu({
                       const state = getProviderState(provider.id);
                       const providerEnabled = state === ProviderState.Connected;
                       const providerConnecting =
-                        state === ProviderState.Initializing ||
-                        state === ProviderState.Authenticating;
+                        state === ProviderState.Initializing || state === ProviderState.Authenticating;
                       const providerUnauthorized = state === ProviderState.Unauthorized;
                       const providerFailed = state === ProviderState.Failed;
                       const providerRequired = getProviderPolicy(provider.id) === "required";
@@ -908,24 +839,14 @@ export function ChatInputAddMenu({
                             )}
                           </div>
                           {providerRequired ? (
-                            <Lock
-                              size={15}
-                              className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                            />
+                            <Lock size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                           ) : (
                             <>
                               {providerEnabled && !providerConnecting && !providerFailed && (
-                                <Check
-                                  size={16}
-                                  className="shrink-0 text-neutral-600 dark:text-neutral-400"
-                                />
+                                <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
                               )}
-                              {providerUnauthorized && (
-                                <Lock size={16} className="shrink-0 text-amber-500" />
-                              )}
-                              {providerFailed && (
-                                <TriangleAlert size={16} className="shrink-0 text-neutral-400" />
-                              )}
+                              {providerUnauthorized && <Lock size={16} className="shrink-0 text-amber-500" />}
+                              {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
                             </>
                           )}
                         </button>
@@ -973,15 +894,10 @@ export function ChatInputAddMenu({
                           <User size={16} className="shrink-0" />
                           <span className="font-medium text-sm flex-1 text-left">
                             All my skills{" "}
-                            <span className="text-neutral-400 dark:text-neutral-500">
-                              ({skills.length})
-                            </span>
+                            <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
                           </span>
                           {skillSources.personal && (
-                            <Check
-                              size={16}
-                              className="shrink-0 text-neutral-600 dark:text-neutral-400"
-                            />
+                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
                           )}
                         </button>
                       </>
@@ -1015,11 +931,7 @@ export function ChatInputAddMenu({
                               }`}
                             >
                               {plugin.icon ? (
-                                <img
-                                  src={plugin.icon}
-                                  alt=""
-                                  className="h-4 w-4 shrink-0 rounded object-contain"
-                                />
+                                <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
                               ) : (
                                 <Puzzle size={16} className="shrink-0" />
                               )}
@@ -1027,16 +939,10 @@ export function ChatInputAddMenu({
                                 {plugin.title || plugin.id}
                               </span>
                               {required ? (
-                                <Lock
-                                  size={16}
-                                  className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                                />
+                                <Lock size={16} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                               ) : (
                                 enabled && (
-                                  <Check
-                                    size={16}
-                                    className="shrink-0 text-neutral-600 dark:text-neutral-400"
-                                  />
+                                  <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
                                 )
                               )}
                             </button>
@@ -1050,37 +956,37 @@ export function ChatInputAddMenu({
 
               {/* Agents section; selecting one happens in the model chooser. */}
               <>
-                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                  <div className="px-4 pb-1 flex items-center justify-between">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Agents
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        title="Add Agent"
-                        onClick={() => {
-                          setShowMobileSheet(false);
-                          setWizardOpen(true);
-                        }}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-                      >
-                        <Plus size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        title="Manage Agents"
-                        onClick={() => {
-                          setShowMobileSheet(false);
-                          setAgentDrawerView("list");
-                          setShowAgentDrawer(true);
-                        }}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-                      >
-                        <Settings2 size={16} />
-                      </button>
-                    </div>
+                <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                <div className="px-4 pb-1 flex items-center justify-between">
+                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                    Agents
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      title="Add Agent"
+                      onClick={() => {
+                        setShowMobileSheet(false);
+                        setWizardOpen(true);
+                      }}
+                      className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Manage Agents"
+                      onClick={() => {
+                        setShowMobileSheet(false);
+                        setAgentDrawerView("list");
+                        setShowAgentDrawer(true);
+                      }}
+                      className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                    >
+                      <Settings2 size={16} />
+                    </button>
                   </div>
+                </div>
               </>
             </div>
           </DialogPanel>

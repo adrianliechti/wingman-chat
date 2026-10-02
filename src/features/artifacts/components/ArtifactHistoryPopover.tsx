@@ -80,18 +80,11 @@ function RevisionList({ fs, path, onPeek, onPin, close }: RevisionListProps) {
     return <div className="px-3 py-2 text-xs text-neutral-400 dark:text-neutral-500">Loading…</div>;
   }
   if (entries.length === 0) {
-    return (
-      <div className="px-3 py-2 text-xs text-neutral-400 dark:text-neutral-500">No earlier revisions</div>
-    );
+    return <div className="px-3 py-2 text-xs text-neutral-400 dark:text-neutral-500">No earlier revisions</div>;
   }
 
   return (
-    <ul
-      role="list"
-      aria-label="Revisions"
-      className="max-h-80 overflow-auto"
-      onMouseLeave={() => onPeek(null)}
-    >
+    <ul role="list" aria-label="Revisions" className="max-h-80 overflow-auto" onMouseLeave={() => onPeek(null)}>
       {entries.map((entry) => (
         <li key={`${entry.revision}-${entry.createdAt}`}>
           <button

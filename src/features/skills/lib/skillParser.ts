@@ -45,7 +45,7 @@ export type SkillParseResult =
 // No start/end hyphens, no consecutive hyphens
 const SKILL_NAME_REGEX = /^[\p{Ll}\p{N}]+(-[\p{Ll}\p{N}]+)*$/u;
 
-export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
+const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 
 /**
  * Validate a skill name against the agentskills.io specification
@@ -91,9 +91,7 @@ export function validateSkillDescription(description: string): { valid: boolean;
 /**
  * Parse YAML frontmatter from markdown content
  */
-function parseFrontmatter(
-  content: string,
-): { frontmatter: Record<string, string>; body: string } | null {
+function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } | null {
   const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/;
   const match = content.match(frontmatterRegex);
 
@@ -120,8 +118,7 @@ function parseFrontmatter(
         } catch {
           value = value.slice(1, -1);
         }
-      } else if (value.startsWith("'") && value.endsWith("'"))
-        value = value.slice(1, -1).replace(/''/g, "'");
+      } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/''/g, "'");
       frontmatter[key] = value;
     }
   }
@@ -174,15 +171,9 @@ export function parseSkillFile(
     });
   }
 
-  if (errors.length > 0) {
+  // A missing name was already reported above; this only narrows the type.
+  if (errors.length > 0 || !name) {
     return { success: false, errors };
-  }
-
-  if (!name) {
-    return {
-      success: false,
-      errors: [{ field: "format", message: "Missing required frontmatter fields" }],
-    };
   }
 
   return {
@@ -227,10 +218,7 @@ async function downloadSkillZip(skills: Skill[], filename: string): Promise<void
   for (const skill of skills) {
     zip.file(`${skill.name}/SKILL.md`, serializeSkill(skill));
     for (const { path, content } of skill.resources ?? []) {
-      zip.file(
-        `${skill.name}/${path}`,
-        content.startsWith("data:") ? decodeDataURL(content) : content,
-      );
+      zip.file(`${skill.name}/${path}`, content.startsWith("data:") ? decodeDataURL(content) : content);
     }
   }
 
@@ -246,19 +234,13 @@ export async function downloadSkill(skill: Skill): Promise<void> {
     await downloadSkillZip([skill], `${skill.name}.zip`);
     return;
   }
-  await downloadBlob(
-    new Blob([serializeSkill(skill)], { type: "text/markdown" }),
-    `${skill.name}.SKILL.md`,
-  );
+  await downloadBlob(new Blob([serializeSkill(skill)], { type: "text/markdown" }), `${skill.name}.SKILL.md`);
 }
 
 /**
  * Download all skills as a zip file
  */
-export async function downloadSkillsAsZip(
-  skills: Skill[],
-  filename: string = "skills.zip",
-): Promise<void> {
+export async function downloadSkillsAsZip(skills: Skill[], filename: string = "skills.zip"): Promise<void> {
   if (skills.length === 0) {
     throw new Error("No skills to download");
   }
@@ -281,10 +263,7 @@ function isHiddenZipPath(path: string): boolean {
  * inside one). Off by default so plain user imports keep ignoring siblings of a
  * loose root `.md`.
  */
-export async function parseSkillsFromZip(
-  zip: JSZip,
-  options?: { rootIsSkill?: boolean },
-): Promise<ParsedSkill[]> {
+export async function parseSkillsFromZip(zip: JSZip, options?: { rootIsSkill?: boolean }): Promise<ParsedSkill[]> {
   const skills: ParsedSkill[] = [];
   const rootIsSkill = options?.rootIsSkill ?? false;
 

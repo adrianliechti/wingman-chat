@@ -138,10 +138,7 @@ async function parseMcpServers(zip: JSZip): Promise<HubMcpServer[]> {
  * (`skills/{name}/SKILL.md`, `mcp.json`) and the plugin-hub skill-folder
  * fallback (`SKILL.md` at the archive root).
  */
-export async function downloadHubPlugin(
-  hubUrl: string,
-  plugin: HubPlugin,
-): Promise<DownloadedPlugin> {
+export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Promise<DownloadedPlugin> {
   hubUrl = normalizeHubUrl(hubUrl);
   const url = resolveHubUrl(`${encodeURIComponent(plugin.id)}.zip`, hubUrl);
 

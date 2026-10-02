@@ -1,10 +1,55 @@
 import { expect, test, type Page } from "@playwright/test";
+import JSZip from "jszip";
 
 async function open(page: Page) {
   await page.route("**/config.json", (route) => route.fulfill({ json: { models: [] } }));
   await page.goto("/tests/browser/fixtures/persistence.html");
   await page.waitForFunction(() => window.persistenceE2E?.state().ready && window.profileE2E?.isLoaded);
 }
+
+test("streams a ZIP to a file and reports malformed JSON before reloading a partial restore", async ({ page }) => {
+  await open(page);
+  const { id, bytes } = await page.evaluate(async () => {
+    const api = window.persistenceE2E;
+    const chat = await api.createChat();
+    api.updateChat(chat.id, () => ({ customTitle: "Keep original" }));
+    // Exercise a real FileSystemWritableFileStream without a native picker UI.
+    const root = await navigator.storage.getDirectory();
+    const output = await root.getFileHandle("download.zip", { create: true });
+    Object.defineProperty(window, "showSaveFilePicker", { configurable: true, value: async () => output });
+    await api.downloadChats();
+    return { id: chat.id, bytes: Array.from(new Uint8Array(await (await output.getFile()).arrayBuffer())) };
+  });
+  const archive = await JSZip.loadAsync(new Uint8Array(bytes), { checkCRC32: true });
+  const original = JSON.parse(await archive.file(`chats/${id}/chat.json`)!.async("string"));
+  expect(original.customTitle).toBe("Keep original");
+  archive.file(`chats/${id}/chat.json`, "{broken");
+  archive.file(
+    "chats/healthy/chat.json",
+    JSON.stringify({ ...original, id: "healthy", customTitle: "Healthy import" }),
+  );
+  const changed = Array.from(await archive.generateAsync({ type: "uint8array" }));
+  const result = await page.evaluate(async (bytes) => {
+    const result = await window.persistenceE2E.restore(bytes);
+    void window.persistenceE2E.finishRestore(result);
+    return result;
+  }, changed);
+  expect(result.skipped).toMatchObject([{ path: `chats/${id}/chat.json` }]);
+  const report = page.getByRole("dialog");
+  await expect(report).toContainText("Import partially completed");
+  await expect(report).toContainText(`chats/${id}/chat.json`);
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`chats/${id}/chat.json`), id)).toMatchObject({
+    customTitle: "Keep original",
+  });
+  await report.getByRole("button", { name: "Reload", exact: true }).click();
+  await page.waitForFunction(() => window.persistenceE2E?.state().chats.some((chat) => chat.id === "healthy"));
+  expect(await page.evaluate(() => window.persistenceE2E.state().chats)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id, customTitle: "Keep original" }),
+      expect.objectContaining({ id: "healthy", customTitle: "Healthy import" }),
+    ]),
+  );
+});
 
 test("chat edits in the same event persist once with their combined changes and survive reload", async ({ page }) => {
   await open(page);

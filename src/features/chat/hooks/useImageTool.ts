@@ -230,14 +230,7 @@ export function useImageTool(): Tool | null {
   const config = getConfig();
   const { fs } = useArtifacts();
 
-  const isAvailable = useMemo(() => {
-    try {
-      return !!config.renderer;
-    } catch (error) {
-      console.warn("Failed to get image generation config:", error);
-      return false;
-    }
-  }, [config.renderer]);
+  const isAvailable = !!config.renderer;
 
   const client = config.client;
   const catalog = useModelCatalog();

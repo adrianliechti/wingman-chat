@@ -4,7 +4,7 @@
  * downloadable workspace, but included in full OPFS backups.
  */
 
-import { deleteFile, readJson, writeJson } from "./opfs-core";
+import { readJson, writeJson } from "./opfs-core";
 import { withPersistenceLock } from "./persistence";
 import { normalizeArtifactPath } from "./sandbox";
 
@@ -37,10 +37,6 @@ export async function writeArtifactState(chatId: string, path: string, state: Ar
     throw new Error(`Artifact state is ${size} bytes; the limit is ${ARTIFACT_STATE_MAX_BYTES}.`);
   }
   await writeJson(artifactStatePath(chatId, path), state);
-}
-
-export function deleteArtifactState(chatId: string, path: string): Promise<void> {
-  return deleteFile(artifactStatePath(chatId, path));
 }
 
 /** Read-modify-write under a lock so concurrent calls from one page do not lose keys. */

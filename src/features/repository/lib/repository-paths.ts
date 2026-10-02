@@ -96,18 +96,12 @@ function migrationOrder(a: RepositoryFile, b: RepositoryFile): number {
   return safeATime - safeBTime || a.id.localeCompare(b.id);
 }
 
-export interface RepositoryPathReconciliation {
-  files: ResolvedRepositoryFile[];
-  /** IDs whose metadata must be written back. */
-  changedIds: string[];
-}
-
 /**
  * Reconcile current and legacy metadata without renaming physical OPFS data.
  * Existing valid unique paths win; missing, unsafe, or duplicate paths are
  * assigned deterministically and never depend on input enumeration order.
  */
-export function reconcileRepositoryFilePaths(files: readonly RepositoryFile[]): RepositoryPathReconciliation {
+export function reconcileRepositoryFilePaths(files: readonly RepositoryFile[]): ResolvedRepositoryFile[] {
   const resolved = files.map((file) => ({ ...file })) as ResolvedRepositoryFile[];
   const ordered = [...resolved].sort(migrationOrder);
   const used = new Set<string>();
@@ -129,9 +123,5 @@ export function reconcileRepositoryFilePaths(files: readonly RepositoryFile[]): 
     used.add(comparisonKey(file.path));
   }
 
-  const originalPaths = new Map(files.map((file) => [file.id, file.path]));
-  return {
-    files: resolved,
-    changedIds: ordered.filter((file) => originalPaths.get(file.id) !== file.path).map((file) => file.id),
-  };
+  return resolved;
 }

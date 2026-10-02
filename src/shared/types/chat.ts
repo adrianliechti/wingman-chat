@@ -128,8 +128,8 @@ export type Tool = {
     model?: string;
     instructions: string;
     tools: Tool[];
-    runtimeContext: string;
-    middleware: ChatMiddleware[];
+    runtimeContext?: string;
+    middleware?: ChatMiddleware[];
     /** Research receives its explicit brief instead of the parent conversation. */
     inheritHistory?: boolean;
   };
@@ -211,12 +211,9 @@ export interface ToolContext {
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
-  sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;
-  updateMeta?(meta: Record<string, unknown>): void;
   setError?(error: MessageError): void;
   setContent?(content: Record<string, unknown>): void;
-  setContext?(text: string | null): Promise<void>;
   /** Trace context for nested agents spawned from this tool. */
   agentContext?: AgentContext;
 }

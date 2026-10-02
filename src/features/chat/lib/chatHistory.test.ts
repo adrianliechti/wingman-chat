@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
 import type { Message } from "@/shared/types/chat";
-import { trimBulkyToolHistory } from "@/shared/lib/toolHistoryTrim";
 import { prepareChatMessages } from "./chatHistory";
 
 const user = (text: string): Message => ({ role: "user", content: [{ type: "text", text }] });
@@ -75,7 +74,6 @@ describe("saved chat history", () => {
   it("does not count internal feedback as a human turn when trimming tool history", () => {
     const longOutput = output("a", "x".repeat(5000));
     const messages = [user("Work"), call("a"), longOutput, feedback, assistant("Still working"), feedback];
-    expect(trimBulkyToolHistory(messages)).toBe(messages);
     expect(prepareChatMessages(messages)[2]).toBe(longOutput);
   });
 });

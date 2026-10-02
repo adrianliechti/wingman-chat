@@ -54,14 +54,6 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
   return normalized;
 }
 
-/**
- * Normalize a path used as a *reference* from within an artifact (e.g. an
- * `<img src="...">` inside a markdown artifact). Drops leading `./` and `/`.
- */
-export function normalizeArtifactReferencePath(path: string): string {
-  return path.replace(/^\.\//, "").replace(/^\//, "");
-}
-
 const ARTIFACT_LINK_SCHEME = /^(sandbox|artifact):/i;
 
 export function getArtifactLinkPath(url: string): string | null {

@@ -25,7 +25,9 @@ export function ConfirmHost() {
                 {request.title}
               </Dialog.Title>
               {request.message && (
-                <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">{request.message}</p>
+                <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed whitespace-pre-line break-words">
+                  {request.message}
+                </p>
               )}
             </div>
             <div className="flex justify-end gap-2 px-6 py-4 bg-neutral-50/60 dark:bg-neutral-900/40 border-t border-neutral-200 dark:border-neutral-800">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioRecorder } from "@tanstack/ai-client";
 import { AudioResources } from "@/shared/lib/audioResources";
+import { micConstraints } from "@/features/voice/lib/micConstraints";
 import { notify } from "@/shared/lib/notify";
 import { getConfig } from "@/shared/config";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
@@ -56,12 +57,7 @@ export function useTranscription(ownerKey?: string, enabled = true): UseTranscri
     if (current.current) return;
     const scope = new AudioResources();
     const recorder = new AudioRecorder({
-      audio: {
-        ...(inputDeviceId && { deviceId: { exact: inputDeviceId } }),
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
+      audio: micConstraints(inputDeviceId),
       mimeType: "audio/webm;codecs=opus",
       onError: (error) => {
         // Start/stop failures reject their own promises; only asynchronous

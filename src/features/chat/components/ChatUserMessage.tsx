@@ -47,9 +47,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
   const [editContent, setEditContent] = useState(textContent);
   // Passages highlighted in the artifact viewer, sent along with the instruction.
-  const selectionParts = message.content.filter(
-    (p): p is ArtifactSelectionContent => p.type === "artifact_selection",
-  );
+  const selectionParts = message.content.filter((p): p is ArtifactSelectionContent => p.type === "artifact_selection");
   // Get additional text parts (file attachments) - all text content after the first one
   const textParts = message.content.filter((p): p is TextContent => p.type === "text");
   const additionalTextContent = textParts.slice(1);

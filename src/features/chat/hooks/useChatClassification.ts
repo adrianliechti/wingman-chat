@@ -117,7 +117,6 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
                       `This request appears to involve "${cfg.name}", which may require special attention. Please review before continuing.`,
                     severity: cfg.severity ?? "medium",
                   },
-                  resolve: () => {},
                 };
               }
             }
@@ -142,7 +141,6 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
                   consent: {
                     message: customText ?? `This conversation appears to be about "${toAsk.name}". Please acknowledge.`,
                   },
-                  resolve: () => {},
                 };
               }
             }

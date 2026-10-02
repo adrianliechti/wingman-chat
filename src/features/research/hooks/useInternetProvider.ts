@@ -4,7 +4,6 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import type { SearchResult } from "@/features/research/types/search";
 import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
-import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
 import { getTextFromContent, type Tool, type ToolDisplay, type ToolProvider } from "@/shared/types/chat";
 
@@ -195,7 +194,6 @@ export function createInternetProvider(client: Client, internet: Config["interne
     {
       instructions: internetInstructionsText,
       tools: buildWebTools(client, internet),
-      runtimeContext: "",
       inheritHistory: false,
       middleware: [
         {
@@ -208,9 +206,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
                 : (content?.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("\n") ?? "");
             let guard;
             try {
-              guard = await client.guard(internet.guard ?? "", `${prompt}\n\n${captureRequestContext()}`, {
-                signal: ctx.signal,
-              });
+              guard = await client.guard(internet.guard ?? "", prompt, { signal: ctx.signal });
             } catch (error) {
               ctx.signal?.throwIfAborted();
               throw new Error("The Guardrail system is not available. Please try again later.", { cause: error });

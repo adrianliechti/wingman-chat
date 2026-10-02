@@ -97,18 +97,49 @@ describe("backup and restore", () => {
     expect(await opfs.readText("agents/one/files/gone/segments.json")).toBeUndefined();
   });
 
-  it("validates metadata before overwriting any saved file", async () => {
+  it("imports valid records while preserving an existing record whose backup JSON is malformed", async () => {
     memory.put("profile.json", '{"name":"Before"}');
-    await expect(
-      restoreFiles(
-        new Map([
-          ["profile.json", new Blob(['{"name":"After"}'])],
-          ["chats/broken/chat.json", new Blob(["{broken"])],
-        ]),
-      ),
-    ).rejects.toThrow("Invalid JSON");
-    expect(await opfs.readJson("profile.json")).toEqual({ name: "Before" });
+    memory.put("chats/broken/chat.json", storedChat("broken"));
+    memory.put("chats/broken/artifacts/a.txt", "Original");
+    const result = await restoreFiles(
+      new Map([
+        ["chats/broken/artifacts/a.txt", new Blob(["Replacement"])],
+        ["profile.json", new Blob(['{"name":"After"}'])],
+        ["chats/broken/chat.json", new Blob(["{broken"])],
+        ["chats/broken/blobs/new.bin", new Blob(["Orphan"])],
+        ["chats/good/chat.json", new Blob([storedChat("good")])],
+        ["chats/good/artifacts/draft.json", new Blob(["{unfinished user file"])],
+      ]),
+    );
+    expect(result.restoredFiles).toBe(3);
+    expect(result.skipped).toEqual([
+      { path: "chats/broken/chat.json", reason: expect.stringContaining("Invalid JSON") },
+    ]);
+    expect(await opfs.readJson("profile.json")).toEqual({ name: "After" });
+    expect(await opfs.readText("chats/broken/chat.json")).toBe(storedChat("broken"));
+    expect(await opfs.readText("chats/broken/artifacts/a.txt")).toBe("Original");
+    expect(await opfs.readText("chats/broken/blobs/new.bin")).toBeUndefined();
+    expect(await opfs.readText("chats/good/artifacts/draft.json")).toBe("{unfinished user file");
+    expect((await opfs.readIndex("chats")).map((entry) => entry.id).sort()).toEqual(["broken", "good"]);
+  });
+
+  it("reports an entirely invalid backup without writing", async () => {
+    const result = await restoreFiles(new Map([["profile.json", new Blob(["{broken"])]]));
+    expect(result.restoredFiles).toBe(0);
+    expect(result.skipped).toHaveLength(1);
     expect(memory.closed).toEqual([]);
+  });
+
+  it("reports a malformed optional index and rebuilds it from imported records", async () => {
+    const result = await opfs.importFolderFromZip(
+      "/",
+      await zipBlob({
+        "chats/index.json": "{broken",
+        "chats/one/chat.json": storedChat("one"),
+      }),
+    );
+    expect(result.skipped).toEqual([{ path: "chats/index.json", reason: expect.stringContaining("rebuilt") }]);
+    expect(await opfs.readIndex("chats")).toMatchObject([{ id: "one" }]);
   });
 
   it.each([

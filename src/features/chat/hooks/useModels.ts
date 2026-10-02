@@ -140,6 +140,5 @@ export function useModels() {
     models,
     selectedModel: selectedModel ?? null,
     setSelectedModel,
-    getSavedModelId,
   };
 }

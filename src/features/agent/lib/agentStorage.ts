@@ -104,57 +104,18 @@ async function writeAgent(agent: Agent): Promise<void> {
 export async function loadAgent(id: string): Promise<Agent | undefined> {
   const agentPath = `${COLLECTION}/${id}`;
 
-  // Try AGENTS.md first, then legacy AGENT.md, then agent.json
-  let name = "Untitled";
-  let instructions: string | undefined;
-  let skills: string[] = [];
-  let plugins: string[] = [];
-  let tools: string[] = [];
-  let servers: BridgeServer[] = [];
-  let model: string | undefined;
-  let effort: Agent["effort"];
-  let verbosity: Agent["verbosity"];
-  let memory: boolean | undefined;
-
+  // Both formats supply the same settings; preserve them when loading or exporting.
   const mdContent = (await opfs.readText(`${agentPath}/AGENTS.md`)) || (await opfs.readText(`${agentPath}/AGENT.md`));
-  if (mdContent) {
-    const parsed = parseAgentMd(mdContent);
-    if (!parsed) throw new Error(`Invalid agent definition in ${agentPath}/AGENTS.md`);
-    if (parsed) {
-      name = parsed.name;
-      instructions = parsed.instructions;
-      skills = parsed.skills;
-      plugins = parsed.plugins;
-      tools = parsed.tools;
-      model = parsed.model;
-      effort = parsed.effort;
-      verbosity = parsed.verbosity;
-      memory = parsed.memory || undefined;
-    }
-  } else {
-    // Legacy: read agent.json
-    const meta = await opfs.readJson<{
-      id: string;
-      name: string;
-      instructions?: string;
-      repositoryEnabled?: boolean;
-      embedder: string;
-      skills: string[];
-      servers: BridgeServer[];
-      tools: string[];
-      createdAt: string;
-      updatedAt: string;
-    }>(`${agentPath}/agent.json`);
-    if (!meta) return undefined;
-
-    name = meta.name;
-    instructions = meta.instructions;
-    skills = meta.skills || [];
-    tools = meta.tools || [];
-    servers = meta.servers || [];
+  const meta = mdContent
+    ? parseAgentMd(mdContent)
+    : await opfs.readJson<Partial<Agent> & Pick<Agent, "name">>(`${agentPath}/agent.json`);
+  if (!meta) {
+    if (mdContent) throw new Error(`Invalid agent definition in ${agentPath}/AGENTS.md`);
+    return undefined;
   }
 
   // Load servers from servers.json (new format; legacy agents have them inline in agent.json)
+  let servers = ("servers" in meta ? meta.servers : undefined) ?? [];
   if (servers.length === 0) {
     const loadedServers = await opfs.readJson<BridgeServer[]>(`${agentPath}/servers.json`);
     if (loadedServers && Array.isArray(loadedServers)) {
@@ -183,17 +144,17 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
 
   return {
     id,
-    name,
-    instructions,
-    skills,
-    plugins,
+    name: meta.name,
+    instructions: meta.instructions,
+    skills: meta.skills ?? [],
+    plugins: meta.plugins ?? [],
     servers,
-    tools,
-    model,
-    effort,
-    verbosity,
-    memory,
-    files: reconciled.files.length > 0 ? reconciled.files : undefined,
+    tools: meta.tools ?? [],
+    model: meta.model,
+    effort: meta.effort,
+    verbosity: meta.verbosity,
+    memory: meta.memory || undefined,
+    files: reconciled.length > 0 ? reconciled : undefined,
   };
 }
 

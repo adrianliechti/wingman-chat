@@ -46,7 +46,14 @@ const EMPTY_ROWS: string[][] = [];
  * so a million-row file costs only the rows on screen. TanStack manages the
  * columns (sizing, sort state); the body is rendered from `getRow`.
  */
-export function DataTable({ columns: inputColumns, rowCount, getRow, onVisibleRange, sorting, onSortingChange }: DataTableProps) {
+export function DataTable({
+  columns: inputColumns,
+  rowCount,
+  getRow,
+  onVisibleRange,
+  sorting,
+  onSortingChange,
+}: DataTableProps) {
   "use no memo";
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -129,7 +136,9 @@ export function DataTable({ columns: inputColumns, rowCount, getRow, onVisibleRa
                   >
                     <span
                       className={`block h-full w-0.5 ${
-                        header.column.getIsResizing() ? "bg-blue-500 dark:bg-blue-400" : "bg-gray-400 dark:bg-neutral-500"
+                        header.column.getIsResizing()
+                          ? "bg-blue-500 dark:bg-blue-400"
+                          : "bg-gray-400 dark:bg-neutral-500"
                       }`}
                     />
                   </button>

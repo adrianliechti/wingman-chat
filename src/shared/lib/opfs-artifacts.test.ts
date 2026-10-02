@@ -11,7 +11,12 @@ import { MemoryOpfs } from "./test-support/memoryOpfs";
 
 const memory = new MemoryOpfs();
 
-function revision(path: string, content: string, createdAt: string, origin?: { actor: "assistant" | "user" | "system" }) {
+function revision(
+  path: string,
+  content: string,
+  createdAt: string,
+  origin?: { actor: "assistant" | "user" | "system" },
+) {
   return { path, revision: `sha256:${content}`, content, contentType: "text/plain", createdAt, origin };
 }
 
@@ -39,8 +44,14 @@ describe("artifact revision log", () => {
 
   it("merges revision files that predate the log by their stored timestamp", async () => {
     const directory = `chats/chat/artifact-versions/${encodeURIComponent("/legacy.md")}`;
-    await writeJson(`${directory}/${encodeURIComponent("sha256:new")}.json`, revision("/legacy.md", "new", "2026-02-02T00:00:00.000Z"));
-    await writeJson(`${directory}/${encodeURIComponent("sha256:old")}.json`, revision("/legacy.md", "old", "2026-02-01T00:00:00.000Z"));
+    await writeJson(
+      `${directory}/${encodeURIComponent("sha256:new")}.json`,
+      revision("/legacy.md", "new", "2026-02-02T00:00:00.000Z"),
+    );
+    await writeJson(
+      `${directory}/${encodeURIComponent("sha256:old")}.json`,
+      revision("/legacy.md", "old", "2026-02-01T00:00:00.000Z"),
+    );
 
     const entries = await listArtifactRevisionEntries("chat", "/legacy.md");
     expect(entries.map((entry) => entry.revision)).toEqual(["sha256:old", "sha256:new"]);

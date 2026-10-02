@@ -74,7 +74,7 @@ test("closing the banner returns to the live file without changing it", async ({
   await page.getByRole("button", { name: "Back to current version" }).click();
   await expect(page.getByRole("status")).toBeHidden();
   await expect(page.locator("pre")).toHaveText("second");
-  expect(await page.evaluate((id) => window.artifactsE2E.read(id, "/notes.txt").then((file) => file?.content), id)).toBe(
-    "second",
-  );
+  expect(
+    await page.evaluate((id) => window.artifactsE2E.read(id, "/notes.txt").then((file) => file?.content), id),
+  ).toBe("second");
 });

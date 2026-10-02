@@ -15,15 +15,7 @@ const AGENT_STORAGE_KEY = "app_agent";
 const storage = { load: loadAgents, store: storeAgent, remove: removeAgent };
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const {
-    items: agents,
-    isLoaded,
-    create,
-    update,
-    remove,
-    getItems,
-    flush,
-  } = usePersistentCollection(storage);
+  const { items: agents, isLoaded, create, update, remove, getItems, flush } = usePersistentCollection(storage);
   const ownerActive = useRef(true);
   const [currentId, setCurrentId] = useState<string | null>(() => {
     try {
@@ -104,9 +96,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         updateFile: (agentId, fileId, changes) =>
           update(agentId, (agent) => ({
             ...agent,
-            files: agent.files?.map((file) =>
-              file.id === fileId ? { ...file, ...changes, id: fileId } : file,
-            ),
+            files: agent.files?.map((file) => (file.id === fileId ? { ...file, ...changes, id: fileId } : file)),
           })),
         flush,
         getModel: () => getConfig().repository?.embedder ?? "",
@@ -125,10 +115,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const addFile = useCallback(
-    (agentId: string, file: File) => getIngestion().addFile(agentId, file),
-    [getIngestion],
-  );
+  const addFile = useCallback((agentId: string, file: File) => getIngestion().addFile(agentId, file), [getIngestion]);
   const reindexFile = useCallback(
     (agentId: string, fileId: string) => getIngestion().reindexFile(agentId, fileId),
     [getIngestion],

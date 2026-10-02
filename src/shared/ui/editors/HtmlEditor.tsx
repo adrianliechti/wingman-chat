@@ -36,7 +36,8 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
     return toolsContext.providers
       .filter(
         (provider) =>
-          !EXCLUDED_PROVIDERS.has(provider.id) && toolsContext.getProviderState(provider.id) === ProviderState.Connected,
+          !EXCLUDED_PROVIDERS.has(provider.id) &&
+          toolsContext.getProviderState(provider.id) === ProviderState.Connected,
       )
       .flatMap((provider) => provider.tools);
   }, [toolsContext]);
@@ -47,7 +48,10 @@ export function HtmlEditor({ path, content, viewMode = "preview", onSelectionRoo
 
   const hasTools = tools.length > 0;
   const capabilities = useMemo(() => resolveCapabilities(config, { tools: hasTools }), [config, hasTools]);
-  const sdk = useMemo(() => (bridgeEnabled ? { source: sdkSource, capabilities } : undefined), [bridgeEnabled, capabilities]);
+  const sdk = useMemo(
+    () => (bridgeEnabled ? { source: sdkSource, capabilities } : undefined),
+    [bridgeEnabled, capabilities],
+  );
 
   const bridgeRef = useRef<ArtifactBridge | null>(null);
   useEffect(() => {

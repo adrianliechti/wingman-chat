@@ -8,6 +8,7 @@ const audio = vi.hoisted(() => ({
   disconnect: vi.fn(),
   begin: vi.fn(async () => {}),
   end: vi.fn(async () => {}),
+  record: vi.fn(async () => {}),
 }));
 vi.mock("@/features/voice/lib/AudioStreamPlayer", () => ({
   AudioStreamPlayer: class {
@@ -20,7 +21,7 @@ vi.mock("@/features/voice/lib/AudioRecorder", () => ({
   AudioRecorder: class {
     begin = audio.begin;
     end = audio.end;
-    record = async () => {};
+    record = audio.record;
     pause = async () => {};
   },
 }));
@@ -54,15 +55,19 @@ class Socket extends EventTarget {
 function createHarness(tools: Tool[] = [], getContext = () => "active_file: /first.txt") {
   const onResult = vi.fn();
   const onUser = vi.fn();
+  const onClosed = vi.fn();
+  const onError = vi.fn();
   let hook!: ReturnType<typeof useVoiceWebSockets>;
   function Harness() {
-    hook = useVoiceWebSockets(onUser, vi.fn(), undefined, undefined, onResult, undefined, getContext);
+    hook = useVoiceWebSockets(onUser, vi.fn(), undefined, undefined, onResult, onClosed, getContext, onError);
     return null;
   }
   renderToString(<Harness />);
   return {
     onResult,
     onUser,
+    onClosed,
+    onError,
     hook,
     start: async () => {
       await hook.start("test", "test", "Static instructions", [], tools, undefined, undefined, undefined, () => ({
@@ -95,7 +100,129 @@ describe("voice request context and tool lifecycle", () => {
     vi.stubGlobal("window", { location: { protocol: "http:", host: "localhost" }, setTimeout });
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("sends the original tool schema and instructions in the first session update", async () => {
+    const parameters: Tool["parameters"] = {
+      type: "object",
+      properties: {
+        file_path: { type: "string", description: "Workspace-relative path" },
+        options: { type: "object", properties: { append: { type: "boolean", default: false } } },
+      },
+      required: ["file_path"],
+      additionalProperties: false,
+    };
+    const { hook, start } = createHarness([{ name: "edit", parameters, function: async () => [] }]);
+    try {
+      const socket = await start();
+      expect(socket.sent[0]).toMatchObject({
+        type: "session.update",
+        session: {
+          instructions: "Static instructions",
+          tools: [{ type: "function", name: "edit", description: "edit", parameters }],
+        },
+      });
+      expect(socket.sent[0].session.tools[0].parameters).toEqual(parameters);
+      expect(socket.sent.filter((event) => event.type === "session.update")).toHaveLength(1);
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it("removes tools from the live session when the selection is cleared", async () => {
+    const handler = vi.fn<Tool["function"]>(async () => []);
+    const { hook, start, onResult } = createHarness([
+      { name: "edit", parameters: { type: "object" }, function: handler },
+    ]);
+    try {
+      const socket = await start();
+      hook.updateSession([], "Updated instructions");
+      await vi.waitFor(() =>
+        expect(socket.sent.filter((event) => event.type === "session.update").at(-1)?.session).toMatchObject({
+          tools: [],
+          instructions: "Updated instructions",
+        }),
+      );
+      toolCall(socket, {});
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
+      expect(handler).not.toHaveBeenCalled();
+      expect(socket.sent.some((event) => event.item?.output?.includes("Unknown or non-executable tool"))).toBe(true);
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it("reports a non-fatal service error once and continues accepting transcripts", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { hook, start, onError, onClosed, onUser } = createHarness();
+    try {
+      const socket = await start();
+      socket.message({ type: "error", error: { message: "Could not truncate audio" } });
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+      expect(onError.mock.calls[0][0]).toMatchObject({ message: "Could not truncate audio" });
+      expect(onClosed).not.toHaveBeenCalled();
+      socket.message({ type: "conversation.item.input_audio_transcription.completed", transcript: "Still here" });
+      expect(onUser).toHaveBeenCalledExactlyOnceWith("Still here");
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it("reports a rejected initial session only through the fatal-close callback", async () => {
+    const { hook, onError, onClosed } = createHarness();
+    try {
+      await hook.start("test");
+      const socket = Socket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: "error", error: { message: "Invalid transcriber" } });
+      await vi.waitFor(() => expect(onClosed).toHaveBeenCalledOnce());
+      expect(onClosed).toHaveBeenCalledWith({ fatal: true, message: "Invalid transcriber" });
+      expect(onError).not.toHaveBeenCalled();
+      expect(socket.readyState).toBe(3);
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it("reports a fatal capture-start rejection only through the fatal-close callback", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    audio.record.mockRejectedValueOnce(new Error("Microphone start failed"));
+    const { hook, start, onError, onClosed } = createHarness();
+    try {
+      const socket = await start();
+      await vi.waitFor(() => expect(onClosed).toHaveBeenCalledOnce());
+      expect(onClosed).toHaveBeenCalledWith({ fatal: true, message: "Microphone start failed" });
+      expect(socket.readyState).toBe(3);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      await hook.stop();
+    }
+  });
+
+  it.each([
+    { type: "server_error", message: "Temporary failure processing conversation.item.delete" },
+    { type: "invalid_request_error", message: "conversation.item.delete item no longer exists" },
+    {
+      type: "invalid_request_error",
+      message: 'client event "conversation.item.delete" has an unsupported parameter',
+    },
+  ])("reports $message without disabling later context cleanup", async (error) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { hook, start, onError, onClosed } = createHarness();
+    try {
+      const socket = await start();
+      await hook.sendText("First");
+      expect(socket.sent.filter((event) => event.type === "conversation.item.delete")).toHaveLength(1);
+      socket.message({ type: "error", error });
+      await hook.sendText("Second");
+      expect.soft(onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: error.message }));
+      expect.soft(socket.sent.filter((event) => event.type === "conversation.item.delete")).toHaveLength(2);
+      expect(onClosed).not.toHaveBeenCalled();
+    } finally {
+      await hook.stop();
+    }
   });
 
   it("seeds voice with final assistant answers and all user text", async () => {
@@ -262,6 +389,34 @@ describe("voice request context and tool lifecycle", () => {
     ).toBe(true);
     expect(socket.sent[0].session.instructions).toBe("Static instructions");
     await hook.stop();
+  });
+
+  it("stops deleting stale context when the provider rejects item deletion", async () => {
+    const { hook, start, onError, onClosed } = createHarness();
+    try {
+      const socket = await start();
+      await hook.sendText("First");
+      await hook.sendText("Second");
+      expect(socket.sent.filter((event) => event.type === "conversation.item.delete")).toHaveLength(2);
+      const rejection = {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          // The gateway's wording for providers without conversation editing.
+          message: 'client event "conversation.item.delete" is not supported by this realtime provider',
+        },
+      };
+      socket.message(rejection);
+      // The provider can also reject a deletion that was already in flight.
+      socket.message(rejection);
+      await hook.sendText("Third");
+      expect(socket.sent.filter((event) => event.type === "conversation.item.delete")).toHaveLength(2);
+      expect(socket.sent.filter((event) => event.item?.role === "system")).toHaveLength(4);
+      expect(onError).not.toHaveBeenCalled();
+      expect(onClosed).not.toHaveBeenCalled();
+    } finally {
+      await hook.stop();
+    }
   });
 
   it("validates canonical arguments before invoking voice tools", async () => {

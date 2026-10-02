@@ -86,9 +86,7 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
               }
               const definition = createFileTools(files, OPTIONS).find((item) => item.name === tool.name)!;
               // Generic file tools publish artifact metadata; memory is not a deliverable.
-              const memoryContext: ToolContext | undefined = context
-                ? { ...context, setMeta: undefined, updateMeta: undefined }
-                : undefined;
+              const memoryContext: ToolContext | undefined = context ? { ...context, setMeta: undefined } : undefined;
               const output = await definition.function(args, memoryContext);
               context?.signal?.throwIfAborted();
               const failure = output.find(

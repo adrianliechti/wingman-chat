@@ -1,14 +1,14 @@
 import type JSZip from "jszip";
-import type { Agent } from "@/features/agent/types/agent";
 import { parseAgentMd, serializeAgentMd } from "@/features/agent/lib/agentMarkdown";
-import { storeAgent, removeAgent } from "@/features/agent/lib/agentStorage";
+import { loadAgent } from "@/features/agent/lib/agentStorage";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
-import { getDirectory, listDirectories, readText } from "@/shared/lib/opfs-core";
+import { getDirectory, readText } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, getZipFolder } from "@/shared/lib/opfs-zip";
-import { readZipFiles, restoreFiles } from "@/shared/lib/opfs-restore";
+import { readZipFiles, restoreFiles, type RestoreResult } from "@/shared/lib/opfs-restore";
 import { flushForBackup, withPersistenceLock } from "@/shared/lib/persistence";
-import { downloadBlob } from "@/shared/lib/utils";
+import { downloadZip } from "@/shared/lib/zipStreams";
+import { finishRestore } from "./restoreReport";
 
 async function readAgentMd(id: string): Promise<string | undefined> {
   return (await readText(`agents/${id}/AGENTS.md`)) ?? readText(`agents/${id}/AGENT.md`);
@@ -27,103 +27,65 @@ async function addSkillsToZip(names: string[], zip: JSZip): Promise<void> {
   }
 }
 
-export async function exportAgentsAsZip(): Promise<void> {
-  await flushForBackup();
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-  await withPersistenceLock("collection:agents", () =>
-    withPersistenceLock("collection:skills", async () => {
-      for (const id of await listDirectories("agents")) {
-        const folder = getZipFolder(zip, `agents/${id}`);
-        await addDirectoryToZip(await getDirectory(`agents/${id}`), folder);
-        const md = await readAgentMd(id);
-        if (md) await addSkillsToZip(parseAgentMd(md)?.skills ?? [], folder);
-      }
-    }),
-  );
-  await downloadBlob(
-    await zip.generateAsync({ type: "blob", compression: "DEFLATE" }),
-    `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`,
-  );
-}
-
 export async function exportSingleAgentAsZip(
   id: string,
-  { includeMemory = false }: { includeMemory?: boolean } = {},
+  { includeMemory = false, name = "agent" }: { includeMemory?: boolean; name?: string } = {},
 ): Promise<void> {
-  await flushForBackup();
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-  let name = "agent";
-  await withPersistenceLock("collection:agents", () =>
-    withPersistenceLock("collection:skills", async () => {
-      await addDirectoryToZip(await getDirectory(`agents/${id}`), zip);
-      // The runtime queue is never part of a shareable agent.
-      zip.remove("memory-state.json");
-      if (!includeMemory) {
-        zip.remove("MEMORY.md");
-        zip.remove("memory");
-      }
-      const md = await readAgentMd(id);
-      const parsed = md ? parseAgentMd(md) : undefined;
-      if (parsed) {
-        name = parsed.name;
-        await addSkillsToZip(parsed.skills, zip);
-      }
-    }),
-  );
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
-  await downloadBlob(
-    await zip.generateAsync({ type: "blob", compression: "DEFLATE" }),
-    `wingman-agent-${safeName}-${new Date().toISOString().split("T")[0]}.zip`,
-  );
-}
-
-function importedAgent(value: unknown, id: string): Agent {
-  if (!value || typeof value !== "object") throw new Error("Invalid agent record");
-  const data = value as Partial<Agent>;
-  for (const list of [data.skills, data.plugins, data.tools, data.servers, data.files]) {
-    if (list !== undefined && !Array.isArray(list)) throw new Error("Invalid agent list in backup");
-  }
-  return {
-    ...data,
-    id,
-    name: typeof data.name === "string" ? data.name : "Imported Agent",
-    skills: data.skills ?? [],
-    plugins: data.plugins ?? [],
-    tools: data.tools ?? [],
-    servers: data.servers ?? [],
-    files: data.files?.map((file) => ({
-      ...file,
-      id: file.id || crypto.randomUUID(),
-      uploadedAt: new Date(file.uploadedAt ?? Date.now()),
-    })),
-  };
+  await downloadZip(`wingman-agent-${safeName}-${new Date().toISOString().split("T")[0]}.zip`, async () => {
+    await flushForBackup();
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    await withPersistenceLock("collection:agents", () =>
+      withPersistenceLock("collection:skills", async () => {
+        await addDirectoryToZip(await getDirectory(`agents/${id}`), zip);
+        // The runtime queue is never part of a shareable agent.
+        zip.remove("memory-state.json");
+        if (!includeMemory) {
+          zip.remove("MEMORY.md");
+          zip.remove("memory");
+        }
+        let md = await readAgentMd(id);
+        if (!md) {
+          const agent = await loadAgent(id);
+          if (!agent) throw new Error("Agent not found");
+          md = serializeAgentMd(agent);
+          zip.file("servers.json", JSON.stringify(agent.servers));
+        }
+        // Export saved agents in the current format without rewriting local data.
+        zip.remove("AGENT.md");
+        zip.remove("agent.json");
+        zip.file("AGENTS.md", md);
+        const parsed = parseAgentMd(md);
+        if (parsed) {
+          await addSkillsToZip(parsed.skills, zip);
+        }
+      }),
+    );
+    return zip;
+  });
 }
 
 /** Accept full backups, collection exports, and a single shareable agent. */
-export async function importAgentsFromZip(file: Blob): Promise<void> {
+export async function importAgentsFromZip(file: Blob): Promise<RestoreResult> {
   const files = await readZipFiles(file);
   const mapped = new Map<string, Blob>();
   const paths = [...files.keys()];
-  const flat = paths.some((path) => /^(AGENTS?\.md|agent\.json)$/.test(path));
+  const flat = files.has("AGENTS.md");
   const roots = flat
     ? [""]
     : [
         ...new Set(
           paths.flatMap((path) => {
-            const match = path.match(
-              /^((?:agents\/|repositories\/)?[^/]+)\/(AGENTS?\.md|agent\.json|repository\.json)$/,
-            );
+            const match = path.match(/^((?:agents\/)?[^/]+)\/AGENTS\.md$/);
             return match ? [match[1]] : [];
           }),
         ),
       ];
-  if (!roots.length) throw new Error("Unrecognized archive: expected an agent definition");
+  if (!roots.length) throw new Error("Unrecognized archive: expected an AGENTS.md definition");
   for (const root of roots) {
     const prefix = root ? `${root}/` : "";
-    const repository = files.has(`${prefix}repository.json`);
-    const id = flat || repository ? crypto.randomUUID() : root.split("/").at(-1)!;
+    const id = flat ? crypto.randomUUID() : root.split("/").at(-1)!;
     for (const [path, blob] of files) {
       if (!path.startsWith(prefix)) continue;
       const relative = path.slice(prefix.length);
@@ -132,108 +94,38 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
         mapped.set(relative, blob);
         continue;
       }
-      if (relative === "index.json" || /^(agent|repository)\.json$/.test(relative)) continue;
-      mapped.set(`agents/${id}/${relative === "AGENT.md" ? "AGENTS.md" : relative}`, blob);
-    }
-    if (!mapped.has(`agents/${id}/AGENTS.md`)) {
-      const metaPath = `${prefix}${repository ? "repository" : "agent"}.json`;
-      const meta = files.get(metaPath)!;
-      let record: unknown;
-      try {
-        record = JSON.parse(await meta.text());
-      } catch {
-        throw new Error(`Invalid JSON in backup: ${metaPath}`);
-      }
-      const agent = importedAgent(record, id);
-      mapped.set(`agents/${id}/AGENTS.md`, new Blob([serializeAgentMd(agent)]));
-      mapped.set(`agents/${id}/servers.json`, new Blob([JSON.stringify(agent.servers)]));
+      if (relative === "index.json") continue;
+      mapped.set(`agents/${id}/${relative}`, blob);
     }
   }
   // Full backups store skills beside agents; shareable exports bundle them.
   for (const [path, blob] of files) if (path.startsWith("skills/")) mapped.set(path, blob);
   if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
-  await restoreFiles(mapped);
-}
-
-/** Compatibility lives at import time; current persistence has one write path. */
-export async function importAgentsFromLegacyJson(
-  jsonData: string,
-): Promise<{ total: number; imported: number; failed: number }> {
-  const data = JSON.parse(jsonData);
-  const records = data.agents ?? data.repositories;
-  if (!Array.isArray(records)) throw new Error("Expected an agents or repositories array");
-  let imported = 0;
-  for (const record of records) {
-    const id = crypto.randomUUID();
-    try {
-      await storeAgent(importedAgent(record, id));
-      imported++;
-    } catch (error) {
-      await removeAgent(id).catch((cleanupError) => console.error("Import cleanup failed:", cleanupError));
-      console.error("Could not import agent:", error);
-    }
-  }
-  return { total: records.length, imported, failed: records.length - imported };
+  return restoreFiles(mapped);
 }
 
 export function triggerAgentImport(): void {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".zip,.json";
+  input.accept = ".zip";
   input.multiple = false;
 
   input.onchange = async (event) => {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
 
-    const isZip = file.name.toLowerCase().endsWith(".zip");
-
-    if (isZip) {
-      if (
-        !(await confirm({
-          title: "Import agents?",
-          message: "Agents and skills from the ZIP will be merged with your existing ones.",
-        }))
-      )
-        return;
-      try {
-        await importAgentsFromZip(file);
-        window.location.reload();
-      } catch (error) {
-        console.error("Failed to import agents:", error);
-        notify.error("Couldn't import agents", "Check the file and try again.");
-      }
-    } else {
-      try {
-        const jsonData = await file.text();
-        const parsed = JSON.parse(jsonData);
-        const count = (parsed.agents ?? parsed.repositories)?.length ?? 0;
-        if (!count) {
-          notify.error("Invalid import file", "No agents were found in this file.");
-          return;
-        }
-        if (
-          !(await confirm({
-            title: "Import agents?",
-            message: `${count} agent${count === 1 ? "" : "s"} will be added alongside your existing ones.`,
-          }))
-        )
-          return;
-
-        const result = await importAgentsFromLegacyJson(jsonData);
-        if (result.failed) {
-          notify.error("Some agents could not be imported", `${result.imported} imported; ${result.failed} failed.`);
-          if (!result.imported) return;
-        }
-        notify.success(
-          "Agents imported",
-          `${result.imported} agent${result.imported === 1 ? "" : "s"} added. Reloading…`,
-        );
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (error) {
-        console.error("Failed to import agents:", error);
-        notify.error("Couldn't import agents", "Check the file format and try again.");
-      }
+    if (
+      !(await confirm({
+        title: "Import agents?",
+        message: "Agents and skills from the ZIP will be merged with your existing ones.",
+      }))
+    )
+      return;
+    try {
+      await finishRestore(await importAgentsFromZip(file));
+    } catch (error) {
+      console.error("Failed to import agents:", error);
+      notify.error("Couldn't import agents", "Check the file and try again.");
     }
   };
 

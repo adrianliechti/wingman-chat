@@ -204,12 +204,7 @@ function OptionRow({
       {icon && <span className="shrink-0 mt-0.5 flex justify-center text-neutral-400">{icon}</span>}
       <span className="flex flex-col items-start flex-1 min-w-0">
         <span className="flex w-full items-baseline gap-1.5 min-w-0">
-          <span
-            className={cn(
-              "truncate text-[13px] leading-tight",
-              selected ? "font-semibold" : "font-medium",
-            )}
-          >
+          <span className={cn("truncate text-[13px] leading-tight", selected ? "font-semibold" : "font-medium")}>
             {name}
           </span>
           {caption && (
@@ -231,10 +226,7 @@ function OptionRow({
       </span>
       <Check
         size={14}
-        className={cn(
-          "shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400",
-          selected ? "opacity-100" : "opacity-0",
-        )}
+        className={cn("shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400", selected ? "opacity-100" : "opacity-0")}
       />
     </button>
   );
@@ -460,11 +452,18 @@ function AgentSubmenu({ items, value, onChange, onOpen, actions }: AgentsConfig)
                 }}
                 className="flex flex-1 min-w-0 items-center gap-2 py-2 pl-3 text-left focus:outline-none"
               >
-                <span className={cn("flex-1 truncate text-[13px] leading-tight", selected ? "font-semibold" : "font-medium")}>
+                <span
+                  className={cn(
+                    "flex-1 truncate text-[13px] leading-tight",
+                    selected ? "font-semibold" : "font-medium",
+                  )}
+                >
                   {a.name}
                 </span>
                 {a.caption && (
-                  <span className="truncate text-[11px] leading-tight text-neutral-500 dark:text-neutral-400">{a.caption}</span>
+                  <span className="truncate text-[11px] leading-tight text-neutral-500 dark:text-neutral-400">
+                    {a.caption}
+                  </span>
                 )}
               </button>
               {/* One slot: the check marks the active agent and gives way to the
@@ -508,12 +507,12 @@ function AgentSubmenu({ items, value, onChange, onOpen, actions }: AgentsConfig)
               }}
               className={cn(
                 "flex w-full items-center gap-2 px-3 py-2 rounded-lg text-left text-[13px] font-medium transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5",
-                action.warning
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-neutral-800 dark:text-neutral-200",
+                action.warning ? "text-amber-600 dark:text-amber-400" : "text-neutral-800 dark:text-neutral-200",
               )}
             >
-              {action.icon && <span className="shrink-0 flex justify-center text-current opacity-70">{action.icon}</span>}
+              {action.icon && (
+                <span className="shrink-0 flex justify-center text-current opacity-70">{action.icon}</span>
+              )}
               <span className="truncate">{action.label}</span>
             </button>
           ))}
@@ -704,10 +703,7 @@ function ModelDropdownRoot({
       size({
         apply({ availableHeight, elements }) {
           // Cap the panel so a long model list scrolls instead of stretching tall.
-          elements.floating.style.setProperty(
-            "--panel-max-h",
-            `${Math.min(availableHeight, 384)}px`,
-          );
+          elements.floating.style.setProperty("--panel-max-h", `${Math.min(availableHeight, 384)}px`);
         },
         padding: 8,
       }),
@@ -902,73 +898,71 @@ function ModelDropdownRoot({
                 setShowHidden(e.altKey);
                 setQuery("");
               });
-              (overrides?.onPointerDownCapture as ((e: React.PointerEvent) => void) | undefined)?.(
-                e,
-              );
+              (overrides?.onPointerDownCapture as ((e: React.PointerEvent) => void) | undefined)?.(e);
             },
           }),
       })}
 
       <RootOpenContext.Provider value={isOpen}>
-      <TreeCloseContext.Provider value={closeAll}>
-        {isOverlayMounted && (
-          <FloatingPortal>
-            {/* Dims the page so the open panel stands out; a click on it dismisses. */}
-            <FloatingOverlay className="z-9998 bg-black/10 dark:bg-black/40" style={overlayStyles} />
-          </FloatingPortal>
-        )}
-        {isMounted && (
-          <FloatingPortal>
-            <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
-              <div
-                ref={setFloating}
-                style={floatingStyles}
-                className="z-9999"
-                {...getFloatingProps()}
-              >
-                <div
-                  style={transitionStyles}
-                  className={cn(PANEL_CLASS, "flex flex-col overflow-hidden", dropdownClassName, hasPresets && "w-72")}
-                >
-                  {hasPresets ? (
-                    // With presets the slider is the panel; the full list and the
-                    // other settings are flyouts, so the panel keeps one layout.
-                    <>
-                      <PresetSlider {...presets} fallbackLabel={selectedName} onPreview={setPreviewIndex} />
-                      <div className="mb-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-                      {agents && <AgentSubmenu {...agents} />}
-                      <Flyout
-                        icon={<Boxes size={14} />}
-                        label="Model"
-                        detail={preview ? (preview.model.name ?? preview.model.id) : selectedName}
-                        panelClassName="flex w-auto min-w-48 max-w-72 flex-col overflow-hidden whitespace-nowrap"
-                      >
+        <TreeCloseContext.Provider value={closeAll}>
+          {isOverlayMounted && (
+            <FloatingPortal>
+              {/* Dims the page so the open panel stands out; a click on it dismisses. */}
+              <FloatingOverlay className="z-9998 bg-black/10 dark:bg-black/40" style={overlayStyles} />
+            </FloatingPortal>
+          )}
+          {isMounted && (
+            <FloatingPortal>
+              <FloatingFocusManager context={context} modal={false} initialFocus={-1} returnFocus>
+                <div ref={setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
+                  <div
+                    style={transitionStyles}
+                    className={cn(
+                      PANEL_CLASS,
+                      "flex flex-col overflow-hidden",
+                      dropdownClassName,
+                      hasPresets && "w-72",
+                    )}
+                  >
+                    {hasPresets ? (
+                      // With presets the slider is the panel; the full list and the
+                      // other settings are flyouts, so the panel keeps one layout.
+                      <>
+                        <PresetSlider {...presets} fallbackLabel={selectedName} onPreview={setPreviewIndex} />
+                        <div className="mb-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                        {agents && <AgentSubmenu {...agents} />}
+                        <Flyout
+                          icon={<Boxes size={14} />}
+                          label="Model"
+                          detail={preview ? (preview.model.name ?? preview.model.id) : selectedName}
+                          panelClassName="flex w-auto min-w-48 max-w-72 flex-col overflow-hidden whitespace-nowrap"
+                        >
+                          {modelList}
+                        </Flyout>
+                        {allSubmenus.map((cfg) => (
+                          <OptionSubmenu key={cfg.label} {...cfg} />
+                        ))}
+                      </>
+                    ) : (
+                      <div className="flex flex-col overflow-hidden" style={{ maxHeight: "var(--panel-max-h, 24rem)" }}>
                         {modelList}
-                      </Flyout>
-                      {allSubmenus.map((cfg) => (
-                        <OptionSubmenu key={cfg.label} {...cfg} />
-                      ))}
-                    </>
-                  ) : (
-                    <div className="flex flex-col overflow-hidden" style={{ maxHeight: "var(--panel-max-h, 24rem)" }}>
-                      {modelList}
-                      {(agents || allSubmenus.length > 0) && !q && (
-                        <>
-                          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-                          {agents && <AgentSubmenu {...agents} />}
-                          {allSubmenus.map((cfg) => (
-                            <OptionSubmenu key={cfg.label} {...cfg} />
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
+                        {(agents || allSubmenus.length > 0) && !q && (
+                          <>
+                            <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                            {agents && <AgentSubmenu {...agents} />}
+                            {allSubmenus.map((cfg) => (
+                              <OptionSubmenu key={cfg.label} {...cfg} />
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </FloatingFocusManager>
-          </FloatingPortal>
-        )}
-      </TreeCloseContext.Provider>
+              </FloatingFocusManager>
+            </FloatingPortal>
+          )}
+        </TreeCloseContext.Provider>
       </RootOpenContext.Provider>
     </FloatingNode>
   );

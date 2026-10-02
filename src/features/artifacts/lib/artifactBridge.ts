@@ -509,7 +509,6 @@ class ArtifactDocument {
           model: this.options.model() ?? undefined,
           signal: this.controller.signal,
           setMeta() {},
-          updateMeta() {},
         };
         return tool.function(isRecord(params[1]) ? params[1] : {}, context);
       }

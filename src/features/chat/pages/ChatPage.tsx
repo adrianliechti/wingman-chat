@@ -20,12 +20,11 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
 import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
-import { getSavedModel } from "@/features/chat/hooks/useModels";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
-import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
+import { useChatScroll } from "@/shared/hooks/useChatScroll";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
@@ -74,9 +73,6 @@ export function ChatPage() {
     chats,
     chatsLoaded,
     isResponding,
-    model,
-    models,
-    setModel,
     pendingElicitation,
   } = useChat();
   const { isListening, stopVoice } = useVoice();
@@ -84,15 +80,14 @@ export function ChatPage() {
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
 
+  // selectChat(null) already leaves realtime for a new chat without touching
+  // the model stored on the chat being left.
   const handleNewChat = useCallback(() => {
-    if (model?.id === "realtime") {
-      setModel(getSavedModel(models) ?? models[0] ?? null);
-    }
     if (isListening) {
       void stopVoice();
     }
     newChat();
-  }, [model, models, setModel, isListening, stopVoice, newChat]);
+  }, [isListening, stopVoice, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 

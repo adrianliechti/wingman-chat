@@ -15,8 +15,7 @@ interface ArtifactRevisionBannerProps {
   onClose: () => void;
 }
 
-const action =
-  "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50";
+const action = "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50";
 
 /** Shown above the editor while an archived revision is pinned in the viewer. */
 export function ArtifactRevisionBanner({
@@ -45,9 +44,7 @@ export function ArtifactRevisionBanner({
           aria-pressed={comparing}
           className={cn(
             action,
-            comparing
-              ? "bg-amber-200/70 dark:bg-amber-400/20"
-              : "hover:bg-amber-200/50 dark:hover:bg-amber-400/10",
+            comparing ? "bg-amber-200/70 dark:bg-amber-400/20" : "hover:bg-amber-200/50 dark:hover:bg-amber-400/10",
           )}
         >
           <Columns2 size={12} />

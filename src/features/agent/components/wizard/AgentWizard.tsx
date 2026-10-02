@@ -302,11 +302,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
                   {currentStepId === "tools" && (
-                    <ToolsStep
-                      selectedTools={state.selectedTools}
-                      servers={state.servers}
-                      dispatch={dispatch}
-                    />
+                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
                   )}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />

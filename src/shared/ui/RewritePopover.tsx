@@ -48,12 +48,7 @@ export function RewritePopover({
       setIsLoading(true);
       const model = config.translator?.model || "";
       try {
-        const result = await config.client.rewriteSelection(
-          model,
-          fullText,
-          selectionStart,
-          selectionEnd,
-        );
+        const result = await config.client.rewriteSelection(model, fullText, selectionStart, selectionEnd);
 
         if (result) {
           setData({

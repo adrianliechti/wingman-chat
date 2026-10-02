@@ -143,9 +143,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
         <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {content.name}
         </span>
-        {size && (
-          <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>
-        )}
+        {size && <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>}
       </span>
 
       <Download className="h-4 w-4 shrink-0 text-neutral-400 opacity-0 transition-opacity group-hover/file:opacity-100" />
@@ -242,21 +240,16 @@ export function ContentRenderer({ content, className }: { content: Content; clas
 
 function isImageContent(content: RenderableContent): boolean {
   if (content.type === "image") return true;
-  if (content.type === "file")
-    return detectMimeType(content.data, content.name).startsWith("image/");
+  if (content.type === "file") return detectMimeType(content.data, content.name).startsWith("image/");
   return false;
 }
 
 function asImage(content: RenderableContent): ImageContent {
-  return content.type === "image"
-    ? content
-    : { type: "image", name: content.name, data: content.data };
+  return content.type === "image" ? content : { type: "image", name: content.name, data: content.data };
 }
 
 function asFile(content: RenderableContent): FileContent {
-  return content.type === "file"
-    ? content
-    : { type: "file", name: content.name || "audio.mp3", data: content.data };
+  return content.type === "file" ? content : { type: "file", name: content.name || "audio.mp3", data: content.data };
 }
 
 // Single content: images/previewable files render their own preview; other files

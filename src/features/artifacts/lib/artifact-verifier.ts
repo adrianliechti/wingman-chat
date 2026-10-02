@@ -10,7 +10,7 @@ import { ooxmlDescendants, SPREADSHEETML_NAMESPACES } from "@/shared/lib/ooxml";
 import { validateArtifactFile } from "./artifactValidators";
 import { validateOoxmlPackage, type OoxmlIssue } from "./ooxmlPackage";
 import { validateXlsxIntegrity } from "./xlsxIntegrity";
-export interface ArtifactVerificationCheck {
+interface ArtifactVerificationCheck {
   id: string;
   scope: string;
   status: "pass" | "warn" | "fail";
@@ -71,12 +71,9 @@ function relativeArtifactPath(basePath: string, reference: string): string | nul
 }
 
 function verifyHtml(path: string, content: string, existingPaths: Set<string>, checks: Check[]): void {
+  // text/html parsing always yields a root element, so there is no failing variant.
   const document = new DOMParser().parseFromString(content, "text/html");
-  checks.push(
-    document.documentElement
-      ? check("html.root", path, "pass", "HTML document has a root element.")
-      : check("html.root", path, "fail", "HTML document has no root element."),
-  );
+  checks.push(check("html.root", path, "pass", "HTML document has a root element."));
 
   const resources = [
     ...document.querySelectorAll("script[src], link[href], img[src], source[src], audio[src], video[src]"),
@@ -133,7 +130,7 @@ async function verifyBinaryPackage(path: string, content: string, checks: Check[
   const bytes = dataUrlToBytes(content)?.bytes;
   if (!bytes) {
     checks.push(check("binary.encoding", path, "fail", "Binary artifact is not stored as a valid data URL."));
-    return undefined;
+    return;
   }
 
   if (lower.endsWith(".pdf")) {
@@ -154,7 +151,7 @@ async function verifyBinaryPackage(path: string, content: string, checks: Check[
         ),
       );
     }
-    return undefined;
+    return;
   }
 
   if (lower.endsWith(".docx") || lower.endsWith(".pptx") || lower.endsWith(".xlsx")) {
@@ -242,7 +239,6 @@ async function verifyBinaryPackage(path: string, content: string, checks: Check[
       );
     }
   }
-  return undefined;
 }
 
 /** Read only changed files; the workspace index is enough to check HTML dependencies. */

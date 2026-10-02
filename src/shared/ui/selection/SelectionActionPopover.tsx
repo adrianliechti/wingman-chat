@@ -33,12 +33,7 @@ const surface =
  * a one-line instruction input. The snapshot is latched when the pill opens,
  * so focusing the input (which collapses the document selection) keeps it.
  */
-export function SelectionActionPopover({
-  selection,
-  onSubmit,
-  onDismiss,
-  pressDocument,
-}: SelectionActionPopoverProps) {
+export function SelectionActionPopover({ selection, onSubmit, onDismiss, pressDocument }: SelectionActionPopoverProps) {
   const [latched, setLatched] = useState<TextSelectionSnapshot | null>(null);
   const [instruction, setInstruction] = useState("");
   const active = latched ?? selection;

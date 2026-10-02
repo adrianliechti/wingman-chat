@@ -1,14 +1,4 @@
-import {
-  AlertTriangle,
-  Loader2,
-  Lock,
-  Pencil,
-  Plus,
-  Server,
-  ToggleLeft,
-  ToggleRight,
-  Wrench,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Lock, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -41,12 +31,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
   // Global tools: built-in providers + config MCPs (everything not agent-internal)
   const availableTools = useMemo(() => {
     return providers
-      .filter(
-        (p) =>
-          !agentInternalIds.has(p.id) &&
-          p.id !== "artifacts" &&
-          !p.id.startsWith(PLUGIN_PROVIDER_PREFIX),
-      )
+      .filter((p) => !agentInternalIds.has(p.id) && p.id !== "artifacts" && !p.id.startsWith(PLUGIN_PROVIDER_PREFIX))
       .map((p) => ({
         id: p.id,
         label: p.name,
@@ -59,9 +44,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
   const toggleTool = (toolId: string) => {
     const current = agent.tools || [];
-    const next = current.includes(toolId)
-      ? current.filter((id) => id !== toolId)
-      : [...current, toolId];
+    const next = current.includes(toolId) ? current.filter((id) => id !== toolId) : [...current, toolId];
     updateAgent(agent.id, { tools: next });
   };
 
@@ -236,11 +219,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                           : "Disabled (click to enable)"
                   }
                 >
-                  {state === ProviderState.Connected ? (
-                    <ToggleRight size={20} />
-                  ) : (
-                    <ToggleLeft size={20} />
-                  )}
+                  {state === ProviderState.Connected ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 </button>
               </div>
             );

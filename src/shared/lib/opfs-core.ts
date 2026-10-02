@@ -385,10 +385,6 @@ async function healIndex(collection: string, reason: Error): Promise<IndexEntry[
 /**
  * Write the index for a collection.
  */
-export async function writeIndex(collection: string, entries: IndexEntry[]): Promise<void> {
-  await withPersistenceLock(`index:${collection}`, () => writeJson(`${collection}/index.json`, entries));
-}
-
 /** Lock the complete read/modify/write, including updates from other tabs. */
 export async function updateIndex(collection: string, update: (entries: IndexEntry[]) => IndexEntry[]): Promise<void> {
   await withPersistenceLock(`index:${collection}`, async () => {
@@ -480,13 +476,6 @@ export function blobToDataUrl(blob: Blob, contentType?: string): Promise<string>
  */
 export function isDataUrl(str: string): boolean {
   return str.startsWith("data:");
-}
-
-/**
- * Check if a string is a blob reference (path to blob storage).
- */
-export function isBlobRef(str: string): boolean {
-  return str.startsWith("blob:");
 }
 
 /**

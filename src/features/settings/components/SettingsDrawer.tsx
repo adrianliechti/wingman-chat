@@ -26,6 +26,7 @@ import { themeOptions } from "@/features/settings/lib/appearance";
 import type { PersonaKey } from "@/features/settings/lib/personas";
 import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
+import { finishRestore } from "@/features/settings/lib/restoreReport";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
@@ -33,11 +34,7 @@ import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { clearAll, getStorageUsage } from "@/shared/lib/opfs";
-import {
-  downloadFolderAsZip,
-  downloadFoldersAsZip,
-  importFolderFromZip,
-} from "@/shared/lib/opfs-zip";
+import { downloadFolderAsZip, downloadFoldersAsZip, importFolderFromZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode } from "@/shared/types/settings";
@@ -90,13 +87,9 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
-        {label}
-      </p>
+      <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
       {description && (
-        <p className="mb-2.5 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">
-          {description}
-        </p>
+        <p className="mb-2.5 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">{description}</p>
       )}
       <div
         role="radiogroup"
@@ -129,33 +122,18 @@ function SegmentedControl<T extends string>({
   );
 }
 
-function SettingsViewHeader({
-  id,
-  title,
-  description,
-}: {
-  id?: string;
-  title: string;
-  description: string;
-}) {
+function SettingsViewHeader({ id, title, description }: { id?: string; title: string; description: string }) {
   return (
     <div className="border-b border-neutral-200/60 pb-4 dark:border-neutral-800/60">
       <h3 id={id} className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
         {title}
       </h3>
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        {description}
-      </p>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{description}</p>
     </div>
   );
 }
 
-export function SettingsDrawer({
-  isOpen,
-  onClose,
-  showAdvanced,
-  initialSection,
-}: SettingsDrawerProps) {
+export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
   const profileNameInputId = useId();
   const profileRoleInputId = useId();
   const profileAboutInputId = useId();
@@ -163,8 +141,7 @@ export function SettingsDrawer({
   const [mobileShowList, setMobileShowList] = useState(true);
   const isDesktop = useBreakpoint("sm");
   const [probingDevices, setProbingDevices] = useState(false);
-  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
-    useToolsContext();
+  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } = useToolsContext();
   const { agents, currentAgent, deleteAgent } = useAgents();
   const { plugins } = usePlugins();
   const companion = providers.find((p) => p.id === COMPANION_ID);
@@ -266,15 +243,7 @@ export function SettingsDrawer({
       setProbingDevices(true);
       void requestPermission().finally(() => setProbingDevices(false));
     }
-  }, [
-    isOpen,
-    section,
-    micPermission,
-    devicesEnumerated,
-    inputDevices.length,
-    outputDevices.length,
-    requestPermission,
-  ]);
+  }, [isOpen, section, micPermission, devicesEnumerated, inputDevices.length, outputDevices.length, requestPermission]);
 
   const deleteChats = async () => {
     if (
@@ -297,8 +266,7 @@ export function SettingsDrawer({
     if (
       !(await confirm({
         title: "Delete all data?",
-        message:
-          "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
+        message: "This permanently removes every chat, agent, image, skill, and setting. It can't be undone.",
         danger: true,
       }))
     ) {
@@ -308,8 +276,7 @@ export function SettingsDrawer({
     if (
       !(await confirm({
         title: "Are you absolutely sure?",
-        message:
-          "This is your final warning. All data will be permanently deleted and cannot be recovered.",
+        message: "This is your final warning. All data will be permanently deleted and cannot be recovered.",
         danger: true,
         confirmLabel: "Delete everything",
       }))
@@ -346,8 +313,7 @@ export function SettingsDrawer({
       setRestoreProgress(0);
       stopStreaming();
       try {
-        await importFolderFromZip("/", file, setRestoreProgress);
-        window.location.reload();
+        await finishRestore(await importFolderFromZip("/", file, setRestoreProgress));
       } catch (error) {
         notify.error("Couldn't restore backup", error);
       }
@@ -411,11 +377,7 @@ export function SettingsDrawer({
     setIsExporting(true);
     setExportProgress(0);
     try {
-      await downloadFolderAsZip(
-        "/",
-        `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`,
-        setExportProgress,
-      );
+      await downloadFolderAsZip("/", `wingman-backup-${new Date().toISOString().split("T")[0]}.zip`, setExportProgress);
     } catch (error) {
       console.error("Export failed:", error);
       notify.error("Couldn't export data", error);
@@ -448,9 +410,7 @@ export function SettingsDrawer({
   };
 
   const storageSizeFor = (prefix: string) =>
-    storageInfo.entries
-      .filter((entry) => entry.path.startsWith(prefix))
-      .reduce((sum, entry) => sum + entry.size, 0);
+    storageInfo.entries.filter((entry) => entry.path.startsWith(prefix)).reduce((sum, entry) => sum + entry.size, 0);
   const chatStorageSize = storageSizeFor("chats/");
   const agentStorageSize = storageSizeFor("agents/");
   const imageStorageSize = storageSizeFor("images/");
@@ -563,9 +523,7 @@ export function SettingsDrawer({
                               : "text-neutral-600 hover:bg-neutral-200/40 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100",
                           )}
                         >
-                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
-                            {s.icon}
-                          </span>
+                          <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{s.icon}</span>
                           {s.label}
                         </button>
                       ))}
@@ -580,10 +538,7 @@ export function SettingsDrawer({
                     >
                       {/* General Section */}
                       {section === "general" && (
-                        <section
-                          aria-labelledby="appearance-settings-heading"
-                          className="space-y-6"
-                        >
+                        <section aria-labelledby="appearance-settings-heading" className="space-y-6">
                           <SettingsViewHeader
                             id="appearance-settings-heading"
                             title="Appearance"
@@ -591,12 +546,7 @@ export function SettingsDrawer({
                           />
 
                           <div className="space-y-5">
-                            <SegmentedControl
-                              label="Theme"
-                              value={theme}
-                              onChange={setTheme}
-                              options={themeOptions}
-                            />
+                            <SegmentedControl label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
                             <SegmentedControl
                               label="Emoji"
                               description={
@@ -638,9 +588,7 @@ export function SettingsDrawer({
                           />
 
                           <div className="space-y-5">
-                            {micPermission !== "granted" &&
-                            inputDevices.length === 0 &&
-                            outputDevices.length === 0 ? (
+                            {micPermission !== "granted" && inputDevices.length === 0 && outputDevices.length === 0 ? (
                               <div className="space-y-2">
                                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                                   {micPermission === "denied"
@@ -668,8 +616,7 @@ export function SettingsDrawer({
                                     </div>
                                   ) : (
                                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                                      No audio devices were found. Connect a microphone or speaker
-                                      to select it here.
+                                      No audio devices were found. Connect a microphone or speaker to select it here.
                                     </p>
                                   )
                                 ) : null}
@@ -723,9 +670,7 @@ export function SettingsDrawer({
                               onChange={(value) => updateProfile({ persona: value })}
                               options={personaOptions}
                               description={
-                                personaOptions.find(
-                                  (p) => p.value === (profile.persona || "default"),
-                                )?.description
+                                personaOptions.find((p) => p.value === (profile.persona || "default"))?.description
                               }
                             />
                           </section>
@@ -790,10 +735,7 @@ export function SettingsDrawer({
 
                       {/* Backup & Restore Section */}
                       {section === "backup" && (
-                        <section
-                          aria-labelledby="backup-settings-heading"
-                          className="flex flex-col gap-6"
-                        >
+                        <section aria-labelledby="backup-settings-heading" className="flex flex-col gap-6">
                           <SettingsViewHeader
                             id="backup-settings-heading"
                             title="Backup & Restore"
@@ -822,10 +764,7 @@ export function SettingsDrawer({
                                   />
                                 )}
                                 <span className="relative flex items-center justify-center gap-2">
-                                  <Download
-                                    size={16}
-                                    className={isExporting ? "animate-pulse" : undefined}
-                                  />
+                                  <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
                                   {isExporting
                                     ? `Creating backup… ${Math.round(exportProgress * 100)}%`
                                     : "Back up everything"}
@@ -840,10 +779,7 @@ export function SettingsDrawer({
                                 Choose items instead
                                 <ChevronDown
                                   size={15}
-                                  className={cn(
-                                    "transition-transform",
-                                    backupSelectionOpen && "rotate-180",
-                                  )}
+                                  className={cn("transition-transform", backupSelectionOpen && "rotate-180")}
                                 />
                               </button>
                               {backupSelectionOpen && (
@@ -857,9 +793,8 @@ export function SettingsDrawer({
                                         {storageInfo.isLoading
                                           ? "…"
                                           : formatBytes(
-                                              storageInfo.entries.find(
-                                                (entry) => entry.path === "profile.json",
-                                              )?.size ?? 0,
+                                              storageInfo.entries.find((entry) => entry.path === "profile.json")
+                                                ?.size ?? 0,
                                             )}
                                       </span>
                                       <input
@@ -884,9 +819,7 @@ export function SettingsDrawer({
                                         </span>
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(chatStorageSize)}
+                                        {storageInfo.isLoading ? "…" : formatBytes(chatStorageSize)}
                                       </span>
                                       <input
                                         type="checkbox"
@@ -911,9 +844,7 @@ export function SettingsDrawer({
                                         </span>
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(agentStorageSize)}
+                                        {storageInfo.isLoading ? "…" : formatBytes(agentStorageSize)}
                                       </span>
                                       <input
                                         type="checkbox"
@@ -938,9 +869,7 @@ export function SettingsDrawer({
                                         </span>
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(imageStorageSize)}
+                                        {storageInfo.isLoading ? "…" : formatBytes(imageStorageSize)}
                                       </span>
                                       <input
                                         type="checkbox"
@@ -964,9 +893,7 @@ export function SettingsDrawer({
                                         </span>
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(skillStorageSize)}
+                                        {storageInfo.isLoading ? "…" : formatBytes(skillStorageSize)}
                                       </span>
                                       <input
                                         type="checkbox"
@@ -990,9 +917,7 @@ export function SettingsDrawer({
                                         </span>
                                       </span>
                                       <span className="ml-auto w-16 shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400">
-                                        {storageInfo.isLoading
-                                          ? "…"
-                                          : formatBytes(pluginStorageSize)}
+                                        {storageInfo.isLoading ? "…" : formatBytes(pluginStorageSize)}
                                       </span>
                                       <input
                                         type="checkbox"
@@ -1030,10 +955,7 @@ export function SettingsDrawer({
                                       />
                                     )}
                                     <span className="relative flex items-center justify-center gap-2">
-                                      <Download
-                                        size={16}
-                                        className={isExporting ? "animate-pulse" : undefined}
-                                      />
+                                      <Download size={16} className={isExporting ? "animate-pulse" : undefined} />
                                       {isExporting
                                         ? `Creating backup… ${Math.round(exportProgress * 100)}%`
                                         : "Back up selected"}
@@ -1073,14 +995,9 @@ export function SettingsDrawer({
                                 />
                               )}
                               <span className="relative flex items-center justify-center gap-2">
-                                <Upload
-                                  size={16}
-                                  className="text-neutral-500 dark:text-neutral-400 shrink-0"
-                                />
+                                <Upload size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                                 <span className="font-medium">
-                                  {isRestoring
-                                    ? `Restoring… ${Math.round(restoreProgress * 100)}%`
-                                    : "Restore backup"}
+                                  {isRestoring ? `Restoring… ${Math.round(restoreProgress * 100)}%` : "Restore backup"}
                                 </span>
                               </span>
                             </button>
@@ -1134,10 +1051,7 @@ export function SettingsDrawer({
                             description="Manage the companion connection and the tools it provides."
                           />
 
-                          <section
-                            aria-labelledby="companion-connection-heading"
-                            className="space-y-5"
-                          >
+                          <section aria-labelledby="companion-connection-heading" className="space-y-5">
                             <div className="flex items-center justify-between">
                               <h4
                                 id="companion-connection-heading"
@@ -1146,9 +1060,7 @@ export function SettingsDrawer({
                                 Connection
                               </h4>
                               <div className="flex items-center gap-3">
-                                <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                                  Enable companion
-                                </span>
+                                <span className="text-sm text-neutral-500 dark:text-neutral-400">Enable companion</span>
                                 <button
                                   type="button"
                                   onClick={toggleCompanion}
@@ -1170,8 +1082,8 @@ export function SettingsDrawer({
 
                             {currentAgent ? (
                               <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                                While an agent is active, the companion is controlled by the agent's
-                                tools, not this global setting.
+                                While an agent is active, the companion is controlled by the agent's tools, not this
+                                global setting.
                               </p>
                             ) : null}
 
@@ -1188,22 +1100,13 @@ export function SettingsDrawer({
                                         {(() => {
                                           const toolIcon =
                                             tool.icon ??
-                                            (typeof companion.icon === "string"
-                                              ? companion.icon
-                                              : undefined);
+                                            (typeof companion.icon === "string" ? companion.icon : undefined);
                                           if (toolIcon) {
                                             return (
-                                              <McpProviderIcon
-                                                src={toolIcon}
-                                                size={16}
-                                                className="object-contain"
-                                              />
+                                              <McpProviderIcon src={toolIcon} size={16} className="object-contain" />
                                             );
                                           }
-                                          if (
-                                            companion.icon &&
-                                            typeof companion.icon !== "string"
-                                          ) {
+                                          if (companion.icon && typeof companion.icon !== "string") {
                                             const CompanionIcon = companion.icon;
                                             return <CompanionIcon width={16} height={16} />;
                                           }
@@ -1225,9 +1128,7 @@ export function SettingsDrawer({
                                 </div>
                               </div>
                             ) : companionConnected ? (
-                              <p className="text-sm text-neutral-400 dark:text-neutral-500">
-                                No tools exposed
-                              </p>
+                              <p className="text-sm text-neutral-400 dark:text-neutral-500">No tools exposed</p>
                             ) : (
                               <p className="text-sm text-neutral-400 dark:text-neutral-500">
                                 Enable the companion to see available tools.
@@ -1278,10 +1179,7 @@ export function SettingsDrawer({
                                 onClick={() => setOpfsBrowserOpen(true)}
                                 className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left"
                               >
-                                <HardDrive
-                                  size={16}
-                                  className="text-neutral-500 dark:text-neutral-400 shrink-0"
-                                />
+                                <HardDrive size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                                 <div className="min-w-0">
                                   <div className="font-medium">OPFS browser</div>
                                   <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">

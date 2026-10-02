@@ -48,10 +48,6 @@ it("decodes UTF-8 resources and advertises only available host features", () => 
     serverTools: { listChanged: true },
   });
   expect(buildHostCapabilities()).not.toHaveProperty("message");
-  expect(buildHostCapabilities(undefined, {}, true, true)).toMatchObject({
-    message: { text: {} },
-    updateModelContext: { text: {}, structuredContent: {} },
-  });
 });
 
 it("restores initial inputs and structured results without executing the tool again", async () => {

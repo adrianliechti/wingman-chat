@@ -85,11 +85,19 @@ export function useChatContext(
       currentAgent?.memory && getConfig().memory && getFilteredProviders().some((p) => p.id === "memory")
         ? getMemoryManager(currentAgent.id)
         : undefined;
+    const chatMiddleware = (filteredProviders: ToolProvider[]) =>
+      filteredProviders.flatMap((provider) => provider.chat?.middleware ?? []);
+    // Memory's runtime context is only for realtime; chat recalls memory per request.
+    const providerRuntimeContext = (filteredProviders: ToolProvider[], includeMemory: boolean) =>
+      filteredProviders
+        .filter((provider) => includeMemory || provider.id !== "memory")
+        .map((provider) => provider.runtimeContext?.trim())
+        .filter((s): s is string => !!s)
+        .join("\n\n");
 
     return {
       memory,
-      middleware: () =>
-        mode === "chat" ? getFilteredProviders().flatMap((provider) => provider.chat?.middleware ?? []) : [],
+      middleware: () => (mode === "chat" ? chatMiddleware(getFilteredProviders()) : []),
       tools: () => {
         const filteredProviders = getFilteredProviders();
 
@@ -111,7 +119,7 @@ export function useChatContext(
 
         // Delegated runs always use chat, even when invoked from realtime voice.
         const chatProviders = filteredProviders.map((provider) => provider.chat ?? provider);
-        const middleware = filteredProviders.flatMap((provider) => provider.chat?.middleware ?? []);
+        const middleware = chatMiddleware(filteredProviders);
         const subagentTools =
           mode === "voice"
             ? mountMemoryFiles(
@@ -128,15 +136,15 @@ export function useChatContext(
           .map((provider) => provider.instructions?.trim())
           .filter((s): s is string => !!s)
           .join("\n\n");
-        const providerRuntimeContext = filteredProviders
-          .filter((p) => p.id !== "memory")
-          .map((p: ToolProvider) => p.runtimeContext?.trim())
-          .filter((s): s is string => !!s)
-          .join("\n\n");
-
         return [
           ...tools,
-          createSubagentTool(subagentModel, providerInstructions, subagentTools, providerRuntimeContext, middleware),
+          createSubagentTool(
+            subagentModel,
+            providerInstructions,
+            subagentTools,
+            providerRuntimeContext(filteredProviders, false),
+            middleware,
+          ),
         ];
       },
 
@@ -181,16 +189,9 @@ export function useChatContext(
           }
         });
 
-        console.log("Compiled Instructions:", instructionsList);
-
         return instructionsList.join("\n\n");
       },
-      runtimeContext: () =>
-        getFilteredProviders()
-          .filter((provider) => mode === "voice" || provider.id !== "memory")
-          .map((provider) => provider.runtimeContext?.trim())
-          .filter(Boolean)
-          .join("\n\n"),
+      runtimeContext: () => providerRuntimeContext(getFilteredProviders(), mode === "voice"),
     };
   }, [
     mode,

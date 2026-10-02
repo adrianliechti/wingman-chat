@@ -16,7 +16,6 @@ export type VoiceToolIdentity = { id: string; name: string; runId: string; argum
 interface GatewayOptions {
   model: string;
   transcriber: string;
-  config: RealtimeSessionConfig;
   history: Message[];
   signal: AbortSignal;
   inputDeviceId?: string;
@@ -42,15 +41,22 @@ export function gatewayRealtime(options: GatewayOptions) {
   let socket: WebSocket | undefined;
   let recorder: AudioRecorder | undefined;
   let player: AudioStreamPlayer | undefined;
-  let config = options.config;
+  let config: RealtimeSessionConfig = {};
   let closed = false;
   let configured = false;
+  let resolveConfigured!: () => void;
+  const whenConfigured = new Promise<void>((resolve) => {
+    resolveConfigured = resolve;
+  });
   let ready = false;
   let currentTrack = crypto.randomUUID();
   let contextItem: string | undefined;
+  // Some gateway providers reject item deletion; stale context items then stay
+  // in the conversation and age out through the session's truncation policy.
+  let canDeleteItems = true;
   let runId = crypto.randomUUID();
   let pauseCount = 0;
-  let inputLevel = 0;
+  let mode: "thinking" | "speaking" | undefined;
   let generation = 0;
   let pendingContinuation = false;
   let pendingText: { texts: string[]; done: Promise<void> } | undefined;
@@ -69,8 +75,14 @@ export function gatewayRealtime(options: GatewayOptions) {
     if (live() && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event));
   };
   const activeResponse = () => [...responses.values()].some((response) => !response.done);
+  // Audio deltas arrive many times per second; RealtimeClient only needs transitions.
+  const setMode = (next: "thinking" | "speaking") => {
+    if (mode === next) return;
+    mode = next;
+    events.emit("mode_change", { mode: next });
+  };
   const refreshContext = () => {
-    if (contextItem) send({ type: "conversation.item.delete", item_id: contextItem });
+    if (contextItem && canDeleteItems) send({ type: "conversation.item.delete", item_id: contextItem });
     contextItem = `ctx_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
     runId = crypto.randomUUID();
     send({
@@ -117,6 +129,7 @@ export function gatewayRealtime(options: GatewayOptions) {
         content_index: 0,
         audio_end_ms: Math.floor(played.offsetSamples / 24),
       });
+    mode = undefined;
     events.emit("interrupted", {});
   };
   const drain = () => {
@@ -139,9 +152,22 @@ export function gatewayRealtime(options: GatewayOptions) {
     }
     drain();
   };
-  const updateSession = (next: Partial<RealtimeSessionConfig>) => {
-    config = { ...config, ...next };
-    if (socket?.readyState !== WebSocket.OPEN) return;
+  const sendHistory = () => {
+    for (const message of options.history) {
+      const text =
+        message.role === "assistant" ? getFinalTextFromContent(message.content) : getTextFromContent(message.content);
+      if (text.trim())
+        send({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: message.role,
+            content: [{ type: message.role === "user" ? "input_text" : "output_text", text }],
+          },
+        });
+    }
+  };
+  const sendSessionConfig = () => {
     configured = true;
     send({
       type: "session.update",
@@ -173,14 +199,22 @@ export function gatewayRealtime(options: GatewayOptions) {
       },
     });
   };
+  const updateSession = (next: Partial<RealtimeSessionConfig>) => {
+    config = { ...config, ...next };
+    resolveConfigured();
+    if (socket?.readyState === WebSocket.OPEN) sendSessionConfig();
+  };
   const record = async () => {
     await whenReady;
     if (!live() || pauseCount) return;
     await recorder?.record(({ mono }) => {
       if (!live() || pauseCount || !mono?.byteLength) return;
-      const samples = new Int16Array(mono);
-      inputLevel = Math.sqrt(samples.reduce((sum, sample) => sum + (sample / 32768) ** 2, 0) / samples.length);
-      options.onAudioLevel?.(inputLevel);
+      if (options.onAudioLevel) {
+        const samples = new Int16Array(mono);
+        options.onAudioLevel(
+          Math.sqrt(samples.reduce((sum, sample) => sum + (sample / 32768) ** 2, 0) / samples.length),
+        );
+      }
       send({ type: "input_audio_buffer.append", audio: encodePcm(mono) });
     });
   };
@@ -193,7 +227,6 @@ export function gatewayRealtime(options: GatewayOptions) {
     if (activeResponse()) send({ type: "response.cancel" });
     const pending = { texts: [text], done: Promise.resolve() };
     pendingText = pending;
-    pendingContinuation = false;
     pending.done = interruptPlayback()
       .then(() => {
         if (!live()) return;
@@ -239,10 +272,10 @@ export function gatewayRealtime(options: GatewayOptions) {
       void interruptPlayback().catch((error: Error) => fail(error));
     },
     on: (event, handler) => events.on(event, handler),
+    // Required by the connection contract; the application reads levels
+    // through onAudioLevel instead.
     getAudioVisualization: () => ({
-      get inputLevel() {
-        return inputLevel;
-      },
+      inputLevel: 0,
       outputLevel: 0,
       inputSampleRate: 24000,
       outputSampleRate: 24000,
@@ -267,22 +300,8 @@ export function gatewayRealtime(options: GatewayOptions) {
       timer = setTimeout(() => fail(new Error("The voice service did not confirm its audio configuration.")), 15_000);
       socket.addEventListener("open", () => {
         if (!live()) return;
-        updateSession(config);
-        for (const message of options.history) {
-          const text =
-            message.role === "assistant"
-              ? getFinalTextFromContent(message.content)
-              : getTextFromContent(message.content);
-          if (text.trim())
-            send({
-              type: "conversation.item.create",
-              item: {
-                type: "message",
-                role: message.role,
-                content: [{ type: message.role === "user" ? "input_text" : "output_text", text }],
-              },
-            });
-        }
+        sendSessionConfig();
+        sendHistory();
       });
       socket.addEventListener("message", (event) => {
         if (!live()) return;
@@ -305,7 +324,7 @@ export function gatewayRealtime(options: GatewayOptions) {
             case "response.created":
               currentTrack = msg.response.id;
               responses.set(currentTrack, { runId, calls: new Set(), done: false, tools: false });
-              events.emit("mode_change", { mode: "thinking" });
+              setMode("thinking");
               break;
             case "conversation.item.input_audio_transcription.completed":
               if (msg.transcript?.trim())
@@ -316,8 +335,7 @@ export function gatewayRealtime(options: GatewayOptions) {
               if (msg.item_id) audioItems.set(track, msg.item_id);
               const pcm = decodeBase64(msg.delta);
               player?.add16BitPCM(new Int16Array(pcm.buffer), track);
-              events.emit("audio_chunk", { data: pcm.buffer, sampleRate: 24000 });
-              events.emit("mode_change", { mode: "speaking" });
+              setMode("speaking");
               break;
             }
             case "response.done": {
@@ -375,11 +393,23 @@ export function gatewayRealtime(options: GatewayOptions) {
               drain();
               break;
             }
-            case "error":
-              recentError = new Error(msg.error?.message ?? "The voice service reported an error.");
+            case "error": {
+              const message: string = msg.error?.message ?? "The voice service reported an error.";
+              if (
+                ready &&
+                msg.error?.type === "invalid_request_error" &&
+                /^client event ["']conversation\.item\.delete["'] is not supported\b/i.test(message)
+              ) {
+                // Only an explicit unsupported-event rejection disables deletion.
+                // Also ignore rejections for deletions already in flight.
+                canDeleteItems = false;
+                break;
+              }
+              recentError = new Error(message);
               if (!ready) fail(recentError);
               else events.emit("error", { error: recentError });
               break;
+            }
           }
         } catch (error) {
           fail(error instanceof Error ? error : new Error("Couldn't process a voice service event."));
@@ -400,6 +430,8 @@ export function gatewayRealtime(options: GatewayOptions) {
   return {
     prepare,
     disconnect,
+    /** Resolves once RealtimeClient has supplied instructions and tools. */
+    configured: whenConfigured,
     toolIdentity: (input: unknown) => (input && typeof input === "object" ? identities.get(input) : undefined),
     // RealtimeClient's executable tool list is immutable. Rebinding a client
     // switches event ownership, while earlier calls may still deliver results.

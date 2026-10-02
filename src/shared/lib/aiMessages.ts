@@ -231,7 +231,7 @@ function fromAIContent(part: ContentPart): Content[] {
   return [{ type: part.type, data, ...(name ? { name } : {}), ...stored }];
 }
 
-export function fromAIMessages(messages: UIMessage[], runId?: string, model?: string, richResults = true): Message[] {
+export function fromAIMessages(messages: UIMessage[], model?: string, richResults = true): Message[] {
   const calls = new Map(
     messages.flatMap((m) => m.parts.flatMap((p) => (p.type === "tool-call" ? [[p.id, p] as const] : []))),
   );
@@ -271,7 +271,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
       const converted: Message = {
         id: message.id,
         role: message.role === "user" ? "user" : "assistant",
-        runId: stored?.runId ?? runId,
+        runId: stored?.runId,
         createdAt: message.createdAt ? new Date(message.createdAt).toISOString() : undefined,
         usage: stored?.usage,
         error: stored?.error,
@@ -288,7 +288,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                   toolCallId: part.subagent.parentToolCallId,
                   status: part.subagent.status,
                   error: part.subagent.error,
-                  messages: fromAIMessages(part.subagent.messages, runId, model, richResults),
+                  messages: fromAIMessages(part.subagent.messages, model, richResults),
                   signature: subagentSignature(part.subagent),
                 },
               ];

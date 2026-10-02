@@ -3,7 +3,14 @@ import { isDataFilePath, isMountablePath } from "./dataFiles";
 
 describe("data files", () => {
   it("recognises scanned tabular files, including compressed text", () => {
-    for (const path of ["/data/flights.csv", "/x.tsv.gz", "/events.ndjson", "/rows.jsonl", "/big.parquet", "/t.arrow"]) {
+    for (const path of [
+      "/data/flights.csv",
+      "/x.tsv.gz",
+      "/events.ndjson",
+      "/rows.jsonl",
+      "/big.parquet",
+      "/t.arrow",
+    ]) {
       expect(isDataFilePath(path), path).toBe(true);
     }
     for (const path of ["/notes.md", "/config.json", "/store.sqlite", "/.gz", "/archive.gz", "/a.csvx"]) {

@@ -30,7 +30,7 @@ import {
   gatewayText,
   gatewayTranscription,
 } from "./aiProvider";
-import { simplifyMarkdown } from "./utils";
+import { decodeBase64, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
@@ -464,7 +464,7 @@ export class Client {
       abortSignal: requestOptions.signal,
       middleware: [aiTelemetry("audio", requestOptions.parentContext)],
     });
-    const bytes = Uint8Array.from(atob(result.audio), (character) => character.charCodeAt(0));
+    const bytes = decodeBase64(result.audio);
     if (!bytes.byteLength) throw new Error("The speech service returned empty audio");
     return new Blob([bytes], { type: result.contentType ?? "audio/wav" });
   }

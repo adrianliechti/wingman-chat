@@ -13,8 +13,8 @@ export function createSubagentTool(
   model: string,
   providerInstructions: string,
   baseTools: Tool[],
-  runtimeContext = "",
-  middleware: ChatMiddleware[] = [],
+  runtimeContext?: string,
+  middleware?: ChatMiddleware[],
 ): Tool {
   const baseInstructions = subagentSystem.trim();
   const extra = providerInstructions.trim();

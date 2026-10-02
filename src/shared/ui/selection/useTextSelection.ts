@@ -86,7 +86,11 @@ function snapshot(context: SelectionContext): TextSelectionSnapshot | null {
     top += frame.top;
     left += frame.left;
   }
-  return { text, rect: { top, left, width: rect.width, height: rect.height }, lines: lineRange(context.container, range) };
+  return {
+    text,
+    rect: { top, left, width: rect.width, height: rect.height },
+    lines: lineRange(context.container, range),
+  };
 }
 
 /**

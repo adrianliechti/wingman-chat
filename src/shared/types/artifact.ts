@@ -68,8 +68,3 @@ export const ArtifactRevisionEntrySchema = z.object({
   origin: RevisionOriginSchema.optional(),
 });
 export type ArtifactRevisionEntry = z.infer<typeof ArtifactRevisionEntrySchema>;
-
-export const ArtifactRevisionLogSchema = z.object({
-  entries: z.array(ArtifactRevisionEntrySchema),
-});
-export type ArtifactRevisionLog = z.infer<typeof ArtifactRevisionLogSchema>;

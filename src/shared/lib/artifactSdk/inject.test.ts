@@ -6,7 +6,10 @@ const options = { token: "tok en", path: "/index.html", capabilities: { ...empty
 
 describe("injectSdkScript", () => {
   it("places the script first inside an existing head", () => {
-    const out = injectSdkScript('<!doctype html><html><head lang="en"><title>x</title></head><body></body></html>', options);
+    const out = injectSdkScript(
+      '<!doctype html><html><head lang="en"><title>x</title></head><body></body></html>',
+      options,
+    );
     expect(out.indexOf(sdkScriptUrl("tok en"))).toBeLessThan(out.indexOf("<title>"));
     expect(out).toContain('data-path="/index.html"');
     expect(out).toContain('data-capabilities="{&quot;llm&quot;:false');

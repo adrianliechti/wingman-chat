@@ -32,14 +32,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [audioLevel, setAudioLevel] = useState(0);
   const lastLevelUpdateRef = useRef(0);
   const config = getConfig();
-  const [isAvailable] = useState(() => {
-    try {
-      return !!config.voice;
-    } catch (error) {
-      console.warn("Failed to get voice config:", error);
-      return false;
-    }
-  });
+  const isAvailable = !!config.voice;
   const { addMessage, ensureChat, setVoiceToolCall, requestElicitation, updateToolMeta } = useChatActions();
   const { models, model, setModel } = useChatModel();
   const { chatId } = useChatList();
@@ -68,6 +61,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     onToolResultCallback,
     onClosedCallback,
     chatRuntimeContext,
+    onErrorCallback,
   );
 
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
@@ -119,8 +113,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       const restored = getSavedModel(modelsRef.current) ?? modelsRef.current.find((m) => m.id !== "realtime") ?? null;
       setModelRef.current(restored);
       console.error("[voice] session ended:", reason.message);
-      alert(`Voice mode stopped: ${reason.message}`);
+      notify.error("Voice mode stopped", reason.message);
     }
+  }
+
+  // Non-fatal service errors (rejected session updates, truncation failures)
+  // keep the session alive but should not pass silently.
+  function onErrorCallback(error: Error) {
+    notify.error("Voice service error", error.message);
   }
 
   function onToolResultCallback(
@@ -156,17 +156,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         if (!owner || sessionRef.current !== owner) throw new DOMException("Voice session stopped", "AbortError");
       };
       return (toolCall: { id: string; name: string }): ToolContext => {
-        let resultMeta: Record<string, unknown> = {};
         return {
           model: currentModel,
           chatId,
           setMeta: (meta: Record<string, unknown>) => {
-            resultMeta = meta;
             updateToolMetaRef.current(toolCall.id, { ...meta });
-          },
-          updateMeta: (meta: Record<string, unknown>) => {
-            resultMeta = { ...resultMeta, ...meta };
-            updateToolMetaRef.current(toolCall.id, { ...resultMeta });
           },
           elicit: async (elicitation: Elicitation) => {
             requireOwner();
@@ -284,15 +278,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (!isCurrent()) return;
       void stopVoice();
       console.error("Failed to start voice mode:", error);
-      const errorMessage = error?.toString() || "";
-      if (errorMessage.includes("API key") || errorMessage.includes("401")) {
-        notify.error("Voice mode unavailable", "An OpenAI API key must be configured to use voice mode.");
-      } else {
-        notify.error(
-          "Couldn't start voice mode",
-          error instanceof Error ? error.message : "Check your audio devices and permissions, then try again.",
-        );
-      }
+      notify.error(
+        "Couldn't start voice mode",
+        error instanceof Error ? error.message : "Check your audio devices and permissions, then try again.",
+      );
     }
   }, [
     chatId,

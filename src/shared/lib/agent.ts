@@ -26,7 +26,7 @@ import {
 } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
-import { combineAbortSignals } from "./abortSignals";
+import { combineAbortSignals, followAbortSignal } from "./abortSignals";
 import { fromAIMessages, toAIMessages } from "./aiMessages";
 import type { GatewayTextSegment } from "./gatewayText";
 import { artifactDelta, artifactDeltaFromMeta } from "../types/artifact";
@@ -62,11 +62,7 @@ export interface RunHooks {
   /** Application context for cancellation and workspace isolation. */
   context?: AgentRunContext;
 
-  /**
-   * Identifier for this agent (e.g. `"chat"` or `"research"`).
-   * Used as the suffix on the `invoke_agent` span name and the
-   * `gen_ai.agent.name` attribute. Omitted → span is just `invoke_agent`.
-   */
+  /** Identifier for this agent (e.g. `"chat"` or `"research"`), reported as the telemetry operation name. */
   agentName?: string;
 
   /**
@@ -75,7 +71,7 @@ export interface RunHooks {
    */
   createToolContext?: (toolCall: ToolCallContent) => ToolContext | undefined;
 
-  /** Fires on every `setMeta`/`updateMeta` — both live (during execution) and late (after commit). */
+  /** Fires on every `setMeta` — both live (during execution) and late (after commit). */
   onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
 
   /**
@@ -207,10 +203,7 @@ export async function* streamRun(
   hooks: StreamRunHooks,
 ): AsyncGenerator<StreamChunk> {
   const combined = combineAbortSignals(hooks.context?.signal, hooks.options?.signal);
-  const abortController = new AbortController();
-  const abort = () => abortController.abort(combined.signal?.reason);
-  if (combined.signal?.aborted) abort();
-  else combined.signal?.addEventListener("abort", abort, { once: true });
+  const { controller: abortController, cleanup } = followAbortSignal(combined.signal);
   const invocation: AgentRunContext = {
     ...hooks.context,
     signal: abortController.signal,
@@ -261,7 +254,6 @@ export async function* streamRun(
                     hooks.metadata.withTextSegments(
                       modelMessagesToUIMessages(config.providerMessages ?? config.messages),
                     ),
-                    undefined,
                     model,
                     false,
                   ),
@@ -341,7 +333,7 @@ export async function* streamRun(
           let content: Record<string, unknown> | undefined;
           let error: Message["error"];
           let saved: Message | undefined;
-          const updateMeta = (next: Record<string, unknown>) => {
+          const setMeta = (next: Record<string, unknown>) => {
             meta = next;
             if (saved) {
               saved = updateToolResultMeta([saved], call.id, meta)[0];
@@ -358,8 +350,7 @@ export async function* streamRun(
             invocationContext: execution?.context,
             signal: abortController.signal,
             agentContext: telemetry.toolContext(call.id),
-            setMeta: updateMeta,
-            updateMeta: (next) => updateMeta({ ...meta, ...next }),
+            setMeta,
             setContent: (next) => {
               content = next;
             },
@@ -399,7 +390,7 @@ export async function* streamRun(
         defineAgent({
           name: tool.name,
           description: tool.description ?? tool.name,
-          inputSchema: chatToolDefinition(tool).inputSchema,
+          inputSchema: z.fromJSONSchema(tool.parameters),
           run: (ctx) => {
             const { prompt } = ctx.input as { prompt: string };
             const childModel = spec.model ?? model;
@@ -518,7 +509,7 @@ export async function* streamRun(
       yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
     }
   } finally {
-    combined.signal?.removeEventListener("abort", abort);
+    cleanup();
     combined.cleanup();
   }
 }

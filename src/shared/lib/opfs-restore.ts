@@ -16,6 +16,7 @@ import { writeFileChanges } from "./opfs-transaction";
 import { rebuildFolderIndexUnlocked, STORAGE_COLLECTIONS } from "./opfs-index";
 import { isJunkZipEntry } from "./opfs-zip";
 import { flushPersistence, withPersistenceLock } from "./persistence";
+import { readZipEntryBlob } from "./zipStreams";
 
 function validatePath(path: string): void {
   if (
@@ -31,6 +32,17 @@ function validatePath(path: string): void {
 /** Reports restore progress as a fraction in the range [0, 1]. */
 export type RestoreProgressHandler = (fraction: number) => void;
 
+export interface RestoreResult {
+  restoredFiles: number;
+  skipped: Array<{ path: string; reason: string }>;
+}
+
+class InvalidBackupJsonError extends Error {}
+
+function recordScope(path: string): string {
+  return path.match(/^(?:agents|chats|images|plugins)\/[^/]+\//)?.[0] ?? path;
+}
+
 /** Decode and validate the entire archive before changing any saved files. */
 export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandler): Promise<Map<string, Blob>> {
   const JSZip = (await import("jszip")).default;
@@ -45,7 +57,7 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
     const original = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName;
     if (original) validatePath(original.replace(/\/$/, ""));
     validatePath(path.replace(/\/$/, ""));
-    if (!entry.dir) files.set(path, new Blob([await entry.async("arraybuffer")]));
+    if (!entry.dir) files.set(path, await readZipEntryBlob(entry));
   }
   // Accept a full backup wrapped in a download folder without requiring users
   // to rearrange its contents. Collection and single-record layouts stay intact.
@@ -75,7 +87,7 @@ function parseBackupJson(path: string, text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Invalid JSON in backup: ${path}`);
+    throw new InvalidBackupJsonError(`Invalid JSON in backup: ${path}`);
   }
 }
 
@@ -106,13 +118,13 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
   }
   if (
     path === "profile.json" ||
-    /^(chats\/[^/]+\/chat|agents\/[^/]+\/(servers|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata)\.json$/.test(
+    /^(chats\/(?:[^/]+\/chat|[^/]+)|agents\/[^/]+\/(agent|servers|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata|plugins\/[^/]+\/plugin)\.json$/.test(
       path,
     )
   ) {
     const value = parseBackupJson(path, await blob.text());
     if (!value || typeof value !== "object") throw new Error(`Invalid metadata in backup: ${path}`);
-    if (/^chats\/.+\/chat\.json$/.test(path)) {
+    if (/^chats\/(?:[^/]+\/chat|[^/]+)\.json$/.test(path)) {
       const messages = (value as { messages?: unknown }).messages;
       if (
         !Array.isArray(messages) ||
@@ -140,22 +152,25 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
 
 /**
  * Merge supplied files, preserving everything absent from a partial backup.
- * Existing files with matching paths are replaced. All inputs are decoded and
- * checked first; a write failure restores the previous bytes and indexes.
+ * Malformed JSON skips its owning record; arbitrary artifact files stay opaque.
+ * Accepted files are checked first; a write failure restores previous bytes and indexes.
  */
 export async function restoreFiles(
   input: ReadonlyMap<string, Blob>,
   onProgress?: RestoreProgressHandler,
-): Promise<void> {
+): Promise<RestoreResult> {
   const files = new Map<string, Blob>();
-  const collections = new Set<string>();
   const indexHints = new Map<string, IndexEntry[]>();
+  const skipped: RestoreResult["skipped"] = [];
+  const skippedRecords = new Set<string>();
   // A deleted agent file can leave an empty metadata.json behind; drop that
   // file folder entirely so its orphaned siblings don't fail the restore.
   const skippedFileDirs = new Set<string>();
   for (const [path, blob] of input) {
-    if (/^agents\/[^/]+\/files\/[^/]+\/metadata\.json$/.test(path) && !(await blob.text()).trim())
+    if (/^agents\/[^/]+\/files\/[^/]+\/metadata\.json$/.test(path) && !(await blob.text()).trim()) {
       skippedFileDirs.add(path.slice(0, path.lastIndexOf("/") + 1));
+      skipped.push({ path, reason: "Empty file metadata; skipped the file folder." });
+    }
   }
   const isSkipped = (path: string) => [...skippedFileDirs].some((dir) => path.startsWith(dir));
   let validated = 0;
@@ -167,22 +182,30 @@ export async function restoreFiles(
     const root = path.split("/")[0];
     // A full OPFS backup may also contain older collections and additional
     // user files. Preserve them without inventing sidebar records for them.
-    collections.add(path === "profile.json" ? "profile" : root);
     // A backup's listing must not replace the destination's merged listing.
     if ((STORAGE_COLLECTIONS as readonly string[]).includes(root) && /^[^/]+\/index\.json$/.test(path)) {
       try {
-        const hints: unknown = JSON.parse(await blob.text());
+        const hints = parseBackupJson(path, await blob.text());
         if (Array.isArray(hints))
           indexHints.set(
             root,
             hints.filter((entry) => entry && typeof entry.id === "string" && typeof entry.updated === "string"),
           );
-      } catch {
-        /* Listings are optional hints, never authoritative backup data. */
+      } catch (error) {
+        if (!(error instanceof InvalidBackupJsonError)) throw error;
+        skipped.push({ path, reason: "Invalid JSON in the optional index; rebuilt it from saved records." });
       }
       continue;
     }
-    await validateMetadata(path, blob);
+    try {
+      await validateMetadata(path, blob);
+    } catch (error) {
+      if (!(error instanceof InvalidBackupJsonError)) throw error;
+      const scope = recordScope(path);
+      skippedRecords.add(scope);
+      skipped.push({ path, reason: `Invalid JSON; skipped ${scope}.` });
+      continue;
+    }
     if (/^agents\/[^/]+\/memory\/.+\.md$/.test(path) && !isMemoryIndex(path)) {
       const normalized = new Blob([
         serializeMemoryDocument(parseMemoryDocument(redactSecrets(await blob.text()).text)),
@@ -194,7 +217,14 @@ export async function restoreFiles(
       files.set(path, blob);
     }
   }
-  if (!files.size) throw new Error("No restorable files were found in the archive");
+  // Filter after validation so ZIP entry order cannot leave half a skipped record.
+  for (const path of files.keys()) {
+    if (skippedRecords.has(recordScope(path))) files.delete(path);
+  }
+  if (!files.size) {
+    if (skipped.length) return { restoredFiles: 0, skipped };
+    throw new Error("No restorable files were found in the archive");
+  }
   for (const [path, blob] of files) {
     if (!/^agents\/[^/]+\/files\/[^/]+\/embeddings\.bin$/.test(path)) continue;
     const bytes = await blob.arrayBuffer();
@@ -213,7 +243,9 @@ export async function restoreFiles(
       throw new Error(`Invalid embeddings in backup: ${path}`);
   }
   await flushPersistence();
-  const keys = [...collections].sort();
+  const keys = [
+    ...new Set([...files.keys()].map((path) => (path === "profile.json" ? "profile" : path.split("/")[0]))),
+  ].sort();
   const chatIds = [
     ...new Set([...files.keys()].flatMap((path) => (path.startsWith("chats/") ? [path.split("/")[1]] : []))),
   ].sort();
@@ -238,4 +270,5 @@ export async function restoreFiles(
       ? lockChats(0)
       : withPersistenceLock(`collection:${keys[index]}`, () => lockCollections(index + 1));
   await lockCollections(0);
+  return { restoredFiles: files.size, skipped };
 }

@@ -24,6 +24,8 @@ export function createSkillSource(entries: SkillEntry[]) {
     return entry;
   };
   return {
+    /** The deduplicated catalog, shared with callers that build tools around this source. */
+    catalog,
     list: async () => catalog,
     load: async (name) => get(name).loadContent(),
     // Scripts remain readable resources: our browser interpreter executes the
@@ -37,5 +39,5 @@ export function createSkillSource(entries: SkillEntry[]) {
       if (content == null) throw new Error(`Failed to load resource "${path}" for skill "${name}"`);
       return content;
     },
-  } satisfies SkillSource;
+  } satisfies SkillSource & { catalog: SkillMetadata[] };
 }

@@ -160,7 +160,10 @@ test("virtual .lib/ references load bundled libraries in previews, offline, and 
     body +
     '<script src="/.lib/three.js"></script><script src="../.lib/lucide.js"></script>' +
     `<script>const modelUrl = ${JSON.stringify(`data:model/gltf+json,${encodeURIComponent(model)}`)};${sceneScript}</script></body></html>`;
-  await page.evaluate(([path, content]) => window.htmlArtifactsE2E.write(path, content), ["/scenes/deck.html", html] as const);
+  await page.evaluate(([path, content]) => window.htmlArtifactsE2E.write(path, content), [
+    "/scenes/deck.html",
+    html,
+  ] as const);
   await page.evaluate(() => window.htmlArtifactsE2E.write("/ready.html", "<!doctype html><p>Preview ready</p>"));
   expect(html.length).toBeLessThan(6000);
 
@@ -229,7 +232,10 @@ test("/.lib/tailwind.js compiles utility classes and @theme overrides in the pre
   expect(errors).toEqual([]);
 });
 
-test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder exports", async ({ page, context }) => {
+test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder exports", async ({
+  page,
+  context,
+}) => {
   const errors: string[] = [];
   // A failed Tailwind compile surfaces as an unhandled rejection inside the preview.
   context.on("weberror", (error) => errors.push(error.error().message));
@@ -262,7 +268,11 @@ test("/.lib/daisyui.css styles components on top of Tailwind and ships in folder
   await expect.poll(() => panel.evaluate((element) => getComputedStyle(element).paddingTop)).toBe("24px");
   const panelStyle = await panel.evaluate((element) => {
     const style = getComputedStyle(element);
-    return { background: style.backgroundColor, radius: style.borderRadius, baseVariable: style.getPropertyValue("--color-base-200") };
+    return {
+      background: style.backgroundColor,
+      radius: style.borderRadius,
+      baseVariable: style.getPropertyValue("--color-base-200"),
+    };
   });
   expect(panelStyle.baseVariable.trim()).not.toBe("");
   expect(panelStyle.background).not.toBe("rgba(0, 0, 0, 0)");

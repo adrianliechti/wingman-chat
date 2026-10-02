@@ -47,7 +47,11 @@ export function SelectMenu<T extends string | null>({
             {selected?.icon && <span className="shrink-0 text-neutral-400">{selected.icon}</span>}
             <span className="min-w-0 flex-1">
               <span className="block truncate">{selected?.label ?? placeholder}</span>
-              {description && <span className="mt-0.5 block truncate text-xs text-neutral-500 dark:text-neutral-400">{description}</span>}
+              {description && (
+                <span className="mt-0.5 block truncate text-xs text-neutral-500 dark:text-neutral-400">
+                  {description}
+                </span>
+              )}
             </span>
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">

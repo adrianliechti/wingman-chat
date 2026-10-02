@@ -197,7 +197,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 throw new Error("TRANSIENT_E2E_FAILURE: retry unstable_fixture with attempt 2");
               }
               assert.equal(args.attempt, 2);
-              context.updateMeta?.({ phase: "recovered", marker });
+              context.setMeta?.({ phase: "recovered", attempt: args.attempt, marker });
               return [{ type: "text", text: marker }];
             },
           };

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ARTIFACT_STATE_MAX_BYTES,
-  deleteArtifactState,
   readArtifactState,
   updateArtifactState,
   writeArtifactState,
@@ -22,8 +21,6 @@ describe("artifact state", () => {
     await writeArtifactState("chat", "/dash.html", { filter: "eu" });
     await updateArtifactState("chat", "/dash.html", (state) => ({ ...state, page: 2 }));
     expect(await readArtifactState("chat", "/dash.html")).toEqual({ filter: "eu", page: 2 });
-    await deleteArtifactState("chat", "/dash.html");
-    expect(await readArtifactState("chat", "/dash.html")).toEqual({});
   });
 
   it("keeps state per artifact path and ignores corrupt files", async () => {

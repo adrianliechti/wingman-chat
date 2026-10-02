@@ -1302,17 +1302,6 @@ export function createReadonlyFileTools(source: ReadonlyFileSource, options: Fil
   return [createReadTool(source, opts), createGrepTool(source, opts), createGlobTool(source, opts)];
 }
 
-/** Create mutation tools for a writable logical file space. */
-export function createWritableFileTools(source: WritableFileSource, options: FileToolsOptions): Tool[] {
-  const opts = resolveOptions(options);
-  return [
-    createWriteTool(source, opts),
-    createEditTool(source, opts),
-    createDeleteTool(source, opts),
-    createMoveTool(source, opts),
-  ];
-}
-
 /** Create the complete read-write toolset while retaining the traditional operation order. */
 export function createFileTools(source: WritableFileSource, options: FileToolsOptions): Tool[] {
   const opts = resolveOptions(options);

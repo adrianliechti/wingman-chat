@@ -500,7 +500,7 @@ export function AgentDrawer() {
         <AgentDetails
           key={currentAgent.id}
           agent={currentAgent}
-          onExport={() => exportSingleAgentAsZip(currentAgent.id)}
+          onExport={() => exportSingleAgentAsZip(currentAgent.id, { name: currentAgent.name })}
           onDelete={async () => {
             if (
               !(await confirm({

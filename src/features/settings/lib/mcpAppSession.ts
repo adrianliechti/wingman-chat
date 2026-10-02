@@ -2,14 +2,12 @@ import { AppBridge, type McpUiHostCapabilities, type McpUiHostContext } from "@m
 import type { McpUiDisplayMode, McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type {
   CallToolResult,
-  ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/client";
-import { Role, type Message, type ToolContext } from "@/shared/types/chat";
 
 export const MCP_HOST_INFO = { name: "Wingman Chat", version: "1.0.0" };
-export type DisplayMode = McpUiDisplayMode;
+type DisplayMode = McpUiDisplayMode;
 export type UiResourceEntry = { uri: string; content: MCPResourceContents; meta?: McpUiResourceMeta };
 export type AppNotification = "tools" | "resources" | "prompts" | "disconnect";
 type McpServerCapabilities = { tools?: { listChanged?: boolean }; resources?: { listChanged?: boolean } };
@@ -19,7 +17,6 @@ type AppHandlers = Partial<
 export interface McpAppOptions {
   signal?: AbortSignal;
   initialResult?: CallToolResult;
-  context?: Pick<ToolContext, "sendMessage" | "setContext" | "updateMeta">;
 }
 
 /** The renderer's SDK accepts object structured content; MCP 2 also allows primitives. */
@@ -40,7 +37,6 @@ export interface McpAppData {
   resource: UiResourceEntry;
   capabilities: McpUiHostCapabilities;
   handlers: AppHandlers;
-  context?: McpAppOptions["context"];
   subscribe: (listener: (kind: AppNotification) => void) => () => void;
 }
 
@@ -55,7 +51,6 @@ export function createAppBridge(
 ): AppBridge {
   const bridge = new AppBridge(null, MCP_HOST_INFO, data.capabilities, { hostContext: options.hostContext });
   Object.assign(bridge, data.handlers);
-  const context = data.context ?? {};
   // AppFrame currently forwards CSP but omits resource permissions and sandbox.
   const sendResource = bridge.sendSandboxResourceReady.bind(bridge);
   bridge.sendSandboxResourceReady = (params) =>
@@ -70,23 +65,6 @@ export function createAppBridge(
   bridge.onopenlink = async ({ url }) => {
     if (!isSafeExternalUrl(url)) return { isError: true };
     window.open(url, "_blank", "noopener,noreferrer");
-    return {};
-  };
-  bridge.onmessage = async ({ role, content }) => {
-    if (!context.sendMessage || role !== "user") return { isError: true };
-    const blocks = content.filter(
-      (block): block is Extract<MCPContentBlock, { type: "text" }> => block.type === "text",
-    );
-    if (blocks.length === 0 || blocks.length !== content.length) return { isError: true };
-    const message: Message = {
-      role: Role.User,
-      content: blocks.map((block) => ({ type: "text", text: block.text })),
-    };
-    await context.sendMessage(message);
-    return {};
-  };
-  bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
-    await context.setContext?.(serializeModelContext(content, structuredContent));
     return {};
   };
   bridge.onloggingmessage = ({ level, logger, data }) => {
@@ -111,8 +89,6 @@ export function getHtmlContent(resource: MCPResourceContents): string {
 export function buildHostCapabilities(
   resourceMeta?: McpUiResourceMeta,
   serverCapabilities?: McpServerCapabilities | null,
-  supportsMessages = false,
-  supportsModelContext = false,
 ): McpUiHostCapabilities {
   const capabilities: McpUiHostCapabilities = {
     openLinks: {},
@@ -129,17 +105,6 @@ export function buildHostCapabilities(
 
   if (serverCapabilities?.resources) {
     capabilities.serverResources = serverCapabilities.resources.listChanged ? { listChanged: true } : {};
-  }
-
-  if (supportsMessages) {
-    capabilities.message = { text: {} };
-  }
-
-  if (supportsModelContext) {
-    capabilities.updateModelContext = {
-      text: {},
-      structuredContent: {},
-    };
   }
 
   return capabilities;
@@ -203,46 +168,4 @@ function isSafeExternalUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function serializeModelContext(
-  content?: MCPContentBlock[],
-  structuredContent?: Record<string, unknown>,
-): string | null {
-  const textParts = (content ?? []).map(serializeModelContextBlock).filter((part): part is string => !!part);
-
-  if (structuredContent && Object.keys(structuredContent).length > 0) {
-    textParts.push(`Structured context:\n${JSON.stringify(structuredContent, null, 2)}`);
-  }
-
-  if (textParts.length === 0) {
-    return null;
-  }
-
-  return textParts.join("\n\n");
-}
-
-function serializeModelContextBlock(block: MCPContentBlock): string | null {
-  if (block.type === "text") {
-    const text = block.text?.trim();
-    return text ? text : null;
-  }
-
-  if (block.type === "image") {
-    return `[Image context: ${block.mimeType ?? "image"}]`;
-  }
-
-  if (block.type === "audio") {
-    return `[Audio context: ${block.mimeType ?? "audio"}]`;
-  }
-
-  if (block.type === "resource_link") {
-    return `[Resource link context: ${block.uri}]`;
-  }
-
-  if (block.type === "resource") {
-    return `[Embedded resource context: ${block.resource?.uri ?? "resource"}]`;
-  }
-
-  return JSON.stringify(block);
 }

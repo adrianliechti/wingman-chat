@@ -117,5 +117,4 @@ export type PendingConsent = {
   id: string;
   name: string;
   consent: Consent;
-  resolve: (result: ConsentResult) => void;
 };

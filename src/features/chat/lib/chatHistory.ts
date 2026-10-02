@@ -52,8 +52,8 @@ export function pruneAtSummary(messages: Message[]): Message[] {
   if (idx < 0) return messages;
 
   const userIndex = messages.findLastIndex(isUserMessage);
-  // Emergency compaction can condense the current tool loop. Keep the exact
-  // human request and internal stop-policy feedback alongside its summary.
+  // A legacy summary can sit inside the current tool loop. Keep the exact
+  // human request and any saved runtime feedback alongside it.
   const currentTurn = userIndex >= 0 && userIndex < idx ? messages.slice(userIndex, idx) : [];
   const retained = currentTurn.filter(
     (message, index) => index === 0 || message.content.some((part) => part.type === "runtime_feedback"),

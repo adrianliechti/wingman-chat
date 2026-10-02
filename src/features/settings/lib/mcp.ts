@@ -359,7 +359,7 @@ export class MCPClient implements ToolProvider {
       const result = await client.callTool(params.name, params.arguments, { signal: context?.signal });
       context?.signal?.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
-      return "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+      return result as CallToolResult;
     } finally {
       this.activeToolCalls.delete(call);
       for (const [id, owner] of this.elicitations) {
@@ -414,19 +414,13 @@ export class MCPClient implements ToolProvider {
       result: toAppToolResult(result),
       html: getHtmlContent(resource.content),
       resource,
-      context: options.context,
-      capabilities: buildHostCapabilities(
-        resource.meta,
-        capabilities,
-        !!options.context?.sendMessage,
-        !!options.context?.setContext,
-      ),
+      capabilities: buildHostCapabilities(resource.meta, capabilities),
       handlers: {
         oncalltool: async (params, extra) => {
           const definition = this.toolDefinitions.get(params.name);
           if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
-          return toAppToolResult(await this.callTool(client, params, { ...options.context, signal: extra.signal }));
+          return toAppToolResult(await this.callTool(client, params, { signal: extra.signal }));
         },
         onlistresources: async () => ({ resources: await client.resources() }),
         onreadresource: async ({ uri }) => client.readResource(uri),

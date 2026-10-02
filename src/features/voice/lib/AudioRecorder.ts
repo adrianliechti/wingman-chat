@@ -5,10 +5,12 @@ import {
   ownAudioWorklet,
   stopAudioTracks,
 } from "@/shared/lib/audioResources";
+import { micConstraints } from "./micConstraints";
 
 /**
- * AudioRecorder - Records microphone audio as PCM16 using AudioWorklet
- * Replacement for wavtools WavRecorder
+ * AudioRecorder - Records microphone audio as PCM16 using AudioWorklet for
+ * the realtime gateway's streaming protocol. Dictation uses TanStack's
+ * AudioRecorder instead.
  */
 
 // Inline AudioWorklet processor code for recording
@@ -128,15 +130,7 @@ export class AudioRecorder {
     };
     const stream = await scope.wait(
       navigator.mediaDevices
-        .getUserMedia({
-          audio: {
-            ...(this.options.deviceId && { deviceId: { exact: this.options.deviceId } }),
-            sampleRate,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-          },
-        })
+        .getUserMedia({ audio: micConstraints(this.options.deviceId, { sampleRate }) })
         .then((stream) => scope.own(stream, stopAudioTracks)),
     );
     scope.signal.throwIfAborted();

@@ -10,9 +10,7 @@ async function openFixture(page: Page) {
   return id;
 }
 
-test("the file column defaults to hidden, remembers showing it, and hands over to the navigator", async ({
-  page,
-}) => {
+test("the file column defaults to hidden, remembers showing it, and hands over to the navigator", async ({ page }) => {
   const id = await openFixture(page);
   await page.evaluate((id) => window.artifactsE2E.write(id, "/one.txt", "First"), id);
   await page.evaluate((id) => window.artifactsE2E.write(id, "/two.txt", "Second"), id);

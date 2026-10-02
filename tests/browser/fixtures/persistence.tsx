@@ -10,6 +10,8 @@ import { usePersistedState } from "../../../src/shared/hooks/usePersistedState";
 import { loadConfig } from "../../../src/shared/config";
 import * as opfs from "../../../src/shared/lib/opfs";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
+import { finishRestore } from "../../../src/features/settings/lib/restoreReport";
+import { ConfirmHost } from "../../../src/shell/components/ConfirmHost";
 
 await loadConfig();
 let release: (() => void) | undefined;
@@ -115,10 +117,17 @@ function Fixture() {
     showProfile: setShowProfile,
     setStorageKey,
     backup: async () => Array.from(new Uint8Array(await (await opfs.exportFolderAsZip("/")).arrayBuffer())),
+    downloadChats: () => opfs.downloadFoldersAsZip(["chats"], "chats.zip"),
     restore: (bytes: number[]) => opfs.importFolderFromZip("/", new Blob([new Uint8Array(bytes)])),
+    finishRestore,
   };
   window.persistenceE2E = api;
-  return <>{showProfile && <ProfileFixture storageKey={storageKey} />}</>;
+  return (
+    <>
+      {showProfile && <ProfileFixture storageKey={storageKey} />}
+      <ConfirmHost />
+    </>
+  );
 }
 
 declare global {
@@ -161,7 +170,9 @@ declare global {
       showProfile: (show: boolean) => void;
       setStorageKey: (key: string) => void;
       backup: () => Promise<number[]>;
-      restore: (bytes: number[]) => Promise<void>;
+      downloadChats: () => Promise<void>;
+      restore: (bytes: number[]) => ReturnType<typeof opfs.importFolderFromZip>;
+      finishRestore: typeof finishRestore;
     };
     profileE2E: ReturnType<typeof usePersistedState<Profile>>;
   }

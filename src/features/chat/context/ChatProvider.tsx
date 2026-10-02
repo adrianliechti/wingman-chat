@@ -194,14 +194,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const resolved = findModel(models, selection?.id);
       const model =
         selection && resolved && resolved.id !== selection.id ? withModelSettings(resolved, selection) : selection;
-      if (chatIdRef.current) {
-        updateChat(chatIdRef.current, () => ({ model }));
-        // Also remember the last chat model globally so new chats / mode
-        // toggles can restore it.
-        setSelectedModel(model);
-      } else {
-        setSelectedModel(model);
-      }
+      if (chatIdRef.current) updateChat(chatIdRef.current, () => ({ model }));
+      // Also remember the last chat model globally so new chats / mode
+      // toggles can restore it.
+      setSelectedModel(model);
     },
     [models, updateChat, setSelectedModel],
   );

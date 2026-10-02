@@ -56,7 +56,7 @@ export class McpAuthRequiredError extends Error {
 type McpAuthState = { blocked: true; reason: McpAuthFailureReason; at: number };
 
 /** Whether a prior auth attempt for this server failed and must not auto-retry. */
-export function isAuthBlocked(serverKey: string): boolean {
+function isAuthBlocked(serverKey: string): boolean {
   return readJson<McpAuthState>(storageKey(serverKey, "auth_state"))?.blocked === true;
 }
 
@@ -252,19 +252,8 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     this.authCodePromise = null;
   }
 
-  invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
-    if (scope === "all" || scope === "tokens") {
-      removeKey(storageKey(this.serverKey, "tokens"));
-    }
-    if (scope === "all" || scope === "client") {
-      removeKey(storageKey(this.serverKey, "client_info"));
-    }
-    if (scope === "all" || scope === "verifier") {
-      removeKey(storageKey(this.serverKey, "code_verifier"));
-    }
-    if (scope === "all" || scope === "discovery") {
-      removeKey(storageKey(this.serverKey, "discovery"));
-    }
+  invalidateCredentials(scope: CredentialScope): void {
+    removeCredentials(this.serverKey, scope);
   }
 
   /** True once a prior auth attempt failed and requires an explicit user gesture to retry. */
@@ -290,14 +279,20 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
   }
 }
 
+type CredentialScope = "all" | "client" | "tokens" | "verifier" | "discovery";
+
+function removeCredentials(serverKey: string, scope: CredentialScope): void {
+  if (scope === "all" || scope === "tokens") removeKey(storageKey(serverKey, "tokens"));
+  if (scope === "all" || scope === "client") removeKey(storageKey(serverKey, "client_info"));
+  if (scope === "all" || scope === "verifier") removeKey(storageKey(serverKey, "code_verifier"));
+  if (scope === "all" || scope === "discovery") removeKey(storageKey(serverKey, "discovery"));
+}
+
 /**
  * Removes all OAuth localStorage entries for a given server key.
  * Call this when a server is deleted so stale credentials don't accumulate.
  */
 export function clearMcpOAuthStorage(serverKey: string): void {
-  removeKey(storageKey(serverKey, "tokens"));
-  removeKey(storageKey(serverKey, "client_info"));
-  removeKey(storageKey(serverKey, "code_verifier"));
-  removeKey(storageKey(serverKey, "discovery"));
+  removeCredentials(serverKey, "all");
   removeKey(storageKey(serverKey, "auth_state"));
 }

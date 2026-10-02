@@ -45,7 +45,7 @@ export function createRepositoryFileSource(files: readonly RepositoryFile[]): {
   source: ReadonlyFileSource;
   files: ResolvedRepositoryFile[];
 } {
-  const resolved = reconcileRepositoryFilePaths(files).files;
+  const resolved = reconcileRepositoryFilePaths(files);
   const readable = resolved.filter((file) => file.status === "completed" && file.text !== undefined);
   const byPath = new Map(readable.map((file) => [pathKey(file.path), file]));
 

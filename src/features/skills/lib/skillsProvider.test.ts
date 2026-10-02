@@ -30,6 +30,35 @@ const call = (id: string, name: string, args: object): Message => ({
 });
 
 describe("native skills", () => {
+  it("uses one winning entry for duplicate names across the voice catalog, loader, and mounts", async () => {
+    const loadContent = vi.fn(
+      () => "---\nname: reports\ndescription: Personal reports\n---\nUse the personal template.",
+    );
+    const loadResource = vi.fn(() => "print('personal')");
+    const shadowedContent = vi.fn(skill.loadContent);
+    const shadowedResource = vi.fn(skill.loadResource);
+    const provider = createSkillsProvider(
+      [
+        { ...skill, loadContent: shadowedContent, loadResource: shadowedResource },
+        { ...skill, description: "Personal reports", loadContent, loadResource },
+      ],
+      meta,
+    )!;
+    const load = provider.tools.find((tool) => tool.name === "load_skill")!;
+
+    expect(load.parameters).toMatchObject({ properties: { name: { enum: ["reports"] } } });
+    expect(provider.instructions).toContain("Personal reports");
+    expect(provider.instructions).not.toContain("Create reports");
+    const output = await load.function({ name: "reports" });
+    expect(output).toEqual([{ type: "text", text: expect.stringContaining("Use the personal template.") }]);
+    const files = await mountSkillFiles();
+    expect(files["/skills/reports/scripts/check.py"]).toEqual({ content: "print('personal')" });
+    expect(loadContent).toHaveBeenCalledOnce();
+    expect(loadResource).toHaveBeenCalledExactlyOnceWith("scripts/check.py");
+    expect(shadowedContent).not.toHaveBeenCalled();
+    expect(shadowedResource).not.toHaveBeenCalled();
+  });
+
   it("keeps the complete selected catalog available above the native default token cap", async () => {
     const entries = Array.from({ length: 40 }, (_, index) => ({
       name: `reports-${String(index).padStart(2, "0")}`,

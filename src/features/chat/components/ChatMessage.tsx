@@ -6,6 +6,7 @@ import { ChatToolMessage } from "./ChatToolMessage";
 import { ChatUserMessage } from "./ChatUserMessage";
 import { ChatMessageAttachments } from "./ChatMessageAttachments";
 import { hasStoredAttachments } from "../lib/chatAttachments";
+import { isToolResultMessage } from "./chatMessageUtils";
 
 type ChatMessageProps = {
   index: number;
@@ -41,12 +42,7 @@ function ChatMessageBody({ message, index, isResponding, isLast }: ChatMessagePr
   }
 
   if (isUser) {
-    // Tool result messages (user role, no text, has tool results)
-    const hasToolResults = message.content.some((p) => p.type === "tool_result");
-    const hasTextContent = message.content.some((p) => p.type === "text" && p.text);
-    const hasMedia = message.content.some((p) => p.type === "image" || p.type === "file" || p.type === "audio");
-
-    if (hasToolResults && !hasTextContent && !hasMedia) {
+    if (isToolResultMessage(message)) {
       return <ChatToolMessage message={message} index={index} />;
     }
 

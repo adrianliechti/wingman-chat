@@ -7,8 +7,8 @@ import {
 } from "@/shared/lib/audioResources";
 
 /**
- * AudioStreamPlayer - Plays streaming PCM16 audio using AudioWorklet
- * Replacement for wavtools WavStreamPlayer
+ * AudioStreamPlayer - Plays streaming PCM16 audio from the realtime gateway
+ * using AudioWorklet.
  */
 
 // Inline AudioWorklet processor code for streaming playback

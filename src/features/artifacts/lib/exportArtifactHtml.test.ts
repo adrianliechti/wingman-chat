@@ -24,7 +24,10 @@ describe("folder exports", () => {
   it("collects each referenced library once per resolved path and skips unknown names", async () => {
     const files = [
       { path: "/index.html", content: '<script src="/.lib/echarts.js"></script>' },
-      { path: "/pages/b.html", content: '<script src="../.lib/echarts.js"></script><script src="../.lib/nope.js"></script>' },
+      {
+        path: "/pages/b.html",
+        content: '<script src="../.lib/echarts.js"></script><script src="../.lib/nope.js"></script>',
+      },
       { path: "/pages/c.html", content: '<script src=".lib/echarts.js"></script>' },
       { path: "/notes.md", content: '<script src="/.lib/echarts.js"></script>' },
     ];
@@ -41,7 +44,10 @@ describe("stylesheet references", () => {
   it("treats link tags into /.lib/ as library references", async () => {
     const { findLibraryReferences } = await import("./exportArtifactHtml");
     expect(
-      findLibraryReferences('<link rel="stylesheet" href="/.lib/daisyui.css"><link rel="icon" href="/icon.png">', "/ui/a.html"),
+      findLibraryReferences(
+        '<link rel="stylesheet" href="/.lib/daisyui.css"><link rel="icon" href="/icon.png">',
+        "/ui/a.html",
+      ),
     ).toEqual([{ name: "daisyui.css", resolved: "/.lib/daisyui.css" }]);
   });
 });

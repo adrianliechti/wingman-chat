@@ -93,7 +93,6 @@ export function useChatRun({
   }, [session]);
   const aiRef = useRef<ReturnType<typeof useNativeChat> | null>(null);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
-  const pendingModelContextRef = useRef(new Map<string, string>());
   // Realtime and legacy MCP URL requests have a live transport callback.
   // Chat forms and tool approvals use ChatClient's durable interrupts below.
   const { pendingElicitation, requestElicitation, resolveElicitation, completeElicitation, clearElicitation } =
@@ -104,10 +103,6 @@ export function useChatRun({
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const updateToolMeta = useCallback((id: string, meta: Record<string, unknown>) => {
     setToolMeta((prev) => ({ ...prev, [id]: { ...prev[id], ...meta } }));
-  }, []);
-  const updateModelContext = useCallback(async (id: string, text: string | null) => {
-    if (text?.trim()) pendingModelContextRef.current.set(id, text.trim());
-    else pendingModelContextRef.current.delete(id);
   }, []);
 
   const connect = useCallback(
@@ -222,10 +217,6 @@ export function useChatRun({
             signal,
             content: () =>
               (toolMessage?.content ?? []).filter((p) => p.type === "text" || p.type === "image" || p.type === "file"),
-            sendMessage: async (message) => {
-              if (active()) await aiRef.current?.sendMessage(userContent(message));
-            },
-            setContext: (text) => updateModelContext(id, text),
             elicit: (elicitation) => requestElicitation(call.id, call.name, elicitation, signal),
             onElicitationComplete: (elicitationId) => {
               if (active()) completeElicitation(elicitationId);
@@ -264,7 +255,6 @@ export function useChatRun({
       client,
       chatInstructions,
       chatMiddleware,
-      updateModelContext,
       requestElicitation,
       completeElicitation,
       clearElicitation,
@@ -426,9 +416,7 @@ export function useChatRun({
       if (!getChat(id) || chatIdRef.current !== id) return;
       if (session.id !== id) return;
       if (historyOverride) setMessages(toAIMessages(historyOverride));
-      const context = pendingModelContextRef.current.get(id) ?? null;
-      pendingModelContextRef.current.delete(id);
-      await sendNativeMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
+      await sendNativeMessage(userContent(withMessageIdentity(resolvedMessage)));
     },
     [getOrCreateChat, getChat, chatIdRef, session.id, setMessages, sendNativeMessage],
   );
@@ -488,17 +476,6 @@ export function useChatRun({
     requestElicitation,
     updateToolMeta,
     resolveConsent,
-  };
-}
-
-function appendTextContent(message: Message, text: string | null): Message {
-  if (!text || message.role !== Role.User) {
-    return message;
-  }
-
-  return {
-    ...message,
-    content: [...message.content, { type: "text", text }],
   };
 }
 

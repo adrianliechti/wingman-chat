@@ -65,7 +65,13 @@ test("a code selection reports the highlighted lines even when the text repeats"
   await line.evaluate(selectContents);
   const message = await sendInstruction(page, "Log it instead");
 
-  expect(message?.[1]).toMatchObject({ type: "artifact_selection", path: "/script.py", text: "print(x)", startLine: 2, endLine: 2 });
+  expect(message?.[1]).toMatchObject({
+    type: "artifact_selection",
+    path: "/script.py",
+    text: "print(x)",
+    startLine: 2,
+    endLine: 2,
+  });
 });
 
 test("a selection inside the html preview offers the same control", async ({ page }) => {
@@ -87,7 +93,13 @@ test("a selection inside the html preview offers the same control", async ({ pag
   await target.evaluate(selectContents);
   const message = await sendInstruction(page, "Make it a heading");
 
-  expect(message?.[1]).toMatchObject({ type: "artifact_selection", path: "/index.html", text: "Hello preview", startLine: 3, endLine: 3 });
+  expect(message?.[1]).toMatchObject({
+    type: "artifact_selection",
+    path: "/index.html",
+    text: "Hello preview",
+    startLine: 3,
+    endLine: 3,
+  });
 });
 
 test("escape closes the control without sending", async ({ page }) => {
@@ -126,7 +138,12 @@ test("a press outside the control closes it, in the page and inside the preview 
 
   // Preview frame: a press inside the iframe never reaches the page.
   await page.evaluate(
-    (id) => window.artifactsE2E.write(id, "/index.html", '<!doctype html>\n<html><body><p id="target">Hello preview</p><div id="space" style="height:400px"></div></body></html>\n'),
+    (id) =>
+      window.artifactsE2E.write(
+        id,
+        "/index.html",
+        '<!doctype html>\n<html><body><p id="target">Hello preview</p><div id="space" style="height:400px"></div></body></html>\n',
+      ),
     id,
   );
   await page.evaluate(() => window.artifactsE2E.openFile("/index.html"));

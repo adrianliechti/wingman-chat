@@ -59,9 +59,7 @@ export async function downloadPluginsAsZip(
         "mcp.json",
         JSON.stringify(
           {
-            mcpServers: Object.fromEntries(
-              plugin.mcpServers.map(({ name, ...server }) => [name, server]),
-            ),
+            mcpServers: Object.fromEntries(plugin.mcpServers.map(({ name, ...server }) => [name, server])),
           },
           null,
           2,

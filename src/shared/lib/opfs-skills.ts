@@ -22,12 +22,6 @@ import {
   removeIndexEntry,
 } from "./opfs-core";
 
-export interface StoredSkill {
-  name: string;
-  description: string;
-  content: string;
-}
-
 /**
  * Save a skill as SKILL.md in /skills/{name}/ folder.
  */

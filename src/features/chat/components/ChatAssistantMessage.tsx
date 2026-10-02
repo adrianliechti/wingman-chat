@@ -10,6 +10,7 @@ import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
 import type { Content, Message, ToolIcon } from "@/shared/types/chat";
+import type { RunStatus } from "../context/ChatContext";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -100,13 +101,7 @@ function ErrorMessage({
 }
 
 /** The "working" row shown before any reasoning or tool call arrives. */
-function ThinkingIndicator({
-  status,
-  runKey,
-}: {
-  status: "compacting" | "thinking" | "responding" | "running_tool" | "waiting" | "idle";
-  runKey: string;
-}) {
+function ThinkingIndicator({ status, runKey }: { status: RunStatus; runKey: string }) {
   const word = getThinkingWord(runKey);
   const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
   return <ActivityRow running label={`${label}…`} />;

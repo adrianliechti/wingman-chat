@@ -9,6 +9,7 @@ import {
   type ChatMiddleware,
 } from "@tanstack/ai";
 import { clearToolResults, composeStrategies, summarizeOldest, withCompaction } from "@tanstack/ai-compaction";
+import { followAbortSignal } from "@/shared/lib/abortSignals";
 import type { Client } from "@/shared/lib/client";
 import { aiTelemetry } from "@/shared/lib/otel";
 import { fromAIMessages, toAIMessages } from "@/shared/lib/aiMessages";
@@ -29,10 +30,7 @@ export function chatCompaction(
       clearToolResults(),
       summarizeOldest({
         summarize: async (messages) => {
-          const abortController = new AbortController();
-          const abort = () => abortController.abort(signal?.reason);
-          if (signal?.aborted) abort();
-          else signal?.addEventListener("abort", abort, { once: true });
+          const { controller: abortController, cleanup } = followAbortSignal(signal);
           try {
             return await chat({
               adapter: client.textAdapter(model, signal),
@@ -46,7 +44,7 @@ export function chatCompaction(
               abortController,
             });
           } finally {
-            signal?.removeEventListener("abort", abort);
+            cleanup();
           }
         },
       }),

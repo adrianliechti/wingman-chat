@@ -1,14 +1,14 @@
 import { convertSchemaToJsonSchema, type Tool as NativeTool } from "@tanstack/ai";
 import { createLoadSkillTool, createResourceTool, renderCatalog, withSkills } from "@tanstack/ai-skills";
 import { FileCode2, ScrollText, Sparkles } from "lucide-react";
-import type { Skill } from "@/features/skills/lib/skillParser";
+import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { loadSkillResource, type SkillTemplate } from "@/features/skills/lib/templates";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
-import { createSkillSource, skillMetadata } from "./skillSource";
+import { createSkillSource } from "./skillSource";
 
 /** Provider id for the app's single skills tool. */
 export const SKILLS_PROVIDER_ID = "skills";
@@ -68,21 +68,25 @@ export function studioTemplateEntries(
     }));
 }
 
+/** Adapt a parsed skill (content already loaded) to a catalog entry, optionally tagged with its plugin. */
+export function parsedSkillEntry(skill: ParsedSkill, plugin?: string): SkillEntry {
+  const resources = skill.resources ?? [];
+  return {
+    name: skill.name,
+    description: skill.description,
+    ...(plugin ? { plugin } : {}),
+    compatibility: skill.compatibility,
+    resources: resources.length ? resources.map((r) => r.path) : undefined,
+    loadContent: () => skill.content,
+    loadResource: resources.length
+      ? (path: string) => resources.find((r) => r.path === path)?.content ?? null
+      : undefined,
+  };
+}
+
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */
-export function libraryEntries(skills: Skill[]): SkillEntry[] {
-  return skills.map((s) => {
-    const resources = s.resources ?? [];
-    return {
-      name: s.name,
-      description: s.description,
-      compatibility: s.compatibility,
-      resources: resources.length ? resources.map((r) => r.path) : undefined,
-      loadContent: () => s.content,
-      loadResource: resources.length
-        ? (path: string) => resources.find((r) => r.path === path)?.content ?? null
-        : undefined,
-    };
-  });
+export function libraryEntries(skills: ParsedSkill[]): SkillEntry[] {
+  return skills.map((skill) => parsedSkillEntry(skill));
 }
 
 /** Identity (provider id, display name, description) of a skills tool variant. */
@@ -100,7 +104,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   }
 
   const source = createSkillSource(entries);
-  const skills = entries.map(skillMetadata);
+  const skills = source.catalog;
   const hasResources = entries.some((entry) => entry.resources?.length && entry.loadResource);
   const resourceTools = hasResources ? [displaySkillTool(createResourceTool(source))] : [];
   const instructions = [

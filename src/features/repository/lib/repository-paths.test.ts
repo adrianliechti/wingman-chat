@@ -24,9 +24,9 @@ describe("repository paths", () => {
     const first = file("aaaaaaaa", name);
     const second = file("bbbbbbbb", name);
     const migrated = reconcileRepositoryFilePaths([first, second]);
-    for (const entry of migrated.files) expect(entry.path.length).toBeLessThanOrEqual(181);
-    expect(reconcileRepositoryFilePaths(migrated.files).changedIds).toEqual([]);
-    expect(reconcileRepositoryFilePaths([migrated.files[1]]).files[0].path).toBe(migrated.files[1].path);
+    for (const entry of migrated) expect(entry.path.length).toBeLessThanOrEqual(181);
+    expect(reconcileRepositoryFilePaths(migrated)).toEqual(migrated);
+    expect(reconcileRepositoryFilePaths([migrated[1]])[0].path).toBe(migrated[1].path);
   });
   it("sanitizes untrusted flat filenames while preserving useful extensions", () => {
     expect(sanitizeRepositoryFileName(" ../Quarter\\Report.pdf \u0000")).toBe("-Quarter-Report.pdf");
@@ -47,14 +47,13 @@ describe("repository paths", () => {
     const forward = reconcileRepositoryFilePaths([older, newer]);
     const reverse = reconcileRepositoryFilePaths([newer, older]);
 
-    expect(Object.fromEntries(forward.files.map((entry) => [entry.id, entry.path]))).toEqual({
+    expect(Object.fromEntries(forward.map((entry) => [entry.id, entry.path]))).toEqual({
       "aaaaaaaa-0000": "/report.pdf",
       "bbbbbbbb-0000": "/Report~bbbbbbbb.pdf",
     });
-    expect(Object.fromEntries(reverse.files.map((entry) => [entry.id, entry.path]))).toEqual(
-      Object.fromEntries(forward.files.map((entry) => [entry.id, entry.path])),
+    expect(Object.fromEntries(reverse.map((entry) => [entry.id, entry.path]))).toEqual(
+      Object.fromEntries(forward.map((entry) => [entry.id, entry.path])),
     );
-    expect(forward.changedIds).toEqual(["aaaaaaaa-0000", "bbbbbbbb-0000"]);
   });
 
   it("preserves valid allocations and repairs duplicate or unsafe legacy paths", () => {
@@ -64,7 +63,6 @@ describe("repository paths", () => {
       file("cccccccc-0000", "third.pdf", "../escape.pdf"),
     ]);
 
-    expect(result.files.map((entry) => entry.path)).toEqual(["/kept.pdf", "/second.pdf", "/third.pdf"]);
-    expect(result.changedIds).toEqual(["bbbbbbbb-0000", "cccccccc-0000"]);
+    expect(result.map((entry) => entry.path)).toEqual(["/kept.pdf", "/second.pdf", "/third.pdf"]);
   });
 });

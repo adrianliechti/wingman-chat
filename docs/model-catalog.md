@@ -154,12 +154,14 @@ over optional `/models` `max_output_tokens` metadata, then the internal profile.
 The current Wingman backend returns only model IDs and inventory metadata, so
 the internal profiles supply known capacities without another model mapping.
 
-`Client.complete` defaults to `min(64,000, maxOutputTokens)`. This budget includes
-reasoning, text, and generated tool arguments, and applies to chat, subagents,
-and interpreter `llm` calls through the shared client. Explicit request budgets
-are also capped by the known capacity. Unknown capacities keep the provider
-default unless an explicit budget is configured; such an override cannot be
-clamped until the deployment supplies a capacity.
+Chat requests default to an output budget of `min(64,000, maxOutputTokens)`,
+applied by `Client.chatModelOptions` for chat, subagents, and interpreter `llm`
+calls. Titles use 8,000 and other structured extraction 16,000. The budget
+includes reasoning, text, and generated tool arguments. Explicit request budgets
+are clamped to the known capacity, and `0` omits the budget from the request.
+Unknown capacities keep the provider default unless an explicit budget is
+configured; such an override cannot be clamped until the deployment supplies a
+capacity.
 
 Examples of documented capacities (reviewed September 23, 2026):
 
