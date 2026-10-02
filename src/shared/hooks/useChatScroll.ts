@@ -148,15 +148,12 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     if (!scrollElement || !content) return;
     // Markdown is deferred and images/math can resize after a message commit.
     // Observe actual layout as well as the scroll viewport (including its footer).
-    // Use the scroller's own window: in a Picture-in-Picture window the opener
-    // tab may be hidden, which pauses its animation frames.
-    const view = scrollElement.ownerDocument.defaultView ?? window;
     let frame: number | undefined;
     const observer = new ResizeObserver(() => {
       if (frame !== undefined) return;
       // Reclaiming the spacer changes this observed box. Write next frame so
       // ResizeObserver can finish its current delivery without a resize loop.
-      frame = view.requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
         frame = undefined;
         syncScroll();
       });
@@ -166,7 +163,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     syncScroll();
     return () => {
       observer.disconnect();
-      if (frame !== undefined) view.cancelAnimationFrame(frame);
+      if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, [scrollElement, syncScroll]);
 

@@ -193,8 +193,6 @@ interface ChatConfig {
   risks?: RiskConfig[];
   /** Replaces the model list with a slider when at least two presets are available. */
   presets?: ModelPresetConfig[];
-  /** Offer an always-on-top Picture-in-Picture mini chat window (Chromium only). Default false. */
-  miniChat?: boolean;
 }
 
 export interface DriveConfig {

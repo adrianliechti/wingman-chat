@@ -3,6 +3,7 @@ import {
   FloatingFocusManager,
   FloatingList,
   FloatingNode,
+  FloatingPortal,
   FloatingTree,
   flip,
   offset,
@@ -23,7 +24,6 @@ import {
   useTransitionStyles,
   useTypeahead,
 } from "@floating-ui/react";
-import { FloatingPortal } from "@/shared/ui/FloatingPortal";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import {
   Bot,

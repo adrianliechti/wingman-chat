@@ -3,6 +3,7 @@ import {
   FloatingFocusManager,
   FloatingNode,
   FloatingOverlay,
+  FloatingPortal,
   FloatingTree,
   flip,
   offset,
@@ -23,7 +24,6 @@ import {
   type Placement,
   type Side,
 } from "@floating-ui/react";
-import { FloatingPortal } from "./FloatingPortal";
 import { AlignLeft, Bot, Boxes, Check, ChevronRight, Gauge, Mic, Search, Settings2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";

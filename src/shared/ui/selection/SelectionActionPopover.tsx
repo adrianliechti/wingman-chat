@@ -1,13 +1,13 @@
 import {
   autoUpdate,
   flip,
+  FloatingPortal,
   offset,
   shift,
   useDismiss,
   useFloating,
   useInteractions,
 } from "@floating-ui/react";
-import { FloatingPortal } from "../FloatingPortal";
 import { CornerDownLeft, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
