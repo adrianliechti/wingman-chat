@@ -104,6 +104,8 @@ type Extractor struct {
 }
 
 type Internet struct {
+	Model       string `json:"model,omitempty" yaml:"model,omitempty"`
+	Guard       string `json:"guard,omitempty" yaml:"guard,omitempty"`
 	Searcher    string `json:"searcher,omitempty" yaml:"searcher,omitempty"`
 	Scraper     string `json:"scraper,omitempty" yaml:"scraper,omitempty"`
 	Researcher  string `json:"researcher,omitempty" yaml:"researcher,omitempty"`

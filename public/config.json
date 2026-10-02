@@ -26,17 +26,10 @@
   "repository": {},
   "renderer": {},
   "extractor": {
-    "files": [
-      ".pdf",
-      ".doc",
-      ".docx",
-      ".xls",
-      ".xlsx",
-      ".ppt",
-      ".pptx"
-    ]
+    "files": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]
   },
   "internet": {
+    "model": "gpt-6-luna",
     "elicitation": true,
     "searcher": "web",
     "scraper": "web",
@@ -232,17 +225,7 @@
         "description": "Google Cloud Translation"
       }
     ],
-    "files": [
-      ".pdf"
-    ],
-    "languages": [
-      "en",
-      "es",
-      "fr",
-      "de",
-      "zh",
-      "ja",
-      "ru"
-    ]
+    "files": [".pdf"],
+    "languages": ["en", "es", "fr", "de", "zh", "ja", "ru"]
   }
 }

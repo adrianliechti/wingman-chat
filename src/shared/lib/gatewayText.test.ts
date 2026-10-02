@@ -8,6 +8,7 @@ import { fromAIMessages, toAIMessages } from "@/shared/lib/aiMessages";
 import { response, textItem, callItem, finished, sse } from "@/shared/lib/test-support/ai";
 import { chatSession } from "@/shared/lib/test-support/chatSession";
 import type { Message, Tool } from "@/shared/types/chat";
+import { historyForRetry } from "@/features/chat/lib/chatHistory";
 
 const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "Go" }] }];
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -81,12 +82,15 @@ it("preserves both visible signed reasoning and its separate summary on replay",
   });
 });
 
-it("retries rejected encrypted reasoning once and clears it from saved history", async () => {
+it.each([
+  ["invalid_encrypted_content", "Encrypted content could not be verified"],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`."],
+])("retries rejected reasoning (%s) once and clears it from saved history", async (code, message) => {
   fetchMock
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          error: { code: "invalid_encrypted_content", message: "Encrypted content could not be verified" },
+          error: { code, message },
         }),
         { status: 400, headers: { "content-type": "application/json" } },
       ),
@@ -116,6 +120,66 @@ it("retries rejected encrypted reasoning once and clears it from saved history",
   const restored = JSON.parse(JSON.stringify(result.messages));
   expect((await run(new Client(), "model", "", [...restored, ...prompt], [])).status).toBe("completed");
   expect(JSON.stringify(JSON.parse(fetchMock.mock.calls[2][1].body).input)).not.toContain("old-key");
+});
+
+it.each([false, true])("excludes unfinished reasoning on retry with pending tool call: %s", async (pendingCall) => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+  const execute = vi.fn<Tool["function"]>(async () => [{ type: "text", text: "Already read" }]);
+  const messages: Message[] = [
+    ...prompt,
+    {
+      role: "assistant",
+      content: [
+        { type: "reasoning", id: "rs_tool", text: "Read the skill", encryptedContent: "tool-key", model: "model" },
+        { type: "tool_call", id: "read-skill", name: "read", arguments: "{}" },
+      ],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          id: "read-skill",
+          name: "read",
+          arguments: "{}",
+          result: [{ type: "text", text: "Skill instructions" }],
+        },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "reasoning",
+          id: "rs_unfinished",
+          text: "Preparing the artifact",
+          encryptedContent: "unfinished-key",
+          model: "model",
+        },
+        ...(pendingCall
+          ? [{ type: "tool_call" as const, id: "unfinished-call", name: "read", arguments: "{}", incomplete: true }]
+          : []),
+      ],
+    },
+    { role: "assistant", content: [], error: { code: "TIMEOUT", message: "Model response timed out after 60s" } },
+  ];
+  const before = JSON.stringify(messages);
+  const result = await run(new Client(), "model", "", historyForRetry(messages)!, [
+    { name: "read", parameters: { type: "object", properties: {} }, function: execute },
+  ]);
+  expect(result.status).toBe("completed");
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(input.filter((part: { type: string }) => part.type === "reasoning")).toMatchObject([
+    { id: "rs_tool", encrypted_content: "tool-key" },
+  ]);
+  expect(input).toContainEqual(expect.objectContaining({ type: "function_call", call_id: "read-skill" }));
+  expect(input).toContainEqual({ type: "function_call_output", call_id: "read-skill", output: "Skill instructions" });
+  expect(JSON.stringify(input)).not.toMatch(/unfinished-key|unfinished-call|rs_unfinished/);
+  expect(execute).not.toHaveBeenCalled();
+  expect(JSON.stringify(messages)).toBe(before);
+  expect(result.messages.flatMap((message) => message.content)).toContainEqual(
+    expect.objectContaining({ type: "reasoning", text: "Preparing the artifact" }),
+  );
 });
 
 it("retains reasoning model identity at the live chat persistence boundary", async () => {
@@ -184,37 +248,94 @@ it("does not replay model-a ciphertext to model-b after switching a live chat", 
   }
 });
 
-it("times out a stalled SSE body and releases its deadline", async () => {
-  vi.useFakeTimers();
-  const controller = new AbortController();
+function mockOpenStream() {
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const emit = (event: object) => body.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   fetchMock.mockImplementationOnce(
     (_url, init: RequestInit) =>
       new Response(
         new ReadableStream({
-          start(body) {
-            body.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: "response.created", response: response([], { status: "in_progress" }) })}\n\n`,
-              ),
-            );
+          start(controller) {
+            body = controller;
+            emit({ type: "response.created", response: response([], { status: "in_progress" }) });
             init.signal?.addEventListener("abort", () => body.error(init.signal?.reason), { once: true });
           },
         }),
         { headers: { "content-type": "text/event-stream" } },
       ),
   );
+  return { emit, close: () => body.close() };
+}
+
+it.each(["response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.output_text.delta"])(
+  "streams %s past an hour with gaps longer than ten minutes",
+  async (type) => {
+    vi.useFakeTimers();
+    const stream = mockOpenStream();
+    let settled = false;
+    const request = run(new Client(), "model", "", prompt, []).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
+      expect(settled).toBe(false);
+      stream.emit({
+        type,
+        item_id: "item_test",
+        output_index: 0,
+        content_index: 0,
+        delta: "Still working. ",
+        response: response([], { status: "in_progress" }),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    stream.emit({ type: "response.completed", response: response([textItem("Done")]) });
+    stream.close();
+    const result = await request;
+    expect(result.status).toBe("completed");
+    expect(result.messages.at(-1)?.content).toContainEqual({ type: "text", text: "Done" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it.each(["complete", "stop"])("allows a silent response to %s after an hour", async (end) => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const stream = mockOpenStream();
   let settled = false;
   const request = run(new Client(), "model", "", prompt, [], { options: { signal: controller.signal } }).finally(() => {
     settled = true;
   });
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-  await vi.advanceTimersByTimeAsync(600_001);
-  const settledAtDeadline = settled;
-  controller.abort();
+  await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+  expect(settled).toBe(false);
+  if (end === "complete") {
+    stream.emit({ type: "response.completed", response: response([textItem("Done")]) });
+    stream.close();
+  } else controller.abort();
   const result = await request;
-  expect(settledAtDeadline).toBe(true);
-  expect(result.status).toBe("failed");
-  expect(result.error).toMatchObject({ code: "TIMEOUT", message: "Model response timed out after 600s" });
+  expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+  if (end === "complete") expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+  else expect(result.error).toMatchObject({ code: "CANCELLED" });
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("keeps the native timeout and retries while waiting for response headers", async () => {
+  vi.useFakeTimers();
+  fetchMock.mockImplementation(
+    (_url, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }),
+  );
+  const request = run(new Client(), "model", "", prompt, []);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(3 * 60 * 1000 + 5_000);
+  expect((await request).status).toBe("failed");
+  expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -364,6 +485,52 @@ it("replays live signed text and summary for the same deployment alias after per
   }
 });
 
+it("streams requested reasoning summaries and preserves them after chat persistence", async () => {
+  const summary = "Checking the calculation";
+  const item = {
+    type: "reasoning",
+    id: "rs_summary",
+    encrypted_content: "signature",
+    summary: [{ type: "summary_text", text: summary }],
+    status: "completed",
+  };
+  fetchMock.mockResolvedValueOnce(
+    sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...item, encrypted_content: null, summary: [] } },
+      {
+        type: "response.reasoning_summary_text.delta",
+        item_id: item.id,
+        output_index: 0,
+        summary_index: 0,
+        delta: summary,
+      },
+      { type: "response.output_item.done", output_index: 0, item },
+      { type: "response.output_text.delta", item_id: "msg_test", output_index: 1, content_index: 0, delta: "Done" },
+      { type: "response.completed", response: response([item, textItem("Done")]) },
+    ]),
+  );
+  const session = chatSession(new Client(), []);
+  const streamed: string[] = [];
+  session.ai.updateOptions({
+    onChunk: (chunk) => {
+      if (chunk.type === "REASONING_MESSAGE_CONTENT") streamed.push(chunk.delta);
+    },
+  });
+  try {
+    await session.ai.sendMessage("Go");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning).toEqual({ summary: "auto" });
+    expect(streamed).toContain(summary);
+    expect(session.store.value).toBeDefined();
+    const restored = fromAIMessages(session.store.value!.messages);
+    expect(restored.flatMap((message) => message.content)).toContainEqual(
+      expect.objectContaining({ type: "reasoning", summary, encryptedContent: "signature", model: "model" }),
+    );
+  } finally {
+    session.ai.dispose();
+  }
+});
+
 it("keeps visible reasoning deltas separate from summary when completion omits visible content", async () => {
   const item = {
     type: "reasoning",
@@ -403,35 +570,42 @@ it("keeps visible reasoning deltas separate from summary when completion omits v
   });
 });
 
-it.each(["invalid_encrypted_content", "invalid_request_error"])(
-  "bounds retries for a rejected request with code %s",
-  async (code) => {
-    fetchMock.mockImplementation(async () => Response.json({ error: { code, message: "Bad input" } }, { status: 400 }));
-    const result = await run(
-      new Client(),
-      "model",
-      "",
-      [
-        ...prompt,
-        {
-          role: "assistant",
-          content: [{ type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }],
-        },
-        ...prompt,
-      ],
-      [],
-    );
-    expect(result.status).toBe("failed");
-    expect(fetchMock).toHaveBeenCalledTimes(code === "invalid_encrypted_content" ? 2 : 1);
-  },
-);
+it.each([
+  ["invalid_encrypted_content", "Bad input", 2],
+  ["invalid_request_error", "Bad input", 1],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`.", 2],
+])("bounds retries for a rejected request with code %s", async (code, message, attempts) => {
+  fetchMock.mockImplementation(async () => Response.json({ error: { code, message } }, { status: 400 }));
+  const result = await run(
+    new Client(),
+    "model",
+    "",
+    [
+      ...prompt,
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" },
+          { type: "text", text: "First answer" },
+        ],
+      },
+      ...prompt,
+    ],
+    [],
+  );
+  expect(result.status).toBe("failed");
+  expect(fetchMock).toHaveBeenCalledTimes(attempts);
+});
 
-it("does not retry a reasoning error after response text has arrived", async () => {
+it.each([
+  ["invalid_encrypted_content", "Encrypted content could not be verified"],
+  ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`."],
+])("does not retry a reasoning error (%s) after response text has arrived", async (code, message) => {
   fetchMock.mockResolvedValueOnce(
     sse([
       { type: "response.created", response: response([], { status: "in_progress" }) },
       { type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: "Partial" },
-      { type: "error", code: "invalid_encrypted_content", message: "Encrypted content could not be verified" },
+      { type: "error", code, message },
     ]),
   );
   const result = await run(
@@ -442,7 +616,10 @@ it("does not retry a reasoning error after response text has arrived", async () 
       ...prompt,
       {
         role: "assistant",
-        content: [{ type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }],
+        content: [
+          { type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" },
+          { type: "text", text: "First answer" },
+        ],
       },
       ...prompt,
     ],
@@ -472,6 +649,7 @@ it("pairs deduplicated reasoning with the text and signature from the same origi
             encryptedContent: `${text} signature`,
             model: "model",
           },
+          { type: "text", text: `${text} answer` },
         ],
       })),
       ...prompt,

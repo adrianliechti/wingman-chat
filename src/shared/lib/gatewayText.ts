@@ -1,6 +1,5 @@
 import { OpenAITextAdapter, type OpenAIChatModel } from "@tanstack/ai-openai";
 import type { AdapterYieldChunk } from "@tanstack/ai";
-import { combineAbortSignals } from "./abortSignals";
 import { isReasoningReplayError } from "./errors";
 import { packGatewayReasoning, readGatewayReasoning, type GatewayReasoning } from "./reasoning";
 
@@ -26,63 +25,41 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     ...args: Parameters<OpenAITextAdapter<TModel>["chatStream"]>
   ): AsyncIterable<AdapterYieldChunk> {
     const [options] = args;
-    const deadline = new AbortController();
-    const combined = combineAbortSignals(
-      options.abortController?.signal,
-      options.request?.signal ?? undefined,
-      deadline.signal,
-    );
-    // The SDK clears its fetch timer at headers. Keep the model-call deadline
-    // alive through body consumption, and release it on completion or Stop.
-    const timer = setTimeout(() => deadline.abort(), this.client.timeout);
     let started = false;
-    try {
-      const request =
-        options.request instanceof Request
-          ? new Request(options.request, { signal: combined.signal })
-          : { ...options.request, signal: combined.signal };
-      for (let attempt = 0; attempt < 2; attempt++) {
-        let receivedContent = false;
-        let retry = false;
-        for await (const chunk of super.chatStream({ ...options, request })) {
-          if (chunk.type === "RUN_STARTED") {
-            if (!started) yield chunk;
-            started = true;
-            continue;
-          }
-          if (chunk.type === "RUN_ERROR" && deadline.signal.aborted) {
-            const message = `Model response timed out after ${Math.round(this.client.timeout / 1000)}s`;
-            yield { ...chunk, message, code: "TIMEOUT", error: { message, code: "TIMEOUT" } };
-            return;
-          }
-          if (
-            chunk.type === "RUN_ERROR" &&
-            attempt === 0 &&
-            !receivedContent &&
-            !combined.signal?.aborted &&
-            isReasoningReplayError(chunk)
-          ) {
-            const payloads = options.messages.flatMap((message) =>
-              (message.thinking ?? []).flatMap((part) => {
-                const { encryptedContent } = readGatewayReasoning(part.signature);
-                return encryptedContent && !this.rejectedReasoning.has(encryptedContent) ? [encryptedContent] : [];
-              }),
-            );
-            if (payloads.length) {
-              for (const payload of payloads) this.rejectedReasoning.add(payload);
-              this.needsMessageSnapshot = true;
-              retry = true;
-              break;
-            }
-          }
-          receivedContent = true;
-          yield chunk;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let receivedContent = false;
+      let retry = false;
+      for await (const chunk of super.chatStream(...args)) {
+        if (chunk.type === "RUN_STARTED") {
+          if (!started) yield chunk;
+          started = true;
+          continue;
         }
-        if (!retry) return;
+        if (
+          chunk.type === "RUN_ERROR" &&
+          attempt === 0 &&
+          !receivedContent &&
+          !options.request?.signal?.aborted &&
+          !options.abortController?.signal.aborted &&
+          isReasoningReplayError(chunk)
+        ) {
+          const payloads = options.messages.flatMap((message) =>
+            (message.thinking ?? []).flatMap((part) => {
+              const { encryptedContent } = readGatewayReasoning(part.signature);
+              return encryptedContent && !this.rejectedReasoning.has(encryptedContent) ? [encryptedContent] : [];
+            }),
+          );
+          if (payloads.length) {
+            for (const payload of payloads) this.rejectedReasoning.add(payload);
+            this.needsMessageSnapshot = true;
+            retry = true;
+            break;
+          }
+        }
+        receivedContent = true;
+        yield chunk;
       }
-    } finally {
-      clearTimeout(timer);
-      combined.cleanup();
+      if (!retry) return;
     }
   }
 
@@ -262,9 +239,17 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     const reasoning = new Map<string, GatewayReasoning>();
     const messages = args[0].map((message) => {
       let rejected = false;
+      // An interrupted response can leave a signed reasoning item without
+      // text or a tool call. Keep it visible in history, but do not replay an
+      // assistant turn ending in thinking to gateway providers such as Claude.
+      const hasOutput =
+        !!message.toolCalls?.length ||
+        (typeof message.content === "string"
+          ? !!message.content
+          : !!message.content?.some((part) => part.type === "text" && part.content));
       const thinking = message.thinking?.map((part) => {
         const state = readGatewayReasoning(part.signature);
-        if (!state.encryptedContent || this.rejectedReasoning.has(state.encryptedContent)) {
+        if (!hasOutput || !state.encryptedContent || this.rejectedReasoning.has(state.encryptedContent)) {
           rejected ||= !!state.encryptedContent;
           return { ...part, signature: undefined };
         }

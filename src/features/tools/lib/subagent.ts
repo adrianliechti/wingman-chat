@@ -1,4 +1,4 @@
-import type { ChatMiddleware } from "@tanstack/ai";
+import { maxIterations, type ChatMiddleware } from "@tanstack/ai";
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
@@ -60,7 +60,6 @@ export function createAgentTool(
         return [{ type: "text", text: "Error: prompt is required" }];
       }
       const model = spec.model ?? ctx?.model;
-      if (!model) return [{ type: "text", text: "No model is available for this task." }];
       if (options.needsApproval) {
         if (!ctx?.elicit)
           return [{ type: "text", text: "This task requires confirmation, which is unavailable in this context." }];
@@ -70,6 +69,13 @@ export function createAgentTool(
       }
 
       try {
+        const timeout = spec.timeoutMs ? AbortSignal.timeout(spec.timeoutMs) : undefined;
+        const signal = timeout && ctx?.signal ? AbortSignal.any([ctx.signal, timeout]) : (timeout ?? ctx?.signal);
+        signal?.throwIfAborted();
+        const direct = await spec.direct?.(args, { ...ctx, model, signal });
+        signal?.throwIfAborted();
+        if (direct !== undefined) return [{ type: "text", text: direct }];
+        if (!model) return [{ type: "text", text: "No model is available for this task." }];
         const requestContext = captureRequestContext(spec.runtimeContext);
         const runResult = await agentRun(
           options.client ?? getConfig().client,
@@ -82,7 +88,8 @@ export function createAgentTool(
             middleware: spec.middleware,
             parentContext: ctx?.agentContext,
             context: { ...ctx?.invocationContext, subagentRunId: crypto.randomUUID() },
-            options: { signal: ctx?.signal },
+            options: { signal },
+            ...(spec.maxIterations ? { agentLoopStrategy: maxIterations(spec.maxIterations) } : {}),
             createToolContext: () => ({
               model,
               chatId: ctx?.chatId,

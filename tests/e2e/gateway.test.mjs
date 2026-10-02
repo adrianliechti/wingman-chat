@@ -56,6 +56,72 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.some((model) => model.id === selectedModel));
   });
 
+  for (const model of new Set([compatibilityModel, documentModel, "claude-opus-5-5"])) {
+    void test(
+      `displays reasoning by default with ${model} and replays it after persistence`,
+      async (context) => {
+        if (!availableModels.some((available) => available.id === model)) {
+          context.skip(`${model} is not exposed by ${GATEWAY_URL}`);
+          return;
+        }
+        const events = [];
+        const first = await run(
+          client,
+          model,
+          "Think carefully, verify the result, then return only the numeric answer.",
+          [
+            {
+              role: Role.User,
+              content: [
+                {
+                  type: "text",
+                  text: "Find the smallest positive integer x such that x mod 7 = 3, x mod 11 = 5, and x mod 13 = 7.",
+                },
+              ],
+            },
+          ],
+          [],
+          {
+            options: {
+              // Exercise the provider default on a model that thinks by default.
+              ...(model === "claude-opus-5-5" ? {} : { effort: "high" }),
+              signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            },
+            middleware: [observeRun(events)],
+          },
+        );
+        assert.equal(first.status, "completed", resultDetail(first));
+        const visible = contentParts(first.messages, "reasoning").filter((part) => part.text || part.summary);
+        assert(visible.length > 0, `${model} did not return visible reasoning with default chat settings`);
+        assert(
+          visible.some((part) => part.encryptedContent),
+          `${model} did not return signed reasoning`,
+        );
+        assert(
+          events.some((chunk) => chunk.type === "REASONING_MESSAGE_CONTENT" && chunk.delta),
+          `${model} did not stream visible reasoning`,
+        );
+        const restored = JSON.parse(JSON.stringify(first.messages));
+        const beforeReplay = faults.snapshot().requestCount;
+        const second = await run(
+          client,
+          model,
+          "Return only the numeric answer.",
+          [...restored, { role: Role.User, content: [{ type: "text", text: "What is that answer plus one?" }] }],
+          [],
+          { options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+        );
+        assert.equal(second.status, "completed", resultDetail(second));
+        assert.equal(faults.snapshot().requestCount - beforeReplay, 1, "Reasoning replay needed a recovery retry");
+        assert(
+          contentParts(second.messages, "reasoning").some((part) => part.text || part.summary),
+          "Persisted reasoning disappeared on the next turn",
+        );
+      },
+      { timeout: REQUEST_TIMEOUT_MS * 2 },
+    );
+  }
+
   for (const model of new Set([compatibilityModel, documentModel])) {
     void test(
       `reads an inline Office attachment with ${model} and replays it after persistence`,

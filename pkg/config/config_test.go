@@ -7,6 +7,49 @@ import (
 	"testing"
 )
 
+func TestInternetOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		initial *Internet
+		env     map[string]string
+		want    *Internet
+	}{
+		{"researcher only", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_RESEARCHER": "web"}, &Internet{Researcher: "web"}},
+		{"override YAML without enable flag", &Internet{Researcher: "old"}, map[string]string{"INTERNET_RESEARCHER": "web"}, &Internet{Researcher: "web"}},
+		{"explicit disable", &Internet{Searcher: "web"}, map[string]string{"INTERNET_ENABLED": "false"}, nil},
+		{"selector alone does not enable", nil, map[string]string{"INTERNET_RESEARCHER": "web"}, nil},
+		{"clear gateway to use local model", &Internet{Researcher: "web", Model: "gpt-6-luna", Elicitation: true}, map[string]string{"INTERNET_RESEARCHER": "", "INTERNET_ELICITATION": "false"}, &Internet{Model: "gpt-6-luna"}},
+		{"all selectors", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_MODEL": " gpt-6-luna ", "INTERNET_GUARD": "guard", "INTERNET_SEARCHER": "search", "INTERNET_SCRAPER": "scrape", "INTERNET_RESEARCHER": "research", "INTERNET_ELICITATION": "true"}, &Internet{Model: "gpt-6-luna", Guard: "guard", Searcher: "search", Scraper: "scrape", Researcher: "research", Elicitation: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"INTERNET_ENABLED", "INTERNET_MODEL", "INTERNET_GUARD", "INTERNET_SEARCHER", "INTERNET_SCRAPER", "INTERNET_RESEARCHER", "INTERNET_ELICITATION"} {
+				// Preserve the caller environment while making absence testable.
+				t.Setenv(key, "")
+				os.Unsetenv(key)
+			}
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+			cfg := Config{Internet: tc.initial}
+			applyInternetOverrides(&cfg)
+			if !reflect.DeepEqual(cfg.Internet, tc.want) {
+				t.Fatalf("got=%+v want=%+v", cfg.Internet, tc.want)
+			}
+			data, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded Config
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(decoded.Internet, tc.want) {
+				t.Fatalf("browser config lost internet fields: %s", data)
+			}
+		})
+	}
+}
+
 func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	previous, err := os.Getwd()
 	if err != nil {

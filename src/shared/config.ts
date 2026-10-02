@@ -73,8 +73,11 @@ interface RendererConfig {
 }
 
 interface InternetConfig {
+  /** Local deep-research model when no researcher is selected; defaults to the chat model. */
+  model?: string;
   scraper?: string;
   searcher?: string;
+  /** Gateway researcher for deep mode; takes precedence over the local model and retrieval tools. */
   researcher?: string;
   guard?: string;
   elicitation?: boolean;

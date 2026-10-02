@@ -391,9 +391,32 @@ export async function* streamRun(
           name: tool.name,
           description: tool.description ?? tool.name,
           inputSchema: z.fromJSONSchema(tool.parameters),
-          run: (ctx) => {
+          run: async (ctx) => {
             const { prompt } = ctx.input as { prompt: string };
             const childModel = spec.model ?? model;
+            const parentSignal = ctx.abortSignal ?? abortController.signal;
+            const signal = spec.timeoutMs
+              ? AbortSignal.any([parentSignal, AbortSignal.timeout(spec.timeoutMs)])
+              : parentSignal;
+            signal.throwIfAborted();
+            const direct = await spec.direct?.(ctx.input as Record<string, unknown>, {
+              model: childModel,
+              signal,
+              interruptible: true,
+              runId: ctx.runId,
+            });
+            signal.throwIfAborted();
+            if (direct !== undefined) {
+              // Keep the same native approval/result boundary, but return
+              // retrieval text without starting a child model generation.
+              return (async function* (): AsyncGenerator<StreamChunk> {
+                const messageId = `${ctx.subagentRunId}-direct`;
+                yield { type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as StreamChunk;
+                yield { type: "TEXT_MESSAGE_CONTENT", messageId, delta: direct } as StreamChunk;
+                yield { type: "TEXT_MESSAGE_END", messageId } as StreamChunk;
+                yield { type: "RUN_FINISHED", runId: ctx.runId, threadId: ctx.threadId, result: direct } as StreamChunk;
+              })();
+            }
             const history = hooks.metadata.read(
               ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
             );
@@ -424,7 +447,8 @@ export async function* streamRun(
                 subagentRunId: ctx.subagentRunId,
                 resume: ctx.resume,
                 context: { ...invocation, subagentRunId: ctx.subagentRunId },
-                options: { signal: ctx.abortSignal },
+                options: { signal },
+                ...(spec.maxIterations ? { agentLoopStrategy: maxIterations(spec.maxIterations) } : {}),
                 parentContext: telemetry.toolContext(childCalls.get(ctx.subagentRunId) ?? ctx.subagentRunId),
                 createToolContext: hooks.createToolContext,
                 onToolMeta: hooks.onToolMeta,
@@ -461,7 +485,7 @@ export async function* streamRun(
       resume: hooks.resume,
       subagentRunId: hooks.subagentRunId,
       debug: aiDebug,
-      modelOptions: client.chatModelOptions(model, hooks.options),
+      modelOptions: client.chatModelOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
       agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
       middleware: [
         telemetry,

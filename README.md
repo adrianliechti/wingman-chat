@@ -25,6 +25,8 @@ conversations, retrieval over your own files, and a library of reusable skills.
   Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
   land back in the workspace.
 - **Web search & browsing** for grounded, up-to-date answers.
+  Research tools batch and reuse retrieval, and select relevant passages from long pages.
+  See [research benchmarks](docs/research-benchmarks.md) for repeatable quality and tool-usage comparisons.
 - **Sub-agents** for delegating focused, multi-step work.
 - **Model Context Protocol (MCP)** — connect external tool servers through a configurable bridge.
 - **Built-in tool shims** for OCR, vision, translation, transcription, speech synthesis, and rendering.
@@ -319,7 +321,7 @@ restart and browser refresh in production, or a browser refresh during frontend 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_ELICITATION`)
+- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_MODEL`, `INTERNET_GUARD`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
@@ -330,6 +332,19 @@ YAML files loaded from the working directory (when present) configure models, to
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+
+Internet exposes one `web_research` tool. `mode: fast` uses `searcher` directly;
+`mode: deep` uses the configured gateway `researcher`. Without a `researcher`, deep
+mode runs a local agent using `model` (or the parent chat model), with the configured
+`searcher` and/or `scraper`. A researcher-only setup supports deep mode. `elicitation`
+controls user approval; `guard` selects the gateway content checker. An omitted guard
+uses the gateway default, which passes when no guards are configured.
+
+Enable internet via `internet.yaml` or `INTERNET_ENABLED=true`. Environment overrides
+also apply when YAML enables it; `INTERNET_ENABLED=false` disables it. An explicitly
+empty selector clears the YAML value, e.g. `INTERNET_RESEARCHER=` selects the local
+agent. Local frontend development uses the same fields in `public/config.json`.
+See [research benchmarks](docs/research-benchmarks.md) for timings and reproduction.
 
 Model entries can list retired IDs in `replaces` to redirect saved agents and
 chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

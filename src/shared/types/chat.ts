@@ -132,6 +132,11 @@ export type Tool = {
     middleware?: ChatMiddleware[];
     /** Research receives its explicit brief instead of the parent conversation. */
     inheritHistory?: boolean;
+    /** Optional bounds for a delegated run, including its tools and middleware. */
+    maxIterations?: number;
+    timeoutMs?: number;
+    /** Optional retrieval-only path. Undefined continues with the model loop. */
+    direct?: (args: Record<string, unknown>, context: ToolContext) => Promise<string | undefined>;
   };
 
   parameters: Record<string, unknown>;

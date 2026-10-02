@@ -94,14 +94,7 @@ func applyEnvOverrides(cfg *Config) {
 
 	withFeature("VISION_ENABLED", &cfg.Vision, nil)
 
-	withFeature("INTERNET_ENABLED", &cfg.Internet, func(i *Internet) {
-		envOverride("INTERNET_SCRAPER", &i.Scraper)
-		envOverride("INTERNET_SEARCHER", &i.Searcher)
-		envOverride("INTERNET_RESEARCHER", &i.Researcher)
-		if envBool("INTERNET_ELICITATION") {
-			i.Elicitation = true
-		}
-	})
+	applyInternetOverrides(cfg)
 
 	withFeature("RENDERER_ENABLED", &cfg.Renderer, func(r *Renderer) {
 		envOverride("RENDERER_MODEL", &r.Model)
@@ -170,6 +163,33 @@ func applyEnvOverrides(cfg *Config) {
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
+}
+
+func applyInternetOverrides(cfg *Config) {
+	switch os.Getenv("INTERNET_ENABLED") {
+	case "true":
+		cfg.Internet = ensurePtr(cfg.Internet)
+	case "false":
+		cfg.Internet = nil
+	}
+	if i := cfg.Internet; i != nil {
+		// YAML enables the feature too. An explicitly empty selector clears its
+		// YAML value (e.g. clear researcher to use the local research model).
+		for key, target := range map[string]*string{
+			"INTERNET_MODEL": &i.Model, "INTERNET_GUARD": &i.Guard,
+			"INTERNET_SCRAPER": &i.Scraper, "INTERNET_SEARCHER": &i.Searcher,
+			"INTERNET_RESEARCHER": &i.Researcher,
+		} {
+			if value, exists := os.LookupEnv(key); exists {
+				*target = strings.TrimSpace(value)
+			}
+		}
+		if value, exists := os.LookupEnv("INTERNET_ELICITATION"); exists {
+			if enabled, err := strconv.ParseBool(value); err == nil {
+				i.Elicitation = enabled
+			}
+		}
+	}
 }
 
 // PlatformToken returns the API token from environment variables.

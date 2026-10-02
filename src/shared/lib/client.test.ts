@@ -32,6 +32,41 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("chat reasoning display", () => {
+  it.each([
+    ["gpt-6.1-sol", "medium"],
+    ["gpt-6-sol", "none"],
+    ["gpt-5.4", undefined],
+    ["claude-sonnet-4-6", "high"],
+    ["claude-opus-4-8", "high"],
+    ["claude-sonnet-5-5", undefined],
+    ["bedrock-sonnet-4-6", "high"],
+    ["team-chat", undefined],
+    ["", undefined],
+  ] as const)("requests visible reasoning for deployment '%s'", async (model, effort) => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+    await runMessages(new Client(), model, "", prompt, [], { options: { effort, summary: undefined } });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reasoning).toEqual({ ...(effort ? { effort } : {}), summary: "auto" });
+  });
+
+  it("preserves the configured summary style and disabled reasoning effort", async () => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+    await runMessages(new Client(), "claude-sonnet-5-5", "", prompt, [], {
+      options: { effort: "none", summary: "detailed" },
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning).toEqual({ effort: "none", summary: "detailed" });
+  });
+
+  it("keeps reasoning summaries opt-in for structured helper calls", async () => {
+    fetchMock.mockResolvedValueOnce(finished(response([textItem('{"answer":"Done"}')])));
+    expect(await new Client().parse("model", "", "Go", z.object({ answer: z.string() }), "review")).toEqual({
+      answer: "Done",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("reasoning");
+  });
+});
+
 describe("chat output allowances", () => {
   it.each([
     ["gpt-6-sol", "none"],

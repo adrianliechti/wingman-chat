@@ -321,7 +321,7 @@ caps. The catalog cap is disabled; the following other bounds apply independentl
 | History compaction          | Model-dependent threshold: 100,000–272,000 estimated tokens         | Enabled when `chat.compaction` is configured. Model/deployment overrides apply; `0` disables it. TanStack preserves about half the budget as recent messages and 3 recent tool results with our chosen strategies. This is not a hard context-window guarantee and does not count the system catalog or tool schemas. |
 | MCP tool discovery          | 100 pages                                                           | TanStack throws if tool-list pagination exceeds the cap or repeats a cursor. This limits pages, not the number of tools.                                                                                                                                                                                              |
 | MCP requests                | 60 seconds                                                          | MCP SDK default, also used explicitly by TanStack's raw tool-call bridge.                                                                                                                                                                                                                                             |
-| Text SDK requests           | 10-minute timeout; 2 automatic retries                              | The gateway adapter extends the SDK deadline through streaming body consumption. The timeout governs each model call, not the total agent run. Embedding requests explicitly disable retries.                                                                                                                         |
+| Text SDK requests           | 60 seconds to response headers; 2 automatic retries                 | The native SDK clears its timeout at response headers. Streaming has no duration or inactivity limit; Stop and caller-provided abort signals cancel it. Embedding requests explicitly disable retries.                                                                                                                |
 | Queued user messages        | Unlimited                                                           | Wingman's native `useChat` queue does not set `maxSize`.                                                                                                                                                                                                                                                              |
 | Voice context/configuration | 8,000 post-instruction tokens; 15-second configuration confirmation | Wingman's gateway realtime session requests truncation and bounds its audio-configuration handshake.                                                                                                                                                                                                                  |
 
@@ -360,13 +360,21 @@ gateway deployment. Native parsing still handles the stream. Completed response
 text is authoritative even when deltas are partial or differ; replacements use
 the standard `MESSAGES_SNAPSHOT` event to update the native client and persistence.
 
+Chat runs request `reasoning.summary: "auto"` by default, with any configured
+summary style taking precedence. This opts into visible Claude thinking rather
+than signed blocks with empty text, including deployments behind opaque aliases.
+Structured helper calls keep summaries opt-in.
+
 Reasoning signatures retain the producing deployment alias, visible signed text,
 and its separate summary through native model/UI conversions. Saved pre-migration
 reasoning remains readable. Ciphertext is replayed only for the same deployment;
 selecting a model does not relabel earlier reasoning. A recognized reasoning
 rejection before any response content triggers one retry without ciphertext and
-removes the rejected payload from saved history. Other failures and partial
-response failures are surfaced.
+removes the rejected payload from saved history, including Claude's rejection of
+an assistant message ending in thinking. Reasoning-only assistant messages from
+interrupted responses stay visible in history but are omitted from provider
+requests; completed tool calls and their results still replay. Other failures
+and partial response failures are surfaced.
 
 Structured extraction uses TanStack's `combinedStructuredOutputSource()` event
 contract to select the final answer instead of concatenating commentary with JSON.

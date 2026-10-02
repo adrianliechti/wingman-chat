@@ -46,7 +46,9 @@ export function isReasoningReplayError(error: unknown): boolean {
     message.includes("encrypted content could not be verified") ||
     (message.includes("reasoning") && message.includes("required following item")) ||
     (message.includes("thinking") &&
-      (message.includes("invalid signature") || message.includes("signature verification failed")))
+      (message.includes("invalid signature") ||
+        message.includes("signature verification failed") ||
+        message.includes("the final block in an assistant message cannot be thinking")))
   );
 }
 export function getErrorInfo(error: unknown): ErrorInfo {
