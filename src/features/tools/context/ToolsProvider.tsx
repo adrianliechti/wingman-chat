@@ -14,7 +14,6 @@ import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/ski
 import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
-import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import type { AudioContent, FileContent, ImageContent, TextContent, ToolProvider } from "@/shared/types/chat";
@@ -22,8 +21,7 @@ import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
 
 // Persisted source selection for the Skills tool: "personal" exposes the user's
-// own skills. The Studio skill pack is not a persisted source — it's slaved to
-// the Studio capability and passed to useSkillsProvider as a separate flag.
+// own skills. Built-in capability skills are always available.
 const SKILL_SOURCES_STORAGE_KEY = "app_skills";
 const SKILL_SOURCE_IDS = ["personal"] as const;
 
@@ -55,7 +53,10 @@ function loadSavedTools(): Set<string> {
     const raw = localStorage.getItem(TOOLS_STORAGE_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed.filter((id): id is string => typeof id === "string")) : new Set();
+    // Studio is now a built-in skill catalog, not a selectable tool.
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((id): id is string => typeof id === "string" && id !== "studio"))
+      : new Set();
   } catch {
     return new Set();
   }
@@ -127,8 +128,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // its required tools, not the global selection — and never persisted.
   const [sessionTools, setSessionTools] = useState<Set<string>>(new Set());
 
-  // Source selection for the global Skills tool (persisted). The tool is enabled
-  // whenever at least one source is on — see mcpConnectionDesired below.
+  // Optional personal skills supplement the built-in capability catalog.
   const [skillSources, setSkillSourcesState] = useState<SkillSources>(() => loadSavedSkillSources());
   const setSkillSources = useCallback((sources: SkillSources) => {
     setSkillSourcesState(sources);
@@ -234,10 +234,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // global userTools.
   const activeSelection = currentAgent ? sessionTools : userTools;
 
-  // Studio's skill pack must surface when the capability is on — a required tool
-  // (currentAgent.tools), a session addition, or the global userTools selection.
-  const studioEnabled = activeSelection.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
-
   const {
     providers: agentProviders,
     enabledTools: agentTools,
@@ -247,7 +243,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Built-in providers
   const internetProvider = useInternetProvider();
   const artifactsProvider = useArtifactsProvider();
-  const studioProvider = useStudioProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
   const {
     plugins: installedPlugins,
@@ -267,7 +262,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [installedPlugins, pluginRequiredIds, activeSelection],
   );
 
-  const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled, activePlugins);
+  const skillsProvider = useSkillsProvider(currentAgent, skillSources, activePlugins);
 
   // Drop selections for plugins that are no longer installed, so an uninstalled
   // plugin's provider and MCP server ids don't linger in persisted storage.
@@ -329,7 +324,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // tools are then unioned via agentRequired as the enforced floor.
     const merged = new Set<string>(activeSelection);
     // The Skills tool's connection tracks the assembled provider: it's non-null
-    // exactly when some source, the Studio pack, or an agent's curated set has
+    // exactly when built-ins, a personal source, or an agent's curated set has
     // skills to expose — so no source/agent branching is needed here.
     if (skillsProvider) merged.add(SKILLS_PROVIDER_ID);
     for (const id of agentRequired) merged.add(id);
@@ -372,12 +367,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (internetProvider) list.push(internetProvider);
-    // Studio adds creative-output instructions and skills on top of default tools.
-    list.push(studioProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     // The single Skills tool (one load_skill surface): an agent's curated subset
-    // under an agent, the selected global sources otherwise, plus the Studio pack
-    // when the capability is on, plus enabled plugins' bundled skills.
+    // under an agent, the selected global sources otherwise, plus built-in
+    // capability skills and enabled plugins' bundled skills.
     if (skillsProvider) list.push(skillsProvider);
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
@@ -386,7 +379,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     return list;
   }, [
     internetProvider,
-    studioProvider,
     artifactsProvider,
     skillsProvider,
     visibleConfigMcpClients,

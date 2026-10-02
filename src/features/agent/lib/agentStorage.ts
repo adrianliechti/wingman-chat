@@ -149,7 +149,7 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
     skills: meta.skills ?? [],
     plugins: meta.plugins ?? [],
     servers,
-    tools: meta.tools ?? [],
+    tools: (meta.tools ?? []).filter((id) => id !== "studio"),
     model: meta.model,
     effort: meta.effort,
     verbosity: meta.verbosity,

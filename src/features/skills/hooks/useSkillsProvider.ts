@@ -8,7 +8,7 @@ import {
   SKILLS_PROVIDER_ID,
   type SkillEntry,
   type SkillSources,
-  studioTemplateEntries,
+  builtinTemplateEntries,
 } from "@/features/skills/lib/skillsProvider";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
@@ -19,10 +19,9 @@ import { useSkillTemplates } from "./useSkillTemplates";
  * The agent and no-agent cases are the same provider with different inputs (not
  * two providers sharing an id), so a duplicate `load_skill` can never arise.
  *
- * Entries come from up to two sources, pushed in ascending precedence and then
+ * Entries come from built-ins and personal skills, pushed in ascending precedence and then
  * collapsed by a single dedup (later push wins on a name collision):
- *   1. Studio pack — format/medium + generator skills, whenever the Studio
- *                    capability is on (agent or no-agent)
+ *   1. Built-in capability skills — always discoverable in agent and no-agent mode.
  *   2. personal   — the user's library: an agent's curated subset (agent.skills),
  *                   or the full library when the personal source is on. Pushed
  *                   last so a personal/curated skill shadows a shipped template of
@@ -34,19 +33,14 @@ import { useSkillTemplates } from "./useSkillTemplates";
 export function useSkillsProvider(
   agent: Agent | null,
   sources: SkillSources,
-  studioEnabled: boolean,
   activePlugins: InstalledPlugin[] = [],
 ): ToolProvider | null {
   const { skills } = useSkills();
   const { templates, loadTemplate } = useSkillTemplates();
 
   return useMemo<ToolProvider | null>(() => {
-    const entries: SkillEntry[] = [];
-
-    // 1. Studio skill pack — whenever the capability is on, in either mode.
-    if (studioEnabled) {
-      entries.push(...studioTemplateEntries(templates, loadTemplate));
-    }
+    // Built-in capabilities are discovered by task, without a mode toggle.
+    const entries: SkillEntry[] = builtinTemplateEntries(templates, loadTemplate);
     // 2. Personal library — an agent's curated subset, or the full library.
     const personal = agent ? skills.filter((s) => agent.skills.includes(s.name)) : sources.personal ? skills : [];
     entries.push(...libraryEntries(personal));
@@ -62,5 +56,5 @@ export function useSkillsProvider(
       name: "Skills",
       description: agent ? "Specialized agent skills" : "Available skills",
     });
-  }, [agent, skills, templates, loadTemplate, sources.personal, studioEnabled, activePlugins]);
+  }, [agent, skills, templates, loadTemplate, sources.personal, activePlugins]);
 }

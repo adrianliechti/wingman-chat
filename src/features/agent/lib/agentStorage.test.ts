@@ -18,6 +18,19 @@ beforeEach(() => {
 });
 
 describe("agent storage", () => {
+  it("drops the retired Studio tool when parsing, loading legacy JSON and saving agents", async () => {
+    expect(parseAgentMd('---\nname: Shared\ntools: ["studio", "internet"]\n---')!.tools).toEqual(["internet"]);
+    const legacy = { ...agent(), tools: ["studio", "internet"] };
+    memory.put("agents/agent/agent.json", JSON.stringify(legacy));
+    const writes = memory.closed.length;
+    expect((await loadAgent("agent"))!.tools).toEqual(["internet"]);
+    expect(memory.closed).toHaveLength(writes);
+    await storeAgent(legacy);
+    expect((await loadAgent("agent"))!.tools).toEqual(["internet"]);
+    expect(serializeAgentMd(legacy)).not.toContain('"studio"');
+    expect(serializeAgentMd({ ...agent(), tools: ["studio"] })).not.toContain("tools:");
+  });
+
   it("persists requested and resolved embedding models with the file's vectors", async () => {
     const value = {
       ...agent(),

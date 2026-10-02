@@ -847,6 +847,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     expect(request.instructions).not.toContain("{finalInstructions}");
   });
 
+  it("preserves regional spelling returned by the rewrite model", async () => {
+    const rewrittenText = "Die Straße führt zum großen Gebäude.";
+    fetchMock.mockResolvedValueOnce(finished(response([textItem(JSON.stringify({ rewrittenText }))])));
+    expect(await new Client().rewriteText("model", "Eine Straße", "de-DE")).toBe(rewrittenText);
+  });
+
   it("stops an in-flight stream on cancellation", async () => {
     const controller = new AbortController();
     fetchMock.mockImplementationOnce(

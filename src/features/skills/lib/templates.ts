@@ -6,8 +6,8 @@
  * `GET /skills` inventory endpoint (a Vite dev middleware serves the same in
  * local dev). Each entry's `SKILL.md` is fetched lazily and cached here.
  *
- * Templates are not skills themselves — the catalog offers them as starting
- * points that the user copies into their own (editable) OPFS skill library.
+ * The Studio category supplies the default capability catalog. Other categories
+ * are optional templates users can copy into their editable OPFS skill library.
  */
 
 import { type ParsedSkill, parseSkillFile } from "./skillParser";

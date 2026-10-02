@@ -32,6 +32,70 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+for (const legacySelection of [false, true]) {
+  test(`built-in skills load on demand without a Studio menu (${legacySelection ? "legacy selection" : "fresh settings"})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((selected) => {
+      localStorage.setItem("app_tools", JSON.stringify(selected ? ["studio"] : []));
+      localStorage.setItem("app_skills", "[]");
+    }, legacySelection);
+    const loaded: string[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith("/skills/") && path.endsWith(".md")) loaded.push(path);
+    });
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await expect(input).toBeVisible();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Add File", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Studio/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await input.fill("Build an HTML data explorer");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    const request = await page.evaluate(() => window.reactUiE2E.state());
+    expect(request.tools).toContain("load_skill");
+    expect(request.tools).toContain("read_skill_resource");
+    expect(request.instructions).toContain("html-artifacts");
+    expect(request.instructions).toContain("document-drafting");
+    expect(request.instructions).not.toContain("## Studio");
+    expect(loaded).toEqual([]);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("app_tools") ?? "[]"))).not.toContain("studio");
+
+    await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "html-artifacts" }));
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    expect(loaded).toEqual(["/skills/studio/html-artifacts/SKILL.md"]);
+    await page.evaluate(() =>
+      window.reactUiE2E.callTool("read_skill_resource", {
+        skill: "html-artifacts",
+        path: "references/sdk.md",
+      }),
+    );
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+    expect(loaded).toEqual([
+      "/skills/studio/html-artifacts/SKILL.md",
+      "/skills/studio/html-artifacts/references/sdk.md",
+    ]);
+    await page.evaluate(() => window.reactUiE2E.finish("Done"));
+  });
+}
+
+test("Canvas loads optional image styles from the shared design reference", async ({ page }) => {
+  const loaded: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/skills/") && path.endsWith(".md")) loaded.push(path);
+  });
+  await open(page);
+  await page.getByRole("link", { name: "Canvas", exact: true }).click();
+  await page.getByRole("button", { name: "Style", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Watercolor", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Watercolor", exact: true })).toBeVisible();
+  expect(loaded).toEqual(["/skills/studio/canvas-design/references/image-styles.md"]);
+});
+
 test("Activity retains drafts, stops hidden effects and portals, and leaves persistent iframes alive", async ({
   page,
 }) => {

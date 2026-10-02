@@ -1,65 +1,16 @@
 ---
 name: algorithmic-art
-description: Create generative / algorithmic art — flow fields, particle systems, noise-driven compositions — rendered to an image with code. Use when the user wants art made with code, generative art, or parametric visuals.
+description: "Create art through code, such as flow fields, particles, noise or parametric compositions. Use for generative art and interactive exploration of its parameters."
 ---
 
-# Algorithmic Art
+# Algorithmic art
 
-Make a computational aesthetic — emergent behaviour expressed through code. Render it **offline** with
-the bundled Python interpreter (`numpy` + `matplotlib`/Pillow) to a `.png`; don't depend on a CDN.
-Define an algorithmic idea, then express it in code.
+Choose a computational idea that fits the requested subject and aesthetic. Translate it into a field, rule system, palette, mark-making and density; skip invented manifestos unless requested.
 
-## Algorithmic direction
+Use numpy with matplotlib/Pillow for a static PNG, or native canvas/SVG and JavaScript when the user wants to explore parameters. Follow the requested format. Load `html-artifacts` if browser libraries or preview services are needed.
 
-Name the movement (1–2 words: "Organic Turbulence", "Emergent Stillness"). In 4–6 paragraphs describe
-how it manifests through computational processes, seeded randomness / noise fields, particle
-behaviour and forces, temporal evolution, and parametric variation. Emphasize emergent beauty and
-master-level craft. Keep this as the working concept unless the user asks for a written rationale.
+Make randomness reproducible with an explicit seed, such as `rng = np.random.default_rng(42)`, and separate adjustable parameters from the rendering logic. Bound iteration counts, particle lifetimes and canvas size so work completes within runtime limits; vectorize heavy operations. Do not silently change the seed on every redraw.
 
-## Express it (Python → PNG, offline)
+For interactive output, expose the few parameters that reveal meaningful changes, label them, and support reset. Stop animation when it is no longer needed and respect reduced motion. Save state only when useful. A standalone version should use native browser APIs and embed its required assets.
 
-Use **seeded** randomness so the piece is reproducible, and let the algorithm do the work (90%
-generation, 10% parameters). The flow field below demonstrates mechanics, not a default dark visual
-style; derive the field, palette, density, and mark-making from the requested concept.
-
-```python
-import numpy as np, matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-rng = np.random.default_rng(42)            # seed → reproducible
-W = H = 1600
-fig, ax = plt.subplots(figsize=(8, 8), dpi=200)
-ax.set_xlim(0, W); ax.set_ylim(0, H); ax.axis('off')
-fig.patch.set_facecolor('#0b0b10'); ax.set_facecolor('#0b0b10')
-
-for _ in range(1400):                      # particles
-    x, y = rng.uniform(0, W), rng.uniform(0, H)
-    xs, ys = [x], [y]
-    for _ in range(80):                    # trace through the field
-        a = (np.sin(x * 0.004) * np.cos(y * 0.004)) * np.pi * 2
-        x += np.cos(a) * 6; y += np.sin(a) * 6
-        xs.append(x); ys.append(y)
-    ax.plot(xs, ys, color='white', alpha=0.06, lw=0.6)
-
-fig.savefig('art.png', facecolor='#0b0b10', bbox_inches='tight', pad_inches=0)
-plt.close(fig)
-print('wrote art.png')
-```
-
-Vary the field, palette, particle count, and step rules to match the philosophy. `numpy` (vectorised
-noise/forces) and Pillow (per-pixel work, blends) are both available and fast. Favour controlled
-chaos and reward sustained viewing.
-
-## Interactive version (offline)
-
-The Python→PNG above is the default deliverable. When the user wants to _explore_ the parameters live,
-write a self-contained `.html` instead: render the same field/particle math to an HTML5 `<canvas>` with
-**vanilla JS** — no p5.js, no library, no CDN, so it still works offline. Add a few
-`<input type="range">` sliders (particle count, field scale, step size, palette) that redraw on
-`input`, and persist their values to `localStorage` so a refresh keeps the look. Mirror the PNG
-algorithm so both render as the same piece.
-
-## Deliver
-
-Save `art.png` to the workspace; one line on what it is. To revise, tweak the parameters and re-run.
+Inspect composition, density, clipping and output dimensions. Check parameter extremes for instability or blank output. Save the piece and include the source/seed when reproducibility is part of the request.

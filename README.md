@@ -29,15 +29,17 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **Model Context Protocol (MCP)** — connect external tool servers through a configurable bridge.
 - **Built-in tool shims** for OCR, vision, translation, transcription, speech synthesis, and rendering.
 
-### Studio — documents, visuals & media
+### Documents, visuals & media
 
-Ask for a real deliverable and Wingman builds it for real, then drops it in your workspace:
+Built-in skills are available in every chat and agent without a mode toggle. Instructions and
+runtime references load on demand. Ask for a deliverable and Wingman saves it in your workspace:
 
 - **Slide decks** (`.pptx`), **Word documents** (`.docx`), **spreadsheets** (`.xlsx`), and **PDFs**.
 - **Charts, dashboards, and data visualizations** built from real numbers.
-- **Diagrams** — BPMN, swimlane, C4, sequence, mind maps, and other process/architecture diagrams.
+- **Diagrams** — BPMN-style flows, swimlanes, C4-style views, sequences and mind maps.
 - **Infographics, posters, and generative/algorithmic art** across many visual styles.
-- **Self-contained web pages / UI prototypes** (offline-ready, no external CDNs).
+- **Web pages / UI prototypes** with bundled libraries and preview services, or standalone HTML when requested.
+- **Structured documents and internal communications** adapted to the audience and supplied sources.
 - **Generated images** (when an image tool is configured) and **podcast-style audio**.
 
 ### Artifacts workspace
@@ -129,7 +131,8 @@ A focused surface for generating and iterating on images.
 
 100+ reusable, domain-specific skills the model can read on demand — spanning engineering, product,
 design, data, finance, legal, HR, marketing, sales, operations, customer support, knowledge, writing,
-and the Studio output formats. Skills are plain Markdown, so they're easy to add, edit, and share.
+and artifact output formats. General document, data and design skills are included by default;
+personal and plugin skills extend the catalog. Skills are plain Markdown, so they're easy to add, edit, and share.
 
 ### Cloud drives
 

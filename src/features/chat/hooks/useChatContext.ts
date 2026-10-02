@@ -6,7 +6,6 @@ import { mountMemoryFiles } from "@/features/agent/lib/memoryFileMount";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
-import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
@@ -106,7 +105,7 @@ export function useChatContext(
           (provider) => (mode === "chat" ? (provider.chat ?? provider) : provider).tools,
         );
 
-        // Image generation follows renderer availability, independent of Studio.
+        // Image generation follows renderer availability.
         const baseTools = mountMemoryFiles([...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])], memory());
         // Clarification is a core chat capability, independent of provider
         // selections and model allowlists; native child runs can ask too.
@@ -177,8 +176,6 @@ export function useChatContext(
 
         if (mode === "voice") {
           instructionsList.push(voiceInstructions);
-          const hasTools = filteredProviders.some((p: ToolProvider) => p.tools.length > 0);
-          if (hasTools) instructionsList.push(voiceToolsInstructions);
         }
 
         // Add instructions from filtered providers

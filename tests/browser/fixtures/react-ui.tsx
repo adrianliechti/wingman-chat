@@ -11,7 +11,7 @@ import "../../../src/index.css";
 
 const parameters = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById("root")!);
-const state = { effects: 0, calls: 0 };
+const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "" };
 let stream = (_text: string) => {};
 let finish = (_text: string) => {};
 let callTool = (_name: string, _args: object) => {};
@@ -86,9 +86,11 @@ if (parameters.has("panels")) {
   config.client.listModels = async () => [model];
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
-    async (_options, handler) =>
+    async (options, handler) =>
       new Promise<Message>((resolve) => {
         state.calls++;
+        state.tools = options.tools?.map((tool) => tool.name) ?? [];
+        state.instructions = JSON.stringify(options.systemPrompts);
         stream = (text) => handler?.([{ type: "text", text }]);
         finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
         callTool = (name, args) =>
@@ -130,7 +132,7 @@ if (parameters.has("panels")) {
 declare global {
   interface Window {
     reactUiE2E: {
-      state(): { effects: number; calls: number };
+      state(): { effects: number; calls: number; tools: string[]; instructions: string };
       stream(text: string): void;
       finish(text: string): void;
       callTool(name: string, args: object): void;

@@ -443,7 +443,7 @@ export class Client {
       "rewrite_text",
       requestOptions,
     );
-    return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
+    return result?.rewrittenText ?? text;
   }
 
   async generateAudio(

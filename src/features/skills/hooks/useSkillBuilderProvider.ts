@@ -15,13 +15,37 @@ export function useSkillBuilderProvider(): ToolProvider {
       {
         name: "list_skills",
         description:
-          "List the skills already in the library (name and description only). Use it to avoid creating duplicates and to find the exact name of a skill to update.",
+          "List personal library skills (name and description), or pass name to read one skill's full current content and resource paths before editing. This reads the library regardless of which skills are active; it does not activate the skill.",
         parameters: {
           type: "object",
-          properties: {},
+          properties: {
+            name: { type: "string", description: "Exact personal skill name to read; omit to list metadata." },
+          },
           additionalProperties: false,
         },
-        function: async () => {
+        function: async (args: Record<string, unknown>) => {
+          if (args.name !== undefined) {
+            const name = typeof args.name === "string" ? args.name.trim() : "";
+            const skill = name ? getSkill(name) : undefined;
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  skill
+                    ? {
+                        skill: {
+                          name: skill.name,
+                          description: skill.description,
+                          content: skill.content,
+                          compatibility: skill.compatibility,
+                          resources: skill.resources?.map((resource) => resource.path) ?? [],
+                        },
+                      }
+                    : { error: name ? `Skill "${name}" not found in the personal library` : "Skill name is required" },
+                ),
+              },
+            ];
+          }
           const list = skills.map((s) => ({ name: s.name, description: s.description }));
           return [{ type: "text" as const, text: JSON.stringify({ skills: list }) }];
         },
@@ -138,7 +162,7 @@ export function useSkillBuilderProvider(): ToolProvider {
           },
         },
         description:
-          "Replace an existing skill's description and/or content. This overwrites the field wholesale — pass the complete new value, not a diff. Read the skill's current content first (load_skill or list_skills) before modifying one you didn't just author.",
+          "Replace an existing personal skill's description and/or content. Fields are replaced wholesale: pass complete values, not diffs. Read the current library content with list_skills({name}) first; load_skill may resolve a different active skill with the same name. Bundled resources are preserved.",
         parameters: {
           type: "object",
           properties: {

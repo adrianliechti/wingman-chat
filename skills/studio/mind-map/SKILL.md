@@ -1,46 +1,25 @@
 ---
 name: mind-map
-description: Build a hierarchical mind map of the concepts in the conversation and workspace material, delivered as a Mermaid diagram (.mmd) that renders natively in the side panel. Trigger with "make a mind map", "map out these concepts", "give me a concept map", or whenever the user wants the structure of a topic visualized.
+description: "Organize a topic or supplied material into a hierarchical Mermaid mind map (.mmd). Use for topic trees; use a graph or process diagram when relationships are not hierarchical."
 ---
 
-# Mind Map
+# Mind map
 
-Visualize how the key concepts relate as a hierarchical map. Write a `.mmd` file (Mermaid source); the
-drawer renders it natively — **offline, no internet needed**.
+Read the material, identify a central theme and group related concepts by meaning. Preserve the source hierarchy; choose branch counts and depth from the content. Do not invent facts to make branches symmetrical.
 
-## 1. Gather the material
-
-The root node is the central theme; capture the real hierarchy from the conversation and workspace
-material.
-
-## 2. Structure it
-
-- One **root** = the central topic.
-- **4–7 main branches** for the key themes.
-- **2–5 sub-topics** per branch, nesting deeper only where it adds meaning.
-- Labels are concise (1–6 words).
-
-## 3. Write it as Mermaid (.mmd)
+Use concise labels with enough context to distinguish siblings. If cross-links are essential, use an appropriate graph instead of forcing a tree.
 
 ```mermaid
 mindmap
-  root((FY24 Review))
-    Revenue
-      Enterprise +38%
-      Mid-market +2%
-    Retention
-      Net retention 121%
-      Logo churn down
-    Risks
-      Sales cycle length
-      Concentration
+  root((Project))
+    Goals
+      Audience
+      Outcomes
+    Delivery
+      Milestones
+      Dependencies
 ```
 
-Indentation defines the hierarchy — keep it consistent. Avoid characters Mermaid treats specially in
-labels (or wrap them in quotes). Pass the source directly to `create_file` as `/mindmap.mmd`; do not
-write a Python wrapper for a text artifact. The file tool validates the syntax, so fix any reported
-parser error before finishing.
+Indentation defines Mermaid mind-map hierarchy. Keep it consistent and avoid unescaped syntax in labels. Save source directly with `artifacts_create` as `/mindmap.mmd`; the preview renders it natively. Fix parser errors reported by the file tool.
 
-## 4. Deliver
-
-Tell the user the mind map is ready in the workspace. To revise, edit the `.mmd` file.
+Check that no important source branch vanished during compression. Deliver the file and identify any grouping that is your interpretation.

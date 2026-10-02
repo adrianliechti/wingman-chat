@@ -37,7 +37,7 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
     },
     [remove],
   );
-  const getSkill = useCallback((name: string) => skills.find((skill) => skill.name === name), [skills]);
+  const getSkill = useCallback((name: string) => getItems().find((skill) => skill.name === name), [getItems]);
 
   const [showSkillCatalog, setShowSkillCatalog] = useState(false);
   const [skillCatalogTarget, setSkillCatalogTarget] = useState<string | null>(null);

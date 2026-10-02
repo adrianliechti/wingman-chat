@@ -1,111 +1,30 @@
 ---
 name: visualize
-description: Create a general explanatory visual — a mechanism drawing, simple flow/chart, or interactive explainer — as .mmd/.svg/.png/.html. Use when no specialized process, architecture, mind-map, or rigorous data-visualization skill fits better.
+description: "Create a conceptual explanation as a diagram, mechanism drawing or interactive explainer. Use when architecture-diagram, process-diagram, mind-map or data-visualization does not fit."
 ---
 
-# Visualize — diagrams & charts
+# Visualize
 
-Produce a clean, flat visual that renders in the workspace. Everything here works **offline** — the
-drawer renders **Mermaid `.mmd`** natively, the bundled Python interpreter draws charts
-(`matplotlib`) and images, and hand-authored SVG needs nothing. Don't load scripts from a CDN. Put
-the explanation in your chat reply; keep the artifact to the visual.
+Choose the form that exposes the relationship: Mermaid for flows, sequences, schemas and trees; authored SVG for spatial mechanisms; HTML with SVG/canvas and controls when changing a parameter helps understanding. A mechanism drawing should show the actual parts and forces, not replace them with generic process boxes. Split a dense topic into focused views.
 
-**This skill is for _explaining_** — diagrams, mechanism drawings, and quick illustrative charts. For a
-rigorous chart of a real dataset (publication-quality, accessible), use `data-visualization`; for a
-business flow, C4, or tree, use `process-diagram` / `architecture-diagram` / `mind-map`.
+Ground labels and relationships in the supplied material. Label illustrative numbers and assumptions; use `data-visualization` for measured datasets. Keep explanation close to the relevant visual and omit decorative complexity.
 
-## Pick the form (route on the verb)
+## Mermaid
 
-| Asked                          | Form                      | Build with                                   |
-| ------------------------------ | ------------------------- | -------------------------------------------- |
-| "what are the **steps**?"      | flowchart                 | **Mermaid** `.mmd`                           |
-| "what's the **architecture**?" | structural (nested boxes) | **Mermaid** `.mmd` (`flowchart` + subgraphs) |
-| schema / ERD                   | entity diagram            | **Mermaid** `.mmd` (`erDiagram`)             |
-| "how does X **work**?"         | illustrative mechanism    | hand-authored **SVG**                        |
-| "show the **data**"            | chart                     | **`matplotlib` → PNG**                       |
-| "explain X" (let me poke it)   | interactive explainer     | self-contained **HTML** (inline SVG + JS)    |
-
-**Illustrative is the default for "how does X work."** Don't retreat to a flowchart because
-boxes-and-arrows feel safer — a mechanism drawing (the actual thing, mid-process) teaches more. Reach
-for a flowchart only when the answer really _is_ a sequence of steps.
-
-Mermaid does the layout, routing, and spacing for flows / structures / ERDs — reliable and **offline**,
-so prefer it there over hand-placed SVG. Hand-author SVG **only** for illustrative mechanisms Mermaid
-can't express. For a complex topic, ship **several focused visuals with prose between them**, not one
-dense diagram.
-
-## Aesthetic (all forms)
-
-- **Flat.** No gradients, drop shadows, glow, or neon.
-- **Color encodes meaning, not sequence.** Group by _category_ (one hue per category); 2–3 hues, not
-  a rainbow. Reserve red/amber/green for error/warning/success.
-- **Style the semantics.** For Mermaid, add a small set of `classDef` rules derived from the subject
-  and assign them by role (actor/system/data/risk), so the output does not rely on default gray nodes.
-- **Budget the complexity.** Box labels ≤ 5 words — detail goes in the prose, not the box. ≤ 4 boxes
-  across at full width; more than that, wrap to rows or split into two diagrams. Aim for 8–25 nodes.
-- **Sentence case**, never Title Case or ALL CAPS. Nothing below ~11px.
-
-## Diagrams → Mermaid (`.mmd`, native & offline)
-
-Write the Mermaid source to a `.mmd` file; the drawer renders it.
+Save source directly with `artifacts_create` as `/diagram.mmd`; previews render it natively. Use stable node IDs and concise labels. Quote flowchart labels containing punctuation; use `<br/>` only for intentional breaks. In sequence messages/notes, prefer plain words over HTML entities or angle-bracket comparisons. Keep `alt`/`opt`/`loop` nesting readable.
 
 ```mermaid
 flowchart LR
-  user([User]) -->|request| api[API service]
-  api -->|SQL| db[(Postgres)]
-  classDef actor fill:#fff0e8,stroke:#d96846,color:#4b2b22
-  classDef service fill:#e4f4f0,stroke:#168779,color:#17332f
-  classDef data fill:#f1ecfb,stroke:#7659a3,color:#322747
-  class user actor
-  class api service
-  class db data
+  user(["User"]) -->|request| service["Service"]
+  service -->|read/write| data[("Data")]
 ```
 
-Pass the source directly to `create_file` as `/diagram.mmd`; do not write a Python wrapper for a text
-artifact.
+Use semantic colors when they help distinguish roles. Fix file-tool parse errors before delivery.
 
-`flowchart` for flows/architecture (with `subgraph` for lanes/boundaries), `sequenceDiagram` for
-interactions, `erDiagram` for schemas, `mindmap` for trees. Mermaid grammars differ: quote
-flowchart labels containing punctuation and use `<br/>` only for an intentional label break. In
-sequence message/note text, use plain words: write "and", "under", or "at least" instead of HTML
-entities or angle-bracket comparisons. Keep `alt`/`opt`/`loop` nesting shallow. Decision nodes `{ }`,
-start/end `([ ])`, datastore `[( )]`, queue `[[ ]]`. The file tool validates `.mmd` syntax; fix any
-reported parse error before finishing.
+## SVG and HTML
 
-## Charts → matplotlib (`.png`)
+Set a responsive viewBox with room for all labels and arrowheads. Connector paths need `fill="none"`. SVG text does not wrap: measure labels or use positioned `tspan` lines. Reuse markers and style tokens.
 
-```python
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots(figsize=(7, 4), dpi=200)
-ax.bar(['Q1', 'Q2', 'Q3'], [12, 19, 30], color='#4f9cf5')
-for v, h in zip(['Q1', 'Q2', 'Q3'], [12, 19, 30]):
-    ax.text(v, h + 0.4, str(h), ha='center', fontsize=11)
-for s in ('top', 'right'):
-    ax.spines[s].set_visible(False)
-ax.set_title('Revenue ($mm)', loc='left')
-fig.tight_layout(); fig.savefig('chart.png'); plt.close(fig)
-```
+For an interactive explainer, connect each control to a visible consequence and label units, initial conditions and assumptions. Use `html-artifacts` for bundled libraries, SDK services or export constraints. Native HTML/SVG/JavaScript can make a standalone explainer without dependencies. Persist state only when it benefits the task.
 
-Hide top/right spines, label values directly, no chartjunk, real numbers.
-
-## Illustrative mechanism → hand-authored SVG
-
-For a "how it works" drawing Mermaid can't express:
-
-- `viewBox="0 0 680 H"` — 680 wide is fixed; set `H` to the bottom-most element + ~20px; `width="100%"`;
-  no negative coordinates (content in x≈40–640).
-- Every connector `<path>` **must have `fill="none"`**. SVG text doesn't wrap — size boxes to fit or
-  add `<tspan x dy="1.2em">` breaks; `dominant-baseline="central"` to center. Two sizes (14 / 12),
-  0.5px strokes, one reusable arrowhead `<marker>`.
-
-## Interactive explainer → self-contained HTML
-
-HTML with an inline `<svg>` plus `<input type="range">`/buttons and **inline JS** that updates it
-live — no external scripts. Persist chosen state to `localStorage` (the preview supports it).
-
-## Deliver
-
-Save the `.mmd` / `.png` / `.svg` / `.html` to the workspace; one line on what it shows. To revise,
-edit the file.
+Verify labels, geometry and model behavior at meaningful parameter values; identify approximations. Save the visual in the requested format and give a brief handoff.

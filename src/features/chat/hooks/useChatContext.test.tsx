@@ -1,7 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
-import { useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
 
@@ -10,7 +9,6 @@ const state = vi.hoisted(() => ({
   activeFile: "/first.md",
   providers: [] as ToolProvider[],
   coreProviders: [] as ToolProvider[],
-  studio: false,
   renderer: undefined as { model: string } | undefined,
   agent: null as { model: string } | null,
 }));
@@ -24,14 +22,11 @@ vi.mock("@/shared/config", () => ({
 }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({ useArtifacts: () => ({ fs: null }) }));
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({
-  useToolsContext: () => {
-    const studio = useStudioProvider();
-    return {
-      providers: state.studio ? [...state.providers, studio] : state.providers,
-      coreProviders: state.coreProviders,
-      getProviderState: () => "connected",
-    };
-  },
+  useToolsContext: () => ({
+    providers: state.providers,
+    coreProviders: state.coreProviders,
+    getProviderState: () => "connected",
+  }),
 }));
 vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({
   useArtifactsProvider: (): ToolProvider => ({
@@ -62,7 +57,6 @@ describe("chat prompt context", () => {
     state.activeFile = "/first.md";
     state.providers = [];
     state.coreProviders = [];
-    state.studio = false;
     state.renderer = undefined;
     state.agent = null;
   });
@@ -112,7 +106,7 @@ describe("chat prompt context", () => {
     const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["skills"] } });
     expect(disabled.middleware()).toEqual([]);
     expect(disabled.tools().map((tool) => tool.name)).toEqual(["ask_questions"]);
-    expect(disabled.instructions()).not.toContain("Plugin skill names");
+    expect(disabled.instructions()).not.toContain("Create reports");
   });
 
   it("does not expose editor context when the model excludes artifact tools", () => {
@@ -190,7 +184,7 @@ describe("chat prompt context", () => {
 
   it.each([
     { enabled: ["repository"], disabled: [] },
-    { enabled: [], disabled: ["studio", "artifacts"] },
+    { enabled: [], disabled: ["skills", "artifacts"] },
   ])("keeps default tools available with model provider filters %j", async (tools) => {
     state.renderer = { model: "image" };
     const available = context({ id: "test", name: "Test", tools }).tools();
@@ -198,14 +192,4 @@ describe("chat prompt context", () => {
     expect(new Set(available.map((tool) => tool.name)).size).toBe(available.length);
   });
 
-  it("enabling Studio adds its instructions without duplicating default tools", async () => {
-    state.renderer = { model: "image" };
-    const defaults = context().tools();
-    state.studio = true;
-    const studio = context();
-    const tools = studio.tools();
-    expect(tools.map((tool) => tool.name)).toEqual(defaults.map((tool) => tool.name));
-    expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
-    expect(studio.instructions()).toContain("## Studio");
-  });
 });

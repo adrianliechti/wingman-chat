@@ -1,12 +1,6 @@
-### OCR helper (ocr)
-Extract text and layout from scanned PDFs, document images, or Office files through the configured remote service.
+### OCR helper
+`await ocr(path)` in Python/JavaScript returns extracted text/layout through the configured remote service. Bash: `ocr scan.pdf > text.txt` or `extract -o text.txt scan.pdf`; one document path, -- before dash-prefixed filenames.
 
-- Python: text = await ocr("/home/user/scan.pdf")
-- JavaScript: const text = await ocr("/scan.pdf")
-- Bash: `ocr scan.pdf > extracted.txt` or `extract -o extracted.txt scan.pdf`. Both commands use the same extraction service, read from the shared virtual filesystem, and accept one document path. Use `--` before a filename starting with a dash.
+Try local libraries first for text PDFs and Office files. Use OCR when requested, for image-based content, or when extraction misses or garbles relevant material. Judge coverage and readability, not text length; mixed documents may still need OCR.
 
-For ordinary text PDFs and Office documents, try local extraction first using the document libraries. Use OCR when the user requests it, the document is image-based, or local extraction misses or garbles relevant content. Judge coverage and readability; a short but valid text is not evidence that extraction failed. Mixed documents may need OCR even when some text extracts correctly.
-
-Read images already included in the message directly when that suffices. Use OCR for precise transcription or batch extraction; use vision, when available, for visual interpretation.
-
-Pass the whole document in one call by default. Follow actual service limits or errors if a smaller input is required; avoid a separate network call per page.
+Inspect images already in the message directly when sufficient. Choose OCR for precise/batch transcription and vision for interpretation. Send the whole document by default; split only for actual service limits.

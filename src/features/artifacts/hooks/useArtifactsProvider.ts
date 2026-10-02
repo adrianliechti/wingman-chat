@@ -7,12 +7,11 @@ import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
 import { useArtifactEntries } from "./useArtifactFiles";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import bridgeInstructionsText from "@/features/artifacts/prompts/bridge.txt?raw";
+import documentsInstructionsText from "@/features/artifacts/prompts/documents.txt?raw";
 import duckdbInstructionsText from "@/features/artifacts/prompts/duckdb.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import ocrInstructionsText from "@/features/artifacts/prompts/ocr.txt?raw";
-import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
-import rasterizeInstructionsText from "@/features/artifacts/prompts/rasterize.txt?raw";
 import renderInstructionsText from "@/features/artifacts/prompts/render.txt?raw";
 import synthesizeInstructionsText from "@/features/artifacts/prompts/synthesize.txt?raw";
 import transcribeInstructionsText from "@/features/artifacts/prompts/transcribe.txt?raw";
@@ -65,26 +64,16 @@ export function useArtifactsProvider(): ToolProvider | null {
         name: "execute_script",
         display: SCRIPT_EXECUTION_DISPLAY,
         description:
-          "Execute Python, JavaScript, or Bash in a sandboxed Web Worker over the shared artifact workspace. " +
-          "Pass inline `code` with `language` (python, javascript, bash), or `path` to an artifact script or selected " +
-          "skill resource. File scripts select their interpreter from a shebang or extension (.py, .js/.mjs/.cjs, " +
-          ".sh/.bash); `language` overrides detection. For long or bundled scripts prefer `path`. " +
-          'Pass literal script arguments in `args`: Python sys.argv[1:], JavaScript process.argv.slice(2), Bash $1/$2/"$@". ' +
-          "Use Python for computation, data analysis and document libraries; JavaScript for browser media APIs, " +
-          "OffscreenCanvas and bundled browser libraries; Bash for shell scripts, pipelines and file/text processing. " +
-          "Do not execute code merely to inspect or OCR an image already included in the user's message. " +
-          "Python and Bash mount artifacts under /home/user/ (the working directory). JavaScript uses " +
-          "vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove with artifact paths " +
-          "like /data.csv. Local fetch reads VFS; direct remote networking is disabled. All runtimes sync created, modified " +
-          "and deleted artifacts on success; failures do not commit. Selected skill resources are under " +
-          "/home/user/skills/<name>/ (JavaScript VFS: /skills/<name>/); treat them as read-only and save outputs elsewhere. " +
-          "Python file scripts have __file__ and sibling imports; JavaScript has __filename/__dirname; Bash has " +
-          "$0, and can invoke bash/sh scripts. Bash provides virtual Unix commands, not a host shell: " +
-          "no installed system binaries, Python/Node commands or package installation. It offers `llm` and configured " +
-          "`ocr`/`extract` service commands through the same app bridges as Python; see their helper instructions. Invoke this tool " +
-          "again with the appropriate language for Python or JavaScript. JavaScript has no DOM or Node runtime; " +
-          "use top-level await and console.log or return, and vfs for files. Python imports load bundled offline packages. " +
-          "Use an HTML artifact for interactive interfaces; browser libraries are available under /.lib/.",
+          "Run Python, JavaScript or Bash over the shared artifact workspace in a sandboxed Web Worker. " +
+          "Use Python for data, computation and documents; JavaScript for browser media/rendering; Bash for virtual " +
+          "shell pipelines and file processing. Use file tools for simple text edits and HTML artifacts for interactive UI. " +
+          "Pass inline code with language, or a path to an artifact/selected-skill script. Paths detect the runtime " +
+          "from shebang or extension; language overrides detection. Prefer path for long or bundled scripts. " +
+          "args contains literal arguments, excluding the script path. " +
+          "Python/Bash work under /home/user/; JavaScript uses vfs with artifact paths such as /data.csv. " +
+          "There is no host shell, Node, DOM, package installation or direct remote networking. " +
+          "File changes commit on success and are discarded on failure. Treat mounted skill resources as read-only. " +
+          "See the runtime instructions for bundled libraries, helpers, output and file limits.",
         parameters: SCRIPT_EXECUTION_PARAMETERS,
         function: (args: Record<string, unknown>, context?: ToolContext) => runCode({ args, context }),
       },
@@ -111,9 +100,8 @@ export function useArtifactsProvider(): ToolProvider | null {
         ...(getConfig().artifacts?.bridge !== false && getConfig().artifacts?.duckdb !== false
           ? [duckdbInstructionsText]
           : []),
-        officeInstructionsText,
-        // Always available — pdf.js rasterization needs no backing service.
-        rasterizeInstructionsText,
+        // Document libraries and local PDF rasterization need no backing service.
+        documentsInstructionsText,
         llmInstructionsText,
         // Only advertise the `ocr`, `vision`, `render`, `synthesize`,
         // `transcribe`, and `translate` helpers when their backing services

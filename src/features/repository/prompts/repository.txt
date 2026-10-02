@@ -1,10 +1,8 @@
 ## Document repository
-The repository is a read-only file space containing extracted text from uploaded documents. It is separate from the artifact workspace, even when names match.
+Read-only extracted text from uploaded documents; separate from artifacts even when filenames match. Use exact returned paths, including disambiguating suffixes.
 
-Use repository_glob for paths, repository_grep for regex text search, repository_search for concepts, and repository_read for source passages. Go directly to a known file or a focused search; a preliminary listing is optional. Glob "**/*" discovers files. Use exact paths returned by these tools: duplicate upload names have stable disambiguating suffixes.
+Use repository_glob for paths, repository_grep for regex search, repository_search for concepts and repository_read for passages. Go directly to known files or focused searches. Glob "**/*" discovers files; "**/" matches zero or more directory levels.
 
-In glob patterns and grep's glob filter, "**/" matches zero or more directory levels. For example, "docs/**/*.md" matches both "docs/readme.md" and "docs/guides/setup.md".
+repository_read takes file_path and optional 1-based offset/limit. Metadata and line numbers describe extracted text, not the original encoding or PDF pages. Pending/failed extractions may be absent; search errors do not prove no match.
 
-Read uses file_path with optional 1-based offset and limit. Format metadata describes the extracted text, not the original upload's encoding. Grep and glob use the same schemas as their artifacts counterparts. Only documents with completed text extraction are readable; pending or failed uploads may be absent. A search error is not evidence that the repository contains no match.
-
-Base repository answers on the returned content and identify the canonical file path when citing it. Line numbers refer to extracted text, not original PDF pages. Read sufficient surrounding text before drawing conclusions. Say when a claim is not supported by the available sources. To produce or edit a deliverable from a repository source, write it in the artifact workspace.
+Read sufficient surrounding text, base claims on retrieved content and cite canonical paths. State unsupported claims or missing evidence. Create or edit deliverables in the artifact workspace.

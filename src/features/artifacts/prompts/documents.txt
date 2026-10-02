@@ -1,0 +1,16 @@
+## Binary documents
+Office/PDF/email artifacts retain original bytes. Read the applicable format skill before building, when available. Use Python:
+- DOCX: docx, docx2txt; PPTX: pptx; XLSX: openpyxl, xlsxwriter, pandas.
+- PDF: reportlab to create; pypdf to merge/split; pdfminer for prose/layout; pdfplumber for tables. For borderless tables, try text-based row/column strategies or extracted text.
+- MSG: extract_msg; EML: email.parser. Embedded charts: matplotlib/seaborn PNG or SVG.
+
+Save under /home/user/ with the requested extension. No LibreOffice, Pandoc, pdftoppm, markitdown or external recalculation. openpyxl cannot calculate formulas; preserve formulas despite missing cached values. Use native Office list/numbering APIs and preserve formatting during localized edits.
+
+### PDF rasterization
+Render PDF pixels locally with:
+- Python: `await rasterize_pdf(path, scale=2.0, pages=[1])`
+- JavaScript: `await rasterizePdf(path, { scale: 2.0, pages: [1] })`
+
+Returns PNG paths beside the input, e.g. report-1.png. Pages are 1-based; omit to render all. Python also accepts one page number. Scale 1 is about 72 DPI; 2 is about 144 DPI, subject to canvas limits. Render only needed pages/resolution; derive overlay coordinates from actual image dimensions and page geometry, including rotation/crop.
+
+No pypdfium2, PyMuPDF or poppler; pdfplumber.to_image() cannot render here. Prefer pdfplumber/pypdf extraction for text and tables.

@@ -1,75 +1,16 @@
 ---
 name: podcast-audio
-description: Turn the conversation and workspace material into a spoken podcast-style audio file (.wav), single- or multi-voice. Trigger with "make a podcast", "create an audio overview", "turn this into a podcast", "narrate this", or whenever the user wants an audio version of the material.
+description: "Create a spoken WAV narration or podcast from supplied material, with one voice or distinct configured voices. Use when the user requests an audio deliverable."
 ---
 
-# Podcast Audio
+# Podcast audio
 
-Produce a listenable audio episode as a real `.wav` file in the workspace. You write the script,
-synthesize it with the interpreter's `synthesize()` helper, and merge the segments — the file
-shows up in the artifacts panel with an inline player.
+Read the material and match the requested format, length and tone. If unspecified, use a concise single-narrator overview. Write spoken prose with natural transitions; avoid reading Markdown markup or inventing speakers' claims. Preserve qualifications and attribution that matter to the content.
 
-> Requires a configured speech service. If `synthesize()` reports none is configured, tell the
-> user audio generation isn't available and offer the written script instead.
+The interpreter helper `await synthesize(text, output, voice=None)` writes WAV and returns its path. It requires a configured speech service. If unavailable, explain the limit and provide the script when useful; do not report completed audio.
 
-## 1. Gather the material and pick a format
+Use only supplied/configured voice IDs, or omit voice for the default. Distinct speakers require distinct supported voices; do not invent IDs like "host" or "guest". Split long scripts into coherent passages/turns and synthesize each.
 
-If the user named a format ("overview", "deep-dive", "briefing", "debate", "story"), match its voice
-count and tone. Default: a single warm narrator giving a clear overview, ~3–5 minutes (roughly
-500–800 words).
+For concatenation with Python's `wave`, verify matching channel count, sample width, sample rate and compression type across segments before writing frames. Do not assume all returned audio has the same format. Use an available conversion method if needed, or report the mismatch. Preserve turn order and natural pauses. Remove only temporary files created by this task after the final WAV is saved and verified.
 
-## 2. Write the script
-
-- Natural, conversational, spoken prose — no markdown, no bullet points, no headers (it is read
-  aloud verbatim).
-- Don't open with "Welcome to…" or close with a recap; start in the content and end when it's
-  done.
-- Weave the key findings into a narrative with real transitions.
-- For a **multi-voice** format, split the script into a list of `(speaker, text)` turns and assign
-  each speaker a distinct voice.
-
-## 3. Synthesize and merge
-
-`synthesize(text, output, voice=None)` writes one WAV per call. Generate per segment, then
-concatenate with Python's stdlib `wave` (all segments share the speech service's format):
-
-```python
-import os, wave
-
-# Single or multi-voice: list of (voice, text) turns.
-turns = [
-    ("host",  "Here's the thing everyone misses about the Q3 numbers."),
-    ("guest", "Right — and it's not the headline growth rate at all."),
-]
-
-paths = []
-for i, (voice, text) in enumerate(turns):
-    p = f"seg_{i:03d}.wav"
-    await synthesize(text, p, voice=voice)   # voice may be a configured name or None
-    paths.append(p)
-
-with wave.open(paths[0], "rb") as w0:
-    params = w0.getparams()
-with wave.open("podcast.wav", "wb") as out:
-    out.setparams(params)
-    for p in paths:
-        with wave.open(p, "rb") as w:
-            out.writeframes(w.readframes(w.getnframes()))
-
-for p in paths:
-    os.remove(p)  # keep only the final artifact
-
-print("wrote podcast.wav")
-```
-
-Notes:
-
-- Keep each `synthesize` call to a reasonable chunk (a paragraph or a turn) rather than one giant
-  call or hundreds of tiny ones.
-- Use a voice name only when the user or deployment supplied it; otherwise pass `None` rather than
-  inventing an unsupported voice id. Multi-speaker output needs distinct configured voices.
-
-## 4. Deliver
-
-Save `podcast.wav` to the workspace root and tell the user it's ready with a one-line description
-and the approximate length. To revise, adjust the script and re-run.
+Reopen the final WAV, verify nonzero frames and calculate duration from frames/sample rate. Listen to representative segments if playback is available; structural validation alone does not establish pronunciation quality. Hand off the audio with its duration and any material generation limit.

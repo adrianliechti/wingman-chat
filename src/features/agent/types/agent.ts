@@ -28,7 +28,7 @@ export interface Agent {
   skills: string[]; // names referencing global skill library
   plugins: string[]; // ids referencing installed plugins
 
-  tools: string[]; // active built-in tool IDs: "internet", "canvas"
+  tools: string[]; // optional tool IDs, e.g. "internet", "companion"
   servers: BridgeServer[]; // per-agent MCP server definitions
 
   memory?: boolean; // enable the persistent /.memory/ file mount

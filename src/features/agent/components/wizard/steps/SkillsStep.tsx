@@ -35,7 +35,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
     <div className="space-y-3">
       <StepHeader
         title="Choose skills"
-        description="Skills are reusable prompt templates that teach your agent how to handle specific tasks — like writing code reviews or summarizing documents. Select existing ones below, or create a new one. You can skip this and add skills later."
+        description="Add personal skills for your agent's specialized tasks. Built-in document, data and design skills are already available. You can add or change personal skills later."
       />
 
       {/* Actions + inline search */}

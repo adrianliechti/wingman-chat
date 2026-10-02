@@ -32,7 +32,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
     <div className="space-y-3">
       <StepHeader
         title="Enable tools"
-        description="Tools power up your agent with real capabilities — searching the web, generating images, creating skills, or connecting to external services via MCP servers. Toggle on what you need, or skip this and enable tools later."
+        description="Enable optional tools such as web search and connected services. Document, data and design skills are available by default. You can change these choices later."
       />
 
       {/* Actions */}

@@ -1,9 +1,8 @@
-### LLM helper (llm)
-Calls a language model and returns text. Each call has fresh context: no chat history, earlier helper results, or parent tools. Supply all necessary input. The model defaults to the current chat's model.
+### LLM helper
+Use llm for language processing inside a pipeline; handle direct answers yourself. Returns text with fresh context: no chat history, earlier helper results or parent tools. Supply all inputs; put fixed instructions in system and data in the prompt. Validate generated JSON and factual claims.
 
-- Python: await llm(text, system="Return one label: positive, negative, or neutral.")
-- JavaScript: await llm(text, { system: "Return one label: positive, negative, or neutral." })
-- Bash: `cat extracted.txt | llm -s "Summarize this report" > summary.md`. `llm "Summarize this" < extracted.txt` includes both the prompt and piped text; neither is discarded. Use `-m/--model`, `-s/--system`, `-e/--effort`, and optional `-o/--output` for a file instead of stdout. Use `--` before a prompt starting with a dash.
-- Optional settings: model (model ID), system (instructions), effort (none, minimal, low, medium, high, xhigh, max). Omit effort unless an override is needed and supported by that model.
+- Python: `await llm(text, system="Return one label.")`
+- JavaScript: `await llm(text, { system: "Return one label." })`
+- Bash: `cat input.txt | llm -s "Summarize" > summary.md`. Prompt arguments and stdin are combined. Flags: -m/--model, -s/--system, -e/--effort, -o/--output; use -- before dash-prefixed prompts.
 
-Use this for language processing within a larger pipeline, such as classifying records or summarizing extracted text. Put fixed instructions in system and the data in the prompt. The result is model-generated text, not independently verified evidence or guaranteed schema-valid JSON. Avoid an extra call for work you can answer directly.
+Optional model defaults to the chat's model. Optional effort: none, minimal, low, medium, high, xhigh, max; omit unless a supported override is needed.

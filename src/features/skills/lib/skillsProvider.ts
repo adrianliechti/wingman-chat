@@ -15,9 +15,7 @@ export const SKILLS_PROVIDER_ID = "skills";
 
 /**
  * Which independently-toggled sources the Skills tool exposes (no-agent mode).
- * The Studio skill pack is intentionally absent here — it's slaved to the Studio
- * capability and passed to the provider as a separate `studioEnabled` flag, not
- * a user-toggled source.
+ * Built-in capability skills are always discoverable and are not a user-toggled source.
  */
 export interface SkillSources {
   /** The user's own editable OPFS skills. */
@@ -43,12 +41,12 @@ export interface SkillEntry {
 }
 
 /**
- * Adapt the shipped Studio skill pack (content fetched lazily) to catalog
+ * Adapt the built-in capability pack (content fetched lazily) to catalog
  * entries, so the Skills tool resolves `load_skill` / `read_skill_resource`
  * identically across sources. Name collisions across sources are resolved by
  * the caller's single dedup (push order = precedence), not here.
  */
-export function studioTemplateEntries(
+export function builtinTemplateEntries(
   templates: SkillTemplate[],
   loadTemplate: (path: string) => Promise<{ content: string } | null>,
 ): SkillEntry[] {

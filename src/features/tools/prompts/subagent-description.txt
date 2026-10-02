@@ -1,3 +1,3 @@
-Delegate a bounded task to a child agent with the supplied tools. In chat, the child receives the conversation at the point of delegation and streams its work in a separate card; its result returns to the parent. Voice receives the child's final result.
+Delegate substantial research or an independent subtask with a bounded brief: goal, constraints, context and expected result. Use tools directly for simple tasks; avoid overlapping writes between agents.
 
-Use this for substantial research or independent subtasks. Handle simple tasks with the tools directly. Provide a clear brief with the goal, constraints, relevant context, and expected result. Avoid overlapping writes to the same workspace files when delegating multiple tasks.
+In chat, the child receives conversation history at delegation and streams into a separate card; its result returns to the parent. In voice, the parent receives the final result.

@@ -14,7 +14,8 @@ export function serializeAgentMd(agent: Agent): string {
   if (agent.verbosity) lines.push(`verbosity: ${agent.verbosity}`);
   if (agent.skills.length > 0) lines.push(`skills: ${JSON.stringify(agent.skills)}`);
   if (agent.plugins.length > 0) lines.push(`plugins: ${JSON.stringify(agent.plugins)}`);
-  if (agent.tools.length > 0) lines.push(`tools: ${JSON.stringify(agent.tools)}`);
+  const tools = agent.tools.filter((id) => id !== "studio");
+  if (tools.length > 0) lines.push(`tools: ${JSON.stringify(tools)}`);
   if (agent.memory) lines.push("memory: true");
   lines.push("---");
   if (agent.instructions) {
@@ -92,7 +93,7 @@ export function parseAgentMd(content: string):
     name: parseString(fields.name) || "Untitled",
     skills: parseList(fields.skills),
     plugins: parseList(fields.plugins),
-    tools: parseList(fields.tools),
+    tools: parseList(fields.tools).filter((id) => id !== "studio"),
     model: parseString(fields.model),
     // Unknown levels (e.g. from a newer build) are dropped so the model default applies.
     effort: oneOf(parseString(fields.effort), EFFORTS) as ReasoningEffort | undefined,

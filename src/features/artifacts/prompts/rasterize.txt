@@ -1,9 +1,0 @@
-### PDF rasterization
-Use this local helper when you need PDF pixels for visual inspection, overlays, or image processing. The sandbox has no pypdfium2, PyMuPDF, or poppler; pdfplumber.to_image() cannot render pages here.
-
-- Python: paths = await rasterize_pdf("/home/user/report.pdf", scale=2.0, pages=[1])
-- JavaScript: const paths = await rasterizePdf("/report.pdf", { scale: 2.0, pages: [1] })
-
-Both calls are async and must be awaited, including at top level. Page numbers are 1-based; omit pages to render all pages. Python also accepts a single page number. Results are PNG paths beside the input file, named report-1.png, etc.
-
-Scale 1.0 is about 72 DPI; 2.0 is about 144 DPI. Render only the pages and resolution needed, and scale overlay coordinates accordingly. For text or tables, prefer direct extraction with pdfplumber or pypdf.

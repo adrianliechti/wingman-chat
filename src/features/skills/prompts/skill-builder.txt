@@ -1,14 +1,10 @@
 ## Skill builder
-Use create_skill when the user asks to create or save a reusable workflow, and update_skill when they ask to revise one. Skills persist in the user's library; a new skill is also enabled on the active agent. A recurring task can justify suggesting a skill, but does not itself request a library change.
+Use create_skill for requested reusable workflows and update_skill for revisions. Skills persist in the library; new skills also enable on the active agent. Recurrence can justify a suggestion, not an unsolicited library change.
 
-Before creating, use list_skills to avoid duplicating an existing capability. Keep each skill focused. Its description should state what it does and the user intent that triggers it, with exclusions for easily confused tasks. Do not trigger a workflow merely because a related keyword appears.
+Before creating, list_skills to avoid duplicates. Keep scope focused. Descriptions state the capability and triggering user intent, with exclusions for likely confusion; keywords alone should not trigger a workflow.
 
-Write actionable instructions covering required inputs, steps, decision points, outputs, and checks. Preserve useful references to available tools and bundled resources. Do not invent capabilities, dependencies, or permissions. Names use 1–64 lowercase letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens.
+Instructions cover inputs, actions, decisions, outputs and checks. Preserve useful tool/resource references; invent no capabilities, dependencies or permissions. Names: 1–64 lowercase letters, digits and hyphens; no leading, trailing or consecutive hyphens.
 
-For updates:
-- Load the current body with load_skill before the first update in a run. list_skills contains metadata only.
-- update_skill replaces each supplied field; send the complete new value. Preserve unrelated instructions and resources. Never substitute a summary or omission marker for the body.
-- Reuse full content already loaded in this run, including subsequent edits. If history was truncated or only an already-loaded marker remains, recover the full body before overwriting. If it cannot be recovered, explain the blocker.
-- Shorten content when the requested change calls for it; accidental truncation is not optimization. There is no version history.
+Before updating, read the full current personal skill with list_skills({name}); list_skills without name supplies metadata only. load_skill activates a selected skill and can resolve a built-in instead of the intended library entry. Reuse complete library content and your subsequent edits from this run; reread by name if that content is missing or truncated.
 
-delete_skill is permanent. Confirm before deleting a skill unless it was just created in this turn.
+Each supplied update_skill field replaces its value: send complete content, preserve unrelated instructions/resources and never substitute summaries or omission markers. Shorten only as requested; there is no version history. Confirm permanent delete_skill actions unless the skill was created this turn.

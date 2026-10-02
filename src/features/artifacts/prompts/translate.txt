@@ -1,10 +1,7 @@
-### Translation helper (`translate`)
+### Translation
+Configured languages and file formats vary. All calls are async:
+- Python/JavaScript: `await translate(text, lang)` returns text.
+- Python: `await translate_file(input, lang, output)`.
+- JavaScript: `await translateFile(input, lang, output)`.
 
-Both the Python and JavaScript interpreters expose a `translate` helper that translates text or whole files into another language via the configured translation service. Supported file formats and target languages depend on the configuration.
-
-- Python (text): `text = await translate("Hello, world", "de")` — async, returns `str`
-- Python (file): `await translate_file("report.pdf", "de", "report_de.pdf")` — async, writes the translated file (preserving its format) and returns its path
-- JavaScript (text): `const text = await translate("Hello, world", "de")` — async, returns a string
-- JavaScript (file): `await translateFile("report.pdf", "de", "report_de.pdf")` — async, writes the translated file and returns its path
-
-Pass the whole text or file in one call by default to preserve context and formatting. Split only when a service limit requires it; preserve ordering and terminology across segments. For tone or style rewrites in the same language, use `llm` within a pipeline or answer directly.
+File calls preserve format, write output and return its path. Send whole texts/files to retain context and formatting; split only for service limits and preserve order/terminology. For same-language style rewrites, answer directly or use llm in a pipeline.

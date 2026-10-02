@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { loadSkillTemplate, loadSkillTemplates, type SkillTemplate } from "@/features/skills/lib/templates";
 
 /**
- * Loads the default skill templates shipped under `public/skills/`.
+ * Loads the skill inventory served at `/skills`.
  * `loadTemplate` lazily fetches and parses a single template's SKILL.md.
  */
 export function useSkillTemplates() {
