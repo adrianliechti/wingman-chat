@@ -205,7 +205,10 @@ The smoke suite covers inline Word documents, structured extraction, persisted
 signed reasoning, model switching, and compaction alongside the agent lifecycle
 checks. Word and signed-reasoning fixtures use GPT-5.4-mini by default; set
 `WINGMAN_E2E_COMPATIBILITY_MODEL` to another deployment supporting both features.
-These fixtures are skipped when that deployment is absent. The replay check
+Word input and conversation replay are also checked with Bedrock Sonnet 4.6,
+along with raw CSV input. Set `WINGMAN_E2E_DOCUMENT_MODEL` to its gateway alias
+(default `claude-sonnet-4-6`); this must resolve to a Bedrock Converse deployment.
+Fixtures are skipped when their deployment is absent. The reasoning replay check
 requires a second model for the switch (the smoke model, or Sonnet 4.6 when they
 are the same). Inline document support depends on the gateway deployment.
 
@@ -225,6 +228,7 @@ WINGMAN_E2E_GATEWAY=http://localhost:4242 \
 WINGMAN_E2E_MODEL=auto \
 WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
 WINGMAN_E2E_COMPATIBILITY_MODEL=gpt-5.4-mini \
+WINGMAN_E2E_DOCUMENT_MODEL=claude-sonnet-4-6 \
 WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
 WINGMAN_E2E_BEDROCK_MODEL=bedrock-sonnet-4-6 \
 WINGMAN_E2E_PYTHON=python3 \

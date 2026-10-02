@@ -22,6 +22,7 @@ let Role;
 let selectedModel;
 let availableModels;
 const compatibilityModel = process.env.WINGMAN_E2E_COMPATIBILITY_MODEL ?? "gpt-5.4-mini";
+const documentModel = process.env.WINGMAN_E2E_DOCUMENT_MODEL ?? "claude-sonnet-4-6";
 const faults = createResponseFaultInjector();
 
 void describe("Wingman gateway E2E", { concurrency: false }, () => {
@@ -55,31 +56,77 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.some((model) => model.id === selectedModel));
   });
 
+  for (const model of new Set([compatibilityModel, documentModel])) {
+    void test(
+      `reads an inline Office attachment with ${model} and replays it after persistence`,
+      async (context) => {
+        if (!availableModels.some((available) => available.id === model)) {
+          context.skip(`${model} is not exposed by ${GATEWAY_URL}`);
+          return;
+        }
+        const marker = "OFFICE_ATTACHMENT_63B9";
+        const bytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph(marker)] }] }));
+        const contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        const result = await run(
+          client,
+          model,
+          "Return only the exact marker inside the attached document.",
+          [
+            {
+              role: Role.User,
+              content: [
+                { type: "text", text: "Read the attached Office document." },
+                {
+                  type: "file",
+                  name: "fixture.docx",
+                  contentType,
+                  data: `data:${contentType};base64,${bytes.toString("base64")}`,
+                },
+              ],
+            },
+          ],
+          [],
+          { options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+        );
+        assert.equal(result.status, "completed", resultDetail(result));
+        assert.match(messageText(result.messages.slice(-1)), new RegExp(marker));
+        const continued = await run(
+          client,
+          model,
+          "Return only the exact marker inside the attached document.",
+          [
+            ...JSON.parse(JSON.stringify(result.messages)),
+            { role: Role.User, content: [{ type: "text", text: "Repeat the marker from the document." }] },
+          ],
+          [],
+          { options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+        );
+        assert.equal(continued.status, "completed", resultDetail(continued));
+        assert.match(messageText(continued.messages.slice(-1)), new RegExp(marker));
+      },
+      { timeout: REQUEST_TIMEOUT_MS * 2 },
+    );
+  }
+
   void test(
-    "reads an inline Office attachment through the native adapter and real gateway",
+    "reads a raw CSV attachment through the Bedrock document path",
     async (context) => {
-      if (!availableModels.some((model) => model.id === compatibilityModel)) {
-        context.skip(`${compatibilityModel} is not exposed by ${GATEWAY_URL}`);
+      if (!availableModels.some((model) => model.id === documentModel)) {
+        context.skip(`${documentModel} is not exposed by ${GATEWAY_URL}`);
         return;
       }
-      const marker = "OFFICE_ATTACHMENT_63B9";
-      const bytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph(marker)] }] }));
-      const contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      const marker = "CSV_ATTACHMENT_B49A";
+      const data = Buffer.from(`marker\n${marker}\n`).toString("base64");
       const result = await run(
         client,
-        compatibilityModel,
+        documentModel,
         "Return only the exact marker inside the attached document.",
         [
           {
             role: Role.User,
             content: [
-              { type: "text", text: "Read the attached Office document." },
-              {
-                type: "file",
-                name: "fixture.docx",
-                contentType,
-                data: `data:${contentType};base64,${bytes.toString("base64")}`,
-              },
+              { type: "text", text: "Read the attached CSV document." },
+              { type: "file", name: "fixture.csv", contentType: "text/csv", data: `data:text/csv;base64,${data}` },
             ],
           },
         ],
