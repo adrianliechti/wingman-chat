@@ -321,7 +321,7 @@ caps. The catalog cap is disabled; the following other bounds apply independentl
 | History compaction          | Model-dependent threshold: 100,000–272,000 estimated tokens         | Enabled when `chat.compaction` is configured. Model/deployment overrides apply; `0` disables it. TanStack preserves about half the budget as recent messages and 3 recent tool results with our chosen strategies. This is not a hard context-window guarantee and does not count the system catalog or tool schemas. |
 | MCP tool discovery          | 100 pages                                                           | TanStack throws if tool-list pagination exceeds the cap or repeats a cursor. This limits pages, not the number of tools.                                                                                                                                                                                              |
 | MCP requests                | 60 seconds                                                          | MCP SDK default, also used explicitly by TanStack's raw tool-call bridge.                                                                                                                                                                                                                                             |
-| Text SDK requests           | 10-minute timeout; 2 automatic retries                              | Inherited from the OpenAI SDK through the gateway adapter. The timeout governs the request, not the total agent run. Embedding requests explicitly disable retries.                                                                                                                                                   |
+| Text SDK requests           | 10-minute timeout; 2 automatic retries                              | The gateway adapter extends the SDK deadline through streaming body consumption. The timeout governs each model call, not the total agent run. Embedding requests explicitly disable retries.                                                                                                                         |
 | Queued user messages        | Unlimited                                                           | Wingman's native `useChat` queue does not set `maxSize`.                                                                                                                                                                                                                                                              |
 | Voice context/configuration | 8,000 post-instruction tokens; 15-second configuration confirmation | Wingman's gateway realtime session requests truncation and bounds its audio-configuration handshake.                                                                                                                                                                                                                  |
 
@@ -354,9 +354,25 @@ field when selecting the gateway default. The embedding boundary retains the
 resolved model identity returned by the gateway for retrieval indexes.
 `gatewayText.ts` extends the native Responses adapter to retain commentary and
 final-answer phases on output and replay, resolved model identity, and the
-gateway's reasoning context mode; native parsing still handles the stream.
-Saved pre-migration reasoning is translated to the adapter's signature
-format and replayed only for the same model.
+gateway's reasoning context mode. It forwards inline documents using the same
+file contract as the pre-migration client; supported formats still depend on the
+gateway deployment. Native parsing still handles the stream. Completed response
+text is authoritative even when deltas are partial or differ; replacements use
+the standard `MESSAGES_SNAPSHOT` event to update the native client and persistence.
+
+Reasoning signatures retain the producing deployment alias, visible signed text,
+and its separate summary through native model/UI conversions. Saved pre-migration
+reasoning remains readable. Ciphertext is replayed only for the same deployment;
+selecting a model does not relabel earlier reasoning. A recognized reasoning
+rejection before any response content triggers one retry without ciphertext and
+removes the rejected payload from saved history. Other failures and partial
+response failures are surfaced.
+
+Structured extraction uses TanStack's `combinedStructuredOutputSource()` event
+contract to select the final answer instead of concatenating commentary with JSON.
+TanStack continues to normalize optional fields and validate the result schema.
+Compaction requests a new summary with a final user instruction, avoiding an
+assistant-prefill request that gateway providers can reject.
 
 `gatewayRealtime.ts` implements `RealtimeAdapter` for the existing WebSocket
 protocol and audio recorder/player. The upstream OpenAI realtime adapter uses

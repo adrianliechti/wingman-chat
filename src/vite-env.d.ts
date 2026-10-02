@@ -69,3 +69,22 @@ interface FileSystemDirectoryHandle {
   values(): AsyncIterableIterator<FileSystemHandle>;
   [Symbol.asyncIterator](): AsyncIterableIterator<[string, FileSystemHandle]>;
 }
+
+// Document Picture-in-Picture API (Chromium 116+), not yet in lib.dom
+// https://wicg.github.io/document-picture-in-picture/
+
+interface DocumentPictureInPictureOptions {
+  width?: number;
+  height?: number;
+  disallowReturnToOpener?: boolean;
+  preferInitialWindowPlacement?: boolean;
+}
+
+interface DocumentPictureInPicture extends EventTarget {
+  readonly window: Window | null;
+  requestWindow(options?: DocumentPictureInPictureOptions): Promise<Window>;
+}
+
+interface Window {
+  documentPictureInPicture?: DocumentPictureInPicture;
+}

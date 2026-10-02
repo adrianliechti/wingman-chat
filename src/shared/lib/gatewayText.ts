@@ -1,23 +1,109 @@
 import { OpenAITextAdapter, type OpenAIChatModel } from "@tanstack/ai-openai";
+import type { AdapterYieldChunk } from "@tanstack/ai";
+import { combineAbortSignals } from "./abortSignals";
+import { isReasoningReplayError } from "./errors";
+import { packGatewayReasoning, readGatewayReasoning, type GatewayReasoning } from "./reasoning";
 
 export interface GatewayTextSegment {
   content: string;
   phase?: "commentary" | "final_answer";
 }
 
-/** Preserve gateway phases and context metadata not exposed by the native adapter. */
+/** Gateway compatibility around TanStack's native Responses parsing and tool loop. */
 export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITextAdapter<TModel> {
   responseInfo?: { model: string; reasoningContext?: "current_turn" | "all_turns" };
+  readonly rejectedReasoning = new Set<string>();
+  readonly textSegments = new Map<string, GatewayTextSegment[]>();
+  needsMessageSnapshot = false;
 
-  protected override async *processStreamChunks(...args: Parameters<OpenAITextAdapter<TModel>["processStreamChunks"]>) {
+  // A gateway response may contain commentary as well as schema JSON. Use
+  // TanStack's event source so only the final message becomes the schema result.
+  combinedStructuredOutputSource(): "event" {
+    return "event";
+  }
+
+  override async *chatStream(
+    ...args: Parameters<OpenAITextAdapter<TModel>["chatStream"]>
+  ): AsyncIterable<AdapterYieldChunk> {
+    const [options] = args;
+    const deadline = new AbortController();
+    const combined = combineAbortSignals(
+      options.abortController?.signal,
+      options.request?.signal ?? undefined,
+      deadline.signal,
+    );
+    // The SDK clears its fetch timer at headers. Keep the model-call deadline
+    // alive through body consumption, and release it on completion or Stop.
+    const timer = setTimeout(() => deadline.abort(), this.client.timeout);
+    let started = false;
+    try {
+      const request =
+        options.request instanceof Request
+          ? new Request(options.request, { signal: combined.signal })
+          : { ...options.request, signal: combined.signal };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let receivedContent = false;
+        let retry = false;
+        for await (const chunk of super.chatStream({ ...options, request })) {
+          if (chunk.type === "RUN_STARTED") {
+            if (!started) yield chunk;
+            started = true;
+            continue;
+          }
+          if (chunk.type === "RUN_ERROR" && deadline.signal.aborted) {
+            const message = `Model response timed out after ${Math.round(this.client.timeout / 1000)}s`;
+            yield { ...chunk, message, code: "TIMEOUT", error: { message, code: "TIMEOUT" } };
+            return;
+          }
+          if (
+            chunk.type === "RUN_ERROR" &&
+            attempt === 0 &&
+            !receivedContent &&
+            !combined.signal?.aborted &&
+            isReasoningReplayError(chunk)
+          ) {
+            const payloads = options.messages.flatMap((message) =>
+              (message.thinking ?? []).flatMap((part) => {
+                const { encryptedContent } = readGatewayReasoning(part.signature);
+                return encryptedContent && !this.rejectedReasoning.has(encryptedContent) ? [encryptedContent] : [];
+              }),
+            );
+            if (payloads.length) {
+              for (const payload of payloads) this.rejectedReasoning.add(payload);
+              this.needsMessageSnapshot = true;
+              retry = true;
+              break;
+            }
+          }
+          receivedContent = true;
+          yield chunk;
+        }
+        if (!retry) return;
+      }
+    } finally {
+      clearTimeout(timer);
+      combined.cleanup();
+    }
+  }
+
+  protected override async *processStreamChunks(
+    ...args: Parameters<OpenAITextAdapter<TModel>["processStreamChunks"]>
+  ): AsyncIterable<AdapterYieldChunk> {
     this.responseInfo = undefined;
     const [stream, ...rest] = args;
+    const options = rest[1];
     const segments = new Map<string, GatewayTextSegment>();
+    const reasoning = new Map<string, GatewayReasoning>();
+    let activeReasoningId: string | undefined;
+    let completed = false;
+    let emittedText = "";
     const capture = (item: {
       id: string;
       type: string;
       phase?: GatewayTextSegment["phase"];
       content?: { type: string; text?: string }[];
+      summary?: { type: string; text?: string }[];
+      encrypted_content?: string;
     }) => {
       if (item.type === "message")
         segments.set(item.id, {
@@ -25,6 +111,24 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
             item.content?.flatMap((part) => (part.type === "output_text" ? [part.text ?? ""] : [])).join("") ?? "",
           phase: item.phase,
         });
+      if (item.type === "reasoning") {
+        activeReasoningId = item.id;
+        const previous = reasoning.get(item.id) ?? reasoning.get("");
+        reasoning.delete("");
+        reasoning.set(item.id, {
+          ...previous,
+          id: item.id,
+          encryptedContent: item.encrypted_content ?? previous?.encryptedContent,
+          text:
+            item.content?.flatMap((part) => (part.type === "reasoning_text" ? [part.text ?? ""] : [])).join("") ??
+            previous?.text ??
+            "",
+          summary: item.summary ? item.summary.map((part) => part.text ?? "").join("") || undefined : previous?.summary,
+          // Replay is bound to the requested deployment alias. Usage separately
+          // records the resolved provider model, which may have a different id.
+          model: options.model,
+        });
+      }
     };
     const captureResponse = (response: { model: string; reasoning?: unknown }) => {
       const context = (response.reasoning as { context?: unknown } | undefined)?.context;
@@ -40,15 +144,68 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
         else if (event.type === "response.output_text.delta") {
           const segment = segments.get(event.item_id) ?? { content: "" };
           segments.set(event.item_id, { ...segment, content: segment.content + event.delta });
+        } else if (
+          event.type === "response.reasoning_text.delta" ||
+          event.type === "response.reasoning.delta" ||
+          event.type === "response.reasoning_summary_text.delta"
+        ) {
+          const id = ("item_id" in event ? event.item_id : activeReasoningId) ?? "";
+          const field = event.type === "response.reasoning_summary_text.delta" ? "summary" : "text";
+          const previous = reasoning.get(id) ?? {};
+          const delta = typeof event.delta === "string" ? event.delta : "";
+          reasoning.set(id, { ...previous, [field]: (previous[field] ?? "") + delta });
         } else if (event.type === "response.completed") {
+          completed = true;
           captureResponse(event.response);
+          segments.clear();
           for (const item of event.response.output) capture(item as Parameters<typeof capture>[0]);
         }
         yield event;
       }
     }
     for await (const chunk of super.processStreamChunks(observe(), ...rest)) {
+      if (chunk.type === "STEP_FINISHED") {
+        const state = readGatewayReasoning(chunk.signature);
+        yield {
+          ...chunk,
+          signature: packGatewayReasoning({ ...state, ...reasoning.get(state.id ?? ""), model: options.model }),
+        };
+        continue;
+      }
+      if (chunk.type === "TEXT_MESSAGE_CONTENT") emittedText = chunk.content ?? emittedText + chunk.delta;
+      if (chunk.type === "TEXT_MESSAGE_END" && completed) {
+        const fullText = [...segments.values()].map((part) => part.content).join("");
+        if (fullText && fullText !== emittedText) {
+          const append = fullText.startsWith(emittedText);
+          if (!append) this.needsMessageSnapshot = true;
+          yield {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: chunk.messageId,
+            delta: append ? fullText.slice(emittedText.length) : "",
+            content: fullText,
+            metadata: { wingmanTextSegments: [...segments.values()] },
+          } as AdapterYieldChunk;
+          emittedText = fullText;
+        }
+      }
+      if (chunk.type === "RUN_FINISHED" && completed && options.outputSchema && chunk.finishReason === "stop") {
+        const parts = [...segments.values()];
+        const raw = (parts.findLast((part) => part.phase === "final_answer") ?? parts.at(-1))?.content;
+        if (raw) {
+          try {
+            yield { type: "CUSTOM", name: "structured-output.complete", value: { object: JSON.parse(raw), raw } };
+          } catch {
+            yield {
+              type: "RUN_ERROR",
+              code: "structured-output-parse-failed",
+              message: "Failed to parse final structured output as JSON",
+            } as AdapterYieldChunk;
+            return;
+          }
+        }
+      }
       if (chunk.type.startsWith("TEXT_MESSAGE_")) {
+        if ("messageId" in chunk && chunk.messageId) this.textSegments.set(chunk.messageId, [...segments.values()]);
         yield {
           ...chunk,
           metadata: {
@@ -98,21 +255,67 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     };
   }
 
-  protected override convertMessagesToInput(...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>) {
+  protected override convertMessagesToInput(
+    ...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>
+  ): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> {
     const phased = new Map<string, GatewayTextSegment[][]>();
-    for (const message of args[0]) {
+    const reasoning = new Map<string, GatewayReasoning>();
+    const messages = args[0].map((message) => {
+      let rejected = false;
+      const thinking = message.thinking?.map((part) => {
+        const state = readGatewayReasoning(part.signature);
+        if (!state.encryptedContent || this.rejectedReasoning.has(state.encryptedContent)) {
+          rejected ||= !!state.encryptedContent;
+          return { ...part, signature: undefined };
+        }
+        if (state.id && !reasoning.has(state.id)) reasoning.set(state.id, state);
+        return part;
+      });
+      return {
+        ...message,
+        thinking,
+        // Persisted item ids depend on their original reasoning item. call_id
+        // still correlates results when the rejected reasoning is removed.
+        ...(rejected
+          ? {
+              toolCalls: message.toolCalls?.map((call) => ({
+                ...call,
+                metadata: { ...(call.metadata as Record<string, unknown> | undefined), itemId: undefined },
+              })),
+            }
+          : {}),
+      };
+    });
+    for (const message of messages) {
       if (message.role !== "assistant") continue;
-      const parts = message.metadata?.wingmanTextSegments as GatewayTextSegment[] | undefined;
+      const parts =
+        (message.metadata?.wingmanTextSegments as GatewayTextSegment[] | undefined) ??
+        this.textSegments.get(message.id ?? "");
       if (!parts) continue;
       const text = parts.map((part) => part.content).join("");
       if (text) phased.set(text, [...(phased.get(text) ?? []), parts]);
     }
-    return super.convertMessagesToInput(...args).flatMap((item) => {
-      if (item.type !== "message" || item.role !== "assistant" || typeof item.content !== "string") return [item];
-      const parts = phased.get(item.content)?.shift();
-      return parts?.some((part) => part.phase)
-        ? parts.map((part) => ({ ...item, content: part.content, ...(part.phase ? { phase: part.phase } : {}) }))
-        : [item];
-    });
+    return super
+      .convertMessagesToInput(messages)
+      .flatMap((item): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> => {
+        if (item.type === "reasoning") {
+          const state = reasoning.get(item.id);
+          // Unextended native signatures already store their summary in content.
+          if (state?.text !== undefined)
+            return [
+              {
+                ...item,
+                summary: state.summary ? [{ type: "summary_text" as const, text: state.summary }] : [],
+                ...(state.text ? { content: [{ type: "reasoning_text" as const, text: state.text }] } : {}),
+              },
+            ];
+          return [item];
+        }
+        if (item.type !== "message" || item.role !== "assistant" || typeof item.content !== "string") return [item];
+        const parts = phased.get(item.content)?.shift();
+        return parts?.some((part) => part.phase)
+          ? parts.map((part) => ({ ...item, content: part.content, ...(part.phase ? { phase: part.phase } : {}) }))
+          : [item];
+      });
   }
 }

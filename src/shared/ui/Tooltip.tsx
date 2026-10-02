@@ -2,7 +2,6 @@ import {
   arrow,
   autoUpdate,
   FloatingArrow,
-  FloatingPortal,
   flip,
   offset,
   shift,
@@ -13,6 +12,7 @@ import {
   useRole,
   useTransitionStyles,
 } from "@floating-ui/react";
+import { FloatingPortal } from "./FloatingPortal";
 import { type ReactNode, useState } from "react";
 import { cn } from "@/shared/lib/cn";
 

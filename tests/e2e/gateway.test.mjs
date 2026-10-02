@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { maxIterations } from "@tanstack/ai";
+import { Document, Packer, Paragraph } from "docx";
+import { z } from "zod";
 import { after, before, describe, test } from "node:test";
 import {
   GATEWAY_URL,
@@ -19,6 +21,7 @@ let run;
 let Role;
 let selectedModel;
 let availableModels;
+const compatibilityModel = process.env.WINGMAN_E2E_COMPATIBILITY_MODEL ?? "gpt-5.4-mini";
 const faults = createResponseFaultInjector();
 
 void describe("Wingman gateway E2E", { concurrency: false }, () => {
@@ -36,6 +39,8 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       } else {
         selectedModel =
           availableModels.find((model) => model.id === "auto")?.id ??
+          availableModels.find((model) => model.id === "claude-sonnet-4-6")?.id ??
+          availableModels.find((model) => model.id === "gpt-5.4-mini")?.id ??
           availableModels.find((model) => model.type === "completer")?.id;
       }
       assert(selectedModel, `No completion model is exposed by ${GATEWAY_URL}`);
@@ -49,6 +54,128 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.length > 0);
     assert(availableModels.some((model) => model.id === selectedModel));
   });
+
+  void test(
+    "reads an inline Office attachment through the native adapter and real gateway",
+    async (context) => {
+      if (!availableModels.some((model) => model.id === compatibilityModel)) {
+        context.skip(`${compatibilityModel} is not exposed by ${GATEWAY_URL}`);
+        return;
+      }
+      const marker = "OFFICE_ATTACHMENT_63B9";
+      const bytes = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph(marker)] }] }));
+      const contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      const result = await run(
+        client,
+        compatibilityModel,
+        "Return only the exact marker inside the attached document.",
+        [
+          {
+            role: Role.User,
+            content: [
+              { type: "text", text: "Read the attached Office document." },
+              {
+                type: "file",
+                name: "fixture.docx",
+                contentType,
+                data: `data:${contentType};base64,${bytes.toString("base64")}`,
+              },
+            ],
+          },
+        ],
+        [],
+        { options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+      );
+      assert.equal(result.status, "completed", resultDetail(result));
+      assert.match(messageText(result.messages.slice(-1)), new RegExp(marker));
+    },
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+
+  void test(
+    "validates structured output through the gateway with optional and nullable fields",
+    async () => {
+      const schema = z.object({ answer: z.string(), omitted: z.string().optional(), nullable: z.string().nullable() });
+      const result = await client.parse(
+        selectedModel,
+        'Return answer="STRUCTURED_8D17", omit omitted, and set nullable=null.',
+        "Produce the requested result.",
+        schema,
+        "e2e_compatibility",
+        { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+      );
+      assert.deepEqual(result, { answer: "STRUCTURED_8D17", nullable: null });
+    },
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+
+  void test(
+    "replays signed reasoning after persistence and continues after switching models",
+    async (context) => {
+      if (!availableModels.some((model) => model.id === compatibilityModel)) {
+        context.skip(`${compatibilityModel} is not exposed by ${GATEWAY_URL}`);
+        return;
+      }
+      const other =
+        selectedModel !== compatibilityModel
+          ? selectedModel
+          : availableModels.find((model) => model.id === "claude-sonnet-4-6")?.id;
+      assert(other, "Model-switch fixture requires a second model alongside the compatibility model");
+      const options = { effort: "medium", summary: "auto", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
+      const first = await run(
+        client,
+        compatibilityModel,
+        "Follow the user's instructions; return only the numeric answer.",
+        [{ role: Role.User, content: [{ type: "text", text: "What is 17 times 19?" }] }],
+        [],
+        { options },
+      );
+      assert.equal(first.status, "completed", resultDetail(first));
+      const signed = contentParts(first.messages, "reasoning").filter((part) => part.encryptedContent);
+      assert(signed.length > 0, "The reasoning-enabled deployment did not return a replayable reasoning item");
+      assert(signed.every((part) => part.model === compatibilityModel));
+      const restored = JSON.parse(JSON.stringify(first.messages));
+      const beforeReplay = faults.snapshot().requestCount;
+      const second = await run(
+        client,
+        compatibilityModel,
+        "Follow the user's instructions; return only the numeric answer.",
+        [...restored, { role: Role.User, content: [{ type: "text", text: "What is that answer plus one?" }] }],
+        [],
+        {
+          options: { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+          prepareMessages: (messages) => messages,
+        },
+      );
+      assert.equal(second.status, "completed", resultDetail(second));
+      assert.match(messageText(second.messages.slice(-1)), /324/);
+      assert.equal(
+        faults.snapshot().requestCount - beforeReplay,
+        1,
+        "Signed reasoning was rejected and needed a recovery retry",
+      );
+      const beforeSwitch = faults.snapshot().requestCount;
+      const switched = await run(
+        client,
+        other,
+        "Return only the numeric answer.",
+        [
+          ...JSON.parse(JSON.stringify(second.messages)),
+          { role: Role.User, content: [{ type: "text", text: "Repeat the last numeric answer." }] },
+        ],
+        [],
+        { options: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+      );
+      assert.equal(switched.status, "completed", resultDetail(switched));
+      assert.match(messageText(switched.messages.slice(-1)), /324/);
+      assert.equal(
+        faults.snapshot().requestCount - beforeSwitch,
+        1,
+        "The model switch sent incompatible reasoning and needed recovery",
+      );
+    },
+    { timeout: REQUEST_TIMEOUT_MS * 3 },
+  );
 
   void test(
     "reports a dropped native response stream and accepts an explicit retry",

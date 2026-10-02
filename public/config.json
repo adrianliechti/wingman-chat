@@ -43,6 +43,7 @@
     "researcher": "web"
   },
   "chat": {
+    "miniChat": true,
     "model": "claude-sonnet-5",
     "effort": "medium",
     "classification": {

@@ -169,6 +169,11 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Compaction.Threshold = *v
 	}
 
+	if envBool("CHAT_MINI_ENABLED") {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.MiniChat = true
+	}
+
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
 }
 

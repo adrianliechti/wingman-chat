@@ -148,7 +148,7 @@ or a **local** directory.
 | Layer          | Stack                                                                                          |
 | -------------- | ---------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack AI/Router/Table/Virtual, React Compiler |
-| Code execution | `execute_script`: Python/Pyodide, JavaScript and Bash workers; DuckDB-Wasm preview bridge        |
+| Code execution | `execute_script`: Python/Pyodide, JavaScript and Bash workers; DuckDB-Wasm preview bridge      |
 | Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry                 |
 | Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                                |
 
@@ -201,6 +201,14 @@ workspace to cover invalid structured-file repair, revision/delta metadata, file
 many real model requests and requires `python3`; use the smoke suite for
 quick checks.
 
+The smoke suite covers inline Word documents, structured extraction, persisted
+signed reasoning, model switching, and compaction alongside the agent lifecycle
+checks. Word and signed-reasoning fixtures use GPT-5.4-mini by default; set
+`WINGMAN_E2E_COMPATIBILITY_MODEL` to another deployment supporting both features.
+These fixtures are skipped when that deployment is absent. The replay check
+requires a second model for the switch (the smoke model, or Sonnet 4.6 when they
+are the same). Inline document support depends on the gateway deployment.
+
 The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
 `execute_script` calls with `language: "python"` using the production schemas. It reports raw JSON/AntML failures separately from calls
 that succeeded through TanStack's provider normalization, making gateway/model quality measurable separately
@@ -216,6 +224,7 @@ npm run test:e2e:all
 WINGMAN_E2E_GATEWAY=http://localhost:4242 \
 WINGMAN_E2E_MODEL=auto \
 WINGMAN_E2E_ARTIFACT_MODEL=claude-sonnet-4-6 \
+WINGMAN_E2E_COMPATIBILITY_MODEL=gpt-5.4-mini \
 WINGMAN_E2E_CHALLENGE_MODELS=bedrock-sonnet-4-6,gpt-5.4 \
 WINGMAN_E2E_BEDROCK_MODEL=bedrock-sonnet-4-6 \
 WINGMAN_E2E_PYTHON=python3 \
@@ -308,6 +317,7 @@ restart and browser refresh in production, or a browser refresh during frontend 
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
 - `CHAT_MODEL` (`CHAT_EFFORT`) — the model every new chat starts on; the reset next to the model picker returns to it. `chat.yaml` also accepts `verbosity`
+- `CHAT_MINI_ENABLED` — adds a button that pops the chat out into an always-on-top mini window (Document Picture-in-Picture; Chrome/Edge only, hidden elsewhere). `chat.yaml`: `miniChat: true`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,

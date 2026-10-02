@@ -24,7 +24,7 @@ export function chatCompaction(
 ): ChatMiddleware {
   const compaction = withCompaction({
     maxTokens,
-    strategyKey: `wingman-summary-v1:${model}:${instructions}`,
+    strategyKey: `wingman-summary-v2:${model}:${instructions}`,
     strategy: composeStrategies(
       clearToolResults(),
       summarizeOldest({
@@ -36,7 +36,10 @@ export function chatCompaction(
           try {
             return await chat({
               adapter: client.textAdapter(model, signal),
-              messages,
+              // A compacted prefix often ends with an assistant/tool turn.
+              // Request a new summary instead of an assistant prefill, which
+              // several gateway providers reject.
+              messages: [...messages, { role: "user", content: "Summarize the preceding conversation." }],
               systemPrompts: [instructions],
               middleware: [aiTelemetry("summarize_history")],
               stream: false,

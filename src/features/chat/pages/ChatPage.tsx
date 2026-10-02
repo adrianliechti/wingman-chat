@@ -1,7 +1,7 @@
-import { ChatInterrupts } from "../components/ChatInterrupts";
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { AppWindow, ArrowDown, Info, PictureInPicture2, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { LibraryDialog } from "@/features/agent/components/LibraryDialog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -12,10 +12,9 @@ import { PanelShell } from "@/features/chat/components/PanelShell";
 import { AgentButton } from "@/features/chat/components/AgentButton";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
-import { ChatMessage } from "@/features/chat/components/ChatMessage";
+import { ChatMessageList } from "@/features/chat/components/ChatMessageList";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
-import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
-import { groupRenderUnits, isToolResultMessage } from "@/features/chat/components/chatMessageUtils";
+import { MiniChat } from "@/features/chat/components/MiniChat";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
@@ -26,9 +25,11 @@ import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
+import { useDocumentPictureInPicture } from "@/shared/hooks/useDocumentPictureInPicture";
 import { useBreakpoint } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
+import { PortalRootContext } from "@/shared/ui/PortalRootContext";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
 import { useApp } from "@/shell/hooks/useApp";
@@ -77,7 +78,6 @@ export function ChatPage() {
     model,
     models,
     setModel,
-    pendingElicitation,
   } = useChat();
   const { isListening, stopVoice } = useVoice();
 
@@ -352,17 +352,20 @@ export function ChatPage() {
   // Previous route chatId — distinguishes real navigation from implicit-creation renders
   const previousRouteChatIdRef = useRef<string | undefined>(undefined);
 
-  // Persisted IDs survive streaming, edits and reloads. Scope legacy fallbacks
-  // to the chat without mutating refs during a potentially interrupted render.
   const messageScope = chat?.id ?? routeChatId ?? "__draft__";
-  const messageRenderKeys = messages.map((message, index) => `${messageScope}:${message.id ?? index}`);
 
-  // Fold runs of consecutive tool results into collapsible groups so tool-heavy
-  // turns read as one tidy "Used N tools" row instead of a scattered stack.
-  const renderUnits = useMemo(
-    () => groupRenderUnits(messages, isResponding, pendingElicitation?.toolCallId ?? null),
-    [messages, isResponding, pendingElicitation?.toolCallId],
-  );
+  // Mini chat: an always-on-top Picture-in-Picture window (Chromium only, opt-in via config).
+  const miniChatEnabled = getConfig().chat?.miniChat === true;
+  const {
+    isSupported: pipSupported,
+    pipWindow: miniChatWindow,
+    open: openMiniChatWindow,
+    close: closeMiniChat,
+  } = useDocumentPictureInPicture();
+  const miniChatAvailable = miniChatEnabled && pipSupported;
+  const openMiniChat = useCallback(() => {
+    void openMiniChatWindow({ width: 400, height: 600 }).catch(console.error);
+  }, [openMiniChatWindow]);
 
   const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
@@ -375,6 +378,16 @@ export function ChatPage() {
     setRightActions(
       <div className="flex items-center gap-2">
         <AgentButton />
+        {miniChatAvailable && (
+          <button
+            type="button"
+            className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+            onClick={miniChatWindow ? closeMiniChat : openMiniChat}
+            title={miniChatWindow ? "Back to tab" : "Open mini chat"}
+          >
+            <PictureInPicture2 size={20} />
+          </button>
+        )}
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
@@ -388,7 +401,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, handleNewChat]);
+  }, [setRightActions, handleNewChat, miniChatAvailable, miniChatWindow, openMiniChat, closeMiniChat]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -425,7 +438,15 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {(chatLoading && showChatLoading) || chatError ? (
+          {miniChatWindow ? (
+            <div className="m-auto flex flex-col items-center gap-3 p-6 text-sm text-neutral-500 dark:text-neutral-400">
+              <PictureInPicture2 size={32} className="opacity-60" />
+              <span>This chat is open in a mini window.</span>
+              <button type="button" className="underline" onClick={closeMiniChat}>
+                Back to tab
+              </button>
+            </div>
+          ) : (chatLoading && showChatLoading) || chatError ? (
             <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (
@@ -471,43 +492,14 @@ export function ChatPage() {
               >
                 <Disclaimer />
 
-                <div>
-                  {renderUnits.map((unit) => {
-                    if (unit.kind === "toolGroup") {
-                      // Key off the first tool-call id — stable as the group grows and across restarts.
-                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
-                      const groupKey =
-                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
-                      return (
-                        <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} />
-                        </div>
-                      );
-                    }
-                    const index = unit.index;
-                    const message = messages[index];
-                    // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
-                    const dataRole = isToolResultMessage(message) ? "tool" : message.role;
-                    return (
-                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
-                        <ChatMessage
-                          index={index}
-                          message={message}
-                          isLast={index === messages.length - 1}
-                          isResponding={isResponding}
-                        />
-                      </div>
-                    );
-                  })}
-                  <ChatInterrupts />
-                </div>
+                <ChatMessageList scope={messageScope} />
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>
             </div>
           )}
 
-          {messages.length > 0 && !isAtBottom && (
+          {!miniChatWindow && messages.length > 0 && !isAtBottom && (
             <button
               type="button"
               onClick={goToLatest}
@@ -523,7 +515,16 @@ export function ChatPage() {
         <ChatConsentBackdrop />
       </div>
 
+      {miniChatWindow &&
+        createPortal(
+          <PortalRootContext value={miniChatWindow.document.body}>
+            <MiniChat onReturn={closeMiniChat} onNewChat={handleNewChat} />
+          </PortalRootContext>,
+          miniChatWindow.document.body,
+        )}
+
       <footer
+        hidden={!!miniChatWindow}
         ref={measureFooter}
         className={cn(
           "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",

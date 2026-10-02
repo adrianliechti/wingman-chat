@@ -128,11 +128,10 @@ it("keeps reasoning in existing fields and replays it only for the producing mod
       content: [{ type: "reasoning", id: "rs", text: "Plan", encryptedContent: "opaque", model: "original" }],
     },
   ];
-  expect(toAIMessages(history, "original")[0].parts[0]).toMatchObject({
-    type: "thinking",
-    signature: JSON.stringify({ id: "rs", encrypted_content: "opaque" }),
-  });
-  expect(toAIMessages(history, "different")[0].parts[0]).toMatchObject({ type: "thinking", signature: undefined });
+  expect(fromAIMessages(toAIMessages(history, "original"))[0].content).toEqual(history[0].content);
+  expect(fromAIMessages(toAIMessages(history, "different"))[0].content).toEqual([
+    { type: "reasoning", id: "rs", text: "Plan", model: "original" },
+  ]);
   const stored = fromAIMessages(
     [
       {
@@ -147,9 +146,7 @@ it("keeps reasoning in existing fields and replays it only for the producing mod
     "original",
   );
   expect(stored[0].content).toEqual(history[0].content);
-  expect(toAIMessages(stored, "original")[0].parts[0]).toMatchObject({
-    signature: JSON.stringify({ id: "rs", encrypted_content: "opaque" }),
-  });
+  expect(fromAIMessages(toAIMessages(stored, "original"))[0].content).toEqual(history[0].content);
 });
 
 it("preserves domain-only parts and identities through JSON persistence", () => {
@@ -265,5 +262,7 @@ it("keeps media filenames and reasoning model identities through native persiste
   const restored = fromAIMessages(JSON.parse(JSON.stringify(toAIMessages(messages))));
   expect(restored[0].content).toEqual(messages[0].content);
   expect(restored[1].content).toEqual(messages[1].content);
-  expect(toAIMessages(restored, "other-model")[1].parts[0]).toMatchObject({ signature: undefined });
+  expect(fromAIMessages(toAIMessages(restored, "other-model"))[1].content).toEqual([
+    { type: "reasoning", id: "reason", text: "Plan", model: "producer" },
+  ]);
 });

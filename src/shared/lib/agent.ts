@@ -4,6 +4,7 @@ import {
   normalizeToUIMessage,
   convertMessagesToModelMessages,
   modelMessagesToUIMessages,
+  uiMessagesToWire,
   maxIterations,
   StreamProcessor,
   toolDefinition,
@@ -27,6 +28,7 @@ import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { combineAbortSignals } from "./abortSignals";
 import { fromAIMessages, toAIMessages } from "./aiMessages";
+import type { GatewayTextSegment } from "./gatewayText";
 import { artifactDelta, artifactDeltaFromMeta } from "../types/artifact";
 import { captureRequestContext, injectRequestContext } from "./requestContext";
 import { aiDebug } from "./aiStream";
@@ -99,6 +101,30 @@ export class AgentMessageMetadata {
   private results = new Map<string, Message>();
   private usage = new Map<string, Message["usage"]>();
   private runs = new Map<string, string>();
+  private rejectedReasoning = new Set<string>();
+  private textSegments = new Map<string, GatewayTextSegment[]>();
+
+  rejectReasoning(payloads: Iterable<string>) {
+    for (const payload of payloads) this.rejectedReasoning.add(payload);
+  }
+
+  captureTextSegments(segments: ReadonlyMap<string, GatewayTextSegment[]>) {
+    for (const [id, parts] of segments) this.textSegments.set(id, parts);
+  }
+
+  withTextSegments(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => ({
+      ...message,
+      ...(this.textSegments.has(message.id)
+        ? { metadata: { ...message.metadata, wingmanTextSegments: this.textSegments.get(message.id) } }
+        : {}),
+      parts: message.parts.map((part) =>
+        part.type === "subagent"
+          ? { ...part, subagent: { ...part.subagent, messages: this.withTextSegments(part.subagent.messages) } }
+          : part,
+      ),
+    }));
+  }
 
   result(message: Message) {
     const part = message.content.find((item) => item.type === "tool_result");
@@ -114,8 +140,10 @@ export class AgentMessageMetadata {
     if (usage) this.usage.set(id, usage);
   }
 
-  read(messages: UIMessage[], model?: string): Message[] {
-    return this.enrich(fromAIMessages(messages, undefined, model));
+  read(messages: UIMessage[]): Message[] {
+    // Selecting a model must not assign it to reasoning from earlier turns.
+    // The producer is retained in the opaque signature or persisted metadata.
+    return this.enrich(fromAIMessages(this.withTextSegments(messages)));
   }
 
   private enrich(messages: Message[]): Message[] {
@@ -125,14 +153,18 @@ export class AgentMessageMetadata {
       if (saved) return saved;
       return {
         ...message,
-        content: message.content.map((part) =>
-          part.type === "subagent"
+        content: message.content.map((part) => {
+          if (part.type === "reasoning" && part.encryptedContent && this.rejectedReasoning.has(part.encryptedContent)) {
+            const { encryptedContent: _encrypted, prefix: _prefix, ...visible } = part;
+            return visible;
+          }
+          return part.type === "subagent"
             ? {
                 ...part,
                 messages: this.enrich(part.messages),
               }
-            : part,
-        ),
+            : part;
+        }),
         runId: this.runs.get(message.id!) ?? message.runId,
         usage: this.usage.get(message.id!) ?? message.usage,
       };
@@ -197,8 +229,13 @@ export async function* streamRun(
     const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
     let terminal: Extract<StreamChunk, { type: "RUN_FINISHED" }> | undefined;
     let failure: Error | undefined;
+    const captureAdapterMetadata = () => {
+      hooks.metadata.rejectReasoning(adapter.rejectedReasoning ?? []);
+      if (adapter.textSegments) hooks.metadata.captureTextSegments(adapter.textSegments);
+    };
     const remember = (ctx: Parameters<NonNullable<ChatMiddleware["onStart"]>>[0]) => {
-      snapshot = () => hooks.metadata.read(modelMessagesToUIMessages([...ctx.messages]), model);
+      captureAdapterMetadata();
+      snapshot = () => hooks.metadata.read(modelMessagesToUIMessages([...ctx.messages]));
     };
     const middleware: ChatMiddleware<AgentRunContext> = {
       onFinish: remember,
@@ -221,7 +258,9 @@ export async function* streamRun(
               toAIMessages(
                 await hooks.prepareMessages(
                   fromAIMessages(
-                    modelMessagesToUIMessages(config.providerMessages ?? config.messages),
+                    hooks.metadata.withTextSegments(
+                      modelMessagesToUIMessages(config.providerMessages ?? config.messages),
+                    ),
                     undefined,
                     model,
                     false,
@@ -237,6 +276,7 @@ export async function* streamRun(
         if (ctx.currentMessageId) hooks.metadata.turn(ctx.currentMessageId, runId);
       },
       onUsage: (ctx, usage) => {
+        captureAdapterMetadata();
         if (ctx.currentMessageId)
           hooks.metadata.turn(ctx.currentMessageId, runId, {
             model: adapter.responseInfo?.model ?? model,
@@ -365,7 +405,6 @@ export async function* streamRun(
             const childModel = spec.model ?? model;
             const history = hooks.metadata.read(
               ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
-              childModel,
             );
             const context = captureRequestContext(
               [spec.runtimeContext, `Delegated task: ${prompt}`].filter(Boolean).join("\n\n"),
@@ -459,6 +498,12 @@ export async function* streamRun(
       yield chunk;
     }
     abortController.signal.throwIfAborted();
+    if (adapter.needsMessageSnapshot) {
+      // AG-UI text deltas cannot rewrite prior content. Publish TanStack's
+      // canonical transcript after an authoritative replacement or replay
+      // recovery, preserving the same persistence/rich-result boundary.
+      yield { type: "MESSAGES_SNAPSHOT", messages: uiMessagesToWire(toAIMessages(snapshot())) } as StreamChunk;
+    }
     if (failure) {
       await finish("failed", failure);
       return;
@@ -500,7 +545,7 @@ export async function run(
     }),
   );
   if (!result) throw new Error("Agent stream did not finish");
-  return { ...result, messages: metadata.read(processor.getMessages(), model) };
+  return { ...result, messages: metadata.read(processor.getMessages()) };
 }
 
 export async function runMessages(...args: Parameters<typeof run>): Promise<Message[]> {

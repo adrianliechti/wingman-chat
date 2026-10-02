@@ -34,6 +34,21 @@ export function isContextOverflowError(error: unknown): boolean {
     value.message ?? "",
   );
 }
+
+/** A rejected input can be retried without its opaque reasoning, before any response content arrives. */
+export function isReasoningReplayError(error: unknown): boolean {
+  const value = detail(error);
+  if (value.status !== undefined && ![400, 413, 422].includes(value.status)) return false;
+  if (value.code === "invalid_encrypted_content") return true;
+  const message = (value.message ?? "").toLowerCase().replaceAll("`", "");
+  return (
+    message.includes("invalid_encrypted_content") ||
+    message.includes("encrypted content could not be verified") ||
+    (message.includes("reasoning") && message.includes("required following item")) ||
+    (message.includes("thinking") &&
+      (message.includes("invalid signature") || message.includes("signature verification failed")))
+  );
+}
 export function getErrorInfo(error: unknown): ErrorInfo {
   if (isAbortError(error)) return { code: "CANCELLED", message: "Request was cancelled." };
   const value = detail(error);
@@ -65,6 +80,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     return { code: "AUTH_ERROR", message: "Access denied. You may not have permission to use this model." };
   if (value.status === 404 || value.code === "model_not_found")
     return { code: "NOT_FOUND_ERROR", message: "The requested model or resource was not found." };
+  if (value.code === "TIMEOUT") return { code: value.code, message };
   if (/network|connection|failed to fetch|fetch failed|load failed|timeout|timed out/i.test(message))
     return { code: "NETWORK_ERROR", message: "Network connection failed. Please check your connection and try again." };
   if (value.code && /^[A-Z_]+$/.test(value.code)) return { code: value.code, message };

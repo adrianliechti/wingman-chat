@@ -148,6 +148,9 @@ type Chat struct {
 	Risks          []Risk          `json:"risks,omitempty" yaml:"risks,omitempty"`
 
 	Presets []Preset `json:"presets,omitempty" yaml:"presets,omitempty"`
+
+	// MiniChat offers an always-on-top Picture-in-Picture chat window (Chromium only).
+	MiniChat bool `json:"miniChat,omitempty" yaml:"miniChat,omitempty"`
 }
 
 // Preset is one step of the chat model slider, ordered from fastest to most capable.
