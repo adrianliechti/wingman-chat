@@ -1,8 +1,9 @@
-### PDF rasterization helper (`rasterize_pdf`)
+### PDF rasterization
+Use this local helper when you need PDF pixels for visual inspection, overlays, or image processing. The sandbox has no pypdfium2, PyMuPDF, or poppler; pdfplumber.to_image() cannot render pages here.
 
-Both the Python and JavaScript interpreters expose a helper that renders PDF pages to PNG images. The sandbox has no in-process PDF rasterizer — `pypdfium2`, PyMuPDF, and poppler are all unavailable, so `pdfplumber`'s `.to_image()` raises `ModuleNotFoundError: No module named 'pypdfium2'`. This helper is the only way to turn a PDF page into an image: for visual inspection, overlaying form-field boxes, OCR of a specific region, or feeding a page to `vision`.
+- Python: paths = await rasterize_pdf("/home/user/report.pdf", scale=2.0, pages=[1])
+- JavaScript: const paths = await rasterizePdf("/report.pdf", { scale: 2.0, pages: [1] })
 
-- Python: `rasterize_pdf(path, scale=2.0, pages=None)` renders the requested pages (a page number, a list, or None for all) and returns the written PNG paths, e.g. `["report-1.png", "report-2.png"]`. It is async — `await` it (or call it at the top level of your code).
-- JavaScript: `rasterizePdf(path, { scale, pages })` returns the written paths through the `vfs`.
+Both calls are async and must be awaited, including at top level. Page numbers are 1-based; omit pages to render all pages. Python also accepts a single page number. Results are PNG paths beside the input file, named report-1.png, etc.
 
-`scale` controls resolution: 1.0 ≈ 72 DPI, 2.0 ≈ 144 DPI. Higher scale means larger images, so the pixel coordinates of anything you draw scale with it. Render only the pages you need — each page is a full raster. For plain text or tables, prefer `pdfplumber`/`pypdf` (vector extraction, no raster); reach for `rasterize_pdf` only when you genuinely need pixels.
+Scale 1.0 is about 72 DPI; 2.0 is about 144 DPI. Render only the pages and resolution needed, and scale overlay coordinates accordingly. For text or tables, prefer direct extraction with pdfplumber or pypdf.

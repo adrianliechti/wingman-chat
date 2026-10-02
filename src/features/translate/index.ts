@@ -6,11 +6,14 @@ export type {
   SupportedFile,
   ToneOption,
   TranslateContextType,
+  TranslatorProvider,
 } from "./context/TranslateContext";
 export {
+  pickLanguage,
   styleOptions,
   supportedFiles,
   supportedLanguages,
+  supportedProviders,
   TranslateContext,
   toneOptions,
 } from "./context/TranslateContext";

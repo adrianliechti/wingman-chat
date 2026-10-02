@@ -1,4 +1,5 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
 import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
 import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
@@ -13,6 +14,8 @@ const ARTIFACT_WRITE_TOOLS = new Set([
   "edit",
   "move",
   "delete",
+  "execute_script",
+  // Interpreter names retained only for persisted conversations.
   "execute_python_code",
   "execute_javascript_code",
   // Render artifacts from conversations saved before the concise tool rename.
@@ -68,7 +71,7 @@ function toolResultArtifactPaths(result: ToolResultContent): string[] {
     const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
     return path ? [path] : [];
   }
-  // execute_python_code / execute_javascript_code report written files via meta.
+  // Code execution tools report written files via meta (including historical names).
   const files = result.meta?.artifactFiles;
   return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
 }
@@ -81,7 +84,7 @@ function isUserPrompt(message: Message): boolean {
 /**
  * Collect the artifact files written during the assistant turn ending at
  * `assistantIndex` — gathered from every tool result since the preceding user
- * prompt. Deduplicated, in first-seen order. Used to show the created files as
+ * prompt. Deduplicated, respecting moves and deletions. Shows generated files as
  * chips on the assistant's completion message.
  */
 export function collectTurnArtifactPaths(messages: Message[], assistantIndex: number): string[] {
@@ -101,6 +104,11 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
         continue;
       }
       if (part.type !== "tool_result") continue;
+      const delta = artifactDeltaFromMeta(part.meta);
+      if (delta) {
+        updateArtifactPaths(seen, delta.mutations);
+        continue;
+      }
       if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
       for (const path of toolResultArtifactPaths(part)) seen.add(path);
     }
@@ -213,7 +221,13 @@ function isToolConnectorMessage(message: Message): boolean {
   if (message.role !== "assistant" || message.content.length === 0) return false;
   const hasToolCalls = message.content.some((p) => p.type === "tool_call");
   const hasReasoning = message.content.some((p) => p.type === "reasoning" && (p.text || p.summary));
-  return hasToolCalls && !hasReasoning && !messageHasText(message) && !messageHasMedia(message);
+  return (
+    hasToolCalls &&
+    !hasReasoning &&
+    !message.content.some((part) => part.type === "subagent") &&
+    !messageHasText(message) &&
+    !messageHasMedia(message)
+  );
 }
 
 function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
@@ -222,6 +236,15 @@ function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
 }
 
 export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
+
+/** A delegated call is already represented by its child conversation. */
+export function subagentToolCallIds(messages: Message[]): Set<string> {
+  return new Set(
+    messages.flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "subagent" && part.toolCallId ? [part.toolCallId] : [])),
+    ),
+  );
+}
 
 /**
  * Partition messages into standalone messages and folded tool groups (runs of
@@ -234,6 +257,13 @@ export function groupRenderUnits(
   pendingElicitationToolCallId?: string | null,
 ): RenderUnit[] {
   const units: RenderUnit[] = [];
+  const delegated = subagentToolCallIds(messages);
+  const represented = (message: Message) =>
+    isGroupableToolResultMessage(message) &&
+    message.content.every((part) => part.type === "tool_result" && delegated.has(part.id));
+  const addMessage = (index: number) => {
+    if (!represented(messages[index])) units.push({ kind: "message", index });
+  };
   const limit = isResponding ? messages.length - 1 : messages.length;
   const groupable = (message: Message) =>
     !hostsToolCall(message, pendingElicitationToolCallId) &&
@@ -245,21 +275,21 @@ export function groupRenderUnits(
       let j = i;
       const indices: number[] = [];
       while (j < limit && groupable(messages[j])) {
-        if (isGroupableToolResultMessage(messages[j])) indices.push(j);
+        if (isGroupableToolResultMessage(messages[j]) && !represented(messages[j])) indices.push(j);
         j++;
       }
       if (indices.length >= 2) {
         units.push({ kind: "toolGroup", indices });
       } else {
-        for (let k = i; k < j; k++) units.push({ kind: "message", index: k });
+        for (let k = i; k < j; k++) addMessage(k);
       }
       i = j;
     } else {
-      units.push({ kind: "message", index: i });
+      addMessage(i);
       i++;
     }
   }
-  for (; i < messages.length; i++) units.push({ kind: "message", index: i });
+  for (; i < messages.length; i++) addMessage(i);
   return units;
 }
 
@@ -288,6 +318,8 @@ const TOOL_FAMILIES: Record<string, ToolFamily> = {
   edit: "edit",
   move: "edit",
   delete: "edit",
+  execute_script: "run",
+  // Interpreter names retained only for persisted conversations.
   execute_python_code: "run",
   execute_javascript_code: "run",
   // Historical names can still occur in persisted message content.

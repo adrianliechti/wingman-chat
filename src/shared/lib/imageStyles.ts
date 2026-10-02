@@ -10,7 +10,7 @@ export interface ImageStyle {
  * Parse named image styles out of the `image-styles` skill body. Each style is a
  * markdown bullet of the form `- **Name** — fragment` (em dash, en dash, or plain
  * hyphen), grouped under `##`/`###` category headings. This is the same content
- * the chat path reads via `read_skill`, so the Canvas picker stays in sync with
+ * the chat path reads via `load_skill`, so the Canvas picker stays in sync with
  * whatever skill is served at runtime.
  */
 export function parseImageStyles(markdown: string): ImageStyle[] {

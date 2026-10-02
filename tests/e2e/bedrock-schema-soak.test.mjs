@@ -1,3 +1,4 @@
+import { maxIterations } from "@tanstack/ai";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { after, before, describe, test } from "node:test";
@@ -201,8 +202,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         .createFileTools(workspace.source, { namespace: "artifacts", validators: validatorsModule.ARTIFACT_VALIDATORS })
         .find((tool) => tool.name === "artifacts_create");
       assert(createFile);
-      assert.equal(createFile.strict, false);
-      pythonParameters = executionSchemas.PYTHON_EXECUTION_PARAMETERS;
+      pythonParameters = executionSchemas.SCRIPT_EXECUTION_PARAMETERS;
       await execFileAsync(PYTHON, ["--version"], { timeout: 10_000 });
     },
     { timeout: REQUEST_TIMEOUT_MS },
@@ -223,10 +223,10 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
           `This is a schema transport probe. Call artifacts_create exactly once and emit no prose. Use file_path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
           [user("Create the exact fixture now.")],
           [createFile],
-          { agentName: "bedrock-create-soak", maxTurns: 1 },
+          { agentName: "bedrock-create-soak", agentLoopStrategy: maxIterations(1) },
         );
 
-        assert.equal(result.status, "max_turns", resultDetail(result));
+        assert.equal(result.status, "completed", resultDetail(result));
         const observed = recordArguments(result, "artifacts_create", "content");
         assert.equal(
           (await workspace.read(fixture.path))?.content,
@@ -242,17 +242,18 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
 
   for (const fixture of pythonFixtures) {
     void test(
-      `execute_python_code: ${fixture.name}`,
+      `execute_script: ${fixture.name}`,
       async () => {
         const parsedCalls = [];
         const pythonTool = {
-          name: "execute_python_code",
-          description: "Execute inline Python code. Omit path when using code.",
-          strict: false,
+          name: "execute_script",
+          description: "Execute inline Python code with language=python. Omit path when using code.",
+
           parameters: pythonParameters,
           function: async (args) => {
             parsedCalls.push(args);
             assert.equal(typeof args.code, "string");
+            assert.equal(args.language, "python");
             assert(args.path === undefined || args.path === "");
             const { stdout } = await execFileAsync(PYTHON, ["-I", "-c", args.code], {
               timeout: 15_000,
@@ -264,18 +265,16 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         const result = await run(
           client,
           MODEL,
-          `This is a schema transport probe. Call execute_python_code exactly once and emit no prose. Omit path.\n${exactBlock("PYTHON_CODE", fixture.code)}`,
+          `This is a schema transport probe. Call execute_script exactly once with language="python" and emit no prose. Omit path.\n${exactBlock("PYTHON_CODE", fixture.code)}`,
           [user("Execute the exact Python fixture now.")],
           [pythonTool],
-          { agentName: "bedrock-python-soak", maxTurns: 1 },
+          { agentName: "bedrock-python-soak", agentLoopStrategy: maxIterations(1) },
         );
 
-        assert.equal(result.status, "max_turns", resultDetail(result));
-        const observed = recordArguments(result, "execute_python_code", "code");
+        assert.equal(result.status, "completed", resultDetail(result));
+        const observed = recordArguments(result, "execute_script", "code");
         assert.equal(parsedCalls.length, 1);
-        const toolResult = contentParts(result.messages, "tool_result").find(
-          (part) => part.name === "execute_python_code",
-        );
+        const toolResult = contentParts(result.messages, "tool_result").find((part) => part.name === "execute_script");
         const output = toolResult?.result?.find((part) => part.type === "text")?.text;
         assert.equal(output, fixture.output);
         if (observed.leakedMarkup) stats.recoveredMarkupCalls++;

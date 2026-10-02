@@ -1,65 +1,64 @@
 import {
-  updateToolResultMeta,
+  chat,
+  defineAgent,
+  normalizeToUIMessage,
+  convertMessagesToModelMessages,
+  modelMessagesToUIMessages,
+  maxIterations,
+  StreamProcessor,
+  toolDefinition,
+  type AgentLoopStrategy,
+  type ChatMiddleware,
+  type RunAgentResumeItem,
+  type StreamChunk,
+  type UIMessage,
+} from "@tanstack/ai";
+import { z } from "zod";
+import {
   withMessageIdentity,
-  type Content,
+  updateToolResultMeta,
   type Message,
-  type MessageError,
   type Tool,
   type ToolCallContent,
   type ToolContext,
+  type AgentRunContext,
 } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
-import type { Client } from "./client";
+import type { Client, ClientRequestOptions } from "./client";
 import { combineAbortSignals } from "./abortSignals";
-import { getErrorInfo, isAbortError, isContextOverflowError, isReasoningReplayError } from "./errors";
-import { traceExecuteTool, traceInvokeAgent } from "./otel";
-import {
-  clearIncompatibleReasoning,
-  clearReplayableReasoning,
-  hasReplayableReasoning,
-  reasoningPrefix,
-} from "./reasoning";
-import { toResponseTools } from "./toolSchemas";
-import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
-import { compileToolRegistry, ToolArgumentValidationError, ToolRegistryError, type ToolRegistry } from "./toolRegistry";
-import {
-  AgentInvocationContext,
-  AgentRunController,
-  type AgentRunEvent,
-  type AgentRunResult,
-} from "./agent-run-controller";
+import { fromAIMessages, toAIMessages } from "./aiMessages";
+import { artifactDelta, artifactDeltaFromMeta } from "../types/artifact";
+import { captureRequestContext, injectRequestContext } from "./requestContext";
+import { aiDebug } from "./aiStream";
+import { getErrorInfo, isAbortError } from "./errors";
+import { aiTelemetry } from "./otel";
+import { serializeToolResultForApi } from "./utils";
 
-export type { AgentRunEvent, AgentRunResult, AgentRunStatus } from "./agent-run-controller";
+export type AgentRunStatus = "completed" | "interrupted" | "aborted" | "failed";
 
-/** Safety bound on model calls in one run, guarding against a runaway tool loop. */
-const DEFAULT_MAX_TURNS = 100;
-
-/** How many times one turn may compact-and-retry after a context overflow. */
-const MAX_OVERFLOW_COMPACTIONS = 2;
-
-/** Options forwarded verbatim to `client.complete`. */
-export type CompleteOptions = Parameters<Client["complete"]>[5];
-
-export interface AgentBeforeFinishContext {
-  runId: string;
+export interface AgentRunResult {
+  status: AgentRunStatus;
   messages: Message[];
-  signal?: AbortSignal;
+  error?: Message["error"];
 }
 
-export type AgentBeforeFinishDecision =
-  | { action: "finish"; appendContent?: Content[] }
-  | { action: "continue"; feedback: Message };
+/** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
+export type ChatOptions = NonNullable<Parameters<Client["chatModelOptions"]>[1]> & ClientRequestOptions;
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  /** Provider-owned native extensions, scoped by TanStack to this invocation. */
+  middleware?: ChatMiddleware[];
+  /** App policies instantiated for this run and each native child, with that run's cancellation. */
+  sharedMiddleware?: (signal: AbortSignal, context: AgentRunContext) => ChatMiddleware[];
+  /** Conversation identity shared by TanStack runs and diagnostics. */
+  threadId?: string;
+
   /** Stable run id supplied by a durable caller. Generated when omitted. */
   runId?: string;
 
-  /** Shared identity, cancellation, and model-call budget for nested agents. */
-  invocationContext?: AgentInvocationContext;
-
-  /** Receives the framework-independent lifecycle stream for this run. */
-  onEvent?: (event: AgentRunEvent) => void;
+  /** Application context for cancellation and workspace isolation. */
+  context?: AgentRunContext;
 
   /**
    * Identifier for this agent (e.g. `"chat"` or `"research"`).
@@ -68,35 +67,14 @@ export interface RunHooks {
    */
   agentName?: string;
 
-  /** Called with partial content as the model streams. */
-  onStream?: (content: Content[]) => void;
-
-  /** Called before each turn with the empty assistant message and its durable identity. */
-  onTurnStart?: (assistant: Message) => void;
-
-  /** Called after each LLM response is received with the new assistant message. */
-  onTurnEnd?: (assistant: Message) => void;
-
-  /** Authoritative history after each commit, including compaction and stop policies. */
-  onMessagesChange?: (messages: Message[]) => void;
-
   /**
    * Build a ToolContext for a given tool call (chat uses this for elicitation,
    * render, etc.). The harness injects tracing and metadata helpers.
    */
   createToolContext?: (toolCall: ToolCallContent) => ToolContext | undefined;
 
-  /** Called after each tool result message is appended. */
-  onToolResult?: (toolResult: Message) => void;
-
   /** Fires on every `setMeta`/`updateMeta` — both live (during execution) and late (after commit). */
   onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
-
-  /** Runtime stop gate. Return feedback to continue the same bounded run. */
-  beforeFinish?: (context: AgentBeforeFinishContext) => Promise<AgentBeforeFinishDecision>;
-
-  /** Persists wire-visible but UI-hidden feedback injected by a stop policy. */
-  onRuntimeFeedback?: (message: Message) => void | Promise<void>;
 
   /**
    * Transform messages before they're sent to the LLM. Used by chat to prune
@@ -104,23 +82,11 @@ export interface RunHooks {
    */
   prepareMessages?: (messages: Message[]) => Message[] | Promise<Message[]>;
 
-  /**
-   * Called when a model request overflows the context window mid-run (e.g. tool
-   * results ballooned it after the proactive compaction). Return a compacted
-   * copy of the messages to retry with, or the same array to give up. Lets the
-   * loop recover instead of failing the whole turn.
-   */
-  onContextOverflow?: (messages: Message[]) => Message[] | Promise<Message[]>;
+  /** Native loop strategy; defaults to 100 model turns per run. */
+  agentLoopStrategy?: AgentLoopStrategy;
 
-  /** Cap on model calls in one run. Defaults to a safety bound; a runaway
-   * tool-calling loop stops here rather than never terminating. */
-  maxTurns?: number;
-
-  /** Invocation-wide model-call budget shared with nested agents. Defaults to maxTurns. */
-  maxModelCalls?: number | null;
-
-  /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
-  options?: CompleteOptions;
+  /** Provider settings and cancellation for this run. */
+  options?: ChatOptions;
 
   /**
    * Parent trace context for nested agents spawned from a tool.
@@ -128,6 +94,391 @@ export interface RunHooks {
   parentContext?: AgentContext;
 }
 
+/** Rich workspace results and provider usage are presentation metadata, not a second transcript. */
+export class AgentMessageMetadata {
+  private results = new Map<string, Message>();
+  private usage = new Map<string, Message["usage"]>();
+  private runs = new Map<string, string>();
+
+  result(message: Message) {
+    const part = message.content.find((item) => item.type === "tool_result");
+    if (part) this.results.set(part.id, message);
+  }
+
+  toolMeta(toolCallId: string) {
+    return this.results.get(toolCallId)?.content.find((part) => part.type === "tool_result")?.meta;
+  }
+
+  turn(id: string, runId: string, usage?: Message["usage"]) {
+    this.runs.set(id, runId);
+    if (usage) this.usage.set(id, usage);
+  }
+
+  read(messages: UIMessage[], model?: string): Message[] {
+    return this.enrich(fromAIMessages(messages, undefined, model));
+  }
+
+  private enrich(messages: Message[]): Message[] {
+    return messages.map((message) => {
+      const part = message.content.find((item) => item.type === "tool_result");
+      const saved = part && this.results.get(part.id);
+      if (saved) return saved;
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === "subagent"
+            ? {
+                ...part,
+                messages: this.enrich(part.messages),
+              }
+            : part,
+        ),
+        runId: this.runs.get(message.id!) ?? message.runId,
+        usage: this.usage.get(message.id!) ?? message.usage,
+      };
+    });
+  }
+}
+
+export interface StreamRunHooks extends RunHooks {
+  metadata: AgentMessageMetadata;
+  parentRunId?: string;
+  resume?: RunAgentResumeItem[];
+  subagentRunId?: string;
+  onComplete?: (result: AgentRunResult) => void | Promise<void>;
+}
+
+export function chatToolDefinition(tool: Tool) {
+  return toolDefinition({
+    name: tool.name,
+    description: tool.description ?? tool.name,
+    inputSchema: z.fromJSONSchema(tool.parameters),
+    lazy: tool.lazy,
+    needsApproval: tool.needsApproval,
+  });
+}
+
+export function approvalTools(tools: Tool[]): ReturnType<typeof chatToolDefinition>[] {
+  return tools.flatMap((tool) => [
+    ...(tool.needsApproval ? [chatToolDefinition(tool)] : []),
+    ...(tool.subagent ? approvalTools(tool.subagent.tools) : []),
+  ]);
+}
+
+/** Browser-local connection stream. chat() owns every model/tool iteration. */
+export async function* streamRun(
+  client: Client,
+  model: string,
+  instructions: string,
+  messages: Message[],
+  tools: Tool[],
+  hooks: StreamRunHooks,
+): AsyncGenerator<StreamChunk> {
+  const combined = combineAbortSignals(hooks.context?.signal, hooks.options?.signal);
+  const abortController = new AbortController();
+  const abort = () => abortController.abort(combined.signal?.reason);
+  if (combined.signal?.aborted) abort();
+  else combined.signal?.addEventListener("abort", abort, { once: true });
+  const invocation: AgentRunContext = {
+    ...hooks.context,
+    signal: abortController.signal,
+  };
+  const runId = hooks.runId ?? crypto.randomUUID();
+  const childCalls = new Map<string, string>();
+  const childResults = new Map<string, Message[]>();
+  let snapshot = () => messages;
+  const finish = async (status: AgentRunResult["status"], error?: unknown, messages = snapshot()) => {
+    await hooks.onComplete?.({ status, messages, ...(error ? { error: getErrorInfo(error) } : {}) });
+  };
+
+  try {
+    abortController.signal.throwIfAborted();
+    const adapter = client.textAdapter(model, abortController.signal);
+    const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
+    let terminal: Extract<StreamChunk, { type: "RUN_FINISHED" }> | undefined;
+    let failure: Error | undefined;
+    const remember = (ctx: Parameters<NonNullable<ChatMiddleware["onStart"]>>[0]) => {
+      snapshot = () => hooks.metadata.read(modelMessagesToUIMessages([...ctx.messages]), model);
+    };
+    const middleware: ChatMiddleware<AgentRunContext> = {
+      onFinish: remember,
+      onError: remember,
+      onAbort: remember,
+      onConfig: async (ctx, config) => {
+        remember(ctx);
+        if (ctx.phase === "init")
+          return {
+            tools: config.tools.map((native) =>
+              tools.some((tool) => tool.subagent && tool.name === native.name && tool.needsApproval)
+                ? { ...native, needsApproval: true }
+                : native,
+            ),
+          };
+        if (ctx.phase !== "beforeModel") return;
+        if (hooks.prepareMessages)
+          return {
+            providerMessages: convertMessagesToModelMessages(
+              toAIMessages(
+                await hooks.prepareMessages(
+                  fromAIMessages(
+                    modelMessagesToUIMessages(config.providerMessages ?? config.messages),
+                    undefined,
+                    model,
+                    false,
+                  ),
+                ),
+                model,
+              ),
+            ),
+          };
+        return undefined;
+      },
+      onIteration: (ctx) => {
+        if (ctx.currentMessageId) hooks.metadata.turn(ctx.currentMessageId, runId);
+      },
+      onUsage: (ctx, usage) => {
+        if (ctx.currentMessageId)
+          hooks.metadata.turn(ctx.currentMessageId, runId, {
+            model: adapter.responseInfo?.model ?? model,
+            reasoningContext: adapter.responseInfo?.reasoningContext,
+            inputTokens: usage.promptTokens,
+            outputTokens: usage.completionTokens,
+            cachedInputTokens: usage.promptTokensDetails?.cachedTokens,
+            reasoningTokens: usage.completionTokensDetails?.reasoningTokens,
+          });
+      },
+      onAfterToolCall: (_ctx, call) => {
+        if (tools.some((tool) => tool.name === call.toolName && tool.subagent)) {
+          const child = [...childCalls].find(([, id]) => id === call.toolCallId)?.[0];
+          const mutations = (childResults.get(child ?? "") ?? [])
+            .flatMap((message) => message.content)
+            .flatMap((part) =>
+              part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : [],
+            );
+          hooks.metadata.result(
+            withMessageIdentity(
+              {
+                id: `result-${call.toolCallId}`,
+                role: "user",
+                content: [
+                  {
+                    type: "tool_result",
+                    id: call.toolCallId,
+                    name: call.toolName,
+                    arguments: call.toolCall.function.arguments,
+                    result: [
+                      {
+                        type: "text",
+                        text: call.ok
+                          ? typeof call.result === "string"
+                            ? call.result
+                            : (JSON.stringify(call.result) ?? "")
+                          : getErrorInfo(call.error).message,
+                      },
+                    ],
+                    ...(mutations.length ? { meta: { artifactDelta: artifactDelta(mutations) } } : {}),
+                  },
+                ],
+                ...(!call.ok ? { error: getErrorInfo(call.error) } : {}),
+              },
+              runId,
+            ),
+          );
+        }
+      },
+    };
+    const nativeTools = tools
+      .filter((tool) => !tool.subagent)
+      .map((tool) =>
+        chatToolDefinition(tool).server<AgentRunContext>(async (input, execution) => {
+          const call: ToolCallContent = {
+            type: "tool_call",
+            id: execution?.toolCallId ?? crypto.randomUUID(),
+            name: tool.name,
+            arguments: JSON.stringify(input),
+          };
+          let meta: Record<string, unknown> = {};
+          let content: Record<string, unknown> | undefined;
+          let error: Message["error"];
+          let saved: Message | undefined;
+          const updateMeta = (next: Record<string, unknown>) => {
+            meta = next;
+            if (saved) {
+              saved = updateToolResultMeta([saved], call.id, meta)[0];
+              hooks.metadata.result(saved);
+            }
+            hooks.onToolMeta?.(call.id, { ...meta });
+          };
+          const result = await tool.function(input as Record<string, unknown>, {
+            ...hooks.createToolContext?.(call),
+            model,
+            interruptible: true,
+            inputResponse: execution?.inputResponse,
+            runId,
+            invocationContext: execution?.context,
+            signal: abortController.signal,
+            agentContext: telemetry.toolContext(call.id),
+            setMeta: updateMeta,
+            updateMeta: (next) => updateMeta({ ...meta, ...next }),
+            setContent: (next) => {
+              content = next;
+            },
+            setError: (next) => {
+              error = next;
+            },
+          });
+          abortController.signal.throwIfAborted();
+          saved = withMessageIdentity(
+            {
+              id: `result-${call.id}`,
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  id: call.id,
+                  name: call.name,
+                  arguments: call.arguments,
+                  result,
+                  meta,
+                  content,
+                },
+              ],
+              error,
+            },
+            runId,
+          );
+          hooks.metadata.result(saved);
+          if (error) throw Object.assign(new Error(error.message), { code: error.code });
+          return serializeToolResultForApi(result);
+        }),
+      );
+    const agents = tools.flatMap((tool) => {
+      const spec = tool.subagent;
+      if (!spec) return [];
+      return [
+        defineAgent({
+          name: tool.name,
+          description: tool.description ?? tool.name,
+          inputSchema: chatToolDefinition(tool).inputSchema,
+          run: (ctx) => {
+            const { prompt } = ctx.input as { prompt: string };
+            const childModel = spec.model ?? model;
+            const history = hooks.metadata.read(
+              ctx.messages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
+              childModel,
+            );
+            const context = captureRequestContext(
+              [spec.runtimeContext, `Delegated task: ${prompt}`].filter(Boolean).join("\n\n"),
+            );
+            return streamRun(
+              client,
+              childModel,
+              spec.instructions,
+              spec.inheritHistory === false
+                ? [
+                    { id: `${ctx.subagentRunId}-prompt`, role: "user", content: [{ type: "text", text: prompt }] },
+                    // Native resume includes the parent prefix and the child's
+                    // work. A brief-only child retains just its own work.
+                    ...history.filter((message) => message.runId?.includes(ctx.subagentRunId)),
+                  ]
+                : history,
+              spec.tools,
+              {
+                metadata: hooks.metadata,
+                middleware: spec.middleware,
+                sharedMiddleware: hooks.sharedMiddleware,
+                agentName: tool.name,
+                runId: ctx.runId,
+                threadId: ctx.threadId,
+                parentRunId: ctx.parentRunId,
+                subagentRunId: ctx.subagentRunId,
+                resume: ctx.resume,
+                context: { ...invocation, subagentRunId: ctx.subagentRunId },
+                options: { signal: ctx.abortSignal },
+                parentContext: telemetry.toolContext(childCalls.get(ctx.subagentRunId) ?? ctx.subagentRunId),
+                createToolContext: hooks.createToolContext,
+                onToolMeta: hooks.onToolMeta,
+                prepareMessages: async (messages) =>
+                  hooks.prepareMessages && spec.inheritHistory !== false
+                    ? injectRequestContext(await hooks.prepareMessages(messages), `Delegated task: ${prompt}`)
+                    : injectRequestContext(messages, context),
+                onComplete: (result) => {
+                  childResults.set(
+                    ctx.subagentRunId,
+                    result.messages.filter((message) => message.runId?.includes(ctx.subagentRunId)),
+                  );
+                },
+              },
+            );
+          },
+        }),
+      ];
+    });
+    const stream = chat({
+      adapter,
+      // Outstanding calls belong to an explicit interrupt continuation.
+      // A fresh send must not execute a tool abandoned by Stop or reload.
+      messages: toAIMessages(messages, model, { pendingToolCalls: !!hooks.resume?.length }),
+      systemPrompts: [instructions],
+      tools: nativeTools,
+      ...(agents.length ? { subagents: { agents } } : {}),
+      lazyToolsConfig: { includeDescription: "first-sentence" },
+      abortController,
+      context: invocation,
+      runId,
+      threadId: hooks.threadId,
+      parentRunId: hooks.parentRunId,
+      resume: hooks.resume,
+      subagentRunId: hooks.subagentRunId,
+      debug: aiDebug,
+      modelOptions: client.chatModelOptions(model, hooks.options),
+      agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
+      middleware: [
+        telemetry,
+        // Checkpoints must see the canonical transcript. Request-only context
+        // and attachment loading then operate on the compacted provider view.
+        ...(hooks.sharedMiddleware?.(abortController.signal, invocation) ?? []),
+        middleware,
+        ...(hooks.middleware ?? []),
+      ],
+    });
+    for await (const chunk of stream) {
+      abortController.signal.throwIfAborted();
+      if (chunk.type === "SUBAGENT_STARTED" && chunk.parentToolCallId)
+        childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
+      if (
+        chunk.type === "RUN_FINISHED" &&
+        (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+      ) {
+        terminal = chunk;
+        continue;
+      }
+      if (chunk.type === "RUN_ERROR" && (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)) {
+        failure = Object.assign(new Error(chunk.message), { code: chunk.code });
+      }
+      yield chunk;
+    }
+    abortController.signal.throwIfAborted();
+    if (failure) {
+      await finish("failed", failure);
+      return;
+    }
+    await finish(terminal?.outcome?.type === "interrupt" ? "interrupted" : "completed");
+    if (terminal) yield terminal;
+  } catch (error) {
+    const aborted = abortController.signal.aborted || isAbortError(error);
+    await finish(aborted ? "aborted" : "failed", error);
+    if (!aborted) {
+      const info = getErrorInfo(error);
+      yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
+    }
+  } finally {
+    combined.signal?.removeEventListener("abort", abort);
+    combined.cleanup();
+  }
+}
+
+/** One-shot callers collect the native stream without an interactive ChatClient. */
 export async function run(
   client: Client,
   model: string,
@@ -136,401 +487,27 @@ export async function run(
   tools: Tool[],
   hooks: RunHooks = {},
 ): Promise<AgentRunResult> {
-  const combinedSignal = combineAbortSignals(hooks.invocationContext?.signal, hooks.options?.signal);
-  const baseInvocation =
-    hooks.invocationContext ??
-    new AgentInvocationContext({
-      maxModelCalls: hooks.maxModelCalls === undefined ? (hooks.maxTurns ?? DEFAULT_MAX_TURNS) : hooks.maxModelCalls,
-    });
-  const controller = new AgentRunController({
-    runId: hooks.runId,
-    invocation: baseInvocation.withSignal(combinedSignal.signal),
-    onEvent: hooks.onEvent,
-  });
-  try {
-    const toolRegistry = compileToolRegistry(tools);
-    return await traceInvokeAgent(
-      hooks.agentName,
-      (invokeCtx) => runLoop(client, model, instructions, messages, toolRegistry, hooks, invokeCtx, controller),
-      hooks.parentContext,
-    );
-  } catch (error) {
-    if (controller.invocation.signal?.aborted || isAbortError(error)) {
-      return controller.finish("aborted", "abort", messages);
-    }
-    if (error instanceof ToolRegistryError) {
-      return controller.finish("failed", "error", messages, {
-        code: "TOOL_REGISTRY_INVALID",
-        message: error.message,
-      });
-    }
-    const detail = getErrorInfo(error);
-    return controller.finish("failed", "error", messages, detail);
-  } finally {
-    combinedSignal.cleanup();
-  }
+  const metadata = new AgentMessageMetadata();
+  let result: AgentRunResult | undefined;
+  const processor = new StreamProcessor({ initialMessages: toAIMessages(messages, model) });
+  await processor.process(
+    streamRun(client, model, instructions, messages, tools, {
+      ...hooks,
+      metadata,
+      onComplete: (value) => {
+        result = value;
+      },
+    }),
+  );
+  if (!result) throw new Error("Agent stream did not finish");
+  return { ...result, messages: metadata.read(processor.getMessages(), model) };
 }
 
-/** Compatibility adapter for callers that have not migrated to terminal results yet. */
-export async function runMessages(
-  client: Client,
-  model: string,
-  instructions: string,
-  messages: Message[],
-  tools: Tool[],
-  hooks: RunHooks = {},
-): Promise<Message[]> {
-  const result = await run(client, model, instructions, messages, tools, hooks);
-  if (result.status === "failed") {
-    const error = new Error(result.error?.message ?? "Agent run failed");
-    Object.assign(error, { code: result.error?.code ?? "AGENT_RUN_FAILED" });
-    throw error;
-  }
+export async function runMessages(...args: Parameters<typeof run>): Promise<Message[]> {
+  const result = await run(...args);
+  if (result.status === "failed")
+    throw Object.assign(new Error(result.error?.message ?? "Agent run failed"), { code: result.error?.code });
+  if (result.status === "interrupted") throw new Error("This operation requires an interactive chat to continue.");
   if (result.status === "aborted") throw new DOMException("Agent run was cancelled.", "AbortError");
-  if (result.status === "max_turns") {
-    throw Object.assign(new Error("Agent run reached its turn limit."), { code: "MAX_TURNS" });
-  }
   return result.messages;
-}
-
-async function runLoop(
-  client: Client,
-  model: string,
-  instructions: string,
-  messages: Message[],
-  toolRegistry: ToolRegistry,
-  hooks: RunHooks,
-  invokeCtx: AgentContext,
-  controller: AgentRunController,
-): Promise<AgentRunResult> {
-  const { onStream, onTurnStart, onTurnEnd, onToolResult, prepareMessages, onContextOverflow, options } = hooks;
-  const signal = controller.invocation.signal;
-  const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
-  let conversation = [...messages];
-  let settled = false;
-  const commit = (next: Message[]) => {
-    conversation = next;
-    hooks.onMessagesChange?.(conversation);
-  };
-  const toolHooks: RunHooks = {
-    ...hooks,
-    onToolMeta: (callId, meta) => {
-      if (!settled && !signal?.aborted) {
-        const updated = updateToolResultMeta(conversation, callId, meta);
-        if (updated !== conversation) commit(updated);
-      }
-      hooks.onToolMeta?.(callId, meta);
-    },
-  };
-
-  // Send one model request, recovering from two provider rejections rather
-  // than failing the turn: replayed reasoning the provider will not accept is
-  // dropped once, and a mid-run context overflow is compacted and re-sent.
-  // Both are bounded so a request that stays invalid still surfaces the error.
-  const sendTurn = async (turn: number): Promise<Message> => {
-    let compactions = 0;
-    let droppedReasoning = false;
-    for (;;) {
-      signal?.throwIfAborted();
-      const compatible = clearIncompatibleReasoning(conversation, {
-        model,
-        prefix: reasoningPrefix(instructions, toResponseTools(toolRegistry.tools)),
-      });
-      if (compatible !== conversation) commit(compatible);
-      const modelMessages = prepareMessages ? await prepareMessages(conversation) : conversation;
-      try {
-        signal?.throwIfAborted();
-        if (!controller.invocation.tryConsumeModelCall()) throw new AgentBudgetExceededError();
-        controller.emit({ type: "model.started", turn });
-        let streamingStarted = false;
-        const assistant = await client.complete(
-          model,
-          instructions,
-          modelMessages,
-          toolRegistry.tools,
-          (content) => {
-            if (!streamingStarted) {
-              streamingStarted = true;
-              controller.emit({ type: "model.streaming", turn });
-            }
-            onStream?.(content);
-          },
-          {
-            ...options,
-            signal,
-            parentContext: invokeCtx,
-          },
-        );
-        controller.emit({ type: "model.completed", turn });
-        return assistant;
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        if (!droppedReasoning && isReasoningReplayError(error) && hasReplayableReasoning(conversation)) {
-          // Payloads bound to another key or deployment: continue without them.
-          droppedReasoning = true;
-          commit(clearReplayableReasoning(conversation));
-          continue;
-        }
-        if (onContextOverflow && compactions < MAX_OVERFLOW_COMPACTIONS && isContextOverflowError(error)) {
-          compactions++;
-          try {
-            controller.emit({ type: "compaction.started", turn });
-            const compacted = await onContextOverflow(conversation);
-            signal?.throwIfAborted();
-            controller.emit({ type: "compaction.completed", turn });
-            if (compacted !== conversation) {
-              commit(compacted);
-              continue;
-            }
-          } catch (compactError) {
-            if (signal?.aborted || isAbortError(compactError)) throw compactError;
-            // Compaction itself failed (e.g. the summarizer errored); surface the
-            // original overflow, which is the more actionable error.
-            console.warn("[agent] context-overflow recovery failed", compactError);
-          }
-        }
-        throw error;
-      }
-    }
-  };
-
-  try {
-    // Bounded to keep a runaway tool-calling loop from never terminating.
-    for (let turn = 0; turn < maxTurns; turn++) {
-      if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-      const pendingAssistant = withMessageIdentity({ role: "assistant", content: [] }, controller.runId);
-      onTurnStart?.(pendingAssistant);
-
-      const assistantMessage = withMessageIdentity(
-        { ...(await sendTurn(turn)), id: pendingAssistant.id, createdAt: pendingAssistant.createdAt },
-        controller.runId,
-      );
-      if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-
-      const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");
-      const callIds = new Set(
-        conversation.flatMap((message) =>
-          message.content.flatMap((part) => (part.type === "tool_call" ? [part.id] : [])),
-        ),
-      );
-      for (const call of toolCalls) {
-        if (!call.id.trim() || callIds.has(call.id)) {
-          throw Object.assign(new Error("The model returned a missing or duplicate tool call ID."), {
-            code: "INVALID_TOOL_CALL",
-          });
-        }
-        callIds.add(call.id);
-      }
-      commit([...conversation, assistantMessage]);
-      onTurnEnd?.(assistantMessage);
-      if (toolCalls.length === 0) {
-        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-        if (hooks.beforeFinish) {
-          controller.emit({ type: "verification.started", turn });
-          const decision = await hooks.beforeFinish({
-            runId: controller.runId,
-            messages: conversation,
-            signal,
-          });
-          if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-          controller.emit({ type: "verification.completed", turn });
-          if (decision.action === "continue") {
-            const feedback = withMessageIdentity(decision.feedback, controller.runId);
-            commit([...conversation, feedback]);
-            await hooks.onRuntimeFeedback?.(feedback);
-            continue;
-          }
-          if (decision.appendContent?.length) {
-            commit(appendToFinalAssistant(conversation, decision.appendContent));
-          }
-        }
-        return controller.finish("completed", "end_turn", conversation);
-      }
-
-      for (const toolCall of toolCalls) {
-        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-        controller.emit({ type: "tool.started", turn, callId: toolCall.id, name: toolCall.name });
-        const toolResult = withMessageIdentity(
-          await dispatchToolCall(toolCall, toolRegistry, toolHooks, invokeCtx, controller, turn),
-          controller.runId,
-        );
-        commit([...conversation, toolResult]);
-        onToolResult?.(toolResult);
-        controller.emit({ type: "tool.completed", turn, callId: toolCall.id, name: toolCall.name });
-        if (signal?.aborted) return controller.finish("aborted", "abort", conversation);
-      }
-    }
-
-    return controller.finish("max_turns", "max_turns", conversation);
-  } catch (error) {
-    if (signal?.aborted || isAbortError(error)) return controller.finish("aborted", "abort", conversation);
-    if (error instanceof AgentBudgetExceededError) {
-      return controller.finish("max_turns", "max_turns", conversation);
-    }
-    const detail = getErrorInfo(error);
-    return controller.finish("failed", "error", conversation, detail);
-  } finally {
-    settled = true;
-  }
-}
-
-async function dispatchToolCall(
-  toolCall: ToolCallContent,
-  toolRegistry: ToolRegistry,
-  hooks: RunHooks,
-  invokeCtx: AgentContext,
-  controller: AgentRunController,
-  turn: number,
-): Promise<Message> {
-  const tool = toolRegistry.get(toolCall.name);
-  if (!tool) {
-    return toolErrorMessage(toolCall, `Error: Tool "${toolCall.name}" not found or not executable.`, {
-      code: "TOOL_NOT_FOUND",
-      message: `Tool "${toolCall.name}" is not available or not executable.`,
-    });
-  }
-
-  if (toolCall.incomplete) {
-    return toolErrorMessage(
-      toolCall,
-      `Error: The response hit its output token limit while writing the arguments for "${toolCall.name}", so they are incomplete. Nothing was executed. Retry with a smaller, complete JSON object. For large files, create a small initial section and extend it with localized edits in separate calls, or use a short interpreter script to generate the file from existing data. Do not resend the same oversized payload.`,
-      {
-        code: "TOOL_ARGS_TRUNCATED",
-        message: `Arguments for "${toolCall.name}" were truncated by the output token limit. Nothing was executed; retry with a smaller payload.`,
-      },
-    );
-  }
-
-  // Parse before tracing so a malformed-JSON failure (model mis-escaped a
-  // string field like `code`) yields an actionable, model-facing message it can
-  // self-correct from — instead of a raw V8 SyntaxError. `parseToolArguments`
-  // already retries with a repair pass, so reaching the catch means the args are
-  // genuinely unrecoverable.
-  let args: Record<string, unknown>;
-  try {
-    // Pass the tool's schema so a mis-escaped code/command field can be sliced
-    // out by structural boundaries instead of guessed at (or truncated) by the
-    // generic repair pass.
-    args = toolRegistry.parse(tool, parseToolArguments(toolCall.arguments, toolArgumentHints(tool.parameters)));
-  } catch (error) {
-    if (error instanceof ToolArgumentsParseError) {
-      return toolErrorMessage(
-        toolCall,
-        `Error: The tool arguments could not be parsed (${error.message}). Re-send the call as a single JSON object with the declared parameters. If a string value (e.g. \`code\`) contains " or \\, escape every " as \\", every \\ as \\\\, and newlines as \\n. For long scripts with many quotes, write the code to a .py artifact and run it via \`path\` to avoid JSON escaping entirely.`,
-        { code: "TOOL_ARGS_INVALID_JSON", message: "The tool arguments could not be parsed as JSON." },
-      );
-    }
-    if (error instanceof ToolArgumentValidationError) {
-      return toolErrorMessage(
-        toolCall,
-        `Error: ${error.message}. Nothing was executed. Re-send one complete JSON object with every required property and the declared parameter types. Array parameters must be JSON arrays, even for a single item; do not stringify them.`,
-        {
-          code: "TOOL_ARGS_SCHEMA_INVALID",
-          message: error.message,
-        },
-      );
-    }
-    throw error;
-  }
-
-  try {
-    let resultMeta: Record<string, unknown> | undefined;
-    let resultError: MessageError | undefined;
-    let resultContent: Record<string, unknown> | undefined;
-
-    const result = await traceExecuteTool(
-      toolCall.name,
-      {
-        toolCallId: toolCall.id,
-        toolDescription: tool.description,
-        parentContext: invokeCtx,
-      },
-      (executeCtx) => {
-        const baseContext = hooks.createToolContext?.(toolCall);
-        const toolContext: ToolContext = {
-          ...baseContext,
-          runId: controller.runId,
-          invocationContext: controller.invocation,
-          signal: controller.invocation.signal ?? baseContext?.signal,
-          setMeta: (meta) => {
-            resultMeta = { ...meta };
-            hooks.onToolMeta?.(toolCall.id, { ...meta });
-            controller.emit({ type: "tool.updated", turn, callId: toolCall.id, name: toolCall.name });
-          },
-          updateMeta: (meta) => {
-            resultMeta = { ...resultMeta, ...meta };
-            hooks.onToolMeta?.(toolCall.id, { ...resultMeta });
-            controller.emit({ type: "tool.updated", turn, callId: toolCall.id, name: toolCall.name });
-          },
-          setError: (error) => {
-            resultError = error;
-          },
-          setContent: (content) => {
-            resultContent = content;
-          },
-          agentContext: executeCtx,
-        };
-        return tool.function(args, toolContext);
-      },
-    );
-
-    return {
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          id: toolCall.id,
-          name: toolCall.name,
-          arguments: toolCall.arguments,
-          result,
-          ...(resultMeta ? { meta: resultMeta } : {}),
-          ...(resultContent ? { content: resultContent } : {}),
-        },
-      ],
-      ...(resultError ? { error: resultError } : {}),
-    };
-  } catch (error) {
-    if (controller.invocation.signal?.aborted || isAbortError(error)) throw error;
-    console.error("Tool failed", error);
-    const detail = error instanceof Error ? error.message : "Tool execution failed.";
-    return toolErrorMessage(toolCall, `Error: ${detail}`, {
-      code: "TOOL_EXECUTION_ERROR",
-      message: "The tool could not complete the requested action. Please try again or use a different approach.",
-    });
-  }
-}
-
-class AgentBudgetExceededError extends Error {
-  constructor() {
-    super("The invocation-wide model-call budget was exhausted.");
-    this.name = "AgentBudgetExceededError";
-  }
-}
-
-function appendToFinalAssistant(messages: Message[], content: Content[]): Message[] {
-  const index = messages.findLastIndex((message) => message.role === "assistant");
-  if (index < 0) return messages;
-  const next = [...messages];
-  next[index] = { ...next[index], content: [...next[index].content, ...content] };
-  return next;
-}
-
-function toolErrorMessage(
-  toolCall: ToolCallContent,
-  resultText: string,
-  error: { code: string; message: string },
-): Message {
-  return {
-    role: "user",
-    content: [
-      {
-        type: "tool_result",
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments,
-        result: [{ type: "text", text: resultText }],
-      },
-    ],
-    error,
-  };
 }

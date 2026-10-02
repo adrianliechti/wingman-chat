@@ -15,7 +15,7 @@ export function pluginMcpClientId(pluginId: string, serverName: string): string 
 
 /**
  * Adapt plugins' bundled skills to catalog entries so they resolve through the
- * app's single `read_skill` surface, tagged with the owning plugin id.
+ * app's single `load_skill` surface, tagged with the owning plugin id.
  */
 export function pluginEntries(plugins: InstalledPlugin[]): SkillEntry[] {
   return plugins.flatMap((plugin) =>

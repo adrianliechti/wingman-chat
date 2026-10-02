@@ -23,6 +23,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { type PluggableList, unified } from "unified";
 import { cn } from "@/shared/lib/cn";
+import { useStreamingText } from "@/shared/hooks/useStreamingText";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
@@ -977,9 +978,9 @@ const NonMemoizedMarkdown = ({
   );
   const processor = useMemo(() => createMarkdownProcessor(mathPlugins, emojiMode), [mathPlugins, emojiMode]);
 
-  // useChatRun already throttles incoming tokens. Memoization keeps the urgent
-  // render of a deferred update from parsing the unchanged input again.
-  const input = useDeferredValue(children);
+  // Native chunks may contain whole sentences. Reveal them over a few frames;
+  // defer Markdown work so typing and Stop stay responsive during parsing.
+  const input = useDeferredValue(useStreamingText(children, isStreaming));
   const { result, hasMath } = useMemo(() => {
     if (!input) return { result: null, hasMath: false };
     const parsed = processor.parse(input);

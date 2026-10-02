@@ -27,6 +27,13 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "webkit-interpreter",
+      testMatch: "interpreter.spec.ts",
+      // These two checks specifically require the OPFS writer missing in Playwright WebKit.
+      grepInvert: /production file tools preserve|artifact OPFS round-trip/,
+      use: { ...devices["Desktop Safari"] },
+    },
     { name: "webkit-react-ui", testMatch: "react-ui.spec.ts", use: { ...devices["Desktop Safari"] } },
     { name: "webkit-services", testMatch: "worker-services.spec.ts", use: { ...devices["Desktop Safari"] } },
     { name: "webkit-duckdb", testMatch: "duckdb-lifecycle.spec.ts", use: { ...devices["Desktop Safari"] } },

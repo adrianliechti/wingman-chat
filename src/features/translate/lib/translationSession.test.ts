@@ -42,7 +42,7 @@ describe("translation ownership", () => {
     await pending;
     await vi.advanceTimersByTimeAsync(2000);
     expect(translate).toHaveBeenCalledOnce();
-    expect(translate.mock.calls[0].slice(0, 2)).toEqual(["de", "Hello"]);
+    expect(translate.mock.calls[0].slice(0, 3)).toEqual(["", "de", "Hello"]);
     expect(rewriteText).toHaveBeenCalledOnce();
     expect(session.getSnapshot().translatedText).toBe("rewritten");
   });
@@ -54,7 +54,7 @@ describe("translation ownership", () => {
     session.update({ sourceText: "Old" });
     const first = session.translate();
     await Promise.resolve();
-    const signal = translate.mock.calls[0][2]?.signal;
+    const signal = translate.mock.calls[0][3]?.signal;
     session.update({ targetLang: "fr" });
     const second = session.translate();
     await Promise.resolve();
@@ -74,7 +74,7 @@ describe("translation ownership", () => {
     const pending = session.translate();
     await vi.advanceTimersByTimeAsync(0);
     expect(rewriteText).toHaveBeenCalledOnce();
-    const signal = translate.mock.calls[0][2]?.signal;
+    const signal = translate.mock.calls[0][3]?.signal;
     session.reset();
     expect(signal?.aborted).toBe(true);
     rewrite.reject(new Error("late failure"));
@@ -116,6 +116,19 @@ describe("translation ownership", () => {
     session.dispose();
     await vi.advanceTimersByTimeAsync(2000);
     expect(translate).not.toHaveBeenCalled();
+  });
+
+  it("starts from the initial provider and retranslates when the provider changes", async () => {
+    session.dispose();
+    session = new TranslationSession({ translate, rewriteText }, {}, { provider: "azure", targetLang: "de" });
+    session.update({ sourceText: "Hello" });
+    await session.translate();
+    session.update({ provider: "google" });
+    await session.translate();
+    expect(translate.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ["azure", "de"],
+      ["google", "de"],
+    ]);
   });
 
   it("validates file and text limits before sending", async () => {

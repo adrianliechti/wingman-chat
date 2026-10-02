@@ -1,0 +1,425 @@
+# Browser AI integration
+
+All AI execution stays in the browser. The Go server continues to host the SPA
+and proxy `/api/v1`; no TypeScript service or provider secret is added to the
+frontend.
+
+## Framework ownership
+
+- `@tanstack/ai` owns the model/tool loop, streamed messages, tool validation,
+  structured output, embeddings, speech, transcription, and OpenTelemetry
+  middleware. `@tanstack/ai-openai` supplies the gateway's Responses and media
+  adapters, including provider serialization and SDK retries. Interrupted response
+  streams fail the run; there is no custom replay of partially streamed requests.
+- `@tanstack/ai-client` owns chat messages, streaming, batch queueing, interrupts,
+  client persistence, realtime state, and dictation through `AudioRecorder`.
+- `@tanstack/ai-react` owns the React chat lifecycle through `useChat`, including
+  loading, queue and interrupt subscriptions, thread changes, and cleanup.
+- `@tanstack/ai-compaction` owns provider-context trimming and summarization.
+- `@tanstack/ai-mcp` owns MCP initialization, discovery, calls, resources, prompts,
+  and connection cleanup. The SDK HTTP transport supplies browser OAuth.
+- `@tanstack/ai-skills` owns skill catalogs, loading, resource tools, and per-run
+  activation through its portable skills API.
+- MCP apps use `AppFrame` and `AppBridge` from `@mcp-ui/client`, the renderer used
+  by TanStack's `MCPAppResource`. It owns iframe initialization and delivery of
+  initial tool input and results.
+
+The integration follows [TanStack AI](https://tanstack.com/ai/latest),
+[MCP](https://tanstack.com/ai/latest/docs/tools/mcp),
+[realtime](https://tanstack.com/ai/latest/docs/media/realtime-chat), and
+[MCP Apps](https://tanstack.com/ai/latest/docs/mcp/apps). Examples that put
+orchestration in a server route are adapted to the application's browser-only
+execution requirement. The installed package sources define the precise APIs.
+
+## Shared execution and removed code
+
+Chat connects native [`useChat`](https://tanstack.com/ai/latest/docs/ui/react)
+directly to browser-local `streamRun`, which calls
+native `chat()`. The connection forwards TanStack's run, parent, thread, and
+resume context. There is no application token buffer, tool-execution loop,
+queue controller, manual React client lifecycle, or recursive queue drain.
+A draft receives its thread ID before saving, so its first send keeps the same
+native client. Voice messages enter that transcript through `setMessages`;
+completed voice tools retain their call arguments alongside the result.
+Delegation uses `defineAgent` and native nested streams. One-shot interpreter
+`llm`/`vision` calls use the same stream through a short `run` helper, with only
+their own prompt and no tools. Noninteractive callers collect messages using
+TanStack's `StreamProcessor`; they do not create an interactive `ChatClient`.
+
+`AgentRunController` and its parallel lifecycle event protocol have been removed.
+Chat progress follows native middleware callbacks and stream chunks. Tool-result
+cleanup uses `onToolPhaseComplete.results` instead of scanning the transcript.
+Run results contain only status, messages, and an optional error. Plain runtime
+context carries cancellation and child workspace identity; it has no counters.
+
+`Client.complete()` and `Client.summarizeHistory()` have been deleted. `Client`
+retains provider configuration, structured-output tasks, media activities, and
+gateway endpoint contracts. Unused per-turn/message callbacks were removed;
+observers use native middleware hooks.
+
+The application no longer creates `invoke_agent` or `execute_tool` spans around
+TanStack's own spans. Native [OpenTelemetry middleware](https://tanstack.com/ai/latest/docs/advanced/otel)
+owns the root, model, and tool lifecycles and their metrics. A small tracer bridge
+passes the native tool context to delegated work and MCP annotations, including
+when the browser has no asynchronous context manager. This removes duplicate
+tool spans and duration reporting. Structured results also rely on TanStack's
+schema validation instead of parsing the validated value a second time.
+
+The existing `Message`/`Content` storage format remains framework-independent.
+`aiMessages.ts` is its storage/UI projection, not another transcript owner.
+`ChatClient` owns live messages; an adapter writes them to the existing chat
+store and OPFS persistence queue. A small metadata cache attaches rich workspace
+results, usage, and run identities. The boundary retains attachment names and
+media types, reasoning model identity, artifact references, and widget results.
+Rich tool results stay in presentation metadata; execution and history replay
+send the same text descriptions of binary outputs to the provider. Inline user
+files retain their filename, MIME type, and bytes as gateway `input_file` items,
+including Office documents and text files beyond the native adapter's PDF-only
+document contract. Upload preservation and text extraction remain independent
+of this request serialization.
+
+Dictation uses the native recorder's encoded blob directly, following the
+[audio recording guide](https://tanstack.com/ai/latest/docs/media/audio-recording).
+It prefers WebM/Opus and falls back to the browser's supported recording format.
+Microphone selection, pending-permission cancellation, duplicate stops, and
+navigation cancellation remain at the composer boundary. The unused PCM/WAV
+encoding module and its exports have been deleted. Realtime voice keeps its
+PCM worklet because that is the gateway's streaming protocol.
+
+## Additional native features
+
+Skills follow the [portable skills guide](https://tanstack.com/ai/latest/docs/skills/agent-skills)
+and [custom source contract](https://tanstack.com/ai/latest/docs/skills/writing-adapters).
+A bytes-only source connects the selected OPFS library, lazy Studio templates,
+and installed plugins to `withSkills`. The middleware adds the catalog and
+`load_skill`; `createResourceTool` supplies `read_skill_resource`. The handwritten
+catalog XML, loading schemas, resource tool implementation, and skill-content
+envelope have been removed. Wingman disables TanStack's default 4,000-estimated-token
+catalog cap with `maxCatalogTokens: Infinity`, keeping every selected skill
+available. Model context limits still apply; history compaction does not shrink
+the skills catalog in the system prompt.
+
+Providers can supply native chat middleware through `ToolProvider.chat`. The
+same filtered selection reaches main chat and delegated runs, including agents
+invoked from voice. Realtime itself uses the native tool factories and catalog
+renderer because it has no chat middleware. Activation belongs to one run or
+voice tools instance, so duplicate loads return TanStack's short marker without
+suppressing a different conversation. The skill editor reuses instructions and
+edits already present in the current run.
+
+Plugin skill names are qualified (`plugin:skill`, with URL-encoded plugin ids)
+in both the catalog and interpreter mount paths. This fixes resource collisions
+between same-named plugin and personal skills. Compaction retains the full
+native skill result, including resources and compatibility, and ignores later
+already-loaded markers. Saved `read_skill` results remain readable; their plugin
+argument is used to distinguish legacy identities. New calls use `load_skill`
+with `name`, and `read_skill_resource` with `skill` and `path`.
+
+`execute_script` accepts inline `code` with an explicit `language` (`python`,
+`javascript`, or `bash`), or `path` to an artifact or selected skill resource
+(including qualified plugin resources). File scripts detect the runtime from a
+recognized shebang, then the extension (`.py`, `.js`/`.mjs`/`.cjs`, `.sh`/`.bash`);
+`language` overrides detection. Source syntax is never guessed. Optional `args`
+supplies script arguments without shell parsing.
+Resource resolution happens after mounting the selected files; an existing
+artifact at the same path retains precedence. Mounted resource files are removed
+from the committed snapshot, so execution does not edit the skill bundle.
+
+Python file scripts receive `__file__`, their own `__main__` module, `sys.argv`,
+and sibling imports. The loader inspects the entry script and its static local
+imports for bundled dependencies before execution; it does not execute modules
+to discover imports or install packages. Relative file I/O remains rooted at
+`/home/user/`. Local modules, argument lists and import paths are reset between
+runs; bundled library imports remain cached. Successful `sys.exit(0)` completes
+normally, while a nonzero exit fails without committing workspace changes.
+JavaScript scripts receive `process.argv`, `__filename` and `__dirname`, with
+resources available through `vfs`. They retain the existing browser runtime:
+no Node module loader or Code Mode dependency is involved.
+
+Bash uses just-bash in a fresh worker with its virtual filesystem rooted at
+`/home/user/`. File scripts receive `$0` and literal positional arguments and can
+invoke `bash`/`sh` scripts. Use `$(dirname "$0")` for adjacent resources; the
+current just-bash version does not reliably populate `BASH_SOURCE`. Shell
+state resets each run. Successful snapshots commit text and binary file
+creations, modifications and deletions through the same workspace transaction
+as Python and JavaScript; failed or cancelled runs do not commit. Native
+programs, Python/Node subprocesses, package installation and direct networking
+are unavailable. `ocr` and `extract` read virtual files and use the configured
+extraction bridge; `llm` accepts prompts and piped text and uses the owning
+run's model by default. These service commands support stdout redirection and
+`-o` output files. LLM calls have fresh context, as in Python and JavaScript.
+
+MCP tools use [lazy tool discovery](https://tanstack.com/ai/latest/docs/tools/lazy-tool-discovery).
+Chat initially sends the native discovery tool with a short catalog (tool names
+and their first description sentence). TanStack supplies schemas on demand,
+executes discovered tools, and restores discoveries from saved history. Built-in
+workspace tools remain eager. Discovery adds a model round trip the first time a
+tool is needed, counted as one native model iteration. Realtime voice continues
+to receive full tool definitions; isolated interpreter calls receive no tools.
+
+Text-only results retain TanStack's JSON string representation across storage
+round trips, so discovery does not require an application cache. Media results
+remain native content parts. Removed or disabled tools cannot be re-enabled by
+an old discovery result. The chat displays discovery as **Find tools**.
+
+Streaming uses the native client's immediate strategy so Stop retains every
+received token. Markdown reveals large incoming chunks across animation frames,
+catching up within 100 ms of the latest update. This affects presentation only:
+the native transcript and persistence receive complete chunks immediately.
+Finishing or stopping shows the full received text, and reduced-motion settings
+disable the reveal. MCP `isError` results reach TanStack's failure lifecycle while
+preserving widget and display data.
+
+Enable [native debug logging](https://tanstack.com/ai/latest/docs/advanced/debug-logging)
+with `VITE_AI_DEBUG=true npm run dev`. It covers chat, structured output, speech,
+and transcription, including provider frames and tool arguments/results in the
+browser console. The switch is disabled in production builds. Chat runs now
+also pass the stable workspace chat id as TanStack's `threadId`.
+
+## Queueing, interrupts, and persistence
+
+[Message queueing](https://tanstack.com/ai/latest/docs/chat/queueing) uses
+`whenBusy: "queue"` and `drain: "batch"`. Pending sends are displayed and can be
+removed using native queue IDs. Stop, failure, and switching conversations discard
+queued messages. The previous held-message policy and manual retry controls have
+been removed. Retry retains completed tool work and removes the failed answer.
+A fresh send excludes abandoned calls from model execution; only an explicit
+interrupt resume may execute an unanswered historical tool call.
+
+`ask_questions` uses TanStack's resumable tool-input protocol. `ChatInterrupts`
+renders native generic form interrupts and opt-in
+[tool approvals](https://tanstack.com/ai/latest/docs/tools/tool-approval), with
+native batching, cancellation, staging, and resume. Questions in a parallel tool
+batch wait for all answers. No blanket approval policy is added. The existing
+schema-driven form renders the controls; native interrupts own their lifecycle.
+Configured image and research confirmations use `needsApproval`, including
+approvals on research's synthetic subagent tool. Server and client share the same
+input schema so a saved approval remains bound after reload. Approval happens
+before image generation or starting research; the tool does not prompt again.
+Legacy MCP transport elicitation and realtime still use the small live-callback
+bridge because those requests cannot be resumed by replaying the tool.
+
+[Client persistence](https://tanstack.com/ai/latest/docs/persistence/client-persistence)
+saves messages and pending interrupt descriptors through the existing store.
+Approval definitions are registered before hydration. A reload can restore a
+question or approval and resume it without replaying completed sibling tools.
+The storage boundary accepts writes only from its mounted client, so native
+cleanup after a thread switch cannot erase a pending approval. Explicit Stop
+still clears it.
+Only paused interrupts retain a resume pointer: this browser-only application
+has no durable executor that could continue a running generation after reload.
+
+`chats/<id>/chat.json` contains only the application's `Chat`, `Message`, and
+`Content` data. A subagent is a flat content part with an id, name, optional tool
+call id, status, messages, and optional error. Its messages use the same format
+and blob extraction as the parent. Reasoning keeps the existing `id` and
+`encryptedContent` fields; the adapter translates its packed signatures.
+There are no native `UIMessage`/`SubagentPart` objects in the conversation file.
+
+Optional TanStack execution data lives in `chats/<id>/tanstack.json`: pending
+resume descriptors, child routing bindings, and middleware checkpoints. The
+existing persistence queue saves both files with write-failure rollback. A
+version and transcript hash prevent a partial restore or interrupted write from
+resuming tools against another conversation. The transcript remains readable
+without this file. Earlier inline runtime fields and native child messages are
+converted when loaded; the next save writes the separated format. Backups include
+both files, while the chat index and attachment layout stay unchanged.
+
+## Compaction and application middleware
+
+[withCompaction](https://tanstack.com/ai/latest/docs/advanced/compaction) checks
+provider context before each model call, including after tool output. Its
+`clearToolResults()` strategy runs first, followed by `summarizeOldest()` when
+needed. Summaries use native `chat()` and telemetry. The configured model and
+threshold remain respected; disabling compaction disables these strategies.
+The full saved transcript stays intact. Custom context estimation, summary
+replacement, the summarizer client method, and overflow retry branches are gone.
+Old saved summary markers remain readable.
+The native metadata capability stores opaque checkpoints in the optional
+`tanstack.json` runtime file, separate from the conversation format. TanStack
+validates the source prefix and strategy identity before reuse, including the
+summarizer and threshold. Edited history invalidates the cache. Each child gets
+its own checkpoint scope, including parallel calls to the same agent.
+Compaction runs on canonical messages before attachment loading and request
+context injection. Those later steps use the compacted provider view and cannot
+restore cleared outputs from presentation metadata.
+
+[Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
+handles provider-only request preparation, progress display, and rich tool
+metadata. A small policy keeps loaded skill instructions when
+compaction removes their original tool result: native skill activation is
+deduplicated within a run. Compaction and this policy also run in native children,
+with each child's cancellation signal. Compaction uses the framework's estimates
+and recent-message retention; it does not guarantee that an oversized latest
+request fits, and no reactive overflow retry is performed.
+
+The [agentic cycle](https://tanstack.com/ai/latest/docs/chat/agentic-cycle) is
+TanStack's `chat()` loop with `maxIterations(100)`, tool validation, and execution.
+The limit applies independently to each parent and child, including tool calls
+used to repair their work.
+The application no longer maintains a shared model-call budget, custom turn
+counter, or synthetic `MAX_TURNS` failure/Continue action. Native iteration-limit
+completion keeps the produced messages and follows TanStack's normal outcome.
+Workspace verification is middleware inside this cycle. `onToolPhaseComplete`
+collects changed paths from tool-result metadata; `onConfig` checks those files
+before the next model call and supplies provider-only findings. The model repairs
+failures through ordinary tool calls within the native iteration limit, or
+explains unresolved findings. Verification no longer restarts a finished answer
+or enforces a separate repair budget. Job/manifest persistence and readiness
+phases are gone. HTML dependency, Office, PDF, image, and syntax checks remain
+browser-local. Only changed files are read, with the workspace index used for
+dependency checks. Interrupted runs restore changed paths from saved tool
+results when continuing. Artifact chips also use those results, including
+subagent writes, moves, and deletions.
+
+The loading indicator derives from ChatClient's loading state. Before an
+assistant message exists, the UI projects a temporary placeholder without adding
+it to the saved transcript. Its message identity varies the label between
+responses while keeping it stable during a response.
+
+[Native subagents](https://tanstack.com/ai/latest/docs/chat/subagents) receive
+parent context and a delegated task, stream nested message parts, and can pause
+for input. They inherit selected capabilities, attachment preparation, workspace
+access, and cancellation. Their artifact mutations
+reach parent verification. Realtime's `agent` tool uses the same one-shot runner
+and returns the final text because the voice protocol has no nested chat cards.
+Web research uses the same `defineAgent` path with its search/fetch tools and a
+content-guard middleware. It receives the model-written brief and its own resumed
+work, keeping unrelated parent history out of research requests. Search and fetch
+progress use native child parts during execution and ordinary child messages in
+storage and the UI, replacing the separate research runner
+and manually maintained parent status. Realtime uses the shared text-result
+adapter and its live confirmation callback.
+The chat renders one disclosure per child conversation. A child's parent tool
+call/result stays in the saved history and model context but does not add a
+duplicate UI row. Research uses readable queries and Markdown sources in the
+existing tool display; delegation JSON and internal agent names stay out of the
+default view. Approvals and elicitation forms sit inline after the current turn,
+inside the scrolling transcript, so they cannot overlay earlier answers.
+Direct voice tools retain live confirmations. A delegated text run that pauses
+for native input or approval asks the user to continue in chat; the one-shot
+voice adapter cannot present and resume that child interrupt.
+
+The remaining optional integrations are the devtools panel (now that ChatClient
+owns state), native memory storage, and code mode. Modern MCP input-required
+resume still needs a separate integration: the public raw `callTool` API does
+not accept input responses, while native tool execution normalizes away the full
+initial result required by saved widgets. Existing legacy MCP form/URL requests
+continue through the transport bridge.
+
+## Runtime limits
+
+The installed TanStack packages and Wingman's call sites were audited for runtime
+caps. The catalog cap is disabled; the following other bounds apply independently:
+
+| Area                        | Current bound                                                       | Owner and behavior                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected skills catalog     | Unlimited                                                           | Wingman passes `maxCatalogTokens: Infinity`; no skills are dropped. Portable loading/resource tools impose no separate skill-count or content-size cap.                                                                                                                                                               |
+| Skill metadata              | Name: 64 characters; description: 1,024 characters                  | Wingman's skill parser and shipped-skill validator enforce the file format.                                                                                                                                                                                                                                           |
+| Agent loop                  | 100 model turns per run                                             | `agent.ts` overrides TanStack's default of 5. One turn can contain multiple tool calls.                                                                                                                                                                                                                               |
+| Output tokens               | Chat: 64,000; titles: 8,000; other structured extraction: 16,000    | Wingman defaults for models with a known output capacity. Explicit budgets are clamped to that capacity; `0` omits the request budget.                                                                                                                                                                                |
+| History compaction          | Model-dependent threshold: 100,000–272,000 estimated tokens         | Enabled when `chat.compaction` is configured. Model/deployment overrides apply; `0` disables it. TanStack preserves about half the budget as recent messages and 3 recent tool results with our chosen strategies. This is not a hard context-window guarantee and does not count the system catalog or tool schemas. |
+| MCP tool discovery          | 100 pages                                                           | TanStack throws if tool-list pagination exceeds the cap or repeats a cursor. This limits pages, not the number of tools.                                                                                                                                                                                              |
+| MCP requests                | 60 seconds                                                          | MCP SDK default, also used explicitly by TanStack's raw tool-call bridge.                                                                                                                                                                                                                                             |
+| Text SDK requests           | 10-minute timeout; 2 automatic retries                              | Inherited from the OpenAI SDK through the gateway adapter. The timeout governs the request, not the total agent run. Embedding requests explicitly disable retries.                                                                                                                                                   |
+| Queued user messages        | Unlimited                                                           | Wingman's native `useChat` queue does not set `maxSize`.                                                                                                                                                                                                                                                              |
+| Voice context/configuration | 8,000 post-instruction tokens; 15-second configuration confirmation | Wingman's gateway realtime session requests truncation and bounds its audio-configuration handshake.                                                                                                                                                                                                                  |
+
+Other library bounds are narrower in scope: parent-run ancestry traversal stops
+after 64 hops to guard against cycles; compaction debug previews show at most 24
+messages with 4,000 characters each. These do not cap the saved transcript.
+
+Optional APIs that Wingman does not currently use have additional defaults:
+filesystem skill discovery walks at most 6 levels; HTTP stream reconnects allow
+5 attempts without progress with a 250 ms delay; reload rejoin waits 2 seconds;
+the in-memory durable stream retains up to 1,024 completed runs for 5 minutes and
+waits 100 ms for a missing run's first chunk; tool-cache storage holds 100 entries;
+video generation polls for up to 10 minutes. Native image-edit adapters enforce
+model-specific source-image counts (usually 16); Wingman image rendering instead
+uses its gateway endpoint. OpenTelemetry content capture has a 100,000-character
+default cap, but Wingman disables content capture.
+
+## Compatibility boundaries
+
+`aiMessages.ts` translates persisted Wingman conversations to native UI messages.
+Native messages can include several model/tool rounds, so the storage projection
+splits them into ordered assistant and tool-result turns with durable identities.
+Existing media, reasoning payloads, artifacts, and tool display metadata remain
+readable. `agent.ts` supplies native tool definitions and application middleware;
+TanStack owns the full model/tool cycle.
+
+`aiProvider.ts` selects dynamic gateway model aliases with `extendAdapter`, keeps
+cancellation attached to provider requests, and omits an empty multipart model
+field when selecting the gateway default. The embedding boundary retains the
+resolved model identity returned by the gateway for retrieval indexes.
+`gatewayText.ts` extends the native Responses adapter to retain commentary and
+final-answer phases on output and replay, resolved model identity, and the
+gateway's reasoning context mode; native parsing still handles the stream.
+Saved pre-migration reasoning is translated to the adapter's signature
+format and replayed only for the same model.
+
+`gatewayRealtime.ts` implements `RealtimeAdapter` for the existing WebSocket
+protocol and audio recorder/player. The upstream OpenAI realtime adapter uses
+WebRTC and does not expose the gateway URL or input/output device choices this
+application needs. The compatibility adapter also preserves interruption offsets,
+configuration readiness, and per-session cleanup. Rebinding native clients updates
+executable tools without reconnecting the physical socket.
+
+`mcpTransport.ts` forwards the SDK transport while exposing server metadata,
+legacy elicitation, and change notifications to the workspace. Resource reads use
+local cancellation because the native MCP resource API has no signal argument.
+Calls and discovery use the native client's APIs.
+
+`McpApp.tsx` uses the renderer's `AppFrame` primitive because TanStack's current
+`MCPAppResource` wrapper does not accept the initial tool result or the display
+mode callbacks needed by saved widgets. The host boundary supplies existing
+capabilities, tool visibility policy, display mode, theme, CSP, and permissions.
+Raw MCP results, including `_meta`, are persisted for widgets; older records use
+the existing display-content fallback. The iframe stays mounted when switching
+between inline and fullscreen display.
+
+Gateway-only extraction, rendering, search, translation, segmentation, and guard
+endpoints keep their existing request helpers; TanStack has no equivalent for
+these endpoint contracts. Workspace persistence, file tools, memory, and audio
+device ownership remain application responsibilities.
+
+Chat classification uses the gateway's `/v1/systemone` endpoint. Each request
+passes one JSON object as `state`, with `latest_user_message` and
+`earlier_messages` containing sanitized message objects. This keeps content parts
+and conversation context structured, excludes tools and runtime feedback, and
+replaces binary attachments with text placeholders. The questions reference
+these fields explicitly: one Choice selects the main category and one independent
+Noul evaluates each risk. Category thresholds use the Choice's `confidence`;
+risk thresholds use the Noul's yes probability. Configured classification
+`effort` is forwarded for API compatibility, but the gateway currently ignores
+it. Its completion adapter explicitly disables reasoning.
+Each risk's true criterion includes its configured name and description:
+question IDs are application keys and are not sent to the underlying model.
+
+This follows the [TypeSafe state guidance](https://docs.typesafe.ai/concepts/state)
+and [OpenRouter classification example](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/jev-classification).
+JevBench's [native adapter](https://github.com/fstandhartinger/jevbench/blob/main/jevbench/adapters/typesafe.py)
+likewise passes the original structured state directly, with rubric definitions
+in the questions rather than encoding them into the content. Questions in one
+request cannot depend on each other's answers; risk warnings take precedence
+over category consent in application code.
+
+## Verification
+
+Unit integration tests exercise the actual TanStack model loop, OpenAI adapter,
+MCP client, realtime client, and renderer bridge. Browser suites exercise compiled
+chat UI, queueing/cancellation, saved conversations, memory, voice devices and
+interruptions, and MCP sandbox behavior. Gateway end-to-end tests additionally
+require a configured live deployment; local mocked transport tests do not prove
+that every deployment alias accepts the native provider schema.
+
+`npm run test:e2e:classification` evaluates the example config against labelled
+synthetic prompts through the real gateway with `effort: "none"`. It checks
+categories above their configured threshold and exact risk sets, including exclusions, follow-ups, topic changes,
+multiple risks, long prompts and multilingual requests. Set
+`WINGMAN_CLASSIFICATION_CONFIG` to another config JSON file to compare wording,
+or `WINGMAN_CLASSIFICATION_REPEATS` to check repeat stability. The summary reports
+raw category accuracy, risk accuracy, accepted category errors and choices below
+the configured confidence threshold. These samples support regression checks; production
+threshold calibration needs representative labelled requests, as described in
+the [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence).

@@ -1,21 +1,20 @@
 import { createFileTools, type FileToolsOptions, type WritableFileSource } from "@/shared/lib/file-tools";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { artifactRevision, type ArtifactMutation, type RevisionOrigin } from "@/shared/types/artifact";
-import type { Tool, ToolContext } from "@/shared/types/chat";
-import type { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import type { Tool, ToolContext, AgentRunContext } from "@/shared/types/chat";
 import type { ArtifactWorkspaceAccess, FileSystemManager } from "./fs";
 
 /** Per-actor observations: another agent's reads/writes must never refresh our baseline. */
 export class ArtifactReadWriteManager {
   private readonly conversations = new Map<string, Map<string, string | undefined>>();
-  private readonly children = new WeakMap<AgentInvocationContext, Map<string, Map<string, string | undefined>>>();
+  private readonly children = new WeakMap<AgentRunContext, Map<string, Map<string, string | undefined>>>();
 
   private session(chatId: string, context?: ToolContext): Map<string, string | undefined> {
     // Child observations live only as long as their existing invocation object.
     // Many child runs must not evict the active conversation's baseline.
     const invocation = context?.invocationContext;
     let sessions = this.conversations;
-    if (invocation?.branch) {
+    if (invocation?.subagentRunId) {
       sessions = this.children.get(invocation) ?? new Map();
       this.children.set(invocation, sessions);
     }

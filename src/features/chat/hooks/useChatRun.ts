@@ -1,41 +1,64 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useChat as useNativeChat } from "@tanstack/ai-react";
+import type { ChatInterruptState, RunAgentInputContext } from "@tanstack/ai-client";
+import {
+  normalizeToUIMessage,
+  type ContentPart,
+  type StreamChunk,
+  type UIMessage,
+  type ModelMessage,
+} from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
-import { applyArtifactStopPolicy } from "@/features/artifacts/lib/artifact-stop-policy";
+import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { parseArtifactReference } from "../components/chatMessageUtils";
 import type { ChatContextType } from "../context/ChatContext";
 import type { useChatContext } from "./useChatContext";
-import { compactIfNeeded, historyForRetry, prepareChatMessages } from "../lib/chatHistory";
-import { mergeQueuedMessages, queuedSend } from "../lib/chatQueue";
+import { historyForRetry, prepareChatMessages } from "../lib/chatHistory";
+import { chatCompaction, preserveSkillContext } from "../lib/chatCompaction";
 import { getConfig } from "@/shared/config";
-import { run as agentRun, type AgentRunEvent } from "@/shared/lib/agent";
+import { AgentMessageMetadata, approvalTools, streamRun } from "@/shared/lib/agent";
+import { toAIMessages } from "@/shared/lib/aiMessages";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { compactThreshold } from "@/shared/lib/models";
 import { notify } from "@/shared/lib/notify";
 import { captureRequestContext, isUserMessage } from "@/shared/lib/requestContext";
-import type { Chat, Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type { Chat, Content, Message, Model } from "@/shared/types/chat";
+import { compactionStore, fromResume, toResume } from "../lib/chatRuntime";
+import type { ChatStore } from "../lib/chatStore";
 import { Role, updateToolResultMeta, withMessageIdentity } from "@/shared/types/chat";
-import type { Elicitation, ElicitationResult } from "@/shared/types/elicitation";
 import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
-import { useChatQueue } from "./useChatQueue";
 import { createAttachmentLoader } from "../lib/chatAttachments";
 import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
 import { recallMemory } from "@/features/agent/lib/memoryRecall";
 import { memoryMessageText, reconcileMemorySources } from "@/features/agent/lib/memorySources";
 
+interface Session {
+  id: string;
+  metadata: AgentMessageMetadata;
+}
+
+function userContent(message: Message) {
+  const native = toAIMessages([message])[0];
+  return { id: native.id, content: native.parts as ContentPart[], metadata: native.metadata };
+}
+
 interface Options {
   model: Model | null;
   models: Model[];
   chatId: string | null;
+  threadId: string;
   chatIdRef: RefObject<string | null>;
   fsRef: RefObject<FileSystemManager | null>;
   artifactsEnabled: boolean;
   getChat: (id: string) => Chat | undefined;
-  updateChat: ChatContextType["updateChat"];
+  loadChat: (id: string) => Promise<Chat>;
+  updateChat: ChatStore["updateChat"];
   getOrCreateChat: () => Promise<{ id: string; chat: Chat; fs: FileSystemManager }>;
   chatTools: ReturnType<typeof useChatContext>["tools"];
   chatInstructions: ReturnType<typeof useChatContext>["instructions"];
+  chatMiddleware: ReturnType<typeof useChatContext>["middleware"];
   chatRuntimeContext: ReturnType<typeof useChatContext>["runtimeContext"];
   chatMemory: ReturnType<typeof useChatContext>["memory"];
 }
@@ -44,404 +67,314 @@ export function useChatRun({
   model,
   models,
   chatId,
+  threadId,
   chatIdRef,
   fsRef,
   artifactsEnabled,
   getChat,
+  loadChat,
   updateChat,
   getOrCreateChat,
   chatTools,
   chatInstructions,
+  chatMiddleware,
   chatRuntimeContext,
   chatMemory,
 }: Options) {
   const config = getConfig();
   const client = config.client;
-  const { queuedSends, queuedSendsRef, replaceQueue, holdQueuedSends, takeQueuedSends, removeQueuedMessage } =
-    useChatQueue();
+  const session = useMemo<Session>(() => ({ id: threadId, metadata: new AgentMessageMetadata() }), [threadId]);
+  const storageOwnerRef = useRef<Session | null>(session);
+  useLayoutEffect(() => {
+    storageOwnerRef.current = session;
+    return () => {
+      storageOwnerRef.current = null;
+    };
+  }, [session]);
+  const aiRef = useRef<ReturnType<typeof useNativeChat> | null>(null);
+  const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
+  const pendingModelContextRef = useRef(new Map<string, string>());
+  // Realtime and legacy MCP URL requests have a live transport callback.
+  // Chat forms and tool approvals use ChatClient's durable interrupts below.
   const { pendingElicitation, requestElicitation, resolveElicitation, completeElicitation, clearElicitation } =
     useChatElicitation();
   const { classify, pendingConsent, resolveConsent } = useChatClassification({ models, chatId, chatIdRef, updateChat });
-  const [isResponding, setIsResponding] = useState<boolean>(false);
   const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
   const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
-  const updateToolMeta = useCallback((toolCallId: string, meta: Record<string, unknown>) => {
-    setToolMeta((prev) => {
-      const existing = prev[toolCallId];
-      const merged = existing ? { ...existing, ...meta } : { ...meta };
-      return { ...prev, [toolCallId]: merged };
-    });
-  }, []);
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
-  const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
-  const streamFlushTimerRef = useRef<number | undefined>(undefined);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  // Chat that owns the single in-flight turn, so navigating away can cancel it.
-  const runningChatIdRef = useRef<string | null>(null);
-  const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
-  // The ref always holds the latest content (so stopStreaming can commit the
-  // full partial message synchronously), but the state — and with it the whole
-  // message tree — re-renders at most ~8x/s instead of once per streamed token.
-  // Clearing (null) applies immediately and cancels any pending flush so stale
-  // streaming content can't reappear after the turn was committed.
-  const updateStreamingMessage = useCallback((msg: { chatId: string; message: Message } | null) => {
-    streamingMessageRef.current = msg;
-    if (msg === null) {
-      window.clearTimeout(streamFlushTimerRef.current);
-      streamFlushTimerRef.current = undefined;
-      setStreamingMessage(null);
-      return;
-    }
-    if (streamFlushTimerRef.current !== undefined) return;
-    streamFlushTimerRef.current = window.setTimeout(() => {
-      streamFlushTimerRef.current = undefined;
-      setStreamingMessage(streamingMessageRef.current);
-    }, 120);
+  const updateToolMeta = useCallback((id: string, meta: Record<string, unknown>) => {
+    setToolMeta((prev) => ({ ...prev, [id]: { ...prev[id], ...meta } }));
+  }, []);
+  const updateModelContext = useCallback(async (id: string, text: string | null) => {
+    if (text?.trim()) pendingModelContextRef.current.set(id, text.trim());
+    else pendingModelContextRef.current.delete(id);
   }, []);
 
-  const updateModelContext = useCallback(async (targetChatId: string, text: string | null) => {
-    if (!text?.trim()) {
-      pendingModelContextRef.current.delete(targetChatId);
-      return;
-    }
-
-    pendingModelContextRef.current.set(targetChatId, text.trim());
-  }, []);
-
-  const runMessageInChat = useCallback(
-    async function run(id: string, message: Message | null, historyOverride?: Message[], initialTitle?: string) {
-      const currentModel = model;
-      if (!currentModel) {
-        throw new Error("no model selected");
-      }
-
-      const history = historyOverride ?? getChat(id)?.messages ?? [];
+  const connect = useCallback(
+    async function* (
+      session: Session,
+      nativeMessages: UIMessage[] | ModelMessage[],
+      signal?: AbortSignal,
+      runContext?: RunAgentInputContext,
+    ): AsyncGenerator<StreamChunk> {
+      if (!model) throw new Error("No model selected");
+      const { id, metadata } = session;
+      const runId = runContext?.runId ?? crypto.randomUUID();
+      const conversation = metadata.read(
+        nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
+        model.id,
+      );
+      const outgoing = conversation.findLast(isUserMessage);
       const loadAttachments = createAttachmentLoader(id);
-      const pendingModelContext = message ? (pendingModelContextRef.current.get(id) ?? null) : null;
-      if (message) pendingModelContextRef.current.delete(id);
-
-      const runId = crypto.randomUUID();
-      const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
-      const outgoingMessage = message
-        ? withMessageIdentity(appendTextContent(message, pendingModelContext), runId)
-        : history.findLast(isUserMessage);
-      let toolMessage = outgoingMessage;
-      // Capture ownership at run start, even if the selected agent later changes.
       const memory = chatMemory();
       const releaseMemory = memory ? beginMemoryRun(memory) : undefined;
-
-      let conversation = message && outgoingMessage ? [...history, outgoingMessage] : [...history];
-
-      updateChat(id, () => ({ messages: conversation }));
-      setIsResponding(true);
-      setRunPhase("thinking");
-
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
-      runningChatIdRef.current = id;
-      const ownsRun = () => abortControllerRef.current === abortController;
-      const isActive = () => ownsRun() && !abortController.signal.aborted;
-      let streamingAssistant = withMessageIdentity({ role: Role.Assistant, content: [] }, runId);
-
-      classify({ id, runId, conversation, title: initialTitle, hasMessage: !!message, currentModel, abortController });
-
-      // Create tool context with current message content and elicitation support
-      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
-        return {
-          model: currentModel.id,
-          chatId: id,
-          signal: abortController.signal,
-          content: () =>
-            (toolMessage?.content ?? []).filter(
-              (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
-            ) as Content[],
-          sendMessage: async (appMessage: Message) => {
-            if (runningChatIdRef.current === id) {
-              replaceQueue((items) => [...items, queuedSend(id, withMessageIdentity(appMessage))]);
-            } else {
-              await run(id, appMessage, undefined, initialTitle);
-            }
-          },
-          setContext: async (text: string | null) => {
-            await updateModelContext(id, text);
-          },
-          elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-            return requestElicitation(currentToolCall.id, currentToolCall.name, elicitation, abortController.signal);
-          },
-          onElicitationComplete: (elicitationId: string) => {
-            if (!isActive()) return;
-            completeElicitation(elicitationId);
-          },
-        };
-      };
-
+      const active = () => chatIdRef.current === id && !signal?.aborted;
+      const runFs = artifactsEnabled ? resolveArtifactFileSystem(fsRef.current, id) : null;
+      const startLength = conversation.length;
       try {
-        // Get tools and instructions when needed
-        const tools = await chatTools();
-        abortController.signal.throwIfAborted();
-        if (outgoingMessage) toolMessage = (await loadAttachments([outgoingMessage], abortController.signal))[0];
-        const instructions = chatInstructions();
+        if (active()) setRunPhase("thinking");
+        updateChat(id, () => ({}));
+        const tools = chatTools();
+        signal?.throwIfAborted();
+        const toolMessage = outgoing ? (await loadAttachments([outgoing], signal))[0] : undefined;
         let memoryContext = "";
         if (memory) {
           try {
             await reconcileMemorySources(memory);
-            memoryContext = recallMemory(
-              await memory.snapshot(),
-              outgoingMessage ? memoryMessageText(outgoingMessage) : "",
-            );
+            memoryContext = recallMemory(await memory.snapshot(), outgoing ? memoryMessageText(outgoing) : "");
           } catch (error) {
             console.warn("Memory recall unavailable:", error);
           }
         }
-        abortController.signal.throwIfAborted();
+        signal?.throwIfAborted();
         const requestContext = captureRequestContext(
           [chatRuntimeContext(), memoryContext].filter(Boolean).join("\n\n"),
         );
-
-        // The model can opt out with 0; the deployment threshold is a ceiling.
+        if (!runContext?.resume?.length)
+          classify({
+            id,
+            runId,
+            conversation,
+            title: getChat(id)?.title,
+            hasMessage: true,
+            currentModel: model,
+            signal,
+          });
         const compaction = config.chat?.compaction;
-        let threshold = compaction ? (currentModel.compactThreshold ?? compactThreshold(currentModel.id)) : 0;
+        let threshold = compaction ? (model.compactThreshold ?? compactThreshold(model.id)) : 0;
         if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        const compactMessages = async (messages: Message[], force = false) => {
-          if (!(threshold > 0)) return messages;
-          if (isActive()) setRunPhase("compacting");
-          try {
-            return await compactIfNeeded(messages, {
-              threshold,
-              client,
-              summarizerModel: config.chat?.summarizer || currentModel.id,
-              fallbackModel: currentModel.id,
-              signal: abortController.signal,
-              force,
-            });
-          } finally {
-            if (isActive()) setRunPhase("thinking");
-          }
-        };
-        try {
-          const compacted = await compactMessages(conversation);
-          abortController.signal.throwIfAborted();
-          if (compacted !== conversation) {
-            conversation = compacted;
-            updateChat(id, () => ({ messages: compacted }));
-          }
-        } catch (error) {
-          if (isAbortError(error) || abortController.signal.aborted) throw error;
-          console.error("[Summary] compaction failed, continuing uncompacted", error);
-        }
-
-        const runResult = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+        yield* streamRun(client, model.id, chatInstructions(), conversation, tools, {
           runId,
+          threadId: id,
+          parentRunId: runContext?.parentRunId,
+          resume: runContext?.resume,
           agentName: "chat",
-          options: {
-            effort: currentModel.effort,
-            summary: currentModel.summary,
-            verbosity: currentModel.verbosity,
-            signal: abortController.signal,
+          metadata,
+          middleware: [
+            ...chatMiddleware(),
+            ...(runFs ? [artifactVerification(runFs, metadata, conversation)] : []),
+            {
+              onIteration: () => {
+                if (active()) setRunPhase("thinking");
+              },
+              onBeforeToolCall: () => {
+                if (active()) setRunPhase("running_tool");
+              },
+              onToolPhaseComplete: (_ctx, { results }) => {
+                if (!active()) return;
+                setRunPhase("thinking");
+                if (!results.length) return;
+                clearElicitation();
+                setToolMeta((prev) => {
+                  const next = { ...prev };
+                  for (const { toolCallId } of results) delete next[toolCallId];
+                  return next;
+                });
+              },
+            },
+          ],
+          sharedMiddleware: (runSignal, context) =>
+            threshold > 0
+              ? [
+                  chatCompaction(
+                    client,
+                    threshold,
+                    config.chat?.summarizer || model.id,
+                    runSignal,
+                    compactionStore(
+                      () => getChat(id)?.compactions,
+                      (update) => {
+                        if (runSignal.aborted) return;
+                        updateChat(id, (prev) => ({ compactions: update(prev.compactions ?? []) }), {
+                          preserveDates: true,
+                        });
+                      },
+                      context.subagentRunId,
+                    ),
+                  ),
+                  preserveSkillContext(),
+                ]
+              : [],
+          options: { effort: model.effort, summary: model.summary, verbosity: model.verbosity, signal },
+          prepareMessages: (messages) => loadAttachments(prepareChatMessages(messages, requestContext), signal),
+          createToolContext: (call) => ({
+            model: model.id,
+            chatId: id,
+            signal,
+            content: () =>
+              (toolMessage?.content ?? []).filter((p) => p.type === "text" || p.type === "image" || p.type === "file"),
+            sendMessage: async (message) => {
+              if (active()) await aiRef.current?.sendMessage(userContent(message));
+            },
+            setContext: (text) => updateModelContext(id, text),
+            elicit: (elicitation) => requestElicitation(call.id, call.name, elicitation, signal),
+            onElicitationComplete: (elicitationId) => {
+              if (active()) completeElicitation(elicitationId);
+            },
+          }),
+          onToolMeta: (callId, meta) => {
+            if (signal?.aborted) return;
+            if (active()) updateToolMeta(callId, meta);
+            updateChat(id, (prev) => ({ messages: updateToolResultMeta(prev.messages, callId, meta) }));
           },
-          prepareMessages: (msgs) => loadAttachments(prepareChatMessages(msgs, requestContext), abortController.signal),
-          onContextOverflow: threshold > 0 ? (msgs) => compactMessages(msgs, true) : undefined,
-          onMessagesChange: (messages) => {
-            if (!isActive()) return;
-            conversation = messages;
-            updateChat(id, () => ({ messages }));
-          },
-          onEvent: (event: AgentRunEvent) => {
-            if (!isActive()) return;
-            if (event.type === "model.started") setRunPhase("thinking");
-            else if (event.type === "model.streaming") setRunPhase("responding");
-            else if (event.type === "tool.started" || event.type === "tool.updated") setRunPhase("running_tool");
-            else if (event.type === "tool.completed") setRunPhase("thinking");
-            else if (event.type === "verification.started") setRunPhase("running_tool");
-            else if (event.type === "verification.completed") setRunPhase("thinking");
-          },
-          onTurnStart: (assistant) => {
-            if (!isActive()) return;
-            streamingAssistant = assistant;
-            updateStreamingMessage({
-              chatId: id,
-              message: streamingAssistant,
-            });
-          },
-          onStream: (contentParts) => {
-            if (!isActive()) return;
-            updateStreamingMessage({
-              chatId: id,
-              message: { ...streamingAssistant, content: contentParts },
-            });
-          },
-          onTurnEnd: () => {
-            if (isActive()) updateStreamingMessage(null);
-          },
-          createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
-          onToolResult: (toolResult) => {
-            if (!isActive()) return;
-            clearElicitation();
-            // Drop live meta entries — data now lives on tool_result.meta.
-            const completedIds = toolResult.content.filter((p) => p.type === "tool_result").map((p) => p.id);
-            if (completedIds.length > 0) {
-              setToolMeta((prev) => {
-                let changed = false;
-                const next = { ...prev };
-                for (const cid of completedIds) {
-                  if (cid in next) {
-                    delete next[cid];
-                    changed = true;
-                  }
-                }
-                return changed ? next : prev;
-              });
-            }
-          },
-          beforeFinish: async ({ runId: activeRunId, messages: runMessages, signal }) => {
-            if (!runFs) return { action: "finish" as const };
-            return applyArtifactStopPolicy({
-              chatId: id,
-              runId: activeRunId,
-              messages: runMessages,
-              fs: runFs,
-              signal,
-            });
-          },
-          onToolMeta: (toolCallId, meta) => {
-            if (abortController.signal.aborted) return;
-            if (isActive()) updateToolMeta(toolCallId, meta);
-            // Also support updates after the loop has finished, patching only
-            // this result in the latest stored history.
-            updateChat(id, (prev) => ({
-              messages: updateToolResultMeta(prev.messages, toolCallId, meta),
-            }));
+          onComplete: async (result) => {
+            if (!memory || result.status !== "completed" || !active()) return;
+            const delta = result.messages.slice(startLength);
+            if (outgoing) delta.unshift(outgoing);
+            await enqueueMemoryLearning(memory, id, config.chat?.summarizer || model.id, delta).catch((error) =>
+              console.warn("Memory learning could not be queued:", error),
+            );
           },
         });
-        // A stopped run may settle after another run has already started.
-        // Its callbacks must not clear or overwrite the new run's state.
-        if (!ownsRun()) return;
-        conversation = runResult.messages;
-
-        const aborted = runResult.status === "aborted" || abortController.signal.aborted;
-        // Ensure streaming buffer is cleared after completion
-        updateStreamingMessage(null);
-
-        // If the stream was stopped by the user, don't run follow-up work
-        // (title summarization etc.) on the partial conversation.
-        if (aborted) {
-          abortControllerRef.current = null;
-          runningChatIdRef.current = null;
-          holdQueuedSends(id);
-          clearElicitation();
-          setRunPhase("idle");
-          setIsResponding(false);
-          return;
-        }
-
-        if (runResult.status === "failed") {
-          const error = new Error(runResult.error?.message ?? "Agent run failed");
-          Object.assign(error, { code: runResult.error?.code ?? "AGENT_RUN_FAILED" });
-          throw error;
-        }
-
-        if (memory && runResult.status !== "max_turns") {
-          const delta = conversation.filter((item) => item.runId === runId && item.id !== outgoingMessage?.id);
-          if (outgoingMessage) delta.unshift(outgoingMessage);
-          // Persist a small queue entry before returning, never await extraction.
-          await enqueueMemoryLearning(memory, id, config.chat?.summarizer || currentModel.id, delta).catch((error) =>
-            console.warn("Memory learning could not be queued:", error),
-          );
-        }
-
-        const ready = takeQueuedSends(id);
-        if (ready.length > 0) {
-          await run(id, mergeQueuedMessages(ready), conversation, initialTitle);
-          return;
-        }
-        if (runResult.status === "max_turns") {
-          conversation = [
-            ...conversation,
-            withMessageIdentity(
-              {
-                role: Role.Assistant,
-                content: [],
-                error: {
-                  code: "MAX_TURNS",
-                  message: "This run reached its turn limit. Continue when you're ready to resume.",
-                },
-              },
-              runId,
-            ),
-          ];
-          updateChat(id, () => ({ messages: conversation }));
-        }
-
-        abortControllerRef.current = null;
-        runningChatIdRef.current = null;
-        setRunPhase("idle");
-        setIsResponding(false);
-      } catch (error) {
-        if (!ownsRun()) return;
-        if (!isAbortError(error)) console.error(error);
-        setIsResponding(false);
-        const aborted = abortController.signal.aborted || isAbortError(error);
-        abortControllerRef.current = null;
-        runningChatIdRef.current = null;
-        updateStreamingMessage(null);
-
-        // If the stream was aborted by the user, exit cleanly without
-        // surfacing an error. `stopStreaming()` has already committed any
-        // partial content it had buffered.
-        if (aborted) {
-          setRunPhase("idle");
-          return;
-        }
-
-        holdQueuedSends(id);
-
-        const { code, message } = getErrorInfo(error);
-
-        conversation = [
-          ...conversation,
-          withMessageIdentity(
-            {
-              role: Role.Assistant,
-              content: [],
-              error: { code, message },
-            },
-            runId,
-          ),
-        ];
-
-        updateChat(id, () => ({ messages: conversation }));
-        setRunPhase("idle");
       } finally {
         releaseMemory?.();
       }
     },
     [
-      artifactsEnabled,
-      getChat,
-      classify,
-      clearElicitation,
-      completeElicitation,
-      fsRef,
-      updateChat,
-      client,
       model,
-      config.chat?.summarizer,
-      config.chat?.compaction,
-      config.chat?.classification,
-      config.chat?.categories,
-      config.chat?.risks,
-      chatTools,
-      chatInstructions,
-      chatRuntimeContext,
+      chatIdRef,
       chatMemory,
-      requestElicitation,
+      artifactsEnabled,
+      fsRef,
+      chatTools,
+      chatRuntimeContext,
+      classify,
+      getChat,
+      config.chat?.compaction,
+      config.chat?.summarizer,
+      client,
+      chatInstructions,
+      chatMiddleware,
       updateModelContext,
-      updateStreamingMessage,
+      requestElicitation,
+      completeElicitation,
+      clearElicitation,
       updateToolMeta,
-      takeQueuedSends,
-      holdQueuedSends,
-      replaceQueue,
+      updateChat,
     ],
+  );
+  const connectRef = useRef(connect);
+  useLayoutEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  const ai = useNativeChat({
+    threadId: session.id,
+    tools,
+    queue: { whenBusy: "queue", drain: "batch" },
+    connection: {
+      connect: (messages, _data, signal, context) => connectRef.current(session, messages, signal, context),
+    },
+    persistence: {
+      getItem: async () => {
+        const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
+        return saved
+          ? {
+              messages: toAIMessages(saved.messages),
+              resume: toResume(saved.id, saved.pendingRun),
+            }
+          : null;
+      },
+      setItem: (_key, state) => {
+        // A draft has no durable record until the first send or attachment.
+        // useChat stops disposed clients; their cleanup must not erase a saved
+        // approval or overwrite the conversation opened by their replacement.
+        if (storageOwnerRef.current !== session || !getChat(session.id)) return;
+        updateChat(
+          session.id,
+          () => ({
+            messages: session.metadata.read(state.messages),
+            pendingRun: fromResume(state.resume),
+          }),
+          { preserveDates: true },
+        );
+      },
+      removeItem: () => {
+        if (storageOwnerRef.current === session && getChat(session.id))
+          updateChat(session.id, () => ({ messages: [], pendingRun: undefined, compactions: undefined }));
+      },
+    },
+    onChunk: (chunk) => {
+      if (chatIdRef.current !== session.id) return;
+      if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
+      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
+      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
+    },
+    onError: (error) => {
+      if (isAbortError(error) || chatIdRef.current !== session.id) return;
+      const messages = getChat(session.id)?.messages ?? [];
+      ai.setMessages(
+        toAIMessages([
+          ...messages,
+          withMessageIdentity({ role: Role.Assistant, content: [], error: getErrorInfo(error) }),
+        ]),
+      );
+    },
+  });
+  useLayoutEffect(() => {
+    aiRef.current = ai;
+  }, [ai]);
+  useEffect(() => {
+    setStreamingMessage(null);
+    setToolMeta({});
+    clearElicitation();
+  }, [threadId, clearElicitation]);
+
+  const interruptState = useMemo<ChatInterruptState>(
+    () => ({
+      interrupts: ai.interrupts,
+      pendingInterrupts: ai.pendingInterrupts,
+      interruptErrors: ai.interruptErrors,
+      resuming: ai.resuming,
+    }),
+    [ai.interrupts, ai.pendingInterrupts, ai.interruptErrors, ai.resuming],
+  );
+  const { sendMessage: sendNativeMessage, setMessages, append, stop, isLoading } = ai;
+  const isResponding = ai.isLoading || !!streamingMessage;
+  const status: ChatContextType["status"] =
+    pendingElicitation || ai.interrupts.length
+      ? "waiting"
+      : isResponding
+        ? runPhase === "idle"
+          ? "thinking"
+          : runPhase
+        : "idle";
+
+  const addMessage = useCallback(
+    async (message: Message, targetChatId?: string) => {
+      const id = targetChatId ?? (await getOrCreateChat()).id;
+      await loadChat(id);
+      const chat = getChat(id);
+      if (!chat) return;
+      const messages = [...chat.messages, withMessageIdentity(message)];
+      // Voice and externally produced messages enter the same live transcript.
+      // A callback for an inactive conversation only updates its stored record.
+      if (id === session.id && chatIdRef.current === id) {
+        setMessages(toAIMessages(messages));
+        updateChat(id, () => ({}));
+      } else updateChat(id, () => ({ messages }));
+    },
+    [getOrCreateChat, loadChat, getChat, session.id, chatIdRef, setMessages, updateChat],
   );
 
   const sendMessage = useCallback(
@@ -491,139 +424,66 @@ export function useChatRun({
           );
         }
       }
-      const identifiedMessage = withMessageIdentity(resolvedMessage);
-      if (!getChat(id)) return;
-      if (chatIdRef.current !== id) {
-        replaceQueue((items) => [...items, { ...queuedSend(id, identifiedMessage), status: "held" }]);
-        return;
-      }
-      if (runningChatIdRef.current === id) {
-        replaceQueue((items) => [...items, queuedSend(id, identifiedMessage)]);
-        return;
-      }
-      await runMessageInChat(id, identifiedMessage, historyOverride, chatObj.title);
+      if (!getChat(id) || chatIdRef.current !== id) return;
+      if (session.id !== id) return;
+      if (historyOverride) setMessages(toAIMessages(historyOverride));
+      const context = pendingModelContextRef.current.get(id) ?? null;
+      pendingModelContextRef.current.delete(id);
+      await sendNativeMessage(userContent(appendTextContent(withMessageIdentity(resolvedMessage), context)));
     },
-    [getOrCreateChat, getChat, chatIdRef, runMessageInChat, replaceQueue],
+    [getOrCreateChat, getChat, chatIdRef, session.id, setMessages, sendNativeMessage],
   );
 
   const retryMessage = useCallback(async () => {
     const chat = getChat(chatIdRef.current ?? "");
-    if (!chat || runningChatIdRef.current === chat.id) return;
+    if (!chat) return;
+    if (chat.id !== session.id || isLoading) return;
     const history = historyForRetry(chat.messages);
-    if (history) await runMessageInChat(chat.id, null, history, chat.title);
-  }, [getChat, chatIdRef, runMessageInChat]);
-
-  const continueRun = useCallback(async () => {
-    const chat = getChat(chatIdRef.current ?? "");
-    if (!chat || runningChatIdRef.current) return;
-    const last = chat.messages.at(-1);
-    if (last?.role !== Role.Assistant || last.error?.code !== "MAX_TURNS") return;
-
-    const history = chat.messages.slice(0, -1);
-    updateChat(chat.id, () => ({ messages: history }));
-    await runMessageInChat(
-      chat.id,
-      withMessageIdentity({ role: Role.User, content: [{ type: "text", text: "Continue." }] }),
-      history,
-      chat.title,
-    );
-  }, [getChat, chatIdRef, runMessageInChat, updateChat]);
-
-  const sendHeldMessage = useCallback(
-    async (queueId: string) => {
-      const item = queuedSendsRef.current.find((candidate) => candidate.id === queueId && candidate.status === "held");
-      if (!item) return;
-
-      if (runningChatIdRef.current === item.chatId) {
-        replaceQueue((items) =>
-          items.map((candidate) => (candidate.id === queueId ? { ...candidate, status: "queued" } : candidate)),
-        );
-        return;
-      }
-
-      const targetChat = getChat(item.chatId);
-      if (!targetChat) {
-        removeQueuedMessage(queueId);
-        return;
-      }
-      removeQueuedMessage(queueId);
-      await runMessageInChat(item.chatId, item.message, undefined, targetChat.title);
-    },
-    [getChat, queuedSendsRef, removeQueuedMessage, replaceQueue, runMessageInChat],
-  );
-
-  const setVoiceToolCall = useCallback(
-    (toolName: string | null, callId?: string) => {
-      if (toolName === null) {
-        updateStreamingMessage(null);
-        setIsResponding(false);
-      } else {
-        const id = chatIdRef.current;
-        if (!id) return;
-        setIsResponding(true);
-        updateStreamingMessage({
-          chatId: id,
-          message: {
-            role: Role.Assistant,
-            content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name: toolName, arguments: "{}" }],
-          },
-        });
-      }
-    },
-    [updateStreamingMessage],
-  );
+    if (!history) return;
+    const native = toAIMessages(history);
+    setMessages(native.slice(0, -1));
+    await append(native.at(-1)!);
+  }, [getChat, chatIdRef, session.id, isLoading, setMessages, append]);
 
   const stopStreaming = useCallback(() => {
-    const controller = abortControllerRef.current;
-
-    // Detach drafts from automatic drain before aborting. The aborted run may
-    // settle synchronously; held items can only be sent by an explicit action.
-    const runningChatId = runningChatIdRef.current;
-    if (runningChatId) holdQueuedSends(runningChatId);
-    controller?.abort();
-    abortControllerRef.current = null;
-    runningChatIdRef.current = null;
-
-    // Commit partial streaming content to chat
-    const streaming = streamingMessageRef.current;
-    if (streaming && streaming.message.content.length > 0) {
-      updateChat(streaming.chatId, (prev) => ({
-        messages: [...prev.messages, streaming.message],
-      }));
-    }
-
-    updateStreamingMessage(null);
-    setIsResponding(false);
-    setRunPhase("idle");
+    stop();
     clearElicitation();
+    setStreamingMessage(null);
     setToolMeta({});
-  }, [holdQueuedSends, updateChat, updateStreamingMessage, clearElicitation]);
-
-  // Navigating to another/new chat cancels the in-flight turn (single run).
-  useEffect(() => {
-    const runningId = runningChatIdRef.current;
-    if (runningId && runningId !== chatId) stopStreaming();
-  }, [chatId, stopStreaming]);
-
-  useEffect(() => () => stopStreaming(), [stopStreaming]);
-
-  const status: ChatContextType["status"] = pendingElicitation ? "waiting" : runPhase;
-  const visibleQueuedSends = useMemo(() => queuedSends.filter((item) => item.chatId === chatId), [queuedSends, chatId]);
+    setRunPhase("idle");
+  }, [stop, clearElicitation]);
+  const setVoiceToolCall = useCallback(
+    (name: string | null, callId?: string) => {
+      const id = chatIdRef.current;
+      setStreamingMessage(
+        name && id
+          ? {
+              chatId: id,
+              message: {
+                role: Role.Assistant,
+                content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name, arguments: "{}" }],
+              },
+            }
+          : null,
+      );
+    },
+    [chatIdRef],
+  );
 
   return {
     streamingMessage,
     isResponding,
     status,
-    queuedSends: visibleQueuedSends,
+    queuedSends: ai.queue,
+    interruptState,
     pendingElicitation,
     pendingConsent,
     toolMeta,
+    addMessage,
     sendMessage,
     retryMessage,
-    continueRun,
     setVoiceToolCall,
-    removeQueuedMessage,
-    sendHeldMessage,
+    removeQueuedMessage: ai.cancelQueued,
     stopStreaming,
     resolveElicitation,
     requestElicitation,
@@ -631,6 +491,7 @@ export function useChatRun({
     resolveConsent,
   };
 }
+
 function appendTextContent(message: Message, text: string | null): Message {
   if (!text || message.role !== Role.User) {
     return message;

@@ -1,6 +1,6 @@
+import type { ChatMiddleware } from "@tanstack/ai";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
-import type { AgentInvocationContext } from "../lib/agent-run-controller";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -18,6 +18,9 @@ export type ImageBackground = "opaque" | "transparent";
 export type Model = {
   id: string;
   name: string;
+
+  /** Older model IDs whose saved selections should use this model instead. */
+  replaces?: string[];
 
   /** Short subdued text shown inline after `name`, e.g. the underlying model. */
   caption?: string;
@@ -100,6 +103,13 @@ export interface ToolProvider {
   readonly runtimeContext?: string;
 
   readonly tools: Tool[];
+
+  /** Native chat setup when a provider uses middleware; tools above also serve realtime and display. */
+  readonly chat?: {
+    tools: Tool[];
+    instructions?: string;
+    middleware: ChatMiddleware[];
+  };
 }
 
 export type Tool = {
@@ -108,9 +118,23 @@ export type Tool = {
   description?: string;
   icon?: string;
 
-  parameters: Record<string, unknown>;
+  /** Let TanStack discover this tool's schema on demand in chat runs. */
+  lazy?: boolean;
+  /** Opt in to TanStack approval; no additional app approval lifecycle. */
+  needsApproval?: boolean;
+  /** Chat uses a native defineAgent; function remains the realtime tool boundary. */
+  subagent?: {
+    /** Defaults to the caller's model. */
+    model?: string;
+    instructions: string;
+    tools: Tool[];
+    runtimeContext: string;
+    middleware: ChatMiddleware[];
+    /** Research receives its explicit brief instead of the parent conversation. */
+    inheritHistory?: boolean;
+  };
 
-  strict?: boolean;
+  parameters: Record<string, unknown>;
 
   function: (
     args: Record<string, unknown>,
@@ -128,7 +152,12 @@ export type Tool = {
 /** A type icon for a tool's chat presentation (e.g. a lucide icon component). */
 export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
-export type ToolDisplayState = { running?: boolean; error?: boolean };
+export type ToolDisplayState = {
+  running?: boolean;
+  error?: boolean;
+  /** Stable identity while arguments stream and the tool runs. */
+  toolCallId?: string;
+};
 
 /** A code/text block rendered in a tool call's expanded view. */
 export type ToolDisplayBlock = {
@@ -163,12 +192,22 @@ export type ToolDisplay = {
   output?: (result: Content[]) => ToolDisplayBlock | null;
 };
 
+/** Application context passed through native chat middleware and tool execution. */
+export interface AgentRunContext {
+  signal?: AbortSignal;
+  /** A child keeps separate workspace observations and read-only memory access. */
+  subagentRunId?: string;
+}
+
 export interface ToolContext {
   model?: string;
   chatId?: string;
   runId?: string;
-  invocationContext?: AgentInvocationContext;
+  invocationContext?: AgentRunContext;
   signal?: AbortSignal;
+  /** Native chat tools can pause and receive an answer on their resumed execution. */
+  interruptible?: boolean;
+  inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
@@ -242,6 +281,22 @@ export type RuntimeFeedbackContent = {
   text: string;
 };
 
+/** A child conversation uses the same messages and content as its parent. */
+export type SubagentContent = {
+  type: "subagent";
+  id: string;
+  name: string;
+  description?: string;
+  /** Parent run that started this invocation. */
+  runId?: string;
+  toolCallId?: string;
+  status: "running" | "finished" | "error" | "suspended";
+  messages: Message[];
+  error?: { message: string; code?: string };
+  /** Runtime-owned routing state; see {@link Signature}. */
+  signature?: Signature;
+};
+
 // Content is the union of all content types used in messages
 export type Content =
   | TextContent
@@ -254,7 +309,8 @@ export type Content =
   | SummaryContent
   | ArtifactRefContent
   | ArtifactSelectionContent
-  | RuntimeFeedbackContent;
+  | RuntimeFeedbackContent
+  | SubagentContent;
 
 export type TextContent = {
   type: "text";
@@ -270,6 +326,7 @@ export type ImageContent = {
 
   name?: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string; // Retained when data is a stored blob reference.
 };
 
 export type AudioContent = {
@@ -277,6 +334,7 @@ export type AudioContent = {
 
   name?: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string;
 };
 
 export type FileContent = {
@@ -284,6 +342,7 @@ export type FileContent = {
 
   name: string;
   data: string; // Full data URL (data:mime;base64,...)
+  contentType?: string;
 };
 
 export type Message = {
@@ -334,6 +393,48 @@ export const Role = {
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
 
+/**
+ * Opaque runtime state tagged with the realm that produced it:
+ * `"@<realm>:<data>"`. Only that realm replays it; any other runtime ignores
+ * it and falls back to the readable fields beside it.
+ */
+export type Signature = string;
+
+/** A question the paused run waits on: a tool approval, form, or client tool. */
+export type Interrupt = {
+  id: string;
+  reason: string;
+  message?: string;
+  toolCallId?: string;
+  /** Subagent invocation that raised it; absent for the chat's own run. */
+  subagentId?: string;
+  /** JSON Schema of the expected answer. */
+  schema?: Record<string, unknown>;
+  expiresAt?: string;
+  /** Descriptive data such as the tool name, input, or form payload. */
+  metadata?: Record<string, unknown>;
+  /** Runtime binding that validates the answer on resume. */
+  signature?: Signature;
+};
+
+/** A run that stopped for input and continues once its interrupts are answered. */
+export type PendingRun = {
+  id: string;
+  interrupts: Interrupt[];
+  /** Runtime session the run belongs to. */
+  signature?: Signature;
+};
+
+/** Model-context compaction; the transcript itself always stays complete. */
+export type Compaction = {
+  /** Subagent invocation whose context was compacted; absent for the chat itself. */
+  subagentId?: string;
+  /** Readable summary of the compacted prefix. */
+  text?: string;
+  /** The runtime's checkpoint, reused while the compacted prefix is unchanged. */
+  signature: Signature;
+};
+
 export type Chat = {
   id: string;
   title?: string;
@@ -345,6 +446,10 @@ export type Chat = {
 
   model: Model | null;
   messages: Array<Message>;
+
+  /** Present only while a run waits for input. */
+  pendingRun?: PendingRun;
+  compactions?: Compaction[];
 };
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */
@@ -364,6 +469,16 @@ export function updateToolResultMeta(messages: Message[], callId: string, meta: 
     };
   });
   return changed ? updated : messages;
+}
+
+export function tagSignature(realm: string, data: string): Signature {
+  return `@${realm}:${data}`;
+}
+
+/** The raw data when `signature` was produced by `realm`. */
+export function readSignature(signature: Signature | undefined, realm: string): string | undefined {
+  const prefix = `@${realm}:`;
+  return signature?.startsWith(prefix) ? signature.slice(prefix.length) : undefined;
 }
 
 export function getTextFromContent(content: Content[]): string {

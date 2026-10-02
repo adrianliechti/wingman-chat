@@ -1,10 +1,7 @@
-import { Braces, Shapes, SquareCode } from "lucide-react";
+import { Shapes } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
-import {
-  JAVASCRIPT_EXECUTION_PARAMETERS,
-  PYTHON_EXECUTION_PARAMETERS,
-} from "@/features/artifacts/lib/executionToolSchemas";
+import { SCRIPT_EXECUTION_PARAMETERS } from "@/features/artifacts/lib/executionToolSchemas";
 import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
 import { useArtifactEntries } from "./useArtifactFiles";
@@ -21,45 +18,16 @@ import synthesizeInstructionsText from "@/features/artifacts/prompts/synthesize.
 import transcribeInstructionsText from "@/features/artifacts/prompts/transcribe.txt?raw";
 import translateInstructionsText from "@/features/artifacts/prompts/translate.txt?raw";
 import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw";
-import { executeCode } from "@/features/tools/lib/interpreter";
-import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
 import { getConfig } from "@/shared/config";
-import { executeArtifactCode } from "../lib/executeArtifactCode";
+import { executeScript } from "../lib/executeScript";
+import { SCRIPT_EXECUTION_DISPLAY } from "../lib/executionToolDisplay";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 
 function executionFailure(context: ToolContext | undefined, text: string) {
   context?.setError?.({ code: "EXECUTION_ERROR", message: text });
   return [{ type: "text" as const, text }];
-}
-
-// A rotating, playful verb for the "running code" indicator. Seeded off the
-// snippet so it's stable across re-renders of the same call but varies between
-// calls — keeps a tool-heavy turn from reading as a wall of "Executing code…".
-const RUNNING_CODE_WORDS = [
-  "Coding",
-  "Programming",
-  "Computing",
-  "Crunching",
-  "Calculating",
-  "Compiling",
-  "Executing",
-  "Processing",
-  "Churning",
-  "Crafting",
-  "Tinkering",
-  "Cooking",
-  "Synthesizing",
-  "Wrangling",
-  "Reticulating",
-];
-
-function runningCodeLabel(code: unknown): string {
-  const text = typeof code === "string" ? code : "";
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
-  return `${RUNNING_CODE_WORDS[Math.abs(hash) % RUNNING_CODE_WORDS.length]}…`;
 }
 
 export function useArtifactsProvider(): ToolProvider | null {
@@ -73,17 +41,14 @@ export function useArtifactsProvider(): ToolProvider | null {
   // Direct/UI calls use the active fs. Model calls carry their originating
   // chatId so neither a draft-chat render nor navigation can redirect a write.
   const artifactsTools = useCallback((): Tool[] => {
-    const fileTools = readWriteManager.createTools(
-      (context) => resolveArtifactFileSystem(fs, context?.chatId),
-      {
-        namespace: "artifacts",
-        spaceName: "artifact workspace",
-        validators: ARTIFACT_VALIDATORS,
-      },
-    );
-    const runCode = async (options: Omit<Parameters<typeof executeArtifactCode>[0], "fs">) => {
+    const fileTools = readWriteManager.createTools((context) => resolveArtifactFileSystem(fs, context?.chatId), {
+      namespace: "artifacts",
+      spaceName: "artifact workspace",
+      validators: ARTIFACT_VALIDATORS,
+    });
+    const runCode = async (options: Omit<Parameters<typeof executeScript>[0], "fs">) => {
       const workspace = resolveArtifactFileSystem(fs, options.context?.chatId);
-      const result = await executeArtifactCode({
+      const result = await executeScript({
         ...options,
         fs: workspace,
         limits: { maxOutputBytes: AGENT_CODE_OUTPUT_MAX_BYTES },
@@ -96,72 +61,31 @@ export function useArtifactsProvider(): ToolProvider | null {
 
     const executionTools: Tool[] = [
       {
-        name: "execute_python_code",
-        display: {
-          header: (args, state) => ({
-            icon: SquareCode,
-            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
-          }),
-          input: (args) => {
-            const code = typeof args?.code === "string" ? args.code : "";
-            return code ? [{ code, language: "python" }] : [];
-          },
-        },
+        name: "execute_script",
+        display: SCRIPT_EXECUTION_DISPLAY,
         description:
-          "Execute Python code when the task requires computation, programmatic file processing, transformation, batch work, or file generation. Do not use it merely to inspect or OCR an image already included in the user's message; use built-in vision for that. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. The user's selected skills have bundled resources mounted read-only under /home/user/skills/<name>/ (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
-        // Keep this schema-guided rather than provider-compiled: the combined
-        // artifact toolbox otherwise exceeds Anthropic's strict-schema budget.
-        strict: false,
-        parameters: PYTHON_EXECUTION_PARAMETERS,
-        // Hold the workspace lock through snapshot, execution and commit.
-        function: (args: Record<string, unknown>, context?: ToolContext) =>
-          runCode({
-            args,
-            context,
-            executor: executeCode,
-            extension: "py",
-            mountSkills: true,
-          }),
-      },
-      {
-        name: "execute_javascript_code",
-        display: {
-          header: (args, state) => ({
-            icon: Braces,
-            label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(args?.code) : "Ran code",
-          }),
-          input: (args) => {
-            const code = typeof args?.code === "string" ? args.code : "";
-            return code ? [{ code, language: "javascript" }] : [];
-          },
-        },
-        description:
-          "Execute JavaScript in a sandboxed Web Worker (off the UI thread, isolated from the page, no network). " +
-          "Use it only when the task requires actual execution; do not use it merely to inspect or OCR an image " +
-          "already included in the user's message, which the chat model can inspect with built-in vision. " +
-          "Use it for browser-native work: WebCodecs, OffscreenCanvas, createImageBitmap, crypto.subtle, WebAssembly, " +
-          "TextEncoder/Decoder, and bundled libraries available as globals when referenced: `mediabunny` (media " +
-          "transcoding), `echarts` (SVG SSR charts), `jsPDF` (PDF). HTML pages load browser libraries from the " +
-          "virtual `/.lib/` folder (`/.lib/echarts.js`, `/.lib/three.js`, `/.lib/lucide.js`); never write library " +
-          "source into the workspace or into a page. " +
-          "Files are NOT mounted " +
-          "as a real filesystem — read and write artifacts through the injected " +
-          "`vfs` helper: `vfs.read(path)` / `vfs.readBytes(path)` / `vfs.readJSON(path)` and `vfs.write(path, data, " +
-          "contentType?)` / `vfs.writeBytes` / `vfs.writeJSON`, plus `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`. " +
-          "Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also reads the VFS (remote URLs are blocked). " +
-          "Anything you write or delete via `vfs` is synced back as artifacts. Use top-level `await` directly, and " +
-          "`return` a value or `console.log(...)` to produce output. Pass the full script in `code`, or `path` to run an " +
-          "existing .js artifact. For heavy data/number crunching or document libraries, Python (`execute_python_code`) " +
-          "is usually the stronger fit — they share the filesystem, so you can do that step there and read the result back here.",
-        strict: false,
-        parameters: JAVASCRIPT_EXECUTION_PARAMETERS,
-        function: (args: Record<string, unknown>, context?: ToolContext) =>
-          runCode({
-            args,
-            context,
-            executor: executeJavaScript,
-            extension: "js",
-          }),
+          "Execute Python, JavaScript, or Bash in a sandboxed Web Worker over the shared artifact workspace. " +
+          "Pass inline `code` with `language` (python, javascript, bash), or `path` to an artifact script or selected " +
+          "skill resource. File scripts select their interpreter from a shebang or extension (.py, .js/.mjs/.cjs, " +
+          ".sh/.bash); `language` overrides detection. For long or bundled scripts prefer `path`. " +
+          'Pass literal script arguments in `args`: Python sys.argv[1:], JavaScript process.argv.slice(2), Bash $1/$2/"$@". ' +
+          "Use Python for computation, data analysis and document libraries; JavaScript for browser media APIs, " +
+          "OffscreenCanvas and bundled browser libraries; Bash for shell scripts, pipelines and file/text processing. " +
+          "Do not execute code merely to inspect or OCR an image already included in the user's message. " +
+          "Python and Bash mount artifacts under /home/user/ (the working directory). JavaScript uses " +
+          "vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove with artifact paths " +
+          "like /data.csv. Local fetch reads VFS; direct remote networking is disabled. All runtimes sync created, modified " +
+          "and deleted artifacts on success; failures do not commit. Selected skill resources are under " +
+          "/home/user/skills/<name>/ (JavaScript VFS: /skills/<name>/); treat them as read-only and save outputs elsewhere. " +
+          "Python file scripts have __file__ and sibling imports; JavaScript has __filename/__dirname; Bash has " +
+          "$0, and can invoke bash/sh scripts. Bash provides virtual Unix commands, not a host shell: " +
+          "no installed system binaries, Python/Node commands or package installation. It offers `llm` and configured " +
+          "`ocr`/`extract` service commands through the same app bridges as Python; see their helper instructions. Invoke this tool " +
+          "again with the appropriate language for Python or JavaScript. JavaScript has no DOM or Node runtime; " +
+          "use top-level await and console.log or return, and vfs for files. Python imports load bundled offline packages. " +
+          "Use an HTML artifact for interactive interfaces; browser libraries are available under /.lib/.",
+        parameters: SCRIPT_EXECUTION_PARAMETERS,
+        function: (args: Record<string, unknown>, context?: ToolContext) => runCode({ args, context }),
       },
     ];
 
@@ -176,7 +100,7 @@ export function useArtifactsProvider(): ToolProvider | null {
     return {
       id: "artifacts",
       name: "Artifacts",
-      description: "Create and edit files, run Python and JavaScript code",
+      description: "Create and edit files, run Python, JavaScript and Bash scripts",
       icon: Shapes,
       instructions: [
         artifactsInstructionsText,
@@ -209,7 +133,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         ...(duckdbEnabled
           ? [
               `duckdb_files: ${JSON.stringify(queryable)}`,
-              "These workspace files are queryable by name with DuckDB (wingman.duckdb in HTML, sql() in the interpreters).",
+              "These workspace files are queryable by name with DuckDB (wingman.duckdb in HTML, sql() in Python/JavaScript).",
             ]
           : []),
       ].join("\n"),

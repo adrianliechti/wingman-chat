@@ -1,4 +1,5 @@
-import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { SubagentCard } from "./SubagentCard";
+import { AlertCircle, RotateCcw } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
@@ -8,14 +9,15 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
-import type { Content, Message } from "@/shared/types/chat";
+import type { Content, Message, ToolIcon } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
+import { ActivityRow } from "./ActivityRow";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd, subagentToolCallIds } from "./chatMessageUtils";
 import { getThinkingWord } from "./thinkingWord";
 import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
@@ -97,7 +99,7 @@ function ErrorMessage({
   );
 }
 
-/** Spinner + label "working" indicator — identical box to a running tool row. */
+/** The "working" row shown before any reasoning or tool call arrives. */
 function ThinkingIndicator({
   status,
   runKey,
@@ -107,14 +109,7 @@ function ThinkingIndicator({
 }) {
   const word = getThinkingWord(runKey);
   const label = status === "compacting" ? "Compacting conversation" : status === "waiting" ? "Waiting for input" : word;
-  return (
-    <div className="rounded-lg overflow-hidden max-w-full">
-      <div className="flex items-center gap-2 min-w-0">
-        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}…</span>
-      </div>
-    </div>
-  );
+  return <ActivityRow running label={`${label}…`} />;
 }
 
 // Reasoning/Thinking display component - shows model's thinking process in collapsible UI
@@ -128,7 +123,6 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
   // Track the previous streaming state to detect transitions
   const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
-  const label = isStreaming ? "Thinking..." : isExpanded ? "Hide Thoughts" : "Expand Thoughts";
 
   // Adjust state during render when isStreaming prop changes
   // This is React's recommended pattern for updating state based on props
@@ -143,17 +137,12 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
 
   return (
     <div className={cn(isExpanded ? "mb-1" : "mb-0")}>
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="grid w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-      >
-        <ChevronRight className={cn("w-3 h-3 transition-transform duration-200", isExpanded && "rotate-90")} />
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="font-medium">{label}</span>
-          {isStreaming && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
-        </span>
-      </button>
+      <ActivityRow
+        label={isStreaming ? "Thinking…" : "Thought"}
+        running={isStreaming}
+        expanded={isExpanded}
+        onToggle={() => setIsExpanded(!isExpanded)}
+      />
 
       {isExpanded && (
         <div className="mt-1 ml-4.5">
@@ -202,35 +191,27 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
   }
 }
 
-/** Compact row shown while a tool call is still running (spinner + label + status/preview). */
+/** A tool call still running at the top level of the turn. */
 function RunningToolRow({
   header,
+  icon,
   status,
   className,
 }: {
   header: ResolvedToolHeader;
+  icon?: ToolIcon;
   status?: string | null;
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-lg overflow-hidden max-w-full", className)}>
-      <div className="flex items-center gap-2 min-w-0">
-        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-        <span
-          className={cn(
-            "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
-            header.mono ? "font-mono truncate" : "font-medium",
-          )}
-        >
-          {header.label}
-        </span>
-        {status ? (
-          <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
-        ) : header.preview ? (
-          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{header.preview}</span>
-        ) : null}
-      </div>
-    </div>
+    <ActivityRow
+      running
+      label={header.label}
+      detail={status ?? header.preview}
+      mono={header.mono}
+      icon={header.Icon ?? icon}
+      className={className}
+    />
   );
 }
 
@@ -242,7 +223,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 }: ChatAssistantMessageProps) {
   const { messages, toolMeta } = useChatConversation();
   const { pendingElicitation, status } = useChatRunState();
-  const { resolveElicitation, retryMessage, continueRun } = useChatActions();
+  const { resolveElicitation, retryMessage } = useChatActions();
   const { providers } = useToolsContext();
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
 
@@ -258,7 +239,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // sticky after trackpad taps, so the buttons wouldn't reliably hide.
   const [hovered, setHovered] = useState(false);
 
-  // Files written during this turn (create + python/javascript), surfaced as
+  // Files written during this turn (file tools + execute_script), surfaced as
   // clickable chips on the turn's completion message rather than auto-opening
   // the artifacts drawer.
   const turnArtifactPaths = useMemo(
@@ -271,7 +252,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     [messages, index],
   );
 
-  const toolCallParts = message.content.filter((p) => p.type === "tool_call");
+  const delegated = subagentToolCallIds(messages);
+  const toolCallParts = message.content.filter((p) => p.type === "tool_call" && !delegated.has(p.id));
   const hasToolCalls = toolCallParts.length > 0;
   const hasTextContent = message.content.some((p) => p.type === "text" && p.text);
 
@@ -289,20 +271,18 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
   // Handle error messages
   if (message.error) {
-    const isMaxTurns = message.error.code === "MAX_TURNS";
     return (
       <ErrorMessage
         title={message.error.code || "Error"}
         message={message.error.message}
-        variant={isMaxTurns ? "neutral" : "error"}
-        actionLabel={isMaxTurns ? "Continue" : "Retry"}
-        onAction={isLast && !isResponding ? (isMaxTurns ? continueRun : retryMessage) : undefined}
+        actionLabel="Retry"
+        onAction={isLast && !isResponding ? retryMessage : undefined}
       />
     );
   }
 
   // Handle loading states (no text content yet)
-  if (!hasTextContent) {
+  if (!hasTextContent && !message.content.some((part) => part.type === "subagent")) {
     const reasoningParts = message.content.filter((p) => p.type === "reasoning");
     const hasReasoning = reasoningParts.some((p) => p.text || p.summary);
 
@@ -365,11 +345,15 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
               const meta = toolMeta[part.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
-              const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
-                running: true,
-              });
+              const tool = findTool(providers, part.name);
+              const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
               return (
-                <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
+                <RunningToolRow
+                  key={getMessagePartKey(part, i, "loading-tool-call")}
+                  header={header}
+                  icon={tool?.icon}
+                  status={status}
+                />
               );
             })
           : !hasReasoning && (
@@ -386,11 +370,12 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="flex-1 py-3 [overflow-wrap:anywhere] min-w-0 overflow-hidden">
+      <div className={cn("flex-1 [overflow-wrap:anywhere] min-w-0 overflow-hidden", hasTextContent && "py-3")}>
         {/* Render content parts in order */}
         {message.content.map((part, index) => {
           const partKey = getMessagePartKey(part, index, "content");
 
+          if (part.type === "subagent") return <SubagentCard key={part.id} {...part} />;
           if (part.type === "reasoning") {
             return (
               <ReasoningDisplay
@@ -413,6 +398,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             );
           }
           if (part.type === "tool_call") {
+            if (delegated.has(part.id)) return null;
             const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
 
             if (isPendingElicitation) {
@@ -431,9 +417,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
-            const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
-              running: true,
-            });
+            const tool = findTool(providers, part.name);
+            const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
             // Only the first tool call in a run gets top spacing (to match the
             // committed result's gap); consecutive concurrent calls stay tight.
             const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
@@ -441,7 +426,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               <RunningToolRow
                 key={partKey}
                 header={header}
-                className={cn("mb-0", isFirstToolCall ? "mt-2" : "mt-0.5")}
+                icon={tool?.icon}
+                className={isFirstToolCall ? "mt-2" : "mt-1"}
               />
             );
           }
@@ -470,7 +456,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           </div>
         )}
 
-        {!(isLast && isResponding) && (
+        {hasTextContent && !(isLast && isResponding) && (
           <div
             className={cn(
               "flex items-center gap-3 mt-1 transition-opacity duration-200",

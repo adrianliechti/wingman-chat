@@ -90,6 +90,150 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
   });
 }
 
+for (const existingChat of [false, true]) {
+  test(`shows activity before the first token in ${existingChat ? "an existing" : "a new"} chat`, async ({ page }) => {
+    await open(page, existingChat ? "?seed" : "");
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Please think about this");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    const activity = page.getByRole("status", { name: "Assistant is working" });
+    await expect(activity).toBeVisible();
+    await expect(activity).not.toBeEmpty();
+    await page.evaluate(() => window.reactUiE2E.stream("Here is my answer"));
+    await expect(activity).toHaveCount(0);
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is my answer");
+    await page.evaluate(() => window.reactUiE2E.finish("Here is my answer"));
+    await input.fill("Think again");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(activity).toBeVisible();
+    await page.getByRole("button", { name: "Stop generating (Esc)", exact: true }).click();
+    await expect(activity).toHaveCount(0);
+  });
+}
+
+test("activity labels vary across responses and stay stable while composing", async ({ page }) => {
+  await page.addInitScript(() => {
+    let id = 0;
+    crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`;
+  });
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  const activity = page.getByRole("status", { name: "Assistant is working" });
+  const labels = new Set<string>();
+  for (let turn = 1; turn <= 4; turn++) {
+    await input.fill("Think about this");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(turn);
+    await expect(activity).toBeVisible();
+    const label = (await activity.textContent())!;
+    labels.add(label);
+    await input.fill("A draft while waiting");
+    await expect(activity).toHaveText(label);
+    await input.fill("");
+    await page.evaluate(() => window.reactUiE2E.finish("Done"));
+    await expect(activity).toHaveCount(0);
+  }
+  expect(labels.size).toBeGreaterThan(1);
+});
+
+test("research approvals and child tools use chat disclosures and remain operable on a narrow screen", async ({
+  page,
+}, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page, "?seed&research");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Research this topic");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("search_agent", { prompt: "Find evidence about the topic" }));
+  const requests = page.getByLabel("Agent requests");
+  await expect(requests.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  await expect(requests).toContainText("Approval required to run Web research");
+  await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
+  expect(
+    await requests.evaluate(
+      (element) =>
+        element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
+    ),
+  ).toBe(true);
+  await requests.getByText("View details", { exact: true }).click();
+  await expect(requests.locator("details")).toContainText("Find evidence about the topic");
+  await expect(requests.locator("pre")).toHaveCount(0);
+  await requests.getByText("View details", { exact: true }).click();
+  await page.screenshot({ path: info.outputPath("approval.png") });
+  await requests.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  const child = page
+    .locator("details")
+    .filter({ has: page.locator("summary", { hasText: "Researching the web" }) })
+    .first();
+  await expect(child).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.callTool("web_search", { queries: ["A useful research query"] }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  const result = child.getByRole("button", { name: "Searched the web", exact: false });
+  await expect(result).toBeVisible();
+  await result.click();
+  await expect(child).toContainText("Research evidence");
+  await result.click();
+  await page.screenshot({ path: info.outputPath("research.png") });
+  await page.setViewportSize({ width: 390, height: 750 });
+  await expect(result).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.evaluate(() => window.reactUiE2E.finish("Findings with sources"));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
+  await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
+  await expect(requests).toHaveCount(0);
+  await expect(page.getByText("Web research", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
+  await page.getByText("Web research", { exact: true }).click();
+  await expect(page.getByText("Findings with sources", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.reactUiE2E.flush());
+  expect(errors).toEqual([]);
+});
+
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`large text chunks render progressively and Stop retains the full text (${reducedMotion})`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await open(page);
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Stream a response");
+    await input.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    const burst = "Hello 🌍. A received text chunk. ".repeat(30);
+    const lengths = await page.evaluate(async (text) => {
+      const sizes: number[] = [];
+      const observer = new MutationObserver(() => {
+        const value = [...document.querySelectorAll('[data-role="assistant"]')].at(-1)?.textContent?.trim() ?? "";
+        if (text.startsWith(value) && sizes.at(-1) !== value.length) sizes.push(value.length);
+      });
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+      window.reactUiE2E.stream(text);
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      observer.disconnect();
+      return sizes;
+    }, burst);
+    expect(lengths.some((length) => length > 0 && length < burst.trim().length)).toBe(
+      reducedMotion === "no-preference",
+    );
+    await expect(page.locator('[data-role="assistant"]').last()).toHaveText(burst.trim());
+
+    const final = burst + "More text that must survive Stop. ".repeat(30);
+    await page.evaluate((text) => {
+      window.reactUiE2E.stream(text);
+      // Stop while the newly received burst is still being revealed.
+      setTimeout(() => document.querySelector<HTMLButtonElement>('button[title="Stop generating (Esc)"]')?.click(), 30);
+    }, final);
+    await expect(page.getByRole("button", { name: "Stop generating (Esc)", exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
+    await page.evaluate(() => window.reactUiE2E.finish("Late provider completion"));
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText(final.trim());
+  });
+}
+
 test("compiled chat keeps stream DOM stable, measures the composer and updates virtualized search", async ({
   page,
 }) => {
@@ -132,9 +276,9 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   await response.hover();
   await expect(response.getByRole("button")).toHaveCount(0);
   await response.evaluate((element) => element.setAttribute("data-stream-instance", "original"));
-  await page.evaluate(() => window.reactUiE2E.stream("Second draft"));
-  await expect(response).toContainText("Second draft");
-  await page.evaluate(() => window.reactUiE2E.finish("Final answer"));
+  await page.evaluate(() => window.reactUiE2E.stream("First draft updated"));
+  await expect(response).toContainText("First draft updated");
+  await page.evaluate(() => window.reactUiE2E.finish("First draft updated. Final answer"));
   await expect(response).toContainText("Final answer");
   await expect(response).toHaveAttribute("data-stream-instance", "original");
   await expect(response.getByRole("button", { name: "Copy to clipboard (Alt+click for raw markdown)" })).toBeVisible();
@@ -236,6 +380,9 @@ test("hi then long Markdown keeps the start readable; Latest follows until the r
   await scroll.hover();
   await page.mouse.wheel(0, 2000);
   await expect.poll(gap).toBeLessThan(3);
+  // WebKit can update scrollTop before delivering the scroll event that
+  // restores follow mode. Wait for the UI to observe reaching the end.
+  await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 650, height: 450 });
   await expect.poll(gap).toBeLessThan(3);
   await input.fill("Another question");

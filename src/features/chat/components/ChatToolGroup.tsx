@@ -1,8 +1,8 @@
-import { ChevronRight, ToolCase } from "lucide-react";
+import { ToolCase } from "lucide-react";
 import { memo, useMemo, useState } from "react";
-import { cn } from "@/shared/lib/cn";
 import type { Message } from "@/shared/types/chat";
 import { summarizeToolGroup } from "./chatMessageUtils";
+import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { ChatMessageAttachments } from "./ChatMessageAttachments";
 import { hasStoredAttachments } from "../lib/chatAttachments";
@@ -28,25 +28,15 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
 
   return (
     <div className="pb-2 max-w-full">
-      <button onClick={() => setExpanded((v) => !v)} className="w-full text-left transition-colors" type="button">
-        <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
-          <ChevronRight
-            className={cn(
-              "w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-          <div className="flex items-center gap-2 min-w-0">
-            <ToolCase className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-            <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
-              {summary}
-            </span>
-          </div>
-        </div>
-      </button>
+      <ActivityRow
+        label={summary}
+        icon={ToolCase}
+        expanded={expanded}
+        onToggle={() => setExpanded((value) => !value)}
+      />
 
       {expanded && (
-        <div className="mt-1">
+        <div className="mt-1 ml-4.5">
           {indices.map((idx) => {
             const result = messages[idx].content.find((p) => p.type === "tool_result");
             // Key by the stable tool-call id, not the array index — stop/restart
@@ -54,10 +44,10 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
             const key = result && "id" in result ? result.id : idx;
             return hasStoredAttachments(messages[idx].content) ? (
               <ChatMessageAttachments key={key} message={messages[idx]}>
-                {(message) => <ChatToolMessage message={message} index={idx} />}
+                {(message) => <ChatToolMessage message={message} index={idx} nested />}
               </ChatMessageAttachments>
             ) : (
-              <ChatToolMessage key={key} message={messages[idx]} index={idx} />
+              <ChatToolMessage key={key} message={messages[idx]} index={idx} nested />
             );
           })}
         </div>

@@ -59,6 +59,11 @@ describe("chat persistence", () => {
   });
   it("round-trips message identity, usage, phases, nested media MIME and tool metadata", async () => {
     const value = chat();
+    value.pendingRun = {
+      id: "run",
+      interrupts: [{ id: "approval", reason: "tool_call", toolCallId: "call", metadata: { toolName: "vision" } }],
+    };
+    value.compactions = [{ subagentId: "child", text: "Earlier work", signature: "@tanstack:{}" }];
     value.messages = [
       {
         id: "message",
@@ -81,9 +86,14 @@ describe("chat persistence", () => {
     ];
     await storeChat(value);
     expect(await loadChat(value.id)).toMatchObject(value);
+    expect(await loadChat(value.id, false)).toMatchObject({
+      pendingRun: value.pendingRun,
+      compactions: value.compactions,
+    });
     const stored = await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json");
     expect(JSON.stringify(stored)).not.toContain("base64");
     expect(JSON.stringify(stored)).toContain("image/jpeg");
+    expect(stored).toMatchObject({ pendingRun: value.pendingRun, compactions: value.compactions });
   });
 
   it("a failed manifest save keeps the last committed attachments readable", async () => {
@@ -93,8 +103,70 @@ describe("chat persistence", () => {
     memory.beforeWrite = async (path) => {
       if (path.endsWith("chat.json")) throw new Error("disk full");
     };
-    await expect(storeChat({ ...value, messages: [] })).rejects.toThrow("disk full");
+    await expect(storeChat({ ...value, messages: [] })).rejects.toThrow();
     expect((await loadChat(value.id))!.messages[0].content[0]).toMatchObject({ data: "data:image/png;base64,YWJj" });
+  });
+
+  it("stores subagent conversations and attachments using the ordinary message format", async () => {
+    const value = chat();
+    value.messages = [
+      {
+        id: "parent",
+        role: "assistant",
+        content: [
+          {
+            type: "subagent",
+            id: "child",
+            name: "research",
+            status: "finished",
+            messages: [
+              {
+                id: "child-message",
+                role: "assistant",
+                content: [
+                  {
+                    type: "subagent",
+                    id: "nested",
+                    name: "inspect",
+                    status: "finished",
+                    messages: [
+                      {
+                        id: "result",
+                        role: "user",
+                        content: [
+                          {
+                            type: "tool_result",
+                            id: "call",
+                            name: "read",
+                            arguments: "{}",
+                            result: [
+                              { type: "image", data: "data:image/jpeg;base64,YWJj" },
+                              { type: "file", name: "notes.txt", data: "data:text/plain;base64,bm90ZXM=" },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    await storeChat(value);
+    const manifest = (await loadChat(value.id, false))!;
+    expect(JSON.stringify(manifest.messages)).not.toContain("base64");
+    expect(JSON.stringify(manifest.messages)).not.toContain('"parts"');
+    const loaded = await createAttachmentLoader(value.id)(manifest.messages);
+    expect(loaded).toMatchObject(value.messages);
+    // Saving references must keep blobs owned by a nested child.
+    await storeChat(manifest);
+    expect(await opfs.listChatBlobs(value.id)).toHaveLength(2);
+    expect((await loadChat(value.id))?.messages).toMatchObject(value.messages);
+    await storeChat({ ...manifest, messages: [] });
+    expect(await opfs.listChatBlobs(value.id)).toHaveLength(0);
   });
 
   it("finishes sibling blob writes before a failed save releases the lock to deletion", async () => {

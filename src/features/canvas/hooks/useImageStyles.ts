@@ -20,7 +20,7 @@ async function loadImageStyles(): Promise<ImageStyle[] | null> {
  * Loads named image styles at runtime from the served `image-styles` skill, so
  * adding, removing, or editing that skill (e.g. mounted into the Docker image)
  * changes the Canvas style picker without a rebuild — the same source the chat
- * path reads via `read_skill`. Empty when the skill isn't served.
+ * path reads via `load_skill`. Empty when the skill isn't served.
  */
 export function useImageStyles(): { styles: ImageStyle[]; prompts: Record<string, string> } {
   const [styles, setStyles] = useState<ImageStyle[]>([]);

@@ -3,9 +3,11 @@ import type { Content, Message } from "@/shared/types/chat";
 
 export function hasStoredAttachments(content: Content[]): boolean {
   return content.some((part) =>
-    part.type === "tool_result"
-      ? hasStoredAttachments(part.result)
-      : (part.type === "image" || part.type === "audio" || part.type === "file") && !!parseBlobRef(part.data),
+    part.type === "subagent"
+      ? part.messages.some((message) => hasStoredAttachments(message.content))
+      : part.type === "tool_result"
+        ? hasStoredAttachments(part.result)
+        : (part.type === "image" || part.type === "audio" || part.type === "file") && !!parseBlobRef(part.data),
   );
 }
 

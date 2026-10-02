@@ -1,47 +1,36 @@
 import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
-import OpenAI from "openai";
-import { APIConnectionTimeoutError } from "openai/error";
-import { zodTextFormat } from "openai/helpers/zod";
-import { z } from "zod/v3";
-import instructionsClassifyChat from "@/features/chat/prompts/chat-classify.txt?raw";
+import { chat, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
+import { z } from "zod";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
-import instructionsSummarizeHistory from "@/features/chat/prompts/summarize-history.txt?raw";
+import instructionsTitleChat from "@/features/chat/prompts/chat-title.txt?raw";
+import { sanitizeForClassification } from "@/features/chat/lib/chatHistory";
+import {
+  type ClassificationItem,
+  type ClassificationMatch,
+  classificationMatches,
+  classificationRequest,
+} from "@/features/chat/lib/classificationQuestions";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
-import type {
-  Content,
-  ImageQuality,
-  Message,
-  Model,
-  ModelType,
-  ReasoningEffort,
-  ReasoningContent,
-  Tool,
-  ToolCallContent,
-  TextContent,
-} from "@/shared/types/chat";
-import { Role } from "@/shared/types/chat";
+import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
-import { isAbortError, isRecoverableStreamError, waitBeforeStreamRetry } from "./errors";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
-import { traceGenAI } from "./otel";
-import { reasoningPrefix } from "./reasoning";
-import { finalResponseText, responseContent, validateResponse, toResponseInput } from "./responses";
-import { toResponseTools } from "./toolSchemas";
-import { compileToolRegistry } from "./toolRegistry";
+import { aiTelemetry } from "./otel";
+import { aiDebug } from "./aiStream";
+import {
+  browserProviderConfig,
+  gatewayEmbedding,
+  gatewaySpeech,
+  gatewayText,
+  gatewayTranscription,
+} from "./aiProvider";
 import { simplifyMarkdown } from "./utils";
-
-/**
- * Streaming uses one retry budget for HTTP failures and interrupted streams.
- * SDK retries are disabled on this path to avoid multiplying attempts.
- */
-const MAX_STREAM_RETRIES = 2;
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
@@ -146,30 +135,27 @@ async function readErrorBody(resp: Response): Promise<string> {
 }
 
 export class Client {
-  private oai: OpenAI;
+  private readonly apiKey: string;
   private readonly modelOverrides: Map<string, Pick<Model, "id" | "maxOutputTokens" | "outputTokenBudget">>;
   private modelInfo: Model[] = [];
 
   constructor(apiKey: string = "sk-", models: Pick<Model, "id" | "maxOutputTokens" | "outputTokenBudget">[] = []) {
     this.modelOverrides = new Map(models.map((model) => [model.id, model]));
-    this.oai = new OpenAI({
-      baseURL: new URL("/api/v1", window.location.origin).toString(),
-      apiKey: apiKey,
-      dangerouslyAllowBrowser: true,
-      // Configure automatic retries for rate limits and server errors
-      // Three retries after the initial attempt for non-streaming requests.
-      maxRetries: 3,
-      // Uses SDK default timeout of 10 minutes for complex operations
-    });
+    this.apiKey = apiKey;
+  }
+
+  textAdapter(model: string, signal?: AbortSignal) {
+    return gatewayText(model, this.apiKey, browserProviderConfig(signal));
   }
 
   async listModels(type?: ModelType): Promise<Model[]> {
-    const models = await this.oai.models.list({
-      timeout: 15_000,
-      maxRetries: 0,
-      headers: { "Cache-Control": "no-cache" },
+    const response = await fetch(new URL("/api/v1/models", window.location.origin), {
+      signal: AbortSignal.timeout(15_000),
+      headers: { "Cache-Control": "no-cache", Authorization: `Bearer ${this.apiKey}` },
     });
-    const mappedModels = models.data.map(modelFromAPI);
+    if (!response.ok) throw new Error(`Failed to list models: ${response.status}`);
+    const models = await response.json();
+    const mappedModels = (models.data as Parameters<typeof modelFromAPI>[0][]).map(modelFromAPI);
     this.modelInfo = mappedModels;
 
     if (type) {
@@ -198,325 +184,62 @@ export class Client {
     return body.data.map((mcp: { id: string }) => mcp.id);
   }
 
-  async complete(
+  chatModelOptions(
     model: string,
-    instructions: string,
-    input: Message[],
-    tools: Tool[],
-    handler?: (content: Content[]) => void,
     options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+      effort?: ReasoningEffort;
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       maxOutputTokens?: number;
-      signal?: AbortSignal;
-      parentContext?: AgentContext;
     },
-  ): Promise<Message> {
+  ) {
     const maxOutputTokens = this.outputTokenBudget(
       model,
       options?.maxOutputTokens ?? this.modelOverrides.get(model)?.outputTokenBudget,
     );
-    return traceGenAI(
-      "chat",
-      model,
-      async (observeResponse) => {
-        options?.signal?.throwIfAborted();
-        const requestTools = toResponseTools(compileToolRegistry(tools).tools);
-        // Reasoning payloads are replayed only under the model and request
-        // prefix that produced them; see reasoning.ts.
-        const reasoning = { model, prefix: reasoningPrefix(instructions, requestTools) };
-        const items = toResponseInput(input, { reasoning });
-
-        const contentParts: Content[] = [];
-
-        // Get-or-create the part for one reasoning item. Items keep their
-        // output position so the streamed render matches the committed order.
-        const ensureReasoning = (id: string): ReasoningContent => {
-          let part = contentParts.find((p): p is ReasoningContent => p.type === "reasoning" && p.id === id);
-          if (!part) {
-            part = { type: "reasoning", id, text: "" };
-            contentParts.push(part);
-          }
-          return part;
-        };
-
-        const emit = () => handler?.(contentParts.map((part) => ({ ...part })));
-
-        // Track in-flight tool calls by their output index so we can grow their
-        // arguments as deltas arrive. (output_index is present on every event;
-        // the item id is optional and the call id isn't on the delta events.)
-        const toolCallsByIndex = new Map<number, ToolCallContent>();
-        const textByIndex = new Map<number, TextContent>();
-        const phasesByIndex = new Map<number, TextContent["phase"]>();
-
-        // Build and run one streaming attempt. Resets the accumulators so a
-        // retry re-streams from empty and the UI overwrites the partial render
-        // instead of duplicating deltas. Re-sending is replay-safe: the caller
-        // commits the assistant message (and runs its tools) only after this
-        // resolves, so a failed attempt left nothing committed.
-        const attemptStream = async () => {
-          // Clearing only matters on a retry: drop the failed attempt's partial
-          // render so the UI overwrites it instead of appending duplicate deltas.
-          const hadPartial = contentParts.length > 0;
-          contentParts.length = 0;
-          toolCallsByIndex.clear();
-          textByIndex.clear();
-          phasesByIndex.clear();
-          if (hadPartial) emit();
-
-          const runner = this.oai.responses
-            .stream(
-              {
-                model: model,
-                store: false,
-                truncation: "disabled",
-                ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
-                // Request payloads explicitly for providers that do not return
-                // them by default. Their context mode decides which to use.
-                include: ["reasoning.encrypted_content"],
-                tools: requestTools,
-                input: items,
-                instructions: instructions,
-                ...(options?.effort
-                  ? {
-                      reasoning: {
-                        effort: options.effort as OpenAI.Reasoning["effort"],
-                        summary: options.summary ?? "auto",
-                      },
-                    }
-                  : {}),
-                ...(options?.verbosity
-                  ? {
-                      text: { verbosity: options.verbosity },
-                    }
-                  : {}),
-              },
-              { signal: options?.signal, maxRetries: 0 },
-            )
-            .on("response.reasoning_summary_text.delta", (event) => {
-              const r = ensureReasoning(event.item_id);
-              r.summary = (r.summary ?? "") + event.delta;
-              emit();
-            })
-            .on("response.reasoning_text.delta", (event) => {
-              ensureReasoning(event.item_id).text += event.delta;
-              emit();
-            })
-            .on("response.output_text.delta", (event) => {
-              let part = textByIndex.get(event.output_index);
-              if (!part) {
-                const phase = phasesByIndex.get(event.output_index);
-                part = { type: "text", text: "", ...(phase ? { phase } : {}) };
-                textByIndex.set(event.output_index, part);
-                contentParts.push(part);
-              }
-              part.text += event.delta;
-              emit();
-            })
-            // Materialize the tool-call part as soon as the call starts, so its
-            // spinner appears right after the intro instead of only once the model
-            // has finished writing all the arguments.
-            .on("response.output_item.added", (event) => {
-              if (event.item.type === "message") {
-                phasesByIndex.set(event.output_index, event.item.phase ?? undefined);
-              } else if (event.item.type === "reasoning") {
-                ensureReasoning(event.item.id);
-                emit();
-              } else if (event.item.type === "function_call") {
-                const part: ToolCallContent = {
-                  type: "tool_call",
-                  id: event.item.call_id,
-                  name: event.item.name,
-                  arguments: event.item.arguments ?? "",
-                };
-                toolCallsByIndex.set(event.output_index, part);
-                contentParts.push(part);
-                emit();
-              }
-            })
-            // Grow the arguments live as the model writes them (e.g. the Python script).
-            .on("response.function_call_arguments.delta", (event) => {
-              const part = toolCallsByIndex.get(event.output_index);
-              if (part) {
-                part.arguments += event.delta;
-                emit();
-              }
-            })
-            .on("response.output_item.done", (event) => {
-              if (event.item.type === "function_call") {
-                const incomplete = event.item.status === "incomplete";
-                const existing = toolCallsByIndex.get(event.output_index);
-                if (existing) {
-                  existing.arguments = event.item.arguments; // authoritative final value
-                  if (incomplete) existing.incomplete = true;
-                } else {
-                  contentParts.push({
-                    type: "tool_call",
-                    id: event.item.call_id,
-                    name: event.item.name,
-                    arguments: event.item.arguments,
-                    ...(incomplete ? { incomplete: true } : {}),
-                  });
-                }
-                emit();
-              }
-            });
-
-          // The SDK's fetch timeout ends at the response headers for streams.
-          // Apply the same deadline through the terminal event so a stalled
-          // body cannot hold the chat or an interpreter bridge indefinitely.
-          let timedOut = false;
-          const timer = setTimeout(() => {
-            timedOut = true;
-            runner.abort();
-          }, this.oai.timeout);
-          try {
-            return await runner.finalResponse();
-          } catch (error) {
-            options?.signal?.throwIfAborted();
-            if (timedOut) throw new APIConnectionTimeoutError();
-            throw error;
-          } finally {
-            clearTimeout(timer);
-          }
-        };
-
-        const assistant: Message = { role: Role.Assistant, content: contentParts };
-
-        for (let attempt = 0; ; attempt++) {
-          try {
-            options?.signal?.throwIfAborted();
-            const finalResponse = await attemptStream();
-            options?.signal?.throwIfAborted();
-            observeResponse({
-              id: finalResponse.id,
-              model: finalResponse.model,
-              finishReasons: [finalResponse.incomplete_details?.reason ?? finalResponse.status ?? "unknown"],
-              inputTokens: finalResponse.usage?.input_tokens,
-              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: finalResponse.usage?.output_tokens,
-              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-            });
-            validateResponse(finalResponse, true);
-            // The terminal response is authoritative, including providers that
-            // omit text deltas or item.done events.
-            assistant.content = responseContent(finalResponse, reasoning);
-            handler?.(assistant.content.map((part) => ({ ...part })));
-            assistant.usage = {
-              model: finalResponse.model,
-              inputTokens: finalResponse.usage?.input_tokens,
-              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-              outputTokens: finalResponse.usage?.output_tokens,
-              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-              reasoningContext:
-                finalResponse.reasoning?.context === "current_turn" || finalResponse.reasoning?.context === "all_turns"
-                  ? finalResponse.reasoning.context
-                  : undefined,
-            };
-            return assistant;
-          } catch (error) {
-            options?.signal?.throwIfAborted();
-            if (isAbortError(error)) throw error;
-            // One retry layer covers both HTTP failures and interrupted streams.
-            // Tools run only after a validated terminal response is returned.
-            if (attempt < MAX_STREAM_RETRIES && isRecoverableStreamError(error)) {
-              await waitBeforeStreamRetry(attempt, error, options?.signal);
-              continue;
-            }
-            throw error;
-          }
-        }
-      },
-      options?.parentContext,
-      { maxOutputTokens },
-    ); // end traceGenAI
-  }
-
-  async classifyChat(
-    model: string,
-    input: Message[],
-    categories: Array<{ id: string; description: string }> = [],
-    risks: Array<{ id: string; description: string }> = [],
-    options: ParseOptions = {},
-  ): Promise<{
-    title: string | null;
-    categories: Array<{ id: string; confidence: number }>;
-    risks: Array<{ id: string; confidence: number }>;
-  }> {
-    const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-    const categoryIds = categories.map((c) => c.id);
-    const riskIds = risks.map((r) => r.id);
-
-    const categoryIdSchema = categoryIds.length > 0 ? z.enum(categoryIds as [string, ...string[]]) : z.string();
-    const riskIdSchema = riskIds.length > 0 ? z.enum(riskIds as [string, ...string[]]) : z.string();
-
-    const confidenceSchema = z
-      .number()
-      .describe(
-        "Model confidence that this category or risk applies to the latest user message. " +
-          "A value between 0 and 1, where higher values denote higher confidence. " +
-          "Omit matches with confidence below ~0.5.",
-      );
-
-    const schema = z
-      .object({
-        title: z.string().describe("Short, descriptive title for the conversation. Less than 10 words, no quotes."),
-        categories: z
-          .array(
-            z
-              .object({
-                id: categoryIdSchema.describe("Id of a category from the provided list."),
-                confidence: confidenceSchema,
-              })
-              .strict(),
-          )
-          .describe("Categories that clearly apply to the latest user message. May be empty."),
-        risks: z
-          .array(
-            z
-              .object({
-                id: riskIdSchema.describe("Id of a risk from the provided list."),
-                confidence: confidenceSchema,
-              })
-              .strict(),
-          )
-          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
-      })
-      .strict();
-
-    const result = await this.parse(
-      model,
-      instructionsClassifyChat,
-      JSON.stringify({ categories, risks, history }),
-      schema,
-      "classify_chat",
-      options,
-    );
     return {
-      title: result?.title ?? null,
-      categories: result?.categories ?? [],
-      risks: result?.risks ?? [],
+      store: false,
+      include: ["reasoning.encrypted_content" as const],
+      ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+      ...(options?.effort || options?.summary
+        ? { reasoning: { effort: options.effort, summary: options.summary } }
+        : {}),
+      ...(options?.verbosity ? { text: { verbosity: options.verbosity } } : {}),
     };
   }
 
-  /**
-   * Summarize a conversation history into a single dense text block.
-   * Used to condense older messages when the context window fills up.
-   * Returns plain text — caller wraps it into a SummaryContent part.
-   */
-  async summarizeHistory(model: string, input: Message[], requestOptions: ClientRequestOptions = {}): Promise<string> {
-    const history = input.map((m) => ({ role: m.role, content: m.content }));
+  async generateTitle(model: string, input: Message[], options: ParseOptions = {}): Promise<string | null> {
+    const history = sanitizeForClassification(input);
     const result = await this.parse(
       model,
-      instructionsSummarizeHistory,
+      instructionsTitleChat,
       JSON.stringify({ history }),
-      z.object({ summary: z.string() }).strict(),
-      "summarize_history",
+      z.object({ title: z.string().describe("Short, descriptive title. Less than 10 words, no quotes.") }).strict(),
+      "title_chat",
+      options,
+    );
+    return result?.title || null;
+  }
+
+  /** Classifies the latest user message into categories and risks with one System One request. */
+  async classifyChat(
+    model: string,
+    input: Message[],
+    categories: ClassificationItem[] = [],
+    risks: ClassificationItem[] = [],
+    requestOptions: ClientRequestOptions & Pick<ParseOptions, "effort"> = {},
+  ): Promise<{ categories: ClassificationMatch[]; risks: ClassificationMatch[] }> {
+    const request = classificationRequest(input, categories, risks);
+    if (!request) return { categories: [], risks: [] };
+    const result = await this.postRaw(
+      "/api/v1/systemone",
+      JSON.stringify({ model, ...request, effort: requestOptions.effort }),
+      (resp) => resp.json(),
+      { "Content-Type": "application/json" },
+      30_000,
       requestOptions,
     );
-    if (!result?.summary?.trim()) throw new Error("The summarizer returned no summary.");
-    return result.summary.trim();
+    return classificationMatches(result?.answers, categories, risks);
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
@@ -613,27 +336,45 @@ export class Client {
 
   async embedText(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<Embedding> {
     requestOptions.signal?.throwIfAborted();
-    const embedding = await this.oai.embeddings
-      .create({ model, input: text, encoding_format: "float" }, { signal: requestOptions.signal })
-      .catch((error) => {
-        requestOptions.signal?.throwIfAborted();
-        throw error;
-      });
+    let resolvedModel = model;
+    const config = browserProviderConfig(requestOptions.signal);
+    const result = await embed({
+      adapter: gatewayEmbedding(model, this.apiKey, {
+        ...config,
+        maxRetries: 0,
+        fetch: async (input, init) => {
+          const response = await config.fetch(input, init);
+          if (response.ok) {
+            const body = await response.clone().json();
+            if (typeof body.model === "string" && body.model) resolvedModel = body.model;
+          }
+          return response;
+        },
+      }),
+      input: text,
+      middleware: [aiTelemetry("embedding", requestOptions.parentContext)],
+    }).catch((error: unknown) => {
+      requestOptions.signal?.throwIfAborted();
+      throw error;
+    });
     requestOptions.signal?.throwIfAborted();
-    const vector = embedding.data?.[0]?.embedding;
+    const vector = result.embeddings[0]?.vector;
     validateEmbeddingVector(vector);
-    const resolvedModel = embedding.model || model;
-    if (typeof resolvedModel !== "string" || !resolvedModel.trim())
-      throw new Error("The embedding service did not identify its model; configure an embedding model explicitly");
+    if (!resolvedModel) throw new Error("The embedding service returned no model identity");
+    // TanStack reports the requested alias; retrieval indexes must instead
+    // remember the actual embedding model returned by the gateway.
     return { vector, model: resolvedModel };
   }
 
   async translate(
+    model: string,
     lang: string,
     input: string | Blob,
     requestOptions: ClientRequestOptions = {},
   ): Promise<string | Blob> {
     const data = new FormData();
+    // An empty model lets the platform pick its default translator.
+    if (model) data.append("model", model);
     data.append("lang", lang);
     const headers: Record<string, string> = {};
 
@@ -695,8 +436,8 @@ export class Client {
     const result = await this.parse(
       model,
       instructionsRewriteText
-        .replace("{languageInstruction}", languageInstruction)
-        .replace("{finalInstructions}", finalInstructions),
+        .replace("{languageInstruction}", () => languageInstruction)
+        .replace("{finalInstructions}", () => finalInstructions),
       text,
       z.object({ rewrittenText: z.string() }).strict(),
       "rewrite_text",
@@ -712,32 +453,20 @@ export class Client {
     requestOptions: ClientRequestOptions = {},
   ): Promise<Blob> {
     requestOptions.signal?.throwIfAborted();
-    if (!input.trim()) {
-      throw new Error("Input text cannot be empty");
-    }
-
-    try {
-      const response = await this.oai.audio.speech.create(
-        {
-          model: model,
-          input: input,
-
-          instructions: "Speak in a clear and natural tone.",
-
-          voice: voice ?? "",
-          response_format: "wav",
-        },
-        requestOptions.signal ? { signal: requestOptions.signal } : undefined,
-      );
-
-      const audioBuffer = await response.arrayBuffer();
-      requestOptions.signal?.throwIfAborted();
-      if (!audioBuffer.byteLength) throw new Error("The speech service returned empty audio");
-      return new Blob([audioBuffer], { type: "audio/wav" });
-    } catch (error) {
-      requestOptions.signal?.throwIfAborted();
-      throw error;
-    }
+    if (!input.trim()) throw new Error("Input text cannot be empty");
+    const result = await generateSpeech({
+      debug: aiDebug,
+      adapter: gatewaySpeech(model, this.apiKey, browserProviderConfig(requestOptions.signal)),
+      text: input,
+      voice: voice ?? "",
+      format: "wav",
+      modelOptions: { instructions: "Speak in a clear and natural tone." },
+      abortSignal: requestOptions.signal,
+      middleware: [aiTelemetry("audio", requestOptions.parentContext)],
+    });
+    const bytes = Uint8Array.from(atob(result.audio), (character) => character.charCodeAt(0));
+    if (!bytes.byteLength) throw new Error("The speech service returned empty audio");
+    return new Blob([bytes], { type: result.contentType ?? "audio/wav" });
   }
 
   async speakText(
@@ -758,13 +487,14 @@ export class Client {
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
-    const result = await this.post(
-      "/api/v1/audio/transcriptions",
-      { file, ...(model && { model }) },
-      (resp) => resp.json(),
-      requestOptions,
-    );
-    if (typeof result?.text !== "string") throw new Error("The transcription service returned an invalid response");
+    const result = await generateTranscription({
+      debug: aiDebug,
+      adapter: gatewayTranscription(model, this.apiKey, browserProviderConfig(requestOptions.signal)),
+      audio: file,
+      abortSignal: requestOptions.signal,
+      middleware: [aiTelemetry("audio", requestOptions.parentContext)],
+    });
+    if (typeof result.text !== "string") throw new Error("The transcription service returned an invalid response");
     return result.text;
   }
 
@@ -854,14 +584,10 @@ export class Client {
     description: string,
     content: string,
   ): Promise<{ name: string; description: string; content: string }> {
-    const instructions = instructionsOptimizeSkill
-      .replace("{name}", name || "")
-      .replace("{description}", description || "")
-      .replace("{content}", content || "");
     const result = await this.parse(
       model,
-      instructions,
-      `Optimize this skill: "${name}"`,
+      instructionsOptimizeSkill,
+      JSON.stringify({ name, description, content }),
       z.object({ name: z.string(), description: z.string(), content: z.string() }).strict(),
       "optimize_skill",
     );
@@ -883,45 +609,26 @@ export class Client {
     const maxOutputTokens = this.outputTokenBudget(
       model,
       options.maxOutputTokens,
-      name === "classify_chat" ? 8_000 : 16_000,
+      name === "title_chat" ? 8_000 : 16_000,
     );
-    return traceGenAI(
-      name,
-      model,
-      async (observeResponse) => {
-        options.signal?.throwIfAborted();
-        // Select the final message before parsing: the SDK parser also parses
-        // commentary and its output_parsed getter returns the first result.
-        const response = await this.oai.responses.create(
-          {
-            model,
-            store: false,
-            instructions,
-            input,
-            truncation: "disabled",
-            ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
-            text: { format: zodTextFormat(schema, name) },
-            ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
-          },
-          options.signal ? { signal: options.signal } : undefined,
-        );
-        options.signal?.throwIfAborted();
-        // Record usage and cutoffs even when validation or JSON parsing fails.
-        observeResponse({
-          id: response.id,
-          model: response.model,
-          finishReasons: [response.incomplete_details?.reason ?? response.status ?? "unknown"],
-          inputTokens: response.usage?.input_tokens,
-          cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
-          outputTokens: response.usage?.output_tokens,
-          reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
-        });
-        const text = finalResponseText(response);
-        return text === null ? null : schema.parse(JSON.parse(text));
-      },
-      options.parentContext,
-      { maxOutputTokens },
-    );
+    options.signal?.throwIfAborted();
+    const result = await chat({
+      adapter: this.textAdapter(model, options.signal),
+      debug: aiDebug,
+      systemPrompts: [instructions],
+      messages: [{ role: "user", content: input }],
+      outputSchema: schema,
+      stream: false,
+      modelOptions: this.chatModelOptions(model, { ...options, maxOutputTokens }),
+      middleware: [aiTelemetry(name, options.parentContext)],
+    }).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "structured-output-missing-result")
+        return null;
+      throw error;
+    });
+    options.signal?.throwIfAborted();
+    // TanStack validates the output; its public schema type infers the input.
+    return result as z.output<T> | null;
   }
 
   private outputTokenBudget(model: string, requested?: number, defaultBudget?: number): number | undefined {

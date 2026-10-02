@@ -16,6 +16,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LanguagePicker } from "@/features/translate/components/LanguagePicker";
 import { isSupportedFile } from "@/features/translate/context/TranslateContext";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
 import { getConfig } from "@/shared/config";
@@ -67,7 +68,8 @@ export function TranslatePage() {
     style,
     isLoading,
     error,
-    supportedLanguages,
+    provider,
+    selectedProvider,
     selectedLanguage,
     selectedFile,
     translatedFileUrl,
@@ -76,7 +78,6 @@ export function TranslatePage() {
     toneOptions,
     styleOptions,
     setSourceText,
-    setTargetLang,
     setTone,
     setStyle,
     performTranslate,
@@ -121,12 +122,12 @@ export function TranslatePage() {
     return () => {
       rewriteController.current?.abort();
     };
-  }, [translatedText, sourceText, tone, style, selectedLanguage?.code, selectedFile]);
+  }, [translatedText, sourceText, tone, style, selectedProvider?.id, selectedLanguage?.code, selectedFile]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && supportedFiles.length > 0) {
-      if (isSupportedFile(file)) {
+      if (isSupportedFile(file, provider)) {
         selectFile(file);
       } else {
         notify.error("Unsupported file type", `Choose one of: ${supportedFiles.map((sf) => sf.ext).join(", ")}.`);
@@ -148,7 +149,7 @@ export function TranslatePage() {
   const handleDropFiles = (files: File[]) => {
     if (supportedFiles.length === 0) return;
 
-    const file = files.find(isSupportedFile);
+    const file = files.find((f) => isSupportedFile(f, provider));
     if (file) {
       selectFile(file);
     } else {
@@ -379,15 +380,7 @@ export function TranslatePage() {
 
                 {/* Language selector and translate button */}
                 <div className="flex items-center gap-3">
-                  <SelectorMenu
-                    icon={<GlobeIcon size={16} />}
-                    label={selectedLanguage?.name || "Select Language"}
-                    options={supportedLanguages.map((l) => ({ value: l.code, label: l.name }))}
-                    onSelect={setTargetLang}
-                    anchor="bottom"
-                    variant="pill"
-                    scrollable
-                  />
+                  <LanguagePicker anchor="bottom" variant="pill" />
 
                   {/* Translate button - only show when not yet translated */}
                   {!translatedFileUrl && !isLoading && (
@@ -561,13 +554,7 @@ export function TranslatePage() {
                   {/* Target section */}
                   <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
                     <div className="h-7 flex items-center md:px-6 md:pt-0 pt-6 pl-2 gap-1 shrink-0">
-                      <SelectorMenu
-                        icon={<GlobeIcon size={14} className="-ml-0.5" />}
-                        label={selectedLanguage?.name || "Select Language"}
-                        options={supportedLanguages.map((l) => ({ value: l.code, label: l.name }))}
-                        onSelect={setTargetLang}
-                        scrollable
-                      />
+                      <LanguagePicker />
                       <SelectorMenu
                         icon={<ThermometerIcon size={14} />}
                         label={tone ? (toneOptions.find((t) => t.value === tone)?.label ?? "Tone") : "Tone"}

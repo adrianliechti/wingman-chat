@@ -1,9 +1,11 @@
+import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { StrictMode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { PanelShell } from "../../../src/features/chat/components/PanelShell";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
+import { flushPersistence } from "../../../src/shared/lib/persistence";
 import type { Content, Message } from "../../../src/shared/types/chat";
 import "../../../src/index.css";
 
@@ -12,7 +14,14 @@ const root = createRoot(document.getElementById("root")!);
 const state = { effects: 0, calls: 0 };
 let stream = (_text: string) => {};
 let finish = (_text: string) => {};
-window.reactUiE2E = { state: () => ({ ...state }), stream: (text) => stream(text), finish: (text) => finish(text) };
+let callTool = (_name: string, _args: object) => {};
+window.reactUiE2E = {
+  state: () => ({ ...state }),
+  stream: (text) => stream(text),
+  finish: (text) => finish(text),
+  callTool: (name, args) => callTool(name, args),
+  flush: flushPersistence,
+};
 
 function PanelContent() {
   const [draft, setDraft] = useState("");
@@ -62,15 +71,34 @@ if (parameters.has("panels")) {
 } else {
   const config = await loadConfig();
   if (!config) throw new Error("Missing fixture config");
-  const model = { id: "fixture", name: "Fixture" };
+  const model = {
+    id: "fixture",
+    name: "Fixture",
+    ...(parameters.has("research") ? { tools: { enabled: ["internet"], disabled: [] } } : {}),
+  };
+  if (parameters.has("research")) {
+    config.internet = { searcher: "fixture", elicitation: true };
+    config.client.guard = async () => ({ flagged: false, categories: [] });
+    config.client.search = async () => [
+      { title: "Source", source: "https://example.com", content: "Research evidence" },
+    ];
+  }
   config.client.listModels = async () => [model];
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
-  config.client.complete = async (_model, _instructions, _input, _tools, handler) =>
-    new Promise<Message>((resolve) => {
-      state.calls++;
-      stream = (text) => handler?.([{ type: "text", text }]);
-      finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
-    });
+  const provider = testClient(
+    async (_options, handler) =>
+      new Promise<Message>((resolve) => {
+        state.calls++;
+        stream = (text) => handler?.([{ type: "text", text }]);
+        finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
+        callTool = (name, args) =>
+          resolve({
+            role: "assistant",
+            content: [{ type: "tool_call", id: crypto.randomUUID(), name, arguments: JSON.stringify(args) }],
+          });
+      }),
+  );
+  config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
   if (parameters.has("seed")) {
     for (let index = 0; index < 120; index++) {
       const id = `history-${index}`;
@@ -105,6 +133,8 @@ declare global {
       state(): { effects: number; calls: number };
       stream(text: string): void;
       finish(text: string): void;
+      callTool(name: string, args: object): void;
+      flush(): Promise<void>;
     };
   }
 }

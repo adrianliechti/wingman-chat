@@ -397,7 +397,7 @@ function sandboxRequire(name: unknown): never {
   );
 }
 
-function makeProcessStub() {
+function makeProcessStub(request: CodeExecutionRequest) {
   const write = (chunk: unknown): boolean => {
     currentStdout?.(typeof chunk === "string" ? chunk : decoder.decode(toBytes(chunk)));
     return true;
@@ -406,7 +406,7 @@ function makeProcessStub() {
   return {
     browser: true,
     env: {} as Record<string, string | undefined>,
-    argv: ["node", "sandbox.js"],
+    argv: ["node", request.path ?? "/sandbox.js", ...(request.args ?? [])],
     platform: "browser",
     arch: "wasm32",
     pid: 1,
@@ -426,14 +426,19 @@ function makeProcessStub() {
   };
 }
 
-async function ensureRuntimeCompat(code: string): Promise<void> {
+async function ensureRuntimeCompat(request: CodeExecutionRequest): Promise<void> {
+  const { code } = request;
   const g = globalThis as Record<string, unknown>;
+  const filename = request.path ? normalizePath(request.path) : "/sandbox.js";
+  if (!filename) throw new Error(`Invalid script path: ${request.path}`);
+  g.__filename = filename;
+  g.__dirname = filename.slice(0, filename.lastIndexOf("/")) || "/";
   // echarts and Node snippets read the Node-only `global` when `window` is
   // absent; a Worker has neither, so point it at globalThis.
   g.global ??= globalThis;
   g.setImmediate ??= (cb: (...a: unknown[]) => void, ...args: unknown[]) => setTimeout(cb, 0, ...args);
   // Fresh `process` each run so `process.env` writes don't leak between runs.
-  if (/\bprocess\b/.test(code)) g.process = makeProcessStub();
+  if (/\bprocess\b/.test(code)) g.process = makeProcessStub({ ...request, path: filename });
   if (/\bBuffer\b/.test(code) && !g.Buffer) {
     try {
       g.Buffer = (await import("buffer")).Buffer;
@@ -478,7 +483,10 @@ const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }
 
 async function executeJs(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
   patchNetwork();
-  const { code, files = {} } = request;
+  const { files = {} } = request;
+  // Function bodies do not accept a file's hashbang. Keep its newline so error
+  // locations still match the script selected by execute_script.
+  const code = request.code.replace(/^\uFEFF?#![^\r\n]*/, "");
 
   // `import()` invokes the browser module loader directly and would bypass the
   // fetch shim. Libraries supported by this runtime are injected explicitly.
@@ -508,7 +516,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   Object.assign(g, bridges);
 
   try {
-    await ensureRuntimeCompat(code);
+    await ensureRuntimeCompat(request);
 
     const lazyValues = await Promise.all(
       LAZY_GLOBALS.map(async (lib) => {

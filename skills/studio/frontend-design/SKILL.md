@@ -151,4 +151,4 @@ plain verbs, no filler; each element does exactly one job.
 ## Optional review
 
 When the user asks to polish the result, make it ready to ship, or run final design checks, use
-`read_skill polish-pass`; otherwise skip the multi-pass review.
+`load_skill polish-pass`; otherwise skip the multi-pass review.

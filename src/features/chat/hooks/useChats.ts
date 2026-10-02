@@ -13,14 +13,17 @@ export function useChats(selectedId: string | null = null) {
   useEffect(() => {
     void store.initialize().catch((error) => notify.error("Couldn't load saved chats", error));
   }, [store]);
-  const createChat = useCallback(async () => {
-    try {
-      return await store.createChat();
-    } catch (error) {
-      reportPersistenceError(error);
-      throw error;
-    }
-  }, [store]);
+  const createChat = useCallback(
+    async (id?: string) => {
+      try {
+        return await store.createChat(id);
+      } catch (error) {
+        reportPersistenceError(error);
+        throw error;
+      }
+    },
+    [store],
+  );
   const deleteChat = useCallback(
     (id: string) => {
       void store.deleteChat(id).catch(reportPersistenceError);

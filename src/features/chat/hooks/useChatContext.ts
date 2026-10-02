@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { ChatMiddleware } from "@tanstack/ai";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { getMemoryManager, type MemoryManager } from "@/features/agent/lib/memoryManager";
 import { mountMemoryFiles } from "@/features/agent/lib/memoryFileMount";
@@ -8,19 +9,20 @@ import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
 import { getConfig } from "@/shared/config";
+import { findModel } from "@/shared/lib/models";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 import { useImageTool } from "./useImageTool";
 
 export interface ChatContext {
-  tools: () => Promise<Tool[]>;
+  tools: () => Tool[];
   instructions: () => string;
   runtimeContext: () => string;
   memory: () => MemoryManager | undefined;
+  middleware: () => ChatMiddleware[];
 }
 
 export function useChatContext(
@@ -55,7 +57,7 @@ export function useChatContext(
       // Further filter based on model configuration
       const filterModel: Pick<Model, "tools"> | null | undefined =
         mode === "voice" && (model?.id === "realtime" || !model?.tools) && currentAgent?.model
-          ? (models.find((m) => m.id === currentAgent.model) ?? model)
+          ? (findModel(models, currentAgent.model) ?? model)
           : model;
 
       if (filterModel?.tools) {
@@ -86,22 +88,20 @@ export function useChatContext(
 
     return {
       memory,
-      tools: async () => {
-        // Make the active chat model available to the python `llm` helper
-        // so it inherits whatever the user is currently chatting with.
-        setInterpreterModel(model?.id ?? null);
-
+      middleware: () =>
+        mode === "chat" ? getFilteredProviders().flatMap((provider) => provider.chat?.middleware ?? []) : [],
+      tools: () => {
         const filteredProviders = getFilteredProviders();
 
         // Extract tools from filtered providers
-        const toolsArrays = filteredProviders.map((p: ToolProvider) => p.tools);
-
-        console.log("Compiled Tools from Providers:", toolsArrays);
+        const toolsArrays = filteredProviders.map(
+          (provider) => (mode === "chat" ? (provider.chat ?? provider) : provider).tools,
+        );
 
         // Image generation follows renderer availability, independent of Studio.
         const baseTools = mountMemoryFiles([...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])], memory());
         // Clarification is a core chat capability, independent of provider
-        // selections and model allowlists. Only the outer chat owns elicitation.
+        // selections and model allowlists; native child runs can ask too.
         const tools = [...baseTools, ASK_QUESTIONS_TOOL];
 
         const subagentModel =
@@ -109,12 +109,23 @@ export function useChatContext(
             ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)
             : (model?.id ?? null);
 
-        if (baseTools.length === 0 || !subagentModel) {
+        // Delegated runs always use chat, even when invoked from realtime voice.
+        const chatProviders = filteredProviders.map((provider) => provider.chat ?? provider);
+        const middleware = filteredProviders.flatMap((provider) => provider.chat?.middleware ?? []);
+        const subagentTools =
+          mode === "voice"
+            ? mountMemoryFiles(
+                [...chatProviders.flatMap((provider) => provider.tools), ...(imageTool ? [imageTool] : [])],
+                memory(),
+              )
+            : tools;
+
+        if ((baseTools.length === 0 && middleware.length === 0) || !subagentModel) {
           return tools;
         }
 
-        const providerInstructions = filteredProviders
-          .map((p: ToolProvider) => p.instructions?.trim())
+        const providerInstructions = chatProviders
+          .map((provider) => provider.instructions?.trim())
           .filter((s): s is string => !!s)
           .join("\n\n");
         const providerRuntimeContext = filteredProviders
@@ -123,7 +134,10 @@ export function useChatContext(
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [...tools, createSubagentTool(subagentModel, providerInstructions, baseTools, providerRuntimeContext)];
+        return [
+          ...tools,
+          createSubagentTool(subagentModel, providerInstructions, subagentTools, providerRuntimeContext, middleware),
+        ];
       },
 
       instructions: () => {
@@ -161,8 +175,9 @@ export function useChatContext(
 
         // Add instructions from filtered providers
         filteredProviders.forEach((provider: ToolProvider) => {
-          if (provider.instructions?.trim()) {
-            instructionsList.push(provider.instructions);
+          const instructions = (mode === "chat" ? (provider.chat ?? provider) : provider).instructions;
+          if (instructions?.trim()) {
+            instructionsList.push(instructions);
           }
         });
 

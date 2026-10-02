@@ -7,13 +7,7 @@ import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
 
 export function useSkillBuilderProvider(): ToolProvider {
-  const {
-    skills,
-    getSkill,
-    addSkill,
-    updateSkill: updateSkillInLibrary,
-    removeSkill,
-  } = useSkills();
+  const { skills, getSkill, addSkill, updateSkill: updateSkillInLibrary, removeSkill } = useSkills();
   const { currentAgent, updateAgent } = useAgents();
 
   return useMemo<ToolProvider>(() => {
@@ -37,11 +31,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         display: {
           header: (_args, state) => ({
             icon: FilePlus2,
-            label: state.error
-              ? "Create failed"
-              : state.running
-                ? "Creating skill…"
-                : "Created skill",
+            label: state.error ? "Create failed" : state.running ? "Creating skill…" : "Created skill",
           }),
           // Show just the SKILL.md content (the name/description are metadata).
           input: (args) => {
@@ -88,9 +78,7 @@ export function useSkillBuilderProvider(): ToolProvider {
 
           const nameValidation = validateSkillName(name);
           if (!nameValidation.valid) {
-            return [
-              { type: "text" as const, text: JSON.stringify({ error: nameValidation.error }) },
-            ];
+            return [{ type: "text" as const, text: JSON.stringify({ error: nameValidation.error }) }];
           }
 
           const descriptionValidation = validateSkillDescription(description);
@@ -142,11 +130,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         display: {
           header: (_args, state) => ({
             icon: SquarePen,
-            label: state.error
-              ? "Update failed"
-              : state.running
-                ? "Updating skill…"
-                : "Updated skill",
+            label: state.error ? "Update failed" : state.running ? "Updating skill…" : "Updated skill",
           }),
           input: (args) => {
             const content = typeof args?.content === "string" ? args.content : "";
@@ -154,7 +138,7 @@ export function useSkillBuilderProvider(): ToolProvider {
           },
         },
         description:
-          "Replace an existing skill's description and/or content. This overwrites the field wholesale — pass the complete new value, not a diff. Read the skill's current content first (read_skill or list_skills) before modifying one you didn't just author.",
+          "Replace an existing skill's description and/or content. This overwrites the field wholesale — pass the complete new value, not a diff. Read the skill's current content first (load_skill or list_skills) before modifying one you didn't just author.",
         parameters: {
           type: "object",
           properties: {
@@ -177,9 +161,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [
-              { type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) },
-            ];
+            return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) }];
           }
 
           const existing = getSkill(name);
@@ -249,9 +231,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         function: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [
-              { type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) },
-            ];
+            return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name is required" }) }];
           }
 
           const existing = getSkill(name);

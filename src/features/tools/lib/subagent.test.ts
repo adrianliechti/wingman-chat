@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import type { ToolContext } from "@/shared/types/chat";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import { testClient } from "@/shared/lib/test-support/ai";
 import { createSubagentTool } from "./subagent";
 
 const state = vi.hoisted(() => ({ complete: vi.fn() }));
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: { complete: state.complete } }) }));
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(state.complete) }) }));
 
 describe("subagent invocation identity", () => {
   beforeEach(() => {
@@ -41,8 +42,8 @@ describe("subagent invocation identity", () => {
     expect(child?.runId).toBeTruthy();
     expect(state.complete).toHaveBeenCalledTimes(2);
     const request = state.complete.mock.calls[0];
-    expect(request[1]).not.toContain("active_file");
-    expect(JSON.stringify(request[2])).toContain("active_file: /current.md");
+    expect(request[0].systemPrompts).not.toContain("active_file");
+    expect(JSON.stringify(request[0].messages)).toContain("active_file: /current.md");
     return child!;
   }
 
@@ -50,7 +51,31 @@ describe("subagent invocation identity", () => {
     const child = await invoke({ runId: "voice-parent", chatId: "origin-chat" });
     expect(child.chatId).toBe("origin-chat");
     expect(child.runId).not.toBe("voice-parent");
-    expect(child.invocationContext?.branch).toBe("subagent");
+    expect(child.invocationContext?.subagentRunId).toBeTruthy();
+  });
+
+  it("applies provider middleware independently to each delegated run", async () => {
+    const tool = createSubagentTool("model", "", [], "", [
+      withSkills(
+        inlineSkill({
+          name: "reports",
+          description: "Create reports",
+          instructions: "Verify the report.",
+        }),
+      ),
+    ]);
+    for (const parent of [undefined, { runId: "voice-parent" }]) {
+      state.complete
+        .mockReset()
+        .mockResolvedValueOnce({
+          role: "assistant",
+          content: [{ type: "tool_call", id: "skill", name: "load_skill", arguments: '{"name":"reports"}' }],
+        })
+        .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "Verified" }] });
+      expect(await tool.function({ prompt: "Build a report" }, parent)).toEqual([{ type: "text", text: "Verified" }]);
+      expect(JSON.stringify(state.complete.mock.calls[0][0].systemPrompts)).toContain("Create reports");
+      expect(JSON.stringify(state.complete.mock.calls[1][0].messages)).toContain("Verify the report.");
+    }
   });
 
   it("returns the final answer without the child agent's commentary", async () => {
@@ -65,13 +90,28 @@ describe("subagent invocation identity", () => {
     expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", text: "Done" }]);
   });
 
-  it("retains the parent's invocation budget but gives the child its own branch and run ID", async () => {
-    const invocationContext = new AgentInvocationContext({ maxModelCalls: 5 });
+  it("asks voice callers to continue in chat when a delegated tool needs native approval", async () => {
+    const execute = vi.fn();
+    const tool = createSubagentTool("model", "", [
+      {
+        name: "inspect",
+        parameters: { type: "object" },
+        needsApproval: true,
+        function: execute,
+      },
+    ]);
+    const result = await tool.function({ prompt: "Inspect" }, { elicit: vi.fn() });
+    expect(result).toEqual([{ type: "text", text: "This task needs interactive input. Continue it in chat." }]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(state.complete).toHaveBeenCalledOnce();
+  });
+
+  it("gives the child its own workspace context and run ID", async () => {
+    const invocationContext = {};
     const child = await invoke({ runId: "chat-parent", invocationContext });
     expect(child.runId).not.toBe("chat-parent");
-    expect(child.invocationContext?.invocationId).toBe(invocationContext.invocationId);
-    expect(child.invocationContext?.branch).toBe("subagent");
-    expect(invocationContext.budgetSnapshot()).toEqual({ used: 2, limit: 5 });
+    expect(child.invocationContext).not.toBe(invocationContext);
+    expect(child.invocationContext?.subagentRunId).toBeTruthy();
   });
 
   it("preserves attached image references and elicitation for delegated tools", async () => {

@@ -1,10 +1,11 @@
 /**
- * Message protocol between the main thread and the Pyodide interpreter worker.
- * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate/
- * rasterize_pdf) need the main thread, so the worker calls back over RPC.
+ * Shared message protocol between the main thread and the interpreter workers.
+ * Helpers (llm/ocr/vision/render/synthesize/transcribe/translate/rasterize_pdf)
+ * and Bash service commands call back to the main thread over RPC.
  */
 
 import type { ImageRenderOptions } from "@/shared/lib/client";
+import type { ReasoningEffort } from "@/shared/types/chat";
 
 export interface ArtifactFile {
   content: string;
@@ -22,6 +23,10 @@ export interface CodeExecutionLimits {
 
 export interface CodeExecutionRequest {
   code: string;
+  /** Canonical artifact/resource path when running a script file. */
+  path?: string;
+  /** Script arguments, excluding the executable and script path. */
+  args?: string[];
   files?: ArtifactFiles;
   limits?: CodeExecutionLimits;
 }
@@ -49,7 +54,7 @@ export interface RenderInput {
 export interface LlmCallOptions {
   model?: string;
   system?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  effort?: ReasoningEffort;
 }
 
 // Every request carries a dedicated MessagePort for its reply, so no id

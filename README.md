@@ -19,8 +19,10 @@ conversations, retrieval over your own files, and a library of reusable skills.
 
 ### Tools & Agents
 
-- **In-browser code interpreters** — sandboxed Python (Pyodide) and JavaScript workers with bundled
-  data, document and media libraries. The model writes and runs real code; charts, files, and results
+- **In-browser code interpreters** — one `execute_script` tool for sandboxed Python (Pyodide), JavaScript,
+  and Bash (just-bash) workers, sharing artifact files and selected skill resources. File scripts select
+  their runtime by shebang or extension; inline code specifies `language`. Bundled libraries and
+  Bash pipelines cover data, document, media and text processing. The model writes and runs real code; charts, files, and results
   land back in the workspace.
 - **Web search & browsing** for grounded, up-to-date answers.
 - **Sub-agents** for delegating focused, multi-step work.
@@ -46,7 +48,7 @@ and download. Browse, preview, and iterate on artifacts side-by-side with the ch
 ### Data analysis & workflows
 
 Python includes DuckDB, pandas and PyArrow for local analysis and file generation. JavaScript exposes
-Apache Arrow as the `arrow` global. Both interpreters can also query saved workspace files through
+Apache Arrow as the `arrow` global. Python and JavaScript can also query saved workspace files through
 `await sql(...)`; HTML previews use `wingman.duckdb`. Libraries load on demand from the bundled assets.
 
 | Capability                                 | Python interpreter                                | JavaScript interpreter                               | HTML preview                                      |
@@ -103,7 +105,21 @@ including live transcription.
 ### Translate
 
 A dedicated mode for translating documents (PDF and more) and text, with selectable tone and style
-across many languages.
+across many languages. When `translator.yaml` lists more than one provider, users can pick which
+translator to use; each `id` must match a translator configured on the platform. A provider's
+`files` and `languages` override the translator-wide lists:
+
+```yaml
+providers:
+  - id: azure-translator
+    name: Azure
+  - id: google-translator
+    name: Google
+    languages: [en, de, fr, ja, zh]
+
+files: [.pdf, .docx]
+languages: [en, de, fr, it, es]
+```
 
 ### Canvas
 
@@ -129,16 +145,20 @@ or a **local** directory.
 
 ## Architecture
 
-| Layer          | Stack                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Router/Table/Virtual, React Compiler |
-| Code execution | Python/Pyodide + DuckDB/PyArrow; JavaScript workers + Arrow; DuckDB-Wasm preview bridge     |
-| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry              |
-| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                             |
+| Layer          | Stack                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack AI/Router/Table/Virtual, React Compiler |
+| Code execution | `execute_script`: Python/Pyodide, JavaScript and Bash workers; DuckDB-Wasm preview bridge        |
+| Server         | Go — static hosting, API proxy, skills library, drive providers, OpenTelemetry                 |
+| Packaging      | Multi-stage Docker image (`ghcr.io/adrianliechti/wingman-chat`)                                |
 
 The Go server (`main.go`, `pkg/`) serves the built SPA from `dist/`, proxies requests under the API
 prefix (default `/api`) to the configured platform, and mounts the `skills/` directory as a library
 the client can read.
+
+AI execution runs in the browser through TanStack AI. The Go server remains the
+existing proxy. See [AI integration](docs/ai-integration.md) for the framework
+boundaries and gateway compatibility adapters.
 
 Production builds generate Brotli and gzip variants of WASM, JavaScript, CSS, HTML, and other text
 assets. The Go server negotiates the encoding and serves those files directly, with no compression
@@ -149,14 +169,14 @@ Hashed assets keep their one-year immutable browser cache; other files revalidat
 
 ### Prerequisites
 
-- Node.js (LTS) and npm
+- Node.js 24.11+ (LTS) and npm (see `package.json` for other supported Node versions)
 - Go 1.x (only to run the server locally)
 - Access to a Wingman or OpenAI-compatible API endpoint
 
 ### Development
 
 ```bash
-npm install
+npm ci
 
 # Point at your platform
 export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
@@ -170,21 +190,21 @@ npm run dev
 
 The opt-in E2E suites start the application development proxy and run the real `Client` and agent loop against a live
 Wingman gateway. The smoke suite covers model discovery, Responses streaming, tool-call correlation, cancellation, the
-terminal error contract, and a Sonnet 4.6 artifact create/validate/reference flow.
+terminal error contract, and a Sonnet 4.6 artifact creation, validation, and mutation metadata flow.
 
 The challenge suite uses the machine's existing `WINGMAN_URL` and `WINGMAN_TOKEN`. It prefers Bedrock Sonnet 4.6 when
 that gateway exposes it (otherwise direct Sonnet 4.6) and also runs GPT-5.4. It injects a real mid-stream connection
-failure, checks transport retry and retry cancellation, exercises transient tool recovery, runtime verification,
-nested-agent budgets, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
+failure, checks interruption reporting, explicit retry and cancellation, exercises model-driven tool recovery, runtime verification,
+nested-agent iteration limits, running-tool aborts and runaway-loop limits, and executes quote-heavy multiline Python through
 the exact production interpreter schema. Its artifact scenarios use production file tools against an isolated disk
-workspace to cover invalid structured-file repair, revision/delta metadata, multi-file manifests, and moves. It makes
+workspace to cover invalid structured-file repair, revision/delta metadata, file verification, and moves. It makes
 many real model requests and requires `python3`; use the smoke suite for
 quick checks.
 
 The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
-`execute_python_code` calls using the production schemas. It reports raw JSON/AntML failures separately from calls
-that succeeded through client-side recovery, which makes gateway/model improvements measurable rather than hidden by
-the workaround.
+`execute_script` calls with `language: "python"` using the production schemas. It reports raw JSON/AntML failures separately from calls
+that succeeded through TanStack's provider normalization, making gateway/model quality measurable separately
+from the framework's handling.
 
 ```bash
 npm run test:e2e
@@ -211,6 +231,13 @@ npm run build
 PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
 # or: task serve
 ```
+
+Keep `vite-plus`, its core package and the `vite` alias at the same version, and
+pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
+supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
+The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
+local and Docker installs use `npm ci` with normal peer-dependency resolution.
+The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
 
 ### Docker
 
@@ -280,9 +307,13 @@ restart and browser refresh in production, or a browser refresh during frontend 
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
+- `CHAT_MODEL` (`CHAT_EFFORT`) — the model every new chat starts on; the reset next to the model picker returns to it. `chat.yaml` also accepts `verbosity`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
 `extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+
+Model entries can list retired IDs in `replaces` to redirect saved agents and
+chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

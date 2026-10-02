@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecuteMessage } from "./interpreterProtocol";
 import { createWorkerHost } from "./workerHost";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 
 class TestWorker extends EventTarget {
   requests: ExecuteMessage[] = [];
@@ -27,7 +26,7 @@ describe("interpreter host coordination", () => {
       crashMessage: "crashed",
     });
     const parent = new AbortController();
-    const context = { invocationContext: new AgentInvocationContext({ signal: parent.signal }) };
+    const context = { invocationContext: { signal: parent.signal } };
     const first = host.execute({ code: "while True: pass" }, { context });
     parent.abort();
     expect((await first).error).toBe("Code execution aborted");
@@ -140,7 +139,7 @@ describe("interpreter host coordination", () => {
     expect(firstSignal?.aborted).toBe(true);
   });
 
-  it("passes the owning run's model and budget to RPCs and ignores messages after completion", async () => {
+  it("passes the owning run's model and context to RPCs and ignores messages after completion", async () => {
     const worker = new TestWorker();
     const handleMessage = vi.fn(async () => "Answer");
     const host = createWorkerHost({
@@ -148,7 +147,7 @@ describe("interpreter host coordination", () => {
       handleMessage,
       crashMessage: "crashed",
     });
-    const context = { model: "run-model", invocationContext: new AgentInvocationContext({ maxModelCalls: 3 }) };
+    const context = { model: "run-model", invocationContext: {} };
     const run = host.execute({ code: "llm('Question')", files: {} }, { context });
     const rpc = () => {
       const port = { postMessage: vi.fn(), close: vi.fn() };

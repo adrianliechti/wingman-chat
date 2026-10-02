@@ -1,6 +1,6 @@
 /**
- * Shared worker→main bridge dispatch for both interpreters: routes an RPC
- * request to the runner that owns it so neither interpreter client repeats the
+ * Shared worker→main bridge dispatch for the interpreters: routes an RPC
+ * request to the runner that owns it so each interpreter client reuses the
  * switch.
  */
 

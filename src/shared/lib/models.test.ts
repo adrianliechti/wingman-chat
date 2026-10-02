@@ -3,15 +3,64 @@ import {
   compactThreshold,
   configureModels,
   defaultEffort,
+  defaultModelId,
+  findModel,
   modelMaxOutputTokens,
   outputTokenAllowance,
   minimalEffort,
   modelName,
   modelType,
+  sameModelSettings,
   rendererCapabilities,
   shortModelName,
   supportedEfforts,
 } from "./models";
+import type { Model } from "@/shared/types/chat";
+
+describe("model replacements", () => {
+  const old: Model = { id: "gpt-4o", name: "GPT-4o" };
+  const replacement: Model = { id: "gpt-6-sol", name: "GPT-6 Sol", replaces: ["gpt-4o", "gpt-4-turbo"] };
+
+  it("redirects retired IDs even when the original is still available", () => {
+    for (const models of [[replacement], [old, replacement], [replacement, old]]) {
+      expect(findModel(models, "gpt-4o")).toBe(replacement);
+      expect(findModel(models, "gpt-4-turbo")).toBe(replacement);
+      expect(defaultModelId(models, "gpt-4o")).toBe(replacement.id);
+      expect(defaultModelId(models)).toBe(replacement.id);
+    }
+  });
+
+  it("uses only available replacement targets and preserves ordinary fallback selection", () => {
+    const models = configureModels([old], [replacement]);
+    expect(findModel(models, old.id)?.id).toBe(old.id);
+    expect(findModel(models, "gpt-4-turbo")).toBeUndefined();
+    expect(defaultModelId(models, "missing")).toBe(old.id);
+    expect(defaultModelId([], old.id)).toBe("");
+  });
+
+  it("follows replacement chains to their current available target", () => {
+    const latest: Model = { id: "current", name: "Current", replaces: [replacement.id] };
+    expect(findModel([old, replacement, latest], old.id)).toBe(latest);
+    expect(findModel([latest, replacement, old], old.id)).toBe(latest);
+    expect(findModel([latest, replacement, old], latest.id)).toBe(latest);
+  });
+
+  it("ignores conflicting rules instead of depending on inventory order", () => {
+    const conflict: Model = { id: "another", name: "Another", replaces: [old.id] };
+    expect(findModel([replacement, old, conflict], old.id)).toBe(old);
+    expect(findModel([conflict, old, replacement], old.id)).toBe(old);
+    expect(findModel([replacement, conflict], old.id)).toBeUndefined();
+  });
+
+  it("ignores cycles and self references without hanging or alternating models", () => {
+    const cyclic = { ...old, replaces: [replacement.id] };
+    expect(findModel([cyclic, replacement], old.id)).toBe(cyclic);
+    expect(findModel([cyclic, replacement], replacement.id)).toBe(replacement);
+    expect(findModel([cyclic, replacement], "gpt-4-turbo")).toBeUndefined();
+    const self = { ...replacement, replaces: [old.id, replacement.id] };
+    expect(findModel([self], old.id)).toBe(self);
+  });
+});
 
 describe("model endpoint detection", () => {
   it.each([
@@ -45,6 +94,7 @@ describe("model endpoint detection", () => {
     ["claude-mythos-5-1", "completer"],
     ["claude-opus-5-5", "completer"],
     ["gpt-6-astra", "completer"],
+    ["gpt-6.1-sol", "completer"],
     ["gpt-6-sol", "completer"],
     ["gpt-6-luna", "completer"],
     ["budget-chat", "completer"],
@@ -84,6 +134,7 @@ describe("model display names", () => {
 describe("model output budgets", () => {
   it.each([
     ["openai/gpt-6-astra", 64_000],
+    ["gpt-6.1-sol", 64_000],
     ["gpt-6-sol", 64_000],
     ["gpt-6-luna", 64_000],
     ["gpt-5.6-terra", 64_000],
@@ -184,6 +235,20 @@ describe("reasoning effort levels", () => {
     }
   });
 
+  it.each(["gpt-6.1-sol", "openai/gpt-6.1-sol", "openai.gpt-6-1-sol", "gpt-6.1-sol-2026-09-30"])(
+    "recognizes %s without offering unsupported none/minimal efforts",
+    (id) => {
+      const [model] = configureModels([{ id, name: "GPT-6.1 Sol" }], []);
+      expect(model).toMatchObject({
+        supportedEfforts: ["low", "medium", "high", "xhigh", "max"],
+        defaultEffort: "medium",
+        maxOutputTokens: 128_000,
+      });
+      expect(minimalEffort(model)).toBe("low");
+      expect(outputTokenAllowance(model.maxOutputTokens, 256_000)).toBe(128_000);
+    },
+  );
+
   it("distinguishes Gemini revisions and never invents effort settings for non-chat or future models", () => {
     expect(supportedEfforts("gemini-3.8-flash")).toEqual(["low", "medium", "high"]);
     expect(supportedEfforts("gemini-3.7-flash")).toEqual(["low", "medium", "high"]);
@@ -197,6 +262,9 @@ describe("reasoning effort levels", () => {
       "gemini-3.8-live-extended-thinking",
       "gpt-7",
       "gpt-5.99",
+      "gpt-6.1-sol-pro",
+      "gpt-6.1-luna",
+      "gpt-6.2-sol",
       "claude-opus-8",
       "qwen3-embedding-8b",
       "o3-pro",
@@ -281,6 +349,7 @@ describe("configured model catalogue", () => {
       "claude-fable-5-1",
       "claude-opus-5-5",
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
     ]) {
@@ -332,5 +401,19 @@ describe("configured model catalogue", () => {
     expect(rendererCapabilities("gemini-3.1-flash-image").resolutions).toEqual(["512", "1K", "2K", "4K"]);
     expect(rendererCapabilities("gemini-3-pro-image").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(rendererCapabilities("gpt-image-20").backgrounds).toBeUndefined();
+  });
+});
+
+describe("sameModelSettings", () => {
+  const luna: Model = { id: "luna", name: "Luna", defaultEffort: "medium", verbosity: "medium" };
+
+  it("treats an unset effort as the model default", () => {
+    expect(sameModelSettings(luna, { ...luna, effort: "medium" })).toBe(true);
+  });
+
+  it("tells apart effort, verbosity and model changes", () => {
+    expect(sameModelSettings(luna, { ...luna, effort: "high" })).toBe(false);
+    expect(sameModelSettings(luna, { ...luna, verbosity: "low" })).toBe(false);
+    expect(sameModelSettings(luna, { ...luna, id: "sol" })).toBe(false);
   });
 });

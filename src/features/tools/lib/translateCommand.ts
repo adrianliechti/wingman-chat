@@ -10,6 +10,10 @@ function requireTranslator() {
   return config;
 }
 
+function defaultProvider(config: ReturnType<typeof getConfig>): string {
+  return config.translator?.providers?.[0]?.id ?? "";
+}
+
 /** Translate plain text into `lang`; returns the translated text. */
 export async function runTranslateText(
   lang: string,
@@ -23,7 +27,7 @@ export async function runTranslateText(
   if (!text.trim()) {
     throw new Error("translate: no text provided");
   }
-  const result = await config.client.translate(lang, text, requestOptions);
+  const result = await config.client.translate(defaultProvider(config), lang, text, requestOptions);
   // A text input should come back as text; decode defensively if the backend
   // returns a binary blob anyway.
   if (typeof result !== "string") {
@@ -53,7 +57,7 @@ export async function runTranslateFile(
   const type = inferContentTypeFromPath(name) ?? "application/octet-stream";
   const file = new File([bytes as BlobPart], name, { type });
 
-  const result = await config.client.translate(lang, file, requestOptions);
+  const result = await config.client.translate(defaultProvider(config), lang, file, requestOptions);
   // Some formats (e.g. plain text) come back as text rather than a file blob.
   if (typeof result === "string") {
     return new TextEncoder().encode(result);

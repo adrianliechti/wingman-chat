@@ -2,15 +2,7 @@
  * OPFS Chat — Chat-scoped blob storage, extraction/rehydration pipeline, and stored types.
  */
 
-import type {
-  AudioContent,
-  Chat,
-  Content,
-  FileContent,
-  ImageContent,
-  Message,
-  ToolResultContent,
-} from "@/shared/types/chat";
+import type { Chat, Content, Message } from "@/shared/types/chat";
 import {
   blobToDataUrl,
   createBlobRef,
@@ -67,44 +59,17 @@ export async function listChatBlobs(chatId: string): Promise<string[]> {
 // Message Blob Extraction and Rehydration (Chat-scoped)
 // ============================================================================
 
-/** Content part with blob reference instead of data URL */
-export type BlobRefImageContent = Omit<ImageContent, "data"> & { data: string; contentType?: string };
-export type BlobRefAudioContent = Omit<AudioContent, "data"> & { data: string; contentType?: string };
-export type BlobRefFileContent = Omit<FileContent, "data"> & { data: string; contentType?: string };
-
-export type StoredContent =
-  | Exclude<Content, ImageContent | AudioContent | FileContent | ToolResultContent>
-  | BlobRefImageContent
-  | BlobRefAudioContent
-  | BlobRefFileContent
-  | (Omit<ToolResultContent, "result"> & { result: StoredContent[] });
-
-export interface StoredMessage {
-  id?: string;
-  runId?: string;
-  createdAt?: string;
-  role: "user" | "assistant";
-  content: StoredContent[];
-  usage?: Message["usage"];
-  error?: { code: string; message: string } | null;
-}
-
-export interface StoredChat {
-  id: string;
-  title?: string;
-  customTitle?: string;
-  customIndex?: number;
+/** Messages keep their application shape; only chat dates need serialization. */
+export interface StoredChat extends Omit<Chat, "created" | "updated"> {
   created: string | null;
   updated: string | null;
-  model: Chat["model"];
-  messages: StoredMessage[];
 }
 
 /**
  * Extract binary data from a content part and store as blob in chat folder.
  * Returns the content with data URL replaced by blob reference.
  */
-async function extractContentBlobForChat(chatId: string, content: Content): Promise<StoredContent> {
+async function extractContentBlobForChat(chatId: string, content: Content): Promise<Content> {
   if (content.type === "image" || content.type === "audio" || content.type === "file") {
     if (isDataUrl(content.data)) {
       const blob = dataUrlToBlob(content.data);
@@ -112,23 +77,29 @@ async function extractContentBlobForChat(chatId: string, content: Content): Prom
       return { ...content, data: createBlobRef(blobId), contentType: blob.type };
     }
     // Already a blob ref or other format, keep as-is
-    return content as StoredContent;
+    return content;
   }
 
   if (content.type === "tool_result") {
     const extractedResult = await finishBlobWrites(
       content.result.map((r) => extractContentBlobForChat(chatId, r as Content)),
     );
-    return { ...content, result: extractedResult } as StoredContent;
+    return { ...content, result: extractedResult } as Content;
   }
 
-  return content as StoredContent;
+  if (content.type === "subagent")
+    return {
+      ...content,
+      messages: await finishBlobWrites(content.messages.map((m) => extractMessageBlobsForChat(chatId, m))),
+    };
+
+  return content;
 }
 
 /**
  * Rehydrate a content part by loading blob data from chat folder and converting to data URL.
  */
-async function rehydrateContentBlobForChat(chatId: string, content: StoredContent): Promise<Content> {
+async function rehydrateContentBlobForChat(chatId: string, content: Content): Promise<Content> {
   if (content.type === "image" || content.type === "audio" || content.type === "file") {
     const blobId = parseBlobRef(content.data);
     if (blobId) {
@@ -151,23 +122,27 @@ async function rehydrateContentBlobForChat(chatId: string, content: StoredConten
       return content;
     }
     // Not a blob ref, return as-is
-    return content as Content;
+    return content;
   }
 
   if (content.type === "tool_result") {
-    const rehydratedResult = await Promise.all(
-      content.result.map((r) => rehydrateContentBlobForChat(chatId, r as StoredContent)),
-    );
+    const rehydratedResult = await Promise.all(content.result.map((r) => rehydrateContentBlobForChat(chatId, r)));
     return { ...content, result: rehydratedResult } as Content;
   }
 
-  return content as Content;
+  if (content.type === "subagent")
+    return {
+      ...content,
+      messages: await Promise.all(content.messages.map((m) => rehydrateMessageBlobsForChat(chatId, m))),
+    };
+
+  return content;
 }
 
 /**
  * Extract all binary data from a message and store as blobs in chat folder.
  */
-export async function extractMessageBlobsForChat(chatId: string, message: Message): Promise<StoredMessage> {
+export async function extractMessageBlobsForChat(chatId: string, message: Message): Promise<Message> {
   const extractedContent = await finishBlobWrites(message.content.map((c) => extractContentBlobForChat(chatId, c)));
 
   return {
@@ -186,7 +161,7 @@ export async function extractMessageBlobsForChat(chatId: string, message: Messag
  */
 export async function rehydrateMessageBlobsForChat(
   chatId: string,
-  message: StoredMessage,
+  message: Message,
   fallbackIdentity?: { id: string; createdAt: string },
 ): Promise<Message> {
   const rehydratedContent = await Promise.all(message.content.map((c) => rehydrateContentBlobForChat(chatId, c)));
@@ -207,6 +182,11 @@ export async function rehydrateMessageBlobsForChat(
  * Returns a StoredChat suitable for JSON serialization.
  * Note: Artifacts should be saved separately via saveArtifacts().
  */
+/** Run state is kept only while it has content, so idle chats keep main's shape. */
+function runtimeFields({ pendingRun, compactions }: Pick<Chat, "pendingRun" | "compactions">) {
+  return { ...(pendingRun ? { pendingRun } : {}), ...(compactions?.length ? { compactions } : {}) };
+}
+
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   const extractedMessages = await finishBlobWrites(chat.messages.map((m) => extractMessageBlobsForChat(chat.id, m)));
 
@@ -219,6 +199,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
     updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
     model: chat.model,
     messages: extractedMessages,
+    ...runtimeFields(chat),
   };
 }
 
@@ -256,30 +237,36 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
     updated: stored.updated ? new Date(stored.updated) : null,
     model: stored.model,
     messages: rehydratedMessages,
+    ...runtimeFields(stored),
   };
 }
 
 /** Restore dates and stable legacy identities without reading attachment bytes. */
 export function restoreChatManifest(stored: StoredChat): Chat {
   return {
-    ...stored,
+    ...runtimeFields(stored),
+    id: stored.id,
+    title: stored.title,
+    customTitle: stored.customTitle,
+    customIndex: stored.customIndex,
+    model: stored.model,
     created: stored.created ? new Date(stored.created) : null,
     updated: stored.updated ? new Date(stored.updated) : null,
     messages: stored.messages.map((message, index) => ({
       ...message,
       id: message.id ?? `legacy-${stored.id}-${index}`,
       createdAt: message.createdAt ?? stored.created ?? new Date(0).toISOString(),
-    })) as Message[],
+    })),
   };
 }
 
 /**
  * Collect all blob IDs referenced in a stored message.
  */
-function collectMessageBlobIds(message: StoredMessage): string[] {
+function collectMessageBlobIds(message: Message): string[] {
   const ids: string[] = [];
 
-  function collectFromContent(content: StoredContent): void {
+  function collectFromContent(content: Content): void {
     if (content.type === "image" || content.type === "audio" || content.type === "file") {
       const blobId = parseBlobRef(content.data);
       if (blobId) {
@@ -287,6 +274,8 @@ function collectMessageBlobIds(message: StoredMessage): string[] {
       }
     } else if (content.type === "tool_result") {
       content.result.forEach(collectFromContent);
+    } else if (content.type === "subagent") {
+      for (const message of content.messages) ids.push(...collectMessageBlobIds(message));
     }
   }
 

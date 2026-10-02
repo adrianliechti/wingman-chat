@@ -1,5 +1,4 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
-import { pcm16ToWav } from "../../src/features/voice/lib/audio";
 
 // Real AudioContexts/worklets with Chromium's synthetic microphone, never the host microphone.
 test.use({
@@ -181,7 +180,7 @@ test("losing the microphone stops playback and updates the owner", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("dictation uploads actual WAV samples and releases capture before the STT response", async ({ page }) => {
+test("dictation uploads native WebM audio and releases capture before the STT response", async ({ page }) => {
   const { errors } = await open(page);
   const pending = page.waitForRequest("**/api/v1/audio/transcriptions");
   let release!: () => void;
@@ -195,10 +194,11 @@ test("dictation uploads actual WAV samples and releases capture before the STT r
   await page.evaluate(() => window.voiceE2E.mode(false));
   await page.evaluate(() => window.voiceE2E.startDictation());
   await page.evaluate(() => window.voiceE2E.finishStart());
-  await page.waitForFunction(() => window.voiceE2E.diagnostics().recorderChunks > 4);
+  await page.waitForTimeout(250); // Capture enough real microphone audio for a non-empty recording.
   const transcript = page.evaluate(() => window.voiceE2E.stopDictation());
   const request = await pending;
-  expect(request.postDataBuffer()!.includes(Buffer.from("RIFF"))).toBe(true);
+  expect(request.postDataBuffer()!.includes(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))).toBe(true); // WebM header
+  expect(request.postDataBuffer()!.includes(Buffer.from("audio_recording.webm"))).toBe(true);
   expect(request.postDataBuffer()!.includes(Buffer.from("stt-test"))).toBe(true);
   await stopped(page);
   release();
@@ -227,7 +227,7 @@ test("dictation cancels permission and prevents late STT text after navigation",
   });
   await page.evaluate(() => window.voiceE2E.startDictation());
   await page.evaluate(() => window.voiceE2E.finishStart());
-  await page.waitForFunction(() => window.voiceE2E.diagnostics().recorderChunks > 4);
+  await page.waitForTimeout(250); // Capture enough real microphone audio for a non-empty recording.
   const request = page.waitForRequest("**/api/v1/audio/transcriptions");
   const transcript = page.evaluate(() => window.voiceE2E.stopDictation());
   await request;
@@ -243,7 +243,11 @@ test("read-aloud can cancel generation, stop playback, and clean up on unmount",
   const response = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const wav = Buffer.from(await pcm16ToWav(new Int16Array(24000 * 5), 24000).arrayBuffer());
+  // Fixed header for a five-second, 24 kHz mono WAV followed by silent samples.
+  const wav = Buffer.concat([
+    Buffer.from("UklGRqSpAwBXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAAZGF0YYCpAwA=", "base64"),
+    Buffer.alloc(24000 * 5 * 2),
+  ]);
   await page.route("**/api/v1/audio/speech", async (route) => {
     await response;
     await route.fulfill({ body: wav, contentType: "audio/wav" });

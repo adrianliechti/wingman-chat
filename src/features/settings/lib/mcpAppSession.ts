@@ -1,13 +1,7 @@
-import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type {
-  McpUiDisplayMode,
-  McpUiHostCapabilities,
-  McpUiHostContext,
-  McpUiResourceMeta,
-} from "@modelcontextprotocol/ext-apps/app-bridge";
+import { AppBridge, type McpUiHostCapabilities, type McpUiHostContext } from "@mcp-ui/client";
+import type { McpUiDisplayMode, McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type {
   CallToolResult,
-  Client,
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
@@ -17,217 +11,92 @@ import { Role, type Message, type ToolContext } from "@/shared/types/chat";
 export const MCP_HOST_INFO = { name: "Wingman Chat", version: "1.0.0" };
 export type DisplayMode = McpUiDisplayMode;
 export type UiResourceEntry = { uri: string; content: MCPResourceContents; meta?: McpUiResourceMeta };
-type McpServerCapabilities = NonNullable<ReturnType<Client["getServerCapabilities"]>>;
+export type AppNotification = "tools" | "resources" | "prompts" | "disconnect";
+type McpServerCapabilities = { tools?: { listChanged?: boolean }; resources?: { listChanged?: boolean } };
 type AppHandlers = Partial<
   Pick<AppBridge, "oncalltool" | "onlistresources" | "onreadresource" | "onlistresourcetemplates" | "onlistprompts">
 >;
-
 export interface McpAppOptions {
-  iframe: HTMLIFrameElement;
   signal?: AbortSignal;
-  displayMode?: DisplayMode;
-  onDisplayModeRequested?: (mode: DisplayMode) => void;
-  onSizeChange?: (height: number) => void;
+  initialResult?: CallToolResult;
   context?: Pick<ToolContext, "sendMessage" | "setContext" | "updateMeta">;
 }
 
-interface SessionOptions extends McpAppOptions {
+/** The renderer's SDK accepts object structured content; MCP 2 also allows primitives. */
+export function toAppToolResult(result: CallToolResult) {
+  const { structuredContent, ...rest } = result;
+  return {
+    ...rest,
+    ...(structuredContent && typeof structuredContent === "object" && !Array.isArray(structuredContent)
+      ? { structuredContent: structuredContent as Record<string, unknown> }
+      : {}),
+  };
+}
+export interface McpAppData {
   tool: MCPTool;
-  resource: UiResourceEntry;
+  html: string;
   input: Record<string, unknown>;
-  result: CallToolResult;
+  result: ReturnType<typeof toAppToolResult>;
+  resource: UiResourceEntry;
   capabilities: McpUiHostCapabilities;
   handlers: AppHandlers;
-  onClose: () => void;
+  context?: McpAppOptions["context"];
+  subscribe: (listener: (kind: AppNotification) => void) => () => void;
 }
 
-/** One iframe owns one bridge. Server notifications are dispatched by MCPClient. */
-export class McpAppSession {
-  private readonly options: SessionOptions;
-  private readonly bridge: AppBridge;
-  private mode: DisplayMode;
-  private closed = false;
-  private initialized = false;
-  private resourceSent = false;
-  private connecting?: Promise<void>;
-  private closePromise?: Promise<void>;
-  private rejectReady?: (error: unknown) => void;
-  private resolveReady?: () => void;
-  private resizeObserver?: ResizeObserver;
-  private themeObserver?: MutationObserver;
-  private readonly onAbort = () => {
-    void this.close().catch(console.error);
+/** App policy only. AppFrame owns sandbox loading, handshake and result delivery. */
+export function createAppBridge(
+  data: McpAppData,
+  options: {
+    getDisplayMode: () => DisplayMode;
+    onDisplayModeRequested: (mode: DisplayMode) => void;
+    hostContext?: McpUiHostContext;
+  },
+): AppBridge {
+  const bridge = new AppBridge(null, MCP_HOST_INFO, data.capabilities, { hostContext: options.hostContext });
+  Object.assign(bridge, data.handlers);
+  const context = data.context ?? {};
+  // AppFrame currently forwards CSP but omits resource permissions and sandbox.
+  const sendResource = bridge.sendSandboxResourceReady.bind(bridge);
+  bridge.sendSandboxResourceReady = (params) =>
+    sendResource({ ...params, sandbox: "allow-scripts", permissions: data.resource.meta?.permissions });
+  bridge.onrequestdisplaymode = async ({ mode }) => {
+    const available = bridge.getAppCapabilities()?.availableDisplayModes ?? ["inline", "fullscreen"];
+    if (!options.onDisplayModeRequested || !["inline", "fullscreen"].includes(mode) || !available.includes(mode))
+      return { mode: options.getDisplayMode() };
+    options.onDisplayModeRequested(mode);
+    return { mode };
   };
-
-  constructor(options: SessionOptions) {
-    this.options = options;
-    this.mode = options.displayMode ?? "inline";
-    // Explicit handlers preserve the connection's discovery listeners and fan out
-    // notifications to every app instead of replacing SDK handlers on the client.
-    this.bridge = new AppBridge(null, MCP_HOST_INFO, options.capabilities, {
-      hostContext: buildHostContext(options.tool, options.iframe, this.mode),
-    });
-    Object.assign(this.bridge, options.handlers);
-    const bridge = this.bridge;
-    const context = options.context ?? {};
-    bridge.onsandboxready = async () => {
-      if (this.closed || this.resourceSent) return;
-      this.resourceSent = true;
-      try {
-        await bridge.sendSandboxResourceReady({
-          html: getHtmlContent(options.resource.content),
-          sandbox: "allow-scripts",
-          csp: options.resource.meta?.csp,
-          permissions: options.resource.meta?.permissions,
-        });
-      } catch (error) {
-        this.rejectReady?.(error);
-      }
+  bridge.onopenlink = async ({ url }) => {
+    if (!isSafeExternalUrl(url)) return { isError: true };
+    window.open(url, "_blank", "noopener,noreferrer");
+    return {};
+  };
+  bridge.onmessage = async ({ role, content }) => {
+    if (!context.sendMessage || role !== "user") return { isError: true };
+    const blocks = content.filter(
+      (block): block is Extract<MCPContentBlock, { type: "text" }> => block.type === "text",
+    );
+    if (blocks.length === 0 || blocks.length !== content.length) return { isError: true };
+    const message: Message = {
+      role: Role.User,
+      content: blocks.map((block) => ({ type: "text", text: block.text })),
     };
-    bridge.oninitialized = () => {
-      if (this.closed || this.initialized) return;
-      this.initialized = true;
-      const modes = bridge.getAppCapabilities()?.availableDisplayModes;
-      if (modes?.length) {
-        context.updateMeta?.({ appDisplayModes: modes });
-        if (!modes.includes(this.mode)) {
-          const mode = modes.find((value) => value === "inline" || value === "fullscreen");
-          if (!mode || !options.onDisplayModeRequested) {
-            this.rejectReady?.(new Error("MCP app has no supported display mode"));
-            return;
-          }
-          this.setDisplayMode(mode);
-          options.onDisplayModeRequested(mode);
-        }
-      }
-      void bridge
-        .sendToolInput({ arguments: options.input })
-        .then(async () => {
-          if (!this.closed) await bridge.sendToolResult(options.result);
-        })
-        .then(() => {
-          if (!this.closed) this.resolveReady?.();
-        })
-        .catch((error) => this.rejectReady?.(error));
-    };
-    bridge.onsizechange = ({ height }) => {
-      if (!this.closed && typeof height === "number" && Number.isFinite(height) && height > 0)
-        options.onSizeChange?.(height);
-    };
-    bridge.onrequestdisplaymode = async ({ mode }) => {
-      const available = bridge.getAppCapabilities()?.availableDisplayModes ?? ["inline", "fullscreen"];
-      if (
-        this.closed ||
-        !options.onDisplayModeRequested ||
-        !["inline", "fullscreen"].includes(mode) ||
-        !available.includes(mode)
-      )
-        return { mode: this.mode };
-      this.setDisplayMode(mode);
-      options.onDisplayModeRequested(mode);
-      return { mode };
-    };
-    bridge.onopenlink = async ({ url }) => {
-      if (this.closed || !isSafeExternalUrl(url)) return { isError: true };
-      window.open(url, "_blank", "noopener,noreferrer");
-      return {};
-    };
-    bridge.onmessage = async ({ role, content }) => {
-      if (this.closed || !context.sendMessage || role !== "user") return { isError: true };
-      const blocks = content.filter(
-        (block): block is Extract<MCPContentBlock, { type: "text" }> => block.type === "text",
-      );
-      if (blocks.length === 0 || blocks.length !== content.length) return { isError: true };
-      const message: Message = {
-        role: Role.User,
-        content: blocks.map((block) => ({ type: "text", text: block.text })),
-      };
-      await context.sendMessage(message);
-      return {};
-    };
-    bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
-      if (!this.closed) await context.setContext?.(serializeModelContext(content, structuredContent));
-      return {};
-    };
-    bridge.onloggingmessage = ({ level, logger, data }) => {
-      const log = level === "error" || level === "critical" || level === "emergency" ? console.error : console.debug;
-      log(`[${logger ?? "MCP App"}] ${level}`, data);
-    };
-  }
-
-  connect(): Promise<void> {
-    if (this.closed) return Promise.reject(new DOMException("App closed", "AbortError"));
-    return (this.connecting ??= this.connectInternal());
-  }
-
-  private async connectInternal(): Promise<void> {
-    const { iframe, signal } = this.options;
-    signal?.throwIfAborted();
-    if (this.closed) throw new DOMException("App closed", "AbortError");
-    const target = iframe.contentWindow;
-    if (!target) throw new Error("MCP iframe is unavailable");
-    const ready = new Promise<void>((resolve, reject) => {
-      this.resolveReady = resolve;
-      this.rejectReady = reject;
-    });
-    const timer = setTimeout(() => this.rejectReady?.(new Error("MCP app did not initialize in time")), 15_000);
-    signal?.addEventListener("abort", this.onAbort, { once: true });
-    try {
-      await Promise.all([this.bridge.connect(new PostMessageTransport(target, target)), ready]);
-      signal?.throwIfAborted();
-      if (this.closed) throw new DOMException("App closed", "AbortError");
-      this.resizeObserver = new ResizeObserver(() => this.updateHostContext());
-      this.resizeObserver.observe(iframe);
-      this.themeObserver = new MutationObserver(() => this.updateHostContext());
-      this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-      this.updateHostContext();
-    } catch (error) {
-      await this.close();
-      throw error;
-    } finally {
-      clearTimeout(timer);
-      this.resolveReady = undefined;
-      this.rejectReady = undefined;
-    }
-  }
-
-  setDisplayMode(mode: DisplayMode): void {
-    if (this.closed) return;
-    this.mode = mode;
-    this.updateHostContext();
-  }
-
-  private updateHostContext(): void {
-    if (!this.closed && this.initialized)
-      this.bridge.setHostContext(buildHostContext(this.options.tool, this.options.iframe, this.mode));
-  }
-
-  async notify(kind: "tools" | "resources" | "prompts"): Promise<void> {
-    if (this.closed || !this.initialized) return;
-    if (kind === "tools") await this.bridge.sendToolListChanged();
-    else if (kind === "resources") await this.bridge.sendResourceListChanged();
-    else await this.bridge.sendPromptListChanged();
-  }
-
-  close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
-    this.closed = true;
-    this.rejectReady?.(new DOMException("App closed", "AbortError"));
-    this.options.signal?.removeEventListener("abort", this.onAbort);
-    this.resizeObserver?.disconnect();
-    this.themeObserver?.disconnect();
-    this.options.onClose();
-    this.closePromise = (async () => {
-      if (this.initialized && !this.options.signal?.aborted && this.options.iframe.isConnected) {
-        await this.bridge.teardownResource({}, { timeout: 1000 }).catch(() => {});
-      }
-      await this.bridge.close();
-    })();
-    return this.closePromise;
-  }
+    await context.sendMessage(message);
+    return {};
+  };
+  bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
+    await context.setContext?.(serializeModelContext(content, structuredContent));
+    return {};
+  };
+  bridge.onloggingmessage = ({ level, logger, data }) => {
+    const log = level === "error" || level === "critical" || level === "emergency" ? console.error : console.debug;
+    log(`[${logger ?? "MCP App"}] ${level}`, data);
+  };
+  return bridge;
 }
 
-function getHtmlContent(resource: MCPResourceContents): string {
+export function getHtmlContent(resource: MCPResourceContents): string {
   if ("text" in resource && typeof resource.text === "string") {
     return resource.text;
   }
@@ -279,7 +148,7 @@ export function buildHostCapabilities(
 /** Max height (px) for inline apps to prevent them from dominating the chat scroll. */
 const INLINE_MAX_HEIGHT = 600;
 
-function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: DisplayMode): McpUiHostContext {
+export function buildHostContext(tool: MCPTool, iframe: HTMLElement, displayMode?: DisplayMode): McpUiHostContext {
   const isDark = document.documentElement.classList.contains("dark");
   const currentMode = displayMode ?? "inline";
 
@@ -302,7 +171,7 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
   };
 
   return {
-    toolInfo: { tool },
+    toolInfo: { tool: tool as NonNullable<McpUiHostContext["toolInfo"]>["tool"] },
     theme: isDark ? "dark" : "light",
     styles: {
       variables: {

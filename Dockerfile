@@ -8,7 +8,7 @@ RUN apt-get update \
 WORKDIR /src
 
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 RUN echo '{}' > public/config.json

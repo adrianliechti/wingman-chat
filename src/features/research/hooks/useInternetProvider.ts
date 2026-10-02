@@ -3,18 +3,22 @@ import { useMemo } from "react";
 import internetInstructionsText from "@/features/research/prompts/internet.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
 import { getConfig } from "@/shared/config";
-import { run as agentRun } from "@/shared/lib/agent";
-import { getFinalTextFromContent } from "@/shared/lib/assistantText";
+import { createAgentTool } from "@/features/tools/lib/subagent";
 import { captureRequestContext } from "@/shared/lib/requestContext";
 import type { Client } from "@/shared/lib/client";
-import { Role, type Tool, type ToolContext, type ToolProvider } from "@/shared/types/chat";
+import { getTextFromContent, type Tool, type ToolDisplay, type ToolProvider } from "@/shared/types/chat";
 
 // Caps prevent a few full-page web_fetch results from blowing past the
 // inner agent's input limit on the next turn.
 const MAX_SEARCH_RESULTS_PER_QUERY = 8;
 const MAX_SEARCH_RESULT_CHARS = 1500;
 const MAX_FETCH_CHARS_PER_URL = 12000;
-const STATUS_QUERY_PREVIEW_CHARS = 60;
+
+const webResultDisplay: Pick<ToolDisplay, "input" | "output"> = {
+  // Queries/URLs already appear in the readable result; no argument JSON.
+  input: () => [],
+  output: (result) => ({ code: getTextFromContent(result), language: "markdown" }),
+};
 
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -28,28 +32,6 @@ function stringArray(value: unknown): string[] {
     throw new Error("Expected an array of strings");
   }
   return value.map((entry: string) => entry.trim()).filter(Boolean);
-}
-
-function summarizeQueries(queries: string[]): string {
-  if (queries.length === 1) {
-    // If the model still smuggled an array-like payload into a single string,
-    // don't render the raw `[...]` to the user — show a generic label.
-    const q = queries[0];
-    if (q.startsWith("[") || q.includes('","')) return "the web";
-    return q.length > STATUS_QUERY_PREVIEW_CHARS ? `${q.slice(0, STATUS_QUERY_PREVIEW_CHARS)}…` : q;
-  }
-  return `${queries.length} queries`;
-}
-
-function summarizeUrls(urls: string[]): string {
-  if (urls.length === 1) {
-    try {
-      return new URL(urls[0]).hostname;
-    } catch {
-      return urls[0];
-    }
-  }
-  return `${urls.length} pages`;
 }
 
 function formatSearchResults(results: SearchResult[]): string {
@@ -73,7 +55,7 @@ function formatSearchResults(results: SearchResult[]): string {
     .join("\n\n");
 }
 
-function buildWebTools(client: Client, internet: { searcher?: string; scraper?: string }, outer?: ToolContext): Tool[] {
+function buildWebTools(client: Client, internet: { searcher?: string; scraper?: string }): Tool[] {
   const tools: Tool[] = [];
 
   if (internet.searcher) {
@@ -81,6 +63,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     tools.push({
       name: "web_search",
       display: {
+        ...webResultDisplay,
         header: (args, state) => {
           const queries = args?.queries;
           return {
@@ -112,7 +95,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
         required: ["queries"],
         additionalProperties: false,
       },
-      function: async (args) => {
+      function: async (args, context) => {
         const queries = stringArray(args.queries);
         const domains = stringArray(args.domains);
 
@@ -120,10 +103,8 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
           return [{ type: "text" as const, text: "No queries provided." }];
         }
 
-        outer?.updateMeta?.({ status: `Searching ${summarizeQueries(queries)}`, queries });
-
         const settled = await Promise.allSettled(
-          queries.map((query) => client.search(searcher, query, { domains }, { signal: outer?.signal })),
+          queries.map((query) => client.search(searcher, query, { domains }, { signal: context?.signal })),
         );
 
         const blocks = settled.map((entry, i) => {
@@ -145,6 +126,7 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
     tools.push({
       name: "web_fetch",
       display: {
+        ...webResultDisplay,
         header: (args, state) => {
           const urls = args?.urls;
           return {
@@ -171,16 +153,14 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
         required: ["urls"],
         additionalProperties: false,
       },
-      function: async (args) => {
+      function: async (args, context) => {
         const urls = stringArray(args.urls);
         if (urls.length === 0) {
           return [{ type: "text" as const, text: "No URLs provided." }];
         }
 
-        outer?.updateMeta?.({ status: `Fetching ${summarizeUrls(urls)}`, urls });
-
         const settled = await Promise.allSettled(
-          urls.map((url) => client.scrape(scraper, url, { signal: outer?.signal })),
+          urls.map((url) => client.scrape(scraper, url, { signal: context?.signal })),
         );
 
         const sections = settled.map((entry, i) => {
@@ -204,119 +184,55 @@ function buildWebTools(client: Client, internet: { searcher?: string; scraper?: 
 
 type Config = ReturnType<typeof getConfig>;
 
-function createInternetProvider(client: Client, internet: Config["internet"]): ToolProvider | null {
+export function createInternetProvider(client: Client, internet: Config["internet"]): ToolProvider | null {
   if (!internet?.searcher && !internet?.scraper) {
     return null;
   }
 
-  const searchAgent: Tool = {
-    name: "search_agent",
-    description:
-      "Research the web. Provide instructions covering everything you need looked up this turn (multiple topics fine — the agent decomposes internally and runs searches in parallel). Returns curated findings with sources. **Make at most one `search_agent` call per turn**: if you have multiple research questions, put them all into a single `instructions` value rather than issuing parallel calls. The agent has no access to this conversation, so include all needed context.",
-    parameters: {
-      type: "object",
-      properties: {
-        instructions: {
-          type: "string",
-          description:
-            "A clear, self-contained research task with all needed context. Combine every topic you need researched this turn into one instructions value — the agent decomposes internally.",
+  const searchAgent = createAgentTool(
+    "search_agent",
+    "Research the web and return findings with sources. Provide a self-contained prompt with all topics and constraints; the researcher sees only that brief. It can search and fetch pages in parallel.",
+    {
+      instructions: internetInstructionsText,
+      tools: buildWebTools(client, internet),
+      runtimeContext: "",
+      inheritHistory: false,
+      middleware: [
+        {
+          name: "research-guard",
+          async onStart(ctx) {
+            const content = ctx.messages.findLast((message) => message.role === "user")?.content;
+            const prompt =
+              typeof content === "string"
+                ? content
+                : (content?.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("\n") ?? "");
+            let guard;
+            try {
+              guard = await client.guard(internet.guard ?? "", `${prompt}\n\n${captureRequestContext()}`, {
+                signal: ctx.signal,
+              });
+            } catch (error) {
+              ctx.signal?.throwIfAborted();
+              throw new Error("The Guardrail system is not available. Please try again later.", { cause: error });
+            }
+            ctx.signal?.throwIfAborted();
+            if (guard.flagged) {
+              const categories = guard.categories.map((category) => category.name).join(", ");
+              throw new Error(`Request blocked by content guard${categories ? ` (flagged: ${categories})` : ""}.`);
+            }
+          },
         },
-      },
-      required: ["instructions"],
-      additionalProperties: false,
+      ],
     },
-    function: async (args, context) => {
-      const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
-      if (!instructions) {
-        return [{ type: "text" as const, text: "Error: instructions are required" }];
-      }
-
-      const request = `${instructions}\n\n${captureRequestContext()}`;
-
-      const model = context?.model;
-      if (!model) {
-        return [{ type: "text" as const, text: "Error: no active model available" }];
-      }
-
-      if (internet?.elicitation && context?.elicit) {
-        const result = await context.elicit({
-          message:
-            "The assistant wants to research the web. The following instructions will be sent to external search/fetch services:\n\n" +
-            request,
-        });
-        if (result.action !== "accept") {
-          return [{ type: "text" as const, text: "Cancelled by user." }];
-        }
-      }
-
-      let guard;
-      try {
-        guard = await client.guard(internet?.guard ?? "", request, { signal: context?.signal });
-      } catch {
-        return [
-          {
-            type: "text" as const,
-            text: "The Guardrail system is not available. Please try again later.",
-          },
-        ];
-      }
-
-      if (guard.flagged) {
-        const categories = guard.categories.map((c) => c.name).join(", ");
-        return [
-          {
-            type: "text" as const,
-            text: `Request blocked by content guard${categories ? ` (flagged: ${categories})` : ""}.`,
-          },
-        ];
-      }
-
-      const innerTools = buildWebTools(client, internet, context);
-
-      try {
-        context?.updateMeta?.({ status: "Planning research…" });
-        const runResult = await agentRun(
-          client,
-          model,
-          internetInstructionsText,
-          [{ role: Role.User, content: [{ type: "text", text: request }] }],
-          innerTools,
-          {
-            agentName: "research",
-            invocationContext: context?.invocationContext?.fork("research"),
-            options: { signal: context?.signal },
-            createToolContext: () => ({ model }),
-            // Nest the inner research agent under the outer execute_tool span
-            // explicitly — the elicitation `await` above has already dropped
-            // the active context.
-            parentContext: context?.agentContext,
-          },
-        );
-        if (runResult.status === "aborted") {
-          return [{ type: "text" as const, text: "Research interrupted before finishing." }];
-        }
-        if (runResult.status === "failed") {
-          return [
-            {
-              type: "text" as const,
-              text: `Search agent error: ${runResult.error?.message ?? "Unknown error"}`,
-            },
-          ];
-        }
-        const conversation = runResult.messages;
-        const last = conversation[conversation.length - 1];
-        const text = last ? getFinalTextFromContent(last.content).trim() : "";
-        const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
-        return [{ type: "text" as const, text: `${text || "No answer produced."}${suffix}` }];
-      } catch (error) {
-        return [
-          {
-            type: "text" as const,
-            text: `Search agent error: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ];
-      }
-    },
+    { client, needsApproval: internet.elicitation },
+  );
+  searchAgent.title = "Web research";
+  searchAgent.display = {
+    ...webResultDisplay,
+    header: (_args, state) => ({
+      icon: Globe,
+      label: state.error ? "Research failed" : state.running ? "Researching the web…" : "Web research",
+    }),
   };
 
   return {

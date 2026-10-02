@@ -12,7 +12,8 @@ import { enqueueMemoryLearning, processMemoryJob, type MemoryCandidates } from "
 import { reconcileMemorySources } from "./memorySources";
 import { migrateLegacyMemory, type LegacyMemoryNotes } from "./memoryMigration";
 
-vi.mock("@/shared/config", () => ({ getConfig: () => ({ memory: {}, models: [], chat: {}, client: {} }) }));
+const parse = vi.hoisted(() => vi.fn());
+vi.mock("@/shared/config", () => ({ getConfig: () => ({ memory: {}, models: [], chat: {}, client: { parse } }) }));
 const disk = new MemoryOpfs();
 const manager = () => new MemoryManager("a");
 const document = (body: string, metadata: Record<string, unknown> = {}) =>
@@ -63,6 +64,7 @@ const fileTool = (
     .then(resultText);
 
 beforeEach(() => {
+  parse.mockReset();
   vi.useFakeTimers();
   disk.reset();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => disk.root } });
@@ -274,6 +276,29 @@ describe("one-time model migration", () => {
     expect(extract).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves legacy notes when the structured model declines and permits a later retry", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    disk.put("agents/a/MEMORY.md", "## User Preferences\nPrefer German.");
+    const before = (await manager().snapshot()).files;
+    parse.mockImplementationOnce((_model, _instructions, _input, schema) => schema.parse({ notes: [] }));
+    await migrateLegacyMemory(manager(), "model");
+    expect(parse).toHaveBeenCalledOnce();
+    const declined = await manager().snapshot();
+    expect(declined.files).toEqual(before);
+    expect(declined.state.migration?.attempts).toBe(1);
+    expect(warning).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ message: "No legacy memory conversion was returned." }),
+    );
+
+    parse.mockResolvedValueOnce(output());
+    await migrateLegacyMemory(manager(), "model");
+    const migrated = await manager().snapshot();
+    expect(migrated.files.get("preferences/language.md")).toContain("Prefer German.");
+    expect(migrated.state.migration).toBeUndefined();
+    warning.mockRestore();
+  });
+
   it("keeps fallbacks on incomplete output and failed persistence, and respects a concurrent edit", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     disk.put("agents/a/MEMORY.md", "## User Preferences\nPrefer German.");
@@ -347,7 +372,7 @@ describe("existing file tools at the memory mount", () => {
         ],
       }),
     ).toContain("cannot span");
-    const child = { invocationContext: { branch: "child" } } as unknown as ToolContext;
+    const child = { invocationContext: { subagentRunId: "child" } } as unknown as ToolContext;
     expect(await fileTool(tools, "create", { file_path: "/.memory/a.md", content: "Memory" }, child)).toContain(
       "read-only",
     );

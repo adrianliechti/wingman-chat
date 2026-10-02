@@ -62,6 +62,7 @@ function harness() {
     closed,
     ready,
     start: async (ack = true) => {
+      const started = ready.mock.calls.length;
       await hook.start(
         "voice/model ?&",
         "transcriber",
@@ -77,7 +78,7 @@ function harness() {
       const socket = Socket.instances.at(-1)!;
       socket.open();
       if (ack) socket.message({ type: "session.updated" });
-      await Promise.resolve();
+      if (ack) await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(started + 1));
       return socket;
     },
   };

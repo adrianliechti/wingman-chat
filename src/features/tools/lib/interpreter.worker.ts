@@ -5,6 +5,7 @@
  */
 
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface, version as pyodideVersion } from "pyodide";
+import type { PyProxy } from "pyodide/ffi";
 import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
@@ -35,6 +36,7 @@ import { callMainThread, describeError } from "./interpreterRpc";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
+import PYTHON_SCRIPTS from "./pythonScripts.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SQL_SHIM from "./sqlShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
@@ -125,6 +127,22 @@ let pyodideReady: Promise<PyodideInterface> | null = null;
 // entrypoints (asyncio.run, ...) into top-level await; sync blocking would need
 // JSPI, which Safari lacks. Cached as a callable proxy at load time.
 let rewriteAsyncEntrypoints: ((code: string) => string) | null = null;
+
+type PythonValue = string | number | bigint | boolean | null | undefined | PyProxy;
+type PythonScope = {
+  namespace: PyodideInterface["globals"];
+  close(): void;
+  destroy(): void;
+};
+let scriptSources: ((code: string, filename?: string) => { toJs(): string[]; destroy(): void }) | undefined;
+let scriptScope: ((filename: string | undefined, argsJson: string) => PythonScope) | undefined;
+let runScript:
+  | ((
+      code: string,
+      namespace: PyodideInterface["globals"],
+      filename?: string,
+    ) => PromiseLike<PythonValue> & { destroy(): void })
+  | undefined;
 
 // The Pyodide FS is a session-long singleton, so we sync /home/user incrementally
 // rather than wiping it each call. `lastSyncedFiles` mirrors what's materialized;
@@ -271,15 +289,23 @@ function collectPyodideFiles(
  * so Pyodide's own lock-driven loader resolves them all by import name — no
  * micropip or dep bookkeeping. (sqlite3/ssl/lzma ship in the base interpreter.)
  */
-async function ensurePackagesLoaded(pyodide: PyodideInterface, code: string): Promise<void> {
+async function ensurePackagesLoaded(pyodide: PyodideInterface, code: string, filename?: string): Promise<void> {
   const warn = (msg: string) => console.warn(`package load: ${msg}`);
+  const discovered = scriptSources!(code, filename);
+  let sources: string[];
+  try {
+    sources = discovered.toJs();
+  } finally {
+    discovered.destroy();
+  }
 
   await withRuntimeFetch(async () => {
     // All imports resolve from the lock index by name; transitive deps via `depends`.
-    await pyodide.loadPackagesFromImports(code, { errorCallback: warn });
+    // Scan each source separately: joining scripts can change their syntax.
+    for (const source of sources) await pyodide.loadPackagesFromImports(source, { errorCallback: warn });
 
     // tzdata is data-only and therefore invisible to the import scan.
-    if (needsTzdata(code)) await pyodide.loadPackage("tzdata", { errorCallback: warn });
+    if (sources.some(needsTzdata)) await pyodide.loadPackage("tzdata", { errorCallback: warn });
   });
 }
 
@@ -288,6 +314,7 @@ async function runPythonCode(
   code: string,
   globals: PyodideInterface["globals"],
   maxOutputBytes: number,
+  filename?: string,
 ): Promise<string> {
   const output = new BoundedOutput(maxOutputBytes);
   const collect = (text: string) => {
@@ -297,8 +324,10 @@ async function runPythonCode(
   pyodide.setStdout({ batched: collect });
   pyodide.setStderr({ batched: collect });
 
-  const result = await pyodide.runPythonAsync(code, { globals });
+  const pending = runScript!(code, globals, filename);
+  let result: PythonValue;
   try {
+    result = await pending;
     const captured = output.value();
     if (result !== undefined && result !== null && !captured.trim()) {
       const value = new BoundedOutput(maxOutputBytes);
@@ -307,7 +336,8 @@ async function runPythonCode(
     }
     return captured.trim() || NO_OUTPUT_MESSAGE;
   } finally {
-    if (result && typeof result === "object" && "destroy" in result && typeof result.destroy === "function") {
+    pending.destroy();
+    if (result instanceof pyodide.ffi.PyProxy) {
       result.destroy();
     }
   }
@@ -325,13 +355,11 @@ const USER_SHIMS = [
   SQL_SHIM,
 ];
 
-async function createExecutionGlobals(
+async function installExecutionHelpers(
   pyodide: PyodideInterface,
   signal: AbortSignal,
-): Promise<PyodideInterface["globals"]> {
-  const globals = pyodide.runPython("dict()") as PyodideInterface["globals"];
-  // Match standalone scripts so `if __name__ == "__main__"` blocks execute.
-  globals.set("__name__", "__main__");
+  globals: PyodideInterface["globals"],
+): Promise<void> {
   // Python tasks can retain their globals after runPythonAsync returns. Bind
   // bridges to this execution so delayed work cannot borrow the next run's
   // model, budget, or workspace through the reused worker's active RPC slot.
@@ -359,13 +387,7 @@ async function createExecutionGlobals(
   setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
     requestRasterizePdf(pyodide, path, optionsJson),
   );
-  try {
-    for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
-    return globals;
-  } catch (error) {
-    globals.destroy();
-    throw error;
-  }
+  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
 }
 
 function loadPyodide(): Promise<PyodideInterface> {
@@ -382,6 +404,10 @@ function loadPyodide(): Promise<PyodideInterface> {
         p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg'); _wingman_base_environ = dict(os.environ)");
         await p.runPythonAsync(ASYNCIO_SHIM);
         rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
+        p.runPython(PYTHON_SCRIPTS);
+        scriptSources = p.globals.get("_wingman_script_sources") as typeof scriptSources;
+        scriptScope = p.globals.get("_wingman_script_scope") as typeof scriptScope;
+        runScript = p.globals.get("_wingman_run_script") as typeof runScript;
         lockDownUserNetwork();
         console.log("Pyodide loaded successfully");
         return p;
@@ -405,10 +431,10 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     validateArtifactFiles(files, limits, "Interpreter input filesystem");
     const pyodide = await loadPyodide();
 
-    let code = request.code;
+    let code = request.code.replace(/^\uFEFF/, "");
     if (rewriteAsyncEntrypoints) {
       try {
-        code = rewriteAsyncEntrypoints(request.code);
+        code = rewriteAsyncEntrypoints(code);
       } catch (error) {
         // A rewrite failure must never block execution — run the original.
         console.error("asyncio entrypoint rewrite failed; running original code:", error);
@@ -418,22 +444,27 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     pyodide.FS.chdir(SANDBOX_HOME);
     pyodide.runPython("import os; os.environ.clear(); os.environ.update(_wingman_base_environ)");
     syncFilesToPyodide(pyodide, files);
-    await ensurePackagesLoaded(pyodide, code);
+    const filename = request.path ? artifactFsPath(request.path) : undefined;
+    await ensurePackagesLoaded(pyodide, code, filename);
 
     const executionController = new AbortController();
     activeRpcSignal = executionController.signal;
     let globals: PyodideInterface["globals"] | undefined;
+    let scope: PythonScope | undefined;
     let closeDuckDb: ((() => void) & { destroy(): void }) | undefined;
 
     try {
-      globals = await createExecutionGlobals(pyodide, executionController.signal);
+      scope = scriptScope!(filename, JSON.stringify(request.args ?? []));
+      globals = scope.namespace;
+      // Attribute proxies are borrowed from scope; retain their owner until cleanup.
+      await installExecutionHelpers(pyodide, executionController.signal, globals);
       if (pyodide.loadedPackages.duckdb) {
         closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals }) as typeof closeDuckDb;
       }
       onStarted?.();
 
       const runStart = Date.now();
-      const output = await runPythonCode(pyodide, code, globals, limits.maxOutputBytes);
+      const output = await runPythonCode(pyodide, code, globals, limits.maxOutputBytes, filename);
 
       // Flush database files and discard SQL state before capturing the run.
       closeDuckDb?.();
@@ -453,9 +484,13 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       try {
         closeDuckDb?.();
       } finally {
-        closeDuckDb?.destroy();
-        globals?.destroy();
-        lockDownUserNetwork();
+        try {
+          scope?.close();
+        } finally {
+          closeDuckDb?.destroy();
+          scope?.destroy();
+          lockDownUserNetwork();
+        }
       }
     }
   } catch (error) {

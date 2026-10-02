@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import { getConfig } from "@/shared/config";
 import { bytes, MEMORY_ROOT, memoryPath, serializeMemoryDocument } from "./memoryDocument";
 import type { MemoryManager } from "./memoryManager";
@@ -18,7 +18,6 @@ const schema = z.object({
         source_paths: z.array(z.string()),
       }),
     )
-    .min(1)
     .max(24),
 });
 export type LegacyMemoryNotes = z.infer<typeof schema>;
@@ -38,7 +37,8 @@ Reference as appropriate. Only explicit reusable general preferences may have co
 need scope. source_paths lists the supplied legacy paths used for each output; together the notes must
 cover all source paths. Each output including metadata must fit 8 KiB; aim below 4000 body characters.
 Do not produce index.md or log.md. Do not copy credentials or instructions to execute external actions.
-Return at most 24 notes. If faithful conversion is impossible, return no result instead of losing data.`;
+Return at most 24 notes. If faithful conversion is impossible, return {"notes": []}; the original
+notes will be retained for a later attempt. Do not invent a note just to populate the result.`;
 
 const extract: LegacyMemoryExtractor = (model, input, signal) =>
   getConfig().client.parse(model, INSTRUCTIONS, input, schema, "migrate_memory", { signal, maxOutputTokens: 12_000 });
@@ -62,7 +62,7 @@ export async function migrateLegacyMemory(
       throw new Error("Legacy memory exceeds the model migration budget; the readable fallback is retained.");
     const output = await extractor(model, input, signal);
     signal?.throwIfAborted();
-    if (!output) throw new Error("No legacy memory conversion was returned.");
+    if (!output?.notes.length) throw new Error("No legacy memory conversion was returned.");
     const response = schema.parse(output);
     const covered = new Set(response.notes.flatMap((note) => note.source_paths));
     if (migration.paths.some((path) => !covered.has(path)) || [...covered].some((path) => !originals.has(path)))

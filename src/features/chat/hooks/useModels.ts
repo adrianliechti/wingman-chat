@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
-import { defaultModelId } from "@/shared/lib/models";
+import { defaultModelId, findModel } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
@@ -44,7 +44,7 @@ export function getSavedModel(models: readonly Model[]): Model | null {
   } catch {
     // Ignore localStorage errors.
   }
-  const model = models.find((model) => model.id === saved?.id);
+  const model = findModel(models, saved?.id);
   if (!model) return null;
   const effort = saved?.effort;
   return {
@@ -52,6 +52,34 @@ export function getSavedModel(models: readonly Model[]): Model | null {
     ...(effort && (!model.supportedEfforts || model.supportedEfforts.includes(effort)) ? { effort } : {}),
     ...(verbosity && VERBOSITIES.has(verbosity) ? { verbosity: verbosity as Model["verbosity"] } : {}),
   };
+}
+
+/**
+ * The configured default for new chats (`chat.model`) with its effort and
+ * verbosity, or null when none is configured or the model is unavailable.
+ */
+export function getConfiguredModel(models: readonly Model[]): Model | null {
+  const chat = getConfig().chat;
+  const model = findModel(models, chat?.model);
+  if (!model) return null;
+  return {
+    ...model,
+    ...(chat?.effort && (!model.supportedEfforts || model.supportedEfforts.includes(chat.effort))
+      ? { effort: chat.effort }
+      : {}),
+    ...(chat?.verbosity && VERBOSITIES.has(chat.verbosity) ? { verbosity: chat.verbosity } : {}),
+  };
+}
+
+/** The model a new chat starts on: the configured default, else the last saved choice. */
+export function getDefaultModel(models: readonly Model[]): Model | null {
+  return (
+    getConfiguredModel(models) ??
+    getSavedModel(models) ??
+    models.find((model) => model.id === defaultModelId([...models])) ??
+    models[0] ??
+    null
+  );
 }
 
 function saveSelectedModel(model: Model | null) {
@@ -98,7 +126,7 @@ export function useModels() {
     if (!models.length) return;
     setSelectedModelState((current) => {
       if (current !== undefined) return current;
-      return getSavedModel(models) ?? models.find((model) => model.id === defaultModelId(models)) ?? models[0];
+      return getDefaultModel(models);
     });
   }, [models]);
 

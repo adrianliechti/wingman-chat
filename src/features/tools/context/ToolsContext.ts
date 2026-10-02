@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { McpAppOptions, McpAppSession } from "@/features/settings/lib/mcpAppSession";
+import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
 import type {
   AudioContent,
@@ -33,7 +33,7 @@ export interface ToolsContextValue {
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
     content: Record<string, unknown> | undefined,
     options: McpAppOptions,
-  ) => Promise<McpAppSession>;
+  ) => Promise<McpAppData>;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);

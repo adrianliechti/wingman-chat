@@ -1,8 +1,9 @@
+import type { ChatMiddleware } from "@tanstack/ai";
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
+import type { Client } from "@/shared/lib/client";
 import { getFinalTextFromContent } from "@/shared/lib/assistantText";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
@@ -13,21 +14,41 @@ export function createSubagentTool(
   providerInstructions: string,
   baseTools: Tool[],
   runtimeContext = "",
+  middleware: ChatMiddleware[] = [],
 ): Tool {
   const baseInstructions = subagentSystem.trim();
   const extra = providerInstructions.trim();
   const instructions = extra ? `${baseInstructions}\n\n${extra}` : baseInstructions;
 
+  return createAgentTool("agent", subagentDescription.trim(), {
+    model,
+    instructions,
+    tools: baseTools,
+    runtimeContext,
+    middleware,
+  });
+}
+
+/** Native chat definition and the small text-result boundary required by realtime. */
+export function createAgentTool(
+  name: string,
+  description: string,
+  spec: NonNullable<Tool["subagent"]>,
+  options: { client?: Client; needsApproval?: boolean } = {},
+): Tool {
   return {
-    name: "agent",
-    description: subagentDescription.trim(),
+    name,
+    subagent: spec,
+    description,
+    needsApproval: options.needsApproval,
     parameters: {
       type: "object",
       properties: {
         prompt: {
           type: "string",
+          minLength: 1,
           description:
-            "A clear, self-contained task description for the agent. Include all necessary context since it has no access to the current conversation.",
+            "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
         },
       },
       required: ["prompt"],
@@ -38,19 +59,29 @@ export function createSubagentTool(
       if (!prompt) {
         return [{ type: "text", text: "Error: prompt is required" }];
       }
+      const model = spec.model ?? ctx?.model;
+      if (!model) return [{ type: "text", text: "No model is available for this task." }];
+      if (options.needsApproval) {
+        if (!ctx?.elicit)
+          return [{ type: "text", text: "This task requires confirmation, which is unavailable in this context." }];
+        const answer = await ctx.elicit({ message: `${description}\n\n${prompt}` });
+        ctx.signal?.throwIfAborted();
+        if (answer.action !== "accept") return [{ type: "text", text: "Cancelled by user." }];
+      }
 
       try {
-        const requestContext = captureRequestContext(runtimeContext);
+        const requestContext = captureRequestContext(spec.runtimeContext);
         const runResult = await agentRun(
-          getConfig().client,
+          options.client ?? getConfig().client,
           model,
-          instructions,
+          spec.instructions,
           [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
-          baseTools,
+          spec.tools,
           {
-            agentName: "subagent",
+            agentName: name,
+            middleware: spec.middleware,
             parentContext: ctx?.agentContext,
-            invocationContext: (ctx?.invocationContext ?? new AgentInvocationContext()).fork("subagent"),
+            context: { ...ctx?.invocationContext, subagentRunId: crypto.randomUUID() },
             options: { signal: ctx?.signal },
             createToolContext: () => ({
               model,
@@ -77,12 +108,14 @@ export function createSubagentTool(
         if (runResult.status === "failed") {
           return [{ type: "text", text: `Subagent error: ${runResult.error?.message ?? "Unknown error"}` }];
         }
+        if (runResult.status === "interrupted") {
+          return [{ type: "text", text: "This task needs interactive input. Continue it in chat." }];
+        }
 
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
         const text = last ? getFinalTextFromContent(last.content).trim() : "";
-        const suffix = runResult.status === "max_turns" ? "\n\n[Stopped: turn limit reached before finishing.]" : "";
-        return [{ type: "text", text: `${text || "Subagent completed but produced no output."}${suffix}` }];
+        return [{ type: "text", text: text || "Subagent completed but produced no output." }];
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return [{ type: "text", text: `Subagent error: ${message}` }];

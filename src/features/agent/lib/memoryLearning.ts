@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import { getConfig } from "@/shared/config";
 import { loadChat } from "@/features/chat/lib/chatStorage";
 import { flushPersistence, withPersistenceLock } from "@/shared/lib/persistence";

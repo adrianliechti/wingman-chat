@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { File } from "../types/file";
-import { countSchemaUnions } from "./toolSchemas";
+import { countSchemaUnions } from "./test-support/toolSchemas";
 import { createFileTools, createReadonlyFileTools, type FileToolsOptions, type WritableFileSource } from "./file-tools";
 
 function memorySource(initial: Record<string, string> = {}): {
@@ -92,7 +92,7 @@ describe("artifact file tools", () => {
       expect(text).not.toContain("/other.ts");
     }
   });
-  it("keeps schemas union-free, closed, and schema-guided for provider portability", () => {
+  it("keeps schemas union-free and closed for provider portability", () => {
     const { source } = memorySource();
     const tools = artifactTools(source);
     const create = tools.find((tool) => tool.name === "artifacts_create");
@@ -110,7 +110,6 @@ describe("artifact file tools", () => {
     };
 
     for (const tool of tools) {
-      expect(tool.strict, tool.name).toBe(false);
       expect(tool.parameters.additionalProperties, tool.name).toBe(false);
       expect(countSchemaUnions(tool.parameters), `${tool.name} must not consume the provider union budget`).toBe(0);
       expect(tool.parameters.required, tool.name).toEqual(requiredByTool[tool.name]);

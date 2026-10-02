@@ -17,7 +17,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
   const modeRef = useRef<"prompt" | "latest" | "free">("latest");
   const spacerRef = useRef<HTMLDivElement | null>(null);
   const spacerHeightRef = useRef(0);
-  const lastMessageRef = useRef<unknown>(undefined);
+  const lastPromptRef = useRef<unknown>(undefined);
   const lastResetKeyRef = useRef(resetKey);
   const geometryRef = useRef({ top: 0, height: 0, viewport: 0 });
 
@@ -69,12 +69,15 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
   }, []);
 
   useLayoutEffect(() => {
-    const last = messages[messages.length - 1];
-    const identity = last?.id ?? last;
-    const newPrompt =
-      identity !== lastMessageRef.current &&
-      last?.role === "user" &&
-      last.content?.some((part) => part.type !== "tool_result");
+    // A loading placeholder or tool result can already follow the new prompt
+    // in the same render. Anchor to the human message itself.
+    const prompt = messages.findLast(
+      (message) =>
+        message.role === "user" &&
+        message.content?.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback"),
+    );
+    const identity = prompt?.id ?? prompt;
+    const newPrompt = !!prompt && identity !== lastPromptRef.current;
     if (lastResetKeyRef.current !== resetKey) {
       lastResetKeyRef.current = resetKey;
       modeRef.current = newPrompt && isResponding ? "prompt" : "latest";
@@ -82,7 +85,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     } else if (newPrompt) {
       modeRef.current = "prompt";
     }
-    lastMessageRef.current = identity;
+    lastPromptRef.current = identity;
     syncScroll();
   }, [messages, resetKey, isResponding, syncScroll, setSpacerHeight]);
 

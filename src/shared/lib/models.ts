@@ -8,13 +8,39 @@ import type {
 } from "@/shared/types/chat";
 
 /**
- * Model id a fresh selection should default to: the saved app default when it's
- * still in the list, otherwise the first visible model. Used by new agents and
- * other "no model chosen yet" spots so they inherit the user's chosen default.
+ * Resolve an ID to an available model, preferring explicit replacements even
+ * while the old model is available. Conflicting or cyclic rules fall back to
+ * the original ID; they must not choose a model based on inventory ordering.
  */
+export function findModel(models: readonly Model[], id?: string | null): Model | undefined {
+  if (!id) return undefined;
+  let current = id;
+  const visited = new Set<string>();
+  while (!visited.has(current)) {
+    visited.add(current);
+    const replacements = models.filter((model) => model.id !== current && model.replaces?.includes(current));
+    if (replacements.length > 1) break;
+    if (!replacements.length) return models.find((model) => model.id === current);
+    current = replacements[0].id;
+  }
+  return models.find((model) => model.id === id);
+}
+
+/**
+ * Model id a fresh selection should default to: the saved app default when it's
+ * available (or replaced), otherwise the first visible model. Used by new
+ * agents and other "no model chosen yet" spots to inherit the chosen default.
+ */
+/** Whether two selections share model, effective effort and verbosity. */
+export function sameModelSettings(a: Model, b: Model) {
+  return (
+    a.id === b.id && (a.effort ?? a.defaultEffort) === (b.effort ?? b.defaultEffort) && a.verbosity === b.verbosity
+  );
+}
+
 export function defaultModelId(models: Model[], savedId?: string | null): string {
-  if (savedId && models.some((m) => m.id === savedId)) return savedId;
-  return models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "";
+  const fallback = models.find((model) => !model.hidden) ?? models[0];
+  return findModel(models, savedId)?.id ?? findModel(models, fallback?.id)?.id ?? "";
 }
 
 // Ordered profiles for known models, not predictions about future versions.
@@ -27,13 +53,9 @@ type ModelProfile = [
   maxOutputTokens?: number,
 ];
 const MODEL_PROFILES: ModelProfile[] = [
+  [/\bgpt-?6\.1-sol(?=$|[/:]|-\d{4})/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   [/\bgpt-?6-astra\b/, ["low", "medium", "high", "xhigh", "max"], undefined, 128_000],
-  [
-    /\bgpt-?6-(?:sol|luna)(?=$|[/:]|-\d{4})/,
-    ["none", "low", "medium", "high", "xhigh", "max"],
-    "medium",
-    128_000,
-  ],
+  [/\bgpt-?6-(?:sol|luna)(?=$|[/:]|-\d{4})/, ["none", "low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   [
     /\bgpt-?5\.6(?:-(?:sol|terra|luna))?(?=$|[/:]|-\d{4})/,
     ["none", "low", "medium", "high", "xhigh", "max"],

@@ -12,6 +12,12 @@ const astra: Model = { id: "gpt-6-astra", name: "GPT-6 Astra", supportedEfforts:
 const plain: Model = { id: "plain", name: "Plain" };
 
 describe("resolveModelPresets", () => {
+  it("resolves retired preset IDs with the replacement's settings", () => {
+    const replacement: Model = { ...luna, replaces: ["retired"], verbosity: "low" };
+    const [preset] = resolveModelPresets([{ model: "retired", effort: "max" }], [replacement]);
+    expect(preset).toEqual({ model: replacement, label: "GPT-6 Luna", effort: "medium", verbosity: "low" });
+  });
+
   it("drops unavailable models and keeps order", () => {
     const presets = resolveModelPresets(
       [

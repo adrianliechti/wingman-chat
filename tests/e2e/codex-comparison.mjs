@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
+import { maxIterations } from "@tanstack/ai";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createArtifactWorkspace } from "./artifact-workspace.mjs";
-import { startGatewayHarness, assertModelsAvailable, lastAssistantText } from "./gateway-harness.mjs";
+import { startGatewayHarness, assertModelsAvailable, lastAssistantText, observeRun } from "./gateway-harness.mjs";
 import { evaluateFiles, initialFiles, task } from "./file-edit-scenario.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -45,6 +46,7 @@ try {
 
   console.log(`Running Wingman file tools with ${model}...`);
   const start = performance.now();
+  const wingmanEvents = [];
   const result = await harness.run(
     harness.client,
     model,
@@ -53,7 +55,8 @@ try {
     tools,
     {
       agentName: "file-edit-comparison",
-      maxTurns: 20,
+      agentLoopStrategy: maxIterations(20),
+      middleware: [observeRun(wingmanEvents)],
       options: { signal: AbortSignal.timeout(timeout), effort: "medium" },
     },
   );
@@ -62,7 +65,7 @@ try {
   report.results.wingman = {
     status: result.status,
     elapsedMs: Math.round(performance.now() - start),
-    modelCalls: result.modelCalls.used,
+    modelCalls: wingmanEvents.modelCalls,
     toolCalls: parts.filter((part) => part.type === "tool_call").map((part) => part.name),
     usage: result.messages.reduce(
       (total, message) => {

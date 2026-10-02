@@ -15,9 +15,9 @@ import { useSkills } from "./useSkills";
 import { useSkillTemplates } from "./useSkillTemplates";
 
 /**
- * The app's single Skills tool provider — one `read_skill` surface for every mode.
+ * The app's single Skills tool provider — one `load_skill` surface for every mode.
  * The agent and no-agent cases are the same provider with different inputs (not
- * two providers sharing an id), so a duplicate `read_skill` can never arise.
+ * two providers sharing an id), so a duplicate `load_skill` can never arise.
  *
  * Entries come from up to two sources, pushed in ascending precedence and then
  * collapsed by a single dedup (later push wins on a name collision):
@@ -28,7 +28,7 @@ import { useSkillTemplates } from "./useSkillTemplates";
  *                   last so a personal/curated skill shadows a shipped template of
  *                   the same name.
  *
- * Template content is fetched lazily on `read_skill`; only name/description reach
+ * Template content is fetched lazily on `load_skill`; only name/description reach
  * the prompt. Returns null when there's nothing to expose.
  */
 export function useSkillsProvider(
@@ -48,11 +48,7 @@ export function useSkillsProvider(
       entries.push(...studioTemplateEntries(templates, loadTemplate));
     }
     // 2. Personal library — an agent's curated subset, or the full library.
-    const personal = agent
-      ? skills.filter((s) => agent.skills.includes(s.name))
-      : sources.personal
-        ? skills
-        : [];
+    const personal = agent ? skills.filter((s) => agent.skills.includes(s.name)) : sources.personal ? skills : [];
     entries.push(...libraryEntries(personal));
 
     // Single dedup: last push wins, so precedence is exactly the order above.

@@ -2,10 +2,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { McpApp } from "../../../src/features/chat/components/McpApp";
 import { MCPClient } from "../../../src/features/settings/lib/mcp";
-import {
-  ToolsContext,
-  type ToolsContextValue,
-} from "../../../src/features/tools/context/ToolsContext";
+import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
 import { ProviderState, type ToolResultContent } from "../../../src/shared/types/chat";
 import { AppProvider } from "../../../src/shell/context/AppProvider";
 import { useApp } from "../../../src/shell/hooks/useApp";
@@ -44,9 +41,7 @@ let holdResource: (() => void) | undefined;
 let hold = false;
 const fetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
-  if (
-    (input instanceof Request ? input.url : input.toString()) !== `${location.origin}/fixture-mcp`
-  )
+  if ((input instanceof Request ? input.url : input.toString()) !== `${location.origin}/fixture-mcp`)
     return fetch(input, init);
   if (init?.method === "GET") {
     return new Response(
@@ -66,6 +61,8 @@ window.fetch = async (input, init) => {
   if (request.id === undefined) return new Response(null, { status: 202 });
   let result: unknown;
   switch (request.method) {
+    case "server/discover":
+      return Response.json({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not found" } });
     case "initialize":
       result = {
         protocolVersion: "2025-11-25",

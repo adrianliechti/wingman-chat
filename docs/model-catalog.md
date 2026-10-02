@@ -62,6 +62,32 @@ loading also wins over the late response.
 Speech calls use their configured model or backend default. They do not choose
 the first model in the catalogue. See [voice lifecycle](voice-lifecycle.md).
 
+## Model replacements
+
+Add `replaces` to the target entry in `models.yaml` (or `config.models`) to move
+saved selections to a newer model:
+
+```yaml
+- id: gpt-6-sol
+  name: GPT-6 Sol
+  replaces:
+    - gpt-4o
+    - gpt-4-turbo
+```
+
+Saved agents, chats, the app default, and slider presets resolve these old IDs
+to the replacement, even if the old model is still available. The target must
+be in the backend inventory. Its current capabilities, instructions, tool
+policy, and defaults apply. Compatible saved effort and verbosity choices are
+kept; unsupported effort falls back to the target's default.
+
+Resolution does not rewrite saved agents, chats, or local storage on load.
+Selecting a model explicitly saves the current selection as usual. Without an
+available replacement, existing selection and fallback behavior is unchanged.
+Replacement chains follow available targets; list all retired IDs on the final
+target when removing intermediate models. Conflicting targets and cycles are
+ignored, retaining the original ID when available.
+
 ## Capability sources and limits
 
 Reviewed September 23, 2026. Profiles are fallbacks, not an API guarantee, and do
@@ -70,6 +96,11 @@ own supported efforts instead of inheriting a vendor profile.
 
 - [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra): low,
   medium, high, xhigh, max; no none/minimal.
+- [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol): low,
+  medium (default), high, xhigh, max; no none/minimal. Uses the Responses API
+  for tool calling, with a 128,000-token output capacity (reviewed September 30,
+  2026). The existing 272,000-token compaction budget stays below its higher
+  long-input pricing tier.
 - [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
   [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna): none, low,
   medium, high, xhigh, max; medium default. Both use the Responses API for tool
@@ -135,6 +166,7 @@ Examples of documented capacities (reviewed September 23, 2026):
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)                                                         | 128,000  | 64,000              |
+| [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)                                                         | 128,000  | 64,000              |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
@@ -152,7 +184,7 @@ that preferred budget; both are capped by the capacity. A zero budget omits the
 request field and lets the provider decide. A zero configured capacity disables
 the internal capacity fallback.
 
-Classification defaults to 8,000 tokens. Other structured helpers, including
+Title generation defaults to 8,000 tokens. Other structured helpers, including
 summarization, rewriting, and conversion, default to 16,000. They are capped by
 the model maximum and do not inherit the larger chat budget; `ParseOptions`
 supports an explicit override. Models with unknown capacity still use provider

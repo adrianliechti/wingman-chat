@@ -184,8 +184,8 @@ export function CanvasInput({
       options: aspectOptions,
       value: selectedAspect,
       onChange: onSelectAspect,
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (qualityOptions.length) {
@@ -195,8 +195,8 @@ export function CanvasInput({
       options: qualityOptions,
       value: selectedQuality,
       onChange: (v) => onSelectQuality(v as ImageQuality | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (resolutionOptions.length) {
@@ -206,8 +206,8 @@ export function CanvasInput({
       options: resolutionOptions,
       value: selectedResolution,
       onChange: (v) => onSelectResolution(v as ImageResolution | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
   if (backgroundOptions.length) {
@@ -217,8 +217,8 @@ export function CanvasInput({
       options: backgroundOptions,
       value: selectedBackground,
       onChange: (v) => onSelectBackground(v as ImageBackground | null),
+      allowDeselect: true,
       defaultLabel: "Auto",
-      defaultDescription: "Model default",
     });
   }
 

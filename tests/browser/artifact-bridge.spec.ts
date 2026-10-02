@@ -91,7 +91,7 @@ test("DuckDB answers SQL over workspace files by name", async ({ page: browser }
   });
 });
 
-test("both interpreters can query workspace files with sql()", async ({ page: browser }) => {
+test("Python and JavaScript can query workspace files with sql()", async ({ page: browser }) => {
   test.setTimeout(300_000);
   await openFixture(browser);
   const id = await ensureChat(browser);
@@ -100,8 +100,11 @@ test("both interpreters can query workspace files with sql()", async ({ page: br
   const js = await browser.evaluate(
     (id) =>
       window.artifactsE2E.tool(
-        "execute_javascript_code",
-        { code: "const r = await sql('SELECT count(*) AS n FROM \\'flights.csv\\''); return JSON.stringify(r.rows);" },
+        "execute_script",
+        {
+          language: "javascript",
+          code: "const r = await sql('SELECT count(*) AS n FROM \\'flights.csv\\''); return JSON.stringify(r.rows);",
+        },
         id,
       ),
     id,
@@ -111,8 +114,9 @@ test("both interpreters can query workspace files with sql()", async ({ page: br
   const py = await browser.evaluate(
     (id) =>
       window.artifactsE2E.tool(
-        "execute_python_code",
+        "execute_script",
         {
+          language: "python",
           code: "r = await sql(\"SELECT carrier FROM 'flights.csv' WHERE delay > $1 ORDER BY carrier\", [7])\nprint([row['carrier'] for row in r['rows']])",
         },
         id,

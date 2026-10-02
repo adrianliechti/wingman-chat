@@ -24,7 +24,7 @@ import {
   type Placement,
   type Side,
 } from "@floating-ui/react";
-import { AlignLeft, Boxes, Check, ChevronRight, Gauge, Mic, Search } from "lucide-react";
+import { AlignLeft, Bot, Boxes, Check, ChevronRight, Gauge, Mic, Search, Settings2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
@@ -62,12 +62,12 @@ const VERBOSITY_OPTIONS: { value: Verbosity; label: string }[] = [
   { value: "high", label: "High" },
 ];
 
-const VERBOSITY_HINT = "How long and detailed responses are. Not every model supports this.";
+const VERBOSITY_HINT = "How long and detailed responses are.";
 
 interface VerbosityConfig {
   /** Current override, or null for the model default. */
   value: Verbosity | null;
-  /** The model's configured verbosity, named on the default row. */
+  /** The model's configured verbosity, badged on its option. */
   defaultValue?: Verbosity;
   onChange: (verbosity: Verbosity | null) => void;
 }
@@ -104,12 +104,10 @@ export interface SubmenuConfig {
   value: string | null;
   /** Pass null to clear back to the default. */
   onChange: (value: string | null) => void;
-  /**
-   * Reset row that clears the selection. Omit for menus where every level is
-   * explicit and one of them is badged as the default instead.
-   */
+  /** Selecting the checked option again clears the selection. */
+  allowDeselect?: boolean;
+  /** Optional label shown on the trigger when unset. */
   defaultLabel?: string;
-  defaultDescription?: string;
 }
 
 interface PresetsConfig {
@@ -120,12 +118,35 @@ interface PresetsConfig {
   onChange: (index: number) => void;
 }
 
+export interface AgentAction {
+  icon?: React.ReactNode;
+  label: string;
+  /** Highlights a row that needs attention, e.g. a pending sign-in. */
+  warning?: boolean;
+  onSelect: () => void;
+}
+
+/** Agents offered next to the models; picking one replaces the model selection. */
+interface AgentsConfig {
+  items: { id: string; name: string; caption?: string }[];
+  /** Active agent id, or null when chatting with a plain model. */
+  value: string | null;
+  /** Picking the active agent again passes null to turn it off. */
+  onChange: (id: string | null) => void;
+  /** Opens an agent's settings from the gear on its row. */
+  onOpen: (id: string) => void;
+  /** Rows after the list, e.g. a pending sign-in. */
+  actions?: AgentAction[];
+}
+
 interface ModelDropdownProps {
   models: Model[];
   value: string;
   onChange: (modelId: string) => void;
   includeRealtime?: boolean;
   dropdownClassName?: string;
+  /** When set, renders an agent submenu before the model and other settings. */
+  agents?: AgentsConfig;
   /** When set, renders a reasoning-effort submenu at the bottom of the model list. */
   effort?: EffortConfig;
   /** When set, renders a verbosity submenu after the effort one. */
@@ -276,6 +297,10 @@ function usePanelTransition(context: FloatingContext, duration: { open: number; 
 
 const TreeCloseContext = createContext<() => void>(() => {});
 
+// The root panel fades out before it unmounts; flyouts follow its open state so
+// they close with it instead of lingering until the fade ends.
+const RootOpenContext = createContext(false);
+
 // ─── Flyout submenu ───────────────────────────────────────────────────────────
 
 /** A menu row that opens a side panel on hover or click. */
@@ -293,7 +318,9 @@ function Flyout({
   panelClassName?: string;
   children: React.ReactNode;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [openState, setIsOpen] = useState(false);
+  const rootOpen = useContext(RootOpenContext);
+  const isOpen = openState && rootOpen;
 
   const tree = useFloatingTree();
   const nodeId = useFloatingNodeId();
@@ -370,8 +397,8 @@ function OptionSubmenu({
   options,
   value,
   onChange,
+  allowDeselect = false,
   defaultLabel,
-  defaultDescription,
 }: SubmenuConfig) {
   const closeAll = useContext(TreeCloseContext);
 
@@ -383,20 +410,6 @@ function OptionSubmenu({
       panelClassName="w-auto min-w-44 max-w-64"
     >
       {hint && <p className="px-3 pt-1.5 pb-2 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{hint}</p>}
-      {defaultLabel && (
-        <>
-          <OptionRow
-            name={defaultLabel}
-            description={defaultDescription}
-            selected={value === null}
-            onSelect={() => {
-              onChange(null);
-              closeAll();
-            }}
-          />
-          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-        </>
-      )}
       {options.map((opt) => (
         <OptionRow
           key={opt.value}
@@ -405,11 +418,107 @@ function OptionSubmenu({
           badge={opt.badge}
           selected={opt.value === value}
           onSelect={() => {
-            onChange(opt.value);
+            onChange(allowDeselect && opt.value === value ? null : opt.value);
             closeAll();
           }}
         />
       ))}
+    </Flyout>
+  );
+}
+
+function AgentSubmenu({ items, value, onChange, onOpen, actions }: AgentsConfig) {
+  const closeAll = useContext(TreeCloseContext);
+
+  return (
+    <Flyout
+      icon={<Bot size={14} />}
+      label="Agent"
+      detail={items.find((a) => a.id === value)?.name ?? "None"}
+      panelClassName="flex w-auto min-w-48 max-w-72 flex-col overflow-hidden"
+    >
+      <div className="min-h-0 overflow-y-auto scrollbar-thin" style={{ maxHeight: "min(60vh, 24rem)" }}>
+        {items.map((a) => {
+          const selected = a.id === value;
+          return (
+            <div
+              key={a.id}
+              className={cn(
+                "group/agent flex items-center gap-1 pr-2 rounded-lg transition-colors",
+                selected
+                  ? "bg-neutral-100/70 text-neutral-900 dark:bg-white/10 dark:text-neutral-100"
+                  : "text-neutral-800 hover:bg-neutral-100/60 has-focus-visible:bg-neutral-100/60 dark:text-neutral-200 dark:hover:bg-white/5 dark:has-focus-visible:bg-white/5",
+              )}
+            >
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => {
+                  onChange(selected ? null : a.id);
+                  closeAll();
+                }}
+                className="flex flex-1 min-w-0 items-center gap-2 py-2 pl-3 text-left focus:outline-none"
+              >
+                <span className={cn("flex-1 truncate text-[13px] leading-tight", selected ? "font-semibold" : "font-medium")}>
+                  {a.name}
+                </span>
+                {a.caption && (
+                  <span className="truncate text-[11px] leading-tight text-neutral-500 dark:text-neutral-400">{a.caption}</span>
+                )}
+              </button>
+              {/* One slot: the check marks the active agent and gives way to the
+                  settings gear on hover. Touch has no hover, so it shows the gear. */}
+              <span className="relative flex size-6 shrink-0 items-center justify-center">
+                <Check
+                  size={14}
+                  className={cn(
+                    "text-neutral-500 transition-opacity group-hover/agent:opacity-0 pointer-coarse:hidden dark:text-neutral-400",
+                    selected ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                <button
+                  type="button"
+                  aria-label={`Open ${a.name} settings`}
+                  title="Agent settings"
+                  onClick={() => {
+                    onOpen(a.id);
+                    closeAll();
+                  }}
+                  className="absolute inset-0 flex items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:text-neutral-700 hover:bg-neutral-200/70 focus-visible:opacity-100 focus:outline-none group-hover/agent:opacity-100 pointer-coarse:opacity-100 dark:hover:text-neutral-200 dark:hover:bg-white/10"
+                >
+                  <Settings2 size={14} />
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {actions && actions.length > 0 && (
+        <>
+          <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                action.onSelect();
+                closeAll();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-2 rounded-lg text-left text-[13px] font-medium transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5",
+                action.warning
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-neutral-800 dark:text-neutral-200",
+              )}
+            >
+              {action.icon && <span className="shrink-0 flex justify-center text-current opacity-70">{action.icon}</span>}
+              <span className="truncate">{action.label}</span>
+            </button>
+          ))}
+        </>
+      )}
     </Flyout>
   );
 }
@@ -449,6 +558,9 @@ function PresetSlider({
   const index = dragIndex ?? value;
   const current = steps[index];
   const last = steps.length - 1;
+  // Presets define the Faster → Smarter scale, including each model's effort.
+  const position = last > 0 ? index / last : 0;
+  const isTopTier = position >= 2 / 3;
 
   const indexAt = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -523,7 +635,10 @@ function PresetSlider({
           <div className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-neutral-200 dark:bg-white/10" />
           {index >= 0 && (
             <div
-              className="absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-neutral-800 dark:bg-neutral-200 transition-[width] duration-150 ease-out"
+              className={cn(
+                "absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none",
+                isTopTier ? "bg-red-500/75 dark:bg-red-400/80" : "bg-neutral-800 dark:bg-neutral-200",
+              )}
               style={{ width: stepOffset(index, steps.length) }}
             />
           )}
@@ -539,7 +654,12 @@ function PresetSlider({
           ))}
           {index >= 0 && (
             <div
-              className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-300 bg-white shadow-sm transition-[left] duration-150 ease-out group-focus-visible/slider:ring-2 group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50"
+              className={cn(
+                "absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-sm transition-[left,background-color,border-color] duration-150 ease-out group-focus-visible/slider:ring-2 motion-reduce:transition-none",
+                isTopTier
+                  ? "border-red-400 bg-red-50 group-focus-visible/slider:ring-red-500/40 dark:border-red-400 dark:bg-red-100 dark:group-focus-visible/slider:ring-red-400/40"
+                  : "border-neutral-300 bg-white group-focus-visible/slider:ring-slate-500/50 dark:border-neutral-500 dark:bg-neutral-100 dark:group-focus-visible/slider:ring-slate-400/50",
+              )}
               style={{ left: stepOffset(index, steps.length) }}
             />
           )}
@@ -557,6 +677,7 @@ function ModelDropdownRoot({
   onChange,
   includeRealtime,
   dropdownClassName,
+  agents,
   effort,
   verbosity,
   submenus,
@@ -694,21 +815,22 @@ function ModelDropdownRoot({
           },
         ]
       : []),
-    // Unlike effort, verbosity keeps a reset row: a model without a configured
-    // level leaves it to the backend, which has no level to badge.
+    // Only explicit overrides are checked; selecting one again restores the
+    // configured verbosity or leaves the choice to the backend.
     ...(shownVerbosity
       ? [
           {
             icon: <AlignLeft size={14} />,
             label: "Verbosity",
             hint: VERBOSITY_HINT,
-            options: VERBOSITY_OPTIONS,
+            options: VERBOSITY_OPTIONS.map((option) => ({
+              ...option,
+              badge: option.value === shownVerbosity.defaultValue ? "Default" : undefined,
+            })),
             value: shownVerbosity.value,
             onChange: (v: string | null) => shownVerbosity.onChange(v as Verbosity | null),
+            allowDeselect: true,
             defaultLabel: "Default",
-            defaultDescription: shownVerbosity.defaultValue
-              ? `Model setting (${shownVerbosity.defaultValue})`
-              : "Model setting",
           },
         ]
       : []),
@@ -787,6 +909,7 @@ function ModelDropdownRoot({
           }),
       })}
 
+      <RootOpenContext.Provider value={isOpen}>
       <TreeCloseContext.Provider value={closeAll}>
         {isOverlayMounted && (
           <FloatingPortal>
@@ -813,6 +936,7 @@ function ModelDropdownRoot({
                     <>
                       <PresetSlider {...presets} fallbackLabel={selectedName} onPreview={setPreviewIndex} />
                       <div className="mb-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                      {agents && <AgentSubmenu {...agents} />}
                       <Flyout
                         icon={<Boxes size={14} />}
                         label="Model"
@@ -828,9 +952,10 @@ function ModelDropdownRoot({
                   ) : (
                     <div className="flex flex-col overflow-hidden" style={{ maxHeight: "var(--panel-max-h, 24rem)" }}>
                       {modelList}
-                      {allSubmenus.length > 0 && !q && (
+                      {(agents || allSubmenus.length > 0) && !q && (
                         <>
                           <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
+                          {agents && <AgentSubmenu {...agents} />}
                           {allSubmenus.map((cfg) => (
                             <OptionSubmenu key={cfg.label} {...cfg} />
                           ))}
@@ -844,6 +969,7 @@ function ModelDropdownRoot({
           </FloatingPortal>
         )}
       </TreeCloseContext.Provider>
+      </RootOpenContext.Provider>
     </FloatingNode>
   );
 }

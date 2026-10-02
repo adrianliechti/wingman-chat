@@ -1,3 +1,5 @@
+import type { ModelMessage } from "@tanstack/ai";
+import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { memo, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentContext, type AgentContextType } from "../../../src/features/agent/context/AgentContext";
@@ -12,10 +14,12 @@ import {
   useChatRunState,
 } from "../../../src/features/chat/hooks/useChat";
 import { ChatMessageAttachments } from "../../../src/features/chat/components/ChatMessageAttachments";
+import { ChatInterrupts } from "../../../src/features/chat/components/ChatInterrupts";
 import { hasStoredAttachments } from "../../../src/features/chat/lib/chatAttachments";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
+import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
 import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
@@ -33,24 +37,48 @@ const calls: {
   model: string;
   effort?: Model["effort"];
   verbosity?: Model["verbosity"];
-  input: Message[];
+  input: ModelMessage[];
+  instructions: string;
+  tools: string[];
   stream: (text: string) => void;
   finish: (text: string) => void;
+  callTool: (name: string, args: object) => void;
   signal?: AbortSignal;
 }[] = [];
-config.client.complete = async (model, _instructions, input, _tools, handler, options) =>
-  new Promise((resolve) => {
-    // Deliberately ignore cancellation in this fake service to exercise late callbacks.
-    calls.push({
-      model,
-      effort: options?.effort,
-      verbosity: options?.verbosity,
-      input,
-      signal: options?.signal,
-      stream: (text) => handler?.([{ type: "text", text }]),
-      finish: (text) => resolve({ role: "assistant", content: [{ type: "text", text }] }),
-    });
-  });
+config.client.textAdapter = (model, signal) =>
+  testClient(
+    async (options, handler) =>
+      new Promise((resolve) => {
+        // Deliberately ignore cancellation to exercise late provider events.
+        const settings = options.modelOptions as {
+          reasoning?: { effort?: Model["effort"] };
+          text?: { verbosity?: Model["verbosity"] };
+        };
+        calls.push({
+          model,
+          effort: settings.reasoning?.effort,
+          verbosity: settings.text?.verbosity,
+          input: options.messages,
+          instructions: JSON.stringify(options.systemPrompts),
+          tools: options.tools?.map((tool) => tool.name) ?? [],
+          signal,
+          stream: (text) => handler([{ type: "text", text }]),
+          finish: (text) => resolve({ role: "assistant", content: [{ type: "text", text }] }),
+          callTool: (name, args) =>
+            resolve({
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_call",
+                  id: crypto.randomUUID(),
+                  name,
+                  arguments: JSON.stringify(args),
+                },
+              ],
+            }),
+        });
+      }),
+  ).textAdapter(model, signal);
 const reads: string[] = [];
 let heldRead: string | undefined;
 let releaseRead: (() => void) | undefined;
@@ -120,11 +148,13 @@ function Fixture() {
       renders: { ...renders },
       results: [...results],
       reads: [...reads],
-      calls: calls.map(({ model, effort, verbosity, input, signal }) => ({
+      calls: calls.map(({ model, effort, verbosity, input, instructions, tools, signal }) => ({
         model,
         effort,
         verbosity,
         input,
+        instructions,
+        tools,
         aborted: signal?.aborted,
       })),
     }),
@@ -142,10 +172,8 @@ function Fixture() {
     },
     stream: (index: number, value: string) => calls[index].stream(value),
     finish: (index: number, value: string) => calls[index].finish(value),
+    callTool: (index: number, name: string, args: object) => calls[index].callTool(name, args),
     stop: chat.stopStreaming,
-    sendHeld: (id: string) => {
-      void chat.sendHeldMessage(id);
-    },
     holdRead: (id: string) => {
       heldRead = `chats/${id}/chat.json`;
       releaseRead = undefined;
@@ -176,6 +204,7 @@ function Fixture() {
       <ListProbe />
       <ActionsProbe />
       <ComposerProbe />
+      <ChatInterrupts />
       <div data-testid="messages">{chat.messages.map((message) => getTextFromContent(message.content)).join("|")}</div>
       <div style={{ paddingTop: 1500 }}>
         {chat.chat?.messages
@@ -196,12 +225,44 @@ function AgentOwner({ children }: { children: ReactNode }) {
   return <AgentContext value={{ currentAgent } as AgentContextType}>{children}</AgentContext>;
 }
 
+const skills = createSkillsProvider(
+  [
+    {
+      name: "reports",
+      plugin: "fixture",
+      description: "Build verified reports",
+      loadContent: () => "Verify every report against its sources.",
+      resources: ["scripts/check.py"],
+      loadResource: () => "print('verified')",
+    },
+  ],
+  { id: "fixture-skills", name: "Skills", description: "Fixture" },
+)!;
+
+function ToolsOwner({ children }: { children: ReactNode }) {
+  const [enabled, setEnabled] = useState(false);
+  window.setChatSkills = setEnabled;
+  return (
+    <ToolsContext
+      value={
+        {
+          providers: enabled ? [skills] : [],
+          coreProviders: [],
+          getProviderState: () => "connected",
+        } as unknown as ToolsContextValue
+      }
+    >
+      {children}
+    </ToolsContext>
+  );
+}
+
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <StrictMode>
     <AgentOwner>
       <ProfileContext value={{ generateInstructions: () => "" } as ProfileContextType}>
-        <ToolsContext value={{ providers: [], coreProviders: [] } as unknown as ToolsContextValue}>
+        <ToolsOwner>
           <AppContext value={{ closeApp: async () => {} } as AppContextType}>
             <ArtifactsProvider>
               <ChatProvider>
@@ -209,7 +270,7 @@ root.render(
               </ChatProvider>
             </ArtifactsProvider>
           </AppContext>
-        </ToolsContext>
+        </ToolsOwner>
       </ProfileContext>
     </AgentOwner>
   </StrictMode>,
@@ -218,6 +279,7 @@ root.render(
 declare global {
   interface Window {
     setChatAgent(agent: Agent | null): void;
+    setChatSkills(enabled: boolean): void;
     chatE2E: {
       state(): {
         ready: boolean;
@@ -228,7 +290,7 @@ declare global {
         error: string | null;
         chats: import("../../../src/shared/types/chat").ChatEntry[];
         messages: Message[];
-        queue: import("../../../src/features/chat/lib/chatQueue").QueuedSend[];
+        queue: import("@tanstack/ai-client").QueuedMessage[];
         pending?: string;
         renders: typeof renders;
         results: typeof results;
@@ -237,7 +299,9 @@ declare global {
           model: string;
           effort?: Model["effort"];
           verbosity?: Model["verbosity"];
-          input: Message[];
+          input: ModelMessage[];
+          instructions: string;
+          tools: string[];
           aborted?: boolean;
         }[];
       };
@@ -250,8 +314,9 @@ declare global {
       send(message: string): void;
       stream(index: number, value: string): void;
       finish(index: number, value: string): void;
+      callTool(index: number, name: string, args: object): void;
       stop(): void;
-      sendHeld(id: string): void;
+
       holdRead(id: string): void;
       readHeld(): boolean;
       releaseRead(): void;

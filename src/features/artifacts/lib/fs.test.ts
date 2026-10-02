@@ -17,7 +17,6 @@ vi.mock("@/shared/lib/opfs", () => opfs);
 
 import { FileSystemManager, resolveArtifactFileSystem } from "./fs";
 import { ArtifactReadWriteManager } from "./artifactFileTools";
-import { AgentInvocationContext } from "@/shared/lib/agent-run-controller";
 import { executeArtifactCode, type SandboxExecutor } from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactRevision } from "@/shared/types/artifact";
@@ -274,7 +273,14 @@ describe("coordinated artifact tools", () => {
   it("reports missing or invalid scripts as execution failures and preserves the workspace", async () => {
     const fs = new FileSystemManager("invalid-script");
     const executor = vi.fn<SandboxExecutor>();
-    for (const args of [{}, { path: "/missing.py" }, { path: "../outside.py" }]) {
+    for (const args of [
+      {},
+      { path: "/missing.py" },
+      { path: "../outside.py" },
+      { path: "/skills/not-selected/run.py" },
+      { code: "print(1)", args: "one argument" },
+      { code: "print(1)", args: [1] },
+    ]) {
       const result = await executeArtifactCode({ fs, executor, args, extension: "py" });
       expect(result.success).toBe(false);
     }
@@ -334,6 +340,42 @@ describe("coordinated artifact tools", () => {
     expect(files.get(path)?.content).toBe("real artifact");
     expect(files.has("/skills/test/resource.txt")).toBe(false);
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
+  });
+
+  it.each(["py", "js", "sh"] as const)(
+    "resolves a selected %s resource by path and preserves its arguments",
+    async (extension) => {
+      const path = `/skills/plugin__sample/scripts/run.${extension}`;
+      const resource = { content: "script body" };
+      setSkillResourceResolver("fs-test-skills", async () => ({ [path]: resource }));
+      const executor = vi.fn<SandboxExecutor>(async (request) => {
+        expect(request).toMatchObject({ code: resource.content, path, args: ["input with spaces.txt", "--flag"] });
+        return { success: true, output: "ok", files: { ...request.files, [path]: { content: "modified resource" } } };
+      });
+      const result = await executeArtifactCode({
+        fs: new FileSystemManager("resource-script"),
+        executor,
+        args: { path: `/home/user${path}`, args: ["input with spaces.txt", "--flag"] },
+        extension,
+      });
+      expect(result.success).toBe(true);
+      expect(files.has(path)).toBe(false);
+      expect(resource.content).toBe("script body");
+      expect(opfs.writeArtifact).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps inline code precedence and runs artifacts at colliding resource paths", async () => {
+    const path = "/skills/test/run.py";
+    files.set(path, { content: "artifact body" });
+    setSkillResourceResolver("fs-test-skills", async () => ({ [path]: { content: "resource body" } }));
+    const executor = vi.fn<SandboxExecutor>(async (request) => ({ success: true, output: request.code }));
+    const fs = new FileSystemManager("script-selection");
+    expect((await executeArtifactCode({ fs, executor, args: { path }, extension: "py" })).output).toBe("artifact body");
+    expect(
+      (await executeArtifactCode({ fs, executor, args: { path, code: "inline body" }, extension: "py" })).output,
+    ).toBe("inline body");
+    expect(executor.mock.calls[1][0].path).toBeUndefined();
   });
 
   it("rejects a stale batch without changing any target, then accepts a reread and own subsequent edits", async () => {
@@ -406,7 +448,7 @@ describe("coordinated artifact tools", () => {
       { file_path: "/a.txt" },
       {
         runId: "child",
-        invocationContext: new AgentInvocationContext().fork("subagent"),
+        invocationContext: { subagentRunId: crypto.randomUUID() },
       },
     );
     const result = await tools
@@ -427,7 +469,7 @@ describe("coordinated artifact tools", () => {
         { file_path: "/a.txt" },
         {
           runId: `child-${i}`,
-          invocationContext: new AgentInvocationContext().fork("subagent"),
+          invocationContext: { subagentRunId: crypto.randomUUID() },
         },
       );
     }
@@ -446,7 +488,7 @@ describe("coordinated artifact tools", () => {
       { file_path: "/new.txt", content: "first" },
       {
         runId: "chat-turn",
-        invocationContext: new AgentInvocationContext(),
+        invocationContext: {},
       },
     );
     const edit = tools.find((tool) => tool.name === "artifacts_edit")!;
@@ -458,7 +500,7 @@ describe("coordinated artifact tools", () => {
     await fs.createFile("/new.txt", "second external");
     const result = await edit.function(
       { edits: [{ file_path: "/new.txt", old_string: "second", new_string: "third" }] },
-      { runId: "next-chat-turn", invocationContext: new AgentInvocationContext() },
+      { runId: "next-chat-turn", invocationContext: {} },
     );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/new.txt")?.content).toBe("second external");

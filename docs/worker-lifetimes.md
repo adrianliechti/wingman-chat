@@ -7,6 +7,7 @@ Cancellation must release resources as well as stop waiting for their results.
 | ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
 | DuckDB worker          | Consumer's database instance        | Consumer disposal; an interrupted query retires the runtime                           |
 | JavaScript worker      | Interpreter execution               | Every execution, including success                                                    |
+| Bash worker            | Interpreter execution               | Every execution, including success                                                    |
 | Python worker          | Interpreter host                    | Failure, cancellation, or one minute idle; successful adjacent runs reuse the runtime |
 | Interpreter RPC        | Execution that started it           | Reply or execution cancellation; both channel endpoints close                         |
 | PDF worker             | Loading task for one document       | Viewer close, extraction/rasterization completion, failure, or cancellation           |

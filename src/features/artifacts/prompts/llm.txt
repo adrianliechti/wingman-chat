@@ -1,10 +1,9 @@
-### LLM helper (`llm`)
+### LLM helper (llm)
+Calls a language model and returns text. Each call has fresh context: no chat history, earlier helper results, or parent tools. Supply all necessary input. The model defaults to the current chat's model.
 
-Both the Python and JavaScript interpreters expose an `llm` helper that calls a language model with a prompt string and returns its text response. By default it uses the model of the current chat; per-call parameters can override it.
+- Python: await llm(text, system="Return one label: positive, negative, or neutral.")
+- JavaScript: await llm(text, { system: "Return one label: positive, negative, or neutral." })
+- Bash: `cat extracted.txt | llm -s "Summarize this report" > summary.md`. `llm "Summarize this" < extracted.txt` includes both the prompt and piped text; neither is discarded. Use `-m/--model`, `-s/--system`, `-e/--effort`, and optional `-o/--output` for a file instead of stdout. Use `--` before a prompt starting with a dash.
+- Optional settings: model (model ID), system (instructions), effort (none, minimal, low, medium, high, xhigh, max). Omit effort unless an override is needed and supported by that model.
 
-- Python: `await llm("your prompt")` — async, returns `str`
-  - Optional keyword arguments: `model` (model id), `system` (system instructions), `effort` (`"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`)
-  - Example: `await llm(text, system="Reply with a single word: positive, negative or neutral.", effort="none")`
-- JavaScript: `await llm("your prompt")` — async, returns a string; an optional second argument is an options object: `await llm(text, { system: "Reply with a single word: positive, negative or neutral.", effort: "none" })` (keys: `model`, `system`, `effort`)
-
-Use it for sub-tasks where another model call is genuinely useful — summarizing intermediate results, classifying or extracting structured information from text, generating short content snippets inside a larger pipeline. Prefer `system` for fixed instructions and keep the prompt to the data being processed. Avoid using it for tasks you can answer directly without an extra round trip.
+Use this for language processing within a larger pipeline, such as classifying records or summarizing extracted text. Put fixed instructions in system and the data in the prompt. The result is model-generated text, not independently verified evidence or guaranteed schema-valid JSON. Avoid an extra call for work you can answer directly.

@@ -6,6 +6,7 @@ import {
   Lock,
   Mic,
   Rocket,
+  RotateCcw,
   ScreenShare,
   Send,
   Sparkles,
@@ -19,7 +20,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChatActions, useChatList, useChatModel, useChatRunState } from "@/features/chat/hooks/useChat";
 import { chatAcceptString, useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
-import { getSavedModel } from "@/features/chat/hooks/useModels";
+import { getConfiguredModel, getSavedModel } from "@/features/chat/hooks/useModels";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -27,10 +28,10 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
-import { useMediaQuery } from "@/shared/hooks/useMediaQuery";
 import { cn } from "@/shared/lib/cn";
 import { DEFAULT_DRIVE_DOWNLOAD_MAX_BYTES, downloadDriveFile } from "@/shared/lib/drives";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
+import { sameModelSettings } from "@/shared/lib/models";
 import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -38,7 +39,7 @@ import type { Content, ImageContent, Message, TextContent, ToolProvider } from "
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
-import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import { EFFORT_LABEL, ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAddMenu } from "./ChatInputAddMenu";
@@ -66,12 +67,18 @@ async function captureScreenAttachment(
 export function ChatInput() {
   const config = getConfig();
 
-  const { sendMessage, stopStreaming, removeQueuedMessage, sendHeldMessage } = useChatActions();
+  const { sendMessage, stopStreaming, removeQueuedMessage } = useChatActions();
   const { models, model, setModel: onModelChange, effort, setEffort, verbosity, setVerbosity } = useChatModel();
   const presets = useMemo(() => resolveModelPresets(config.chat?.presets, models), [config.chat?.presets, models]);
-  const { isResponding, queuedSends } = useChatRunState();
+  // The configured default for new chats; the reset next to the model returns to it.
+  const configuredModel = useMemo(() => getConfiguredModel(models), [models]);
+  const { isResponding, queuedSends, interruptState } = useChatRunState();
   const { chatId, hasMessages, chatLoading, chatError } = useChatList();
-  const { currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
+  const deactivateAgent = useCallback(() => {
+    setCurrentAgent(null);
+    setShowAgentDrawer(false);
+  }, [setCurrentAgent, setShowAgentDrawer]);
   const { isAvailable: artifactsAvailable, fs: artifactsFs } = useArtifacts();
   const { profile } = useSettings();
   const {
@@ -247,9 +254,6 @@ export function ChatInput() {
     [visibleProviders, getProviderState],
   );
 
-  // Touch devices have no hover, so the agent badge opens a dropdown instead.
-  const isTouchDevice = useMediaQuery("(pointer: coarse)");
-
   // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
@@ -280,7 +284,7 @@ export function ChatInput() {
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (chatLoading || chatError) return;
+      if (chatLoading || chatError || interruptState?.interrupts.length) return;
 
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
@@ -333,7 +337,9 @@ export function ChatInput() {
           content: messageContent,
         };
 
-        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
+        void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
+          notify.error("Message failed", error),
+        );
         setContent("");
         clearAttachments();
       }
@@ -349,6 +355,7 @@ export function ChatInput() {
       sendMessage,
       chatLoading,
       chatError,
+      interruptState,
       clearAttachments,
     ],
   );
@@ -482,30 +489,19 @@ export function ChatInput() {
       {queuedSends.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2" aria-label="Queued messages">
           {queuedSends.map((item) => {
-            const label = item.message.content.find((part) => part.type === "text")?.text.trim() || "Attachment";
+            const content = typeof item.content === "string" ? item.content : item.content.content;
+            const label =
+              (typeof content === "string" ? content : content.find((part) => part.type === "text")?.content)?.trim() ||
+              "Attachment";
             return (
               <div
                 key={item.id}
-                className={cn(
-                  "flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-                  item.status === "held"
-                    ? "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
-                    : "border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300",
-                )}
+                className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs border-neutral-200 bg-white/70 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/70 dark:text-neutral-300"
               >
-                <span className="max-w-56 truncate">{item.status === "held" ? `Held: ${label}` : label}</span>
-                {item.status === "held" && (
-                  <button
-                    type="button"
-                    className="font-medium hover:underline"
-                    onClick={() => void sendHeldMessage(item.id)}
-                  >
-                    Send
-                  </button>
-                )}
+                <span className="max-w-56 truncate">{label}</span>
                 <button
                   type="button"
-                  aria-label={item.status === "held" ? "Discard held message" : "Remove queued message"}
+                  aria-label="Remove queued message"
                   className="rounded-full p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => removeQueuedMessage(item.id)}
                 >
@@ -729,176 +725,133 @@ export function ChatInput() {
                 />
               )}
               {models.length > 0 && !isRealtimeSelected && !currentAgent && (
-                <ModelDropdown
-                  models={models}
-                  value={model?.id ?? ""}
-                  onChange={(modelId) => {
-                    const m = models.find((m) => m.id === modelId);
-                    if (m) onModelChange(m);
-                  }}
-                  effort={
-                    model?.supportedEfforts?.length
-                      ? {
-                          options: model.supportedEfforts,
-                          value: effort ?? null,
-                          defaultValue: model.defaultEffort,
-                          onChange: setEffort,
-                        }
-                      : undefined
-                  }
-                  verbosity={{
-                    value: verbosity ?? null,
-                    defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
-                    onChange: setVerbosity,
-                  }}
-                  presets={
-                    presets.length > 1
-                      ? {
-                          steps: presets,
-                          value: modelPresetIndex(presets, model),
-                          onChange: (index) => {
-                            const { model: next, effort, verbosity } = presets[index];
-                            onModelChange({ ...next, effort, verbosity });
-                          },
-                        }
-                      : undefined
-                  }
-                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-                  trigger={({ getProps }) => (
-                    <button
-                      type="button"
-                      {...getProps()}
-                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                    >
-                      <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
-                      </Tooltip>
-                    </button>
-                  )}
-                />
-              )}
-
-              {/* Agent picker badge: shows a lock icon and retries sign-in when auth is needed. */}
-              {currentAgent &&
-                !(isRealtimeSelected && isListening) &&
-                (isTouchDevice ? (
-                  <DropdownMenu
-                    anchor="bottom start"
-                    trigger={
-                      <MenuButton
-                        className={cn(
-                          "flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          unauthorizedProviders.length > 0
-                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-                        )}
-                      >
-                        {authenticatingProviders.length > 0 ? (
-                          <LoaderCircle size={14} className="shrink-0 animate-spin" />
-                        ) : unauthorizedProviders.length > 0 ? (
-                          <Lock size={14} className="shrink-0" />
-                        ) : (
-                          <Bot size={14} className="shrink-0" />
-                        )}
-                        <span className="truncate max-w-28">{currentAgent.name}</span>
-                      </MenuButton>
+                <div className="flex items-center gap-0.5 min-w-0">
+                  <ModelDropdown
+                    models={models}
+                    value={model?.id ?? ""}
+                    onChange={(modelId) => {
+                      const m = models.find((m) => m.id === modelId);
+                      if (m) onModelChange(m);
+                    }}
+                    agents={
+                      agents.length > 0
+                        ? {
+                            items: agents.map((a) => ({ id: a.id, name: a.name })),
+                            value: null,
+                            onChange: (id) => setCurrentAgent(agents.find((a) => a.id === id) ?? null),
+                            // The drawer shows the active agent, so opening one selects it.
+                            onOpen: (id) => {
+                              setCurrentAgent(agents.find((a) => a.id === id) ?? null);
+                              setAgentDrawerView("details");
+                              setShowAgentDrawer(true);
+                            },
+                          }
+                        : undefined
                     }
-                  >
-                    {unauthorizedProviders.length > 0 && (
-                      <DropdownMenuItem
-                        icon={<Lock size={14} />}
-                        render={({ className, children }) => (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              for (const provider of unauthorizedProviders) {
-                                void setProviderEnabled(provider.id, true);
-                              }
-                            }}
-                            className={cn(className, "text-amber-600 dark:text-amber-400")}
-                          >
-                            {children}
-                          </button>
-                        )}
+                    effort={
+                      model?.supportedEfforts?.length
+                        ? {
+                            options: model.supportedEfforts,
+                            value: effort ?? null,
+                            defaultValue: model.defaultEffort,
+                            onChange: setEffort,
+                          }
+                        : undefined
+                    }
+                    verbosity={{
+                      value: verbosity ?? null,
+                      defaultValue: models.find((m) => m.id === model?.id)?.verbosity,
+                      onChange: setVerbosity,
+                    }}
+                    presets={
+                      presets.length > 1
+                        ? {
+                            steps: presets,
+                            value: modelPresetIndex(presets, model),
+                            onChange: (index) => {
+                              const { model: next, effort, verbosity } = presets[index];
+                              onModelChange({ ...next, effort, verbosity });
+                            },
+                          }
+                        : undefined
+                    }
+                    dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                    trigger={({ getProps }) => (
+                      <button
+                        type="button"
+                        {...getProps()}
+                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-56 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       >
-                        Sign in ({unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")})
-                      </DropdownMenuItem>
+                        <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
+                          <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                          <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                        </Tooltip>
+                      </button>
                     )}
-                    <DropdownMenuItem
-                      icon={<Bot size={14} />}
-                      onClick={() => {
-                        setAgentDrawerView("details");
-                        setShowAgentDrawer(true);
-                      }}
-                    >
-                      Open agent
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      icon={<X size={14} />}
-                      destructive
-                      onClick={() => {
-                        setCurrentAgent(null);
-                        setShowAgentDrawer(false);
-                      }}
-                    >
-                      Deselect agent
-                    </DropdownMenuItem>
-                  </DropdownMenu>
-                ) : (
-                  <div className="group flex items-center gap-0.5">
+                  />
+                  {configuredModel && model && !sameModelSettings(model, configuredModel) && (
                     <Tooltip
-                      content={
-                        unauthorizedProviders.length > 0
-                          ? `${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`
-                          : `${currentAgent.name} is active`
-                      }
+                      content={`Reset to ${[configuredModel.name ?? configuredModel.id, configuredModel.effort && EFFORT_LABEL[configuredModel.effort]].filter(Boolean).join(" ")}`}
                       side="bottom"
+                      className="flex shrink-0"
                     >
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (unauthorizedProviders.length > 0) {
-                            for (const provider of unauthorizedProviders) {
-                              void setProviderEnabled(provider.id, true);
-                            }
-                            return;
+                        onClick={() => onModelChange(configuredModel)}
+                        aria-label="Reset to the default model"
+                        className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
+              {/* Active agent: a plain label whose only action is turning the agent off.
+                  When a sign-in is pending, the label itself retries it. */}
+              {currentAgent && !(isRealtimeSelected && isListening) && (
+                <div className="flex items-center gap-0.5 min-w-0">
+                  {unauthorizedProviders.length > 0 ? (
+                    <Tooltip
+                      content={`${currentAgent.name} needs sign-in for ${unauthorizedProviders.map((p: ToolProvider) => p.name).join(", ")}`}
+                      side="bottom"
+                      className="min-w-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          for (const provider of unauthorizedProviders) {
+                            void setProviderEnabled(provider.id, true);
                           }
-                          setAgentDrawerView("details");
-                          setShowAgentDrawer(true);
                         }}
-                        className={cn(
-                          "flex items-center gap-1 pl-1 pr-0.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          unauthorizedProviders.length > 0
-                            ? "text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                            : "text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
-                        )}
+                        className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 rounded-lg text-xs font-medium transition-colors text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
                       >
                         {authenticatingProviders.length > 0 ? (
                           <LoaderCircle size={14} className="shrink-0 animate-spin" />
-                        ) : unauthorizedProviders.length > 0 ? (
-                          <Lock size={14} className="shrink-0" />
                         ) : (
-                          <Bot size={14} className="shrink-0" />
+                          <Lock size={14} className="shrink-0" />
                         )}
-                        <span className="truncate max-w-28">{currentAgent.name}</span>
+                        <span className="truncate min-w-0">{currentAgent.name}</span>
                       </button>
                     </Tooltip>
+                  ) : (
+                    <span className="flex items-center gap-1.5 pl-1 min-w-0 max-w-56 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                      <Bot size={14} className="shrink-0" />
+                      <span className="truncate min-w-0">{currentAgent.name}</span>
+                    </span>
+                  )}
+                  <Tooltip content={`Turn off ${currentAgent.name}`} side="bottom" className="flex shrink-0">
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setCurrentAgent(null);
-                        setShowAgentDrawer(false);
-                      }}
-                      className="p-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      title="Deselect agent"
+                      onClick={deactivateAgent}
+                      aria-label={`Turn off ${currentAgent.name}`}
+                      className="shrink-0 p-0.5 rounded-md text-neutral-400 transition-colors hover:text-neutral-700 hover:bg-neutral-200/70 dark:text-neutral-500 dark:hover:text-neutral-200 dark:hover:bg-white/10"
                     >
                       <X size={14} />
                     </button>
-                  </div>
-                ))}
+                  </Tooltip>
+                </div>
+              )}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
                   type="button"
@@ -1023,12 +976,16 @@ export function ChatInput() {
                     </button>
                   )}
                 </>
-              ) : isResponding ? (
+              ) : isResponding || interruptState?.interrupts.length ? (
                 <div className="flex items-center">
                   {content.trim() && (
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
+                      disabled={!!interruptState?.interrupts.length}
+                      aria-label={
+                        interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
+                      }
                       title="Queue message"
                     >
                       <Send size={16} />

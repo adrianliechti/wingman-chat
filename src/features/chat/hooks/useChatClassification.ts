@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug } from "@/shared/config";
+import { categorySlug, getConfig, riskSlug } from "@/shared/config";
 import { isAbortError } from "@/shared/lib/errors";
 import { minimalEffort } from "@/shared/lib/models";
 import { isUserMessage } from "@/shared/lib/requestContext";
 import type { Chat, Message, Model } from "@/shared/types/chat";
 import type { ConsentResult, PendingConsent } from "@/shared/types/elicitation";
-import { sanitizeForClassification } from "../lib/chatHistory";
 
 interface Options {
   models: Model[];
@@ -38,7 +37,7 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
       title,
       hasMessage,
       currentModel,
-      abortController,
+      signal,
     }: {
       id: string;
       runId: string;
@@ -46,55 +45,63 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
       title?: string;
       hasMessage: boolean;
       currentModel: Model;
-      abortController: AbortController;
+      signal?: AbortSignal;
     }) => {
       latestRunByChatRef.current.set(id, runId);
-      // Kick off the combined title + classification call in parallel with the model turn so
-      // the consent/risk overlay can appear as soon as the user hits send, without waiting for
-      // the stream. When categories or risks are configured we run every turn for detection
-      // (and refresh the title every turn for free). With neither configured we keep the
-      // original initial + every-3-user-turns cadence.
+      if (!hasMessage) return;
+      const isCurrentRun = () => !signal?.aborted && latestRunByChatRef.current.get(id) === runId;
+      // System One only returns typed answers, so the title stays a small LLM call
+      // on the initial turn and every third user turn.
+      const userTurnCount = conversation.filter(isUserMessage).length;
+      if (!title || userTurnCount % 3 === 1) {
+        const titleModel = config.chat?.summarizer || currentModel.id;
+        client
+          .generateTitle(titleModel, conversation, {
+            effort: minimalEffort(models.find((model) => model.id === titleModel) ?? titleModel),
+            signal,
+          })
+          .then((title) => {
+            if (title && isCurrentRun()) updateChat(id, () => ({ title }));
+          })
+          .catch((err) => {
+            if (!isAbortError(err)) console.error("generateTitle failed", err);
+          });
+      }
+
+      // Categories and risks are scored by System One on every prompt, in parallel
+      // with the model turn, so the consent/risk overlay appears as soon as the
+      // user hits send.
       const categoryConfigs = config.chat?.categories ?? [];
       const riskConfigs = config.chat?.risks ?? [];
       const classificationCfg = config.chat?.classification;
       const defaultThreshold = classificationCfg?.threshold ?? 0.5;
-      const hasCategories = categoryConfigs.length > 0;
-      const hasRisks = riskConfigs.length > 0;
-      const userTurnCount = conversation.filter(isUserMessage).length;
-      const needsTitle = !title || userTurnCount % 3 === 1;
-      if (hasMessage && (needsTitle || hasCategories || hasRisks)) {
+      if (categoryConfigs.length || riskConfigs.length) {
+        // The gateway adapts completion models when no native System One model is configured.
         const classificationModel = classificationCfg?.model || config.chat?.summarizer || currentModel.id;
-        const classificationEffort =
-          classificationCfg?.effort ??
-          minimalEffort(models.find((model) => model.id === classificationModel) ?? classificationModel);
         client
           .classifyChat(
             classificationModel,
-            // Classification concerns user intent, not tool implementation or
-            // output. Keep only recent prose and lightweight media placeholders.
-            sanitizeForClassification(conversation),
+            conversation,
             categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
-            riskConfigs.map((r) => ({ id: riskSlug(r.name), description: r.description })),
-            { effort: classificationEffort, signal: abortController.signal },
+            riskConfigs.map((r) => ({ id: riskSlug(r.name), name: r.name, description: r.description })),
+            { effort: classificationCfg?.effort, signal },
           )
-          .then(({ title, categories: detectedCategories, risks: detectedRisks }) => {
-            if (abortController.signal.aborted || latestRunByChatRef.current.get(id) !== runId) return;
-            if (title) {
-              updateChat(id, () => ({ title }));
-            }
+          .then(({ categories: detectedCategories, risks: detectedRisks }) => {
+            if (!isCurrentRun()) return;
 
             // Risks take precedence over category consent — they're more severe.
             let next: PendingConsent | null = null;
-            if (detectedRisks.length > 0 && hasRisks) {
+            if (detectedRisks.length > 0) {
               const acknowledged = acknowledgedRisksRef.current.get(id) ?? new Set<string>();
               const matchedRisk = detectedRisks
-                .map((match) => {
+                .flatMap((match) => {
                   const cfg = riskConfigs.find((r) => riskSlug(r.name) === match.id);
-                  return cfg ? { cfg, confidence: match.confidence } : null;
+                  return cfg &&
+                    match.confidence >= (cfg.threshold ?? defaultThreshold) &&
+                    !acknowledged.has(riskSlug(cfg.name))
+                    ? [{ cfg, confidence: match.confidence }]
+                    : [];
                 })
-                .filter((m): m is { cfg: RiskConfig; confidence: number } => m !== null)
-                .filter(({ cfg, confidence }) => confidence >= (cfg.threshold ?? defaultThreshold))
-                .filter(({ cfg }) => !acknowledged.has(riskSlug(cfg.name)))
                 // Show the highest-confidence unacknowledged risk first.
                 .sort((a, b) => b.confidence - a.confidence)[0];
 
@@ -115,37 +122,34 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
               }
             }
 
-            if (!next && detectedCategories.length > 0 && hasCategories) {
+            const category = detectedCategories[0];
+            if (!next && category) {
               const consented = consentedCategoriesRef.current.get(id) ?? new Set<string>();
-              const toAsk = detectedCategories
-                .map((match) => {
-                  const cfg = categoryConfigs.find((c) => categorySlug(c.name) === match.id);
-                  return cfg ? { cfg, confidence: match.confidence } : null;
-                })
-                .filter((m): m is { cfg: CategoryConfig; confidence: number } => m !== null)
-                .filter(({ cfg, confidence }) => confidence >= (cfg.threshold ?? defaultThreshold))
-                .find(({ cfg }) => !!cfg.consent && !consented.has(categorySlug(cfg.name)));
+              const toAsk = categoryConfigs.find(
+                (cfg) =>
+                  categorySlug(cfg.name) === category.id &&
+                  category.confidence >= (cfg.threshold ?? defaultThreshold) &&
+                  cfg.consent &&
+                  !consented.has(category.id),
+              );
 
               if (toAsk) {
-                const customText = typeof toAsk.cfg.consent === "string" ? toAsk.cfg.consent : null;
+                const customText = typeof toAsk.consent === "string" ? toAsk.consent : null;
                 next = {
                   kind: "category",
-                  id: categorySlug(toAsk.cfg.name),
-                  name: toAsk.cfg.name,
+                  id: category.id,
+                  name: toAsk.name,
                   consent: {
-                    message:
-                      customText ?? `This conversation appears to be about "${toAsk.cfg.name}". Please acknowledge.`,
+                    message: customText ?? `This conversation appears to be about "${toAsk.name}". Please acknowledge.`,
                   },
                   resolve: () => {},
                 };
               }
             }
 
-            if (next && chatIdRef.current === id) {
-              if (pendingRef.current?.chatId !== id) {
-                pendingRef.current = { chatId: id, consent: next };
-                setPendingConsent(next);
-              }
+            if (chatIdRef.current === id) {
+              pendingRef.current = next ? { chatId: id, consent: next } : null;
+              setPendingConsent(next);
             }
           })
           .catch((err) => {

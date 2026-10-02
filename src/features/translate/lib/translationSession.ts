@@ -3,6 +3,7 @@ import { downloadFromUrl, formatBytes } from "@/shared/lib/utils";
 
 interface TranslationInput {
   sourceText: string;
+  provider: string;
   targetLang: string;
   tone: string;
   style: string;
@@ -37,6 +38,7 @@ export class TranslationSession {
   private readonly options: TranslationOptions;
   private state: TranslationState = {
     sourceText: "",
+    provider: "",
     targetLang: "en",
     tone: "",
     style: "",
@@ -48,9 +50,14 @@ export class TranslationSession {
   private request?: { controller: AbortController; key: string; file: File | null; promise: Promise<void> };
   private completed?: { key: string; file: File | null };
 
-  constructor(client: Pick<Client, "translate" | "rewriteText">, options: TranslationOptions = {}) {
+  constructor(
+    client: Pick<Client, "translate" | "rewriteText">,
+    options: TranslationOptions = {},
+    initial: Partial<Pick<TranslationInput, "provider" | "targetLang">> = {},
+  ) {
     this.client = client;
     this.options = options;
+    this.state = { ...this.state, ...initial };
   }
 
   getSnapshot = (): TranslationState => this.state;
@@ -104,7 +111,7 @@ export class TranslationSession {
 
   translate = (): Promise<void> => {
     const input = this.state;
-    const key = JSON.stringify([input.sourceText, input.targetLang, input.tone, input.style]);
+    const key = JSON.stringify([input.sourceText, input.provider, input.targetLang, input.tone, input.style]);
     const file = input.selectedFile;
     clearTimeout(this.timer);
     this.timer = undefined;
@@ -136,7 +143,9 @@ export class TranslationSession {
     const promise = Promise.resolve().then(async () => {
       try {
         signal.throwIfAborted();
-        let result = await this.client.translate(input.targetLang, file ?? input.sourceText, { signal });
+        let result = await this.client.translate(input.provider, input.targetLang, file ?? input.sourceText, {
+          signal,
+        });
         signal.throwIfAborted();
         if (typeof result === "string") {
           if (!file && (input.tone || input.style)) {
