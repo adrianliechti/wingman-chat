@@ -1,12 +1,13 @@
 import type { ContentPart, MessagePart, SubagentPart, UIMessage } from "@tanstack/ai";
 import type { GatewayTextSegment } from "./gatewayText";
 import { serializeToolResultForApi } from "./utils";
+import { formatArtifactSelection } from "./artifactSelection";
+import { packGatewayReasoning, readGatewayReasoning } from "./reasoning";
 import {
   readSignature,
   tagSignature,
   type Content,
   type Message,
-  type ReasoningContent,
   type Signature,
   type ToolResultContent,
 } from "../types/chat";
@@ -50,23 +51,6 @@ function subagentSignature(subagent: SubagentPart["subagent"]) {
     ...routing
   } = subagent;
   return aiSignature(routing satisfies SubagentRouting);
-}
-
-/** The gateway's native adapter packs these existing reasoning fields as JSON. */
-export function reasoningState(signature?: string): Partial<Pick<ReasoningContent, "id" | "encryptedContent">> {
-  if (!signature) return {};
-  try {
-    const value: unknown = JSON.parse(signature);
-    if (!value || typeof value !== "object") return {};
-    return {
-      ...("id" in value && typeof value.id === "string" ? { id: value.id } : {}),
-      ...("encrypted_content" in value && typeof value.encrypted_content === "string"
-        ? { encryptedContent: value.encrypted_content }
-        : {}),
-    };
-  } catch {
-    return {};
-  }
 }
 
 /** Storage/UI boundary. Existing Wingman conversations stay readable; AI state is native TanStack. */
@@ -118,13 +102,17 @@ export function toAIMessages(
               type: "thinking",
               content: part.summary ?? part.text,
               stepId: part.id,
-              signature:
-                (!model || part.model === model) &&
-                !message.content.some((item) => item.type === "tool_call" && !answeredCalls.has(item.id))
-                  ? part.encryptedContent
-                    ? JSON.stringify({ id: part.id, encrypted_content: part.encryptedContent })
-                    : undefined
-                  : undefined,
+              signature: packGatewayReasoning({
+                id: part.id,
+                text: part.text,
+                summary: part.summary,
+                model: part.model,
+                encryptedContent:
+                  (!model || part.model === model) &&
+                  !message.content.some((item) => item.type === "tool_call" && !answeredCalls.has(item.id))
+                    ? part.encryptedContent
+                    : undefined,
+              }),
             },
           ];
         case "tool_call":
@@ -169,7 +157,7 @@ export function toAIMessages(
           return [
             {
               type: "text",
-              content: `Selected text from ${part.path}:\n${part.text}`,
+              content: `\n${formatArtifactSelection(part)}`,
               metadata: { wingmanContent: part },
             },
           ];
@@ -311,14 +299,16 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
             case "document":
             case "video":
               return fromAIContent(part);
-            case "thinking":
+            case "thinking": {
+              const state = readGatewayReasoning(part.signature);
               return [
                 {
                   type: "reasoning",
                   id: part.stepId ?? message.id,
                   text: part.content,
-                  ...reasoningState(part.signature),
+                  ...state,
                   model:
+                    state.model ??
                     (message.metadata?.wingmanReasoningModels as Record<string, string> | undefined)?.[
                       part.stepId ?? message.id
                     ] ??
@@ -326,6 +316,7 @@ export function fromAIMessages(messages: UIMessage[], runId?: string, model?: st
                     model,
                 },
               ];
+            }
             case "tool-call":
               return [
                 {

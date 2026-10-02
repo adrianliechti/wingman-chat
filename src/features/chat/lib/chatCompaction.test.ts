@@ -84,6 +84,7 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
     if (options.systemPrompts?.includes(instructions)) {
       summaries++;
       expect(JSON.stringify(options.messages)).not.toContain("Current workspace");
+      expect(options.messages.at(-1)).toMatchObject({ role: "user", content: "Summarize the preceding conversation." });
       return { role: "assistant", content: [{ type: "text", text: "Earlier evidence was verified." }] };
     }
     turns++;

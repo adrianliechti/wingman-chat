@@ -122,7 +122,6 @@ export function useChatRun({
       const runId = runContext?.runId ?? crypto.randomUUID();
       const conversation = metadata.read(
         nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
-        model.id,
       );
       const outgoing = conversation.findLast(isUserMessage);
       const loadAttachments = createAttachmentLoader(id);
