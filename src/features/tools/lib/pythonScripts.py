@@ -2,6 +2,7 @@
 import ast as _script_ast
 import importlib as _script_importlib
 import json as _script_json
+import linecache as _script_linecache
 import sys as _script_sys
 import types as _script_types
 from pathlib import Path as _ScriptPath
@@ -90,6 +91,9 @@ def _wingman_script_scope(filename, args_json):
     _script_importlib.invalidate_caches()
 
     def close():
+        # Pyodide has formatted any exception before JS calls close(). Keep
+        # source lines for that traceback, then discard them between chats.
+        _script_linecache.cache.pop("<exec>", None)
         # Local modules must not leak stale code or data into another run/chat.
         # Keep expensive bundled-library imports cached in the reusable runtime.
         local_modules = []
@@ -112,8 +116,13 @@ def _wingman_script_scope(filename, args_json):
 
 
 async def _wingman_run_script(code, namespace, filename):
+    if not filename:
+        # Inline code has no file behind it, so register its source for
+        # tracebacks; otherwise frames show a line number without the line.
+        filename = "<exec>"
+        _script_linecache.cache[filename] = (len(code), None, code.splitlines(True), filename)
     try:
-        return await _script_eval(code, globals=namespace, filename=filename or "<exec>")
+        return await _script_eval(code, globals=namespace, filename=filename)
     except SystemExit as error:
         if error.code is not None and error.code != 0:
             raise RuntimeError(f"Script exited with status {error.code}") from None

@@ -91,12 +91,15 @@ export function ExecutionEditor({
               </button>
             </div>
             <div className="flex-1 overflow-auto px-3 py-2 font-mono text-xs text-neutral-600 dark:text-neutral-400">
-              <pre
-                className={
-                  result.success ? "whitespace-pre-wrap" : "whitespace-pre-wrap text-red-500/80 dark:text-red-400/70"
-                }
-              >
-                {result.success ? result.output : result.error}
+              <pre className="whitespace-pre-wrap">
+                {result.success ? (
+                  result.output
+                ) : (
+                  <>
+                    {result.output.trim() ? `${result.output.trim()}\n\n` : ""}
+                    <span className="text-red-500/80 dark:text-red-400/70">{result.error}</span>
+                  </>
+                )}
               </pre>
             </div>
           </ResizablePanel>

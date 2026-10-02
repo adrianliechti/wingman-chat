@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveScriptLanguage } from "./scriptLanguage";
+import { normalizeScriptLanguage, resolveScriptLanguage } from "./scriptLanguage";
 
 describe("script interpreter selection", () => {
   it.each([
@@ -33,5 +33,20 @@ describe("script interpreter selection", () => {
     );
     expect(() => resolveScriptLanguage(undefined, "/scripts/bash", "echo hi")).toThrow("Cannot detect");
     expect(() => resolveScriptLanguage("ruby", "/script.py", "")).toThrow("Unsupported script language");
+  });
+});
+
+describe("normalizeScriptLanguage", () => {
+  it("accepts common spellings of the three runtimes", () => {
+    expect(resolveScriptLanguage("Python3", undefined, "")).toBe("python");
+    expect(resolveScriptLanguage(" js ", undefined, "")).toBe("javascript");
+    expect(resolveScriptLanguage("node", undefined, "")).toBe("javascript");
+    expect(resolveScriptLanguage("sh", undefined, "")).toBe("bash");
+    expect(normalizeScriptLanguage("ruby")).toBeUndefined();
+    expect(() => resolveScriptLanguage("ruby", undefined, "")).toThrow(/Unsupported/);
+  });
+
+  it("treats an empty language like an omitted one", () => {
+    expect(resolveScriptLanguage("", "/run.py", "")).toBe("python");
   });
 });

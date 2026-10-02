@@ -5,8 +5,8 @@
  *
  * Boots a real Pyodide runtime in Node pointed at the bundle (indexURL), then
  * loads packages purely from the (injected) pyodide-lock.json — no network, no
- * micropip. The `loadFor` helper mirrors the worker's loading strategy
- * (loadPackagesFromImports + tzdata detection), so this also
+ * micropip. The `loadFor` helper uses the worker's loading strategy
+ * (static imports + bundled optional engines + tzdata detection), so this also
  * exercises that strategy, not just the lock. Proves that:
  *   - base-interpreter stdlib (sqlite3, ssl, lzma) imports with nothing to load
  *   - tzdata is pulled in for zoneinfo/pandas tz use (never imported by name)
@@ -22,13 +22,11 @@
 
 import path from "node:path";
 import { loadPyodide, version } from "pyodide";
+import { loadPythonPackages } from "../src/features/tools/lib/pythonPackages.ts";
 
 // Same version-scoped path the worker derives; see bundle-pyodide-packages.mjs.
 const indexURL = `${path.resolve("public/pyodide", version)}/`;
 const light = process.argv.includes("--light");
-
-// Keep in sync with TZDATA_USAGE in interpreter.worker.ts.
-const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
 
 // [name, code, { heavy? }]
 /** @type {Array<[string, string, ({ heavy?: boolean })?]>} */
@@ -180,11 +178,9 @@ with duckdb.connect("analysis.duckdb") as con:
 const py = await loadPyodide({ indexURL });
 const warn = (m) => console.warn(`  [warn] ${m}`);
 
-// Mirrors interpreter.worker.ts: imports auto-load; tzdata is data-only and
-// therefore needs the small usage detector below.
+// Exercise the same static-import and optional-engine loader as the worker.
 async function loadFor(code) {
-  await py.loadPackagesFromImports(code, { errorCallback: warn });
-  if (TZDATA_USAGE.test(code)) await py.loadPackage("tzdata", { errorCallback: warn });
+  await loadPythonPackages(py, [code], warn);
 }
 
 let passed = 0;

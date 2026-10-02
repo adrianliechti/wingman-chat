@@ -33,9 +33,31 @@ function languageFromShebang(code: string): ScriptLanguage | undefined {
 }
 
 /** Detect only from explicit metadata, never by guessing the source syntax. */
+/** Spellings models send for the three runtimes. */
+const LANGUAGE_ALIASES: Record<string, ScriptLanguage> = {
+  python: "python",
+  python3: "python",
+  py: "python",
+  javascript: "javascript",
+  js: "javascript",
+  mjs: "javascript",
+  node: "javascript",
+  nodejs: "javascript",
+  bash: "bash",
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+};
+
+export function normalizeScriptLanguage(language: unknown): ScriptLanguage | undefined {
+  if (typeof language !== "string") return undefined;
+  return LANGUAGE_ALIASES[language.trim().toLowerCase()];
+}
+
 export function resolveScriptLanguage(language: unknown, path: string | undefined, code: string): ScriptLanguage {
-  if (language !== undefined) {
-    if (language === "python" || language === "javascript" || language === "bash") return language;
+  if (language !== undefined && language !== null && language !== "") {
+    const normalized = normalizeScriptLanguage(language);
+    if (normalized) return normalized;
     throw new Error("Unsupported script language. Use python, javascript, or bash.");
   }
   if (!path) throw new Error("Inline code requires language: python, javascript, or bash.");

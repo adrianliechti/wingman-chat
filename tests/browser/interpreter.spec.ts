@@ -397,6 +397,80 @@ test("Python script errors include the filename and failed exits never commit fi
   expect(results.exit.files).toEqual({});
 });
 
+test("Python inline source is cleared between chats after successful and failed runs", async ({ page }) => {
+  await openFixture(page);
+  for (const fails of [false, true]) {
+    const first = await page.evaluate(
+      (fails) =>
+        window.interpreterE2E.runScript("python", `private-inline-${fails}`, {
+          code: fails
+            ? 'print("before failure")\nraise ValueError("private source marker")'
+            : 'private_value = "private source marker"\nprint("complete")',
+        }),
+      fails,
+    );
+    expect(first.success, first.error).toBe(!fails);
+    if (fails) {
+      expect(first.output).toBe("before failure");
+      // Cleanup must happen after Pyodide formats the traceback's source lines.
+      expect(first.error).toContain('    raise ValueError("private source marker")');
+    }
+    const next = await page.evaluate(
+      (fails) =>
+        window.interpreterE2E.runScript(
+          "python",
+          `inspect-cache-${fails}`,
+          { path: "/inspect.py" },
+          { "/inspect.py": { content: 'import linecache\nprint(repr(linecache.getlines("<exec>")))' } },
+        ),
+      fails,
+    );
+    expect(next.success, next.error).toBe(true);
+    expect(next.output).toBe("[]");
+  }
+});
+
+test("pandas preloads bundled optional engines on a cold runtime", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.runScript("python", "pandas-optional-engines", {
+      code: `import pandas as pd
+from io import BytesIO
+import importlib
+frame = pd.DataFrame({"value": [21, 42]})
+excel = BytesIO()
+frame.to_excel(excel, index=False, engine="xlsxwriter")
+excel.seek(0)
+assert pd.read_excel(excel).equals(frame)
+excel.seek(0)
+assert pd.read_excel(excel, engine="calamine").equals(frame)
+parquet = BytesIO()
+frame.to_parquet(parquet, index=False)
+parquet.seek(0)
+assert pd.read_parquet(parquet).equals(frame)
+assert "42" in frame.to_markdown(index=False)
+assert hasattr(importlib.import_module("xlrd"), "open_workbook")
+print("optional engines ready")`,
+    }),
+  );
+  expect(result.success, result.error).toBe(true);
+  expect(result.output).toBe("optional engines ready");
+});
+
+test("Bash failure diagnostics appear once and keep recovery hints", async ({ page }) => {
+  await openFixture(page);
+  const result = await page.evaluate(() =>
+    window.interpreterE2E.runScript("bash", "bash-failure-output", {
+      code: "echo progress; python3 --version",
+    }),
+  );
+  expect(result.success).toBe(false);
+  expect(result.output).toBe("progress\n");
+  expect(result.error).not.toContain("progress");
+  expect(result.error).toMatch(/command not (?:found|available)/);
+  expect(result.error).toContain("language python");
+});
+
 for (const source of ["artifact", "plugin"] as const) {
   test(`JavaScript ${source} scripts receive arguments and read adjacent resources through VFS`, async ({ page }) => {
     await openFixture(page);

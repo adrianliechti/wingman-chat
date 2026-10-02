@@ -21,6 +21,7 @@ import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw"
 import { AGENT_CODE_OUTPUT_MAX_BYTES } from "@/features/tools/lib/executionLimits";
 import { getConfig } from "@/shared/config";
 import { executeScript } from "../lib/executeScript";
+import { formatExecutionFailure } from "../lib/executeArtifactCode";
 import { SCRIPT_EXECUTION_DISPLAY } from "../lib/executionToolDisplay";
 import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
@@ -56,7 +57,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       });
       return result.success
         ? [{ type: "text" as const, text: result.output }]
-        : executionFailure(options.context, result.error || "Unknown execution error");
+        : executionFailure(options.context, formatExecutionFailure(result));
     };
 
     const executionTools: Tool[] = [

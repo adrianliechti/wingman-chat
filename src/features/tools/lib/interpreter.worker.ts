@@ -33,6 +33,8 @@ import type {
 } from "./interpreterProtocol";
 import { NO_OUTPUT_MESSAGE } from "./interpreterProtocol";
 import { callMainThread, describeError } from "./interpreterRpc";
+import { formatPythonTraceback } from "./pythonTraceback";
+import { loadPythonPackages } from "./pythonPackages";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
 import PDF_RASTERIZE_SHIM from "./pdfRasterizeShim.py?raw";
@@ -105,14 +107,6 @@ function lockDownUserNetwork(): void {
   } catch {
     // navigator may expose read-only properties.
   }
-}
-
-// zoneinfo/pandas read the IANA tz db from `tzdata` but never import it by name,
-// so find_imports misses it; detect timezone usage and load tzdata explicitly.
-// (pytz ships its own data and is skipped.)
-const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\btz\s*=\s*['"]/;
-function needsTzdata(code: string): boolean {
-  return TZDATA_USAGE.test(code);
 }
 
 // This chunk is content-hashed, the bundle it loads is not — so the bundle path
@@ -299,24 +293,23 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, code: string, fil
     discovered.destroy();
   }
 
-  await withRuntimeFetch(async () => {
-    // All imports resolve from the lock index by name; transitive deps via `depends`.
-    // Scan each source separately: joining scripts can change their syntax.
-    for (const source of sources) await pyodide.loadPackagesFromImports(source, { errorCallback: warn });
+  await withRuntimeFetch(() => loadPythonPackages(pyodide, sources, warn));
+}
 
-    // tzdata is data-only and therefore invisible to the import scan.
-    if (sources.some(needsTzdata)) await pyodide.loadPackage("tzdata", { errorCallback: warn });
-  });
+/** Python tracebacks without runtime frames; anything else keeps its JavaScript stack. */
+function describeExecutionError(error: unknown): string {
+  if (error instanceof Error && error.name === "PythonError") return formatPythonTraceback(error.message);
+  return describeError(error);
 }
 
 async function runPythonCode(
   pyodide: PyodideInterface,
   code: string,
   globals: PyodideInterface["globals"],
+  output: BoundedOutput,
   maxOutputBytes: number,
   filename?: string,
 ): Promise<string> {
-  const output = new BoundedOutput(maxOutputBytes);
   const collect = (text: string) => {
     output.append(`${text}\n`);
   };
@@ -387,7 +380,7 @@ async function installExecutionHelpers(
   setBridge("_wingman_rasterize_pdf", (path: string, optionsJson: string | null) =>
     requestRasterizePdf(pyodide, path, optionsJson),
   );
-  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals });
+  for (const shim of USER_SHIMS) await pyodide.runPythonAsync(shim, { globals, filename: "<wingman-shim>" });
 }
 
 function loadPyodide(): Promise<PyodideInterface> {
@@ -401,10 +394,13 @@ function loadPyodide(): Promise<PyodideInterface> {
         // Matplotlib's default backend wants a DOM canvas the worker lacks, so figure
         // creation would fail. Force the headless Agg backend (savefig still works);
         // an explicit matplotlib.use(...) in user code still wins.
-        p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg'); _wingman_base_environ = dict(os.environ)");
-        await p.runPythonAsync(ASYNCIO_SHIM);
+        p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg'); _wingman_base_environ = dict(os.environ)", {
+          filename: "<wingman-setup>",
+        });
+        await p.runPythonAsync(ASYNCIO_SHIM, { filename: "<wingman-asyncio>" });
         rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
-        p.runPython(PYTHON_SCRIPTS);
+        // Internal code runs under "<wingman-*" filenames so "<exec>" means user code only.
+        p.runPython(PYTHON_SCRIPTS, { filename: "<wingman-scripts>" });
         scriptSources = p.globals.get("_wingman_script_sources") as typeof scriptSources;
         scriptScope = p.globals.get("_wingman_script_scope") as typeof scriptScope;
         runScript = p.globals.get("_wingman_run_script") as typeof runScript;
@@ -424,10 +420,13 @@ function loadPyodide(): Promise<PyodideInterface> {
 async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
   const { files = {} } = request;
   let maxOutputBytes = DEFAULT_CODE_EXECUTION_LIMITS.maxOutputBytes;
+  // Declared outside the try so a failed run still returns what it printed.
+  let captured: BoundedOutput | undefined;
 
   try {
     const limits = resolveCodeExecutionLimits(request.limits);
     maxOutputBytes = limits.maxOutputBytes;
+    captured = new BoundedOutput(maxOutputBytes);
     validateArtifactFiles(files, limits, "Interpreter input filesystem");
     const pyodide = await loadPyodide();
 
@@ -442,7 +441,9 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     }
 
     pyodide.FS.chdir(SANDBOX_HOME);
-    pyodide.runPython("import os; os.environ.clear(); os.environ.update(_wingman_base_environ)");
+    pyodide.runPython("import os; os.environ.clear(); os.environ.update(_wingman_base_environ)", {
+      filename: "<wingman-setup>",
+    });
     syncFilesToPyodide(pyodide, files);
     const filename = request.path ? artifactFsPath(request.path) : undefined;
     await ensurePackagesLoaded(pyodide, code, filename);
@@ -459,12 +460,12 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
       // Attribute proxies are borrowed from scope; retain their owner until cleanup.
       await installExecutionHelpers(pyodide, executionController.signal, globals);
       if (pyodide.loadedPackages.duckdb) {
-        closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals }) as typeof closeDuckDb;
+        closeDuckDb = pyodide.runPython(DUCKDB_SCOPE, { globals, filename: "<wingman-duckdb>" }) as typeof closeDuckDb;
       }
       onStarted?.();
 
       const runStart = Date.now();
-      const output = await runPythonCode(pyodide, code, globals, limits.maxOutputBytes, filename);
+      const output = await runPythonCode(pyodide, code, globals, captured, limits.maxOutputBytes, filename);
 
       // Flush database files and discard SQL state before capturing the run.
       closeDuckDb?.();
@@ -498,10 +499,10 @@ async function executeCode(request: CodeExecutionRequest, onStarted?: () => void
     // FS state may be inconsistent — force a clean rebuild on the next call.
     lastSyncedFiles = null;
     const boundedError = new BoundedOutput(maxOutputBytes);
-    boundedError.append(describeError(error));
+    boundedError.append(describeExecutionError(error));
     return {
       success: false,
-      output: "",
+      output: captured?.value().trim() ?? "",
       error: boundedError.value(),
     };
   }

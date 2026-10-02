@@ -70,10 +70,12 @@ describe("Bash artifact runtime", () => {
   });
 
   it("returns diagnostics and no committable snapshot after a nonzero exit", async () => {
-    const result = await runBash({ code: "echo changed > discard.txt; echo diagnostic >&2; exit 7" });
+    const result = await runBash({
+      code: "echo changed > discard.txt; echo progress; echo diagnostic >&2; exit 7",
+    });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("status 7");
-    expect(result.error).toContain("diagnostic");
+    expect(result.output).toBe("progress\n");
+    expect(result.error).toBe("Script exited with status 7\ndiagnostic\n");
     expect(result.files).toBeUndefined();
   });
 

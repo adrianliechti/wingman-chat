@@ -17,7 +17,12 @@ vi.mock("@/shared/lib/opfs", () => opfs);
 
 import { FileSystemManager, resolveArtifactFileSystem } from "./fs";
 import { ArtifactReadWriteManager } from "./artifactFileTools";
-import { executeArtifactCode, type SandboxExecutor } from "./executeArtifactCode";
+import {
+  coerceScriptArgs,
+  executeArtifactCode,
+  formatExecutionFailure,
+  type SandboxExecutor,
+} from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactRevision } from "@/shared/types/artifact";
 
@@ -270,6 +275,34 @@ describe("coordinated artifact tools", () => {
     expect(opfs.deleteArtifact).not.toHaveBeenCalled();
   });
 
+  it("coerces JSON-encoded and scalar script args before running", async () => {
+    const executor = vi.fn<SandboxExecutor>(async () => ({ success: true, output: "ok" }));
+    const fs = new FileSystemManager("coerced-args");
+    await executeArtifactCode({ fs, executor, args: { code: "run", args: '["--limit", 10, true]' }, extension: "py" });
+    await executeArtifactCode({ fs, executor, args: { code: "run", args: "" }, extension: "py" });
+    expect(executor.mock.calls.map(([request]) => request.args)).toEqual([["--limit", "10", "true"], undefined]);
+    expect(coerceScriptArgs("one argument")).toBeUndefined();
+    expect(coerceScriptArgs("[not json")).toBeUndefined();
+  });
+
+  it("keeps the output a failed interpreter printed before the error", async () => {
+    const result = await executeArtifactCode({
+      fs: new FileSystemManager("failed-output"),
+      executor: async () => ({ success: false, output: "columns: a, b\n", error: "KeyError: 'c'" }),
+      args: { code: "run" },
+      extension: "py",
+    });
+    expect(result).toMatchObject({
+      success: false,
+      output: "columns: a, b\n",
+      error: "Error executing code: KeyError: 'c'",
+    });
+    expect(formatExecutionFailure(result)).toBe(
+      "Output before the failure:\ncolumns: a, b\n\nError executing code: KeyError: 'c'",
+    );
+    expect(formatExecutionFailure({ success: false, output: "", error: "boom" })).toBe("boom");
+  });
+
   it("reports missing or invalid scripts as execution failures and preserves the workspace", async () => {
     const fs = new FileSystemManager("invalid-script");
     const executor = vi.fn<SandboxExecutor>();
@@ -279,7 +312,7 @@ describe("coordinated artifact tools", () => {
       { path: "../outside.py" },
       { path: "/skills/not-selected/run.py" },
       { code: "print(1)", args: "one argument" },
-      { code: "print(1)", args: [1] },
+      { code: "print(1)", args: [{ flag: true }] },
     ]) {
       const result = await executeArtifactCode({ fs, executor, args, extension: "py" });
       expect(result.success).toBe(false);

@@ -77,13 +77,13 @@ export async function runBash(
       rawScript: true,
     });
     output.append(result.stdout);
-    output.append(result.stderr);
     if (result.exitCode !== 0) {
       const error = new BoundedOutput(limits.maxOutputBytes);
-      error.append(`Script exited with status ${result.exitCode}\n`);
-      error.append(output.value());
+      error.append(`Script exited with status ${result.exitCode}`);
+      if (result.stderr) error.append(`\n${result.stderr}`);
       return { success: false, output: output.value(), error: error.value() };
     }
+    output.append(result.stderr);
 
     const snapshot: ArtifactFiles = {};
     let count = 0;

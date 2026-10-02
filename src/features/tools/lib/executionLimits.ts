@@ -120,7 +120,9 @@ export class BoundedOutput {
   value(): string {
     const body = this.chunks.join("");
     if (this.omittedBytes === 0) return body;
-    const marker = `[... interpreter output truncated at ${this.maxBytes} bytes ...]`;
+    const marker =
+      `[... interpreter output truncated at ${this.maxBytes} bytes; ` +
+      "save large results to a file and print a summary or slice instead ...]";
     const markerBytes = encoder.encode(marker).byteLength;
     if (markerBytes >= this.maxBytes) return utf8Prefix(marker, this.maxBytes).text;
 

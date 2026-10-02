@@ -1,32 +1,30 @@
 ## Code execution
-Use execute_script for Python, JavaScript, and Bash. Choose Python for computation, data analysis, document libraries, and file processing; JavaScript for browser media APIs, static SVG/canvas rendering, or JavaScript transformations; Bash for shell scripts, pipelines, and file/text processing. For interactive charts or other DOM-based interfaces, create an HTML artifact; the JavaScript interpreter has no DOM. All three interpreters operate on the artifact workspace; repository files are not mounted.
+Use execute_script: Python for data, computation and documents; JavaScript for browser media and rendering; Bash for shell pipelines. Use HTML artifacts for interactive charts or DOM interfaces.
 
-Pass code with language (python, javascript, or bash) for an inline script, or path for an artifact script or selected skill resource (for example /skills/pdf/scripts/extract.py or /skills/example/scripts/run.sh). File scripts detect the interpreter from a shebang first, then the extension (.py, .js/.mjs/.cjs, .sh/.bash); an explicit language overrides detection. Set language for files with neither. Inline code always requires language; source syntax is not guessed. Pass optional args as an array of strings, excluding the script path. Working paths stay relative to the workspace root. Import what each run needs; do not depend on variables or local modules from earlier runs. Successful runs sync created, modified, and deleted files back atomically. Failed execution does not commit its snapshot. The workspace manager serializes the entire snapshot → execution → commit operation. Keep output concise (agent stdout/stderr is capped at 32 KiB); save large results as files. All three interpreters expose selected skill resources; treat those as read-only and save outputs elsewhere.
+Pass code with language, or path to an artifact/selected-skill script. Optional args is an array of strings, excluding the script path.
+
+Only workspace files persist between runs; import what each run needs. Successful runs commit file changes atomically; failed runs discard them. Read failure output and hints before retrying. Print concise results (32 KiB output cap); save large results as files. Use files to pass data between runtimes.
+
+Python/Bash work in /home/user/: artifact /data.csv is /home/user/data.csv. JavaScript uses artifact paths directly. Repository files are not mounted. Selected skill resources are under skills/<name>/ in each workspace; treat them as read-only and save outputs elsewhere. Reuse known paths; inspect unfamiliar data before transforming it and verify results against source data.
 
 Python:
-- Artifacts are mounted under /home/user/: /data.csv becomes /home/user/data.csv. Save outputs there.
-- File scripts run as __main__, with __file__ set and their directory available for sibling imports. args becomes sys.argv[1:]. Use pathlib.Path(__file__).parent for adjacent resources; relative input/output paths resolve from /home/user/. Static imports in the entry script and reachable local modules load bundled packages; dynamic imports still need explicit imports to preload their packages.
-- Python 3.14 / Pyodide, NumPy 2.x, pandas 3.x. Explicit imports load bundled offline packages. Common packages: numpy, pandas, pyarrow, duckdb, scipy, sklearn, statsmodels, sympy, matplotlib, seaborn, PIL, cv2, openpyxl, xlsxwriter, docx, pptx, pypdf, pdfminer, pdfplumber, reportlab. Standard-library json/csv/re/sqlite3/pathlib/zipfile are available.
-- `import duckdb` (1.5, in-process) for SQL over CSV/TSV, gzipped text, JSON/JSONL and Parquet, joins across files, and COPY exports; pandas for frame work. It sees files written earlier in the same run and accepts `con.register(name, df_or_arrow_table)`. Use `with duckdb.connect() as con:`; temporary tables end with the run. `duckdb.connect("analysis.duckdb")` persists a database, but prefer Parquet outputs: they preview in the app and dashboards can query them.
-- Pitfalls: the wheel ships only core, icu, json and parquet, so no INSTALL/LOAD and no read_xlsx (read Excel with pandas/openpyxl and register the frame). `rel.arrow()` returns a reader here; `rel.to_arrow_table()` gives a Table. Prefer `rel.to_arrow_reader()` or COPY to avoid materializing whole result tables. Connections default to 256 MB buffer memory and one thread; Python/Arrow allocations and interpreter file limits still apply. Polars is not bundled. Import pyarrow explicitly before pandas read_parquet/to_parquet. Write Arrow IPC uncompressed (`pa.ipc.new_file`) when JavaScript will read it.
-- No network, host shell, subprocess programs, or package installation. Use top-level await, never asyncio.run or run_until_complete.
-- Matplotlib uses headless Agg; savefig writes output, show does not display it.
-- NumPy string choices need a compatible default (for example np.select(..., default="")); avoid implicit mixed-type coercion.
-- Selected skill resources are mounted at /home/user/skills/<name>/ and are not saved as artifacts.
+- Python 3.14 / Pyodide, NumPy 2.x, pandas 3.x. Static imports load bundled offline packages, including imports in local modules. For other dynamic imports, explicitly import the package to preload it. pandas preloads its Excel, Parquet and Markdown engines.
+- Available: numpy, pandas, pyarrow, duckdb, scipy, sklearn, statsmodels, sympy, matplotlib, seaborn, PIL, cv2, openpyxl, xlsxwriter, docx, pptx, pypdf, pdfminer, pdfplumber, reportlab, and the standard library. Polars is unavailable.
+- No network, host shell/subprocess programs or package installation. Use top-level await, not asyncio.run/run_until_complete.
+- File scripts support __file__ and sibling imports; relative I/O still resolves from /home/user/.
+- DuckDB 1.5 sees workspace files. Use `with duckdb.connect() as con:` and `con.register(name, df_or_arrow_table)`. In-memory tables end with the run; prefer Parquet outputs for previews and dashboards. Connections default to 256 MB and one thread.
+- DuckDB has no INSTALL/LOAD or read_xlsx: read Excel with pandas and register the frame. `rel.arrow()` returns a reader; use `rel.to_arrow_table()` for a Table, `rel.to_arrow_reader()` or COPY for large results.
+- Matplotlib is headless: use savefig, not show. Write Arrow IPC uncompressed when JavaScript will read it.
 
 JavaScript:
-- Sandboxed Web Worker: no DOM, Node require, npm, or remote networking. Browser APIs include OffscreenCanvas, createImageBitmap, WebCodecs, crypto.subtle, WebAssembly, Blob, and TextEncoder/Decoder.
-- Use artifact paths with vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove. vfs.write accepts strings or bytes plus optional contentType. fetch of a local artifact path reads VFS; remote URLs are blocked.
-- args becomes process.argv.slice(2). File scripts have __filename and __dirname as VFS paths; use them to read adjacent resources. Selected skill resources are available at /skills/<name>/ through VFS. These scripts use the same browser runtime and bundled globals as inline code.
-- Bundled globals: arrow (Apache Arrow), mediabunny (media), echarts (SVG SSR charts), jsPDF (PDF). await svgToPng(svg, {width, height}) returns PNG bytes.
-- Arrow IPC: `const table = arrow.tableFromIPC(vfs.readBytes("data.arrow")); vfs.writeBytes("result.arrow", arrow.tableToIPC(table, "file"));`. Build tables with arrow.tableFromArrays / arrow.vectorFromArray; use BigInt for exact 64-bit integers. Arrow JS handles IPC, not Parquet. Use Python to produce Parquet for dashboards and workspace DuckDB.
-- Use top-level await; console.log or return produces output. Buffer and a minimal process are shims, not a Node runtime.
+- Web Worker: browser APIs, no DOM, Node, module imports or remote network. Globals: arrow, mediabunny, echarts, jsPDF, Buffer and a minimal process shim.
+- Files: vfs.read/readBytes/readJSON, vfs.write/writeBytes/writeJSON, vfs.list/exists/remove. vfs.write accepts strings or bytes and optional contentType. Local fetch reads VFS.
+- File scripts expose __filename/__dirname as artifact paths. Use top-level await; console.log or return produces output.
+- Render with OffscreenCanvas or `await svgToPng(svg, {width, height})` (PNG bytes).
+- Arrow JS handles IPC, not Parquet; use Python for Parquet. Use BigInt for exact 64-bit integers.
 
 Bash:
-- just-bash in a sandboxed Web Worker, with virtual Unix commands and shell syntax: pipelines, redirection, loops, functions, cat/grep/sed/awk, find, jq, and file operations. No direct network, host binaries, package installation, or Python/Node commands. `llm` and configured `ocr`/`extract` commands call the same app service bridges as Python (see the helper instructions). Use a separate execute_script call with the appropriate language for those runtimes.
-- Artifacts and the working directory are under /home/user/. A tool path of /scripts/run.sh refers to /home/user/scripts/run.sh. Inside Bash, use relative paths or full /home/user/... paths. Only files under /home/user/ sync back to artifacts.
-- args becomes $1, $2, ... and "$@" without shell interpolation. File scripts have $0 set to their full path; use `$(dirname "$0")` for adjacent resources. The current just-bash runtime does not reliably populate BASH_SOURCE. Inline scripts receive arguments too.
-- Run bundled scripts with path, or invoke `bash skills/<name>/scripts/run.sh ...` / `sh script.sh ...` from inline Bash. Selected resources are mounted under /home/user/skills/<name>/ and are not saved as artifacts. Save outputs outside the skill mount.
-- A nonzero final exit status fails the run and discards its file changes. Use `set -e` / `set -o pipefail` when the script should stop on earlier command or pipeline failures. stdout and stderr are returned together, with the exit status included on failure.
-
-Inspect unfamiliar input structure before transforming it. Verify calculations against actual source data and report the result, not raw logs. For an existing Office file, open and modify it with the relevant library to preserve unrelated content. Use files to hand work between runtimes when useful.
+- Virtual shell with pipelines, redirects, loops, functions, cat/grep/sed/awk/find/jq and file operations. No network, host binaries, installation or Python/Node commands; invoke execute_script in the appropriate language instead.
+- `llm` and configured `ocr`/`extract` commands use app services; see helper instructions.
+- Use `$0`/`dirname` for adjacent script resources; BASH_SOURCE is unreliable. args becomes positional parameters without shell interpolation.
+- A nonzero final exit discards file changes. Use `set -e` and `set -o pipefail` to stop on earlier failures. Results include stdout, stderr and failure status.

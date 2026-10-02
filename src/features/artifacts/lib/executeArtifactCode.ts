@@ -8,11 +8,46 @@ import type { ToolContext } from "@/shared/types/chat";
 import type { ArtifactWorkspaceAccess, FileSystemManager } from "./fs";
 import { validateArtifactFile } from "./artifactValidators";
 
-function failure(error: string): CodeExecutionResult {
-  return { success: false, output: "", error };
+function failure(error: string, output = ""): CodeExecutionResult {
+  return { success: false, output, error };
+}
+
+/** One text block for a failed run: what it printed first, then why it stopped. */
+export function formatExecutionFailure(result: CodeExecutionResult): string {
+  const error = result.error || "Unknown execution error";
+  const output = result.output.trim();
+  return output ? `Output before the failure:\n${output}\n\n${error}` : error;
 }
 
 type SandboxFiles = Record<string, { content: string; contentType?: string }>;
+
+/**
+ * Accept the shapes models actually send for `args`: a JSON-encoded array,
+ * scalars inside the array, or nothing. Returns undefined when the value
+ * cannot mean a list of string arguments.
+ */
+export function coerceScriptArgs(value: unknown): string[] | null | undefined {
+  if (value === undefined || value === null) return null;
+  let list = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!trimmed.startsWith("[")) return undefined;
+    try {
+      list = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!Array.isArray(list)) return undefined;
+  const args: string[] = [];
+  for (const item of list) {
+    if (typeof item === "string") args.push(item);
+    else if (typeof item === "number" || typeof item === "boolean") args.push(String(item));
+    else return undefined;
+  }
+  return args;
+}
 
 /**
  * Merge a skill's mounted resources into the sandbox file map, returning the
@@ -106,8 +141,11 @@ export async function executeArtifactCode(options: {
 
   const run = async (fs: ArtifactWorkspaceAccess | null): Promise<CodeExecutionResult> => {
     context?.signal?.throwIfAborted();
-    if (args.args !== undefined && (!Array.isArray(args.args) || args.args.some((arg) => typeof arg !== "string"))) {
-      return failure("Script args must be an array of strings.");
+    const scriptArgs = coerceScriptArgs(args.args);
+    if (scriptArgs === undefined) {
+      return failure(
+        'Script args must be an array of strings, for example ["--input", "data.csv"]. Omit args when unused.',
+      );
     }
     const hasCode = inlineCode.trim().length > 0;
     const path = hasCode ? undefined : normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
@@ -133,11 +171,12 @@ export async function executeArtifactCode(options: {
     context?.signal?.throwIfAborted();
     const result = await executeCancellable(
       executor,
-      { code: script, path, args: args.args as string[] | undefined, files: artifactFiles, limits: options.limits },
+      { code: script, path, args: scriptArgs ?? undefined, files: artifactFiles, limits: options.limits },
       { signal: context?.signal, context },
     );
     if (!result.success) {
-      return failure(`Error executing code: ${result.error || "Unknown error"}`);
+      // Keep what the script printed before failing; it is usually the clue.
+      return failure(`Error executing code: ${result.error || "Unknown error"}`, result.output);
     }
 
     let artifactValidation: SnapshotValidation = { errors: [], warnings: [] };
