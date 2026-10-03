@@ -1,7 +1,8 @@
+import { z } from "zod";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Client } from "./client";
 import { runMessages } from "./agent";
-import { finished, response, textItem, testClient } from "./test-support/ai";
+import { assistant, calls, finished, output, response, textItem, testClient, user } from "./test-support/ai";
 import { trace, type Span } from "@opentelemetry/api";
 import { chat } from "@tanstack/ai";
 import { aiTelemetry } from "./otel";
@@ -68,25 +69,28 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it.each(["chat", "summarize_history"])(
+it.each(["chat", "summarize_history", "classify_chat"])(
   "records native %s usage without capturing conversation content",
   async (operation) => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          finished(response([textItem(operation === "chat" ? "Private answer" : '{"summary":"Private summary"}')])),
-        ),
+      vi.fn().mockResolvedValueOnce(
+        operation === "classify_chat"
+          ? Response.json({
+              answers: { risk_0: { type: "noul", noul: 0.2 } },
+              usage: { input_tokens: 10, output_tokens: 5 },
+            })
+          : finished(response([textItem(operation === "chat" ? "Private answer" : '{"summary":"Private summary"}')])),
+      ),
     );
     const client = new Client();
-    if (operation === "chat")
-      await runMessages(
-        client,
+    if (operation === "chat") await runMessages(client, "model", "Private instructions", [user("Private input")], []);
+    else if (operation === "classify_chat")
+      await client.classifyChat(
         "model",
-        "Private instructions",
-        [{ role: "user", content: [{ type: "text", text: "Private input" }] }],
+        [user("Private input")],
         [],
+        [{ id: "risk", description: "Private criterion" }],
       );
     else
       await chat({
@@ -105,11 +109,19 @@ it.each(["chat", "summarize_history"])(
     ).toBe(true);
     expect(telemetry.spans.some((span) => span.attributes["wingman.operation.name"] === operation)).toBe(true);
     expect(JSON.stringify(telemetry.spans.map((span) => span.attributes))).not.toContain("Private");
-    expect(telemetry.histogram).toHaveBeenCalledWith(
-      "gen_ai.client.token.usage",
-      5,
-      expect.objectContaining({ "gen_ai.token.type": "output" }),
-    );
+    if (operation === "classify_chat") {
+      expect(telemetry.histogram).toHaveBeenCalledWith(
+        "gen_ai.client.operation.duration",
+        expect.any(Number),
+        expect.objectContaining({ "gen_ai.operation.name": "evaluate" }),
+      );
+    } else {
+      expect(telemetry.histogram).toHaveBeenCalledWith(
+        "gen_ai.client.token.usage",
+        5,
+        expect.objectContaining({ "gen_ai.token.type": "output" }),
+      );
+    }
   },
 );
 
@@ -129,13 +141,10 @@ it("closes native spans when generation fails", async () => {
 });
 
 it("uses one native tool span and parents delegated calls to it without an async context manager", async () => {
-  const answer = { role: "assistant" as const, content: [{ type: "text" as const, text: "Private answer" }] };
+  const answer = assistant("Private answer");
   const complete = vi
     .fn<Parameters<typeof testClient>[0]>()
-    .mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "delegate-1", name: "delegate", arguments: "{}" }],
-    })
+    .mockResolvedValueOnce(calls(["delegate-1", "delegate"]))
     .mockResolvedValue(answer);
   let toolSpan: Span | undefined;
   await runMessages(
@@ -146,8 +155,10 @@ it("uses one native tool span and parents delegated calls to it without an async
     [
       {
         name: "delegate",
-        parameters: { type: "object", properties: {} },
-        function: async (_args, context) => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          const context = execution?.context;
           toolSpan = context?.agentContext && trace.getSpan(context.agentContext);
           await Promise.resolve();
           await runMessages(testClient(complete), "child", "", [], [], {
@@ -155,7 +166,7 @@ it("uses one native tool span and parents delegated calls to it without an async
             parentContext: context?.agentContext,
             context: context?.invocationContext,
           });
-          return [{ type: "text", text: "Private tool result" }];
+          return output("Private tool result");
         },
       },
     ],
@@ -172,11 +183,8 @@ it("uses one native tool span and parents delegated calls to it without an async
 it("closes failed tool spans through the native error lifecycle", async () => {
   const complete = vi
     .fn<Parameters<typeof testClient>[0]>()
-    .mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "failed-1", name: "fail", arguments: "{}" }],
-    })
-    .mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "The tool failed." }] });
+    .mockResolvedValueOnce(calls(["failed-1", "fail"]))
+    .mockResolvedValue(assistant("The tool failed."));
   await runMessages(
     testClient(complete),
     "model",
@@ -185,8 +193,9 @@ it("closes failed tool spans through the native error lifecycle", async () => {
     [
       {
         name: "fail",
-        parameters: { type: "object", properties: {} },
-        function: async () => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async () => {
           throw new Error("Tool failed");
         },
       },

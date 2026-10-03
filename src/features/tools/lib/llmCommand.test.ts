@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { assistantMessage, text } from "@/shared/lib/messages";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { runLlm, setModel } from "./llmCommand";
 import { runVision } from "./visionCommand";
@@ -9,20 +10,19 @@ const { complete, vision } = vi.hoisted(() => ({
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(complete), vision }) }));
 beforeEach(() => {
-  complete.mockReset().mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
+  complete.mockReset().mockResolvedValue(assistantMessage("Answer"));
   vision.model = undefined;
   setModel("ui-model");
 });
 
 describe("interpreter model calls", () => {
   it.each(["llm", "vision"])("returns only the final answer from %s when commentary is also JSON", async (helper) => {
-    complete.mockResolvedValueOnce({
-      role: "assistant",
-      content: [
-        { type: "text", text: '{"content":"working"}', phase: "commentary" },
-        { type: "text", text: '{"content":"done"}', phase: "final_answer" },
-      ],
-    });
+    complete.mockResolvedValueOnce(
+      assistantMessage([
+        text('{"content":"working"}', { phase: "commentary" }),
+        text('{"content":"done"}', { phase: "final_answer" }),
+      ]),
+    );
     const result =
       helper === "llm" ? await runLlm("Question") : await runVision(new Uint8Array([1]), "/image.png", "Describe");
     expect(JSON.parse(result)).toEqual({ content: "done" });
@@ -52,7 +52,7 @@ describe("interpreter model calls", () => {
             {
               type: "image",
               source: { type: "data", value: "AQ==", mimeType: "image/png" },
-              metadata: { filename: "first.png" },
+              metadata: { filename: "first.png", contentType: "image/png" },
             },
             { type: "text", content: "First image question" },
           ],
@@ -66,7 +66,7 @@ describe("interpreter model calls", () => {
             {
               type: "image",
               source: { type: "data", value: "Ag==", mimeType: "image/png" },
-              metadata: { filename: "second.png" },
+              metadata: { filename: "second.png", contentType: "image/png" },
             },
             { type: "text", content: "Independent image question" },
           ],
@@ -100,7 +100,7 @@ describe("interpreter model calls", () => {
     complete.mockImplementationOnce(async (options) => {
       parent.abort();
       options.abortController?.signal.throwIfAborted();
-      return { role: "assistant", content: [{ type: "text", text: "Should not finish" }] };
+      return assistantMessage("Should not finish");
     });
     await expect(
       runLlm(

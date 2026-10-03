@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Globe } from "lucide-react";
 import { useMemo } from "react";
 import { buildWebTools } from "../lib/webTools";
@@ -5,7 +6,9 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent, type ToolProvider } from "@/shared/types/chat";
+import { outputText } from "@/shared/lib/messages";
+import { getErrorInfo } from "@/shared/lib/errors";
+import type { ToolProvider } from "@/shared/types/chat";
 
 type Config = ReturnType<typeof getConfig>;
 
@@ -26,6 +29,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
       guard = await client.guard(internet.guard ?? "", prompt, { signal });
     } catch (error) {
       signal?.throwIfAborted();
+      if (getErrorInfo(error).code === "TIMEOUT") throw error;
       throw new Error("The Guardrail system is not available. Please try again later.", { cause: error });
     }
     signal?.throwIfAborted();
@@ -51,15 +55,19 @@ export function createInternetProvider(client: Client, internet: Config["interne
         const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
         if (!prompt) throw new Error("prompt is required");
         if (mode === "fast" && !search) throw new Error("Fast search is unavailable; use deep mode.");
-        let signal = context.signal;
-        if (mode === "fast") {
-          const timeout = AbortSignal.timeout(15_000);
-          signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-        }
-
+        const { signal } = context;
         await guardPrompt(prompt, signal);
         if (mode === "fast" && search) {
-          return getTextFromContent(await search.function({ queries: [prompt], limit: 3 }, { ...context, signal }));
+          return outputText(
+            await search.execute(
+              { queries: [prompt], limit: 3 },
+              {
+                context,
+                abortSignal: signal,
+                emitCustomEvent() {},
+              },
+            ),
+          );
         }
         // Undefined continues with the local child agent; remote research and
         // fast search both finish at this same approval/result boundary.
@@ -69,31 +77,28 @@ export function createInternetProvider(client: Client, internet: Config["interne
     },
     { client, needsApproval: internet.elicitation },
   );
-  researchTool.parameters = {
-    ...researchTool.parameters,
-    properties: {
-      ...(researchTool.parameters.properties as Record<string, unknown>),
-      prompt: {
-        type: "string",
-        minLength: 1,
-        description:
-          "For fast mode, a concise search query with the entity and facts needed. For deep mode, a complete research brief with all topics and constraints. Keep answer-format instructions in the parent conversation for fast mode.",
-      },
-      mode: {
-        type: "string",
-        enum: search ? ["fast", "deep"] : ["deep"],
-        description: search
+  researchTool.inputSchema = z.strictObject({
+    prompt: z
+      .string()
+      .min(1)
+      .describe(
+        "For fast mode, a concise search query with the entity and facts needed. For deep mode, a complete research brief with all topics and constraints. Keep answer-format instructions in the parent conversation for fast mode.",
+      ),
+    mode: z
+      .enum(search ? ["fast", "deep"] : ["deep"])
+      .optional()
+      .describe(
+        search
           ? "fast (default): one quick search, no child model. deep: follow-up searches, page reading and synthesis within this task."
           : internet.researcher
             ? "deep: delegate the complete task to the configured researcher."
             : "deep: read and research supplied URLs.",
-      },
-    },
-  };
+      ),
+  });
   researchTool.title = "Web research";
   researchTool.display = {
     input: () => [],
-    output: (result) => ({ code: getTextFromContent(result), language: "markdown" }),
+    output: (result) => ({ code: outputText(result), language: "markdown" }),
     header: (args, state) => {
       const fast = (args?.mode ?? defaultMode) === "fast";
       return {

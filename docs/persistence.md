@@ -26,6 +26,12 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
 - Agent and skill saves prepare file changes before mutation and roll back
   reported I/O failures, including changes to their indexes. Agent file membership
   lives in `files/index.json`; cleanup of removed folders follows the commit.
+- A chat record (`chats/<id>/chat.json`, version 2) holds the runtime's native
+  `UIMessage[]` transcript, its optional resume pointer and middleware metadata.
+  Blob extraction walks message parts, native tool-result content, rich tool outputs in metadata
+  and subagent conversations. Records saved before version 2 migrate when read:
+  deterministic, idempotent, never written back as a side effect of reading, so
+  older backups remain restorable and restore validation accepts both shapes.
 - Chat attachments are addressed by content hash, retain their MIME type, and
   remain referenced until the new manifest is durable. All sibling blob writes
   settle before the save releases its lock. Missing references remain intact so

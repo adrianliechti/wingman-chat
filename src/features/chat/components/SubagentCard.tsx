@@ -1,21 +1,19 @@
 import { ChevronRight, Loader2 } from "lucide-react";
+import type { SubagentPart } from "@tanstack/ai";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import type { SubagentContent } from "@/shared/types/chat";
+import { messageMetadata } from "@/shared/lib/messages";
 import { Markdown } from "@/shared/ui/Markdown";
 import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { findTool, resolveToolHeader } from "./toolDisplay";
-import { subagentToolCallIds } from "./chatMessageUtils";
+import { subagentToolCallIds, toolRounds } from "./chatMessageUtils";
 
 /** Child activity uses the same quiet disclosure and tool rows as chat. */
-export function SubagentCard({ name, status, messages, error }: SubagentContent) {
+export function SubagentCard({ name, status, messages, error }: SubagentPart["subagent"]) {
   const { providers } = useToolsContext();
   const running = status === "running";
   const header = resolveToolHeader(findTool(providers, name), name, undefined, { running });
   const delegated = subagentToolCallIds(messages);
-  const answered = new Set(
-    messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
-  );
   return (
     <details open={running || status === "suspended"} className="group/subagent my-1 min-w-0">
       <summary className="grid cursor-pointer list-none grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 [&::-webkit-details-marker]:hidden">
@@ -28,26 +26,40 @@ export function SubagentCard({ name, status, messages, error }: SubagentContent)
         </span>
       </summary>
       <div className="mt-2 ml-4.5 space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
-        {messages.map((message, messageIndex) => (
-          <div key={message.id ?? messageIndex}>
-            {message.content.some(
-              (part) => part.type === "tool_result" && (!delegated.has(part.id) || message.error),
-            ) && <ChatToolMessage message={message} index={messageIndex} messages={messages} nested />}
-            {message.content.map((part, index) => {
-              if (part.type === "text" && message.role === "assistant")
-                return (
-                  <Markdown key={index} compact isStreaming={running}>
-                    {part.text}
-                  </Markdown>
-                );
-              if (part.type === "tool_call" && !answered.has(part.id) && !delegated.has(part.id)) {
-                const tool = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
+        {messages.map((message, messageIndex) => {
+          const failed = messageMetadata(message).error;
+          return (
+            <div key={message.id ?? messageIndex}>
+              {message.parts.map((part, index) => {
+                if (part.type === "text" && message.role === "assistant")
+                  return (
+                    <Markdown key={index} compact isStreaming={running}>
+                      {part.content}
+                    </Markdown>
+                  );
+                if (part.type === "subagent") return <SubagentCard key={part.subagent.id} {...part.subagent} />;
+                return null;
+              })}
+              {toolRounds(message, delegated).map(({ call, result }) => {
+                if (result || failed)
+                  return (
+                    <ChatToolMessage
+                      key={call.id}
+                      message={message}
+                      call={call}
+                      result={result}
+                      index={messageIndex}
+                      messages={messages}
+                      nested
+                    />
+                  );
+                const tool = resolveToolHeader(findTool(providers, call.name), call.name, call.arguments, {
                   running,
-                  toolCallId: part.id,
+                  toolCallId: call.id,
                 });
                 return (
                   <ActivityRow
-                    key={part.id}
+                    key={call.id}
                     running={running}
                     label={tool.label}
                     detail={tool.preview}
@@ -55,12 +67,10 @@ export function SubagentCard({ name, status, messages, error }: SubagentContent)
                     className="pb-1"
                   />
                 );
-              }
-              if (part.type === "subagent") return <SubagentCard key={part.id} {...part} />;
-              return null;
-            })}
-          </div>
-        ))}
+              })}
+            </div>
+          );
+        })}
         {error && (
           <p role="alert" className="text-xs text-red-600 dark:text-red-400">
             {error.message}

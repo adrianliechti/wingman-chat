@@ -6,12 +6,14 @@ import { buildHostContext, createAppBridge, type McpAppData } from "@/features/s
 import { isAbortError } from "@/shared/lib/errors";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";
-import type { ToolResultContent } from "@/shared/types/chat";
+import type { ToolCallPart, ToolResultPart } from "@tanstack/ai";
+import { toolResultContent, toolResultMetadata } from "@/shared/lib/messages";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
 import { useApp } from "@/shell/hooks/useApp";
 
 interface McpAppProps {
-  toolResult: ToolResultContent;
+  call: ToolCallPart;
+  result: ToolResultPart;
   isLastFullscreenApp: boolean;
 }
 
@@ -19,10 +21,10 @@ type AppDisplayMode = "inline" | "fullscreen";
 
 const INLINE_MAX_HEIGHT = 600;
 
-function getAppDisplayModes(toolResult: ToolResultContent): AppDisplayMode[] {
-  const modes = toolResult.meta?.appDisplayModes as AppDisplayMode[] | undefined;
+function getAppDisplayModes(meta: Record<string, unknown> | undefined): AppDisplayMode[] {
+  const modes = meta?.appDisplayModes as AppDisplayMode[] | undefined;
   if (modes && modes.length > 0) return modes;
-  const defaultMode = toolResult.meta?.defaultDisplayMode as string | undefined;
+  const defaultMode = meta?.defaultDisplayMode as string | undefined;
   if (defaultMode === "fullscreen") return ["fullscreen"];
   if (defaultMode === "inline") return ["inline"];
   return ["inline", "fullscreen"];
@@ -37,7 +39,8 @@ function getAppDisplayModes(toolResult: ToolResultContent): AppDisplayMode[] {
  * Switching modes just repositions the iframe and pushes a host-context update
  * (setDisplayMode) — no teardown, no reload.
  */
-export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
+export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
+  const data = toolResultMetadata(result);
   const frameRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<AppBridge | null>(null);
   const [frame, setFrame] = useState<{ data: McpAppData; bridge: AppBridge } | null>(null);
@@ -49,12 +52,12 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
   const { showAppDrawer, closeApp, showDrawer, activeAppKey, setActiveAppKey, drawerTarget } = useApp();
   const { setProviderEnabled, restoreToolUI } = useToolsContext();
 
-  const providerId = toolResult.meta?.toolProvider as string;
-  const resourceUri = toolResult.meta?.toolResource as string;
-  const appKey = `${providerId}-${resourceUri}-${toolResult.id}`;
-  const content = toolResult.content;
+  const providerId = data.meta?.toolProvider as string;
+  const resourceUri = data.meta?.toolResource as string;
+  const appKey = `${providerId}-${resourceUri}-${call.id}`;
+  const content = data.content;
 
-  const appDisplayModes = getAppDisplayModes(toolResult);
+  const appDisplayModes = getAppDisplayModes(data.meta);
   const [bridgeDisplayModes, setBridgeDisplayModes] = useState<AppDisplayMode[] | null>(null);
   const effectiveDisplayModes = bridgeDisplayModes ?? appDisplayModes;
   const isInlineOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "inline";
@@ -94,20 +97,20 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const args = JSON.parse(toolResult.arguments || "{}");
+      const args = JSON.parse(call.arguments || "{}");
       await setProviderEnabled(providerId, true);
       signal.throwIfAborted();
-      const data = await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, content, {
+      const app = await restoreToolUI(providerId, call.name, resourceUri, args, toolResultContent(result), content, {
         signal,
-        initialResult: toolResult.meta?.mcpResult as import("@modelcontextprotocol/client").CallToolResult | undefined,
+        initialResult: data.meta?.mcpResult as import("@modelcontextprotocol/client").CallToolResult | undefined,
       });
       signal.throwIfAborted();
-      const bridge = createAppBridge(data, {
+      const bridge = createAppBridge(app, {
         getDisplayMode,
         onDisplayModeRequested: requestDisplayMode,
-        hostContext: frameRef.current ? buildHostContext(data.tool, frameRef.current, displayMode) : undefined,
+        hostContext: frameRef.current ? buildHostContext(app.tool, frameRef.current, displayMode) : undefined,
       });
-      const unsubscribe = data.subscribe((kind) => {
+      const unsubscribe = app.subscribe((kind) => {
         if (kind === "disconnect") {
           sessionRef.current = null;
           setError("MCP server disconnected. Reopen this app to reconnect.");
@@ -134,7 +137,7 @@ export function McpApp({ toolResult, isLastFullscreenApp }: McpAppProps) {
         { once: true },
       );
       sessionRef.current = bridge;
-      setFrame({ data, bridge });
+      setFrame({ data: app, bridge });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setError(error instanceof Error ? error.message : "Could not open this app");

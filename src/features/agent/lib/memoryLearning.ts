@@ -2,8 +2,8 @@ import { z } from "zod";
 import { getConfig } from "@/shared/config";
 import { loadChat } from "@/features/chat/lib/chatStorage";
 import { flushPersistence, withPersistenceLock } from "@/shared/lib/persistence";
-import { isUserMessage } from "@/shared/lib/requestContext";
-import { Role, type Message } from "@/shared/types/chat";
+import { isUserPrompt, messageMetadata } from "@/shared/lib/messages";
+import type { UIMessage } from "@tanstack/ai";
 import {
   boundMemoryText,
   bytes,
@@ -67,12 +67,12 @@ export async function enqueueMemoryLearning(
   manager: MemoryManager,
   chatId: string,
   model: string,
-  messages: Message[],
+  messages: UIMessage[],
 ): Promise<void> {
-  if (!messages.some((message) => isUserMessage(message) && memoryMessageText(message).trim().length >= 12)) return;
+  if (!messages.some((message) => isUserPrompt(message) && memoryMessageText(message).trim().length >= 12)) return;
   const sources = await Promise.all(
     messages
-      .filter((message) => message.id && !message.error && memoryMessageText(message).trim())
+      .filter((message) => message.id && !messageMetadata(message).error && memoryMessageText(message).trim())
       .slice(-12)
       .map(async (message) => ({ id: message.id!, hash: await memoryMessageHash(message) })),
   );
@@ -124,7 +124,7 @@ export async function processMemoryJob(
       return true;
     }
     if (!job) return false;
-    const finish = async (candidates: MemoryCandidates | null, evidence: Message[]) => {
+    const finish = async (candidates: MemoryCandidates | null, evidence: UIMessage[]) => {
       // Keep evidence stable through the commit, using the same agents -> chats
       // lock order as restore. No network calls happen under either lock.
       await manager.transaction(
@@ -145,7 +145,7 @@ export async function processMemoryJob(
           const valid = job.sources.every((source) => hashes.get(source.id) === source.hash);
           signal?.throwIfAborted();
           if (valid && candidates) {
-            const users = new Set(evidence.filter(isUserMessage).map((message) => message.id));
+            const users = new Set(evidence.filter(isUserPrompt).map((message) => message.id));
             const allowed = new Map(job.sources.map((source) => [source.id, source]));
             const updates = [];
             const bodies = new Set(
@@ -225,7 +225,7 @@ export async function processMemoryJob(
       );
       if (
         evidence.length !== job.sources.length ||
-        !evidence.some(isUserMessage) ||
+        !evidence.some(isUserPrompt) ||
         (
           await Promise.all(
             evidence.map(
@@ -242,7 +242,7 @@ export async function processMemoryJob(
       const delta = evidence.flatMap((message) => {
         const text = redactSecrets(boundMemoryText(memoryMessageText(message), Math.min(4000, remaining))).text;
         remaining -= bytes(text);
-        return text ? [{ id: message.id, role: message.role === Role.User ? "USER" : "ASSISTANT", text }] : [];
+        return text ? [{ id: message.id, role: message.role === "user" ? "USER" : "ASSISTANT", text }] : [];
       });
       const terms = new Set(memoryTerms(delta.map((item) => item.text).join(" ")));
       const relevant = [...snapshot.files]

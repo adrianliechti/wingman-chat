@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { emptyCapabilities } from "@/shared/lib/artifactSdk/protocol";
@@ -56,9 +58,9 @@ function bridge(overrides: Partial<ConstructorParameters<typeof ArtifactBridge>[
   const tool: Tool = {
     name: "search",
     description: "search",
-    parameters: { type: "object", properties: {} },
-    function: vi.fn(async (args: Record<string, unknown>) => [
-      { type: "text" as const, text: `found ${JSON.stringify(args)}` },
+    inputSchema: z.looseObject({}),
+    execute: vi.fn(async (args: Record<string, unknown>) => [
+      { type: "text" as const, content: `found ${JSON.stringify(args)}` },
     ]),
   };
   const instance = new ArtifactBridge({
@@ -137,7 +139,7 @@ describe("ArtifactBridge.dispatch", () => {
     grant(true);
     await rejected;
     await expect(instance.dispatch("files.writeText", ["/late.txt", "late"])).rejects.toThrow();
-    expect(tool.function).not.toHaveBeenCalled();
+    expect(tool.execute).not.toHaveBeenCalled();
   });
 
   it("rejects reserved paths, unknown methods, and capabilities that are off", async () => {
@@ -170,15 +172,20 @@ describe("ArtifactBridge.dispatch", () => {
   it("asks for consent once before calling tools and remembers the grant", async () => {
     const { instance, consent, tool } = bridge();
     expect(await instance.dispatch("tools.list", [])).toEqual([
-      { name: "search", title: undefined, description: "search", parameters: { type: "object", properties: {} } },
+      {
+        name: "search",
+        title: undefined,
+        description: "search",
+        parameters: convertSchemaToJsonSchema(tool.inputSchema),
+      },
     ]);
     expect(await instance.dispatch("tools.call", ["search", { q: "x" }])).toEqual([
-      { type: "text", text: 'found {"q":"x"}' },
+      { type: "text", content: 'found {"q":"x"}' },
     ]);
     await instance.dispatch("tools.call", ["search", {}]);
     expect(consent).toHaveBeenCalledTimes(1);
     expect(consent).toHaveBeenCalledWith(["search"]);
-    expect(tool.function).toHaveBeenCalledTimes(2);
+    expect(tool.execute).toHaveBeenCalledTimes(2);
     expect(await instance.dispatch("store.keys", [])).toEqual([]);
   });
 
@@ -188,6 +195,20 @@ describe("ArtifactBridge.dispatch", () => {
     await expect(instance.dispatch("tools.call", ["search", {}])).rejects.toThrow("did not allow");
     await expect(instance.dispatch("tools.call", ["search", {}])).rejects.toThrow("did not allow");
     expect(consent).toHaveBeenCalledTimes(2);
-    expect(tool.function).not.toHaveBeenCalled();
+    expect(tool.execute).not.toHaveBeenCalled();
+  });
+
+  it("validates the native schema before executing an artifact tool call", async () => {
+    const { instance, tool } = bridge();
+    tool.inputSchema = z.strictObject({ q: z.string().refine((query) => query.trim().length > 0, "Query is empty") });
+    await expect(instance.dispatch("tools.call", ["search", { q: " " }])).rejects.toThrow("Query is empty");
+    expect(tool.execute).not.toHaveBeenCalled();
+    await instance.dispatch("tools.call", ["search", { q: "valid" }]);
+    expect(tool.execute).toHaveBeenCalledExactlyOnceWith(
+      { q: "valid" },
+      expect.objectContaining({
+        context: expect.objectContaining({ chatId: "chat", model: "m" }),
+      }),
+    );
   });
 });

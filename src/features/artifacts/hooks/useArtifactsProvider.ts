@@ -1,7 +1,7 @@
 import { Shapes } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { ARTIFACT_VALIDATORS } from "@/features/artifacts/lib/artifactValidators";
-import { SCRIPT_EXECUTION_PARAMETERS } from "@/features/artifacts/lib/executionToolSchemas";
+import { SCRIPT_EXECUTION_SCHEMA } from "@/features/artifacts/lib/executionToolSchemas";
 import { resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { queryableMountNames } from "@/features/artifacts/lib/duckdbWorkspace";
 import { useArtifactEntries } from "./useArtifactFiles";
@@ -27,7 +27,7 @@ import { useArtifacts } from "./useArtifacts";
 
 function executionFailure(context: ToolContext | undefined, text: string) {
   context?.setError?.({ code: "EXECUTION_ERROR", message: text });
-  return [{ type: "text" as const, text }];
+  return [{ type: "text" as const, content: text }];
 }
 
 export function useArtifactsProvider(): ToolProvider | null {
@@ -55,7 +55,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         onCommit: (access, mutations) => readWriteManager.record(access, workspace!.chatId, options.context, mutations),
       });
       return result.success
-        ? [{ type: "text" as const, text: result.output }]
+        ? [{ type: "text" as const, content: result.output }]
         : executionFailure(options.context, formatExecutionFailure(result));
     };
 
@@ -74,8 +74,11 @@ export function useArtifactsProvider(): ToolProvider | null {
           "There is no host shell, Node, DOM, package installation or direct remote networking. " +
           "File changes commit on success and are discarded on failure. Treat mounted skill resources as read-only. " +
           "See the runtime instructions for bundled libraries, helpers, output and file limits.",
-        parameters: SCRIPT_EXECUTION_PARAMETERS,
-        function: (args: Record<string, unknown>, context?: ToolContext) => runCode({ args, context }),
+        inputSchema: SCRIPT_EXECUTION_SCHEMA,
+        execute: (args: Record<string, unknown>, execution) => {
+          const context = execution?.context;
+          return runCode({ args, context });
+        },
       },
     ];
 

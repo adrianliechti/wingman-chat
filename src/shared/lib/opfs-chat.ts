@@ -1,8 +1,23 @@
 /**
- * OPFS Chat — Chat-scoped blob storage, extraction/rehydration pipeline, and stored types.
+ * OPFS Chat — Chat-scoped blob storage and the stored chat record.
+ *
+ * A chat is saved as the runtime's own transcript. Only media bytes leave the
+ * record: every data-backed part becomes a `blob:` reference into the chat's
+ * blob folder and comes back as data when the chat, a request, or a view
+ * needs it.
  */
 
-import type { Chat, Content, Message } from "@/shared/types/chat";
+import type { MessagePart, UIMessage } from "@tanstack/ai";
+import type { Chat } from "@/shared/types/chat";
+import {
+  isMediaPart,
+  mapMessages,
+  mediaDataUrl,
+  mediaMetadata,
+  mediaMimeType,
+  toolResultMetadata,
+  type MediaPart,
+} from "./messages";
 import {
   blobToDataUrl,
   createBlobRef,
@@ -56,151 +71,120 @@ export async function listChatBlobs(chatId: string): Promise<string[]> {
 }
 
 // ============================================================================
-// Message Blob Extraction and Rehydration (Chat-scoped)
+// Stored record
 // ============================================================================
 
-/** Messages keep their application shape; only chat dates need serialization. */
+export const STORED_CHAT_VERSION = 2;
+
+/** The saved chat: the native transcript with media as blob references, plus the runtime's resume pointer. */
 export interface StoredChat extends Omit<Chat, "created" | "updated"> {
+  version: typeof STORED_CHAT_VERSION;
   created: string | null;
   updated: string | null;
 }
 
-/**
- * Extract binary data from a content part and store as blob in chat folder.
- * Returns the content with data URL replaced by blob reference.
- */
-async function extractContentBlobForChat(chatId: string, content: Content): Promise<Content> {
-  if (content.type === "image" || content.type === "audio" || content.type === "file") {
-    if (isDataUrl(content.data)) {
-      const blob = dataUrlToBlob(content.data);
-      const blobId = await storeChatBlob(chatId, blob);
-      return { ...content, data: createBlobRef(blobId), contentType: blob.type };
-    }
-    // Already a blob ref or other format, keep as-is
-    return content;
-  }
+// ============================================================================
+// Media parts: data <-> blob reference
+// ============================================================================
 
-  if (content.type === "tool_result") {
-    const extractedResult = await finishBlobWrites(
-      content.result.map((r) => extractContentBlobForChat(chatId, r as Content)),
-    );
-    return { ...content, result: extractedResult } as Content;
-  }
-
-  if (content.type === "subagent")
-    return {
-      ...content,
-      messages: await finishBlobWrites(content.messages.map((m) => extractMessageBlobsForChat(chatId, m))),
-    };
-
-  return content;
+/** The blob a stored media part refers to, if it is a reference. */
+function mediaBlobRef(part: MediaPart): string | null {
+  return part.source.type === "url" ? parseBlobRef(part.source.value) : null;
 }
 
-/**
- * Rehydrate a content part by loading blob data from chat folder and converting to data URL.
- */
-async function rehydrateContentBlobForChat(chatId: string, content: Content): Promise<Content> {
-  if (content.type === "image" || content.type === "audio" || content.type === "file") {
-    const blobId = parseBlobRef(content.data);
-    if (blobId) {
-      const blob = await getChatBlob(chatId, blobId);
+function* mediaParts(parts: readonly MessagePart[]): Generator<MediaPart> {
+  for (const part of parts) {
+    if (isMediaPart(part)) yield part;
+    else if (part.type === "tool-result") {
+      if (Array.isArray(part.content)) yield* mediaParts(part.content);
+      yield* mediaParts(toolResultMetadata(part).result ?? []);
+    } else if (part.type === "subagent") {
+      for (const message of part.subagent.messages) yield* mediaParts(message.parts);
+    }
+  }
+}
 
-      if (blob) {
-        // OPFS never persists the blob's MIME, so re-infer it from the content
-        // name (or a per-type default) and let blobToDataUrl stamp it — never
-        // trust the `.bin` read-back type (see blobToDataUrl).
-        const ext = fileExtension((content as { name?: string }).name ?? "");
-        const contentType =
-          (content.contentType || lookupContentType(ext)) ??
-          (content.type === "image" ? "image/png" : content.type === "audio" ? "audio/wav" : undefined);
-        const dataUrl = await blobToDataUrl(blob, contentType);
-        return { ...content, data: dataUrl };
+export function hasStoredMedia(parts: readonly MessagePart[]): boolean {
+  for (const part of mediaParts(parts)) if (mediaBlobRef(part)) return true;
+  return false;
+}
+
+async function extractMediaPart(chatId: string, part: MediaPart): Promise<MediaPart> {
+  const dataUrl = mediaDataUrl(part);
+  if (!dataUrl || !isDataUrl(dataUrl)) return part;
+  const blob = dataUrlToBlob(dataUrl);
+  const blobId = await storeChatBlob(chatId, blob);
+  return {
+    ...part,
+    source: { type: "url", value: createBlobRef(blobId) },
+    metadata: { ...mediaMetadata(part), contentType: blob.type || mediaMimeType(part) },
+  } as MediaPart;
+}
+
+async function rehydrateMediaPart(chatId: string, part: MediaPart): Promise<MediaPart> {
+  const blobId = mediaBlobRef(part);
+  if (!blobId) return part;
+  const blob = await getChatBlob(chatId, blobId);
+  if (!blob) {
+    // Preserve the reference so saving this chat cannot erase the information
+    // needed to repair a partial restore later.
+    console.warn(`Blob not found: ${blobId}`);
+    return part;
+  }
+  // OPFS never persists the blob's MIME, so re-infer it from the stored type or
+  // the file name, and let blobToDataUrl stamp it — never trust the `.bin` read-back.
+  const metadata = mediaMetadata(part);
+  const contentType =
+    (metadata.contentType || lookupContentType(fileExtension(metadata.filename ?? ""))) ??
+    (part.type === "image" ? "image/png" : part.type === "audio" ? "audio/wav" : undefined);
+  const dataUrl = await blobToDataUrl(blob, contentType);
+  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  const mimeType = dataUrl.slice(5, dataUrl.indexOf(";")) || contentType || "application/octet-stream";
+  return {
+    ...part,
+    source: { type: "data", value: base64, mimeType },
+    metadata: { ...metadata, contentType: mimeType },
+  } as MediaPart;
+}
+
+/** Transform media everywhere TanStack can carry it, preserving the rest of each native part. */
+async function mapMediaParts<T extends MessagePart>(
+  parts: readonly T[],
+  transform: (part: MediaPart) => Promise<MediaPart>,
+): Promise<T[]> {
+  return finishBlobWrites(
+    parts.map(async (part): Promise<T> => {
+      if (isMediaPart(part)) return (await transform(part)) as T;
+      if (part.type === "tool-result") {
+        const result = toolResultMetadata(part).result;
+        return {
+          ...part,
+          ...(Array.isArray(part.content) ? { content: await mapMediaParts(part.content, transform) } : {}),
+          ...(result ? { metadata: { ...part.metadata, result: await mapMediaParts(result, transform) } } : {}),
+        };
       }
-      // Preserve the reference so saving this chat cannot erase the information
-      // needed to repair a partial restore later.
-      console.warn(`Blob not found: ${blobId}`);
-      return content;
-    }
-    // Not a blob ref, return as-is
-    return content;
-  }
-
-  if (content.type === "tool_result") {
-    const rehydratedResult = await Promise.all(content.result.map((r) => rehydrateContentBlobForChat(chatId, r)));
-    return { ...content, result: rehydratedResult } as Content;
-  }
-
-  if (content.type === "subagent")
-    return {
-      ...content,
-      messages: await Promise.all(content.messages.map((m) => rehydrateMessageBlobsForChat(chatId, m))),
-    };
-
-  return content;
+      if (part.type === "subagent")
+        return {
+          ...part,
+          subagent: { ...part.subagent, messages: await mapMessageMedia(part.subagent.messages, transform) },
+        };
+      return part;
+    }),
+  );
 }
 
-/**
- * Extract all binary data from a message and store as blobs in chat folder.
- */
-export async function extractMessageBlobsForChat(chatId: string, message: Message): Promise<Message> {
-  const extractedContent = await finishBlobWrites(message.content.map((c) => extractContentBlobForChat(chatId, c)));
-
-  return {
-    id: message.id,
-    runId: message.runId,
-    createdAt: message.createdAt,
-    role: message.role,
-    content: extractedContent,
-    usage: message.usage,
-    error: message.error,
-  };
+/** Content parts with their chat blobs loaded back into data. */
+export function rehydrateContentParts<T extends MessagePart>(chatId: string, parts: readonly T[]): Promise<T[]> {
+  return mapMediaParts(parts, (part) => rehydrateMediaPart(chatId, part));
 }
 
-/**
- * Rehydrate all blob references in a message from chat folder.
- */
-export async function rehydrateMessageBlobsForChat(
-  chatId: string,
-  message: Message,
-  fallbackIdentity?: { id: string; createdAt: string },
-): Promise<Message> {
-  const rehydratedContent = await Promise.all(message.content.map((c) => rehydrateContentBlobForChat(chatId, c)));
-
-  return {
-    id: message.id ?? fallbackIdentity?.id ?? crypto.randomUUID(),
-    runId: message.runId,
-    createdAt: message.createdAt ?? fallbackIdentity?.createdAt ?? new Date().toISOString(),
-    role: message.role,
-    content: rehydratedContent,
-    usage: message.usage,
-    error: message.error,
-  };
-}
-
-/**
- * Extract all binary data from a chat and store as blobs in chat folder.
- * Returns a StoredChat suitable for JSON serialization.
- * Note: Artifacts should be saved separately via saveArtifacts().
- */
-/** Run state is kept only while it has content, so idle chats keep main's shape. */
-function runtimeFields({ pendingRun, compactions }: Pick<Chat, "pendingRun" | "compactions">) {
-  return { ...(pendingRun ? { pendingRun } : {}), ...(compactions?.length ? { compactions } : {}) };
-}
-
-export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
-  const extractedMessages = await finishBlobWrites(chat.messages.map((m) => extractMessageBlobsForChat(chat.id, m)));
-
-  return {
-    id: chat.id,
-    title: chat.title,
-    customTitle: chat.customTitle,
-    customIndex: chat.customIndex,
-    created: chat.created instanceof Date ? chat.created.toISOString() : (chat.created as unknown as string) || null,
-    updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
-    model: chat.model,
-    messages: extractedMessages,
-    ...runtimeFields(chat),
-  };
+function mapMessageMedia(
+  messages: readonly UIMessage[],
+  transform: (part: MediaPart) => Promise<MediaPart>,
+): Promise<UIMessage[]> {
+  return finishBlobWrites(
+    messages.map(async (message) => ({ ...message, parts: await mapMediaParts(message.parts, transform) })),
+  );
 }
 
 /** Never release the chat save lock while sibling blob writes are still active. */
@@ -212,37 +196,45 @@ async function finishBlobWrites<T>(writes: Promise<T>[]): Promise<T[]> {
   });
 }
 
-/**
- * Rehydrate all blob references in a stored chat.
- * Returns a Chat with all data URLs restored.
- * Note: Artifacts should be loaded separately via loadArtifacts().
- */
-export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
-  const fallbackCreatedAt = stored.created ?? new Date(0).toISOString();
-  const rehydratedMessages = await Promise.all(
-    stored.messages.map((message, index) =>
-      rehydrateMessageBlobsForChat(stored.id, message, {
-        id: `legacy-${stored.id}-${index}`,
-        createdAt: fallbackCreatedAt,
-      }),
-    ),
-  );
+// ============================================================================
+// Whole chats
+// ============================================================================
 
+function isoDate(value: Date | null): string | null {
+  return value instanceof Date ? value.toISOString() : (value as unknown as string) || null;
+}
+
+/** Runtime state is kept only while it has content, so idle chats stay small. */
+function runtimeFields({ resume, metadata }: Pick<Chat, "resume" | "metadata">) {
   return {
-    id: stored.id,
-    title: stored.title,
-    customTitle: stored.customTitle,
-    customIndex: stored.customIndex,
-    created: stored.created ? new Date(stored.created) : null,
-    updated: stored.updated ? new Date(stored.updated) : null,
-    model: stored.model,
-    messages: rehydratedMessages,
-    ...runtimeFields(stored),
+    ...(resume ? { resume } : {}),
+    ...(metadata && Object.keys(metadata).length ? { metadata } : {}),
   };
 }
 
-/** Restore dates and stable legacy identities without reading attachment bytes. */
+/**
+ * Extract all binary data from a chat and store as blobs in chat folder.
+ * Returns a StoredChat suitable for JSON serialization.
+ * Note: Artifacts should be saved separately via saveArtifacts().
+ */
+export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
+  return {
+    version: STORED_CHAT_VERSION,
+    id: chat.id,
+    title: chat.title,
+    customTitle: chat.customTitle,
+    customIndex: chat.customIndex,
+    created: isoDate(chat.created),
+    updated: isoDate(chat.updated),
+    model: chat.model,
+    messages: await mapMessageMedia(chat.messages, (part) => extractMediaPart(chat.id, part)),
+    ...runtimeFields(chat),
+  };
+}
+
+/** Restore dates and message identities without reading attachment bytes. */
 export function restoreChatManifest(stored: StoredChat): Chat {
+  const fallbackCreatedAt = stored.created ?? new Date(0).toISOString();
   return {
     ...runtimeFields(stored),
     id: stored.id,
@@ -252,44 +244,33 @@ export function restoreChatManifest(stored: StoredChat): Chat {
     model: stored.model,
     created: stored.created ? new Date(stored.created) : null,
     updated: stored.updated ? new Date(stored.updated) : null,
-    messages: stored.messages.map((message, index) => ({
+    messages: mapMessages(stored.messages, (message) => ({
       ...message,
-      id: message.id ?? `legacy-${stored.id}-${index}`,
-      createdAt: message.createdAt ?? stored.created ?? new Date(0).toISOString(),
+      createdAt: new Date(message.createdAt ?? fallbackCreatedAt),
     })),
   };
 }
 
 /**
- * Collect all blob IDs referenced in a stored message.
+ * Rehydrate all blob references in a stored chat.
+ * Returns a Chat with all media restored as data.
+ * Note: Artifacts should be loaded separately via loadArtifacts().
  */
-function collectMessageBlobIds(message: Message): string[] {
-  const ids: string[] = [];
-
-  function collectFromContent(content: Content): void {
-    if (content.type === "image" || content.type === "audio" || content.type === "file") {
-      const blobId = parseBlobRef(content.data);
-      if (blobId) {
-        ids.push(blobId);
-      }
-    } else if (content.type === "tool_result") {
-      content.result.forEach(collectFromContent);
-    } else if (content.type === "subagent") {
-      for (const message of content.messages) ids.push(...collectMessageBlobIds(message));
-    }
-  }
-
-  message.content.forEach(collectFromContent);
-  return ids;
+export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
+  const chat = restoreChatManifest(stored);
+  return { ...chat, messages: await mapMessageMedia(chat.messages, (part) => rehydrateMediaPart(stored.id, part)) };
 }
 
 /**
  * Collect all blob IDs referenced in a stored chat.
  */
-export function collectChatBlobIds(chat: StoredChat): string[] {
+export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[] {
   const ids: string[] = [];
   for (const message of chat.messages) {
-    ids.push(...collectMessageBlobIds(message));
+    for (const part of mediaParts(message.parts)) {
+      const blobId = mediaBlobRef(part);
+      if (blobId) ids.push(blobId);
+    }
   }
   return ids;
 }

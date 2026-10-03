@@ -1,8 +1,11 @@
-import type { ReasoningContent } from "../types/chat";
-
-export type GatewayReasoning = Partial<
-  Pick<ReasoningContent, "id" | "encryptedContent" | "text" | "summary" | "model">
->;
+/** The gateway's reasoning item: visible text, its summary, the replayable ciphertext, and the producing deployment. */
+export interface GatewayReasoning {
+  id?: string;
+  encryptedContent?: string;
+  text?: string;
+  summary?: string;
+  model?: string;
+}
 
 /** Keep gateway fields in TanStack's opaque signature, which survives native model/UI conversion. */
 export function packGatewayReasoning(state: GatewayReasoning): string {

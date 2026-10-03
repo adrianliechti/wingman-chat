@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
@@ -26,16 +27,9 @@ import { browserMcpTransport } from "./mcpTransport";
 import { trace } from "@opentelemetry/api";
 import { withAbort } from "@/shared/lib/abortSignals";
 import { textToDataUrl } from "@/shared/lib/fileContent";
-import {
-  type AudioContent,
-  type FileContent,
-  type ImageContent,
-  type TextContent,
-  type Tool,
-  type ToolContext,
-  type ToolIcon,
-  type ToolProvider,
-} from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaDataUrl, mediaFromDataUrl } from "@/shared/lib/messages";
+import { type Tool, type ToolContext, type ToolIcon, type ToolProvider } from "@/shared/types/chat";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
 import { mcpToolName } from "./mcpToolNames";
@@ -314,8 +308,9 @@ export class MCPClient implements ToolProvider {
       title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
-      parameters: tool.inputSchema || {},
-      function: async (args, context) => {
+      inputSchema: z.fromJSONSchema(tool.inputSchema as Record<string, unknown>),
+      execute: async (args, execution) => {
+        const context = execution?.context;
         annotateMcpSpan(this.url, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
@@ -372,7 +367,7 @@ export class MCPClient implements ToolProvider {
     toolName: string,
     uiResourceUri: string,
     args: Record<string, unknown>,
-    storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
+    storedResult: ContentPart[],
     content: Record<string, unknown> | undefined,
     options: McpAppOptions,
   ): Promise<McpAppData> {
@@ -383,9 +378,9 @@ export class MCPClient implements ToolProvider {
     // Convert stored content back to MCP CallToolResult format
     const result: CallToolResult = options.initialResult ?? {
       content: storedResult.map((c) => {
-        if (c.type === "text") return { type: "text" as const, text: c.text };
+        if (c.type === "text") return { type: "text" as const, text: c.content };
         if (c.type === "image") {
-          const match = c.data?.match(/^data:([^;]+);base64,(.+)$/);
+          const match = mediaDataUrl(c)?.match(/^data:([^;]+);base64,(.+)$/);
           if (match)
             return {
               type: "image" as const,
@@ -444,8 +439,6 @@ export class MCPClient implements ToolProvider {
   }
 }
 
-type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
-
 // TanStack's readResource currently has no signal parameter. Stop waiting and
 // prevent stale results from reaching the UI when the owning run is cancelled.
 function readResource(client: NativeMCPClient, uri: string, signal?: AbortSignal) {
@@ -468,7 +461,7 @@ function filenameFromUri(uri: string | undefined, fallback = "resource"): string
  * displayable block. Images/audio are surfaced as such (inline preview); everything
  * else becomes a file (type-specific preview + download button).
  */
-function resourceToContent(res: MCPResourceContents, fallbackName?: string): ToolResultContent | null {
+function resourceToContent(res: MCPResourceContents, fallbackName?: string): ContentPart | null {
   const mimeType = (res.mimeType as string | undefined) || "application/octet-stream";
   const name = fallbackName ?? filenameFromUri(res.uri as string | undefined);
 
@@ -481,9 +474,11 @@ function resourceToContent(res: MCPResourceContents, fallbackName?: string): Too
     return null;
   }
 
-  if (mimeType.startsWith("image/")) return { type: "image", name, data };
-  if (mimeType.startsWith("audio/")) return { type: "audio", name, data };
-  return { type: "file", name, data };
+  return mediaFromDataUrl(
+    data,
+    name,
+    mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : "document",
+  );
 }
 
 /**
@@ -495,22 +490,22 @@ async function resolveResourceLink(
   block: Extract<MCPContentBlock, { type: "resource_link" }>,
   client?: NativeMCPClient | null,
   signal?: AbortSignal,
-): Promise<ToolResultContent[]> {
+): Promise<ContentPart[]> {
   const label = block.name || block.uri;
   if (!client) {
-    return [{ type: "text", text: `[Resource: ${label}]` }];
+    return [{ type: "text", content: `[Resource: ${label}]` }];
   }
   try {
     const read = await readResource(client, block.uri, signal);
     signal?.throwIfAborted();
     const mapped = ((read.contents ?? []) as MCPResourceContents[])
       .map((c) => resourceToContent(c, block.name))
-      .filter((c): c is ToolResultContent => c !== null);
-    return mapped.length ? mapped : [{ type: "text", text: `[Resource: ${label}]` }];
+      .filter((c): c is ContentPart => c !== null);
+    return mapped.length ? mapped : [{ type: "text", content: `[Resource: ${label}]` }];
   } catch (error) {
     signal?.throwIfAborted();
     console.error("Failed to read MCP resource link", block.uri, error);
-    return [{ type: "text", text: `Could not load resource: ${label}` }];
+    return [{ type: "text", content: `Could not load resource: ${label}` }];
   }
 }
 
@@ -519,14 +514,16 @@ async function processBlock(
   block: MCPContentBlock,
   client?: NativeMCPClient | null,
   signal?: AbortSignal,
-): Promise<ToolResultContent[]> {
+): Promise<ContentPart[]> {
   switch (block.type) {
     case "text":
-      return [{ type: "text", text: block.text || "" }];
+      return [{ type: "text", content: block.text || "" }];
     case "image":
-      return [{ type: "image", data: `data:${block.mimeType || "image/png"};base64,${block.data || ""}` }];
+      return [mediaFromDataUrl(`data:${block.mimeType || "image/png"};base64,${block.data || ""}`, undefined, "image")];
     case "audio":
-      return [{ type: "audio", data: `data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}` }];
+      return [
+        mediaFromDataUrl(`data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}`, undefined, "audio"),
+      ];
     case "resource": {
       const mapped = resourceToContent(block.resource);
       return mapped ? [mapped] : [];
@@ -542,15 +539,15 @@ async function processContent(
   input: MCPContentBlock[],
   client?: NativeMCPClient | null,
   signal?: AbortSignal,
-): Promise<ToolResultContent[]> {
+): Promise<ContentPart[]> {
   if (!input?.length) {
-    return [{ type: "text", text: "no content" }];
+    return [{ type: "text", content: "no content" }];
   }
 
   // Resource links resolve in parallel; original order is preserved.
   const result = (await Promise.all(input.map((block) => processBlock(block, client, signal)))).flat();
 
-  return result.length ? result : [{ type: "text", text: JSON.stringify(input.length === 1 ? input[0] : input) }];
+  return result.length ? result : [{ type: "text", content: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }
 
 function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {

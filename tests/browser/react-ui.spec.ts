@@ -67,6 +67,8 @@ for (const legacySelection of [false, true]) {
     await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "html-artifacts" }));
     await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
     expect(loaded).toEqual(["/skills/studio/html-artifacts/SKILL.md"]);
+    await page.getByRole("button", { name: /^Read skill\b/ }).click({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: "HTML artifact runtime", exact: true })).toBeVisible();
     await page.evaluate(() =>
       window.reactUiE2E.callTool("read_skill_resource", {
         skill: "html-artifacts",
@@ -161,7 +163,7 @@ for (const existingChat of [false, true]) {
     await input.fill("Please think about this");
     await input.press("Enter");
     await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
-    const activity = page.getByRole("status", { name: "Assistant is working" });
+    const activity = page.locator('[data-role="assistant"]').getByRole("status");
     await expect(activity).toBeVisible();
     await expect(activity).not.toBeEmpty();
     await page.evaluate(() => window.reactUiE2E.stream("Here is my answer"));
@@ -184,7 +186,7 @@ test("activity labels vary across responses and stay stable while composing", as
   });
   await open(page);
   const input = page.getByRole("textbox", { name: "Chat message input" });
-  const activity = page.getByRole("status", { name: "Assistant is working" });
+  const activity = page.locator('[data-role="assistant"]').getByRole("status");
   const labels = new Set<string>();
   for (let turn = 1; turn <= 4; turn++) {
     await input.fill("Think about this");
@@ -212,10 +214,12 @@ test("research approvals and child tools use chat disclosures and remain operabl
   await input.fill("Research this topic");
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
-  await page.evaluate(() => window.reactUiE2E.callTool("search_agent", { prompt: "Find evidence about the topic" }));
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("web_research", { prompt: "Find evidence about the topic", mode: "deep" }),
+  );
   const requests = page.getByLabel("Agent requests");
   await expect(requests.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  await expect(requests).toContainText("Approval required to run Web research");
+  await expect(requests).toContainText("Approval required to run Deep research");
   await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
   expect(
     await requests.evaluate(
@@ -230,10 +234,7 @@ test("research approvals and child tools use chat disclosures and remain operabl
   await page.screenshot({ path: info.outputPath("approval.png") });
   await requests.getByRole("button", { name: "Approve", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
-  const child = page
-    .locator("details")
-    .filter({ has: page.locator("summary", { hasText: "Researching the web" }) })
-    .first();
+  const child = page.locator('details[class~="group/subagent"]');
   await expect(child).toBeVisible();
   await page.evaluate(() => window.reactUiE2E.callTool("web_search", { queries: ["A useful research query"] }));
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
@@ -251,9 +252,9 @@ test("research approvals and child tools use chat disclosures and remain operabl
   await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
   await expect(requests).toHaveCount(0);
-  await expect(page.getByText("Web research", { exact: true })).toHaveCount(1);
+  await expect(child).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
-  await page.getByText("Web research", { exact: true }).click();
+  await child.locator("summary").click();
   await expect(page.getByText("Findings with sources", { exact: true })).toBeVisible();
   await page.evaluate(() => window.reactUiE2E.flush());
   expect(errors).toEqual([]);

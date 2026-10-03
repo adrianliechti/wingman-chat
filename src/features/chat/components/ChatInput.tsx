@@ -35,8 +35,10 @@ import { sameModelSettings } from "@/shared/lib/models";
 import { modelPresetIndex, resolveModelPresets } from "@/shared/lib/modelPresets";
 import { notify } from "@/shared/lib/notify";
 import { readAsDataURL } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
-import { ProviderState, Role } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaFromDataUrl, text, userMessage, type MediaPart } from "@/shared/lib/messages";
+import type { ToolProvider } from "@/shared/types/chat";
+import { ProviderState } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { EFFORT_LABEL, ModelDropdown } from "@/shared/ui/ModelDropdown";
@@ -48,14 +50,14 @@ import { formatArtifactReference } from "./chatMessageUtils";
 
 async function captureScreenAttachment(
   captureFrame: () => Promise<Blob | null>,
-): Promise<{ content: ImageContent; file: File } | null> {
+): Promise<{ content: MediaPart; file: File } | null> {
   try {
     const blob = await captureFrame();
     if (!blob) return null;
     const dataUrl = await readAsDataURL(blob);
     const name = `screen-capture-${Date.now()}.png`;
     return {
-      content: { type: "image", name, data: dataUrl },
+      content: mediaFromDataUrl(dataUrl, name, "image"),
       file: new File([blob], name, { type: blob.type || "image/png" }),
     };
   } catch (error) {
@@ -287,7 +289,7 @@ export function ChatInput() {
       if (chatLoading || chatError || interruptState?.interrupts.length) return;
 
       if (content.trim()) {
-        let finalAttachments: Content[] = [...attachments];
+        let finalAttachments: ContentPart[] = [...attachments];
         let screenCaptureFile: File | null = null;
 
         if (isContinuousCaptureActive) {
@@ -298,7 +300,7 @@ export function ChatInput() {
           }
         }
 
-        const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
+        const messageParts: ContentPart[] = [text(content), ...finalAttachments];
 
         // Persist pending files (and original images) to the workspace at send.
         const toArtifacts = (list: File[]) =>
@@ -325,17 +327,10 @@ export function ChatInput() {
         // UI (see ChatUserMessage) since the image already renders inline.
         const referencedPaths = artifacts.map((f) => f.path);
         if (referencedPaths.length > 0) {
-          const reference: TextContent = {
-            type: "text",
-            text: formatArtifactReference(referencedPaths),
-          };
-          messageContent.push(reference);
+          messageParts.push(text(formatArtifactReference(referencedPaths)));
         }
 
-        const message: Message = {
-          role: Role.User,
-          content: messageContent,
-        };
+        const message = userMessage(messageParts);
 
         void sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined).catch((error) =>
           notify.error("Message failed", error),

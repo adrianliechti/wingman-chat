@@ -9,7 +9,16 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { shortModelName } from "@/shared/lib/models";
-import type { Content, Message, ToolIcon } from "@/shared/types/chat";
+import type { ToolCallPart, UIMessage } from "@tanstack/ai";
+import {
+  finalText,
+  isMediaPart,
+  messageMetadata,
+  messageText,
+  toolResultFor,
+  type MessageMetadata,
+} from "@/shared/lib/messages";
+import type { ToolIcon } from "@/shared/types/chat";
 import type { RunStatus } from "../context/ChatContext";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { ConvertButton } from "@/shared/ui/ConvertButton";
@@ -19,6 +28,7 @@ import { PlayButton } from "@/shared/ui/PlayButton";
 import { ActivityRow } from "./ActivityRow";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd, subagentToolCallIds } from "./chatMessageUtils";
+import { ChatToolMessage } from "./ChatToolMessage";
 import { getThinkingWord } from "./thinkingWord";
 import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
@@ -156,7 +166,7 @@ function formatTokens(count: number): string {
 }
 
 /** Model + token usage of the completion that produced this turn (auto-router aware). */
-function UsageInfo({ usage }: { usage: NonNullable<Message["usage"]> }) {
+function UsageInfo({ usage }: { usage: NonNullable<MessageMetadata["usage"]> }) {
   const parts: string[] = [];
   if (usage.model) parts.push(shortModelName(usage.model));
   if (usage.inputTokens != null) parts.push(`${formatTokens(usage.inputTokens)} in`);
@@ -167,20 +177,22 @@ function UsageInfo({ usage }: { usage: NonNullable<Message["usage"]> }) {
 }
 
 type ChatAssistantMessageProps = {
-  message: Message;
+  message: UIMessage;
   index: number;
   isLast?: boolean;
   isResponding?: boolean;
 };
 
-function getMessagePartKey(part: Message["content"][number], index: number, scope: string) {
+function getMessagePartKey(part: UIMessage["parts"][number], index: number, scope: string) {
   switch (part.type) {
-    case "reasoning":
-      return `${scope}:reasoning:${part.id}`;
-    case "tool_call":
-      return `${scope}:tool_call:${part.id}`;
-    case "text":
-      return `${scope}:text:${index}`;
+    case "thinking":
+      return `${scope}:thinking:${part.stepId ?? index}`;
+    case "tool-call":
+      return `${scope}:tool-call:${part.id}`;
+    case "tool-result":
+      return `${scope}:tool-result:${part.toolCallId}`;
+    case "subagent":
+      return `${scope}:subagent:${part.subagent.id}`;
     default:
       return `${scope}:${part.type}:${index}`;
   }
@@ -247,48 +259,81 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     [messages, index],
   );
 
+  const metadata = messageMetadata(message);
   const delegated = subagentToolCallIds(messages);
-  const toolCallParts = message.content.filter((p) => p.type === "tool_call" && !delegated.has(p.id));
+  const toolCallParts = message.parts.filter(
+    (part): part is ToolCallPart => part.type === "tool-call" && !delegated.has(part.id),
+  );
   const hasToolCalls = toolCallParts.length > 0;
-  const hasTextContent = message.content.some((p) => p.type === "text" && p.text);
+  const hasTextContent = message.parts.some((part) => part.type === "text" && part.content);
 
-  const mediaParts = message.content.filter(
-    (p) => p.type === "image" || p.type === "file" || p.type === "audio",
-  ) as Content[];
+  const mediaParts = message.parts.filter(isMediaPart);
   const hasMedia = mediaParts.length > 0;
 
   // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
-  const isReasoningActive = isLast && isResponding && !hasTextContent && !hasToolCalls;
+  const isReasoningActive = !!isLast && !!isResponding && !hasTextContent && !hasToolCalls;
 
   const config = getConfig();
   const enableTTS = !!config.tts;
-  const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
+  const textContent = finalText(message) || messageText(message);
 
   // Handle error messages
-  if (message.error) {
+  if (metadata.error) {
     return (
       <ErrorMessage
-        title={message.error.code || "Error"}
-        message={message.error.message}
+        title={metadata.error.code || "Error"}
+        message={metadata.error.message}
         actionLabel="Retry"
         onAction={isLast && !isResponding ? retryMessage : undefined}
       />
     );
   }
 
+  const renderToolCall = (part: ToolCallPart, key: string, className?: string) => {
+    const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
+    if (isPendingElicitation) {
+      return (
+        <div key={key} className="my-2 rounded-lg overflow-hidden max-w-full">
+          <ChatMessageElicitation
+            toolName={pendingElicitation.toolName}
+            elicitation={pendingElicitation.elicitation}
+            waiting={pendingElicitation.waiting}
+            completed={pendingElicitation.completed}
+            onResolve={resolveElicitation}
+          />
+        </div>
+      );
+    }
+    const result = toolResultFor(message, part.id);
+    // A settled round keeps its row so its output is never lost between text segments.
+    if (result)
+      return (
+        <div key={key} className={className}>
+          <ChatToolMessage message={message} call={part} result={result} index={index} />
+        </div>
+      );
+    // An unanswered call is only shown while it is still running.
+    if (!isLast || !isResponding) return null;
+    const meta = toolMeta[part.id];
+    const liveStatus = typeof meta?.status === "string" ? meta.status : null;
+    const tool = findTool(providers, part.name);
+    const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
+    return <RunningToolRow key={key} header={header} icon={tool?.icon} status={liveStatus} className={className} />;
+  };
+
   // Handle loading states (no text content yet)
-  if (!hasTextContent && !message.content.some((part) => part.type === "subagent")) {
-    const reasoningParts = message.content.filter((p) => p.type === "reasoning");
-    const hasReasoning = reasoningParts.some((p) => p.text || p.summary);
+  if (!hasTextContent && !message.parts.some((part) => part.type === "subagent")) {
+    const reasoningParts = message.parts.filter((part) => part.type === "thinking");
+    const hasReasoning = reasoningParts.some((part) => part.content);
 
     // isReasoningActive is already false for non-last messages, so a single
     // helper covers the old / loading / streaming branches below.
     const renderReasoning = () =>
       reasoningParts.map((part, i) =>
-        part.type === "reasoning" ? (
+        part.type === "thinking" ? (
           <ReasoningDisplay
             key={getMessagePartKey(part, i, "reasoning")}
-            reasoning={part.text || part.summary || ""}
+            reasoning={part.content}
             isStreaming={isReasoningActive}
           />
         ) : null,
@@ -297,20 +342,22 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     // Check if there's a pending elicitation for any of the tool calls
     const hasPendingElicitation =
       hasToolCalls &&
-      toolCallParts.some(
-        (toolCall) =>
-          toolCall.type === "tool_call" && pendingElicitation && pendingElicitation.toolCallId === toolCall.id,
-      );
+      toolCallParts.some((toolCall) => pendingElicitation && pendingElicitation.toolCallId === toolCall.id);
 
     // Keep a still-awaited elicitation prompt mounted even if a later result made this message not-last.
     if (!isLast && !hasPendingElicitation) {
-      if (!hasReasoning) return null;
-      return <div className="pb-2">{renderReasoning()}</div>;
+      if (!hasReasoning && !hasToolCalls) return null;
+      return (
+        <div className="pb-2">
+          {hasReasoning && renderReasoning()}
+          {toolCallParts.map((part, i) => renderToolCall(part, getMessagePartKey(part, i, "tool-call")))}
+        </div>
+      );
     }
 
     // Show loading indicators for the last message when actively responding,
     // has a pending elicitation, or has reasoning content to display.
-    if (!isResponding && !hasPendingElicitation && !hasReasoning) {
+    if (!isResponding && !hasPendingElicitation && !hasReasoning && !hasToolCalls) {
       return null;
     }
 
@@ -321,38 +368,9 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       <div className="pb-2">
         {hasReasoning && renderReasoning()}
         {hasToolCalls
-          ? toolCallParts.map((part, i) => {
-              if (part.type !== "tool_call") return null;
-              const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
-
-              if (isPendingElicitation) {
-                return (
-                  <ChatMessageElicitation
-                    key={getMessagePartKey(part, i, "loading-tool-call")}
-                    toolName={pendingElicitation.toolName}
-                    elicitation={pendingElicitation.elicitation}
-                    waiting={pendingElicitation.waiting}
-                    completed={pendingElicitation.completed}
-                    onResolve={resolveElicitation}
-                  />
-                );
-              }
-
-              const meta = toolMeta[part.id];
-              const status = typeof meta?.status === "string" ? meta.status : null;
-              const tool = findTool(providers, part.name);
-              const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
-              return (
-                <RunningToolRow
-                  key={getMessagePartKey(part, i, "loading-tool-call")}
-                  header={header}
-                  icon={tool?.icon}
-                  status={status}
-                />
-              );
-            })
+          ? toolCallParts.map((part, i) => renderToolCall(part, getMessagePartKey(part, i, "loading-tool-call")))
           : !hasReasoning && (
-              <ThinkingIndicator status={status} runKey={message.runId ?? message.id ?? String(index)} />
+              <ThinkingIndicator status={status} runKey={metadata.runId ?? message.id ?? String(index)} />
             )}
       </div>
     );
@@ -367,64 +385,32 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     >
       <div className={cn("flex-1 [overflow-wrap:anywhere] min-w-0 overflow-hidden", hasTextContent && "py-3")}>
         {/* Render content parts in order */}
-        {message.content.map((part, index) => {
-          const partKey = getMessagePartKey(part, index, "content");
+        {message.parts.map((part, partIndex) => {
+          const partKey = getMessagePartKey(part, partIndex, "content");
 
-          if (part.type === "subagent") return <SubagentCard key={part.id} {...part} />;
-          if (part.type === "reasoning") {
-            return (
-              <ReasoningDisplay
-                key={partKey}
-                reasoning={part.text || part.summary || ""}
-                isStreaming={isReasoningActive}
-              />
-            );
+          if (part.type === "subagent") return <SubagentCard key={partKey} {...part.subagent} />;
+          if (part.type === "thinking") {
+            return <ReasoningDisplay key={partKey} reasoning={part.content} isStreaming={isReasoningActive} />;
           }
           if (part.type === "text") {
-            const hasPrecedingItems = message.content
-              .slice(0, index)
-              .some((p) => p.type === "reasoning" || p.type === "tool_call");
+            if (!part.content) return null;
+            const hasPrecedingItems = message.parts
+              .slice(0, partIndex)
+              .some((p) => p.type === "thinking" || p.type === "tool-call");
             return (
               <div key={partKey} className={cn(hasPrecedingItems && "mt-2")}>
                 <Markdown isStreaming={!!(isLast && isResponding)} onOpenArtifact={handleOpenArtifact}>
-                  {part.text}
+                  {part.content}
                 </Markdown>
               </div>
             );
           }
-          if (part.type === "tool_call") {
+          if (part.type === "tool-call") {
             if (delegated.has(part.id)) return null;
-            const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
-
-            if (isPendingElicitation) {
-              return (
-                <div key={partKey} className="my-2 rounded-lg overflow-hidden max-w-full">
-                  <ChatMessageElicitation
-                    toolName={pendingElicitation.toolName}
-                    elicitation={pendingElicitation.elicitation}
-                    waiting={pendingElicitation.waiting}
-                    completed={pendingElicitation.completed}
-                    onResolve={resolveElicitation}
-                  />
-                </div>
-              );
-            }
-
-            // Tool calls shown inline only when streaming
-            if (!isLast || !isResponding) return null;
-            const tool = findTool(providers, part.name);
-            const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
             // Only the first tool call in a run gets top spacing (to match the
             // committed result's gap); consecutive concurrent calls stay tight.
-            const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
-            return (
-              <RunningToolRow
-                key={partKey}
-                header={header}
-                icon={tool?.icon}
-                className={isFirstToolCall ? "mt-2" : "mt-1"}
-              />
-            );
+            const isFirstToolCall = message.parts[partIndex - 1]?.type !== "tool-call";
+            return renderToolCall(part, partKey, isFirstToolCall ? "mt-2" : "mt-1");
           }
           return null;
         })}
@@ -464,7 +450,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               <ConvertButton markdown={textContent} className="h-4 w-4" />
               {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
             </div>
-            {isLast && !isResponding && message.usage && <UsageInfo usage={message.usage} />}
+            {isLast && !isResponding && metadata.usage && <UsageInfo usage={metadata.usage} />}
           </div>
         )}
       </div>

@@ -44,6 +44,8 @@ export async function webBatch<T>(
     }),
   );
   signal?.throwIfAborted();
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length && failed.length === results.length) throw failed[0].reason;
   return results;
 }
 

@@ -82,7 +82,9 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     expect(provider.instructions).toBe("Use the fixture tools.");
     expect(provider.icon).toBe("https://example.test/icon.png");
 
-    expect(await tool("run").function({}, {})).toEqual([{ type: "text", text: "done" }]);
+    expect(await tool("run").execute({}, { context: {}, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "done" },
+    ]);
     expect(call).toHaveBeenCalledWith("run", expect.anything());
   });
 
@@ -98,7 +100,9 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     await provider.connect();
     const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { name: "Ada" } });
 
-    expect(await tool("ask").function({}, { elicit })).toEqual([{ type: "text", text: "state-1:Ada" }]);
+    expect(await tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "state-1:Ada" },
+    ]);
     expect(elicit).toHaveBeenCalledOnce();
     expect(elicit.mock.calls[0][0]).toMatchObject({ message: "Your name?", requestedSchema: schema });
     expect(retries()).toHaveLength(2);
@@ -121,7 +125,9 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     await provider.connect();
     const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { name: "Ada" } });
 
-    expect(await tool("ask").function({}, { elicit })).toEqual([{ type: "text", text: "finished" }]);
+    expect(await tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "finished" },
+    ]);
     expect(elicit.mock.calls.map(([params]) => params.message)).toEqual(["Round 0", "Round 1"]);
   });
 
@@ -135,14 +141,18 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     await provider.connect();
 
     const elicit = vi.fn().mockResolvedValue({ action: "decline" });
-    expect(await tool("ask").function({}, { elicit })).toEqual([{ type: "text", text: "decline" }]);
+    expect(await tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "decline" },
+    ]);
   });
 
   it("fails the tool call without retrying when no one can answer the elicitation", async () => {
     call.mockImplementation(askOnce(() => text("unreachable")));
     await provider.connect();
 
-    await expect(tool("ask").function({}, {})).rejects.toThrow("Elicitation requires a single active tool context");
+    await expect(tool("ask").execute({}, { context: {}, emitCustomEvent() {} })).rejects.toThrow(
+      "Elicitation requires a single active tool context",
+    );
     expect(retries()).toHaveLength(1);
   });
 
@@ -159,7 +169,9 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     );
     await provider.connect();
 
-    await expect(tool("ask").function({}, { elicit: vi.fn() })).rejects.toThrow(/sampling\/createMessage.*capabilit/);
+    await expect(tool("ask").execute({}, { context: { elicit: vi.fn() }, emitCustomEvent() {} })).rejects.toThrow(
+      /sampling\/createMessage.*capabilit/,
+    );
   });
 
   it("refreshes tools when the server publishes a tool list change", async () => {
@@ -181,6 +193,8 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
 
     expect(methods().slice(0, 2)).toEqual(["server/discover", "initialize"]);
     expect(provider.instructions).toBe("Use the fixture tools.");
-    expect(await tool("run").function({}, {})).toEqual([{ type: "text", text: "done" }]);
+    expect(await tool("run").execute({}, { context: {}, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "done" },
+    ]);
   });
 });

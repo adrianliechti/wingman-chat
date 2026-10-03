@@ -25,6 +25,9 @@ import {
 } from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactRevision } from "@/shared/types/artifact";
+import { run as runAgent } from "@/shared/lib/agent";
+import { assistant, calls, testClient, user } from "@/shared/lib/test-support/ai";
+import { createAgentTool } from "@/features/tools/lib/subagent";
 
 describe("FileSystemManager.renameFile", () => {
   beforeEach(() => {
@@ -415,7 +418,7 @@ describe("coordinated artifact tools", () => {
     const fs = new FileSystemManager("freshness");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const invoke = (name: string, args: Record<string, unknown>) =>
-      tools.find((tool) => tool.name === name)!.function(args, { runId: "one" });
+      tools.find((tool) => tool.name === name)!.execute(args, { context: { runId: "one" }, emitCustomEvent() {} });
     await invoke("artifacts_read", { file_path: "/a.txt" });
     await fs.createFile("/a.txt", "alpha externally changed");
     const edit = {
@@ -450,10 +453,16 @@ describe("coordinated artifact tools", () => {
       { namespace: "artifacts" },
     );
     const create = tools.find((tool) => tool.name === "artifacts_create")!;
-    await create.function({ file_path: "/draft.txt", content: "draft" }, { chatId: "origin" });
+    await create.execute(
+      { file_path: "/draft.txt", content: "draft" },
+      { context: { chatId: "origin" }, emitCustomEvent() {} },
+    );
     expect(origin.get("/draft.txt")?.content).toBe("draft");
     selected = new FileSystemManager("other");
-    await create.function({ file_path: "/a.txt", content: "updated" }, { chatId: "origin" });
+    await create.execute(
+      { file_path: "/a.txt", content: "updated" },
+      { context: { chatId: "origin" }, emitCustomEvent() {} },
+    );
     expect(origin.get("/a.txt")?.content).toBe("updated");
     expect(other.get("/a.txt")?.content).toBe("other chat");
     expect(resolveArtifactFileSystem(selected, "other")).toBe(selected);
@@ -475,40 +484,83 @@ describe("coordinated artifact tools", () => {
     const fs = new FileSystemManager("agents");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const read = tools.find((tool) => tool.name === "artifacts_read")!;
-    await read.function({ file_path: "/a.txt" }, { runId: "turn-1" });
+    await read.execute({ file_path: "/a.txt" }, { context: { runId: "turn-1" }, emitCustomEvent() {} });
     await fs.createFile("/a.txt", "alpha external");
-    await read.function(
+    await read.execute(
       { file_path: "/a.txt" },
       {
-        runId: "child",
-        invocationContext: { subagentRunId: crypto.randomUUID() },
+        context: {
+          runId: "child",
+          invocationContext: { subagentRunId: crypto.randomUUID() },
+        },
+        emitCustomEvent() {},
       },
     );
     const result = await tools
       .find((tool) => tool.name === "artifacts_edit")!
-      .function({ edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }] }, { runId: "turn-2" });
+      .execute(
+        { edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }] },
+        { context: { runId: "turn-2" }, emitCustomEvent() {} },
+      );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/a.txt")?.content).toBe("alpha external");
+  });
+
+  it("retains a native child's read baseline across tool calls and rejects a stale edit", async () => {
+    const fs = new FileSystemManager("native-child");
+    const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(calls(["delegate", "agent", { prompt: "Edit the file" }]))
+      .mockResolvedValueOnce(calls(["read", "artifacts_read", { file_path: "/a.txt" }]))
+      .mockImplementationOnce(async () => {
+        await fs.createFile("/a.txt", "alpha external");
+        return calls([
+          "edit",
+          "artifacts_edit",
+          {
+            edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }],
+          },
+        ]);
+      })
+      .mockResolvedValue(assistant("Done"));
+    const result = await runAgent(
+      testClient(complete),
+      "model",
+      "",
+      [user("Edit")],
+      [createAgentTool("agent", "Edit a file", { instructions: "", tools, inheritHistory: false })],
+    );
+    expect(result.status).toBe("completed");
+    expect(complete).toHaveBeenCalledTimes(5);
+    expect(files.get("/a.txt")?.content).toBe("alpha external");
+    expect(JSON.stringify(result.messages)).toContain("changed since");
   });
 
   it("does not lose the main baseline after many short-lived child runs", async () => {
     const fs = new FileSystemManager("many-children");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const read = tools.find((tool) => tool.name === "artifacts_read")!;
-    await read.function({ file_path: "/a.txt" }, { runId: "parent" });
+    await read.execute({ file_path: "/a.txt" }, { context: { runId: "parent" }, emitCustomEvent() {} });
     await fs.createFile("/a.txt", "external");
     for (let i = 0; i < 65; i++) {
-      await read.function(
+      await read.execute(
         { file_path: "/a.txt" },
         {
-          runId: `child-${i}`,
-          invocationContext: { subagentRunId: crypto.randomUUID() },
+          context: {
+            runId: `child-${i}`,
+            invocationContext: { subagentRunId: crypto.randomUUID() },
+          },
+          emitCustomEvent() {},
         },
       );
     }
     const result = await tools
       .find((tool) => tool.name === "artifacts_create")!
-      .function({ file_path: "/a.txt", content: "overwrite" }, { runId: "next-parent-turn" });
+      .execute(
+        { file_path: "/a.txt", content: "overwrite" },
+        { context: { runId: "next-parent-turn" }, emitCustomEvent() {} },
+      );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/a.txt")?.content).toBe("external");
   });
@@ -517,23 +569,26 @@ describe("coordinated artifact tools", () => {
     const fs = new FileSystemManager("turns");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const create = tools.find((tool) => tool.name === "artifacts_create")!;
-    await create.function(
+    await create.execute(
       { file_path: "/new.txt", content: "first" },
       {
-        runId: "chat-turn",
-        invocationContext: {},
+        context: {
+          runId: "chat-turn",
+          invocationContext: {},
+        },
+        emitCustomEvent() {},
       },
     );
     const edit = tools.find((tool) => tool.name === "artifacts_edit")!;
-    await edit.function(
+    await edit.execute(
       { edits: [{ file_path: "/new.txt", old_string: "first", new_string: "second" }] },
-      { runId: "voice-turn" },
+      { context: { runId: "voice-turn" }, emitCustomEvent() {} },
     );
     expect(files.get("/new.txt")?.content).toBe("second");
     await fs.createFile("/new.txt", "second external");
-    const result = await edit.function(
+    const result = await edit.execute(
       { edits: [{ file_path: "/new.txt", old_string: "second", new_string: "third" }] },
-      { runId: "next-chat-turn", invocationContext: {} },
+      { context: { runId: "next-chat-turn", invocationContext: {} }, emitCustomEvent() {} },
     );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/new.txt")?.content).toBe("second external");

@@ -6,7 +6,8 @@ import { PanelShell } from "../../../src/features/chat/components/PanelShell";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
-import type { Content, Message } from "../../../src/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { assistantMessage, userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
 
 const parameters = new URLSearchParams(location.search);
@@ -87,26 +88,31 @@ if (parameters.has("panels")) {
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
     async (options, handler) =>
-      new Promise<Message>((resolve) => {
+      new Promise<UIMessage>((resolve) => {
         state.calls++;
         state.tools = options.tools?.map((tool) => tool.name) ?? [];
         state.instructions = JSON.stringify(options.systemPrompts);
-        stream = (text) => handler?.([{ type: "text", text }]);
-        finish = (text) => resolve({ role: "assistant", content: [{ type: "text", text }] });
+        stream = (text) => handler?.(text);
+        finish = (text) => resolve(assistantMessage(text));
         callTool = (name, args) =>
-          resolve({
-            role: "assistant",
-            content: [{ type: "tool_call", id: crypto.randomUUID(), name, arguments: JSON.stringify(args) }],
-          });
+          resolve(
+            assistantMessage([
+              {
+                type: "tool-call",
+                id: crypto.randomUUID(),
+                name,
+                arguments: JSON.stringify(args),
+                state: "input-complete",
+              },
+            ]),
+          );
       }),
   );
   config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
   if (parameters.has("seed")) {
     for (let index = 0; index < 120; index++) {
       const id = `history-${index}`;
-      const text: Content[] = [
-        { type: "text", text: index === 119 ? "A long answer.\n\n".repeat(80) : `Answer ${index}` },
-      ];
+      const answer = index === 119 ? "A long answer.\n\n".repeat(80) : `Answer ${index}`;
       await storeChat({
         id,
         title: `Saved chat ${index}`,
@@ -114,8 +120,8 @@ if (parameters.has("panels")) {
         updated: new Date(Date.now() + index * 1000),
         model,
         messages: [
-          { id: `${id}-user`, role: "user", content: [{ type: "text", text: `Question ${index}` }] },
-          { id: `${id}-answer`, role: "assistant", content: text },
+          userMessage(`Question ${index}`, { id: `${id}-user` }),
+          assistantMessage(answer, { id: `${id}-answer` }),
         ],
       });
     }

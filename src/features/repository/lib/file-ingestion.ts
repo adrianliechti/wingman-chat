@@ -1,6 +1,5 @@
 import { allocateRepositoryFilePath } from "@/features/repository/lib/repository-paths";
 import type { RepositoryFile, RepositoryFileStore } from "@/features/repository/types/repository";
-import { combineAbortSignals } from "@/shared/lib/abortSignals";
 import { type Embedding, validateEmbeddingVector } from "@/shared/lib/embeddings";
 
 export interface IngestionDependencies extends RepositoryFileStore {
@@ -129,38 +128,34 @@ export class FileIngestion {
       let dimension: number | undefined;
       let failure: { error: unknown } | undefined;
       const failed = new AbortController();
-      const combined = combineAbortSignals(signal, failed.signal);
-      try {
-        // Workers claim one segment at a time. On failure no queued segments start,
-        // and all active requests settle before the job publishes its terminal state.
-        const worker = async () => {
-          try {
-            while (next < segments.length) {
-              check();
-              combined.signal!.throwIfAborted();
-              const index = next++;
-              const result = await this.deps.embed(model, segments[index], combined.signal!);
-              check();
-              combined.signal!.throwIfAborted();
-              validateEmbeddingVector(result.vector);
-              if (!result.model || (embeddingModel !== undefined && result.model !== embeddingModel))
-                throw new Error("The embedding model changed during indexing. Please retry.");
-              if (dimension !== undefined && result.vector.length !== dimension)
-                throw new Error("The embedding service returned inconsistent vector dimensions");
-              embeddingModel = result.model;
-              dimension = result.vector.length;
-              chunks[index] = { text: segments[index], vector: result.vector };
-              publish({ progress: 20 + Math.floor((++completed / segments.length) * 79) });
-            }
-          } catch (error) {
-            failure ??= { error };
-            failed.abort();
+      const embeddingSignal = AbortSignal.any([signal, failed.signal]);
+      // Workers claim one segment at a time. On failure no queued segments start,
+      // and all active requests settle before the job publishes its terminal state.
+      const worker = async () => {
+        try {
+          while (next < segments.length) {
+            check();
+            embeddingSignal.throwIfAborted();
+            const index = next++;
+            const result = await this.deps.embed(model, segments[index], embeddingSignal);
+            check();
+            embeddingSignal.throwIfAborted();
+            validateEmbeddingVector(result.vector);
+            if (!result.model || (embeddingModel !== undefined && result.model !== embeddingModel))
+              throw new Error("The embedding model changed during indexing. Please retry.");
+            if (dimension !== undefined && result.vector.length !== dimension)
+              throw new Error("The embedding service returned inconsistent vector dimensions");
+            embeddingModel = result.model;
+            dimension = result.vector.length;
+            chunks[index] = { text: segments[index], vector: result.vector };
+            publish({ progress: 20 + Math.floor((++completed / segments.length) * 79) });
           }
-        };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, segments.length) }, worker));
-      } finally {
-        combined.cleanup();
-      }
+        } catch (error) {
+          failure ??= { error };
+          failed.abort();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, segments.length) }, worker));
       check();
       if (failure) throw failure.error;
       // Text, vectors and model provenance are published together, once every chunk is valid.

@@ -63,7 +63,7 @@ const api = {
   call: async (name: string, args: Record<string, unknown>) =>
     tools
       .find((tool) => tool.name === `artifacts_${name}`)!
-      .function(args, { chatId: "memory-chat", runId: "memory-run" }),
+      .execute(args, { context: { chatId: "memory-chat", runId: "memory-run" }, emitCustomEvent() {} }),
   files: async () => Object.fromEntries((await manager.snapshot()).files),
   index: () => readText("agents/memory-e2e/memory/index.md"),
   externalWrite: async (path: string, text: string) => {

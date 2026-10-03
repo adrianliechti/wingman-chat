@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent } from "@/shared/types/chat";
+import { outputText as getTextFromContent } from "@/shared/lib/messages";
 import { pageExcerpt } from "./webContent";
 import { buildWebTools } from "./webTools";
 
@@ -19,9 +19,9 @@ function fixture() {
 it("deduplicates batches and passes the requested result limit to the backend", async () => {
   const { search, client, context } = fixture();
   const result = getTextFromContent(
-    await search.function(
+    await search.execute(
       { queries: ["topic", " topic ", ""], domains: ["example.com", "example.com"], limit: 3 },
-      context,
+      { context: context, emitCustomEvent() {} },
     ),
   );
   expect(client.search).toHaveBeenCalledExactlyOnceWith(
@@ -36,25 +36,52 @@ it("deduplicates batches and passes the requested result limit to the backend", 
 it("shares concurrent/repeated requests only within the same run and query options", async () => {
   const { search, client, context } = fixture();
   await Promise.all([
-    search.function({ queries: ["topic"], domains: ["b.example", "a.example"] }, context),
-    search.function({ queries: ["topic"], domains: ["a.example", "b.example"] }, context),
+    search.execute(
+      { queries: ["topic"], domains: ["b.example", "a.example"] },
+      { context: context, emitCustomEvent() {} },
+    ),
+    search.execute(
+      { queries: ["topic"], domains: ["a.example", "b.example"] },
+      { context: context, emitCustomEvent() {} },
+    ),
   ]);
   expect(client.search).toHaveBeenCalledTimes(1);
-  await search.function({ queries: ["topic"], domains: ["a.example", "b.example"], limit: 2 }, context);
-  await search.function({ queries: ["topic"] }, context);
-  await search.function({ queries: ["topic"] }, { signal: new AbortController().signal });
+  await search.execute(
+    { queries: ["topic"], domains: ["a.example", "b.example"], limit: 2 },
+    { context: context, emitCustomEvent() {} },
+  );
+  await search.execute({ queries: ["topic"] }, { context: context, emitCustomEvent() {} });
+  await search.execute(
+    { queries: ["topic"] },
+    { context: { signal: new AbortController().signal }, emitCustomEvent() {} },
+  );
   expect(client.search).toHaveBeenCalledTimes(4);
 });
 
 it("does not cache errors or empty results, and preserves successful batch members", async () => {
   const { search, client, context } = fixture();
   client.search.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([]);
-  const result = getTextFromContent(await search.function({ queries: ["failed", "empty", "ok"] }, context));
+  const result = getTextFromContent(
+    await search.execute({ queries: ["failed", "empty", "ok"] }, { context: context, emitCustomEvent() {} }),
+  );
   expect(result).toContain("offline");
   expect(result).toContain("No results found");
   expect(result).toContain("Evidence");
-  await search.function({ queries: ["failed", "empty", "ok"] }, context);
+  await search.execute({ queries: ["failed", "empty", "ok"] }, { context: context, emitCustomEvent() {} });
   expect(client.search).toHaveBeenCalledTimes(5);
+});
+
+it.each(["search", "fetch"] as const)("fails %s when every request fails, and permits a retry", async (kind) => {
+  const { client, search, fetch } = fixture();
+  const request = kind === "search" ? client.search : client.scrape;
+  request.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  const tool = kind === "search" ? search : fetch;
+  const args = kind === "search" ? { queries: ["topic"] } : { urls: ["https://example.com"] };
+  const execution = { context: undefined, abortSignal: new AbortController().signal, emitCustomEvent() {} };
+  await expect(tool.execute(args, execution)).rejects.toThrow("Failed to fetch");
+  await expect(tool.execute(args, execution)).resolves.toBeDefined();
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[0].at(-1)).toEqual({ signal: execution.abortSignal });
 });
 
 it("reads relevant text beyond the old truncation point and paginates without another fetch", async () => {
@@ -62,17 +89,26 @@ it("reads relevant text beyond the old truncation point and paginates without an
   const page = "Background. ".repeat(1800) + "The launch date is 14 May 2031. " + "Appendix. ".repeat(300);
   client.scrape.mockResolvedValue(page);
   const first = getTextFromContent(
-    await fetch.function({ urls: ["https://example.com", " https://example.com "] }, context),
+    await fetch.execute(
+      { urls: ["https://example.com", " https://example.com "] },
+      { context: context, emitCustomEvent() {} },
+    ),
   );
   expect(first).toContain("offset=6000");
   expect(first).not.toContain("14 May 2031");
   const focused = getTextFromContent(
-    await fetch.function({ urls: ["https://example.com"], query: "launch date" }, context),
+    await fetch.execute(
+      { urls: ["https://example.com"], query: "launch date" },
+      { context: context, emitCustomEvent() {} },
+    ),
   );
   expect(focused).toContain("The launch date is 14 May 2031.");
   expect(focused).toContain("other passages omitted");
   const next = getTextFromContent(
-    await fetch.function({ urls: ["https://example.com"], offset: 21000, max_chars: 1000 }, context),
+    await fetch.execute(
+      { urls: ["https://example.com"], offset: 21000, max_chars: 1000 },
+      { context: context, emitCustomEvent() {} },
+    ),
   );
   expect(next).toContain(page.slice(21000, 22000));
   expect(client.scrape).toHaveBeenCalledTimes(1);
@@ -80,16 +116,20 @@ it("reads relevant text beyond the old truncation point and paginates without an
 
 it("bounds cache retention and never shares a page across runs or unscoped calls", async () => {
   const { fetch, client, context } = fixture();
-  for (let i = 0; i < 17; i++) await fetch.function({ urls: [`https://example.com/${i}`] }, context);
-  await fetch.function({ urls: ["https://example.com/0"] }, context);
+  for (let i = 0; i < 17; i++)
+    await fetch.execute({ urls: [`https://example.com/${i}`] }, { context: context, emitCustomEvent() {} });
+  await fetch.execute({ urls: ["https://example.com/0"] }, { context: context, emitCustomEvent() {} });
   expect(client.scrape).toHaveBeenCalledTimes(18);
-  await fetch.function({ urls: ["https://example.com/0"] }, { signal: new AbortController().signal });
-  await fetch.function({ urls: ["https://example.com/0"] });
-  await fetch.function({ urls: ["https://example.com/0"] });
+  await fetch.execute(
+    { urls: ["https://example.com/0"] },
+    { context: { signal: new AbortController().signal }, emitCustomEvent() {} },
+  );
+  await fetch.execute({ urls: ["https://example.com/0"] });
+  await fetch.execute({ urls: ["https://example.com/0"] });
   expect(client.scrape).toHaveBeenCalledTimes(21);
   client.scrape.mockResolvedValue("x".repeat(256001));
-  await fetch.function({ urls: ["https://example.com/large"] }, context);
-  await fetch.function({ urls: ["https://example.com/large"] }, context);
+  await fetch.execute({ urls: ["https://example.com/large"] }, { context: context, emitCustomEvent() {} });
+  await fetch.execute({ urls: ["https://example.com/large"] }, { context: context, emitCustomEvent() {} });
   expect(client.scrape).toHaveBeenCalledTimes(23);
 });
 
@@ -98,7 +138,7 @@ it("limits concurrency to four and retains input order and partial failures", as
   const pending: { resolve: (text: string) => void; reject: (error: Error) => void }[] = [];
   client.scrape.mockImplementation(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
   const urls = Array.from({ length: 6 }, (_, i) => `https://example.com/${i}`);
-  const result = fetch.function({ urls }, context);
+  const result = fetch.execute({ urls }, { context: context, emitCustomEvent() {} });
   await vi.waitFor(() => expect(client.scrape).toHaveBeenCalledTimes(4));
   pending[1].resolve("Second");
   await vi.waitFor(() => expect(client.scrape).toHaveBeenCalledTimes(5));
@@ -120,9 +160,9 @@ it("propagates cancellation and does not start queued requests", async () => {
         options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
       }),
   );
-  const result = fetch.function(
+  const result = fetch.execute(
     { urls: Array.from({ length: 8 }, (_, i) => `https://example.com/${i}`) },
-    { signal: controller.signal },
+    { context: { signal: controller.signal }, emitCustomEvent() {} },
   );
   const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
   await vi.waitFor(() => expect(client.scrape).toHaveBeenCalledTimes(4));
@@ -130,7 +170,10 @@ it("propagates cancellation and does not start queued requests", async () => {
   await rejected;
   expect(client.scrape).toHaveBeenCalledTimes(4);
   await expect(
-    fetch.function({ urls: ["https://example.com/0"] }, { signal: controller.signal }),
+    fetch.execute(
+      { urls: ["https://example.com/0"] },
+      { context: { signal: controller.signal }, emitCustomEvent() {} },
+    ),
   ).rejects.toMatchObject({ name: "AbortError" });
 });
 
@@ -145,7 +188,9 @@ it.each([
   ["web_fetch", { urls: ["https://example.com"], query: 7 }],
 ])("rejects invalid %s arguments before making requests", async (name, args) => {
   const { tools, client, context } = fixture();
-  await expect(tools.find((tool) => tool.name === name)!.function(args, context)).rejects.toThrow();
+  await expect(
+    tools.find((tool) => tool.name === name)!.execute(args, { context: context, emitCustomEvent() {} }),
+  ).rejects.toThrow();
   expect(client.search).not.toHaveBeenCalled();
   expect(client.scrape).not.toHaveBeenCalled();
 });

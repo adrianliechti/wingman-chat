@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersistenceQueue } from "@/shared/lib/persistence";
+import { userMessage } from "@/shared/lib/messages";
 import type { Chat } from "@/shared/types/chat";
 import { ChatStore } from "./chatStore";
 import { chatEntry } from "./chatStorage";
@@ -10,7 +11,7 @@ const chat = (id: string): Chat => ({
   created: null,
   updated: null,
   model: null,
-  messages: [{ role: "user", content: [{ type: "text", text: `Body of ${id}` }] }],
+  messages: [userMessage(`Body of ${id}`, { id: `${id}-prompt`, createdAt: new Date(0) })],
 });
 const storage = {
   index: vi.fn(async () => [chatEntry(chat("one")), chatEntry(chat("two"))]),
@@ -106,7 +107,7 @@ describe("lazy chat collection", () => {
     expect(store.getChat("two")).toBeUndefined();
     await store.loadChat("one");
     store.updateChat("one", () => ({
-      messages: [{ role: "user", content: [{ type: "text", text: "unsaved needle" }] }],
+      messages: [userMessage("unsaved needle")],
     }));
     expect(await store.searchChats("needle", new AbortController().signal)).toEqual(new Set(["one"]));
     expect(storage.store).not.toHaveBeenCalled();

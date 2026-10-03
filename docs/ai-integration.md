@@ -65,14 +65,22 @@ when the browser has no asynchronous context manager. This removes duplicate
 tool spans and duration reporting. Structured results also rely on TanStack's
 schema validation instead of parsing the validated value a second time.
 
-The existing `Message`/`Content` storage format remains framework-independent.
-`aiMessages.ts` is its storage/UI projection, not another transcript owner.
-`ChatClient` owns live messages; an adapter writes them to the existing chat
-store and OPFS persistence queue. A small metadata cache attaches rich workspace
-results, usage, and run identities. The boundary retains attachment names and
-media types, reasoning model identity, artifact references, and widget results.
-Rich tool results stay in presentation metadata; execution and history replay
-send the same text descriptions of binary outputs to the provider. Inline user
+TanStack's native `UIMessage[]` is the only transcript: the runtime holds it,
+the chat store and OPFS persist it, and every view renders it. There is no
+application message format and no projection. `ChatClient` owns the live
+messages; the persistence adapter in `useChatRun.ts` writes them to the existing
+chat store and OPFS persistence queue, skips the echo the runtime writes back
+during hydration, and applies every later mutation (a failed run, retry, voice or
+external messages, editing an earlier turn) to the native transcript. App data
+rides in the `metadata` records TanStack reserves for it (`src/shared/lib/messages.ts`):
+on a message `runId`, `usage`, `error`, `kind` (`summary` or `runtime_feedback`)
+and the gateway's `textSegments`; on a text part `phase`, `artifactRef`,
+`artifactSelection` or `source`; on a tool-result part `result` (the rich output),
+`meta`, `content` (MCP app data) and `error`; on a media part `filename` and
+`contentType`. A `RunSidecar` per thread collects each tool's rich output and
+display data and each turn's run and usage while a run streams, and attaches
+them when the transcript is persisted; execution and history replay send the
+same text descriptions of binary outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
@@ -209,21 +217,24 @@ still clears it.
 Only paused interrupts retain a resume pointer: this browser-only application
 has no durable executor that could continue a running generation after reload.
 
-`chats/<id>/chat.json` contains only the application's `Chat`, `Message`, and
-`Content` data. A subagent is a flat content part with an id, name, optional tool
-call id, status, messages, and optional error. Its messages use the same format
-and blob extraction as the parent. Reasoning keeps the existing `id` and
-`encryptedContent` fields; the adapter translates its packed signatures.
-There are no native `UIMessage`/`SubagentPart` objects in the conversation file.
+`chats/<id>/chat.json` is the stored chat record, version 2: chat metadata, the
+native `UIMessage[]` with media parts replaced by `blob:` references, the
+runtime's optional `resume` pointer (pending interrupt descriptors) and a
+`metadata` map of middleware state such as compaction checkpoints, keyed by
+namespace and thread (a subagent's context is scoped under the same thread).
+Subagent parts and their child messages are stored as TanStack holds them.
+Reasoning stays a thinking part whose signature packs the gateway's reasoning
+id, ciphertext, text, summary and producing deployment.
 
-Optional TanStack execution data lives in `chats/<id>/tanstack.json`: pending
-resume descriptors, child routing bindings, and middleware checkpoints. The
-existing persistence queue saves both files with write-failure rollback. A
-version and transcript hash prevent a partial restore or interrupted write from
-resuming tools against another conversation. The transcript remains readable
-without this file. Earlier inline runtime fields and native child messages are
-converted when loaded; the next save writes the separated format. Backups include
-both files, while the chat index and attachment layout stay unchanged.
+Chats saved before version 2 (the application's own `Message[]` with tool
+outputs as user turns, `pendingRun` and `compactions` in opaque signatures)
+migrate when loaded (`src/shared/lib/chatMigration.ts`). The migration is one
+way, deterministic and idempotent: a chat that is loaded but never saved again
+yields the same record each time, and the next save writes version 2. Old
+backups therefore stay restorable; restore validation accepts both shapes.
+Memory evidence recorded before the migration pointed at projected message ids
+(`result-<id>`, `<id>-2`) that no longer exist; such notes become drafts on the
+next reconciliation.
 
 ## Compaction and application middleware
 
@@ -235,8 +246,8 @@ threshold remain respected; disabling compaction disables these strategies.
 The full saved transcript stays intact. Custom context estimation, summary
 replacement, the summarizer client method, and overflow retry branches are gone.
 Old saved summary markers remain readable.
-The native metadata capability stores opaque checkpoints in the optional
-`tanstack.json` runtime file, separate from the conversation format. TanStack
+The native metadata capability stores checkpoints in the chat record's
+`metadata` field, namespaced by middleware and scoped by thread and child. TanStack
 validates the source prefix and strategy identity before reuse, including the
 summarizer and threshold. Edited history invalidates the cache. Each child gets
 its own checkpoint scope, including parallel calls to the same agent.
@@ -341,12 +352,11 @@ default cap, but Wingman disables content capture.
 
 ## Compatibility boundaries
 
-`aiMessages.ts` translates persisted Wingman conversations to native UI messages.
-Native messages can include several model/tool rounds, so the storage projection
-splits them into ordered assistant and tool-result turns with durable identities.
-Existing media, reasoning payloads, artifacts, and tool display metadata remain
+`chatMigration.ts` converts chats saved before the native transcript on load, so
+existing media, reasoning payloads, artifacts and tool display metadata remain
 readable. `agent.ts` supplies native tool definitions and application middleware;
-TanStack owns the full model/tool cycle.
+TanStack owns the full model/tool cycle, and `RunSidecar` attaches what the
+runtime only holds as text.
 
 `aiProvider.ts` selects dynamic gateway model aliases with `extendAdapter`, keeps
 cancellation attached to provider requests, and omits an empty multipart model
@@ -371,10 +381,12 @@ reasoning remains readable. Ciphertext is replayed only for the same deployment;
 selecting a model does not relabel earlier reasoning. A recognized reasoning
 rejection before any response content triggers one retry without ciphertext and
 removes the rejected payload from saved history, including Claude's rejection of
-an assistant message ending in thinking. Reasoning-only assistant messages from
-interrupted responses stay visible in history but are omitted from provider
-requests; completed tool calls and their results still replay. Other failures
-and partial response failures are surfaced.
+an assistant message ending in thinking. A failed run ends with its own error
+turn in the saved transcript. Retry resends from the last committed tool result;
+a partial answer, reasoning without an answer, or an unanswered tool call is
+regenerated rather than continued, so the provider never receives a trailing
+assistant message. While an interrupt continuation has failed, the interrupt
+card owns the retry and the transcript records no separate error.
 
 Structured extraction uses TanStack's `combinedStructuredOutputSource()` event
 contract to select the final answer instead of concatenating commentary with JSON.

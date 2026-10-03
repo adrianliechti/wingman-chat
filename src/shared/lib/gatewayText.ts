@@ -160,7 +160,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
             messageId: chunk.messageId,
             delta: append ? fullText.slice(emittedText.length) : "",
             content: fullText,
-            metadata: { wingmanTextSegments: [...segments.values()] },
+            metadata: { textSegments: [...segments.values()] },
           } as AdapterYieldChunk;
           emittedText = fullText;
         }
@@ -187,7 +187,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
           ...chunk,
           metadata: {
             ...("metadata" in chunk ? chunk.metadata : {}),
-            wingmanTextSegments: [...segments.values()].map((segment) => ({ ...segment })),
+            textSegments: [...segments.values()].map((segment) => ({ ...segment })),
           },
         };
       } else yield chunk;
@@ -199,7 +199,11 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
    * JSON Schema. OpenAI strict mode would widen optional fields to
    * `["string", "null"]`, which Anthropic rejects next to an `enum`.
    */
+  /** The deployment alias the current request targets; ciphertext replays only to its producer. */
+  private requestModel?: string;
+
   protected override mapOptionsToRequest(...args: Parameters<OpenAITextAdapter<TModel>["mapOptionsToRequest"]>) {
+    this.requestModel = args[0].model;
     const request = super.mapOptionsToRequest(...args);
     const schemas = new Map(args[0].tools?.map((tool) => [tool.name, tool.inputSchema]));
     return {
@@ -249,7 +253,12 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
           : !!message.content?.some((part) => part.type === "text" && part.content));
       const thinking = message.thinking?.map((part) => {
         const state = readGatewayReasoning(part.signature);
-        if (!hasOutput || !state.encryptedContent || this.rejectedReasoning.has(state.encryptedContent)) {
+        if (
+          !hasOutput ||
+          !state.encryptedContent ||
+          this.rejectedReasoning.has(state.encryptedContent) ||
+          (state.model !== undefined && this.requestModel !== undefined && state.model !== this.requestModel)
+        ) {
           rejected ||= !!state.encryptedContent;
           return { ...part, signature: undefined };
         }
@@ -274,8 +283,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     for (const message of messages) {
       if (message.role !== "assistant") continue;
       const parts =
-        (message.metadata?.wingmanTextSegments as GatewayTextSegment[] | undefined) ??
-        this.textSegments.get(message.id ?? "");
+        (message.metadata?.textSegments as GatewayTextSegment[] | undefined) ?? this.textSegments.get(message.id ?? "");
       if (!parts) continue;
       const text = parts.map((part) => part.content).join("");
       if (text) phased.set(text, [...(phased.get(text) ?? []), parts]);

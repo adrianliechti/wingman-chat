@@ -1,6 +1,6 @@
 import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
-import { chat, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
+import { chat, decide, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
 import { z } from "zod";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
@@ -11,14 +11,13 @@ import { sanitizeForClassification } from "@/features/chat/lib/chatHistory";
 import {
   type ClassificationItem,
   type ClassificationMatch,
-  classificationMatches,
   classificationRequest,
 } from "@/features/chat/lib/classificationQuestions";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
-import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
-import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
 import { aiTelemetry } from "./otel";
@@ -31,6 +30,7 @@ import {
   gatewayTranscription,
 } from "./aiProvider";
 import { decodeBase64, simplifyMarkdown } from "./utils";
+import { GatewayEvaluateAdapter } from "./gatewayEvaluate";
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
@@ -208,7 +208,7 @@ export class Client {
     };
   }
 
-  async generateTitle(model: string, input: Message[], options: ParseOptions = {}): Promise<string | null> {
+  async generateTitle(model: string, input: UIMessage[], options: ParseOptions = {}): Promise<string | null> {
     const history = sanitizeForClassification(input);
     const result = await this.parse(
       model,
@@ -224,22 +224,34 @@ export class Client {
   /** Classifies the latest user message into categories and risks with one System One request. */
   async classifyChat(
     model: string,
-    input: Message[],
+    input: UIMessage[],
     categories: ClassificationItem[] = [],
     risks: ClassificationItem[] = [],
     requestOptions: ClientRequestOptions & Pick<ParseOptions, "effort"> = {},
   ): Promise<{ categories: ClassificationMatch[]; risks: ClassificationMatch[] }> {
     const request = classificationRequest(input, categories, risks);
     if (!request) return { categories: [], risks: [] };
-    const result = await this.postRaw(
-      "/api/v1/systemone",
-      JSON.stringify({ model, ...request, effort: requestOptions.effort }),
-      (resp) => resp.json(),
-      { "Content-Type": "application/json" },
-      30_000,
-      requestOptions,
-    );
-    return classificationMatches(result?.answers, categories, risks);
+    const result = await decide({
+      adapter: new GatewayEvaluateAdapter(model, (body, signal) =>
+        this.postRaw(
+          "/api/v1/systemone",
+          JSON.stringify(body),
+          (resp) => resp.json(),
+          { "Content-Type": "application/json" },
+          30_000,
+          { signal },
+        ),
+      ),
+      ...request,
+      modelOptions: { effort: requestOptions.effort },
+      abortSignal: requestOptions.signal,
+      debug: aiDebug,
+      middleware: [aiTelemetry("classify_chat", requestOptions.parentContext)],
+    });
+    return {
+      categories: result.category ? [{ id: result.category.value, confidence: result.category.confidence }] : [],
+      risks: risks.map((risk, index) => ({ id: risk.id, confidence: result[`risk_${index}`].probability })),
+    };
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
@@ -518,7 +530,7 @@ export class Client {
       90_000,
       requestOptions,
     );
-    if (!Array.isArray(results)) return [];
+    if (!Array.isArray(results)) throw new Error("The search service returned an invalid response");
 
     return results.map((result: SearchResult) => {
       let content = simplifyMarkdown(result.content || "");
@@ -538,10 +550,14 @@ export class Client {
       90_000,
       requestOptions,
     );
-    return {
-      flagged: result?.flagged === true,
-      categories: Array.isArray(result?.categories) ? result.categories : [],
-    };
+    const parsed = z
+      .object({
+        flagged: z.boolean(),
+        categories: z.array(z.object({ name: z.string(), score: z.number() })).nullish(),
+      })
+      .safeParse(result);
+    if (!parsed.success) throw new Error("The guard service returned an invalid response");
+    return { flagged: parsed.data.flagged, categories: parsed.data.categories ?? [] };
   }
 
   async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
@@ -551,7 +567,8 @@ export class Client {
       (resp) => resp.json(),
       requestOptions,
     );
-    return result.content || "";
+    if (typeof result?.content !== "string") throw new Error("The research service returned an invalid response");
+    return result.content;
   }
 
   async generateImage(
@@ -665,38 +682,40 @@ export class Client {
     // budget (see generateImage).
     requestOptions.signal?.throwIfAborted();
     const timeoutController = new AbortController();
-    const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
-    let timedOut = false;
+    const signal = AbortSignal.any([
+      timeoutController.signal,
+      ...(requestOptions.signal ? [requestOptions.signal] : []),
+    ]);
     const timer = setTimeout(() => {
-      timedOut = true;
-      timeoutController.abort();
+      timeoutController.abort(
+        new DOMException(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`, "TimeoutError"),
+      );
     }, timeoutMs);
     try {
       const resp = await fetch(new URL(path, window.location.origin), {
         method: "POST",
         headers,
         body: data,
-        signal: combinedSignal.signal,
+        signal,
       });
       if (!resp.ok) {
         const detail = await readErrorBody(resp);
-        combinedSignal.signal?.throwIfAborted();
+        signal.throwIfAborted();
         throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
       }
       // Fetch resolves at headers. Keep cancellation and the deadline connected
       // until the body has finished, including failed response bodies.
       const result = await read(resp);
-      combinedSignal.signal?.throwIfAborted();
+      signal.throwIfAborted();
       return result;
     } catch (error) {
       requestOptions.signal?.throwIfAborted();
       // Surface a readable timeout instead of the runtime's opaque abort message
       // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
-      if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
+      timeoutController.signal.throwIfAborted();
       throw error;
     } finally {
       clearTimeout(timer);
-      combinedSignal.cleanup();
     }
   }
 }

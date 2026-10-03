@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { maxIterations } from "@tanstack/ai";
+import { convertSchemaToJsonSchema, maxIterations } from "@tanstack/ai";
 import { Document, Packer, Paragraph } from "docx";
 import { z } from "zod";
 import { after, before, describe, test } from "node:test";
@@ -10,6 +10,7 @@ import {
   chunkTypes,
   observeRun,
   messageText,
+  nativeMessage,
   REQUEST_TIMEOUT_MS,
   resultDetail,
   startGatewayHarness,
@@ -366,7 +367,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       assert.equal(result.status, "completed", resultDetail(result));
       assert(prepared, "Native compaction did not prepare a smaller provider context");
       assert(!JSON.stringify(prepared).includes("Redundant background material. The marker"));
-      assert.deepEqual(result.messages[1].content, messages[1].content, "Original history must be retained");
+      assert.equal(messageText([result.messages[1]]), messages[1].content[0].text, "Original history must be retained");
       assert.match(messageText(result.messages.slice(-1)), new RegExp(marker));
     },
     { timeout: REQUEST_TIMEOUT_MS * 2 },
@@ -406,16 +407,17 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         name: "lookup_e2e_fixture",
         description: "Return the deterministic value required by the gateway end-to-end test.",
 
-        parameters: {
+        inputSchema: z.fromJSONSchema({
           type: "object",
           properties: { key: { type: "string" } },
           required: ["key"],
           additionalProperties: false,
-        },
-        function: async (args, context) => {
+        }),
+        execute: async (args, execution) => {
+          const context = execution?.context;
           calls.push(args);
           contexts.push(context);
-          return [{ type: "text", text: marker }];
+          return [{ type: "text", content: marker }];
         },
       };
 
@@ -434,12 +436,8 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       assert(contexts[0]?.invocationContext);
       assert.match(messageText(result.messages), new RegExp(marker));
 
-      const toolCall = result.messages
-        .flatMap((message) => message.content)
-        .find((part) => part.type === "tool_call" && part.name === tool.name);
-      const toolResult = result.messages
-        .flatMap((message) => message.content)
-        .find((part) => part.type === "tool_result" && part.name === tool.name);
+      const toolCall = contentParts(result.messages, "tool_call").find((part) => part.name === tool.name);
+      const toolResult = contentParts(result.messages, "tool_result").find((part) => part.name === tool.name);
       assert(toolCall, "The persisted transcript is missing the model tool call");
       assert(toolResult, "The persisted transcript is missing the tool result");
       assert.equal(toolResult.id, toolCall.id);
@@ -553,18 +551,21 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         {
           name: "execute_script",
           description: "Production schema compatibility fixture. Do not call this tool in this test.",
-          parameters: executionSchemasModule.SCRIPT_EXECUTION_PARAMETERS,
+          inputSchema: executionSchemasModule.SCRIPT_EXECUTION_SCHEMA,
         },
       ].map((tool) => ({
         ...tool,
-        function: async () => [{ type: "text", text: "unused" }],
+        execute: async () => [{ type: "text", content: "unused" }],
       }));
       const tools = [...fileTools, ...schemaOnlyTools, questionsToolModule.ASK_QUESTIONS_TOOL];
 
       // Keep the production file, execution, and default question schemas
       // union-free for predictable provider behavior; TanStack controls strictness.
       assert.equal(
-        tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
+        tools.reduce(
+          (total, tool) => total + toolSchemasModule.countSchemaUnions(convertSchemaToJsonSchema(tool.inputSchema)),
+          0,
+        ),
         0,
       );
 
@@ -588,9 +589,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         JSON.stringify(checks),
       );
 
-      const toolResult = result.messages
-        .flatMap((message) => message.content)
-        .find((part) => part.type === "tool_result" && part.name === "artifacts_create");
+      const toolResult = contentParts(result.messages, "tool_result").find((part) => part.name === "artifacts_create");
       const delta = artifactModule.artifactDeltaFromMeta(toolResult?.meta);
       assert.equal(delta?.mutations[0]?.operation, "create");
       assert.equal(delta?.mutations[0]?.path, "/result.json");
@@ -625,7 +624,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       );
 
       assert.equal(result.status, "aborted");
-      assert.deepEqual(result.messages[0]?.content, prompt.content);
+      assert.deepEqual(result.messages[0]?.parts, nativeMessage(prompt).parts);
       assert.equal(contentParts(result.messages, "tool_result").length, 0);
     },
     { timeout: REQUEST_TIMEOUT_MS },

@@ -84,7 +84,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     expect(provider.tools.some((value) => value.lazy)).toBe(false);
     const setMeta = vi.fn();
     const setContent = vi.fn();
-    await provider.tools[0].function({}, { setMeta, setContent });
+    await provider.tools[0].execute({}, { context: { setMeta, setContent }, emitCustomEvent() {} });
     expect(setMeta).toHaveBeenCalledWith(
       expect.objectContaining({ toolProvider: "test", toolResource: "ui://app", mcpResult: expect.any(Object) }),
     );
@@ -107,7 +107,9 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await provider.connect();
     const setError = vi.fn();
     const setMeta = vi.fn();
-    expect(await provider.tools[0].function({}, { setError, setMeta })).toEqual(result.content);
+    expect(await provider.tools[0].execute({}, { context: { setError, setMeta }, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "done" },
+    ]);
     expect(setError).toHaveBeenCalledWith({ code: "MCP_TOOL_ERROR", message: "done" });
     expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ mcpResult: failed }));
   });
@@ -178,9 +180,9 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     const previous = provider.tools[0];
     await provider.disconnect();
     await provider.connect();
-    await expect(previous.function({})).rejects.toThrow("connection changed");
+    await expect(previous.execute({})).rejects.toThrow("connection changed");
     expect(call).not.toHaveBeenCalled();
-    await provider.tools[0].function({});
+    await provider.tools[0].execute({});
     expect(call).toHaveBeenCalledOnce();
   });
 
@@ -193,7 +195,10 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     const firstElicit = vi.fn(() => response.promise);
     const secondElicit = vi.fn(async (): Promise<ElicitationResult> => ({ action: "cancel" }));
     const complete = vi.fn(() => response.resolve({ action: "accept" }));
-    const first = provider.tools[0].function({}, { elicit: firstElicit, onElicitationComplete: complete });
+    const first = provider.tools[0].execute(
+      {},
+      { context: { elicit: firstElicit, onElicitationComplete: complete }, emitCustomEvent() {} },
+    );
     const elicitation = server.elicitInput({
       mode: "url",
       message: "Sign in",
@@ -201,7 +206,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
       elicitationId: "first",
     });
     await vi.waitFor(() => expect(firstElicit).toHaveBeenCalledOnce());
-    const second = provider.tools[0].function({}, { elicit: secondElicit });
+    const second = provider.tools[0].execute({}, { context: { elicit: secondElicit }, emitCustomEvent() {} });
     await expect(
       server.elicitInput({ message: "Ambiguous", requestedSchema: { type: "object", properties: {} } }),
     ).rejects.toThrow("single active tool context");
@@ -226,7 +231,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     const pending = deferred<Awaited<ReturnType<Client["readResource"]>>>();
     read.mockReturnValue(pending.promise);
     const controller = new AbortController();
-    const running = provider.tools[0].function({}, { signal: controller.signal });
+    const running = provider.tools[0].execute({}, { context: { signal: controller.signal }, emitCustomEvent() {} });
     const rejected = expect(running).rejects.toMatchObject({ name: "AbortError" });
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     controller.abort();

@@ -1,15 +1,22 @@
 import { Download, File } from "lucide-react";
 import mime from "mime";
+import type { ContentPart, MessagePart } from "@tanstack/ai";
 import { cn } from "@/shared/lib/cn";
 import { dataUrlToBytes } from "@/shared/lib/fileContent";
+import { isMediaPart, mediaDataUrl, mediaMimeType, mediaName, type MediaPart } from "@/shared/lib/messages";
 import { downloadBlob, downloadFromUrl, fileExtension, formatBytes } from "@/shared/lib/utils";
-import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
 import { PdfRenderer } from "./renderers/PdfRenderer";
 
-type RenderableContent = AudioContent | FileContent | ImageContent;
+/** A media part reduced to what the renderers need: its bytes or URL, a name, and a MIME type. */
+interface Media {
+  kind: MediaPart["type"];
+  data: string;
+  name?: string;
+  mimeType: string;
+}
 
 function isUrl(content: string): boolean {
   return (
@@ -34,6 +41,13 @@ function detectMimeType(data: string, filename?: string): string {
   return "application/octet-stream";
 }
 
+function toMedia(part: MediaPart): Media | null {
+  const data = mediaDataUrl(part);
+  if (!data) return null;
+  const name = mediaName(part);
+  return { kind: part.type, data, name, mimeType: mediaMimeType(part) ?? detectMimeType(data, name) };
+}
+
 function downloadContent(data: string, filename: string, mimeType: string) {
   if (isUrl(data)) {
     downloadFromUrl(data, filename);
@@ -43,49 +57,36 @@ function downloadContent(data: string, filename: string, mimeType: string) {
   }
 }
 
-function getFilename(content: RenderableContent): string {
-  if (content.type === "file") return content.name;
-  if (content.type === "image" && content.name) return content.name;
-  if (content.type === "audio" && content.name) return content.name;
-
-  if (content.type === "image" || content.type === "audio") {
-    const mimeType = detectMimeType(content.data);
-    const ext = mime.getExtension(mimeType) || "bin";
-    return `${content.type}.${ext}`;
-  }
-
-  return "file";
+function getFilename(media: Media): string {
+  if (media.name) return media.name;
+  if (media.kind === "document") return "file";
+  const ext = mime.getExtension(media.mimeType) || "bin";
+  return `${media.kind}.${ext}`;
 }
 
 function createContentKeyFactory() {
   const seen = new Map<string, number>();
 
-  return (content: RenderableContent) => {
-    const baseKey = `${content.type}:${getFilename(content)}:${content.data.slice(0, 64)}`;
+  return (media: Media) => {
+    const baseKey = `${media.kind}:${getFilename(media)}:${media.data.slice(0, 64)}`;
     const occurrence = seen.get(baseKey) ?? 0;
     seen.set(baseKey, occurrence + 1);
     return occurrence === 0 ? baseKey : `${baseKey}:${occurrence}`;
   };
 }
 
-function ImageDisplay({ content, className }: { content: ImageContent; className?: string }) {
-  const filename = content.name || "image";
-  const mimeType = detectMimeType(content.data, filename);
+function ImageDisplay({ media, className }: { media: Media; className?: string }) {
+  const filename = media.name || "image";
 
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    downloadContent(content.data, filename, mimeType);
+    downloadContent(media.data, filename, media.mimeType);
   };
 
   return (
     <div className="relative group/image inline-block">
-      <img
-        src={content.data}
-        alt={filename}
-        className={className || "max-w-full h-auto rounded-md"}
-        draggable={false}
-      />
+      <img src={media.data} alt={filename} className={className || "max-w-full h-auto rounded-md"} draggable={false} />
       <div className="absolute inset-0 flex items-center justify-center">
         <button
           type="button"
@@ -106,24 +107,23 @@ function fileSizeLabel(data: string): string | null {
   return parsed ? formatBytes(parsed.bytes.length) : null;
 }
 
-function FileDisplay({ content, className }: { content: FileContent; className?: string }) {
+function FileDisplay({ media, className }: { media: Media; className?: string }) {
+  const name = getFilename(media);
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    const mimeType = detectMimeType(content.data, content.name);
-    downloadContent(content.data, content.name, mimeType);
+    downloadContent(media.data, name, media.mimeType);
   };
 
-  const ext = fileExtension(content.name).toUpperCase();
-  const size = fileSizeLabel(content.data);
+  const ext = fileExtension(name).toUpperCase();
+  const size = fileSizeLabel(media.data);
 
   return (
     <button
       type="button"
       onClick={handleDownload}
-      title={`Download ${content.name}`}
-      aria-label={`Download ${content.name}`}
+      title={`Download ${name}`}
+      aria-label={`Download ${name}`}
       className={cn(
         "group/file inline-flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left align-top transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/60 dark:hover:bg-neutral-700/60",
         "w-72 max-w-full",
@@ -140,9 +140,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          {content.name}
-        </span>
+        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">{name}</span>
         {size && <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>}
       </span>
 
@@ -159,128 +157,75 @@ function extractTextFromDataUrl(data: string): string {
   return data;
 }
 
-function HtmlDisplay({ content }: { content: FileContent }) {
-  const html = extractTextFromDataUrl(content.data);
-
-  return <HtmlRenderer html={html} language="html" name={content.name} />;
-}
-
-function PdfDisplay({ content }: { content: FileContent }) {
-  return <PdfRenderer src={content.data} name={content.name} />;
-}
-
-function MarkdownDisplay({ content }: { content: FileContent }) {
-  const md = extractTextFromDataUrl(content.data);
-
-  return (
-    <div className="markdown-content">
-      <div className="prose dark:prose-invert max-w-none">
-        <Markdown>{md}</Markdown>
-      </div>
-    </div>
-  );
-}
-
-function CsvDisplay({ content }: { content: FileContent }) {
-  const csv = extractTextFromDataUrl(content.data);
-
-  return <LazyCsvRenderer csv={csv} language="html" name={content.name} />;
-}
-
-export function ContentRenderer({ content, className }: { content: Content; className?: string }) {
-  if (
-    content.type === "text" ||
-    content.type === "reasoning" ||
-    content.type === "tool_call" ||
-    content.type === "tool_result"
-  ) {
-    return null;
+function MediaDisplay({ media, className }: { media: Media; className?: string }) {
+  if (media.kind === "image" || media.mimeType.startsWith("image/")) {
+    return <ImageDisplay media={media} className={className} />;
   }
-
-  if (content.type === "image") {
-    return <ImageDisplay content={content} className={className} />;
+  if (media.kind === "document") {
+    const name = getFilename(media);
+    if (media.mimeType === "text/csv") {
+      return <LazyCsvRenderer csv={extractTextFromDataUrl(media.data)} language="html" name={name} />;
+    }
+    if (media.mimeType === "text/html") {
+      return <HtmlRenderer html={extractTextFromDataUrl(media.data)} language="html" name={name} />;
+    }
+    if (media.mimeType === "text/markdown") {
+      return (
+        <div className="markdown-content">
+          <div className="prose dark:prose-invert max-w-none">
+            <Markdown>{extractTextFromDataUrl(media.data)}</Markdown>
+          </div>
+        </div>
+      );
+    }
+    if (media.mimeType === "application/pdf") {
+      return <PdfRenderer src={media.data} name={name} />;
+    }
   }
-
-  // Render audio as a file for now.
-  if (content.type === "audio") {
-    const filename = content.name || "audio.mp3";
-    const fileContent: FileContent = { type: "file", name: filename, data: content.data };
-    return <FileDisplay content={fileContent} className={className} />;
-  }
-
-  if (content.type === "file") {
-    const mimeType = detectMimeType(content.data, content.name);
-
-    if (mimeType.startsWith("image/")) {
-      const imageContent: ImageContent = { type: "image", name: content.name, data: content.data };
-      return <ImageDisplay content={imageContent} className={className} />;
-    }
-
-    if (mimeType === "text/csv") {
-      return <CsvDisplay content={content} />;
-    }
-
-    if (mimeType === "text/html") {
-      return <HtmlDisplay content={content} />;
-    }
-
-    if (mimeType === "text/markdown") {
-      return <MarkdownDisplay content={content} />;
-    }
-
-    if (mimeType === "application/pdf") {
-      return <PdfDisplay content={content} />;
-    }
-
-    return <FileDisplay content={content} className={className} />;
-  }
-
-  return null;
+  // Audio and video render as a downloadable file for now.
+  return <FileDisplay media={media} className={className} />;
 }
 
-function isImageContent(content: RenderableContent): boolean {
-  if (content.type === "image") return true;
-  if (content.type === "file") return detectMimeType(content.data, content.name).startsWith("image/");
-  return false;
+/** One media part: images and previewable documents show a preview; other files a download chip. */
+export function ContentRenderer({ content, className }: { content: ContentPart | MessagePart; className?: string }) {
+  if (!isMediaPart(content)) return null;
+  const media = toMedia(content);
+  return media ? <MediaDisplay media={media} className={className} /> : null;
 }
 
-function asImage(content: RenderableContent): ImageContent {
-  return content.type === "image" ? content : { type: "image", name: content.name, data: content.data };
-}
-
-function asFile(content: RenderableContent): FileContent {
-  return content.type === "file" ? content : { type: "file", name: content.name || "audio.mp3", data: content.data };
+function isImage(media: Media): boolean {
+  return media.kind === "image" || media.mimeType.startsWith("image/");
 }
 
 // Single content: images/previewable files render their own preview; other files
 // render as a compact chip (sized to its content, not the full chat width).
-function SingleContentDisplay({ content }: { content: Content }) {
-  if (content.type === "image") {
+function SingleContentDisplay({ media }: { media: Media }) {
+  if (media.kind === "image") {
     return (
       <div className="w-full">
-        <ImageDisplay content={content} className="max-h-96 w-auto rounded-md object-contain" />
+        <ImageDisplay media={media} className="max-h-96 w-auto rounded-md object-contain" />
       </div>
     );
   }
-  return <ContentRenderer content={content} />;
+  return <MediaDisplay media={media} />;
 }
 
-function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }) {
+function MultipleContentsDisplay({ contents }: { contents: Media[] }) {
   const getContentKey = createContentKeyFactory();
-  const images = contents.filter(isImageContent);
-  const files = contents.filter((c) => !isImageContent(c));
+  const images = contents.filter(isImage);
+  const files = contents.filter((media) => !isImage(media));
 
   return (
     <div className="flex flex-col gap-2">
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {images.map((content) => (
+          {images.map((media) => (
             <div
-              key={getContentKey(content)}
+              key={getContentKey(media)}
               className="h-32 w-32 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-800"
-              title={getFilename(content)}
+              title={getFilename(media)}
             >
-              <ImageDisplay content={asImage(content)} className="h-full w-full object-cover" />
+              <ImageDisplay media={media} className="h-full w-full object-cover" />
             </div>
           ))}
         </div>
@@ -288,8 +233,8 @@ function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }
 
       {files.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {files.map((content) => (
-            <FileDisplay key={getContentKey(content)} content={asFile(content)} className="w-64" />
+          {files.map((media) => (
+            <FileDisplay key={getContentKey(media)} media={media} className="w-64" />
           ))}
         </div>
       )}
@@ -297,18 +242,20 @@ function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }
   );
 }
 
-export function RenderContents({ contents }: { contents: Content[] }) {
-  const renderableContents = contents.filter(
-    (c): c is RenderableContent => c.type === "image" || c.type === "file" || c.type === "audio",
-  );
+/** The media parts of a message or tool output, as previews and download chips. */
+export function RenderContents({ contents }: { contents: readonly (ContentPart | MessagePart)[] }) {
+  const media = contents.filter(isMediaPart).flatMap((part) => {
+    const item = toMedia(part);
+    return item ? [item] : [];
+  });
 
-  if (renderableContents.length === 0) {
+  if (media.length === 0) {
     return null;
   }
 
-  if (renderableContents.length === 1) {
-    return <SingleContentDisplay content={renderableContents[0]} />;
+  if (media.length === 1) {
+    return <SingleContentDisplay media={media[0]} />;
   }
 
-  return <MultipleContentsDisplay contents={renderableContents} />;
+  return <MultipleContentsDisplay contents={media} />;
 }

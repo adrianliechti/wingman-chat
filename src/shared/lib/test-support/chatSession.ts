@@ -1,6 +1,5 @@
 import { ChatClient, type ChatPersistedState, type ChatInterrupt } from "@tanstack/ai-client";
-import { AgentMessageMetadata, approvalTools, streamRun, type AgentRunResult, type StreamRunHooks } from "../agent";
-import { toAIMessages } from "../aiMessages";
+import { RunSidecar, approvalTools, streamRun, type AgentRunResult, type StreamRunHooks } from "../agent";
 import type { Client } from "../client";
 import type { Tool } from "../../types/chat";
 
@@ -10,7 +9,7 @@ export function chatSession(
   store: { value?: ChatPersistedState } = {},
   hooks: Partial<StreamRunHooks> = {},
 ) {
-  const metadata = new AgentMessageMetadata();
+  const sidecar = new RunSidecar();
   const finished: AgentRunResult[] = [];
   const ai: ChatClient = new ChatClient({
     threadId: "test-chat",
@@ -18,13 +17,8 @@ export function chatSession(
     persistence: {
       getItem: () => store.value ?? null,
       setItem: (_key, state) => {
-        // Exercise the application's existing domain storage boundary too.
-        store.value = JSON.parse(
-          JSON.stringify({
-            ...state,
-            messages: toAIMessages(metadata.read(state.messages)),
-          }),
-        );
+        // Exercise the application's persistence boundary: the native record with rich outputs attached.
+        store.value = JSON.parse(JSON.stringify({ ...state, messages: sidecar.apply(state.messages) }));
       },
       removeItem: () => {
         store.value = undefined;
@@ -32,9 +26,9 @@ export function chatSession(
     },
     connection: {
       connect: (_messages, _data, signal, context) =>
-        streamRun(client, "model", "", metadata.read(ai.getMessages()), tools, {
+        streamRun(client, "model", "", sidecar.apply(ai.getMessages()), tools, {
           ...hooks,
-          metadata,
+          sidecar,
           options: { signal },
           threadId: context?.threadId,
           runId: context?.runId,
@@ -46,7 +40,7 @@ export function chatSession(
         }),
     },
   });
-  return { ai, finished, metadata, store };
+  return { ai, finished, sidecar, store };
 }
 
 export function boundInterrupt(interrupt: ChatInterrupt) {

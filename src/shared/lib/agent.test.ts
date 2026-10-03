@@ -1,29 +1,28 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
-import { DISCOVERY_TOOL_NAME, maxIterations } from "@tanstack/ai";
+import { DISCOVERY_TOOL_NAME, maxIterations, type UIMessage } from "@tanstack/ai";
 import { run } from "./agent";
-import { testClient } from "./test-support/ai";
-import type { Message, Tool } from "../types/chat";
+import { messageMetadata, toolResultMetadata, toolResults } from "./messages";
+import { assistantMessage } from "./messages";
+import { assistant, calls, output, testClient, toolCall, user } from "./test-support/ai";
+import type { Tool } from "../types/chat";
 
-const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "go" }] }];
-const done: Message = { role: "assistant", content: [{ type: "text", text: "Done" }] };
-const call = (id = "call", args = "{}"): Message => ({
-  role: "assistant",
-  content: [{ type: "tool_call", name: "write", id, arguments: args }],
-});
-const tool = (execute: Tool["function"] = async () => [{ type: "text", text: "Written" }]): Tool => ({
+const prompt: UIMessage[] = [user("go")];
+const done = assistant("Done");
+const call = (id = "call", args = "{}") => calls([id, "write", args]);
+const tool = (execute: Tool["execute"] = async () => output("Written")): Tool => ({
   name: "write",
-  parameters: { type: "object", properties: {} },
-  function: execute,
+  description: "Test tool",
+  inputSchema: z.looseObject({}),
+  execute: execute,
 });
+const results = (messages: UIMessage[]) => messages.flatMap(toolResults);
 
 describe("TanStack agent lifecycle", () => {
   it("discovers deferred tools natively and restores them from saved history", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Written" }]);
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written"));
     const deferredTool = { ...tool(execute), lazy: true, description: "Write a file. Extended guidance." };
-    const discovery: Message = {
-      role: "assistant",
-      content: [{ type: "tool_call", name: DISCOVERY_TOOL_NAME, id: "discover", arguments: '{"toolNames":["write"]}' }],
-    };
+    const discovery = calls(["discover", DISCOVERY_TOOL_NAME, { toolNames: ["write"] }]);
     const complete = vi.fn().mockResolvedValueOnce(discovery).mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
     const first = await run(testClient(complete), "model", "", prompt, [deferredTool]);
     expect(first.status).toBe("completed");
@@ -35,7 +34,7 @@ describe("TanStack agent lifecycle", () => {
 
     // JSON storage drops prototypes and object identities; TanStack must still
     // recognize its own discovery result without a separate cache in Wingman.
-    const restored: Message[] = JSON.parse(JSON.stringify([...first.messages, ...prompt]));
+    const restored: UIMessage[] = JSON.parse(JSON.stringify([...first.messages, ...prompt]));
     const next = vi.fn().mockResolvedValue(done);
     await run(testClient(next), "model", "", restored, [deferredTool]);
     expect(next.mock.calls[0][0].tools.map((entry: Tool) => entry.name)).toEqual(["write"]);
@@ -48,21 +47,11 @@ describe("TanStack agent lifecycle", () => {
   });
 
   it("does not execute a deferred tool before discovery and lets the model correct its call", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue([{ type: "text", text: "Written" }]);
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written"));
     const complete = vi
       .fn()
       .mockResolvedValueOnce(call("early"))
-      .mockResolvedValueOnce({
-        role: "assistant",
-        content: [
-          {
-            type: "tool_call",
-            name: DISCOVERY_TOOL_NAME,
-            id: "discover",
-            arguments: '{"toolNames":["write"]}',
-          },
-        ],
-      })
+      .mockResolvedValueOnce(calls(["discover", DISCOVERY_TOOL_NAME, { toolNames: ["write"] }]))
       .mockResolvedValueOnce(call("valid"))
       .mockResolvedValueOnce(done);
     const result = await run(testClient(complete), "model", "", prompt, [{ ...tool(execute), lazy: true }]);
@@ -81,10 +70,11 @@ describe("TanStack agent lifecycle", () => {
       "Instructions",
       prompt,
       [
-        tool(async (_args, context) => {
+        tool(async (_args, execution) => {
+          const context = execution?.context;
           context?.setMeta?.({ artifactDelta: { mutations: [{ path: "/a.txt" }] } });
           context?.setContent?.({ saved: true });
-          return [{ type: "text", text: "Written" }];
+          return output("Written");
         }),
       ],
       {
@@ -96,18 +86,19 @@ describe("TanStack agent lifecycle", () => {
       new Set(result.messages.filter((message) => message.role === "assistant").map((message) => message.id)).size,
     ).toBe(2);
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(result.messages[2].content[0]).toMatchObject({
-      type: "tool_result",
-      id: "call",
+    expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
+    expect(result.messages[1].parts.map((part) => part.type)).toEqual(["tool-call", "tool-result"]);
+    expect(toolResultMetadata(results(result.messages)[0])).toMatchObject({
+      result: output("Written"),
       meta: { artifactDelta: { mutations: [{ path: "/a.txt" }] } },
       content: { saved: true },
     });
-    expect(result.messages.at(-1)?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+    expect(messageMetadata(result.messages.at(-1)!).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+    expect(messageMetadata(result.messages.at(-1)!).runId).toEqual(expect.any(String));
     expect(resultHook).toHaveBeenCalledOnce();
     expect(resultHook).toHaveBeenCalledWith([expect.objectContaining({ toolCallId: "call" })]);
     expect(complete.mock.calls[1][0].messages).toEqual(
-      expect.arrayContaining([expect.objectContaining({ role: "tool", toolCallId: "call" })]),
+      expect.arrayContaining([expect.objectContaining({ role: "tool", toolCallId: "call", content: "Written" })]),
     );
   });
 
@@ -132,16 +123,14 @@ describe("TanStack agent lifecycle", () => {
       .fn<Parameters<typeof testClient>[0]>()
       .mockResolvedValueOnce(call())
       .mockImplementationOnce(async (_options, onStream) => {
-        onStream([{ type: "text", text: "D" }]);
-        onStream([{ type: "text", text: "Do" }]);
-        onStream(done.content);
+        onStream("D");
+        onStream("Do");
+        onStream("Done");
         return done;
       });
     const result = await run(testClient(complete), "model", "", prompt, [tool()]);
-    expect(
-      result.messages.flatMap((message) => message.content).filter((part) => part.type === "tool_result"),
-    ).toHaveLength(1);
-    expect(result.messages.at(-1)?.content).toEqual(done.content);
+    expect(results(result.messages)).toHaveLength(1);
+    expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Done" }]);
   });
 
   it("never invokes a model after parent cancellation", async () => {
@@ -165,7 +154,8 @@ describe("TanStack agent lifecycle", () => {
       "",
       prompt,
       [
-        tool(async (_args, context) => {
+        tool(async (_args, execution) => {
+          const context = execution?.context;
           controller.abort();
           context?.signal?.throwIfAborted();
           return [];
@@ -174,14 +164,17 @@ describe("TanStack agent lifecycle", () => {
       { options: { signal: controller.signal } },
     );
     expect(result.status).toBe("aborted");
-    expect(result.messages.flatMap((m) => m.content).some((p) => p.type === "tool_result")).toBe(false);
+    expect(results(result.messages)).toHaveLength(0);
     expect(complete).toHaveBeenCalledOnce();
   });
 
-  it("lets TanStack validate tool inputs without executing invalid arguments", async () => {
+  it.each(["many", -1])("lets TanStack validate tool inputs, including native refinements: %s", async (count) => {
     const execute = vi.fn();
     const resultHook = vi.fn();
-    const complete = vi.fn().mockResolvedValueOnce(call("bad", '{"count":"many"}')).mockResolvedValueOnce(done);
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(call("bad", JSON.stringify({ count })))
+      .mockResolvedValueOnce(done);
     const result = await run(
       testClient(complete),
       "model",
@@ -190,7 +183,12 @@ describe("TanStack agent lifecycle", () => {
       [
         {
           ...tool(execute),
-          parameters: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] },
+          inputSchema: z.looseObject({
+            count: z
+              .number()
+              .int()
+              .refine((value) => value > 0, "Count must be positive"),
+          }),
         },
       ],
       { middleware: [{ onToolPhaseComplete: (_ctx, info) => resultHook(info.results) }] },
@@ -198,16 +196,106 @@ describe("TanStack agent lifecycle", () => {
     expect(result.status).toBe("completed");
     expect(execute).not.toHaveBeenCalled();
     expect(resultHook).toHaveBeenCalledWith([expect.objectContaining({ toolCallId: "bad" })]);
-    expect(result.messages.flatMap((m) => m.content)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "tool_result", id: "bad" })]),
+    expect(results(result.messages)).toEqual([expect.objectContaining({ toolCallId: "bad", state: "error" })]);
+  });
+
+  it("uses TanStack's cancellation signal for tools and reports middleware aborts as aborted", async () => {
+    const parent = new AbortController();
+    const complete = vi.fn().mockResolvedValue(call());
+    let cancel!: () => void;
+    let toolSignal: AbortSignal | undefined;
+    let invocationSignal: AbortSignal | undefined;
+    let executionSignal: AbortSignal | undefined;
+    const onToolMeta = vi.fn();
+    const result = await run(
+      testClient(complete),
+      "model",
+      "",
+      prompt,
+      [
+        tool(async (_args, execution) => {
+          const context = execution?.context;
+          toolSignal = context?.signal;
+          invocationSignal = context?.invocationContext?.signal;
+          cancel();
+          context?.setMeta?.({ progress: "Late progress" });
+          return output("Too late");
+        }),
+      ],
+      {
+        options: { signal: parent.signal },
+        onToolMeta,
+        createToolContext: (_call, execution) => {
+          executionSignal = execution.abortSignal;
+          return {};
+        },
+        middleware: [
+          {
+            onBeforeToolCall: (ctx) => {
+              cancel = () => ctx.abort("Cancelled by middleware");
+            },
+          },
+        ],
+      },
     );
+    expect(toolSignal?.aborted).toBe(true);
+    expect(toolSignal).toBe(executionSignal);
+    expect(invocationSignal).toBe(toolSignal);
+    expect(parent.signal.aborted).toBe(false);
+    expect(result.status).toBe("aborted");
+    expect(results(result.messages)).toHaveLength(0);
+    expect(onToolMeta).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("prepares delegated requests with the child's cancellation signal", async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(calls(["delegate", "agent", { prompt: "Child task" }]))
+      .mockResolvedValue(done);
+    const parent = new AbortController();
+    let childSignal: AbortSignal | undefined;
+    const result = await run(
+      testClient(complete),
+      "model",
+      "",
+      prompt,
+      [
+        {
+          name: "agent",
+          description: "Test tool",
+          inputSchema: z.looseObject({ prompt: z.string() }),
+          execute: async () => [],
+          subagent: { instructions: "", tools: [], timeoutMs: 10 },
+        },
+      ],
+      {
+        options: { signal: parent.signal },
+        prepareMessages: async (messages, signal) => {
+          if (!childSignal && complete.mock.calls.length === 1) {
+            childSignal = signal;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            signal.throwIfAborted();
+          }
+          return messages;
+        },
+      },
+    );
+    expect(childSignal?.aborted).toBe(true);
+    expect(parent.signal.aborted).toBe(false);
+    expect(result.status).toBe("completed");
+    // Only the parent generated; the child's timeout interrupted request preparation.
+    expect(complete).toHaveBeenCalledTimes(2);
+    const child = result.messages.flatMap((message) => message.parts).find((part) => part.type === "subagent");
+    expect(child?.subagent.status).toBe("error");
+    expect(JSON.stringify(complete.mock.calls.at(-1)?.[0].messages)).toContain("timed out");
   });
 
   it("does not execute truncated tool arguments", async () => {
     const execute = vi.fn();
     const complete = vi
       .fn()
-      .mockResolvedValue({ role: "assistant", content: [{ ...call().content[0], incomplete: true }] });
+      .mockResolvedValue(assistantMessage([{ ...toolCall("call", "write"), state: "input-streaming" }]));
     const result = await run(testClient(complete), "model", "", prompt, [tool(execute)]);
     expect(result.status).toBe("failed");
     expect(result.error?.code).toBe("OUTPUT_TRUNCATED");
@@ -217,22 +305,22 @@ describe("TanStack agent lifecycle", () => {
   it("keeps rich error results and reports their failure through the native tool loop", async () => {
     const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
     const result = await run(testClient(complete), "model", "", prompt, [
-      tool(async (_args, context) => {
+      tool(async (_args, execution) => {
+        const context = execution?.context;
         context?.setMeta?.({ toolResource: "ui://error", mcpResult: { isError: true } });
         context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Remote operation failed" });
-        return [{ type: "text", text: "Failure details" }];
+        return output("Failure details");
       }),
     ]);
     expect(result.status).toBe("completed");
-    expect(result.messages[2]).toMatchObject({
-      error: { code: "MCP_TOOL_ERROR", message: "Remote operation failed" },
-      content: [
-        {
-          type: "tool_result",
-          result: [{ type: "text", text: "Failure details" }],
-          meta: { toolResource: "ui://error", mcpResult: { isError: true } },
-        },
-      ],
+    expect(results(result.messages)[0]).toMatchObject({
+      state: "error",
+      error: "Remote operation failed",
+      metadata: {
+        result: output("Failure details"),
+        meta: { toolResource: "ui://error", mcpResult: { isError: true } },
+        error: { code: "MCP_TOOL_ERROR", message: "Remote operation failed" },
+      },
     });
     expect(complete.mock.calls[1][0].messages).toContainEqual(
       expect.objectContaining({
@@ -244,11 +332,11 @@ describe("TanStack agent lifecycle", () => {
   });
 
   it("keeps committed tool work when a later request fails and does not replay it on resume", async () => {
-    const execute = vi.fn(async () => [{ type: "text" as const, text: "Saved" }]);
+    const execute = vi.fn(async () => output("Saved"));
     const complete = vi.fn().mockResolvedValueOnce(call()).mockRejectedValueOnce(new Error("Model failed"));
     const result = await run(testClient(complete), "model", "", prompt, [tool(execute)]);
     expect(result.status).toBe("failed");
-    expect(result.messages.at(-1)?.content[0]).toMatchObject({ type: "tool_result", id: "call" });
+    expect(results(result.messages)).toMatchObject([{ toolCallId: "call", state: "complete" }]);
     const resumed = await run(testClient(vi.fn().mockResolvedValue(done)), "model", "", result.messages, [
       tool(execute),
     ]);
@@ -265,13 +353,14 @@ describe("TanStack agent lifecycle", () => {
       "",
       prompt,
       [
-        tool(async (_args, ctx) => {
+        tool(async (_args, execution) => {
+          const ctx = execution?.context;
           const result = await run(testClient(child), "model", "", prompt, [], {
             context: { ...ctx?.invocationContext, subagentRunId: "child" },
             agentLoopStrategy: maxIterations(1),
           });
           expect(result.status).toBe("completed");
-          return [{ type: "text", text: "Done" }];
+          return output("Done");
         }),
       ],
       { agentLoopStrategy: maxIterations(2) },

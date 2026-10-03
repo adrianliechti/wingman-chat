@@ -125,18 +125,21 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     const value = parseBackupJson(path, await blob.text());
     if (!value || typeof value !== "object") throw new Error(`Invalid metadata in backup: ${path}`);
     if (/^chats\/(?:[^/]+\/chat|[^/]+)\.json$/.test(path)) {
+      // The native transcript keeps `parts`; chats saved before it keep `content` and migrate on load.
       const messages = (value as { messages?: unknown }).messages;
+      const typedParts = (parts: unknown) =>
+        Array.isArray(parts) &&
+        parts.every(
+          (part: unknown) =>
+            !!part && typeof part === "object" && typeof (part as { type?: unknown }).type === "string",
+        );
       if (
         !Array.isArray(messages) ||
         messages.some(
           (message) =>
             !message ||
-            !["user", "assistant"].includes(message.role) ||
-            !Array.isArray(message.content) ||
-            message.content.some(
-              (part: unknown) =>
-                !part || typeof part !== "object" || typeof (part as { type?: unknown }).type !== "string",
-            ),
+            !["user", "assistant", "system"].includes(message.role) ||
+            !(typedParts(message.parts) || typedParts(message.content)),
         )
       )
         throw new Error(`Invalid chat in backup: ${path}`);

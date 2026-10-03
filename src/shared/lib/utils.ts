@@ -1,5 +1,4 @@
 import mime from "mime";
-import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 
 // Parse a data URL to extract mimeType and base64 data
 export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
@@ -15,27 +14,6 @@ export function parseDataUrl(dataUrl: string): { mimeType: string; data: string 
  * Strips binary data (images, audio, files) and replaces with text descriptions
  * to avoid sending large base64 data URLs to the model which it cannot process.
  */
-export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
-  return result
-    .map((item) => {
-      if (item.type === "text") {
-        return item.text;
-      }
-      if (item.type === "image") {
-        return `[Image${item.name ? `: ${item.name}` : ""} - displayed to user]`;
-      }
-      if (item.type === "audio") {
-        return `[Audio${item.name ? `: ${item.name}` : ""} - displayed to user]`;
-      }
-      if (item.type === "file") {
-        return `[File: ${item.name} - displayed to user]`;
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
 export function lookupContentType(ext: string): string | undefined {
   const normalizedExt = ext.startsWith(".") ? ext : `.${ext}`;
   return mime.getType(normalizedExt) ?? undefined;

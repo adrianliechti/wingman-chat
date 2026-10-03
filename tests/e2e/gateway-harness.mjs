@@ -4,19 +4,44 @@ import { createServer } from "vite";
 export const GATEWAY_URL = process.env.WINGMAN_E2E_GATEWAY ?? process.env.WINGMAN_URL ?? "http://localhost:4242";
 export const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.WINGMAN_E2E_TIMEOUT_MS ?? "90000", 10);
 
+export const Role = { User: "user", Assistant: "assistant" };
+
+/** Scenario inputs may use the compact `{ role, content: [{ type: "text", text }] }` form; runs take native messages. */
+export function nativeMessage(message) {
+  if (message.parts) return message;
+  const parts = message.content.map((part) => {
+    if (part.type === "text") return { type: "text", content: part.text };
+    const match = /^data:([^;,]+)(?:;base64)?,([\s\S]*)$/.exec(part.data);
+    const kind = part.type === "file" ? "document" : part.type;
+    return {
+      type: kind,
+      source: match ? { type: "data", value: match[2], mimeType: match[1] } : { type: "url", value: part.data },
+      metadata: {
+        ...(part.name ? { filename: part.name } : {}),
+        ...(part.contentType ? { contentType: part.contentType } : {}),
+      },
+    };
+  });
+  return { id: message.id ?? crypto.randomUUID(), role: message.role, parts };
+}
+
+export function user(text) {
+  return nativeMessage({ role: "user", content: [{ type: "text", text }] });
+}
+
 export function messageText(messages) {
   return messages
-    .flatMap((message) => message.content)
+    .flatMap((message) => message.parts)
     .filter((part) => part.type === "text")
-    .map((part) => part.text)
+    .map((part) => part.content)
     .join("\n");
 }
 
 export function lastAssistantText(messages) {
   const assistant = messages.findLast((message) => message.role === "assistant");
-  return (assistant?.content ?? [])
+  return (assistant?.parts ?? [])
     .filter((part) => part.type === "text")
-    .map((part) => part.text)
+    .map((part) => part.content)
     .join("\n");
 }
 
@@ -41,8 +66,47 @@ export function resultDetail(result) {
   return result.error ? JSON.stringify(result.error) : result.status;
 }
 
+/**
+ * Parts of one kind across the transcript, by the scenario's legacy names:
+ * "reasoning" yields the gateway reasoning state (text, summary, encryptedContent, model),
+ * "tool_result" yields tool-result parts with their call's name and arguments attached.
+ */
 export function contentParts(messages, type) {
-  return messages.flatMap((message) => message.content).filter((part) => part.type === type);
+  const parts = messages.flatMap((message) => message.parts);
+  if (type === "reasoning")
+    return parts
+      .filter((part) => part.type === "thinking")
+      .map((part) => ({ ...part, ...readReasoning(part.signature) }));
+  if (type === "tool_call") return parts.filter((part) => part.type === "tool-call");
+  if (type === "tool_result") {
+    const calls = new Map(parts.filter((part) => part.type === "tool-call").map((part) => [part.id, part]));
+    return parts
+      .filter((part) => part.type === "tool-result")
+      .map((part) => ({
+        ...part,
+        id: part.toolCallId,
+        name: calls.get(part.toolCallId)?.name,
+        arguments: calls.get(part.toolCallId)?.arguments,
+        meta: part.metadata?.meta,
+      }));
+  }
+  return parts.filter((part) => part.type === type);
+}
+
+function readReasoning(signature) {
+  if (!signature) return {};
+  try {
+    const value = JSON.parse(signature);
+    return {
+      id: value.id,
+      encryptedContent: value.encrypted_content,
+      text: value.wingman?.text,
+      summary: value.wingman?.summary,
+      model: value.wingman?.model,
+    };
+  } catch {
+    return {};
+  }
 }
 
 function requestBody(req) {
@@ -178,7 +242,6 @@ export async function startGatewayHarness(options = {}) {
   });
   let clientModule;
   let agentModule;
-  let chatModule;
   let client;
   let availableModels;
   try {
@@ -188,7 +251,6 @@ export async function startGatewayHarness(options = {}) {
     globalThis.window = { location: { origin: `http://127.0.0.1:${address.port}` } };
     clientModule = await vite.ssrLoadModule("/src/shared/lib/client.ts");
     agentModule = await vite.ssrLoadModule("/src/shared/lib/agent.ts");
-    chatModule = await vite.ssrLoadModule("/src/shared/types/chat.ts");
     client = new clientModule.Client();
     availableModels = await client.listModels();
   } catch (error) {
@@ -200,8 +262,9 @@ export async function startGatewayHarness(options = {}) {
   return {
     vite,
     client,
-    run: agentModule.run,
-    Role: chatModule.Role,
+    run: (client, model, instructions, messages, tools, hooks) =>
+      agentModule.run(client, model, instructions, messages.map(nativeMessage), tools, hooks),
+    Role,
     availableModels,
     async close() {
       delete globalThis.window;

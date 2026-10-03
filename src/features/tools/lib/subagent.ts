@@ -1,13 +1,15 @@
+import { z } from "zod";
 import { maxIterations, type ChatMiddleware } from "@tanstack/ai";
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
-import { getFinalTextFromContent } from "@/shared/lib/assistantText";
+import { getErrorInfo } from "@/shared/lib/errors";
+import { finalText, toolResultMetadata, userMessage } from "@/shared/lib/messages";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
-import { Role, type Tool } from "@/shared/types/chat";
+import type { Tool } from "@/shared/types/chat";
 
 export function createSubagentTool(
   model: string,
@@ -41,47 +43,45 @@ export function createAgentTool(
     subagent: spec,
     description,
     needsApproval: options.needsApproval,
-    parameters: {
-      type: "object",
-      properties: {
-        prompt: {
-          type: "string",
-          minLength: 1,
-          description:
-            "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
-        },
-      },
-      required: ["prompt"],
-      additionalProperties: false,
-    },
-    function: async (args, ctx) => {
+    inputSchema: z.strictObject({
+      prompt: z
+        .string()
+        .min(1)
+        .describe(
+          "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
+        ),
+    }),
+    execute: async (args, execution) => {
+      const ctx = execution?.context;
+      const parentSignal = execution?.abortSignal ?? ctx?.signal;
+      parentSignal?.throwIfAborted();
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) {
-        return [{ type: "text", text: "Error: prompt is required" }];
+        return [{ type: "text", content: "Error: prompt is required" }];
       }
       const model = spec.model ?? ctx?.model;
       if (options.needsApproval) {
         if (!ctx?.elicit)
-          return [{ type: "text", text: "This task requires confirmation, which is unavailable in this context." }];
+          return [{ type: "text", content: "This task requires confirmation, which is unavailable in this context." }];
         const answer = await ctx.elicit({ message: `${description}\n\n${prompt}` });
-        ctx.signal?.throwIfAborted();
-        if (answer.action !== "accept") return [{ type: "text", text: "Cancelled by user." }];
+        parentSignal?.throwIfAborted();
+        if (answer.action !== "accept") return [{ type: "text", content: "Cancelled by user." }];
       }
 
       try {
         const timeout = spec.timeoutMs ? AbortSignal.timeout(spec.timeoutMs) : undefined;
-        const signal = timeout && ctx?.signal ? AbortSignal.any([ctx.signal, timeout]) : (timeout ?? ctx?.signal);
+        const signal = timeout && parentSignal ? AbortSignal.any([parentSignal, timeout]) : (timeout ?? parentSignal);
         signal?.throwIfAborted();
         const direct = await spec.direct?.(args, { ...ctx, model, signal });
         signal?.throwIfAborted();
-        if (direct !== undefined) return [{ type: "text", text: direct }];
-        if (!model) return [{ type: "text", text: "No model is available for this task." }];
+        if (direct !== undefined) return [{ type: "text", content: direct }];
+        if (!model) return [{ type: "text", content: "No model is available for this task." }];
         const requestContext = captureRequestContext(spec.runtimeContext);
         const runResult = await agentRun(
           options.client ?? getConfig().client,
           model,
           spec.instructions,
-          [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
+          [userMessage(prompt)],
           spec.tools,
           {
             agentName: name,
@@ -105,27 +105,31 @@ export function createAgentTool(
         // the parent tool result so its completion check can verify them, even
         // if the child failed after committing files.
         const mutations = runResult.messages
-          .flatMap((message) => message.content)
-          .flatMap((part) => (part.type === "tool_result" ? (artifactDeltaFromMeta(part.meta)?.mutations ?? []) : []));
+          .flatMap((message) => message.parts)
+          .flatMap((part) =>
+            part.type === "tool-result" ? (artifactDeltaFromMeta(toolResultMetadata(part).meta)?.mutations ?? []) : [],
+          );
         if (mutations.length) ctx?.setMeta?.({ artifactDelta: artifactDelta(mutations) });
+        parentSignal?.throwIfAborted();
 
         if (runResult.status === "aborted") {
-          return [{ type: "text", text: "Subagent interrupted before finishing." }];
+          return [{ type: "text", content: "Subagent interrupted before finishing." }];
         }
         if (runResult.status === "failed") {
-          return [{ type: "text", text: `Subagent error: ${runResult.error?.message ?? "Unknown error"}` }];
+          return [{ type: "text", content: `Subagent error: ${runResult.error?.message ?? "Unknown error"}` }];
         }
         if (runResult.status === "interrupted") {
-          return [{ type: "text", text: "This task needs interactive input. Continue it in chat." }];
+          return [{ type: "text", content: "This task needs interactive input. Continue it in chat." }];
         }
 
         const conversation = runResult.messages;
         const last = conversation[conversation.length - 1];
-        const text = last ? getFinalTextFromContent(last.content).trim() : "";
-        return [{ type: "text", text: text || "Subagent completed but produced no output." }];
+        const text = last ? finalText(last).trim() : "";
+        return [{ type: "text", content: text || "Subagent completed but produced no output." }];
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return [{ type: "text", text: `Subagent error: ${message}` }];
+        parentSignal?.throwIfAborted();
+        const { message } = getErrorInfo(error);
+        return [{ type: "text", content: `Subagent error: ${message}` }];
       }
     },
   };

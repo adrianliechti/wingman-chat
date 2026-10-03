@@ -202,7 +202,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         .createFileTools(workspace.source, { namespace: "artifacts", validators: validatorsModule.ARTIFACT_VALIDATORS })
         .find((tool) => tool.name === "artifacts_create");
       assert(createFile);
-      pythonParameters = executionSchemas.SCRIPT_EXECUTION_PARAMETERS;
+      pythonParameters = executionSchemas.SCRIPT_EXECUTION_SCHEMA;
       await execFileAsync(PYTHON, ["--version"], { timeout: 10_000 });
     },
     { timeout: REQUEST_TIMEOUT_MS },
@@ -249,8 +249,8 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
           name: "execute_script",
           description: "Execute inline Python code with language=python. Omit path when using code.",
 
-          parameters: pythonParameters,
-          function: async (args) => {
+          inputSchema: pythonParameters,
+          execute: async (args) => {
             parsedCalls.push(args);
             assert.equal(typeof args.code, "string");
             assert.equal(args.language, "python");
@@ -259,7 +259,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
               timeout: 15_000,
               maxBuffer: 1024 * 1024,
             });
-            return [{ type: "text", text: stdout.trimEnd() }];
+            return [{ type: "text", content: stdout.trimEnd() }];
           },
         };
         const result = await run(

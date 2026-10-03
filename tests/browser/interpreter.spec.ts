@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import type { TextPart } from "@tanstack/ai";
 
 type ExecutionResult = {
   success: boolean;
@@ -9,8 +10,6 @@ type ExecutionResult = {
 };
 
 type ScriptArgs = { code?: string; path?: string; language?: "python" | "javascript" | "bash"; args?: string[] };
-
-type TextToolResult = Array<{ type: "text"; text: string }>;
 
 declare global {
   interface Window {
@@ -42,10 +41,10 @@ declare global {
       queryWorkspace(chatId: string, query: string): Promise<{ rows: Record<string, unknown>[] }>;
       initializeLlm(): Promise<void>;
       runToolFlow(chatId: string): Promise<{
-        created: TextToolResult;
-        edited: TextToolResult;
-        read: TextToolResult;
-        listed: TextToolResult;
+        created: TextPart[];
+        edited: TextPart[];
+        read: TextPart[];
+        listed: TextPart[];
         file?: { content: string };
       }>;
       runArtifactFlow(chatId: string): Promise<{
@@ -648,11 +647,11 @@ test("production file tools preserve BOM/CRLF through OPFS and accept their own 
   expect(JSON.stringify(result.edited)).not.toContain("changed since");
   expect(result.file?.content).toBe("\uFEFFALPHA\r\nbeta\r\n");
   const format = { utf8_bom: true, line_endings: "CRLF" };
-  expect(JSON.parse(result.created[0].text).text_format).toEqual(format);
-  expect(JSON.parse(result.edited[0].text).text_formats).toEqual({ "/bom.txt": format });
-  expect(result.read[0].text).toContain("[UTF-8 BOM: yes; line endings: CRLF]");
-  expect(result.listed[0].text).toContain("# 1 files");
-  expect(result.listed[0].text).toContain("/bom.txt");
+  expect(JSON.parse(result.created[0].content).text_format).toEqual(format);
+  expect(JSON.parse(result.edited[0].content).text_formats).toEqual({ "/bom.txt": format });
+  expect(result.read[0].content).toContain("[UTF-8 BOM: yes; line endings: CRLF]");
+  expect(result.listed[0].content).toContain("# 1 files");
+  expect(result.listed[0].content).toContain("/bom.txt");
 });
 
 test("Python uses real Pyodide, blocks fetch, writes files, and resets per-run state", async ({ page }) => {

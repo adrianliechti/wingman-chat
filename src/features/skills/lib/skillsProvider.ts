@@ -1,4 +1,4 @@
-import { convertSchemaToJsonSchema, type Tool as NativeTool } from "@tanstack/ai";
+import type { Tool as NativeTool } from "@tanstack/ai";
 import { createLoadSkillTool, createResourceTool, renderCatalog, withSkills } from "@tanstack/ai-skills";
 import { FileCode2, ScrollText, Sparkles } from "lucide-react";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
@@ -152,9 +152,9 @@ function displaySkillTool(tool: NativeTool): Tool {
   return {
     name: tool.name,
     description: tool.description,
-    parameters: convertSchemaToJsonSchema(tool.inputSchema)!,
-    function: async (args) => {
-      return [{ type: "text", text: JSON.stringify(await tool.execute!(args)) }];
+    inputSchema: tool.inputSchema!,
+    execute: async (args, execution) => {
+      return [{ type: "text", content: JSON.stringify(await tool.execute!(args, execution)) }];
     },
     display: {
       header: (args, state) => ({
@@ -173,7 +173,7 @@ function displaySkillTool(tool: NativeTool): Tool {
       }),
       input: () => [],
       output: (result) => {
-        const raw = result.find((part) => part.type === "text")?.text;
+        const raw = result.find((part) => part.type === "text")?.content;
         if (!raw) return null;
         try {
           const parsed = JSON.parse(raw) as { content?: unknown; path?: unknown };

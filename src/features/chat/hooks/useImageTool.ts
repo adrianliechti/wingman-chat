@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Image } from "lucide-react";
 import mime from "mime";
 import { useMemo } from "react";
@@ -11,11 +12,13 @@ import { pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
-import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaDataUrl, mediaFromDataUrl } from "@/shared/lib/messages";
+import type { Tool, ToolContext } from "@/shared/types/chat";
 
-function errorResult(error: string, context?: ToolContext): TextContent[] {
+function errorResult(error: string, context?: ToolContext): ContentPart[] {
   context?.setError?.({ code: "IMAGE_GENERATION_ERROR", message: error });
-  return [{ type: "text", text: JSON.stringify({ success: false, error }) }];
+  return [{ type: "text", content: JSON.stringify({ success: false, error }) }];
 }
 
 /** Turn a prompt into a short, filesystem-safe slug (falls back to "image"). */
@@ -58,50 +61,50 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
   // Advertise only the controls this renderer honors — the same capability
   // mapping the Canvas pickers use — so the model isn't offered aspect ratios,
   // quality tiers, or a transparent background the configured model can't make.
-  const properties: Record<string, unknown> = {
-    prompt: {
-      type: "string",
-      description:
+  const properties: Record<string, z.ZodType> = {
+    prompt: z
+      .string()
+      .describe(
         "Describe the subject, composition, style, and any required text. Preserve the user's constraints; add visual detail where unspecified. For edits, state the changes and elements to preserve.",
-    },
-    images: {
-      type: "array",
-      items: { type: "string" },
-      description:
+      ),
+    images: z
+      .array(z.string())
+      .optional()
+      .describe(
         'Artifact paths for edit/reference images, e.g. ["/fox.png"]. Current-message image attachments are also included automatically; use paths for earlier images.',
-    },
+      ),
   };
   if (caps.supportedAspectRatios?.length) {
-    properties.aspect_ratio = {
-      type: "string",
-      enum: caps.supportedAspectRatios,
-      description:
+    properties.aspect_ratio = z
+      .enum(caps.supportedAspectRatios)
+      .optional()
+      .describe(
         "Output shape. Choose a listed ratio that fits the intended placement, or omit for the renderer default.",
-    };
+      );
   }
   if (caps.supportedQualities?.length) {
-    properties.quality = {
-      type: "string",
-      enum: caps.supportedQualities,
-      description:
+    properties.quality = z
+      .enum(caps.supportedQualities)
+      .optional()
+      .describe(
         "Rendering quality; defaults to the first listed tier. Higher tiers usually take longer and cost more.",
-    };
+      );
   }
   if (caps.supportedResolutions?.length) {
-    properties.resolution = {
-      type: "string",
-      enum: caps.supportedResolutions,
-      description:
+    properties.resolution = z
+      .enum(caps.supportedResolutions)
+      .optional()
+      .describe(
         "Output resolution; omit for the renderer default. Use higher resolutions when needed for the final size or detail.",
-    };
+      );
   }
   if (caps.supportedBackgrounds?.length) {
-    properties.background = {
-      type: "string",
-      enum: caps.supportedBackgrounds,
-      description:
+    properties.background = z
+      .enum(caps.supportedBackgrounds)
+      .optional()
+      .describe(
         'Use "transparent" for cutouts or compositing, or "opaque" for a filled background. Omit for the renderer default.',
-    };
+      );
   }
 
   return {
@@ -115,13 +118,9 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
     },
     description:
       "Generate or edit raster images such as photos, illustrations, and visual assets. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, SVG, or charts. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically. Returns the image inline and saves it to the chat workspace when available.",
-    parameters: {
-      type: "object",
-      properties,
-      required: ["prompt"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>, context?: ToolContext) => {
+    inputSchema: z.strictObject(properties),
+    execute: async (args: Record<string, unknown>, execution) => {
+      const context = execution?.context;
       context?.signal?.throwIfAborted();
       const activeFs = resolveArtifactFileSystem(fs, context?.chatId);
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
@@ -148,7 +147,8 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
           references.push(await blobFromDataUrl(file.content));
         }
         for (const part of context?.content?.() ?? []) {
-          if (part.type === "image") references.push(await blobFromDataUrl(part.data));
+          const dataUrl = part.type === "image" ? mediaDataUrl(part) : undefined;
+          if (dataUrl) references.push(await blobFromDataUrl(dataUrl));
         }
 
         const options: ImageRenderOptions = {};
@@ -210,7 +210,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         // reference, not base64 — so it bloats neither context nor storage. The
         // placeholder keeps `name`, so the model learns the artifact path and can
         // reference it to edit the image later.
-        return [{ type: "image" as const, data: dataUrl, name }];
+        return [mediaFromDataUrl(dataUrl, name, "image")];
       } catch (error) {
         context?.signal?.throwIfAborted();
         const message = error instanceof Error ? error.message : "Unknown error";

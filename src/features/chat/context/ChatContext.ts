@@ -1,7 +1,8 @@
 import { createContext } from "react";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { Chat, ChatEntry, Message, Model } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { Chat, ChatEntry, Model } from "@/shared/types/chat";
 import type {
   ConsentResult,
   Elicitation,
@@ -35,7 +36,7 @@ export interface ChatContextType {
   loadChat: (id: string) => Promise<Chat>;
   searchChats: (query: string, signal: AbortSignal) => Promise<Set<string>>;
   chat: Chat | null;
-  messages: Message[];
+  messages: UIMessage[];
   isResponding: boolean;
   status: RunStatus;
   stopStreaming: () => void;
@@ -54,10 +55,10 @@ export interface ChatContextType {
    */
   ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
-  addMessage: (message: Message, targetChatId?: string) => Promise<void>;
+  addMessage: (message: UIMessage, targetChatId?: string) => Promise<void>;
   sendMessage: (
-    message: Message,
-    historyOverride?: Message[],
+    message: UIMessage,
+    historyOverride?: UIMessage[],
     artifactFiles?: ProcessedFile[],
     deletedPaths?: string[],
   ) => Promise<void>;

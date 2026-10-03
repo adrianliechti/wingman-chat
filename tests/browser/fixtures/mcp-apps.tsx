@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { McpApp } from "../../../src/features/chat/components/McpApp";
 import { MCPClient } from "../../../src/features/settings/lib/mcp";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
-import { ProviderState, type ToolResultContent } from "../../../src/shared/types/chat";
+import type { ToolCallPart, ToolResultPart } from "@tanstack/ai";
+import { ProviderState } from "../../../src/shared/types/chat";
 import { AppProvider } from "../../../src/shell/context/AppProvider";
 import { useApp } from "../../../src/shell/hooks/useApp";
 
@@ -162,18 +163,27 @@ function Fixture() {
         style={{ position: "fixed", top: 20, right: 20, width: 350, height: 350 }}
       />
       {ids.map((id, index) => {
-        const result: ToolResultContent = {
-          type: "tool_result",
+        const call: ToolCallPart = {
+          type: "tool-call",
           id,
           name: "app",
           arguments: JSON.stringify({ id }),
-          result: [{ type: "text", text: id }],
-          content: { id },
-          meta: { toolProvider: "fixture", toolResource: "ui://fixture", appDisplayModes: modes },
+          state: "complete",
+        };
+        const result: ToolResultPart = {
+          type: "tool-result",
+          toolCallId: id,
+          content: id,
+          state: "complete",
+          metadata: {
+            result: [{ type: "text", content: id }],
+            content: { id },
+            meta: { toolProvider: "fixture", toolResource: "ui://fixture", appDisplayModes: modes },
+          },
         };
         return (
           <section key={id} data-testid={id} style={{ width: 450 }}>
-            <McpApp toolResult={result} isLastFullscreenApp={index === ids.length - 1} />
+            <McpApp call={call} result={result} isLastFullscreenApp={index === ids.length - 1} />
           </section>
         );
       })}

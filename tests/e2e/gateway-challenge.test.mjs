@@ -1,5 +1,6 @@
+import { z } from "zod";
 import assert from "node:assert/strict";
-import { maxIterations } from "@tanstack/ai";
+import { convertSchemaToJsonSchema, maxIterations } from "@tanstack/ai";
 import { execFile } from "node:child_process";
 import { after, before, describe, test } from "node:test";
 import { promisify } from "node:util";
@@ -184,13 +185,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             description:
               "Fetch a deterministic fixture. Start with attempt 1; if it reports a transient failure, increment attempt and retry.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { attempt: { type: "integer" } },
               required: ["attempt"],
               additionalProperties: false,
-            },
-            function: async (args, context) => {
+            }),
+            execute: async (args, execution) => {
+              const context = execution?.context;
               attempts.push(args.attempt);
               context.setMeta?.({ phase: "attempt", attempt: args.attempt });
               if (attempts.length === 1) {
@@ -198,7 +200,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               }
               assert.equal(args.attempt, 2);
               context.setMeta?.({ phase: "recovered", attempt: args.attempt, marker });
-              return [{ type: "text", text: marker }];
+              return [{ type: "text", content: marker }];
             },
           };
 
@@ -240,7 +242,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           assert.equal(verificationCount, 2);
           assert(
             !result.messages.some((message) =>
-              message.content.some((part) => part.type === "text" && part.text.includes("Verifier correction")),
+              message.parts.some((part) => part.type === "text" && part.content.includes("Verifier correction")),
             ),
             "Provider-only verification must not become a user message",
           );
@@ -267,13 +269,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "delegate_fixture",
             description: "Delegate the deterministic fixture lookup to a child agent.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { task: { type: "string" } },
               required: ["task"],
               additionalProperties: false,
-            },
-            function: async (_args, context) => {
+            }),
+            execute: async (_args, execution) => {
+              const context = execution?.context;
               assert(context.invocationContext, "The tool did not receive the shared invocation context");
               childResult = await run(
                 client,
@@ -289,7 +292,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                 },
               );
               assert.equal(childResult.status, "completed", resultDetail(childResult));
-              return [{ type: "text", text: lastAssistantText(childResult.messages) }];
+              return [{ type: "text", content: lastAssistantText(childResult.messages) }];
             },
           };
 
@@ -328,8 +331,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "wait_for_release",
             description: "Wait until the caller releases or cancels this operation.",
 
-            parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-            function: async (_args, context) => {
+            inputSchema: z.fromJSONSchema({
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            }),
+            execute: async (_args, execution) => {
+              const context = execution?.context;
               toolStarted = true;
               const signal = context.signal;
               assert(signal, "The tool did not receive the run's abort signal");
@@ -344,7 +353,7 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               } finally {
                 clearTimeout(timer);
               }
-              return [{ type: "text", text: "SHOULD_NOT_COMMIT" }];
+              return [{ type: "text", content: "SHOULD_NOT_COMMIT" }];
             },
           };
 
@@ -382,16 +391,16 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "continue_loop",
             description: "Return the next loop step. The test requires another call after every result.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { step: { type: "integer" } },
               required: ["step"],
               additionalProperties: false,
-            },
-            function: async (args) => {
+            }),
+            execute: async (args) => {
               calls.push(args.step);
               return [
-                { type: "text", text: `Step ${args.step} complete. Call continue_loop with step ${args.step + 1}.` },
+                { type: "text", content: `Step ${args.step} complete. Call continue_loop with step ${args.step + 1}.` },
               ];
             },
           };
@@ -424,8 +433,9 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               description:
                 "Execute inline Python. Set language to python, pass code as one JSON string and omit path when unused.",
 
-              parameters: executionSchemasModule.SCRIPT_EXECUTION_PARAMETERS,
-              function: async (args, context) => {
+              inputSchema: executionSchemasModule.SCRIPT_EXECUTION_SCHEMA,
+              execute: async (args, execution) => {
+                const context = execution?.context;
                 parsedCalls.push(args);
                 assert.equal(typeof args.code, "string");
                 assert.equal(args.language, "python");
@@ -436,12 +446,16 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
                   maxBuffer: 1024 * 1024,
                 });
                 context.setContent?.({ exitCode: 0, stderr });
-                return [{ type: "text", text: stdout.trim() }];
+                return [{ type: "text", content: stdout.trim() }];
               },
             };
             const tools = [...productionFileTools(workspace), pythonTool, questionsToolModule.ASK_QUESTIONS_TOOL];
             assert.equal(
-              tools.reduce((count, tool) => count + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
+              tools.reduce(
+                (count, tool) =>
+                  count + toolSchemasModule.countSchemaUnions(convertSchemaToJsonSchema(tool.inputSchema)),
+                0,
+              ),
               0,
             );
 
@@ -583,7 +597,7 @@ Do not skip the intentional invalid write or its edit repair.`,
 
       const afterFault = faults.snapshot();
       assert.equal(result.status, "aborted");
-      assert.deepEqual(result.messages[0]?.content, prompt.content);
+      assert.deepEqual(result.messages[0]?.parts, nativeMessage(prompt).parts);
       assert.equal(contentParts(result.messages, "tool_result").length, 0);
       assert.equal(afterFault.droppedCount - beforeFault.droppedCount, 1);
       assert.equal(afterFault.requestCount - beforeFault.requestCount, 1, "An aborted retry issued another request");

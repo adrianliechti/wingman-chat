@@ -1,8 +1,10 @@
+import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import * as opfs from "@/shared/lib/opfs-core";
 import { restoreFiles } from "@/shared/lib/opfs-restore";
-import type { Message, Tool, ToolContext } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { Tool, ToolContext } from "@/shared/types/chat";
 import { MemoryManager } from "./memoryManager";
 import { bytes, memoryIndexes, memoryRevision, parseMemoryDocument, serializeMemoryDocument } from "./memoryDocument";
 import { emptyMemoryState } from "./memoryState";
@@ -19,9 +21,14 @@ const manager = () => new MemoryManager("a");
 const document = (body: string, metadata: Record<string, unknown> = {}) =>
   serializeMemoryDocument({ metadata: { type: "Reference", ...metadata }, body });
 const settings = (extra = "") => `---\nname: Agent\nmemory: true\n${extra}---\n`;
-const messages: Message[] = [
-  { id: "u", runId: "run", role: "user", content: [{ type: "text", text: "In general please answer me in German." }] },
-  { id: "a", runId: "run", role: "assistant", content: [{ type: "text", text: "I will use German." }] },
+const messages: UIMessage[] = [
+  {
+    id: "u",
+    role: "user",
+    parts: [{ type: "text", content: "In general please answer me in German." }],
+    metadata: { runId: "run" },
+  },
+  { id: "a", role: "assistant", parts: [{ type: "text", content: "I will use German." }], metadata: { runId: "run" } },
 ];
 const saveChat = (value = messages) =>
   disk.put(
@@ -31,6 +38,7 @@ const saveChat = (value = messages) =>
       title: "Chat",
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
+      version: 2,
       messages: value,
     }),
   );
@@ -50,18 +58,17 @@ const candidate = (body = "The user prefers German.", path = "preferences/langua
     },
   ],
 });
-const resultText = (result: Awaited<ReturnType<Tool["function"]>>) =>
-  result.map((part) => (part.type === "text" ? part.text : "")).join("");
+const resultText = (result: Awaited<ReturnType<Tool["execute"]>>) =>
+  result.map((part) => (part.type === "text" ? part.content : "")).join("");
 const fileTool = (
   tools: Tool[],
   name: string,
   args: Record<string, unknown>,
   context: ToolContext = { chatId: "chat", runId: "run" },
 ) =>
-  tools
-    .find((tool) => tool.name === `artifacts_${name}`)!
-    .function(args, context)
-    .then(resultText);
+  Promise.resolve(
+    tools.find((tool) => tool.name === `artifacts_${name}`)!.execute(args, { context, emitCustomEvent() {} }),
+  ).then(resultText);
 
 beforeEach(() => {
   parse.mockReset();
@@ -359,8 +366,9 @@ describe("existing file tools at the memory mount", () => {
   it("isolates artifacts, refuses mixed batches and child writes, bounds search, and skips deliverable metadata", async () => {
     const base: Tool = {
       name: "artifacts_read",
-      parameters: {},
-      function: vi.fn().mockResolvedValue([{ type: "text", text: "ordinary artifact" }]),
+      description: "Test tool",
+      inputSchema: z.unknown(),
+      execute: vi.fn().mockResolvedValue([{ type: "text", content: "ordinary artifact" }]),
     };
     const tools = mountMemoryFiles([base], manager());
     expect(await fileTool(tools, "read", { file_path: "/report.md" })).toBe("ordinary artifact");
@@ -382,7 +390,7 @@ describe("existing file tools at the memory mount", () => {
     const output = await fileTool(tools, "grep", { path: "/.memory", pattern: "Line", head_limit: 0 });
     expect(bytes(output)).toBeLessThanOrEqual(8192);
     expect(await fileTool(mountMemoryFiles([base]), "read", { file_path: "/.memory/a.md" })).toContain("disabled");
-    expect(base.function).toHaveBeenCalledTimes(1);
+    expect(base.execute).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -408,7 +416,7 @@ describe("incremental background learning", () => {
     expect(doc.metadata.sources).toEqual([
       { resource: "wingman://chats/chat/messages/u", wingman_hash: expect.any(String) },
     ]);
-    saveChat([{ ...messages[0], content: [{ type: "text", text: "I prefer French." }] }, messages[1]]);
+    saveChat([{ ...messages[0], parts: [{ type: "text", content: "I prefer French." }] }, messages[1]]);
     await reconcileMemorySources(manager());
     expect(recallMemory(await manager().snapshot(), "language")).toBe("");
     expect(
@@ -422,7 +430,7 @@ describe("incremental background learning", () => {
     await processMemoryJob(manager(), async () => candidate());
     await manager().remove("/.memory/preferences/language.md");
     const changed = [
-      { ...messages[0], content: [{ type: "text" as const, text: "I still prefer German, generally." }] },
+      { ...messages[0], parts: [{ type: "text" as const, content: "I still prefer German, generally." }] },
       messages[1],
     ];
     saveChat(changed);

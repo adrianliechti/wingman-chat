@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Tool, ToolContext } from "@/shared/types/chat";
@@ -104,8 +105,8 @@ describe("voice request context and tool lifecycle", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sends the original tool schema and instructions in the first session update", async () => {
-    const parameters: Tool["parameters"] = {
+  it("sends the native tool schema and instructions in the first session update", async () => {
+    const parameters: z.core.JSONSchema.JSONSchema = {
       type: "object",
       properties: {
         file_path: { type: "string", description: "Workspace-relative path" },
@@ -114,7 +115,9 @@ describe("voice request context and tool lifecycle", () => {
       required: ["file_path"],
       additionalProperties: false,
     };
-    const { hook, start } = createHarness([{ name: "edit", parameters, function: async () => [] }]);
+    const { hook, start } = createHarness([
+      { name: "edit", description: "edit", inputSchema: z.fromJSONSchema(parameters), execute: async () => [] },
+    ]);
     try {
       const socket = await start();
       expect(socket.sent[0]).toMatchObject({
@@ -124,7 +127,6 @@ describe("voice request context and tool lifecycle", () => {
           tools: [{ type: "function", name: "edit", description: "edit", parameters }],
         },
       });
-      expect(socket.sent[0].session.tools[0].parameters).toEqual(parameters);
       expect(socket.sent.filter((event) => event.type === "session.update")).toHaveLength(1);
     } finally {
       await hook.stop();
@@ -132,9 +134,9 @@ describe("voice request context and tool lifecycle", () => {
   });
 
   it("removes tools from the live session when the selection is cleared", async () => {
-    const handler = vi.fn<Tool["function"]>(async () => []);
+    const handler = vi.fn<Tool["execute"]>(async () => []);
     const { hook, start, onResult } = createHarness([
-      { name: "edit", parameters: { type: "object" }, function: handler },
+      { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
     ]);
     try {
       const socket = await start();
@@ -233,19 +235,28 @@ describe("voice request context and tool lifecycle", () => {
       "Instructions",
       [
         {
+          id: "u",
           role: "user",
-          content: [
-            { type: "text", text: "Hello " },
-            { type: "text", text: "there" },
+          parts: [
+            { type: "text", content: "Hello " },
+            { type: "text", content: "there" },
           ],
         },
-        { role: "assistant", content: [{ type: "text", text: "Still working", phase: "commentary" }] },
         {
+          id: "a1",
           role: "assistant",
-          content: [
-            { type: "text", text: "Progress", phase: "commentary" },
-            { type: "text", text: "Final answer", phase: "final_answer" },
-          ],
+          parts: [{ type: "text", content: "Still working", metadata: { phase: "commentary" } }],
+        },
+        {
+          id: "a2",
+          role: "assistant",
+          parts: [{ type: "text", content: "ProgressFinal answer" }],
+          metadata: {
+            textSegments: [
+              { content: "Progress", phase: "commentary" },
+              { content: "Final answer", phase: "final_answer" },
+            ],
+          },
         },
       ],
       [],
@@ -262,8 +273,10 @@ describe("voice request context and tool lifecycle", () => {
   });
 
   it("executes calls from the final response even when item events are missing", async () => {
-    const handler = vi.fn<Tool["function"]>(async () => []);
-    const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+    const handler = vi.fn<Tool["execute"]>(async () => []);
+    const { hook, start } = createHarness([
+      { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
+    ]);
     const socket = await start();
     socket.message({ type: "response.created", response: { id: "response" } });
     socket.message({
@@ -290,8 +303,10 @@ describe("voice request context and tool lifecycle", () => {
   it.each(["completed", "incomplete"])(
     "uses the final tool arguments and %s status instead of earlier item events",
     async (status) => {
-      const handler = vi.fn<Tool["function"]>(async () => []);
-      const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+      const handler = vi.fn<Tool["execute"]>(async () => []);
+      const { hook, start } = createHarness([
+        { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
+      ]);
       const socket = await start();
       socket.message({ type: "response.created", response: { id: "response" } });
       socket.message({
@@ -336,11 +351,13 @@ describe("voice request context and tool lifecycle", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const handler = vi.fn<Tool["function"]>(async () => {
+    const handler = vi.fn<Tool["execute"]>(async () => {
       await gate;
       return [];
     });
-    const { hook, start } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+    const { hook, start } = createHarness([
+      { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
+    ]);
     const socket = await start();
     socket.message({ type: "response.created", response: { id: "response" } });
     const output = ["a", "b"].map((call_id) => ({ type: "function_call", call_id, name: "edit", arguments: "{}" }));
@@ -358,16 +375,17 @@ describe("voice request context and tool lifecycle", () => {
   });
 
   it("updates the static session when schemas or the helper model change, but not callback identity", () => {
-    const tool: Tool = { name: "edit", parameters: { type: "object", properties: {} }, function: async () => [] };
+    const tool: Tool = {
+      name: "edit",
+      description: "Test tool",
+      inputSchema: z.looseObject({}),
+      execute: async () => [],
+    };
     const signature = voiceSessionSignature("static", [tool], "model-a");
-    expect(voiceSessionSignature("static", [{ ...tool, function: async () => [] }], "model-a")).toBe(signature);
-    expect(
-      voiceSessionSignature(
-        "static",
-        [{ ...tool, parameters: { ...tool.parameters, additionalProperties: false } }],
-        "model-a",
-      ),
-    ).not.toBe(signature);
+    expect(voiceSessionSignature("static", [{ ...tool, execute: async () => [] }], "model-a")).toBe(signature);
+    expect(voiceSessionSignature("static", [{ ...tool, inputSchema: z.strictObject({}) }], "model-a")).not.toBe(
+      signature,
+    );
     expect(voiceSessionSignature("static", [tool], "model-b")).not.toBe(signature);
   });
 
@@ -419,32 +437,35 @@ describe("voice request context and tool lifecycle", () => {
     }
   });
 
-  it("validates canonical arguments before invoking voice tools", async () => {
-    const handler = vi.fn(async () => []);
-    const { hook, start, onResult } = createHarness([
-      {
-        name: "edit",
-        parameters: {
-          type: "object",
-          properties: { file_path: { type: "string" } },
-          required: ["file_path"],
-          additionalProperties: false,
+  it.each([{ path: "/wrong-alias.txt" }, { file_path: "/reserved.txt" }])(
+    "validates native schemas before invoking voice tools: %j",
+    async (args) => {
+      const handler = vi.fn(async () => []);
+      const { hook, start, onResult } = createHarness([
+        {
+          name: "edit",
+          description: "Test tool",
+          inputSchema: z.strictObject({
+            file_path: z.string().refine((value) => value !== "/reserved.txt", "Reserved file"),
+          }),
+          execute: handler,
         },
-        function: handler,
-      },
-    ]);
-    const socket = await start();
-    toolCall(socket, { path: "/wrong-alias.txt" });
-    await vi.waitFor(() => expect(onResult).toHaveBeenCalled());
-    expect(handler).not.toHaveBeenCalled();
-    await hook.stop();
-  });
+      ]);
+      const socket = await start();
+      toolCall(socket, args);
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalled());
+      expect(handler).not.toHaveBeenCalled();
+      await hook.stop();
+    },
+  );
 
   it.each(["failed", "incomplete", "cancelled"])(
     "never executes deferred tools after a %s response",
     async (status) => {
       const handler = vi.fn(async () => []);
-      const { start, hook } = createHarness([{ name: "edit", parameters: { type: "object" }, function: handler }]);
+      const { start, hook } = createHarness([
+        { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
+      ]);
       const socket = await start();
       socket.message({ type: "response.created", response: { id: "response" } });
       socket.message({
@@ -472,9 +493,9 @@ describe("voice request context and tool lifecycle", () => {
   );
 
   it("uses authoritative final arguments and ignores duplicate call events", async () => {
-    const handler = vi.fn<Tool["function"]>(async () => []);
+    const handler = vi.fn<Tool["execute"]>(async () => []);
     const { start, hook, onResult } = createHarness([
-      { name: "edit", parameters: { type: "object" }, function: handler },
+      { name: "edit", description: "Test tool", inputSchema: z.looseObject({}), execute: handler },
     ]);
     const socket = await start();
     socket.message({ type: "response.created", response: { id: "response" } });
@@ -505,11 +526,13 @@ describe("voice request context and tool lifecycle", () => {
     const { hook, start, onResult, onUser } = createHarness([
       {
         name: "edit",
-        parameters: { type: "object", properties: {} },
-        function: async (_args, ctx) => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          const ctx = execution?.context;
           context = ctx;
           await gate;
-          return [{ type: "text", text: "late" }];
+          return [{ type: "text", content: "late" }];
         },
       },
     ]);

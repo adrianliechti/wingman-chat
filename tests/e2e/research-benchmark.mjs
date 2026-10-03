@@ -97,11 +97,11 @@ try {
         const trace = [];
         const tools = spec.tools.map((tool) => ({
           ...tool,
-          function: async (args, context) => {
+          execute: async (args, execution) => {
             metrics.toolCalls++;
             let result;
             try {
-              result = await tool.function(args, context);
+              result = await tool.execute(args, execution);
             } catch (error) {
               metrics.toolErrors++;
               trace.push({ name: tool.name, args, error: error instanceof Error ? error.message : String(error) });
@@ -124,7 +124,9 @@ try {
           if (values.mode === "replay") {
             const signal = new AbortController().signal;
             for (const call of fixture.calls)
-              await tools.find(({ name }) => name === call.name).function(call.args, { signal });
+              await tools
+                .find(({ name }) => name === call.name)
+                .execute(call.args, { context: { signal }, emitCustomEvent() {} });
           } else {
             result = await harness.run(
               harness.client,

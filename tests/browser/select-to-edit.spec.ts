@@ -47,10 +47,16 @@ test("editing a highlighted markdown passage sends the instruction with the quot
   await page.locator(".prose p").evaluate(selectContents);
   const message = await sendInstruction(page, "Make it shorter");
 
-  expect(message).toEqual([
-    { type: "text", text: "Make it shorter" },
-    { type: "artifact_selection", path: "/notes.md", text: "Quarterly revenue grew.", startLine: 3, endLine: 3 },
+  expect(message).toMatchObject([
+    { type: "text", content: "Make it shorter" },
+    {
+      type: "text",
+      metadata: {
+        artifactSelection: { path: "/notes.md", text: "Quarterly revenue grew.", startLine: 3, endLine: 3 },
+      },
+    },
   ]);
+  expect(message?.[1]).toHaveProperty("content", expect.stringContaining("Quarterly revenue grew."));
   await expect(page.getByText("Selected in", { exact: false })).toHaveCount(0); // fixture renders no chat list
 });
 
@@ -66,11 +72,8 @@ test("a code selection reports the highlighted lines even when the text repeats"
   const message = await sendInstruction(page, "Log it instead");
 
   expect(message?.[1]).toMatchObject({
-    type: "artifact_selection",
-    path: "/script.py",
-    text: "print(x)",
-    startLine: 2,
-    endLine: 2,
+    type: "text",
+    metadata: { artifactSelection: { path: "/script.py", text: "print(x)", startLine: 2, endLine: 2 } },
   });
 });
 
@@ -94,11 +97,8 @@ test("a selection inside the html preview offers the same control", async ({ pag
   const message = await sendInstruction(page, "Make it a heading");
 
   expect(message?.[1]).toMatchObject({
-    type: "artifact_selection",
-    path: "/index.html",
-    text: "Hello preview",
-    startLine: 3,
-    endLine: 3,
+    type: "text",
+    metadata: { artifactSelection: { path: "/index.html", text: "Hello preview", startLine: 3, endLine: 3 } },
   });
 });
 

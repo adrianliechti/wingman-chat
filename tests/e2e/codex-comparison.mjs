@@ -61,12 +61,12 @@ try {
     },
   );
   const files = await snapshot(wingman);
-  const parts = result.messages.flatMap((message) => message.content);
+  const parts = result.messages.flatMap((message) => message.parts);
   report.results.wingman = {
     status: result.status,
     elapsedMs: Math.round(performance.now() - start),
     modelCalls: wingmanEvents.modelCalls,
-    toolCalls: parts.filter((part) => part.type === "tool_call").map((part) => part.name),
+    toolCalls: parts.filter((part) => part.type === "tool-call").map((part) => part.name),
     usage: result.messages.reduce(
       (total, message) => {
         for (const key of ["inputTokens", "cachedInputTokens", "outputTokens"]) total[key] += message.usage?.[key] ?? 0;

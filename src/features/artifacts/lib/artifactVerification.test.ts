@@ -1,9 +1,13 @@
+import { z } from "zod";
+import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { maxIterations } from "@tanstack/ai";
 import { beforeEach, expect, it, vi } from "vitest";
-import { AgentMessageMetadata, streamRun, type AgentRunResult, type RunHooks } from "@/shared/lib/agent";
+import { RunSidecar, streamRun, type AgentRunResult, type RunHooks } from "@/shared/lib/agent";
+import { assistantMessage, userMessage } from "@/shared/lib/messages";
 import { testClient } from "@/shared/lib/test-support/ai";
 import type { ArtifactMutation } from "@/shared/types/artifact";
-import type { Message, Tool } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { Tool } from "@/shared/types/chat";
 import { artifactVerification } from "./artifactVerification";
 import { verifyArtifacts } from "./artifact-verifier";
 import type { FileSystemManager } from "./fs";
@@ -11,30 +15,31 @@ import type { FileSystemManager } from "./fs";
 vi.mock("./artifact-verifier", () => ({ verifyArtifacts: vi.fn() }));
 const verify = vi.mocked(verifyArtifacts);
 const fs = { chatId: "chat" } as FileSystemManager;
-const prompt: Message = { role: "user", content: [{ type: "text", text: "Build a game" }] };
-const done: Message = { role: "assistant", content: [{ type: "text", text: "Finished" }] };
-const call = (id: string): Message => ({
-  role: "assistant",
-  content: [{ type: "tool_call", id, name: "write", arguments: "{}" }],
-});
+const prompt = userMessage("Build a game", { id: "prompt" });
+const done = assistantMessage("Finished");
+const call = (id: string) => toolCallMessage([{ id, name: "write", arguments: "{}" }]);
 const write = (...batches: ArtifactMutation[][]): Tool => ({
   name: "write",
-  parameters: { type: "object", properties: {} },
-  function: async (_args, ctx) => {
+  description: "Test tool",
+  inputSchema: z.looseObject({}),
+  execute: async (_args, execution) => {
+    const ctx = execution?.context;
     ctx?.setMeta?.({ artifactDelta: { mutations: batches.shift() ?? [] } });
-    return [{ type: "text", text: "Saved" }];
+    return [{ type: "text", content: "Saved" }];
   },
 });
-const saved = (id: string, ...mutations: ArtifactMutation[]): Message => ({
-  role: "user",
-  content: [
+/** A completed write in saved history: the call and its result in one assistant turn. */
+const saved = (id: string, ...mutations: ArtifactMutation[]): UIMessage => ({
+  ...call(id),
+  id: `turn-${id}`,
+  parts: [
+    { type: "tool-call", id, name: "write", arguments: "{}", state: "complete" },
     {
-      type: "tool_result",
-      id,
-      name: "write",
-      arguments: "{}",
-      result: [{ type: "text", text: "Saved" }],
-      meta: { artifactDelta: { mutations } },
+      type: "tool-result",
+      toolCallId: id,
+      content: "Saved",
+      state: "complete",
+      metadata: { result: [{ type: "text", content: "Saved" }], meta: { artifactDelta: { mutations } } },
     },
   ],
 });
@@ -42,16 +47,16 @@ const saved = (id: string, ...mutations: ArtifactMutation[]): Message => ({
 async function execute(
   complete: Parameters<typeof testClient>[0],
   tools: Tool[] = [],
-  messages: Message[] = [prompt],
+  messages: UIMessage[] = [prompt],
   hooks: RunHooks = {},
 ) {
-  const metadata = new AgentMessageMetadata();
+  const sidecar = new RunSidecar();
   let result!: AgentRunResult;
   const chunks = [];
   for await (const chunk of streamRun(testClient(complete), "model", "", messages, tools, {
     ...hooks,
-    metadata,
-    middleware: [artifactVerification(fs, metadata, messages)],
+    sidecar,
+    middleware: [artifactVerification(fs, sidecar, messages)],
     onComplete: (value) => {
       result = value;
     },
@@ -93,15 +98,11 @@ it("repairs in one native cycle and replaces findings after a dependency is writ
 it("restores only current-turn writes, honoring directory moves and deletions", async () => {
   const messages = [
     prompt,
-    call("old"),
     saved("old", { operation: "create", path: "/old.html" }),
     done,
-    prompt,
-    call("create"),
+    userMessage("Build a game", { id: "prompt-2" }),
     saved("create", { operation: "create", path: "/draft/game.html" }, { operation: "create", path: "/tmp/a.txt" }),
-    call("move"),
     saved("move", { operation: "move", from: "/draft/game.html", path: "/game.html" }),
-    call("delete"),
     saved("delete", { operation: "delete", path: "/tmp" }),
   ];
   await execute(vi.fn().mockResolvedValue(done), [], JSON.parse(JSON.stringify(messages)));
