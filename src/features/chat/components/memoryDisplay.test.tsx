@@ -1,24 +1,31 @@
 import { BrainCircuit, FileText } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { Message, Tool } from "@/shared/types/chat";
+import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
+import { assistantMessage, type ToolResultMetadata } from "@/shared/lib/messages";
+import type { Tool } from "@/shared/types/chat";
 import { resolveToolHeader } from "./toolDisplay";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { collectTurnArtifactPaths, summarizeToolGroup } from "./chatMessageUtils";
 
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({ useToolsContext: () => ({ providers: [] }) }));
 vi.mock("@/features/chat/hooks/useChat", () => ({ useChatConversation: () => ({ chat: null, messages: [] }) }));
-const result = (name: string, args: Record<string, unknown>): Message => ({
-  role: "user",
-  content: [
+const result = (name: string, args: Record<string, unknown>): UIMessage =>
+  assistantMessage([
+    { type: "tool-call", id: name, name, arguments: JSON.stringify(args), state: "complete" },
     {
-      type: "tool_result",
-      name,
-      id: name,
-      arguments: JSON.stringify(args),
-      result: [{ type: "text", text: JSON.stringify({ success: true, path: args.file_path }) }],
+      type: "tool-result",
+      toolCallId: name,
+      content: "",
+      state: "complete",
+      metadata: {
+        result: [{ type: "text", content: JSON.stringify({ success: true, path: args.file_path }) }],
+      } satisfies ToolResultMetadata,
     },
-  ],
+  ]);
+const round = (message: UIMessage) => ({
+  call: message.parts[0] as ToolCallPart,
+  result: message.parts[1] as ToolResultPart,
 });
 
 describe("memory operations in chat", () => {
@@ -42,7 +49,8 @@ describe("memory operations in chat", () => {
     expect(header.label).toBe(label);
     expect(header.Icon).toBe(BrainCircuit);
     expect(header.preview).not.toContain("/.memory");
-    const html = renderToString(<ChatToolMessage message={result(`artifacts_${operation}`, args)} index={0} />);
+    const message = result(`artifacts_${operation}`, args);
+    const html = renderToString(<ChatToolMessage message={message} {...round(message)} index={0} />);
     expect(html).toContain(label);
     expect(html).toContain("lucide-brain-circuit");
   });

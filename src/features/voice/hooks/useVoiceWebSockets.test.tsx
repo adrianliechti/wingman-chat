@@ -233,19 +233,28 @@ describe("voice request context and tool lifecycle", () => {
       "Instructions",
       [
         {
+          id: "u",
           role: "user",
-          content: [
-            { type: "text", text: "Hello " },
-            { type: "text", text: "there" },
+          parts: [
+            { type: "text", content: "Hello " },
+            { type: "text", content: "there" },
           ],
         },
-        { role: "assistant", content: [{ type: "text", text: "Still working", phase: "commentary" }] },
         {
+          id: "a1",
           role: "assistant",
-          content: [
-            { type: "text", text: "Progress", phase: "commentary" },
-            { type: "text", text: "Final answer", phase: "final_answer" },
-          ],
+          parts: [{ type: "text", content: "Still working", metadata: { phase: "commentary" } }],
+        },
+        {
+          id: "a2",
+          role: "assistant",
+          parts: [{ type: "text", content: "ProgressFinal answer" }],
+          metadata: {
+            textSegments: [
+              { content: "Progress", phase: "commentary" },
+              { content: "Final answer", phase: "final_answer" },
+            ],
+          },
         },
       ],
       [],
@@ -509,7 +518,7 @@ describe("voice request context and tool lifecycle", () => {
         function: async (_args, ctx) => {
           context = ctx;
           await gate;
-          return [{ type: "text", text: "late" }];
+          return [{ type: "text", content: "late" }];
         },
       },
     ]);

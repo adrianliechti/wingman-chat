@@ -34,7 +34,7 @@ async function call(provider: ToolProvider, name: string, args: Record<string, u
   const result = await provider.tools.find((tool) => tool.name === name)!.function(args);
   const text = result.find((part) => part.type === "text");
   if (text?.type !== "text") throw new Error("Expected tool text");
-  return JSON.parse(text.text);
+  return JSON.parse(text.content);
 }
 
 beforeEach(async () => {

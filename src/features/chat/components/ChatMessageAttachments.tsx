@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type FragmentInstance, type ReactNode } from "react";
-import { getTextFromContent, type Message } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { messageText } from "@/shared/lib/messages";
 import { useChatList } from "../hooks/useChat";
 import { createAttachmentLoader } from "../lib/chatAttachments";
 
@@ -8,14 +9,17 @@ export function ChatMessageAttachments({
   message,
   children,
 }: {
-  message: Message;
-  children: (loaded: Message) => ReactNode;
+  message: UIMessage;
+  children: (loaded: UIMessage) => ReactNode;
 }) {
   const { chatId } = useChatList();
   const container = useRef<FragmentInstance>(null);
-  const [result, setResult] = useState<{ source: Message; chatId: string; message?: Message; error?: string } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{
+    source: UIMessage;
+    chatId: string;
+    message?: UIMessage;
+    error?: string;
+  } | null>(null);
   useEffect(() => {
     if (!chatId || !container.current) return;
     const fragment = container.current;
@@ -47,14 +51,14 @@ export function ChatMessageAttachments({
       observer.disconnect();
     };
   }, [chatId, message]);
-  const current = result?.source === message && result.chatId === chatId ? result : null;
+  const current = result && result.source === message && result.chatId === chatId ? result : null;
   return (
     <Fragment ref={container}>
       {current?.message ? (
         children(current.message)
       ) : (
         <div className="min-h-24 py-3 text-sm text-neutral-500">
-          <p className="whitespace-pre-wrap">{getTextFromContent(message.content)}</p>
+          <p className="whitespace-pre-wrap">{messageText(message)}</p>
           <p role={current?.error ? "alert" : "status"}>{current?.error ?? "Loading attachments…"}</p>
         </div>
       )}

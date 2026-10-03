@@ -154,7 +154,7 @@ function displaySkillTool(tool: NativeTool): Tool {
     description: tool.description,
     parameters: convertSchemaToJsonSchema(tool.inputSchema)!,
     function: async (args) => {
-      return [{ type: "text", text: JSON.stringify(await tool.execute!(args)) }];
+      return [{ type: "text", content: JSON.stringify(await tool.execute!(args)) }];
     },
     display: {
       header: (args, state) => ({
@@ -173,7 +173,7 @@ function displaySkillTool(tool: NativeTool): Tool {
       }),
       input: () => [],
       output: (result) => {
-        const raw = result.find((part) => part.type === "text")?.text;
+        const raw = result.find((part) => part.type === "text")?.content;
         if (!raw) return null;
         try {
           const parsed = JSON.parse(raw) as { content?: unknown; path?: unknown };

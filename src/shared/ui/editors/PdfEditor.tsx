@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { combineAbortSignals, withAbort } from "@/shared/lib/abortSignals";
+import { withAbort } from "@/shared/lib/abortSignals";
 import { dataUrlToBytes } from "@/shared/lib/fileContent";
 import { renderPdfPage, withPdfDocument } from "@/shared/lib/pdf";
 
@@ -44,7 +44,7 @@ async function renderPdfPages(
           const slot = slots.get(element)!;
           const rendering = new AbortController();
           slot.rendering = rendering;
-          const combined = combineAbortSignals(signal, rendering.signal);
+          const renderSignal = AbortSignal.any([signal, rendering.signal]);
           const canvas = document.createElement("canvas");
           slot.canvas = canvas;
           canvas.style.width = "100%";
@@ -52,18 +52,17 @@ async function renderPdfPages(
           canvas.setAttribute("aria-label", `Page ${slot.number}`);
           element.appendChild(canvas);
           try {
-            const page = await withAbort(combined.signal!, () => pdf.getPage(slot.number));
+            const page = await withAbort(renderSignal, () => pdf.getPage(slot.number));
             try {
               const viewport = page.getViewport({ scale: 1 });
               (element as HTMLElement).style.aspectRatio = `${viewport.width} / ${viewport.height}`;
-              await renderPdfPage(page, canvas, window.devicePixelRatio >= 2 ? 1.5 : 1.2, combined.signal!);
+              await renderPdfPage(page, canvas, window.devicePixelRatio >= 2 ? 1.5 : 1.2, renderSignal);
             } finally {
               page.cleanup();
             }
           } catch (cause) {
-            if (!combined.signal?.aborted) throw cause;
+            if (!renderSignal.aborted) throw cause;
           } finally {
-            combined.cleanup();
             if (slot.rendering === rendering) slot.rendering = undefined;
           }
         }

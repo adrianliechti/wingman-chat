@@ -1,16 +1,15 @@
-import type { ChatMiddleware } from "@tanstack/ai";
-import type { AgentMessageMetadata } from "@/shared/lib/agent";
-import { isUserMessage } from "@/shared/lib/requestContext";
+import type { ChatMiddleware, UIMessage } from "@tanstack/ai";
+import type { RunSidecar } from "@/shared/lib/agent";
+import { isUserPrompt, toolResultMetadata } from "@/shared/lib/messages";
 import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
-import type { Message } from "@/shared/types/chat";
 import { verifyArtifacts } from "./artifact-verifier";
 import type { FileSystemManager } from "./fs";
 
 /** Verification feeds the next native model turn; repairs are ordinary tool calls. */
 export function artifactVerification(
   fs: FileSystemManager,
-  metadata: Pick<AgentMessageMetadata, "toolMeta">,
-  messages: Message[],
+  sidecar: Pick<RunSidecar, "toolMeta">,
+  messages: UIMessage[],
 ): ChatMiddleware {
   const paths = new Set<string>();
   let dirty = false;
@@ -23,16 +22,16 @@ export function artifactVerification(
   };
   // Restore the current turn once, including writes completed before an
   // interrupt/reload. Later tool phases use their result IDs, not history scans.
-  for (const message of messages.slice(messages.findLastIndex(isUserMessage) + 1)) {
-    for (const part of message.content) {
-      if (part.type === "tool_result") track(part.meta);
+  for (const message of messages.slice(messages.findLastIndex(isUserPrompt) + 1)) {
+    for (const part of message.parts) {
+      if (part.type === "tool-result") track(toolResultMetadata(part).meta);
     }
   }
   return {
     name: "workspace-verification",
     onToolPhaseComplete: (_ctx, { results }) => {
       for (const { toolCallId } of results) {
-        track(metadata.toolMeta(toolCallId));
+        track(sidecar.toolMeta(toolCallId));
       }
     },
     onConfig: async (ctx, config) => {

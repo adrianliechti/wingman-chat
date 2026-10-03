@@ -1,8 +1,3 @@
-export interface CombinedAbortSignal {
-  signal?: AbortSignal;
-  cleanup(): void;
-}
-
 /** Stop waiting when the owner goes away, including for APIs without signal support. */
 export async function withAbort<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
   signal.throwIfAborted();
@@ -19,47 +14,14 @@ export async function withAbort<T>(signal: AbortSignal, operation: () => Promise
 }
 
 /** A controller that follows `signal`, for APIs that take a controller instead of a signal. */
-export function followAbortSignal(signal?: AbortSignal): { controller: AbortController; cleanup: () => void } {
+export function followAbortSignal(...sources: Array<AbortSignal | undefined>): {
+  controller: AbortController;
+  cleanup: () => void;
+} {
+  const signal = AbortSignal.any(sources.filter((source): source is AbortSignal => source !== undefined));
   const controller = new AbortController();
-  if (!signal) return { controller, cleanup() {} };
   const abort = () => controller.abort(signal.reason);
   if (signal.aborted) abort();
   else signal.addEventListener("abort", abort, { once: true });
   return { controller, cleanup: () => signal.removeEventListener("abort", abort) };
-}
-
-/** Combine cancellation sources while retaining cleanup for the listener fallback. */
-export function combineAbortSignals(...values: Array<AbortSignal | undefined>): CombinedAbortSignal {
-  const signals = [...new Set(values.filter((value): value is AbortSignal => value !== undefined))];
-  if (signals.length === 0) return { cleanup() {} };
-  if (signals.length === 1) return { signal: signals[0], cleanup() {} };
-
-  if (typeof AbortSignal.any === "function") {
-    try {
-      return { signal: AbortSignal.any(signals), cleanup() {} };
-    } catch {
-      // Older partial implementations can expose `any` without accepting an iterable.
-    }
-  }
-
-  const controller = new AbortController();
-  const listeners: Array<{ signal: AbortSignal; abort: () => void }> = [];
-  for (const signal of signals) {
-    const abort = () => {
-      if (!controller.signal.aborted) controller.abort(signal.reason);
-    };
-    if (signal.aborted) {
-      abort();
-      break;
-    }
-    signal.addEventListener("abort", abort, { once: true });
-    listeners.push({ signal, abort });
-  }
-
-  return {
-    signal: controller.signal,
-    cleanup() {
-      for (const { signal, abort } of listeners) signal.removeEventListener("abort", abort);
-    },
-  };
 }

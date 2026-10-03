@@ -1,28 +1,29 @@
+import type { ToolResultPart, UIMessage } from "@tanstack/ai";
 import { useMemo } from "react";
-import type { Message, ToolResultContent } from "@/shared/types/chat";
+import { toolResultMetadata } from "@/shared/lib/messages";
 
-export function useLastFullscreenApp(
-  messages: Message[],
-  index: number,
-  toolResultParts: ToolResultContent[],
-): boolean {
+function appMeta(part: ToolResultPart) {
+  const meta = toolResultMetadata(part).meta;
+  if (typeof meta?.toolProvider !== "string" || typeof meta?.toolResource !== "string") return null;
+  return meta;
+}
+
+/** Whether `result` (in the message at `index`) is the latest app that may take the panel. */
+export function useLastFullscreenApp(messages: UIMessage[], index: number, result?: ToolResultPart): boolean {
   return useMemo(() => {
-    if (!toolResultParts.length) return false;
-    const tr = toolResultParts[0];
-    if (typeof tr?.meta?.toolProvider !== "string" || typeof tr?.meta?.toolResource !== "string") return false;
+    if (!result || !appMeta(result)) return false;
 
     // Find the last message index with a fullscreen-capable tool result
     let lastFullscreenIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      for (const part of msg.content) {
-        if (part.type !== "tool_result") continue;
-        const p = part as ToolResultContent;
-        if (typeof p.meta?.toolProvider !== "string" || typeof p.meta?.toolResource !== "string") continue;
-        const modes = p.meta?.appDisplayModes as string[] | undefined;
-        const defaultMode = p.meta?.defaultDisplayMode as string | undefined;
+      for (const part of messages[i].parts) {
+        if (part.type !== "tool-result") continue;
+        const meta = appMeta(part);
+        if (!meta) continue;
+        const modes = meta.appDisplayModes as string[] | undefined;
+        const defaultMode = meta.defaultDisplayMode as string | undefined;
         // Check if fullscreen is supported: explicit modes, defaultDisplayMode hint, or absent (backward compat = both)
-        const supportsFullscreen = modes ? modes.includes("fullscreen") : defaultMode !== "inline"; // "fullscreen" or absent both mean fullscreen is supported
+        const supportsFullscreen = modes ? modes.includes("fullscreen") : defaultMode !== "inline";
         if (supportsFullscreen) {
           lastFullscreenIndex = i;
           break;
@@ -32,5 +33,5 @@ export function useLastFullscreenApp(
     }
 
     return lastFullscreenIndex === index;
-  }, [messages, index, toolResultParts]);
+  }, [messages, index, result]);
 }

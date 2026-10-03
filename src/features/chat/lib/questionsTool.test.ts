@@ -30,6 +30,6 @@ describe("structured question validation", () => {
     const result = await ASK_QUESTIONS_TOOL.function({ questions }, { elicit, setError });
     expect(elicit).not.toHaveBeenCalled();
     expect(setError).toHaveBeenCalledWith(expect.objectContaining({ code: "QUESTIONS_ERROR" }));
-    expect(result).toEqual([{ type: "text", text: expect.stringContaining('"success":false') }]);
+    expect(result).toEqual([{ type: "text", content: expect.stringContaining('"success":false') }]);
   });
 });

@@ -1,5 +1,6 @@
 import type { PersistenceQueue } from "@/shared/lib/persistence";
-import { getTextFromContent, type ChatEntry } from "@/shared/types/chat";
+import { messageText } from "@/shared/lib/messages";
+import type { ChatEntry } from "@/shared/types/chat";
 import type { Chat } from "@/shared/types/chat";
 import { chatEntry, loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 
@@ -163,7 +164,7 @@ export class ChatStore {
       chat = this.records.get(summary.id) ?? chat;
       if (
         !this.deleted.has(summary.id) &&
-        chat?.messages.some((message) => getTextFromContent(message.content).toLowerCase().includes(normalized))
+        chat?.messages.some((message) => messageText(message).toLowerCase().includes(normalized))
       )
         matches.add(summary.id);
     }

@@ -27,7 +27,7 @@ import { useArtifacts } from "./useArtifacts";
 
 function executionFailure(context: ToolContext | undefined, text: string) {
   context?.setError?.({ code: "EXECUTION_ERROR", message: text });
-  return [{ type: "text" as const, text }];
+  return [{ type: "text" as const, content: text }];
 }
 
 export function useArtifactsProvider(): ToolProvider | null {
@@ -55,7 +55,7 @@ export function useArtifactsProvider(): ToolProvider | null {
         onCommit: (access, mutations) => readWriteManager.record(access, workspace!.chatId, options.context, mutations),
       });
       return result.success
-        ? [{ type: "text" as const, text: result.output }]
+        ? [{ type: "text" as const, content: result.output }]
         : executionFailure(options.context, formatExecutionFailure(result));
     };
 

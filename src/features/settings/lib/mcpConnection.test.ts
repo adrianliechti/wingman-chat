@@ -107,7 +107,7 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await provider.connect();
     const setError = vi.fn();
     const setMeta = vi.fn();
-    expect(await provider.tools[0].function({}, { setError, setMeta })).toEqual(result.content);
+    expect(await provider.tools[0].function({}, { setError, setMeta })).toEqual([{ type: "text", content: "done" }]);
     expect(setError).toHaveBeenCalledWith({ code: "MCP_TOOL_ERROR", message: "done" });
     expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ mcpResult: failed }));
   });

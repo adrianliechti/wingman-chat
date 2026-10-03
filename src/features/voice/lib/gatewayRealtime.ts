@@ -7,16 +7,16 @@ import {
 import { AudioRecorder } from "./AudioRecorder";
 import { AudioStreamPlayer } from "./AudioStreamPlayer";
 import { captureRequestContext } from "@/shared/lib/requestContext";
-import { getFinalTextFromContent } from "@/shared/lib/assistantText";
+import type { UIMessage } from "@tanstack/ai";
+import { finalText, messageMetadata, messageText } from "@/shared/lib/messages";
 import { decodeBase64 } from "@/shared/lib/utils";
-import { getTextFromContent, type Message } from "@/shared/types/chat";
 
 type PendingResponse = { runId: string; calls: Set<string>; done: boolean; tools: boolean };
 export type VoiceToolIdentity = { id: string; name: string; runId: string; arguments: string };
 interface GatewayOptions {
   model: string;
   transcriber: string;
-  history: Message[];
+  history: UIMessage[];
   signal: AbortSignal;
   inputDeviceId?: string;
   outputDeviceId?: string;
@@ -154,8 +154,8 @@ export function gatewayRealtime(options: GatewayOptions) {
   };
   const sendHistory = () => {
     for (const message of options.history) {
-      const text =
-        message.role === "assistant" ? getFinalTextFromContent(message.content) : getTextFromContent(message.content);
+      if (message.role === "system" || messageMetadata(message).kind === "runtime_feedback") continue;
+      const text = message.role === "assistant" ? finalText(message) : messageText(message);
       if (text.trim())
         send({
           type: "conversation.item.create",

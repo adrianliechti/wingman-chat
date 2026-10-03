@@ -248,7 +248,13 @@ test("backups flush pending chat, image, agent, skill and profile data and resto
     const chat = await api.createChat();
     api.updateChat(chat.id, () => ({
       customTitle: "Backup",
-      messages: [{ role: "user", content: [{ type: "image", data: "data:image/jpeg;base64,YWJj" }] }],
+      messages: [
+        {
+          id: "image",
+          role: "user",
+          parts: [{ type: "image", source: { type: "data", value: "YWJj", mimeType: "image/jpeg" } }],
+        },
+      ],
     }));
     await api.createAgent("Agent");
     await api.createImage({ model: "renderer", prompt: "Prompt", data: "data:image/png;base64,YWJj" });
@@ -275,7 +281,7 @@ test("backups flush pending chat, image, agent, skill and profile data and resto
     customTitle: "Backup",
   });
   const loaded = await page.evaluate((id) => window.persistenceE2E.loadChat(id), id);
-  expect(loaded.messages[0].content[0]).toMatchObject({ type: "image" });
+  expect(loaded.messages[0].parts[0]).toMatchObject({ type: "image" });
   expect(JSON.stringify(loaded.messages)).toContain("blob:sha256-");
   expect(state.agents).toHaveLength(1);
   expect(state.skills).toHaveLength(1);

@@ -5,7 +5,8 @@ import internetInstructionsText from "@/features/research/prompts/internet.txt?r
 import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent, type ToolProvider } from "@/shared/types/chat";
+import { outputText } from "@/shared/lib/messages";
+import type { ToolProvider } from "@/shared/types/chat";
 
 type Config = ReturnType<typeof getConfig>;
 
@@ -59,7 +60,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
 
         await guardPrompt(prompt, signal);
         if (mode === "fast" && search) {
-          return getTextFromContent(await search.function({ queries: [prompt], limit: 3 }, { ...context, signal }));
+          return outputText(await search.function({ queries: [prompt], limit: 3 }, { ...context, signal }));
         }
         // Undefined continues with the local child agent; remote research and
         // fast search both finish at this same approval/result boundary.
@@ -93,7 +94,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
   researchTool.title = "Web research";
   researchTool.display = {
     input: () => [],
-    output: (result) => ({ code: getTextFromContent(result), language: "markdown" }),
+    output: (result) => ({ code: outputText(result), language: "markdown" }),
     header: (args, state) => {
       const fast = (args?.mode ?? defaultMode) === "fast";
       return {

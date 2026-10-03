@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { categorySlug, getConfig, riskSlug } from "@/shared/config";
 import { isAbortError } from "@/shared/lib/errors";
 import { minimalEffort } from "@/shared/lib/models";
-import { isUserMessage } from "@/shared/lib/requestContext";
-import type { Chat, Message, Model } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { isUserPrompt } from "@/shared/lib/messages";
+import type { Chat, Model } from "@/shared/types/chat";
 import type { ConsentResult, PendingConsent } from "@/shared/types/elicitation";
 
 interface Options {
@@ -35,24 +36,21 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
       runId,
       conversation,
       title,
-      hasMessage,
       currentModel,
       signal,
     }: {
       id: string;
       runId: string;
-      conversation: Message[];
+      conversation: UIMessage[];
       title?: string;
-      hasMessage: boolean;
       currentModel: Model;
       signal?: AbortSignal;
     }) => {
       latestRunByChatRef.current.set(id, runId);
-      if (!hasMessage) return;
       const isCurrentRun = () => !signal?.aborted && latestRunByChatRef.current.get(id) === runId;
       // System One only returns typed answers, so the title stays a small LLM call
       // on the initial turn and every third user turn.
-      const userTurnCount = conversation.filter(isUserMessage).length;
+      const userTurnCount = conversation.filter(isUserPrompt).length;
       if (!title || userTurnCount % 3 === 1) {
         const titleModel = config.chat?.summarizer || currentModel.id;
         client

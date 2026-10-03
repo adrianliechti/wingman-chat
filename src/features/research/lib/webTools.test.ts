@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent } from "@/shared/types/chat";
+import { outputText as getTextFromContent } from "@/shared/lib/messages";
 import { pageExcerpt } from "./webContent";
 import { buildWebTools } from "./webTools";
 

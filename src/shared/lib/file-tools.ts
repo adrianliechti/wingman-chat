@@ -8,7 +8,8 @@
 
 import { FilePen, FilePlus2, FileSearch, FileText, FolderInput, Search, Trash2 } from "lucide-react";
 import { artifactDelta, type ArtifactMutation } from "../types/artifact";
-import type { TextContent, Tool, ToolContext } from "../types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import type { Tool, ToolContext } from "../types/chat";
 import type { File, FileEntry } from "../types/file";
 import {
   type ArtifactValidationResult,
@@ -79,12 +80,12 @@ const DEFAULTS: Omit<ResolvedFileToolsOptions, "namespace" | "spaceName"> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function text(t: string): TextContent[] {
-  return [{ type: "text" as const, text: t }];
+function text(t: string): ContentPart[] {
+  return [{ type: "text" as const, content: t }];
 }
 
-function error(message: string): TextContent[] {
-  return [{ type: "text" as const, text: JSON.stringify({ error: message }) }];
+function error(message: string): ContentPart[] {
+  return [{ type: "text" as const, content: JSON.stringify({ error: message }) }];
 }
 
 function errorMessage(value: unknown): string {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Client } from "./client";
 import { runMessages } from "./agent";
-import { finished, response, textItem, testClient } from "./test-support/ai";
+import { assistant, calls, finished, output, response, textItem, testClient, user } from "./test-support/ai";
 import { trace, type Span } from "@opentelemetry/api";
 import { chat } from "@tanstack/ai";
 import { aiTelemetry } from "./otel";
@@ -80,14 +80,7 @@ it.each(["chat", "summarize_history"])(
         ),
     );
     const client = new Client();
-    if (operation === "chat")
-      await runMessages(
-        client,
-        "model",
-        "Private instructions",
-        [{ role: "user", content: [{ type: "text", text: "Private input" }] }],
-        [],
-      );
+    if (operation === "chat") await runMessages(client, "model", "Private instructions", [user("Private input")], []);
     else
       await chat({
         adapter: client.textAdapter("model"),
@@ -129,13 +122,10 @@ it("closes native spans when generation fails", async () => {
 });
 
 it("uses one native tool span and parents delegated calls to it without an async context manager", async () => {
-  const answer = { role: "assistant" as const, content: [{ type: "text" as const, text: "Private answer" }] };
+  const answer = assistant("Private answer");
   const complete = vi
     .fn<Parameters<typeof testClient>[0]>()
-    .mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "delegate-1", name: "delegate", arguments: "{}" }],
-    })
+    .mockResolvedValueOnce(calls(["delegate-1", "delegate"]))
     .mockResolvedValue(answer);
   let toolSpan: Span | undefined;
   await runMessages(
@@ -155,7 +145,7 @@ it("uses one native tool span and parents delegated calls to it without an async
             parentContext: context?.agentContext,
             context: context?.invocationContext,
           });
-          return [{ type: "text", text: "Private tool result" }];
+          return output("Private tool result");
         },
       },
     ],
@@ -172,11 +162,8 @@ it("uses one native tool span and parents delegated calls to it without an async
 it("closes failed tool spans through the native error lifecycle", async () => {
   const complete = vi
     .fn<Parameters<typeof testClient>[0]>()
-    .mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "failed-1", name: "fail", arguments: "{}" }],
-    })
-    .mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "The tool failed." }] });
+    .mockResolvedValueOnce(calls(["failed-1", "fail"]))
+    .mockResolvedValue(assistant("The tool failed."));
   await runMessages(
     testClient(complete),
     "model",

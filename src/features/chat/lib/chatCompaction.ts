@@ -1,18 +1,9 @@
 import instructions from "../prompts/summarize-history.txt?raw";
-import {
-  chat,
-  convertMessagesToModelMessages,
-  modelMessagesToUIMessages,
-  MetadataCapability,
-  provideMetadata,
-  type MetadataStore,
-  type ChatMiddleware,
-} from "@tanstack/ai";
+import { chat, MetadataCapability, provideMetadata, type MetadataStore, type ChatMiddleware } from "@tanstack/ai";
 import { clearToolResults, composeStrategies, summarizeOldest, withCompaction } from "@tanstack/ai-compaction";
 import { followAbortSignal } from "@/shared/lib/abortSignals";
 import type { Client } from "@/shared/lib/client";
 import { aiTelemetry } from "@/shared/lib/otel";
-import { fromAIMessages, toAIMessages } from "@/shared/lib/aiMessages";
 import { preservedSkillMessages } from "./chatHistory";
 
 /** Native provider-context compaction; saved messages and tool results stay complete. */
@@ -71,16 +62,11 @@ export function preserveSkillContext(): ChatMiddleware {
       const missing = new Set(
         ctx.messages
           .filter((message) => message.role === "tool" && !retained.has(message.content))
-          .map((message) => message.toolCallId),
+          .flatMap((message) => (message.toolCallId ? [message.toolCallId] : [])),
       );
-      const cleared = fromAIMessages(modelMessagesToUIMessages([...ctx.messages])).filter((message) =>
-        message.content.some((part) => part.type === "tool_result" && missing.has(part.id)),
-      );
-      const skills = preservedSkillMessages(cleared);
+      const skills = preservedSkillMessages(ctx.messages, missing);
       if (!skills.length) return;
-      return {
-        providerMessages: [...convertMessagesToModelMessages(toAIMessages(skills)), ...config.providerMessages],
-      };
+      return { providerMessages: [...skills, ...config.providerMessages] };
     },
   };
 }

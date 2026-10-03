@@ -1,14 +1,8 @@
 import { createContext } from "react";
 import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
-import type {
-  AudioContent,
-  FileContent,
-  ImageContent,
-  ProviderState,
-  TextContent,
-  ToolProvider,
-} from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import type { ProviderState, ToolProvider } from "@/shared/types/chat";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
@@ -30,7 +24,7 @@ export interface ToolsContextValue {
     toolName: string,
     resourceUri: string,
     args: Record<string, unknown>,
-    result: (TextContent | ImageContent | AudioContent | FileContent)[],
+    result: ContentPart[],
     content: Record<string, unknown> | undefined,
     options: McpAppOptions,
   ) => Promise<McpAppData>;

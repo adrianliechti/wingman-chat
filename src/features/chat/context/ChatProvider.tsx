@@ -309,7 +309,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // between tool execution and the next model response. Keep this UI-only.
     const last = baseMessages.at(-1);
     if (run.isResponding && chat?.id === chatId && last?.role === "user") {
-      return [...baseMessages, { id: `pending-${last.id}`, role: "assistant" as const, content: [] }];
+      return [...baseMessages, { id: `pending-${last.id}`, role: "assistant" as const, parts: [] }];
     }
 
     return baseMessages;

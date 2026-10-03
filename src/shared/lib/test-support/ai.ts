@@ -1,10 +1,10 @@
+import type { ContentPart, TextOptions, ToolCallPart, UIMessage } from "@tanstack/ai";
 import type { Client } from "../client";
-import type { Content, Message } from "@/shared/types/chat";
-import type { TextOptions } from "@tanstack/ai";
+import { assistantMessage, text, textSegments, userMessage, type TextMetadata } from "@/shared/lib/messages";
 
 /** Test provider: the real TanStack engine still owns validation and tool execution. */
 export function testClient(
-  complete: (options: TextOptions<Record<string, unknown>>, onStream: (content: Content[]) => void) => Promise<Message>,
+  complete: (options: TextOptions<Record<string, unknown>>, onStream: (text: string) => void) => Promise<UIMessage>,
 ): Client {
   return {
     chatModelOptions: () => ({}),
@@ -18,8 +18,7 @@ export function testClient(
         let notify: (() => void) | undefined;
         let settled = false;
         let streamedText = "";
-        const result = complete(options, (content) => {
-          const text = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+        const result = complete(options, (text) => {
           pending.push({ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text.slice(streamedText.length) });
           streamedText = text;
           notify?.();
@@ -38,27 +37,23 @@ export function testClient(
             });
         }
         const response = await result;
+        const finalText = response.parts.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("");
         if (streamedText) {
-          const finalText = response.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
           if (finalText.startsWith(streamedText) && finalText.length > streamedText.length)
             yield { type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: finalText.slice(streamedText.length) };
         }
-        for (const part of response.content) {
+        for (const part of response.parts) {
           if (part.type === "text" && !streamedText)
             yield {
               type: "TEXT_MESSAGE_CONTENT",
               messageId: id,
-              delta: part.text,
-              metadata: {
-                wingmanTextSegments: response.content.flatMap((part) =>
-                  part.type === "text" ? [{ content: part.text, phase: part.phase }] : [],
-                ),
-              },
+              delta: part.content,
+              metadata: { textSegments: textSegments(response) },
             };
-          if (part.type === "tool_call") {
+          if (part.type === "tool-call") {
             yield { type: "TOOL_CALL_START", toolCallId: part.id, toolCallName: part.name, parentMessageId: id };
             yield { type: "TOOL_CALL_ARGS", toolCallId: part.id, delta: part.arguments };
-            if (part.incomplete) {
+            if (part.state === "input-streaming") {
               yield { type: "RUN_ERROR", message: "max_output_tokens", code: "incomplete" };
               return;
             }
@@ -70,7 +65,7 @@ export function testClient(
           type: "RUN_FINISHED",
           runId: id,
           threadId: "test",
-          finishReason: response.content.some((part) => part.type === "tool_call") ? "tool_calls" : "stop",
+          finishReason: response.parts.some((part) => part.type === "tool-call") ? "tool_calls" : "stop",
           usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
         };
       },
@@ -144,4 +139,52 @@ export function finished(final: ReturnType<typeof response>) {
   });
   events.push({ type: `response.${final.status}`, response: final });
   return sse(events);
+}
+
+// ── Native transcript fixtures ────────────────────────────────────────────
+
+/** A user turn with one text part. */
+export const user = (content: string, init?: Parameters<typeof userMessage>[1]) => userMessage(content, init);
+/** An assistant turn with one text part. */
+export const assistant = (content: string, init?: Parameters<typeof assistantMessage>[1]) =>
+  assistantMessage(content, init);
+
+/** A finished tool call as the fake adapter emits it. */
+export function toolCall(id: string, name: string, args: object | string = {}): ToolCallPart {
+  return {
+    type: "tool-call",
+    id,
+    name,
+    arguments: typeof args === "string" ? args : JSON.stringify(args),
+    state: "input-complete",
+  };
+}
+
+/** An assistant turn that only calls tools. */
+export const calls = (...tools: Array<[string, string, (object | string)?]>) =>
+  assistantMessage(tools.map(([id, name, args]) => toolCall(id, name, args)));
+
+/** A tool's text output. */
+export const output = (content: string): ContentPart[] => [text(content)];
+
+/** Internal feedback the next model turn reads; the UI never shows it. */
+export function feedbackMessage(content: string, source: NonNullable<TextMetadata["source"]>): UIMessage {
+  return userMessage([text(content, { source })], { metadata: { kind: "runtime_feedback" } });
+}
+
+/** An assistant turn that calls tools, as a provider would produce it. */
+export function toolCallMessage(
+  calls: { id: string; name: string; arguments: string; incomplete?: boolean }[],
+  init?: Partial<Omit<UIMessage, "role" | "parts">>,
+): UIMessage {
+  return assistantMessage(
+    calls.map((call) => ({
+      type: "tool-call",
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+      state: call.incomplete ? "input-streaming" : "input-complete",
+    })),
+    init,
+  );
 }

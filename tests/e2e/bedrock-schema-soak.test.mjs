@@ -259,7 +259,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
               timeout: 15_000,
               maxBuffer: 1024 * 1024,
             });
-            return [{ type: "text", text: stdout.trimEnd() }];
+            return [{ type: "text", content: stdout.trimEnd() }];
           },
         };
         const result = await run(

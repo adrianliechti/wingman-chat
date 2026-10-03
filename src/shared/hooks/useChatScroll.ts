@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 interface UseChatScrollOptions {
   resetKey?: string | null;
-  messages?: Array<{ id?: string; role: string; content?: Array<{ type: string }> }>;
+  messages?: Array<{ id?: string; role: string; metadata?: Record<string, unknown> }>;
   isResponding?: boolean;
 }
 
@@ -72,9 +72,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     // A loading placeholder or tool result can already follow the new prompt
     // in the same render. Anchor to the human message itself.
     const prompt = messages.findLast(
-      (message) =>
-        message.role === "user" &&
-        message.content?.some((part) => part.type !== "tool_result" && part.type !== "runtime_feedback"),
+      (message) => message.role === "user" && message.metadata?.kind !== "runtime_feedback",
     );
     const identity = prompt?.id ?? prompt;
     const newPrompt = !!prompt && identity !== lastPromptRef.current;

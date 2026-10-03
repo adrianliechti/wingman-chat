@@ -4,6 +4,7 @@ import { useImageTool } from "./useImageTool";
 import type { Model } from "@/shared/types/chat";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { chatSession, boundInterrupt } from "@/shared/lib/test-support/chatSession";
+import { assistantMessage, mediaFromDataUrl } from "@/shared/lib/messages";
 
 const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
@@ -80,7 +81,7 @@ it("marks renderer failures as tool errors instead of displaying a successful cr
   config.client.generateImage.mockRejectedValueOnce(new Error("Renderer unavailable"));
   const setError = vi.fn();
   const result = await buildTool().function({ prompt: "A test image" }, { setError });
-  expect(result).toEqual([{ type: "text", text: expect.stringContaining("Renderer unavailable") }]);
+  expect(result).toEqual([{ type: "text", content: expect.stringContaining("Renderer unavailable") }]);
   expect(setError).toHaveBeenCalledWith(expect.objectContaining({ code: "IMAGE_GENERATION_ERROR" }));
 });
 
@@ -88,7 +89,7 @@ it("honors configured confirmation even in a context without an elicitation hand
   config.renderer.elicitation = true;
   const result = await buildTool().function({ prompt: "A test image" });
   expect(config.client.generateImage).not.toHaveBeenCalled();
-  expect(result).toEqual([{ type: "text", text: expect.stringContaining("confirmation") }]);
+  expect(result).toEqual([{ type: "text", content: expect.stringContaining("confirmation") }]);
 });
 
 it("does not generate an image when the user declines confirmation", async () => {
@@ -103,7 +104,7 @@ it("forwards current-message image attachments to the renderer", async () => {
   await buildTool().function(
     { prompt: "Edit this image" },
     {
-      content: () => [{ type: "image", data: "data:image/png;base64,cmVmZXJlbmNl" }],
+      content: () => [mediaFromDataUrl("data:image/png;base64,cmVmZXJlbmNl")],
     },
   );
   const references = config.client.generateImage.mock.calls[0][2] as Blob[];
@@ -127,18 +128,18 @@ it.each([true, false])("restores native image approval and does not prompt twice
   const tools = [buildTool()];
   const complete = vi
     .fn<Parameters<typeof testClient>[0]>()
-    .mockResolvedValueOnce({
-      role: "assistant",
-      content: [
+    .mockResolvedValueOnce(
+      assistantMessage([
         {
-          type: "tool_call",
+          type: "tool-call",
           id: "image",
           name: "create_image",
           arguments: JSON.stringify({ prompt: "A test image" }),
+          state: "input-complete",
         },
-      ],
-    })
-    .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "Done" }] });
+      ]),
+    )
+    .mockResolvedValueOnce(assistantMessage("Done"));
   const client = testClient(complete);
   const original = chatSession(client, tools);
   await original.ai.sendMessage("Make an image");
@@ -154,6 +155,6 @@ it.each([true, false])("restores native image approval and does not prompt twice
   await expect.poll(() => restored.finished.at(-1)?.status).toBe("completed");
   expect(config.client.generateImage).toHaveBeenCalledTimes(approved ? 1 : 0);
   expect(elicit).not.toHaveBeenCalled();
-  if (approved) expect(JSON.stringify(restored.store.value)).toContain("data:image/png;base64,aW1hZ2U=");
+  if (approved) expect(JSON.stringify(restored.store.value)).toContain('"value":"aW1hZ2U="');
   restored.ai.dispose();
 });

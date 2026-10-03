@@ -79,12 +79,12 @@ describe("default capability skills", () => {
     expect(state.loadResource).not.toHaveBeenCalled();
 
     expect(await read(value, "html-artifacts")).toEqual([
-      { type: "text", text: expect.stringContaining("Built-in HTML instructions.") },
+      { type: "text", content: expect.stringContaining("Built-in HTML instructions.") },
     ]);
     expect(state.loadTemplate).toHaveBeenCalledExactlyOnceWith("/skills/studio/html-artifacts/SKILL.md");
     const resource = value.tools.find((tool) => tool.name === "read_skill_resource")!;
     expect(await resource.function({ skill: "html-artifacts", path: "references/sdk.md" })).toEqual([
-      { type: "text", text: expect.stringContaining("SDK reference.") },
+      { type: "text", content: expect.stringContaining("SDK reference.") },
     ]);
     expect(state.loadResource).toHaveBeenCalledExactlyOnceWith(
       "/skills/studio/html-artifacts/SKILL.md",
@@ -104,7 +104,7 @@ describe("default capability skills", () => {
       properties: { name: { enum: ["html-artifacts", "private-notes"] } },
     });
     expect(await read(value, "html-artifacts")).toEqual([
-      { type: "text", text: expect.stringContaining("Personal instructions.") },
+      { type: "text", content: expect.stringContaining("Personal instructions.") },
     ]);
     expect(state.loadTemplate).not.toHaveBeenCalled();
   });
@@ -126,10 +126,10 @@ describe("default capability skills", () => {
       properties: { name: { enum: ["html-artifacts", "private-notes", "extension:html-artifacts"] } },
     });
     expect(await read(value, "html-artifacts")).toEqual([
-      { type: "text", text: expect.stringContaining("Built-in HTML instructions.") },
+      { type: "text", content: expect.stringContaining("Built-in HTML instructions.") },
     ]);
     expect(await read(value, "extension:html-artifacts")).toEqual([
-      { type: "text", text: expect.stringContaining("Plugin instructions.") },
+      { type: "text", content: expect.stringContaining("Plugin instructions.") },
     ]);
   });
 });

@@ -1,4 +1,5 @@
 import { getConfig } from "@/shared/config";
+import { mediaFromDataUrl } from "@/shared/lib/messages";
 import { bytesToDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
@@ -40,8 +41,8 @@ export async function runVision(
   const text = await completeIsolated(
     model,
     [
-      { type: "image", name, data: bytesToDataUrl(bytes, type) },
-      { type: "text", text: prompt?.trim() || DEFAULT_PROMPT },
+      mediaFromDataUrl(bytesToDataUrl(bytes, type), name, "image"),
+      { type: "text", content: prompt?.trim() || DEFAULT_PROMPT },
     ],
     {},
     requestOptions,

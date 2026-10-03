@@ -17,13 +17,15 @@ import { DuckDbRuntime } from "../../../src/shared/lib/duckdb";
 import type { File } from "../../../src/shared/types/file";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 import { ThemeProvider } from "../../../src/shell/context/ThemeProvider";
-import type { Content, Tool } from "../../../src/shared/types/chat";
+import { isContentPart, type ContentPart } from "@tanstack/ai";
+import type { Tool } from "../../../src/shared/types/chat";
+import { assistantMessage, userMessage } from "../../../src/shared/lib/messages";
 
 const config = await loadConfig();
 if (!config) throw new Error("Missing fixture config");
 const model = { id: "fixture", name: "Fixture" };
 config.client.listModels = async () => [model];
-const provider = testClient(async () => ({ role: "assistant", content: [{ type: "text", text: "Done" }] }));
+const provider = testClient(async () => assistantMessage("Done"));
 config.client.textAdapter = (model, signal) => provider.textAdapter(model, signal);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
 
@@ -53,10 +55,11 @@ function Fixture() {
     createChat: async () => (await chat.createChat()).id,
     selectChat: chat.selectChat,
     deleteChat: chat.deleteChat,
-    send: () => chat.sendMessage({ role: "user", content: [{ type: "text", text: "Hello" }] }),
+    send: () => chat.sendMessage(userMessage("Hello")),
     lastUserMessage: () =>
-      chat.messages.findLast((item) => item.role === "user" && item.content.some((part) => part.type === "text"))
-        ?.content,
+      chat.messages
+        .findLast((item) => item.role === "user" && item.parts.some((part) => part.type === "text"))
+        ?.parts.filter(isContentPart),
     openFile: artifacts.openFile,
     showDrawer: artifacts.setShowArtifactsDrawer,
     async write(chatId, path, content) {
@@ -197,7 +200,7 @@ declare global {
       selectChat(id: string | null): void;
       deleteChat(id: string): void;
       send(): Promise<void>;
-      lastUserMessage(): Content[] | undefined;
+      lastUserMessage(): ContentPart[] | undefined;
       openFile(path: string, fs?: FileSystemManager): void;
       showDrawer(show: boolean): void;
       write(chatId: string, path: string, content: string): Promise<void>;

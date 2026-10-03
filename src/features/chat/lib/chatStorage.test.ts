@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { PersistenceQueue } from "@/shared/lib/persistence";
 import * as opfs from "@/shared/lib/opfs";
+import { assistantMessage, mediaFromDataUrl, text, userMessage } from "@/shared/lib/messages";
 import type { Chat } from "@/shared/types/chat";
 import { loadChat, loadChatIndex, removeChat, storeChat } from "./chatStorage";
 import { createAttachmentLoader } from "./chatAttachments";
@@ -16,6 +17,7 @@ const chat = (id = "chat"): Chat => ({
   model: null,
   messages: [],
 });
+const image = (value = "YWJj", name?: string) => mediaFromDataUrl(`data:image/jpeg;base64,${value}`, name);
 
 beforeEach(() => {
   memory.reset();
@@ -39,7 +41,7 @@ beforeEach(() => {
 describe("chat persistence", () => {
   it("reads only the index at startup and resolves attachment copies when requested", async () => {
     const value = chat();
-    value.messages = [{ role: "user", content: [{ type: "image", data: "data:image/jpeg;base64,YWJj" }] }];
+    value.messages = [userMessage([image()])];
     await storeChat(value);
     const reads: string[] = [];
     memory.beforeRead = async (path) => {
@@ -57,108 +59,116 @@ describe("chat persistence", () => {
     await load(manifest.messages);
     expect(reads).toHaveLength(readCount);
   });
-  it("round-trips message identity, usage, phases, nested media MIME and tool metadata", async () => {
+
+  it("round-trips the native record: identities, usage, phases, resume, metadata and rich tool output", async () => {
     const value = chat();
-    value.pendingRun = {
-      id: "run",
-      interrupts: [{ id: "approval", reason: "tool_call", toolCallId: "call", metadata: { toolName: "vision" } }],
+    value.resume = {
+      resumeState: { threadId: "chat", runId: "run" },
+      pendingInterrupts: [
+        { id: "approval", reason: "tool_call", toolCallId: "call", metadata: { toolName: "vision" } },
+      ],
     };
-    value.compactions = [{ subagentId: "child", text: "Earlier work", signature: "@tanstack:{}" }];
+    value.metadata = { "@tanstack/ai-compaction": { "chat/child": { compactedMessages: [] } } };
     value.messages = [
-      {
-        id: "message",
-        runId: "run",
-        createdAt: "2026-01-01",
-        role: "assistant",
-        usage: { outputTokens: 3 },
-        content: [
-          { type: "text", phase: "commentary", text: "Working" },
+      assistantMessage(
+        [
+          text("Working", { phase: "commentary" }),
+          { type: "tool-call", id: "call", name: "vision", arguments: "{}", state: "complete" },
           {
-            type: "tool_result",
-            id: "call",
-            name: "vision",
-            arguments: "{}",
-            meta: { revision: 2 },
-            result: [{ type: "image", data: "data:image/jpeg;base64,YWJj" }],
+            type: "tool-result",
+            toolCallId: "call",
+            content: "[Image - displayed to user]",
+            state: "complete",
+            metadata: { result: [image()], meta: { revision: 2 } },
           },
         ],
-      },
+        {
+          id: "message",
+          createdAt: new Date("2026-01-01"),
+          metadata: {
+            runId: "run",
+            usage: { outputTokens: 3 },
+            textSegments: [{ content: "Working", phase: "commentary" }],
+          },
+        },
+      ),
     ];
     await storeChat(value);
     expect(await loadChat(value.id)).toMatchObject(value);
-    expect(await loadChat(value.id, false)).toMatchObject({
-      pendingRun: value.pendingRun,
-      compactions: value.compactions,
-    });
+    expect(await loadChat(value.id, false)).toMatchObject({ resume: value.resume, metadata: value.metadata });
     const stored = await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json");
+    expect(stored?.version).toBe(2);
     expect(JSON.stringify(stored)).not.toContain("base64");
     expect(JSON.stringify(stored)).toContain("image/jpeg");
-    expect(stored).toMatchObject({ pendingRun: value.pendingRun, compactions: value.compactions });
+    expect(stored).toMatchObject({ resume: value.resume, metadata: value.metadata });
   });
 
   it("a failed manifest save keeps the last committed attachments readable", async () => {
     const value = chat();
-    value.messages = [{ role: "user", content: [{ type: "image", data: "data:image/png;base64,YWJj" }] }];
+    value.messages = [userMessage([image()])];
     await storeChat(value);
     memory.beforeWrite = async (path) => {
       if (path.endsWith("chat.json")) throw new Error("disk full");
     };
     await expect(storeChat({ ...value, messages: [] })).rejects.toThrow();
-    expect((await loadChat(value.id))!.messages[0].content[0]).toMatchObject({ data: "data:image/png;base64,YWJj" });
+    expect((await loadChat(value.id))!.messages[0].parts[0]).toMatchObject({
+      source: { type: "data", value: "YWJj", mimeType: "image/jpeg" },
+    });
   });
 
-  it("stores subagent conversations and attachments using the ordinary message format", async () => {
+  it("stores subagent conversations and attachments using the native message format", async () => {
     const value = chat();
     value.messages = [
-      {
-        id: "parent",
-        role: "assistant",
-        content: [
+      assistantMessage(
+        [
           {
             type: "subagent",
-            id: "child",
-            name: "research",
-            status: "finished",
-            messages: [
-              {
-                id: "child-message",
-                role: "assistant",
-                content: [
-                  {
-                    type: "subagent",
-                    id: "nested",
-                    name: "inspect",
-                    status: "finished",
-                    messages: [
-                      {
-                        id: "result",
-                        role: "user",
-                        content: [
-                          {
-                            type: "tool_result",
-                            id: "call",
-                            name: "read",
-                            arguments: "{}",
-                            result: [
-                              { type: "image", data: "data:image/jpeg;base64,YWJj" },
-                              { type: "file", name: "notes.txt", data: "data:text/plain;base64,bm90ZXM=" },
+            subagent: {
+              id: "child",
+              name: "research",
+              status: "finished",
+              messages: [
+                assistantMessage(
+                  [
+                    {
+                      type: "subagent",
+                      subagent: {
+                        id: "nested",
+                        name: "inspect",
+                        status: "finished",
+                        messages: [
+                          assistantMessage(
+                            [
+                              { type: "tool-call", id: "call", name: "read", arguments: "{}", state: "complete" },
+                              {
+                                type: "tool-result",
+                                toolCallId: "call",
+                                content: "[Image - displayed to user]",
+                                state: "complete",
+                                metadata: {
+                                  result: [image(), mediaFromDataUrl("data:text/plain;base64,bm90ZXM=", "notes.txt")],
+                                },
+                              },
                             ],
-                          },
+                            { id: "result" },
+                          ),
                         ],
                       },
-                    ],
-                  },
-                ],
-              },
-            ],
+                    },
+                  ],
+                  { id: "child-message" },
+                ),
+              ],
+            },
           },
         ],
-      },
+        { id: "parent" },
+      ),
     ];
     await storeChat(value);
     const manifest = (await loadChat(value.id, false))!;
     expect(JSON.stringify(manifest.messages)).not.toContain("base64");
-    expect(JSON.stringify(manifest.messages)).not.toContain('"parts"');
+    expect(JSON.stringify(manifest.messages)).toContain('"parts"');
     const loaded = await createAttachmentLoader(value.id)(manifest.messages);
     expect(loaded).toMatchObject(value.messages);
     // Saving references must keep blobs owned by a nested child.
@@ -183,15 +193,7 @@ describe("chat persistence", () => {
       } else throw new Error("failed blob");
     };
     const value = chat();
-    value.messages = [
-      {
-        role: "user",
-        content: [
-          { type: "image", data: "data:image/png;base64,c2xvdw==" },
-          { type: "image", data: "data:image/png;base64,ZmFpbA==" },
-        ],
-      },
-    ];
+    value.messages = [userMessage([image("c2xvdw=="), image("ZmFpbA==")])];
     const saving = storeChat(value).catch(() => {});
     await vi.waitFor(() => expect(held).toBe(true));
     let deleted = false;
@@ -210,7 +212,12 @@ describe("chat persistence", () => {
       "chats/chat/chat.json",
       JSON.stringify({
         ...chat(),
-        messages: [{ role: "user", content: [{ type: "file", name: "x.pdf", data: "blob:missing" }] }],
+        version: 2,
+        messages: [
+          userMessage([
+            { type: "document", source: { type: "url", value: "blob:missing" }, metadata: { filename: "x.pdf" } },
+          ]),
+        ],
       }),
     );
     const loaded = (await loadChat("chat"))!;
@@ -242,11 +249,13 @@ describe("chat persistence", () => {
 
   it("repairs an incomplete content-addressed blob when the same attachment is saved again", async () => {
     const value = chat();
-    value.messages = [{ role: "user", content: [{ type: "image", data: "data:image/png;base64,YWJj" }] }];
+    value.messages = [userMessage([image()])];
     await storeChat(value);
     const [path] = [...memory.files.keys()].filter((path) => path.includes("/blobs/"));
     memory.put(path, "");
     await storeChat(value);
-    expect((await loadChat("chat"))!.messages[0].content[0]).toMatchObject({ data: "data:image/png;base64,YWJj" });
+    expect((await loadChat("chat"))!.messages[0].parts[0]).toMatchObject({
+      source: { type: "data", value: "YWJj", mimeType: "image/jpeg" },
+    });
   });
 });

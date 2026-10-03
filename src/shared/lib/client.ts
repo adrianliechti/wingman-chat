@@ -16,9 +16,9 @@ import {
 } from "@/features/chat/lib/classificationQuestions";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
-import type { ImageQuality, Message, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
-import { combineAbortSignals } from "./abortSignals";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
 import { aiTelemetry } from "./otel";
@@ -208,7 +208,7 @@ export class Client {
     };
   }
 
-  async generateTitle(model: string, input: Message[], options: ParseOptions = {}): Promise<string | null> {
+  async generateTitle(model: string, input: UIMessage[], options: ParseOptions = {}): Promise<string | null> {
     const history = sanitizeForClassification(input);
     const result = await this.parse(
       model,
@@ -224,7 +224,7 @@ export class Client {
   /** Classifies the latest user message into categories and risks with one System One request. */
   async classifyChat(
     model: string,
-    input: Message[],
+    input: UIMessage[],
     categories: ClassificationItem[] = [],
     risks: ClassificationItem[] = [],
     requestOptions: ClientRequestOptions & Pick<ParseOptions, "effort"> = {},
@@ -665,7 +665,10 @@ export class Client {
     // budget (see generateImage).
     requestOptions.signal?.throwIfAborted();
     const timeoutController = new AbortController();
-    const combinedSignal = combineAbortSignals(requestOptions.signal, timeoutController.signal);
+    const signal = AbortSignal.any([
+      timeoutController.signal,
+      ...(requestOptions.signal ? [requestOptions.signal] : []),
+    ]);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -676,17 +679,17 @@ export class Client {
         method: "POST",
         headers,
         body: data,
-        signal: combinedSignal.signal,
+        signal,
       });
       if (!resp.ok) {
         const detail = await readErrorBody(resp);
-        combinedSignal.signal?.throwIfAborted();
+        signal.throwIfAborted();
         throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
       }
       // Fetch resolves at headers. Keep cancellation and the deadline connected
       // until the body has finished, including failed response bodies.
       const result = await read(resp);
-      combinedSignal.signal?.throwIfAborted();
+      signal.throwIfAborted();
       return result;
     } catch (error) {
       requestOptions.signal?.throwIfAborted();
@@ -696,7 +699,6 @@ export class Client {
       throw error;
     } finally {
       clearTimeout(timer);
-      combinedSignal.cleanup();
     }
   }
 }

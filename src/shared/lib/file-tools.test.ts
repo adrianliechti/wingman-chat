@@ -192,7 +192,7 @@ describe("artifact file tools", () => {
       );
       const saved = result[0];
       if (saved.type !== "text") throw new Error("Expected a text result");
-      const details = JSON.parse(saved.text);
+      const details = JSON.parse(saved.content);
       expect(details.success).toBe(true);
       expect(details.validation.errors).toHaveLength(1);
       expect(details.validation.errors[0]).toContain("[json]");
@@ -207,8 +207,8 @@ describe("artifact file tools", () => {
         });
       const corrected = fixed[0];
       if (corrected.type !== "text") throw new Error("Expected a text result");
-      expect(JSON.parse(corrected.text)).toMatchObject({ success: true });
-      expect(JSON.parse(corrected.text)).not.toHaveProperty("validation");
+      expect(JSON.parse(corrected.content)).toMatchObject({ success: true });
+      expect(JSON.parse(corrected.content)).not.toHaveProperty("validation");
       expect(files.get("/config.json")?.content).toBe('{"days":45}');
     },
   );
@@ -223,7 +223,7 @@ describe("artifact file tools", () => {
     expect(files.has("/bad.html")).toBe(false);
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    const parsed = JSON.parse(first.text) as { error: string };
+    const parsed = JSON.parse(first.content) as { error: string };
     expect(parsed.error).toContain("content is required and must be a string");
   });
 
@@ -235,8 +235,10 @@ describe("artifact file tools", () => {
     const badContent = await create?.function({ file_path: "/named.py", text: "print('ho')" });
 
     expect(files.size).toBe(0);
-    expect(badPath?.[0]?.type === "text" && JSON.parse(badPath[0].text).error).toContain("file_path is required");
-    expect(badContent?.[0]?.type === "text" && JSON.parse(badContent[0].text).error).toContain("content is required");
+    expect(badPath?.[0]?.type === "text" && JSON.parse(badPath[0].content).error).toContain("file_path is required");
+    expect(badContent?.[0]?.type === "text" && JSON.parse(badContent[0].content).error).toContain(
+      "content is required",
+    );
   });
 
   it("applies quote-heavy HTML edits", async () => {
@@ -339,7 +341,7 @@ describe("artifact file tools", () => {
     });
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text)).toMatchObject({
+    expect(JSON.parse(first.content)).toMatchObject({
       success: true,
       paths: ["/first.txt", "/second.txt", "/created.txt"],
     });
@@ -360,7 +362,7 @@ describe("artifact file tools", () => {
     expect(files.get("/existing.txt")?.content).toBe("keep me\n");
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text).error).toContain("no files changed");
+    expect(JSON.parse(first.content).error).toContain("no files changed");
   });
 
   it("preserves a UTF-8 BOM and CRLF line endings while editing", async () => {
@@ -380,7 +382,7 @@ describe("artifact file tools", () => {
     expect(files.get("/windows.txt")?.content).toBe("\uFEFFfirst\r\nchanged\r\n");
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text).text_formats).toEqual({
+    expect(JSON.parse(first.content).text_formats).toEqual({
       "/windows.txt": { utf8_bom: true, line_endings: "CRLF" },
     });
   });
@@ -405,7 +407,7 @@ describe("artifact file tools", () => {
       });
     const first = result[0];
     if (first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text).text_formats).toEqual({
+    expect(JSON.parse(first.content).text_formats).toEqual({
       "/lf.txt": { utf8_bom: false, line_endings: "LF" },
       "/cr.txt": { utf8_bom: false, line_endings: "CR" },
       "/mixed.txt": { utf8_bom: true, line_endings: "CRLF" },
@@ -426,7 +428,7 @@ describe("artifact file tools", () => {
       const result = await create.function({ file_path: "/file.txt", content });
       const first = result[0];
       if (first.type !== "text") throw new Error("Expected a text result");
-      expect(JSON.parse(first.text).text_format).toEqual(format);
+      expect(JSON.parse(first.content).text_format).toEqual(format);
     }
   });
 
@@ -444,9 +446,9 @@ describe("artifact file tools", () => {
     const result = await read.function({ file_path: "/file.txt", limit: 1 });
     const first = result[0];
     if (first.type !== "text") throw new Error("Expected a text result");
-    expect(first.text).toContain(`[UTF-8 BOM: ${bom}; line endings: ${endings}]`);
-    expect(first.text).not.toContain("\uFEFF");
-    expect(first.text).not.toContain("\r");
+    expect(first.content).toContain(`[UTF-8 BOM: ${bom}; line endings: ${endings}]`);
+    expect(first.content).not.toContain("\uFEFF");
+    expect(first.content).not.toContain("\r");
   });
 
   it("does not describe binary data URLs as text format", async () => {
@@ -483,7 +485,7 @@ describe("artifact file tools", () => {
     expect(files.get("/large.txt")?.content).toBe("too large");
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text).error).toContain("4-byte edit limit");
+    expect(JSON.parse(first.content).error).toContain("4-byte edit limit");
   });
 
   it("strips a UTF-8 BOM from read output without changing stored content", async () => {
@@ -494,8 +496,8 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(first.text).toContain("1: hello");
-    expect(first.text).not.toContain("\uFEFF");
+    expect(first.content).toContain("1: hello");
+    expect(first.content).not.toContain("\uFEFF");
     expect(files.get("/bom.txt")?.content).toBe("\uFEFFhello\n");
   });
 
@@ -518,10 +520,10 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(first.text.indexOf("/logs/new.txt")).toBeLessThan(first.text.indexOf("/logs/middle.txt"));
-    expect(first.text).not.toContain("old.txt");
-    expect(first.text).not.toContain("ignored.txt");
-    expect(first.text).toContain("Results truncated at 2");
+    expect(first.content.indexOf("/logs/new.txt")).toBeLessThan(first.content.indexOf("/logs/middle.txt"));
+    expect(first.content).not.toContain("old.txt");
+    expect(first.content).not.toContain("ignored.txt");
+    expect(first.content).toContain("Results truncated at 2");
   });
 
   it('uses glob("**/*") to list top-level and nested files', async () => {
@@ -535,8 +537,8 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(first.text).toContain("/README.md");
-    expect(first.text).toContain("/src/app.ts");
+    expect(first.content).toContain("/README.md");
+    expect(first.content).toContain("/src/app.ts");
   });
 
   it("supports Wingman-style grep filters, modes, context, and pagination", async () => {
@@ -550,7 +552,7 @@ describe("artifact file tools", () => {
     const defaults = await grep?.function({ pattern: "Needle", path: "/src", type: "ts" });
     const defaultText = defaults?.[0];
     if (!defaultText || defaultText.type !== "text") throw new Error("Expected a text result");
-    expect(defaultText.text).toBe("/src/app.ts");
+    expect(defaultText.content).toBe("/src/app.ts");
 
     const content = await grep?.function({
       pattern: "needle",
@@ -564,9 +566,9 @@ describe("artifact file tools", () => {
     });
     const contentText = content?.[0];
     if (!contentText || contentText.type !== "text") throw new Error("Expected a text result");
-    expect(contentText.text).toContain("/src/app.ts:4:needle two");
-    expect(contentText.text).toContain("/src/app.ts:3-after");
-    expect(contentText.text).not.toContain("Needle one");
+    expect(contentText.content).toContain("/src/app.ts:4:needle two");
+    expect(contentText.content).toContain("/src/app.ts:3-after");
+    expect(contentText.content).not.toContain("Needle one");
 
     const count = await grep?.function({
       pattern: "Needle[\\s\\S]*after",
@@ -576,7 +578,7 @@ describe("artifact file tools", () => {
     });
     const countText = count?.[0];
     if (!countText || countText.type !== "text") throw new Error("Expected a text result");
-    expect(countText.text).toBe("/src/app.ts:1");
+    expect(countText.content).toBe("/src/app.ts:1");
   });
 
   it("reports invalid grep regexes instead of silently treating them as literals", async () => {
@@ -587,7 +589,7 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(JSON.parse(first.text).error).toContain("invalid regex pattern");
+    expect(JSON.parse(first.content).error).toContain("invalid regex pattern");
   });
 
   it("lets multiline dot cross lines without changing anchor semantics", async () => {
@@ -598,7 +600,7 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(first.text).toBe("No matches found");
+    expect(first.content).toBe("No matches found");
   });
 
   it("continues read pagination from the last line actually returned", async () => {
@@ -613,14 +615,14 @@ describe("artifact file tools", () => {
     const firstResult = first?.[0];
     expect(firstResult?.type).toBe("text");
     if (!firstResult || firstResult.type !== "text") throw new Error("Expected a text result");
-    expect(firstResult.text).toContain("lines 1-1 of 3");
-    expect(firstResult.text).toContain("use offset=2 to continue");
-    expect(firstResult.text).not.toContain("2222222222");
+    expect(firstResult.content).toContain("lines 1-1 of 3");
+    expect(firstResult.content).toContain("use offset=2 to continue");
+    expect(firstResult.content).not.toContain("2222222222");
 
     const second = await read?.function({ file_path: "/long.txt", offset: 2 });
     const secondResult = second?.[0];
     expect(secondResult?.type).toBe("text");
     if (!secondResult || secondResult.type !== "text") throw new Error("Expected a text result");
-    expect(secondResult.text).toContain("2: 2222222222");
+    expect(secondResult.content).toContain("2: 2222222222");
   });
 });

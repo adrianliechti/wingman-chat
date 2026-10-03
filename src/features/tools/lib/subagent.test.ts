@@ -1,6 +1,8 @@
+import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import type { ToolContext } from "@/shared/types/chat";
+import { assistantMessage, mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { createSubagentTool } from "./subagent";
 
@@ -10,14 +12,8 @@ vi.mock("@/shared/config", () => ({ getConfig: () => ({ client: testClient(state
 describe("subagent invocation identity", () => {
   beforeEach(() => {
     state.complete.mockReset();
-    state.complete.mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "tool_call", id: "inspect-call", name: "inspect", arguments: "{}" }],
-    });
-    state.complete.mockResolvedValueOnce({
-      role: "assistant",
-      content: [{ type: "text", text: "done" }],
-    });
+    state.complete.mockResolvedValueOnce(toolCallMessage([{ id: "inspect-call", name: "inspect", arguments: "{}" }]));
+    state.complete.mockResolvedValueOnce(assistantMessage("done"));
   });
 
   async function invoke(parent?: ToolContext, work?: (context: ToolContext) => void) {
@@ -32,7 +28,7 @@ describe("subagent invocation identity", () => {
           function: async (_args, context) => {
             child = context;
             work?.(context!);
-            return [{ type: "text", text: "ok" }];
+            return [{ type: "text", content: "ok" }];
           },
         },
       ],
@@ -67,27 +63,24 @@ describe("subagent invocation identity", () => {
     for (const parent of [undefined, { runId: "voice-parent" }]) {
       state.complete
         .mockReset()
-        .mockResolvedValueOnce({
-          role: "assistant",
-          content: [{ type: "tool_call", id: "skill", name: "load_skill", arguments: '{"name":"reports"}' }],
-        })
-        .mockResolvedValueOnce({ role: "assistant", content: [{ type: "text", text: "Verified" }] });
-      expect(await tool.function({ prompt: "Build a report" }, parent)).toEqual([{ type: "text", text: "Verified" }]);
+        .mockResolvedValueOnce(toolCallMessage([{ id: "skill", name: "load_skill", arguments: '{"name":"reports"}' }]))
+        .mockResolvedValueOnce(assistantMessage("Verified"));
+      expect(await tool.function({ prompt: "Build a report" }, parent)).toEqual([
+        { type: "text", content: "Verified" },
+      ]);
       expect(JSON.stringify(state.complete.mock.calls[0][0].systemPrompts)).toContain("Create reports");
       expect(JSON.stringify(state.complete.mock.calls[1][0].messages)).toContain("Verify the report.");
     }
   });
 
   it("returns the final answer without the child agent's commentary", async () => {
-    state.complete.mockReset().mockResolvedValueOnce({
-      role: "assistant",
-      content: [
-        { type: "text", text: "Working", phase: "commentary" },
-        { type: "text", text: "Done", phase: "final_answer" },
-      ],
-    });
+    state.complete
+      .mockReset()
+      .mockResolvedValueOnce(
+        assistantMessage([text("Working", { phase: "commentary" }), text("Done", { phase: "final_answer" })]),
+      );
     const tool = createSubagentTool("model", "Instructions", []);
-    expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", text: "Done" }]);
+    expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", content: "Done" }]);
   });
 
   it("asks voice callers to continue in chat when a delegated tool needs native approval", async () => {
@@ -101,7 +94,7 @@ describe("subagent invocation identity", () => {
       },
     ]);
     const result = await tool.function({ prompt: "Inspect" }, { elicit: vi.fn() });
-    expect(result).toEqual([{ type: "text", text: "This task needs interactive input. Continue it in chat." }]);
+    expect(result).toEqual([{ type: "text", content: "This task needs interactive input. Continue it in chat." }]);
     expect(execute).not.toHaveBeenCalled();
     expect(state.complete).toHaveBeenCalledOnce();
   });
@@ -115,10 +108,10 @@ describe("subagent invocation identity", () => {
   });
 
   it("preserves attached image references and elicitation for delegated tools", async () => {
-    const content: ToolContext["content"] = () => [{ type: "image", data: "data:image/png;base64,aW1hZ2U=" }];
+    const content: ToolContext["content"] = () => [mediaFromDataUrl("data:image/png;base64,aW1hZ2U=")];
     const elicit = vi.fn().mockResolvedValue({ action: "accept" });
     const child = await invoke({ chatId: "origin-chat", content, elicit });
-    expect(child.content?.()).toEqual(content());
+    expect(child.content?.()).toEqual(content!());
     await child.elicit?.({ message: "Generate an image" });
     expect(elicit).toHaveBeenCalledExactlyOnceWith({ message: "Generate an image" });
   });
@@ -129,10 +122,7 @@ describe("subagent invocation identity", () => {
       if (fail) {
         state.complete
           .mockReset()
-          .mockResolvedValueOnce({
-            role: "assistant",
-            content: [{ type: "tool_call", id: "inspect-call", name: "inspect", arguments: "{}" }],
-          })
+          .mockResolvedValueOnce(toolCallMessage([{ id: "inspect-call", name: "inspect", arguments: "{}" }]))
           .mockRejectedValueOnce(new Error("Later model request failed"));
       }
       const setMeta = vi.fn();

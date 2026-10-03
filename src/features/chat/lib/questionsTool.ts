@@ -1,6 +1,7 @@
 import { MCPInputRequiredError } from "@tanstack/ai-mcp";
 import { HelpCircle } from "lucide-react";
-import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import type { Tool, ToolContext } from "@/shared/types/chat";
 import type { ElicitationPrimitiveSchema, ElicitationResult, ElicitationSchema } from "@/shared/types/elicitation";
 
 type QuestionOption = { value?: unknown; label?: unknown };
@@ -14,9 +15,9 @@ type QuestionSpec = {
   required?: unknown;
 };
 
-function errorResult(error: string, context?: ToolContext): TextContent[] {
+function errorResult(error: string, context?: ToolContext): ContentPart[] {
   context?.setError?.({ code: "QUESTIONS_ERROR", message: error });
-  return [{ type: "text", text: JSON.stringify({ success: false, error }) }];
+  return [{ type: "text", content: JSON.stringify({ success: false, error }) }];
 }
 
 function asPrimitiveString(value: unknown): string {
@@ -186,9 +187,9 @@ export const ASK_QUESTIONS_TOOL: Tool = {
       : await context.elicit!({ message, requestedSchema });
 
     if (result.action !== "accept") {
-      return [{ type: "text", text: JSON.stringify({ answered: false, action: result.action }) }];
+      return [{ type: "text", content: JSON.stringify({ answered: false, action: result.action }) }];
     }
 
-    return [{ type: "text", text: JSON.stringify({ answered: true, answers: result.content ?? {} }) }];
+    return [{ type: "text", content: JSON.stringify({ answered: true, answers: result.content ?? {} }) }];
   },
 };

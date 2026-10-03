@@ -1,19 +1,33 @@
 import { ToolCase } from "lucide-react";
 import { memo, useMemo, useState } from "react";
-import type { Message } from "@/shared/types/chat";
-import { summarizeToolGroup } from "./chatMessageUtils";
+import type { UIMessage } from "@tanstack/ai";
+import { subagentToolCallIds, summarizeToolGroup, toolRounds } from "./chatMessageUtils";
 import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { ChatMessageAttachments } from "./ChatMessageAttachments";
 import { hasStoredAttachments } from "../lib/chatAttachments";
 
 type ChatToolGroupProps = {
-  messages: Message[];
+  messages: UIMessage[];
   indices: number[];
 };
 
+/** Every tool round of one message as nested rows. */
+function ToolRows({ message, index, messages }: { message: UIMessage; index: number; messages: UIMessage[] }) {
+  const delegated = subagentToolCallIds(messages);
+  return (
+    <>
+      {toolRounds(message, delegated).map(({ call, result }) => (
+        // Key by the stable tool-call id, not the array index — stop/restart
+        // shifts indices, and index keys would reconcile the wrong rows.
+        <ChatToolMessage key={call.id} message={message} call={call} result={result} index={index} nested />
+      ))}
+    </>
+  );
+}
+
 /**
- * Folds a run of consecutive tool results into a single collapsible "Used N
+ * Folds a run of consecutive tool rounds into a single collapsible "Used N
  * tools" row. Expanding reveals the individual ChatToolMessage rows, each still
  * independently expandable.
  *
@@ -38,16 +52,13 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
       {expanded && (
         <div className="mt-1 ml-4.5">
           {indices.map((idx) => {
-            const result = messages[idx].content.find((p) => p.type === "tool_result");
-            // Key by the stable tool-call id, not the array index — stop/restart
-            // shifts indices, and index keys would reconcile the wrong rows.
-            const key = result && "id" in result ? result.id : idx;
-            return hasStoredAttachments(messages[idx].content) ? (
-              <ChatMessageAttachments key={key} message={messages[idx]}>
-                {(message) => <ChatToolMessage message={message} index={idx} nested />}
+            const message = messages[idx];
+            return hasStoredAttachments(message) ? (
+              <ChatMessageAttachments key={message.id} message={message}>
+                {(loaded) => <ToolRows message={loaded} index={idx} messages={messages} />}
               </ChatMessageAttachments>
             ) : (
-              <ChatToolMessage key={key} message={messages[idx]} index={idx} nested />
+              <ToolRows key={message.id} message={message} index={idx} messages={messages} />
             );
           })}
         </div>

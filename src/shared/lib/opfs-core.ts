@@ -16,7 +16,7 @@ import { decodeDataURL, readAsDataURL } from "./utils";
  *   /skills/index.json        # Skills index for fast listing
  *
  *   /chats/{id}/
- *   ├── chat.json             # Metadata + messages (with blob refs)
+ *   ├── chat.json             # Metadata + native transcript (media as blob refs); pre-v2 records migrate on load
  *   ├── blobs/{uuid}.bin      # Co-located message blobs (images, audio)
  *   └── artifacts/{path}      # Artifact files stored as real files
  *   /chats/index.json         # Chats index for fast listing

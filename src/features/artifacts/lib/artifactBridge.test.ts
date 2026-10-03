@@ -58,7 +58,7 @@ function bridge(overrides: Partial<ConstructorParameters<typeof ArtifactBridge>[
     description: "search",
     parameters: { type: "object", properties: {} },
     function: vi.fn(async (args: Record<string, unknown>) => [
-      { type: "text" as const, text: `found ${JSON.stringify(args)}` },
+      { type: "text" as const, content: `found ${JSON.stringify(args)}` },
     ]),
   };
   const instance = new ArtifactBridge({
@@ -173,7 +173,7 @@ describe("ArtifactBridge.dispatch", () => {
       { name: "search", title: undefined, description: "search", parameters: { type: "object", properties: {} } },
     ]);
     expect(await instance.dispatch("tools.call", ["search", { q: "x" }])).toEqual([
-      { type: "text", text: 'found {"q":"x"}' },
+      { type: "text", content: 'found {"q":"x"}' },
     ]);
     await instance.dispatch("tools.call", ["search", {}]);
     expect(consent).toHaveBeenCalledTimes(1);

@@ -8,8 +8,9 @@ import type { ToolContextFactory } from "@/features/voice/hooks/useVoiceWebSocke
 import { useVoiceWebSockets, voiceSessionSignature } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
-import type { AudioContent, FileContent, ImageContent, TextContent, ToolContext } from "@/shared/types/chat";
-import { Role } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { assistantMessage, toolRoundMessage, userMessage } from "@/shared/lib/messages";
+import type { ToolContext } from "@/shared/types/chat";
 import type { Elicitation } from "@/shared/types/elicitation";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import type { VoiceContextType } from "./VoiceContext";
@@ -81,13 +82,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   function onUserTranscriptCallback(text: string) {
     if (text.trim() && voiceChatIdRef.current) {
-      void addMessage({ role: Role.User, content: [{ type: "text", text }] }, voiceChatIdRef.current);
+      void addMessage(userMessage(text), voiceChatIdRef.current);
     }
   }
 
   function onAssistantTranscriptCallback(text: string) {
     if (text.trim() && voiceChatIdRef.current) {
-      void addMessage({ role: Role.Assistant, content: [{ type: "text", text }] }, voiceChatIdRef.current);
+      void addMessage(assistantMessage(text), voiceChatIdRef.current);
     }
   }
 
@@ -123,30 +124,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     notify.error("Voice service error", error.message);
   }
 
-  function onToolResultCallback(
-    toolName: string,
-    callId: string,
-    result: (TextContent | ImageContent | AudioContent | FileContent)[],
-    args: string,
-  ) {
+  function onToolResultCallback(toolName: string, callId: string, result: ContentPart[], args: string) {
     const sessionChatId = voiceChatIdRef.current;
     if (!sessionChatId) return;
-    void addMessage(
-      {
-        role: Role.Assistant,
-        content: [
-          { type: "tool_call", id: callId, name: toolName, arguments: args },
-          {
-            type: "tool_result",
-            id: callId,
-            name: toolName,
-            arguments: args,
-            result,
-          },
-        ],
-      },
-      sessionChatId,
-    );
+    void addMessage(toolRoundMessage({ id: callId, name: toolName, arguments: args }, result), sessionChatId);
   }
 
   const buildToolContextFactory = useCallback(
@@ -336,7 +317,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const sendVoiceText = useCallback(
     (text: string) => {
-      void addMessage({ role: Role.User, content: [{ type: "text", text }] });
+      void addMessage(userMessage(text));
       void sendText(text);
     },
     [addMessage, sendText],

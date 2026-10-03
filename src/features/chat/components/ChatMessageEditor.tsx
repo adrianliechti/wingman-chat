@@ -1,14 +1,15 @@
 import { Send, X } from "lucide-react";
-import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
+import type { TextPart } from "@tanstack/ai";
+import type { MediaPart } from "@/shared/lib/messages";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 
 type ChatMessageEditorProps = {
   editContent: string;
   onEditContentChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  editAdditionalTextContent: TextContent[];
+  editAdditionalTextContent: TextPart[];
   onRemoveAdditionalText: (index: number) => void;
-  editMediaContent: (ImageContent | AudioContent | FileContent)[];
+  editMediaContent: MediaPart[];
   onRemoveMedia: (index: number) => void;
   onCancel: () => void;
   onConfirm: () => void;

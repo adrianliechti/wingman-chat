@@ -3,7 +3,8 @@ import { createReadonlyFileTools, type FileToolsOptions, type ReadonlyFileSource
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { splitLines, truncateLine } from "@/shared/lib/text-utils";
-import type { TextContent, Tool } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import type { Tool } from "@/shared/types/chat";
 import type { File, FileEntry } from "@/shared/types/file";
 import { reconcileRepositoryFilePaths, type ResolvedRepositoryFile } from "./repository-paths";
 
@@ -28,12 +29,12 @@ const DEFAULT_SEARCH_RESULTS = 10;
 const MAX_SEARCH_RESULTS = 20;
 const MAX_SEARCH_SNIPPET_CHARS = 400;
 
-function textResult(text: string): TextContent[] {
-  return [{ type: "text" as const, text }];
+function textResult(text: string): ContentPart[] {
+  return [{ type: "text" as const, content: text }];
 }
 
-function errorResult(message: string): TextContent[] {
-  return [{ type: "text" as const, text: JSON.stringify({ error: message }) }];
+function errorResult(message: string): ContentPart[] {
+  return [{ type: "text" as const, content: JSON.stringify({ error: message }) }];
 }
 
 function pathKey(path: string): string {

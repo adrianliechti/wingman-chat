@@ -14,7 +14,7 @@ import type {
 } from "./interpreterProtocol";
 import { resolveCodeExecutionLimits, validateArtifactFiles } from "./executionLimits";
 import type { ToolContext } from "@/shared/types/chat";
-import { combineAbortSignals, withAbort } from "@/shared/lib/abortSignals";
+import { withAbort } from "@/shared/lib/abortSignals";
 
 export interface ExecuteCodeOptions {
   /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
@@ -135,29 +135,28 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function execute(request: CodeExecutionRequest, options?: ExecuteCodeOptions): Promise<CodeExecutionResult> {
-    const combined = combineAbortSignals(options?.signal, options?.context?.invocationContext?.signal);
-    const run = () => executeNow(request, { ...options, signal: combined.signal });
+    const signal = AbortSignal.any(
+      [options?.signal, options?.context?.invocationContext?.signal].filter(
+        (source): source is AbortSignal => !!source,
+      ),
+    );
+    const run = () => executeNow(request, { ...options, signal });
     // Runtime state and bridge replies belong to exactly one execution at a time.
     // This also covers UI runs and different chats, independently of workspace locks.
     const queued = executionTail !== null;
     const scheduled = executionTail ? executionTail.then(run, run) : run();
     // Cancelling a queued caller settles it immediately, while its queue slot
     // stays behind the running job. No later caller can jump into that runtime.
-    const result =
-      queued && combined.signal
-        ? withAbort(combined.signal, () => scheduled).catch((error: unknown) => {
-            if (!combined.signal?.aborted) throw error;
-            return { success: false, output: "", error: "Execution cancelled" };
-          })
-        : scheduled;
+    const result = queued
+      ? withAbort(signal, () => scheduled).catch((error: unknown) => {
+          if (!signal.aborted) throw error;
+          return { success: false, output: "", error: "Execution cancelled" };
+        })
+      : scheduled;
     executionTail = scheduled;
     const clear = () => {
       if (executionTail === scheduled) executionTail = null;
     };
-    void result.then(
-      () => combined.cleanup(),
-      () => combined.cleanup(),
-    );
     void scheduled.then(clear, clear);
     return result;
   }
@@ -200,7 +199,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       let settled = false;
       let started = false;
       const executionController = new AbortController();
-      const bridgeSignal = combineAbortSignals(signal, executionController.signal);
+      const bridgeSignal = AbortSignal.any([executionController.signal, ...(signal ? [signal] : [])]);
 
       // A wedged run can't be interrupted cooperatively — tear the worker down
       // (next call respawns) and settle so the caller's sandbox lock releases.
@@ -228,7 +227,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         );
       };
       const bridge = {
-        signal: bridgeSignal.signal,
+        signal: bridgeSignal,
         context: options?.context,
         enter: () => {
           inFlight++;
@@ -252,7 +251,6 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
         executionController.abort();
-        bridgeSignal.cleanup();
         port1.onmessage = port1.onmessageerror = null;
         port1.close();
         port2.close();

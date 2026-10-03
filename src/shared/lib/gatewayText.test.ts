@@ -1,16 +1,45 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "@/shared/lib/client";
-import { run, streamRun, AgentMessageMetadata } from "@/shared/lib/agent";
+import { run, streamRun, RunSidecar } from "@/shared/lib/agent";
 import { ChatClient } from "@tanstack/ai-client";
-import type { UIMessage } from "@tanstack/ai";
-import { fromAIMessages, toAIMessages } from "@/shared/lib/aiMessages";
-import { response, textItem, callItem, finished, sse } from "@/shared/lib/test-support/ai";
+import type { ThinkingPart, UIMessage } from "@tanstack/ai";
+import {
+  artifactSelectionPart,
+  assistantMessage,
+  mediaFromDataUrl,
+  messageText,
+  text,
+  textSegments,
+  toolResults,
+  userMessage,
+} from "@/shared/lib/messages";
+import { packGatewayReasoning, readGatewayReasoning, type GatewayReasoning } from "@/shared/lib/reasoning";
+import {
+  assistant,
+  calls,
+  output,
+  response,
+  textItem,
+  callItem,
+  finished,
+  sse,
+  toolCall,
+  user,
+} from "@/shared/lib/test-support/ai";
 import { chatSession } from "@/shared/lib/test-support/chatSession";
-import type { Message, Tool } from "@/shared/types/chat";
-import { historyForRetry } from "@/features/chat/lib/chatHistory";
+import type { Tool } from "@/shared/types/chat";
+import { retryHistory } from "@/features/chat/lib/chatRuntime";
 
-const prompt: Message[] = [{ role: "user", content: [{ type: "text", text: "Go" }] }];
+const prompt: UIMessage[] = [user("Go")];
+const thinking = (state: GatewayReasoning): ThinkingPart => ({
+  type: "thinking",
+  content: state.summary ?? state.text ?? "",
+  stepId: state.id,
+  signature: packGatewayReasoning(state),
+});
+const reasoningOf = (message: UIMessage | undefined) =>
+  message?.parts.flatMap((part) => (part.type === "thinking" ? [readGatewayReasoning(part.signature)] : []));
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
@@ -47,27 +76,23 @@ it("uses the authoritative completed text when deltas stop before the final resp
   );
   const result = await run(new Client(), "model", "", prompt, []);
   expect(result.status).toBe("completed");
-  expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Hello world" }]);
+  expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Hello world" }]);
 });
 
 it("preserves both visible signed reasoning and its separate summary on replay", async () => {
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
-  const history: Message[] = [
+  const history: UIMessage[] = [
     ...prompt,
-    {
-      role: "assistant",
-      content: [
-        {
-          type: "reasoning",
-          id: "rs_review",
-          text: "Signed visible reasoning",
-          summary: "Short summary",
-          encryptedContent: "signature",
-          model: "model",
-        },
-        { type: "text", text: "First answer" },
-      ],
-    },
+    assistantMessage([
+      thinking({
+        id: "rs_review",
+        text: "Signed visible reasoning",
+        summary: "Short summary",
+        encryptedContent: "signature",
+        model: "model",
+      }),
+      text("First answer"),
+    ]),
     ...prompt,
   ];
   const result = await run(new Client(), "model", "", history, []);
@@ -75,10 +100,10 @@ it("preserves both visible signed reasoning and its separate summary on replay",
   const item = JSON.parse(fetchMock.mock.calls[0][1].body).input.find(
     (item: { type: string }) => item.type === "reasoning",
   );
-  expect(item).toMatchObject({ content: [{ type: "reasoning_text", text: "Signed visible reasoning" }] });
-  expect(fromAIMessages(toAIMessages(history))[1].content[0]).toMatchObject({
-    text: "Signed visible reasoning",
-    summary: "Short summary",
+  expect(item).toMatchObject({
+    encrypted_content: "signature",
+    content: [{ type: "reasoning_text", text: "Signed visible reasoning" }],
+    summary: [{ type: "summary_text", text: "Short summary" }],
   });
 });
 
@@ -96,15 +121,12 @@ it.each([
       ),
     )
     .mockResolvedValueOnce(finished(response([textItem("Recovered")])));
-  const history: Message[] = [
+  const history: UIMessage[] = [
     ...prompt,
-    {
-      role: "assistant",
-      content: [
-        { type: "reasoning", id: "rs_review", text: "Plan", encryptedContent: "old-key", model: "model" },
-        { type: "text", text: "First answer" },
-      ],
-    },
+    assistantMessage([
+      thinking({ id: "rs_review", text: "Plan", encryptedContent: "old-key", model: "model" }),
+      text("First answer"),
+    ]),
     ...prompt,
   ];
   const result = await run(new Client(), "model", "", history, []);
@@ -113,60 +135,46 @@ it.each([
   expect(
     JSON.parse(fetchMock.mock.calls[1][1].body).input.some((part: { type: string }) => part.type === "reasoning"),
   ).toBe(false);
-  expect(result.messages[1].content[0]).toMatchObject({ type: "reasoning", text: "Plan" });
+  expect(result.messages[1].parts[0]).toMatchObject({ type: "thinking", content: "Plan" });
+  expect(reasoningOf(result.messages[1])).toEqual([{ id: "rs_review", text: "Plan", model: "model" }]);
   expect(JSON.stringify(result.messages)).not.toContain("old-key");
-  expect(history[1].content[0]).toMatchObject({ encryptedContent: "old-key" });
+  expect(JSON.stringify(history)).toContain("old-key");
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Continued")])));
   const restored = JSON.parse(JSON.stringify(result.messages));
-  expect((await run(new Client(), "model", "", [...restored, ...prompt], [])).status).toBe("completed");
+  expect((await run(new Client(), "model", "", [...restored, user("Go")], [])).status).toBe("completed");
   expect(JSON.stringify(JSON.parse(fetchMock.mock.calls[2][1].body).input)).not.toContain("old-key");
 });
 
 it.each([false, true])("excludes unfinished reasoning on retry with pending tool call: %s", async (pendingCall) => {
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered")])));
-  const execute = vi.fn<Tool["function"]>(async () => [{ type: "text", text: "Already read" }]);
-  const messages: Message[] = [
+  const execute = vi.fn<Tool["function"]>(async () => output("Already read"));
+  const messages: UIMessage[] = [
     ...prompt,
-    {
-      role: "assistant",
-      content: [
-        { type: "reasoning", id: "rs_tool", text: "Read the skill", encryptedContent: "tool-key", model: "model" },
-        { type: "tool_call", id: "read-skill", name: "read", arguments: "{}" },
-      ],
-    },
-    {
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          id: "read-skill",
-          name: "read",
-          arguments: "{}",
-          result: [{ type: "text", text: "Skill instructions" }],
-        },
-      ],
-    },
-    {
-      role: "assistant",
-      content: [
-        {
-          type: "reasoning",
-          id: "rs_unfinished",
-          text: "Preparing the artifact",
-          encryptedContent: "unfinished-key",
-          model: "model",
-        },
-        ...(pendingCall
-          ? [{ type: "tool_call" as const, id: "unfinished-call", name: "read", arguments: "{}", incomplete: true }]
-          : []),
-      ],
-    },
-    { role: "assistant", content: [], error: { code: "TIMEOUT", message: "Model response timed out after 60s" } },
+    assistantMessage([
+      thinking({ id: "rs_tool", text: "Read the skill", encryptedContent: "tool-key", model: "model" }),
+      { ...toolCall("read-skill", "read"), state: "complete" },
+      { type: "tool-result", toolCallId: "read-skill", content: "Skill instructions", state: "complete" },
+    ]),
+    assistantMessage([
+      thinking({
+        id: "rs_unfinished",
+        text: "Preparing the artifact",
+        encryptedContent: "unfinished-key",
+        model: "model",
+      }),
+      ...(pendingCall ? [{ ...toolCall("unfinished-call", "read"), state: "input-streaming" as const }] : []),
+    ]),
+    assistantMessage([], { metadata: { error: { code: "TIMEOUT", message: "Model response timed out after 60s" } } }),
   ];
   const before = JSON.stringify(messages);
-  const result = await run(new Client(), "model", "", historyForRetry(messages)!, [
-    { name: "read", parameters: { type: "object", properties: {} }, function: execute },
-  ]);
+  const retry = retryHistory(messages)!;
+  const result = await run(
+    new Client(),
+    "model",
+    "",
+    [...retry.history, retry.resend],
+    [{ name: "read", parameters: { type: "object", properties: {} }, function: execute }],
+  );
   expect(result.status).toBe("completed");
   const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
   expect(input.filter((part: { type: string }) => part.type === "reasoning")).toMatchObject([
@@ -177,9 +185,8 @@ it.each([false, true])("excludes unfinished reasoning on retry with pending tool
   expect(JSON.stringify(input)).not.toMatch(/unfinished-key|unfinished-call|rs_unfinished/);
   expect(execute).not.toHaveBeenCalled();
   expect(JSON.stringify(messages)).toBe(before);
-  expect(result.messages.flatMap((message) => message.content)).toContainEqual(
-    expect.objectContaining({ type: "reasoning", text: "Preparing the artifact" }),
-  );
+  // The unfinished attempt is regenerated rather than continued, so its reasoning leaves the transcript.
+  expect(JSON.stringify(result.messages)).not.toContain("Preparing the artifact");
 });
 
 it("retains reasoning model identity at the live chat persistence boundary", async () => {
@@ -194,9 +201,10 @@ it("retains reasoning model identity at the live chat persistence boundary", asy
   const session = chatSession(new Client(), []);
   try {
     await session.ai.sendMessage("Go");
-    const stored = session.metadata.read(session.ai.getMessages());
-    const reasoning = stored.flatMap((message) => message.content).find((part) => part.type === "reasoning");
-    expect(reasoning).toMatchObject({ encryptedContent: "signature", model: "model" });
+    const stored = session.sidecar.apply(session.ai.getMessages());
+    expect(stored.flatMap(reasoningOf)).toContainEqual(
+      expect.objectContaining({ encryptedContent: "signature", model: "model" }),
+    );
   } finally {
     session.ai.dispose();
   }
@@ -222,15 +230,15 @@ it("does not replay model-a ciphertext to model-b after switching a live chat", 
       ),
     )
     .mockResolvedValueOnce(finished(response([textItem("Second answer")], { model: "model-b" })));
-  const metadata = new AgentMessageMetadata();
+  const sidecar = new RunSidecar();
   const client = new Client();
   let model = "model-a";
   const ai = new ChatClient({
     threadId: "review-chat",
     connection: {
       connect: (messages, _data, signal, ctx) =>
-        streamRun(client, model, "", metadata.read(messages as UIMessage[]), [], {
-          metadata,
+        streamRun(client, model, "", sidecar.apply(messages as UIMessage[]), [], {
+          sidecar,
           options: { signal },
           runId: ctx?.runId,
           threadId: ctx?.threadId,
@@ -295,7 +303,7 @@ it.each(["response.reasoning_text.delta", "response.reasoning_summary_text.delta
     stream.close();
     const result = await request;
     expect(result.status).toBe("completed");
-    expect(result.messages.at(-1)?.content).toContainEqual({ type: "text", text: "Done" });
+    expect(result.messages.at(-1)?.parts).toContainEqual({ type: "text", content: "Done" });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   },
@@ -318,7 +326,7 @@ it.each(["complete", "stop"])("allows a silent response to %s after an hour", as
   } else controller.abort();
   const result = await request;
   expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
-  if (end === "complete") expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+  if (end === "complete") expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Done" }]);
   else expect(result.error).toMatchObject({ code: "CANCELLED" });
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -346,19 +354,16 @@ it("retains selected artifact line locations in the model request", async () => 
     "model",
     "",
     [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Edit the second occurrence" },
-          { type: "artifact_selection", path: "/notes.md", text: "Repeated phrase", startLine: 100, endLine: 102 },
-        ],
-      },
+      userMessage([
+        text("Edit the second occurrence"),
+        artifactSelectionPart({ path: "/notes.md", text: "Repeated phrase", startLine: 100, endLine: 102 }),
+      ]),
     ],
     [],
   );
   const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
   expect(JSON.stringify(input)).toContain("lines 100-102");
-  expect(input[0].content[0].text).toBe(
+  expect(input[0].content.map((part: { text: string }) => part.text).join("\n")).toBe(
     "Edit the second occurrence\nSelected text in /notes.md (lines 100-102):\n```\nRepeated phrase\n```",
   );
 });
@@ -404,8 +409,9 @@ it("replaces earlier text in the live native client and its persisted history", 
   try {
     await session.ai.sendMessage("Go");
     expect(session.ai.getMessages().at(-1)?.parts).toMatchObject([{ type: "text", content: "Final answer" }]);
-    const restored = fromAIMessages(session.store.value!.messages);
-    expect(restored.at(-1)?.content).toEqual([{ type: "text", text: "Final answer", phase: "final_answer" }]);
+    const restored = session.store.value!.messages;
+    expect(messageText(restored.at(-1)!)).toBe("Final answer");
+    expect(textSegments(restored.at(-1)!)).toEqual([{ content: "Final answer", phase: "final_answer" }]);
     fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
     await session.ai.sendMessage("Continue");
     const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
@@ -426,25 +432,22 @@ it("retains rich results and executes a tool once when completed text rewrites a
       ]),
     )
     .mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const image = mediaFromDataUrl("data:image/png;base64,AQ==");
   const execute = vi.fn<Tool["function"]>(async (_input, ctx) => {
     ctx?.setMeta?.({ file: "/notes.md" });
-    return [{ type: "image", data: "data:image/png;base64,AQ==" }];
+    return [image];
   });
   const result = await run(new Client(), "model", "", prompt, [
     { name: "write", parameters: { type: "object", properties: {} }, function: execute },
   ]);
   expect(result.status).toBe("completed");
   expect(execute).toHaveBeenCalledOnce();
-  expect(result.messages.flatMap((message) => message.content)).toMatchObject([
-    { type: "text", text: "Go" },
-    { type: "text", text: "Checked" },
-    { type: "tool_call", id: "call_test" },
-    {
-      type: "tool_result",
-      meta: { file: "/notes.md" },
-      result: [{ type: "image", data: "data:image/png;base64,AQ==" }],
-    },
-    { type: "text", text: "Done" },
+  expect(result.messages.flatMap((message) => message.parts)).toMatchObject([
+    { type: "text", content: "Go" },
+    { type: "text", content: "Checked" },
+    { type: "tool-call", id: "call_test" },
+    { type: "tool-result", toolCallId: "call_test", metadata: { meta: { file: "/notes.md" }, result: [image] } },
+    { type: "text", content: "Done" },
   ]);
 });
 
@@ -461,17 +464,12 @@ it("replays live signed text and summary for the same deployment alias after per
   const session = chatSession(new Client(), []);
   try {
     await session.ai.sendMessage("Go");
-    const restored = JSON.parse(JSON.stringify(session.metadata.read(session.ai.getMessages())));
-    expect(restored.at(-1).content[0]).toMatchObject({
-      type: "reasoning",
-      id: "rs_review",
-      text: "Signed text",
-      summary: "Summary",
-      encryptedContent: "signature",
-      model: "model",
-    });
+    const restored: UIMessage[] = JSON.parse(JSON.stringify(session.sidecar.apply(session.ai.getMessages())));
+    expect(reasoningOf(restored.at(-1))).toEqual([
+      { id: "rs_review", text: "Signed text", summary: "Summary", encryptedContent: "signature", model: "model" },
+    ]);
     fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
-    await run(new Client(), "model", "", [...restored, ...prompt], [], { prepareMessages: (messages) => messages });
+    await run(new Client(), "model", "", [...restored, user("Go")], [], { prepareMessages: (messages) => messages });
     const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
     expect(input.find((part: { type: string }) => part.type === "reasoning")).toMatchObject({
       type: item.type,
@@ -522,9 +520,9 @@ it("streams requested reasoning summaries and preserves them after chat persiste
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning).toEqual({ summary: "auto" });
     expect(streamed).toContain(summary);
     expect(session.store.value).toBeDefined();
-    const restored = fromAIMessages(session.store.value!.messages);
-    expect(restored.flatMap((message) => message.content)).toContainEqual(
-      expect.objectContaining({ type: "reasoning", summary, encryptedContent: "signature", model: "model" }),
+    const restored = session.store.value!.messages;
+    expect(restored.flatMap(reasoningOf)).toContainEqual(
+      expect.objectContaining({ summary, encryptedContent: "signature", model: "model" }),
     );
   } finally {
     session.ai.dispose();
@@ -562,12 +560,9 @@ it("keeps visible reasoning deltas separate from summary when completion omits v
   );
   const result = await run(new Client(), "model", "", prompt, []);
   expect(result.status).toBe("completed");
-  expect(result.messages.at(-1)?.content[0]).toMatchObject({
-    text: "Signed text",
-    summary: "Summary",
-    encryptedContent: "signature",
-    model: "model",
-  });
+  expect(reasoningOf(result.messages.at(-1))).toEqual([
+    { id: "rs_review", text: "Signed text", summary: "Summary", encryptedContent: "signature", model: "model" },
+  ]);
 });
 
 it.each([
@@ -582,13 +577,10 @@ it.each([
     "",
     [
       ...prompt,
-      {
-        role: "assistant",
-        content: [
-          { type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" },
-          { type: "text", text: "First answer" },
-        ],
-      },
+      assistantMessage([
+        thinking({ id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }),
+        text("First answer"),
+      ]),
       ...prompt,
     ],
     [],
@@ -614,19 +606,16 @@ it.each([
     "",
     [
       ...prompt,
-      {
-        role: "assistant",
-        content: [
-          { type: "reasoning", id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" },
-          { type: "text", text: "First answer" },
-        ],
-      },
+      assistantMessage([
+        thinking({ id: "rs_old", text: "Plan", encryptedContent: "old-key", model: "model" }),
+        text("First answer"),
+      ]),
       ...prompt,
     ],
     [],
   );
   expect(result.status).toBe("failed");
-  expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Partial" }]);
+  expect(result.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Partial" }]);
   expect(fetchMock).toHaveBeenCalledOnce();
 });
 
@@ -638,20 +627,18 @@ it("pairs deduplicated reasoning with the text and signature from the same origi
     "",
     [
       ...prompt,
-      ...["First", "Second"].map((text): Message => ({
-        role: "assistant",
-        content: [
-          {
-            type: "reasoning",
+      ...["First", "Second"].map((label) =>
+        assistantMessage([
+          thinking({
             id: "rs_duplicate",
-            text,
-            summary: `${text} summary`,
-            encryptedContent: `${text} signature`,
+            text: label,
+            summary: `${label} summary`,
+            encryptedContent: `${label} signature`,
             model: "model",
-          },
-          { type: "text", text: `${text} answer` },
-        ],
-      })),
+          }),
+          text(`${label} answer`),
+        ]),
+      ),
       ...prompt,
     ],
     [],
@@ -668,6 +655,26 @@ it("pairs deduplicated reasoning with the text and signature from the same origi
   ]);
 });
 
+it("replays only ciphertext the requested deployment produced", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  await run(
+    new Client(),
+    "model-b",
+    "",
+    [
+      ...prompt,
+      assistantMessage([
+        thinking({ id: "rs_a", text: "Plan", encryptedContent: "model-a-key", model: "model-a" }),
+        text("First answer"),
+      ]),
+      ...prompt,
+    ],
+    [],
+  );
+  const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
+  expect(JSON.stringify(input)).not.toContain("model-a-key");
+});
+
 it("releases the model-call deadline after a successful response", async () => {
   vi.useFakeTimers();
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
@@ -676,3 +683,7 @@ it("releases the model-call deadline after a successful response", async () => {
   await vi.advanceTimersByTimeAsync(600_001);
   expect(fetchMock).toHaveBeenCalledOnce();
 });
+
+void assistant;
+void calls;
+void toolResults;

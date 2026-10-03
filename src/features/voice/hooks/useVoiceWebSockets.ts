@@ -1,21 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { RealtimeClient } from "@tanstack/ai-client";
-import { toolDefinition, type JSONSchema } from "@tanstack/ai";
+import { toolDefinition, type ContentPart, type JSONSchema, type UIMessage } from "@tanstack/ai";
 import { z } from "zod";
 import { gatewayRealtime } from "@/features/voice/lib/gatewayRealtime";
-import { serializeToolResultForApi } from "@/shared/lib/utils";
-import type {
-  AudioContent,
-  FileContent,
-  ImageContent,
-  Message,
-  TextContent,
-  Tool,
-  ToolContext,
-} from "@/shared/types/chat";
+import { describeToolOutput, text } from "@/shared/lib/messages";
+import type { Tool, ToolContext } from "@/shared/types/chat";
 
 export type ToolContextFactory = (toolCall: { id: string; name: string }) => ToolContext;
-type ToolOutput = (TextContent | ImageContent | AudioContent | FileContent)[];
 
 export function voiceSessionSignature(instructions: string, tools: Tool[], model?: string): string {
   return JSON.stringify([
@@ -34,7 +25,7 @@ type Session = {
   instructions?: string;
   factory?: ToolContextFactory;
   binding: Promise<void>;
-  outputs: Map<string, ToolOutput>;
+  outputs: Map<string, ContentPart[]>;
 };
 
 /** React/storage boundary for the native TanStack realtime client. */
@@ -43,7 +34,7 @@ export function useVoiceWebSockets(
   onAssistant: (text: string) => void,
   onToolCall?: (toolName: string, callId: string) => void,
   onToolCallDone?: (callId: string) => void,
-  onToolResult?: (toolName: string, callId: string, result: ToolOutput, args: string) => void,
+  onToolResult?: (toolName: string, callId: string, result: ContentPart[], args: string) => void,
   onClosed?: (reason?: { fatal: boolean; message: string }) => void,
   getRuntimeContext?: () => string,
   onError?: (error: Error) => void,
@@ -102,7 +93,7 @@ export function useVoiceWebSockets(
         const result = await tool.function(args, { ...factory?.(identity), runId: identity.runId, signal });
         signal.throwIfAborted();
         outputs.set(identity.id, result);
-        return serializeToolResultForApi(result);
+        return describeToolOutput(result);
       });
     });
     const client = new RealtimeClient({
@@ -149,7 +140,7 @@ export function useVoiceWebSockets(
       realtimeModel = "gpt-realtime-2.1",
       transcribeModel = "gpt-live-transcribe",
       instructions?: string,
-      messages: Message[] = [],
+      messages: UIMessage[] = [],
       tools: Tool[] = [],
       inputDeviceId?: string,
       outputDeviceId?: string,
@@ -159,7 +150,7 @@ export function useVoiceWebSockets(
     ) => {
       if (sessionRef.current) return;
       const controller = new AbortController();
-      const outputs = new Map<string, ToolOutput>();
+      const outputs = new Map<string, ContentPart[]>();
       // Instructions and tools reach the session through RealtimeClient's own
       // configuration; the gateway only supplies transport and audio settings.
       const gateway = gatewayRealtime({
@@ -173,7 +164,7 @@ export function useVoiceWebSockets(
         runtimeContext: () => callbacks.current.getRuntimeContext?.(),
         onToolCall: ({ name, id }) => callbacks.current.onToolCall?.(name, id),
         onToolOutput: ({ name, id, arguments: args }, output) => {
-          callbacks.current.onToolResult?.(name, id, outputs.get(id) ?? [{ type: "text", text: output }], args);
+          callbacks.current.onToolResult?.(name, id, outputs.get(id) ?? [text(output)], args);
           outputs.delete(id);
           callbacks.current.onToolCallDone?.(id);
         },

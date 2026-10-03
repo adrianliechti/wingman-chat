@@ -1,4 +1,5 @@
 import { getConfig } from "@/shared/config";
+import { normalizeStoredChat, type LegacyStoredChat } from "@/shared/lib/chatMigration";
 import * as opfs from "@/shared/lib/opfs";
 import { withPersistenceLock } from "@/shared/lib/persistence";
 import type { Chat, ChatEntry } from "@/shared/types/chat";
@@ -35,15 +36,14 @@ export function removeChat(id: string): Promise<void> {
   return withPersistenceLock("collection:chats", () => removeChatFiles(id));
 }
 
+/** Chats saved before the native transcript migrate on read; the next save writes the current record. */
 export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | undefined> {
-  const stored =
-    (await opfs.readJson<opfs.StoredChat>(`chats/${id}/chat.json`)) ??
-    (await opfs.readJson<opfs.StoredChat>(`chats/${id}.json`));
-  return stored
-    ? hydrateBlobs
-      ? opfs.rehydrateChatBlobs({ ...stored, id })
-      : opfs.restoreChatManifest({ ...stored, id })
-    : undefined;
+  const raw =
+    (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}/chat.json`)) ??
+    (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}.json`));
+  if (!raw) return undefined;
+  const stored = normalizeStoredChat({ ...raw, id });
+  return hydrateBlobs ? opfs.rehydrateChatBlobs(stored) : opfs.restoreChatManifest(stored);
 }
 
 export async function loadChatIndex(): Promise<ChatEntry[]> {

@@ -63,7 +63,7 @@ it("restores initial inputs and structured results without executing the tool ag
     "app",
     resource.uri,
     { count: 1 },
-    [{ type: "text", text: "Saved" }],
+    [{ type: "text", content: "Saved" }],
     { count: 2 },
     {},
   );

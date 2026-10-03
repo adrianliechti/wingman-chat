@@ -1,18 +1,19 @@
 import { Pencil, TextSelect } from "lucide-react";
 import { memo, useState } from "react";
+import type { TextPart, UIMessage } from "@tanstack/ai";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
-import type {
-  ArtifactSelectionContent,
-  AudioContent,
-  Content,
-  FileContent,
-  ImageContent,
-  Message,
-  TextContent,
-} from "@/shared/types/chat";
+import {
+  artifactRefPart,
+  isMediaPart,
+  mediaName,
+  text,
+  textMetadata,
+  type ArtifactSelection,
+  type MediaPart,
+} from "@/shared/lib/messages";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
@@ -20,18 +21,27 @@ import { ChatMessageEditor } from "./ChatMessageEditor";
 import { formatArtifactReference, parseArtifactReference } from "./chatMessageUtils";
 
 // Re-append attached artifact paths that aren't referenced by the editable parts.
-function withArtifactReferences(parts: TextContent[], paths: string[]): TextContent[] {
+function withArtifactReferences(parts: TextPart[], paths: string[]): TextPart[] {
   try {
-    const existingPaths = parts.flatMap((p) => parseArtifactReference(p.text));
+    const existingPaths = parts.flatMap((p) => parseArtifactReference(p.content));
     const toAdd = paths.filter((p) => !existingPaths.includes(p));
-    return toAdd.length ? [...parts, { type: "text", text: formatArtifactReference(toAdd) }] : parts;
+    return toAdd.length ? [...parts, text(formatArtifactReference(toAdd))] : parts;
   } catch {
     return parts;
   }
 }
 
+/** Paths a message refers to as workspace files, by chip metadata or by reference line. */
+function referencedPaths(message: UIMessage): string[] {
+  return message.parts.flatMap((part) => {
+    if (part.type !== "text") return [];
+    const ref = textMetadata(part).artifactRef;
+    return ref ? [ref.path] : parseArtifactReference(part.content);
+  });
+}
+
 type ChatUserMessageProps = {
-  message: Message;
+  message: UIMessage;
   index: number;
   isResponding?: boolean;
   isLast?: boolean;
@@ -43,42 +53,40 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // leaves :hover sticky (notably after a trackpad tap), so the buttons wouldn't
   // hide on mouse-leave.
   const [hovered, setHovered] = useState(false);
-  // Get first text content only (user's typed message)
-  const textContent = message.content.find((p) => p.type === "text")?.text ?? "";
+  // Plain text parts: the typed message first, then any attached text.
+  const plainTextParts = message.parts.filter(
+    (part): part is TextPart =>
+      part.type === "text" && !textMetadata(part).artifactRef && !textMetadata(part).artifactSelection,
+  );
+  const textContent = plainTextParts[0]?.content ?? "";
   const [editContent, setEditContent] = useState(textContent);
   // Passages highlighted in the artifact viewer, sent along with the instruction.
-  const selectionParts = message.content.filter((p): p is ArtifactSelectionContent => p.type === "artifact_selection");
-  // Get additional text parts (file attachments) - all text content after the first one
-  const textParts = message.content.filter((p): p is TextContent => p.type === "text");
-  const additionalTextContent = textParts.slice(1);
+  const selectionParts = message.parts.filter(
+    (part): part is TextPart => part.type === "text" && !!textMetadata(part).artifactSelection,
+  );
+  // Additional text parts (file attachments) - all plain text content after the first one
+  const additionalTextContent = plainTextParts.slice(1);
   // Names of attachments already rendered inline (images/audio/files). Their
   // artifact reference is still sent so the model knows the workspace path, but
   // the chip would just duplicate the inline preview — so suppress it here.
-  const inlineMediaNames = new Set(
-    message.content
-      .filter(
-        (p): p is ImageContent | AudioContent | FileContent =>
-          p.type === "image" || p.type === "audio" || p.type === "file",
-      )
-      .map((p) => p.name)
-      .filter((n): n is string => !!n),
-  );
+  const mediaContent = message.parts.filter(isMediaPart);
+  const inlineMediaNames = new Set(mediaContent.map(mediaName).filter((n): n is string => !!n));
   const basename = (path: string) => path.split("/").pop() ?? path;
   // Split off artifact-attachment references — rendered as clickable chips that
   // open the file in the artifacts editor — from any other plain text parts.
-  const attachedArtifactPaths: string[] = [];
-  attachedArtifactPaths.push(
-    ...message.content.filter((part) => part.type === "artifact_ref").map((part) => part.path),
-  );
-  const plainTextAttachments: TextContent[] = [];
+  const attachedArtifactPaths: string[] = message.parts.flatMap((part) => {
+    const ref = part.type === "text" ? textMetadata(part).artifactRef : undefined;
+    return ref ? [ref.path] : [];
+  });
+  const plainTextAttachments: TextPart[] = [];
   // For the editor: a reference that only points at inline media (images) would
   // render a second time as a file tile, so split those paths out into
   // `mediaRefPaths` (re-attached on submit, tied to the surviving media) and keep
   // just the genuine file/plain-text parts editable.
   const mediaRefPaths: string[] = [];
-  const editableAdditionalText: TextContent[] = [];
+  const editableAdditionalText: TextPart[] = [];
   for (const part of additionalTextContent) {
-    const paths = parseArtifactReference(part.text);
+    const paths = parseArtifactReference(part.content);
     if (!paths.length) {
       plainTextAttachments.push(part);
       editableAdditionalText.push(part);
@@ -87,23 +95,14 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     const nonInline = paths.filter((p) => !inlineMediaNames.has(basename(p)));
     attachedArtifactPaths.push(...nonInline);
     mediaRefPaths.push(...paths.filter((p) => inlineMediaNames.has(basename(p))));
-    if (nonInline.length) editableAdditionalText.push({ type: "text", text: formatArtifactReference(nonInline) });
+    if (nonInline.length) editableAdditionalText.push(text(formatArtifactReference(nonInline)));
   }
-  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(editableAdditionalText);
-  // Get media content (images, audio, files) for editing
-  const mediaContent = message.content.filter(
-    (p): p is ImageContent | AudioContent | FileContent =>
-      p.type === "image" || p.type === "audio" || p.type === "file",
-  );
-  const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
+  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextPart[]>(editableAdditionalText);
+  const [editMediaContent, setEditMediaContent] = useState<MediaPart[]>(mediaContent);
   const { sendMessage } = useChatActions();
   const { chat } = useChatConversation();
 
-  // Check for images and files in content
-  const mediaParts = message.content.filter(
-    (p) => p.type === "image" || p.type === "file" || p.type === "audio",
-  ) as Content[];
-  const hasMedia = mediaParts.length > 0;
+  const hasMedia = mediaContent.length > 0;
 
   const handleEditContentChange = (value: string) => {
     setEditContent(value);
@@ -112,7 +111,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleStartEdit = () => {
     if (isResponding) return;
     setEditContent(textContent);
-    // Preserve `artifact_ref` paths so attachments aren't lost.
+    // Preserve artifact reference paths so attachments aren't lost.
     setEditAdditionalTextContent(withArtifactReferences(editableAdditionalText, attachedArtifactPaths));
     setEditMediaContent(mediaContent);
     setIsEditing(true);
@@ -141,45 +140,32 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
 
     setIsEditing(false);
 
-    // Truncate history and send edited message, preserving additional text content (file attachments) and media
+    // Truncate history and send the edited message, preserving additional text content (file attachments) and media
     const truncatedHistory = chat.messages.slice(0, index);
-    const newContent: Content[] = [];
+    const parts: UIMessage["parts"] = [];
     if (editContent.trim()) {
-      newContent.push({ type: "text" as const, text: editContent });
+      parts.push(text(editContent));
     }
     // The highlighted passage stays attached to an edited instruction.
-    newContent.push(...selectionParts);
-    newContent.push(...editAdditionalTextContent);
-    newContent.push(...editMediaContent);
+    parts.push(...selectionParts);
+    parts.push(...editAdditionalTextContent);
+    parts.push(...editMediaContent);
     // Re-attach the workspace reference for media that survived editing (it was
     // hidden from the editor to avoid showing the image twice) so the model still
     // learns each image's artifact path. Dropped media drops its reference.
-    const survivingMediaNames = new Set(editMediaContent.map((m) => m.name).filter((n): n is string => !!n));
+    const survivingMediaNames = new Set(editMediaContent.map(mediaName).filter((n): n is string => !!n));
     const keptMediaRefs = mediaRefPaths.filter((p) => survivingMediaNames.has(basename(p)));
-    if (keptMediaRefs.length) {
-      newContent.push({ type: "text", text: formatArtifactReference(keptMediaRefs) });
-    }
-    const editedMessage = { ...message, content: newContent };
+    for (const path of keptMediaRefs) parts.push(artifactRefPart({ path, displayName: basename(path) }));
+    const editedMessage: UIMessage = { ...message, parts };
 
     // Compute removed artifact paths and delete only unreferenced ones.
     const newArtifactPaths = new Set<string>([
-      ...editAdditionalTextContent.flatMap((p) => parseArtifactReference(p.text)),
+      ...editAdditionalTextContent.flatMap((p) => parseArtifactReference(p.content)),
       ...keptMediaRefs,
     ]);
     const removed = attachedArtifactPaths.filter((p) => !newArtifactPaths.has(p));
     const safeToDelete = removed.filter(
-      (p) =>
-        !chat.messages.some(
-          (m, i) =>
-            i !== index &&
-            m.content.some((part) =>
-              part.type === "artifact_ref"
-                ? part.path === p
-                : part.type === "text"
-                  ? parseArtifactReference(part.text).includes(p)
-                  : false,
-            ),
-        ),
+      (p) => !chat.messages.some((m, i) => i !== index && referencedPaths(m).includes(p)),
     );
 
     await sendMessage(editedMessage, truncatedHistory, undefined, safeToDelete.length ? safeToDelete : undefined);
@@ -219,7 +205,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
             <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
               <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere] min-w-0">{textContent}</pre>
               {selectionParts.map((part, i) => (
-                <SelectionQuote key={i} part={part} />
+                <SelectionQuote key={i} selection={textMetadata(part).artifactSelection!} />
               ))}
               {/* Artifact attachments — clickable chips that open the file in the editor */}
               {attachedArtifactPaths.length > 0 && (
@@ -239,7 +225,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
               {/* Render images, audio, and files from content */}
               {hasMedia && (
                 <div className="pt-2">
-                  <RenderContents contents={mediaParts} />
+                  <RenderContents contents={mediaContent} />
                 </div>
               )}
             </div>
@@ -268,24 +254,24 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
 });
 
 /** The highlighted artifact passage an instruction refers to; opens the file on click. */
-function SelectionQuote({ part }: { part: ArtifactSelectionContent }) {
+function SelectionQuote({ selection }: { selection: ArtifactSelection }) {
   const [expanded, setExpanded] = useState(false);
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
-  const name = part.path.split("/").pop() ?? part.path;
-  const location = part.startLine
-    ? part.endLine && part.endLine !== part.startLine
-      ? `lines ${part.startLine}–${part.endLine}`
-      : `line ${part.startLine}`
+  const name = selection.path.split("/").pop() ?? selection.path;
+  const location = selection.startLine
+    ? selection.endLine && selection.endLine !== selection.startLine
+      ? `lines ${selection.startLine}–${selection.endLine}`
+      : `line ${selection.startLine}`
     : null;
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-neutral-300/60 bg-white/60 text-left dark:border-neutral-700/60 dark:bg-neutral-950/40">
       <button
         type="button"
         onClick={() => {
-          openFile(part.path);
+          openFile(selection.path);
           setShowArtifactsDrawer(true);
         }}
-        title={`Open ${part.path}`}
+        title={`Open ${selection.path}`}
         className="flex w-full items-center gap-1.5 border-b border-neutral-200/60 px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-black/5 dark:border-neutral-800/60 dark:text-neutral-400 dark:hover:bg-white/5"
       >
         <TextSelect size={11} className="shrink-0" />
@@ -306,7 +292,7 @@ function SelectionQuote({ part }: { part: ArtifactSelectionContent }) {
             !expanded && "line-clamp-4",
           )}
         >
-          {part.text}
+          {selection.text}
         </pre>
       </button>
     </div>

@@ -11,11 +11,13 @@ import { pickModel } from "@/shared/lib/modelSelection";
 import { useModelCatalog } from "@/shared/hooks/useModelCatalog";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { artifactDelta } from "@/shared/types/artifact";
-import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaDataUrl, mediaFromDataUrl } from "@/shared/lib/messages";
+import type { Tool, ToolContext } from "@/shared/types/chat";
 
-function errorResult(error: string, context?: ToolContext): TextContent[] {
+function errorResult(error: string, context?: ToolContext): ContentPart[] {
   context?.setError?.({ code: "IMAGE_GENERATION_ERROR", message: error });
-  return [{ type: "text", text: JSON.stringify({ success: false, error }) }];
+  return [{ type: "text", content: JSON.stringify({ success: false, error }) }];
 }
 
 /** Turn a prompt into a short, filesystem-safe slug (falls back to "image"). */
@@ -148,7 +150,8 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
           references.push(await blobFromDataUrl(file.content));
         }
         for (const part of context?.content?.() ?? []) {
-          if (part.type === "image") references.push(await blobFromDataUrl(part.data));
+          const dataUrl = part.type === "image" ? mediaDataUrl(part) : undefined;
+          if (dataUrl) references.push(await blobFromDataUrl(dataUrl));
         }
 
         const options: ImageRenderOptions = {};
@@ -210,7 +213,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         // reference, not base64 — so it bloats neither context nor storage. The
         // placeholder keeps `name`, so the model learns the artifact path and can
         // reference it to edit the image later.
-        return [{ type: "image" as const, data: dataUrl, name }];
+        return [mediaFromDataUrl(dataUrl, name, "image")];
       } catch (error) {
         context?.signal?.throwIfAborted();
         const message = error instanceof Error ? error.message : "Unknown error";

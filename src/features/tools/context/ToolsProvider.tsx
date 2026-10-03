@@ -16,7 +16,8 @@ import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
-import type { AudioContent, FileContent, ImageContent, TextContent, ToolProvider } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
 
@@ -539,7 +540,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       toolName: string,
       resourceUri: string,
       args: Record<string, unknown>,
-      result: (TextContent | ImageContent | AudioContent | FileContent)[],
+      result: ContentPart[],
       content: Record<string, unknown> | undefined,
       options: McpAppOptions,
     ) => {

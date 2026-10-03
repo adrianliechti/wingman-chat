@@ -178,7 +178,9 @@ describe("chat prompt context", () => {
           },
         },
       });
-      expect(result).toEqual([{ type: "text", text: JSON.stringify({ answered: true, answers: { format: "html" } }) }]);
+      expect(result).toEqual([
+        { type: "text", content: JSON.stringify({ answered: true, answers: { format: "html" } }) },
+      ]);
     },
   );
 
@@ -191,5 +193,4 @@ describe("chat prompt context", () => {
     expect(available.map((tool) => tool.name)).toEqual(["create_image", "ask_questions", "agent"]);
     expect(new Set(available.map((tool) => tool.name)).size).toBe(available.length);
   });
-
 });

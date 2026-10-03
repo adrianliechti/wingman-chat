@@ -24,7 +24,7 @@ async function resultText(tool: Tool, args: Record<string, unknown>): Promise<st
   const result = await tool.function(args);
   const first = result[0];
   if (!first || first.type !== "text") throw new Error("Expected text result");
-  return first.text;
+  return first.content;
 }
 
 describe("repository tools", () => {

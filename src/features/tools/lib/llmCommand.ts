@@ -1,7 +1,7 @@
 import { getConfig } from "@/shared/config";
 import { runMessages } from "@/shared/lib/agent";
-import { getFinalTextFromContent } from "@/shared/lib/assistantText";
-import { Role, type ImageContent, type TextContent } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { finalText, userMessage } from "@/shared/lib/messages";
 import type { LlmCallOptions } from "./interpreterProtocol";
 import type { BridgeRequestOptions } from "./workerHost";
 
@@ -20,23 +20,17 @@ export function getModel(): string | null {
 /** A fresh request: no chat history, previous helper output, or parent tools. */
 export async function completeIsolated(
   model: string,
-  content: Array<TextContent | ImageContent>,
+  content: ContentPart[],
   options: Pick<LlmCallOptions, "system" | "effort">,
   requestOptions: BridgeRequestOptions,
 ): Promise<string> {
-  const messages = await runMessages(
-    getConfig().client,
-    model,
-    options.system ?? "",
-    [{ role: Role.User, content }],
-    [],
-    {
-      context: requestOptions.context?.invocationContext,
-      parentContext: requestOptions.context?.agentContext,
-      options: { effort: options.effort, signal: requestOptions.signal },
-    },
-  );
-  return getFinalTextFromContent(messages.at(-1)?.content ?? []);
+  const messages = await runMessages(getConfig().client, model, options.system ?? "", [userMessage(content)], [], {
+    context: requestOptions.context?.invocationContext,
+    parentContext: requestOptions.context?.agentContext,
+    options: { effort: options.effort, signal: requestOptions.signal },
+  });
+  const last = messages.at(-1);
+  return last ? finalText(last) : "";
 }
 
 export async function runLlm(
@@ -49,5 +43,5 @@ export async function runLlm(
     throw new Error("llm: no model");
   }
 
-  return completeIsolated(model, [{ type: "text", text: prompt }], options, requestOptions);
+  return completeIsolated(model, [{ type: "text", content: prompt }], options, requestOptions);
 }

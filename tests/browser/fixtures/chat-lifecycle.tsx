@@ -1,4 +1,4 @@
-import type { ModelMessage } from "@tanstack/ai";
+import type { ContentPart, ModelMessage, UIMessage } from "@tanstack/ai";
 import { testClient } from "../../../src/shared/lib/test-support/ai";
 import { memo, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,7 +23,8 @@ import { createSkillsProvider } from "../../../src/features/skills/lib/skillsPro
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
 import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
-import { type Content, type Message, type Model, getTextFromContent } from "../../../src/shared/types/chat";
+import type { Model } from "../../../src/shared/types/chat";
+import { assistantMessage, messageText, userMessage } from "../../../src/shared/lib/messages";
 import type { ElicitationResult } from "../../../src/shared/types/elicitation";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 
@@ -62,20 +63,20 @@ config.client.textAdapter = (model, signal) =>
           instructions: JSON.stringify(options.systemPrompts),
           tools: options.tools?.map((tool) => tool.name) ?? [],
           signal,
-          stream: (text) => handler([{ type: "text", text }]),
-          finish: (text) => resolve({ role: "assistant", content: [{ type: "text", text }] }),
+          stream: (text) => handler(text),
+          finish: (text) => resolve(assistantMessage(text)),
           callTool: (name, args) =>
-            resolve({
-              role: "assistant",
-              content: [
+            resolve(
+              assistantMessage([
                 {
-                  type: "tool_call",
+                  type: "tool-call",
                   id: crypto.randomUUID(),
                   name,
                   arguments: JSON.stringify(args),
+                  state: "input-complete",
                 },
-              ],
-            }),
+              ]),
+            ),
         });
       }),
   ).textAdapter(model, signal);
@@ -129,7 +130,7 @@ const ComposerProbe = memo(function ComposerProbe() {
     </div>
   );
 });
-const text = (value: string): Message => ({ role: "user", content: [{ type: "text", text: value }] });
+const text = (value: string): UIMessage => userMessage(value);
 
 function Fixture() {
   const chat = useChat();
@@ -187,14 +188,14 @@ function Fixture() {
         .then((result) => results.push({ id, result }));
     },
     answer: chat.resolveElicitation,
-    seed: async (id: string, content: Content[]) =>
+    seed: async (id: string, parts: ContentPart[]) =>
       storeChat({
         id,
         title: id,
         model: null,
         created: new Date(),
         updated: new Date(),
-        messages: [{ ...text(id), content }],
+        messages: [{ ...text(id), parts }],
       }),
     flush: flushPersistence,
     unmount: () => root.unmount(),
@@ -205,13 +206,13 @@ function Fixture() {
       <ActionsProbe />
       <ComposerProbe />
       <ChatInterrupts />
-      <div data-testid="messages">{chat.messages.map((message) => getTextFromContent(message.content)).join("|")}</div>
+      <div data-testid="messages">{chat.messages.map((message) => messageText(message)).join("|")}</div>
       <div style={{ paddingTop: 1500 }}>
         {chat.chat?.messages
-          .filter((message) => hasStoredAttachments(message.content))
+          .filter((message) => hasStoredAttachments(message))
           .map((message) => (
             <ChatMessageAttachments key={message.id} message={message}>
-              {(loaded) => <div data-testid="attachment">{JSON.stringify(loaded.content)}</div>}
+              {(loaded) => <div data-testid="attachment">{JSON.stringify(loaded.parts)}</div>}
             </ChatMessageAttachments>
           ))}
       </div>
@@ -289,7 +290,7 @@ declare global {
         loading: boolean;
         error: string | null;
         chats: import("../../../src/shared/types/chat").ChatEntry[];
-        messages: Message[];
+        messages: UIMessage[];
         queue: import("@tanstack/ai-client").QueuedMessage[];
         pending?: string;
         renders: typeof renders;
@@ -323,7 +324,7 @@ declare global {
       search(query: string): Promise<string[]>;
       ask(id: string): void;
       answer(result: ElicitationResult): void;
-      seed(id: string, content: Content[]): Promise<void>;
+      seed(id: string, parts: ContentPart[]): Promise<void>;
       flush(): Promise<void>;
       unmount(): void;
     };

@@ -1,6 +1,16 @@
+import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
-import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
+import {
+  isMediaPart,
+  isUserPrompt,
+  messageMetadata,
+  outputText,
+  textMetadata,
+  toolResultContent,
+  toolResultMetadata,
+  toolResults,
+} from "@/shared/lib/messages";
 import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
 import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
 
@@ -52,21 +62,62 @@ function parsePathFromJson(raw: string | undefined): string | null {
   return obj && typeof obj.path === "string" ? obj.path : null;
 }
 
-/** Artifact file paths a single tool result wrote, if any. */
-function toolResultArtifactPaths(result: ToolResultContent): string[] {
-  if (result.name === "artifacts_create" || result.name === "create" || result.name === "create_file") {
-    const resultText = result.result?.find((c): c is TextContent => c.type === "text");
-    const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
+// ── Tool rounds ─────────────────────────────────────────────────────────────
+// Natively a tool result is anchored to its call inside the same assistant
+// message. A "round" pairs them so renderers never have to search.
+
+export interface ToolRound {
+  call: ToolCallPart;
+  result?: ToolResultPart;
+}
+
+/** A delegated call is already represented by its child conversation. */
+export function subagentToolCallIds(messages: readonly UIMessage[]): Set<string> {
+  return new Set(
+    messages.flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.type === "subagent" && part.subagent.parentToolCallId ? [part.subagent.parentToolCallId] : [],
+      ),
+    ),
+  );
+}
+
+function isFailedResult(result: ToolResultPart | undefined): boolean {
+  return !!result && (result.state === "error" || !!toolResultMetadata(result).error);
+}
+
+/**
+ * The calls of a message, each with its result when it has one. A delegated
+ * call is left out, since its child conversation represents it, unless it
+ * failed and the failure would otherwise be invisible.
+ */
+export function toolRounds(message: UIMessage, delegated?: ReadonlySet<string>): ToolRound[] {
+  const results = new Map(toolResults(message).map((part) => [part.toolCallId, part]));
+  return message.parts.flatMap((part) => {
+    if (part.type !== "tool-call") return [];
+    const result = results.get(part.id);
+    return delegated?.has(part.id) && !isFailedResult(result) ? [] : [{ call: part, result }];
+  });
+}
+
+/** Artifact file paths a single tool round wrote, if any. */
+function roundArtifactPaths({ call, result }: ToolRound): string[] {
+  const meta = result ? toolResultMetadata(result).meta : undefined;
+  if (call.name === "artifacts_create" || call.name === "create" || call.name === "create_file") {
+    const output = result ? toolResultContent(result) : undefined;
+    const path = parsePathFromJson(output ? outputText(output) : undefined) ?? parsePathFromJson(call.arguments);
     return path ? [path] : [];
   }
   // Code execution tools report written files via meta (including historical names).
-  const files = result.meta?.artifactFiles;
+  const files = meta?.artifactFiles;
   return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
 }
 
-/** Whether a message is a genuine user prompt (not a tool-result carrier). */
-function isUserPrompt(message: Message): boolean {
-  return message.role === "user" && message.content.some((c) => c.type !== "tool_result");
+function turnStart(messages: readonly UIMessage[], assistantIndex: number): number {
+  for (let i = assistantIndex - 1; i >= 0; i--) {
+    if (isUserPrompt(messages[i])) return i + 1;
+  }
+  return 0;
 }
 
 /**
@@ -75,30 +126,25 @@ function isUserPrompt(message: Message): boolean {
  * prompt. Deduplicated, respecting moves and deletions. Shows generated files as
  * chips on the assistant's completion message.
  */
-export function collectTurnArtifactPaths(messages: Message[], assistantIndex: number): string[] {
-  let start = 0;
-  for (let i = assistantIndex - 1; i >= 0; i--) {
-    if (isUserPrompt(messages[i])) {
-      start = i + 1;
-      break;
-    }
-  }
-
+export function collectTurnArtifactPaths(messages: readonly UIMessage[], assistantIndex: number): string[] {
   const seen = new Set<string>();
-  for (let i = start; i <= assistantIndex; i++) {
-    for (const part of messages[i]?.content ?? []) {
-      if (part.type === "artifact_ref") {
-        seen.add(part.path);
-        continue;
+  for (let i = turnStart(messages, assistantIndex); i <= assistantIndex; i++) {
+    const message = messages[i];
+    if (!message) continue;
+    for (const part of message.parts) {
+      if (part.type === "text") {
+        const ref = textMetadata(part).artifactRef;
+        if (ref) seen.add(ref.path);
       }
-      if (part.type !== "tool_result") continue;
-      const delta = artifactDeltaFromMeta(part.meta);
+    }
+    for (const round of toolRounds(message)) {
+      const delta = round.result ? artifactDeltaFromMeta(toolResultMetadata(round.result).meta) : null;
       if (delta) {
         updateArtifactPaths(seen, delta.mutations);
         continue;
       }
-      if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
-      for (const path of toolResultArtifactPaths(part)) seen.add(path);
+      if (!round.result || !ARTIFACT_WRITE_TOOLS.has(round.call.name)) continue;
+      for (const path of roundArtifactPaths(round)) seen.add(path);
     }
   }
   return [...seen].filter((path) => !isMemoryPath(path));
@@ -107,12 +153,13 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
 // Skill-builder tools that create or modify skills.
 const SKILL_WRITE_TOOLS = new Set(["create_skill", "update_skill"]);
 
-/** Skill name from a skill tool result, or null. */
-function toolResultSkillName(result: ToolResultContent): string | null {
-  const resultText = result.result?.find((c): c is TextContent => c.type === "text");
-  if (resultText?.text) {
+/** Skill name from a skill tool round, or null. */
+function roundSkillName({ call, result }: ToolRound): string | null {
+  const output = result ? toolResultContent(result) : undefined;
+  const resultText = output ? outputText(output) : "";
+  if (resultText) {
     try {
-      const obj = JSON.parse(resultText.text);
+      const obj = JSON.parse(resultText);
       if (typeof obj?.skill?.name === "string") return obj.skill.name;
     } catch {
       // fall through
@@ -120,7 +167,7 @@ function toolResultSkillName(result: ToolResultContent): string | null {
   }
   // Fallback: read from arguments (recovers the name even when a sibling code
   // field left the JSON mis-escaped).
-  const args = tryParseToolArguments(result.arguments);
+  const args = tryParseToolArguments(call.arguments);
   if (typeof args?.name === "string") return args.name;
   return null;
 }
@@ -129,21 +176,14 @@ function toolResultSkillName(result: ToolResultContent): string | null {
  * Collect skill names written/updated during the assistant turn ending at
  * `assistantIndex`. Deduplicated, in first-seen order.
  */
-export function collectTurnSkillNames(messages: Message[], assistantIndex: number): string[] {
-  let start = 0;
-  for (let i = assistantIndex - 1; i >= 0; i--) {
-    if (isUserPrompt(messages[i])) {
-      start = i + 1;
-      break;
-    }
-  }
-
+export function collectTurnSkillNames(messages: readonly UIMessage[], assistantIndex: number): string[] {
   const seen = new Set<string>();
-  for (let i = start; i <= assistantIndex; i++) {
-    for (const part of messages[i]?.content ?? []) {
-      if (part.type !== "tool_result") continue;
-      if (!SKILL_WRITE_TOOLS.has(part.name)) continue;
-      const name = toolResultSkillName(part);
+  for (let i = turnStart(messages, assistantIndex); i <= assistantIndex; i++) {
+    const message = messages[i];
+    if (!message) continue;
+    for (const round of toolRounds(message)) {
+      if (!round.result || !SKILL_WRITE_TOOLS.has(round.call.name)) continue;
+      const name = roundSkillName(round);
       if (name) seen.add(name);
     }
   }
@@ -151,122 +191,101 @@ export function collectTurnSkillNames(messages: Message[], assistantIndex: numbe
 }
 
 /** Whether the assistant message at `index` ends a turn (next is a new prompt). */
-export function isTurnEnd(messages: Message[], index: number): boolean {
+export function isTurnEnd(messages: readonly UIMessage[], index: number): boolean {
   const next = messages[index + 1];
   return !next || isUserPrompt(next);
 }
 
 // ── Tool-call grouping ──────────────────────────────────────────────────────
-// A tool-heavy turn produces many adjacent rows (one committed tool result per
-// message, plus null-rendering assistant tool-call messages between them). To
-// keep the transcript from looking scattered we fold consecutive plain tool
-// results into a single collapsible "Used N tools" group. Rich results — MCP
-// apps, inline media, errors — stay standalone so nothing important is buried.
+// A tool-heavy turn produces many adjacent assistant messages that hold only
+// tool rounds. To keep the transcript from looking scattered we fold
+// consecutive plain tool rounds into a single collapsible "Used N tools" group.
+// Rich results — MCP apps, inline media, errors — stay standalone so nothing
+// important is buried.
 
-function messageHasText(message: Message): boolean {
-  return message.content.some((p) => p.type === "text" && p.text);
+function hasText(message: UIMessage): boolean {
+  return message.parts.some((part) => part.type === "text" && part.content);
 }
 
-function messageHasMedia(message: Message): boolean {
-  return message.content.some((p) => p.type === "image" || p.type === "file" || p.type === "audio");
+function hasReasoning(message: UIMessage): boolean {
+  return message.parts.some((part) => part.type === "thinking" && part.content);
 }
 
-/** A user message that renders as a collapsed tool-result row (see ChatMessage). */
-export function isToolResultMessage(message: Message): boolean {
-  return (
-    message.role === "user" &&
-    message.content.some((p) => p.type === "tool_result") &&
-    !messageHasText(message) &&
-    !messageHasMedia(message)
-  );
-}
-
-/** Tool results that must stay visible standalone (interactive/rich), never folded. */
-function isRichToolResultMessage(message: Message): boolean {
-  if (message.error) return true;
-  for (const part of message.content) {
-    if (part.type !== "tool_result") continue;
-    // MCP UI app — the app itself is the primary renderer.
-    if (typeof part.meta?.toolProvider === "string" && typeof part.meta?.toolResource === "string") return true;
-    // Inline media (images/audio/files) is worth keeping in view.
-    if (part.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file")) return true;
-  }
-  return false;
-}
-
-/** A plain tool result eligible to be folded into a group. */
-function isGroupableToolResultMessage(message: Message): boolean {
-  return isToolResultMessage(message) && !isRichToolResultMessage(message);
+function hasMedia(message: UIMessage): boolean {
+  return message.parts.some(isMediaPart);
 }
 
 /**
- * Assistant message carrying only tool calls (no text/media/reasoning). These
- * render nothing once committed, so they're transparent "connectors" that keep a
- * run of tool results contiguous. A connector with reasoning is excluded so the
- * thought stays visible (and naturally splits the group around it).
+ * An assistant message carrying only tool rounds (no text, media, reasoning or
+ * subagent). It renders as tool rows, and a run of them folds into a group.
  */
-function isToolConnectorMessage(message: Message): boolean {
-  if (message.role !== "assistant" || message.content.length === 0) return false;
-  const hasToolCalls = message.content.some((p) => p.type === "tool_call");
-  const hasReasoning = message.content.some((p) => p.type === "reasoning" && (p.text || p.summary));
+export function isToolOnlyMessage(message: UIMessage): boolean {
+  if (message.role !== "assistant" || message.parts.length === 0 || messageMetadata(message).error) return false;
   return (
-    hasToolCalls &&
-    !hasReasoning &&
-    !message.content.some((part) => part.type === "subagent") &&
-    !messageHasText(message) &&
-    !messageHasMedia(message)
+    message.parts.some((part) => part.type === "tool-call") &&
+    !hasText(message) &&
+    !hasReasoning(message) &&
+    !hasMedia(message) &&
+    !message.parts.some((part) => part.type === "subagent" || part.type === "structured-output")
   );
 }
 
-function hostsToolCall(message: Message, toolCallId?: string | null): boolean {
+/** A result that must stay visible standalone (interactive/rich), never folded. */
+export function isRichToolResult(result: ToolResultPart): boolean {
+  const data = toolResultMetadata(result);
+  if (isFailedResult(result)) return true;
+  // MCP UI app — the app itself is the primary renderer.
+  if (typeof data.meta?.toolProvider === "string" && typeof data.meta?.toolResource === "string") return true;
+  // Inline media (images/audio/files) is worth keeping in view.
+  return toolResultContent(result).some(isMediaPart);
+}
+
+function hostsToolCall(message: UIMessage, toolCallId?: string | null): boolean {
   if (!toolCallId) return false;
-  return message.content.some((p) => p.type === "tool_call" && p.id === toolCallId);
+  return message.parts.some((p) => p.type === "tool-call" && p.id === toolCallId);
 }
 
 export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
 
-/** A delegated call is already represented by its child conversation. */
-export function subagentToolCallIds(messages: Message[]): Set<string> {
-  return new Set(
-    messages.flatMap((message) =>
-      message.content.flatMap((part) => (part.type === "subagent" && part.toolCallId ? [part.toolCallId] : [])),
-    ),
-  );
-}
-
 /**
  * Partition messages into standalone messages and folded tool groups (runs of
- * groupable results/connectors with 2+ results). `pendingElicitationToolCallId`
+ * groupable tool-only messages with 2+ results). `pendingElicitationToolCallId`
  * keeps a message hosting an awaiting elicitation prompt standalone.
  */
 export function groupRenderUnits(
-  messages: Message[],
+  messages: readonly UIMessage[],
   isResponding: boolean,
   pendingElicitationToolCallId?: string | null,
 ): RenderUnit[] {
   const units: RenderUnit[] = [];
   const delegated = subagentToolCallIds(messages);
-  const represented = (message: Message) =>
-    isGroupableToolResultMessage(message) &&
-    message.content.every((part) => part.type === "tool_result" && delegated.has(part.id));
+  const rounds = (message: UIMessage) => toolRounds(message, delegated);
+  // Every call is delegated: the child conversation already represents it.
+  const represented = (message: UIMessage) => isToolOnlyMessage(message) && rounds(message).length === 0;
   const addMessage = (index: number) => {
     if (!represented(messages[index])) units.push({ kind: "message", index });
   };
   const limit = isResponding ? messages.length - 1 : messages.length;
-  const groupable = (message: Message) =>
+  const groupable = (message: UIMessage) =>
+    isToolOnlyMessage(message) &&
     !hostsToolCall(message, pendingElicitationToolCallId) &&
-    (isGroupableToolResultMessage(message) || isToolConnectorMessage(message));
+    rounds(message).every((round) => round.result && !isRichToolResult(round.result));
 
   let i = 0;
   while (i < limit) {
     if (groupable(messages[i])) {
       let j = i;
       const indices: number[] = [];
+      let results = 0;
       while (j < limit && groupable(messages[j])) {
-        if (isGroupableToolResultMessage(messages[j]) && !represented(messages[j])) indices.push(j);
+        const count = rounds(messages[j]).length;
+        if (count) {
+          indices.push(j);
+          results += count;
+        }
         j++;
       }
-      if (indices.length >= 2) {
+      if (results >= 2) {
         units.push({ kind: "toolGroup", indices });
       } else {
         for (let k = i; k < j; k++) addMessage(k);
@@ -322,29 +341,35 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-function deltaPaths(result: ToolResultContent): string[] {
-  return artifactDeltaFromMeta(result.meta)?.mutations.map((mutation) => mutation.path) ?? [];
+function deltaPaths(result: ToolResultPart | undefined): string[] {
+  return result
+    ? (artifactDeltaFromMeta(toolResultMetadata(result).meta)?.mutations.map((mutation) => mutation.path) ?? [])
+    : [];
 }
 
-/** Past-tense semantic summary for a completed group of tool result messages. */
-export function summarizeToolGroup(messages: Message[], indices: number[]): string {
+/** Past-tense semantic summary for a completed group of tool-only messages. */
+export function summarizeToolGroup(messages: readonly UIMessage[], indices: number[]): string {
   const readTargets = new Set<string>();
   const editTargets = new Set<string>();
   let searches = 0;
   let runs = 0;
   let generic = 0;
+  let total = 0;
   const memoryReads = new Set<string>();
   const memoryWrites = new Set<string>();
   const memoryDeletes = new Set<string>();
   let memorySearches = 0;
+  const delegated = subagentToolCallIds(messages);
 
   for (const index of indices) {
-    for (const part of messages[index]?.content ?? []) {
-      if (part.type !== "tool_result") continue;
-      const family = TOOL_FAMILIES[part.name] ?? (part.name.startsWith("execute_") ? "run" : "generic");
-      const args = tryParseToolArguments(part.arguments);
-      if (args && part.name.startsWith("artifacts_")) {
-        const operation = part.name.slice("artifacts_".length);
+    const message = messages[index];
+    if (!message) continue;
+    for (const { call, result } of toolRounds(message, delegated)) {
+      total++;
+      const family = TOOL_FAMILIES[call.name] ?? (call.name.startsWith("execute_") ? "run" : "generic");
+      const args = tryParseToolArguments(call.arguments);
+      if (args && call.name.startsWith("artifacts_")) {
+        const operation = call.name.slice("artifacts_".length);
         const paths = memoryOperationPaths(operation, args).filter(isMemoryPath) as string[];
         if (paths.length) {
           if (operation === "glob" || operation === "grep") memorySearches++;
@@ -361,11 +386,11 @@ export function summarizeToolGroup(messages: Message[], indices: number[]): stri
             ? args.path
             : typeof args?.from === "string"
               ? args.from
-              : `${part.name}:${part.id}`;
+              : `${call.name}:${call.id}`;
 
       if (family === "read") readTargets.add(argumentPath);
       else if (family === "edit") {
-        const paths = deltaPaths(part);
+        const paths = deltaPaths(result);
         if (paths.length > 0) paths.forEach((path) => editTargets.add(path));
         else editTargets.add(argumentPath);
       } else if (family === "search") searches++;
@@ -384,7 +409,7 @@ export function summarizeToolGroup(messages: Message[], indices: number[]): stri
   if (memoryWrites.size) segments.push(`Updated ${plural(memoryWrites.size, "memory note")}`);
   if (memoryDeletes.size) segments.push(`Forgot ${plural(memoryDeletes.size, "memory note")}`);
   if (generic && segments.length > 0) segments.push(`used ${plural(generic, "other tool")}`);
-  if (segments.length === 0) return `Used ${plural(generic || indices.length, "tool")}`;
+  if (segments.length === 0) return `Used ${plural(generic || total, "tool")}`;
   return segments.join(", ");
 }
 

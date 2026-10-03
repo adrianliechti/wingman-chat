@@ -229,10 +229,10 @@ test("startup reads entries only, selection is race safe, and media stays deferr
   await open(page);
   await page.evaluate(async () => {
     await window.chatE2E.seed("first", [
-      { type: "text", text: "search needle" },
-      { type: "image", data: "data:image/jpeg;base64,YWJj" },
+      { type: "text", content: "search needle" },
+      { type: "image", source: { type: "data", value: "YWJj", mimeType: "image/jpeg" } },
     ]);
-    await window.chatE2E.seed("second", [{ type: "text", text: "Other chat" }]);
+    await window.chatE2E.seed("second", [{ type: "text", content: "Other chat" }]);
   });
   await page.reload();
   await page.waitForFunction(() => window.chatE2E?.state().ready);
@@ -255,7 +255,10 @@ test("startup reads entries only, selection is race safe, and media stays deferr
   await expect(page.getByTestId("messages")).toContainText("search needle");
   expect(await page.evaluate(() => window.chatE2E.state().reads.some((path) => path.includes("/blobs/")))).toBe(false);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await expect(page.getByTestId("attachment")).toContainText("data:image/jpeg;base64,YWJj");
+  await expect(page.getByTestId("attachment")).toBeVisible();
+  expect(JSON.parse((await page.getByTestId("attachment").textContent())!)).toContainEqual(
+    expect.objectContaining({ type: "image", source: { type: "data", value: "YWJj", mimeType: "image/jpeg" } }),
+  );
   expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().messages))).toContain("blob:sha256-");
 });
 
@@ -284,8 +287,8 @@ test("replacing or unmounting elicitation settles every pending promise", async 
 test("a send delayed by loading is discarded if the user navigates to another chat", async ({ page }) => {
   await open(page);
   await page.evaluate(async () => {
-    await window.chatE2E.seed("first", [{ type: "text", text: "First history" }]);
-    await window.chatE2E.seed("second", [{ type: "text", text: "Second history" }]);
+    await window.chatE2E.seed("first", [{ type: "text", content: "First history" }]);
+    await window.chatE2E.seed("second", [{ type: "text", content: "Second history" }]);
   });
   await page.reload();
   await page.waitForFunction(() => window.chatE2E?.state().ready);

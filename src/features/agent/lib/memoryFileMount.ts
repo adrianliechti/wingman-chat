@@ -49,12 +49,12 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
         if (!mounted)
           return (
             original.get(tool.name)?.function(args, context) ?? [
-              { type: "text", text: JSON.stringify({ error: "Only /.memory/ is available." }) },
+              { type: "text", content: JSON.stringify({ error: "Only /.memory/ is available." }) },
             ]
           );
         const fail = (message: string) => {
           context?.setError?.({ code: "MEMORY_OPERATION_FAILED", message });
-          return [{ type: "text" as const, text: JSON.stringify({ error: message }) }];
+          return [{ type: "text" as const, content: JSON.stringify({ error: message }) }];
         };
         if (!manager) return fail("Memory is disabled or no agent is selected.");
         if (!paths.every(isMemoryPath))
@@ -94,14 +94,14 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
                   part.type === "text" &&
                   (() => {
                     try {
-                      return !!JSON.parse(part.text).error;
+                      return !!JSON.parse(part.content).error;
                     } catch {
                       return false;
                     }
                   })(),
               );
               // Failed writes must not grant a fresh revision observation.
-              if (failure?.type === "text") throw new Error(JSON.parse(failure.text).error);
+              if (failure?.type === "text") throw new Error(JSON.parse(failure.content).error);
               if (mutation) {
                 for (const path of paths) {
                   const relative = memoryPath(path as string);
@@ -116,7 +116,7 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
           observations.set(session, nextObserved);
           // The complete output has a hard ceiling even when grep asks for all results.
           return result.map((part) =>
-            part.type === "text" ? { ...part, text: boundMemoryText(part.text, 8192) } : part,
+            part.type === "text" ? { ...part, content: boundMemoryText(part.content, 8192) } : part,
           );
         } catch (error) {
           return fail(error instanceof Error ? error.message : "Memory operation failed.");

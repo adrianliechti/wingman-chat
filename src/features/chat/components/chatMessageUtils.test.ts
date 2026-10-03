@@ -1,35 +1,66 @@
 import { describe, expect, it } from "vitest";
-import type { Message } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { assistantMessage, userMessage, type ToolResultMetadata } from "@/shared/lib/messages";
 import { collectTurnArtifactPaths, groupRenderUnits, summarizeToolGroup } from "./chatMessageUtils";
 
-function result(id: string, name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): Message {
-  return {
-    role: "user",
-    content: [{ type: "tool_result", id, name, arguments: JSON.stringify(args), result: [], meta }],
-  };
+/** A committed tool round in its own assistant turn. */
+function result(id: string, name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): UIMessage {
+  return assistantMessage(
+    [
+      { type: "tool-call", id, name, arguments: JSON.stringify(args), state: "complete" },
+      {
+        type: "tool-result",
+        toolCallId: id,
+        content: "",
+        state: "complete",
+        metadata: { result: [], meta } satisfies ToolResultMetadata,
+      },
+    ],
+    { id: `turn-${id}` },
+  );
 }
 
 describe("summarizeToolGroup", () => {
   it("shows a delegated conversation once, while keeping other results and failures", () => {
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Research" }] },
-      {
-        role: "assistant",
-        content: [
-          { type: "subagent", id: "child", name: "research", toolCallId: "delegate", status: "finished", messages: [] },
-        ],
-      },
+    const messages: UIMessage[] = [
+      userMessage("Research"),
+      assistantMessage([
+        {
+          type: "subagent",
+          subagent: { id: "child", name: "research", parentToolCallId: "delegate", status: "finished", messages: [] },
+        },
+      ]),
       result("delegate", "research", {}),
       result("other", "read", {}),
-      { role: "assistant", content: [{ type: "text", text: "Answer" }] },
+      assistantMessage("Answer"),
     ];
     expect(groupRenderUnits(messages, false)).toEqual([0, 1, 3, 4].map((index) => ({ kind: "message", index })));
-    messages[2].error = { code: "EXECUTION_ERROR", message: "Could not return the report" };
+    const failed = result("delegate", "research", {});
+    failed.parts[1] = { ...failed.parts[1], state: "error", error: "Could not return the report" } as never;
+    messages[2] = failed;
     expect(groupRenderUnits(messages, false)).toContainEqual({ kind: "message", index: 2 });
-    messages[1].content = [];
-    messages[2].error = undefined;
+    messages[1] = assistantMessage([]);
+    messages[2] = result("delegate", "research", {});
     expect(groupRenderUnits(messages, false)).toContainEqual({ kind: "toolGroup", indices: [2, 3] });
   });
+
+  it("folds several rounds of one turn and leaves a lone round standalone", () => {
+    const twoRounds = assistantMessage([
+      { type: "tool-call", id: "a", name: "read", arguments: "{}", state: "complete" },
+      { type: "tool-result", toolCallId: "a", content: "", state: "complete" },
+      { type: "tool-call", id: "b", name: "read", arguments: "{}", state: "complete" },
+      { type: "tool-result", toolCallId: "b", content: "", state: "complete" },
+    ]);
+    expect(groupRenderUnits([userMessage("Go"), twoRounds, assistantMessage("Done")], false)).toEqual([
+      { kind: "message", index: 0 },
+      { kind: "toolGroup", indices: [1] },
+      { kind: "message", index: 2 },
+    ]);
+    expect(groupRenderUnits([userMessage("Go"), result("a", "read", {}), assistantMessage("Done")], false)).toEqual(
+      [0, 1, 2].map((index) => ({ kind: "message", index })),
+    );
+  });
+
   it("deduplicates file targets and preserves semantic ordering", () => {
     const messages = [
       result("1", "read", { path: "/a.ts" }),
@@ -63,20 +94,20 @@ describe("summarizeToolGroup", () => {
   });
 
   it.each(["execute_python_code", "execute_javascript_code"])("keeps historical %s results readable", (name) => {
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Run it" }] },
+    const messages: UIMessage[] = [
+      userMessage("Run it"),
       result("legacy", name, { code: "legacy script" }, { artifactFiles: ["/legacy.txt"] }),
-      { role: "assistant", content: [{ type: "text", text: "Done" }] },
+      assistantMessage("Done"),
     ];
     expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/legacy.txt"]);
     expect(summarizeToolGroup(messages, [1])).toBe("Ran 1 command");
   });
 
   it("still renders persisted calls that use the former file-tool names", () => {
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Create it" }] },
+    const messages: UIMessage[] = [
+      userMessage("Create it"),
       result("1", "create_file", { path: "/legacy.txt" }),
-      { role: "assistant", content: [{ type: "text", text: "Done" }] },
+      assistantMessage("Done"),
     ];
 
     expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/legacy.txt"]);
@@ -84,8 +115,8 @@ describe("summarizeToolGroup", () => {
   });
 
   it("shows subagent outputs and retires moved or deleted files without appended references", () => {
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Build the files" }] },
+    const messages: UIMessage[] = [
+      userMessage("Build the files"),
       result(
         "child",
         "agent",
@@ -111,7 +142,7 @@ describe("summarizeToolGroup", () => {
         {},
         { artifactDelta: { mutations: [{ operation: "delete", path: "/temp" }] } },
       ),
-      { role: "assistant", content: [{ type: "text", text: "Done" }] },
+      assistantMessage("Done"),
     ];
     expect(collectTurnArtifactPaths(messages, 4)).toEqual(["/game.html"]);
   });

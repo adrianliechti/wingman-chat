@@ -1,7 +1,8 @@
 import { Globe, Search } from "lucide-react";
 import type { SearchResult } from "@/features/research/types/search";
 import type { Client } from "@/shared/lib/client";
-import { getTextFromContent, type Tool, type ToolDisplay } from "@/shared/types/chat";
+import { outputText } from "@/shared/lib/messages";
+import type { Tool, ToolDisplay } from "@/shared/types/chat";
 import { clip, pageExcerpt, DEFAULT_FETCH_CHARS, MAX_FETCH_CHARS } from "./webContent";
 import { integer, MAX_WEB_BATCH, runCache, stringArray, webBatch } from "./webRequests";
 
@@ -13,7 +14,7 @@ const MAX_SEARCH_RESULT_CHARS = 1500;
 const webResultDisplay: Pick<ToolDisplay, "input" | "output"> = {
   // Queries/URLs already appear in the readable result; no argument JSON.
   input: () => [],
-  output: (result) => ({ code: getTextFromContent(result), language: "markdown" }),
+  output: (result) => ({ code: outputText(result), language: "markdown" }),
 };
 
 function formatSearchResults(results: SearchResult[], limit: number): string {
@@ -95,7 +96,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
         const limit = integer(args.limit, MAX_SEARCH_RESULTS_PER_QUERY, 1, MAX_SEARCH_RESULTS_PER_QUERY);
 
         if (queries.length === 0) {
-          return [{ type: "text" as const, text: "No queries provided." }];
+          return [{ type: "text" as const, content: "No queries provided." }];
         }
 
         const signal = context?.signal;
@@ -119,7 +120,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
           return `## Query: ${query}\n\n${body}`;
         });
 
-        return [{ type: "text" as const, text: blocks.join("\n\n") }];
+        return [{ type: "text" as const, content: blocks.join("\n\n") }];
       },
     });
   }
@@ -183,7 +184,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
         const maxChars = integer(args.max_chars, DEFAULT_FETCH_CHARS, 1000, MAX_FETCH_CHARS);
         if (query && offset) throw new Error("Use query or offset, not both.");
         if (urls.length === 0) {
-          return [{ type: "text" as const, text: "No URLs provided." }];
+          return [{ type: "text" as const, content: "No URLs provided." }];
         }
 
         const signal = context?.signal;
@@ -202,7 +203,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
           return `## ${url}\nError: ${message}`;
         });
 
-        return [{ type: "text" as const, text: sections.join("\n\n") }];
+        return [{ type: "text" as const, content: sections.join("\n\n") }];
       },
     });
   }

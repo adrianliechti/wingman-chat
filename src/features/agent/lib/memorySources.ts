@@ -1,15 +1,18 @@
 import { loadChat } from "@/features/chat/lib/chatStorage";
-import type { Message } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { textParts } from "@/shared/lib/messages";
 import { flushPersistence } from "@/shared/lib/persistence";
 import { memoryRevision, parseMemoryDocument, serializeMemoryDocument } from "./memoryDocument";
 import type { MemoryManager } from "./memoryManager";
 
 // Evidence belongs to memory, not the general ToolContext or a second transcript.
-export function memoryMessageText(message: Message): string {
-  return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+export function memoryMessageText(message: UIMessage): string {
+  return textParts(message)
+    .map((part) => part.content)
+    .join("\n");
 }
 
-export function memoryMessageHash(message: Message): Promise<string> {
+export function memoryMessageHash(message: UIMessage): Promise<string> {
   return memoryRevision(`${message.role}\n${memoryMessageText(message)}`);
 }
 

@@ -1,6 +1,7 @@
+import type { UIMessage } from "@tanstack/ai";
 import { describe, expect, it, vi } from "vitest";
-import type { Chat, Message } from "@/shared/types/chat";
-import { Role } from "@/shared/types/chat";
+import { assistantMessage, userMessage } from "@/shared/lib/messages";
+import type { Chat } from "@/shared/types/chat";
 import { createChatCreationGate } from "./chatCreation";
 
 describe("createChatCreationGate", () => {
@@ -21,12 +22,9 @@ describe("createChatCreationGate", () => {
       return chat;
     });
     const createOnce = createChatCreationGate();
-    const messages: Message[] = [
-      { role: Role.User, content: [{ type: "text", text: "Hello" }] },
-      { role: Role.Assistant, content: [{ type: "text", text: "Hi" }] },
-    ];
+    const messages: UIMessage[] = [userMessage("Hello"), assistantMessage("Hi")];
 
-    const append = async (message: Message) => {
+    const append = async (message: UIMessage) => {
       const target = await createOnce(createChat);
       target.messages.push(message);
       return target;

@@ -1,4 +1,5 @@
-import type { ChatMiddleware } from "@tanstack/ai";
+import type { ChatMiddleware, ContentPart, UIMessage } from "@tanstack/ai";
+import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
 
@@ -141,10 +142,7 @@ export type Tool = {
 
   parameters: Record<string, unknown>;
 
-  function: (
-    args: Record<string, unknown>,
-    context?: ToolContext,
-  ) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
+  function: (args: Record<string, unknown>, context?: ToolContext) => Promise<ContentPart[]>;
 
   /**
    * Optional, tool-owned presentation for how a call renders in chat. Colocating
@@ -194,7 +192,7 @@ export type ToolDisplay = {
   /** Expanded input blocks; return `[]` to hide input, omit to fall back to generic arguments. */
   input?: (args: Record<string, unknown> | null) => ToolDisplayBlock[];
   /** Expanded success output; return `null` to fall back to generic result rendering. */
-  output?: (result: Content[]) => ToolDisplayBlock | null;
+  output?: (result: ContentPart[]) => ToolDisplayBlock | null;
 };
 
 /** Application context passed through native chat middleware and tool execution. */
@@ -213,7 +211,8 @@ export interface ToolContext {
   /** Native chat tools can pause and receive an answer on their resumed execution. */
   interruptible?: boolean;
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
-  content?(): Content[];
+  /** The content parts of the user turn that triggered this run (text and attachments). */
+  content?(): ContentPart[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
   setMeta?(meta: Record<string, unknown>): void;
@@ -221,158 +220,6 @@ export interface ToolContext {
   setContent?(content: Record<string, unknown>): void;
   /** Trace context for nested agents spawned from this tool. */
   agentContext?: AgentContext;
-}
-
-// Content parts for messages - order matters
-export type ReasoningContent = {
-  type: "reasoning";
-  id: string;
-  text: string;
-  summary?: string;
-  encryptedContent?: string;
-  model?: string;
-  prefix?: string;
-};
-
-export type ToolCallContent = {
-  type: "tool_call";
-  id: string;
-  name: string;
-  arguments: string;
-  incomplete?: boolean;
-};
-
-export type ToolResultContent = {
-  type: "tool_result";
-  id: string;
-  name: string;
-  arguments: string;
-  meta?: Record<string, unknown>;
-  result: (TextContent | ImageContent | AudioContent | FileContent)[];
-  content?: Record<string, unknown>;
-};
-
-export type SummaryContent = {
-  type: "summary";
-  text: string;
-};
-
-/** Durable link from a chat turn to a versioned artifact deliverable. */
-export type ArtifactRefContent = {
-  type: "artifact_ref";
-  jobId?: string;
-  path: string;
-  revision?: string;
-  displayName?: string;
-};
-
-/** Text the user highlighted in an artifact viewer, sent with an edit instruction. */
-export type ArtifactSelectionContent = {
-  type: "artifact_selection";
-  path: string;
-  text: string;
-  /** 1-based, inclusive; omitted when the passage could not be located in the source. */
-  startLine?: number;
-  endLine?: number;
-};
-
-/** Runtime-only policy feedback persisted for resumability but hidden in chat UI. */
-export type RuntimeFeedbackContent = {
-  type: "runtime_feedback";
-  source: "verification" | "guardrail";
-  text: string;
-};
-
-/** A child conversation uses the same messages and content as its parent. */
-export type SubagentContent = {
-  type: "subagent";
-  id: string;
-  name: string;
-  description?: string;
-  /** Parent run that started this invocation. */
-  runId?: string;
-  toolCallId?: string;
-  status: "running" | "finished" | "error" | "suspended";
-  messages: Message[];
-  error?: { message: string; code?: string };
-  /** Runtime-owned routing state; see {@link Signature}. */
-  signature?: Signature;
-};
-
-// Content is the union of all content types used in messages
-export type Content =
-  | TextContent
-  | ImageContent
-  | AudioContent
-  | FileContent
-  | ReasoningContent
-  | ToolCallContent
-  | ToolResultContent
-  | SummaryContent
-  | ArtifactRefContent
-  | ArtifactSelectionContent
-  | RuntimeFeedbackContent
-  | SubagentContent;
-
-export type TextContent = {
-  type: "text";
-
-  /** Assistant output message phase; each response message stays a separate text part. */
-  phase?: "commentary" | "final_answer";
-
-  text: string;
-};
-
-export type ImageContent = {
-  type: "image";
-
-  name?: string;
-  data: string; // Full data URL (data:mime;base64,...)
-  contentType?: string; // Retained when data is a stored blob reference.
-};
-
-export type AudioContent = {
-  type: "audio";
-
-  name?: string;
-  data: string; // Full data URL (data:mime;base64,...)
-  contentType?: string;
-};
-
-export type FileContent = {
-  type: "file";
-
-  name: string;
-  data: string; // Full data URL (data:mime;base64,...)
-  contentType?: string;
-};
-
-export type Message = {
-  /** Stable persisted identity. Older stored chats are normalized when loaded. */
-  id?: string;
-  /** Agent invocation that produced or consumed this message. */
-  runId?: string;
-  /** ISO timestamp used for durable ordering and migration. */
-  createdAt?: string;
-
-  role: "user" | "assistant";
-
-  /** Ordered content parts (text, reasoning, tool_call, tool_result, images, files) */
-  content: Content[];
-
-  usage?: MessageUsage;
-
-  error?: MessageError | null;
-};
-
-/** Add durable identity without replacing identity already loaded from storage. */
-export function withMessageIdentity(message: Message, runId?: string): Message {
-  return {
-    ...message,
-    id: message.id ?? crypto.randomUUID(),
-    runId: message.runId ?? runId,
-    createdAt: message.createdAt ?? new Date().toISOString(),
-  };
 }
 
 export type MessageUsage = {
@@ -389,55 +236,11 @@ export type MessageError = {
   message: string;
 };
 
-export const Role = {
-  User: "user",
-  Assistant: "assistant",
-} as const;
-export type Role = (typeof Role)[keyof typeof Role];
+/** Namespaced app and middleware state scoped to one chat (e.g. compaction checkpoints). */
+export type ChatMetadata = Record<string, Record<string, unknown>>;
 
-/**
- * Opaque runtime state tagged with the realm that produced it:
- * `"@<realm>:<data>"`. Only that realm replays it; any other runtime ignores
- * it and falls back to the readable fields beside it.
- */
-export type Signature = string;
-
-/** A question the paused run waits on: a tool approval, form, or client tool. */
-export type Interrupt = {
-  id: string;
-  reason: string;
-  message?: string;
-  toolCallId?: string;
-  /** Subagent invocation that raised it; absent for the chat's own run. */
-  subagentId?: string;
-  /** JSON Schema of the expected answer. */
-  schema?: Record<string, unknown>;
-  expiresAt?: string;
-  /** Descriptive data such as the tool name, input, or form payload. */
-  metadata?: Record<string, unknown>;
-  /** Runtime binding that validates the answer on resume. */
-  signature?: Signature;
-};
-
-/** A run that stopped for input and continues once its interrupts are answered. */
-export type PendingRun = {
-  id: string;
-  interrupts: Interrupt[];
-  /** Runtime session the run belongs to. */
-  signature?: Signature;
-};
-
-/** Model-context compaction; the transcript itself always stays complete. */
-export type Compaction = {
-  /** Subagent invocation whose context was compacted; absent for the chat itself. */
-  subagentId?: string;
-  /** Readable summary of the compacted prefix. */
-  text?: string;
-  /** The runtime's checkpoint, reused while the compacted prefix is unchanged. */
-  signature: Signature;
-};
-
-export type Chat = {
+/** Native transcript and resume state, plus the application's chat settings. */
+export interface Chat extends ChatPersistedState {
   id: string;
   title?: string;
   customTitle?: string;
@@ -447,45 +250,9 @@ export type Chat = {
   updated: Date | null;
 
   model: Model | null;
-  messages: Array<Message>;
-
-  /** Present only while a run waits for input. */
-  pendingRun?: PendingRun;
-  compactions?: Compaction[];
-};
+  messages: UIMessage[];
+  metadata?: ChatMetadata;
+}
 
 /** Sidebar metadata; conversation bodies and attachments are loaded separately. */
 export type ChatEntry = Pick<Chat, "id" | "title" | "customTitle" | "customIndex" | "created" | "updated">;
-
-/** Replace one tool's metadata without mutating earlier history snapshots. */
-export function updateToolResultMeta(messages: Message[], callId: string, meta: Record<string, unknown>): Message[] {
-  let changed = false;
-  const updated = messages.map((message) => {
-    if (!message.content.some((part) => part.type === "tool_result" && part.id === callId)) return message;
-    changed = true;
-    return {
-      ...message,
-      content: message.content.map((part) =>
-        part.type === "tool_result" && part.id === callId ? { ...part, meta: { ...meta } } : part,
-      ),
-    };
-  });
-  return changed ? updated : messages;
-}
-
-export function tagSignature(realm: string, data: string): Signature {
-  return `@${realm}:${data}`;
-}
-
-/** The raw data when `signature` was produced by `realm`. */
-export function readSignature(signature: Signature | undefined, realm: string): string | undefined {
-  const prefix = `@${realm}:`;
-  return signature?.startsWith(prefix) ? signature.slice(prefix.length) : undefined;
-}
-
-export function getTextFromContent(content: Content[]): string {
-  return content
-    .filter((p): p is TextContent => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-}

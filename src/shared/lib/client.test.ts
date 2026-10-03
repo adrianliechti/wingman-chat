@@ -1,11 +1,20 @@
+import { feedbackMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "./client";
 import { run, runMessages } from "./agent";
 import { loadConfig } from "../config";
-import type { Message, Tool } from "../types/chat";
-import { response, textItem, callItem, sse, finished } from "./test-support/ai";
-import type { ChatMiddleware } from "@tanstack/ai";
+import type { Tool } from "../types/chat";
+import { output, response, textItem, callItem, sse, finished, user, assistant } from "./test-support/ai";
+import {
+  mediaFromDataUrl,
+  messageMetadata,
+  messageText,
+  textSegments,
+  toolResults,
+  toolRoundMessage,
+} from "./messages";
+import type { ChatMiddleware, ModelMessage, UIMessage } from "@tanstack/ai";
 
 function observeText(observer: (content: Array<{ type: "text"; text: string }>) => void): ChatMiddleware {
   let text = "";
@@ -19,7 +28,7 @@ function observeText(observer: (content: Array<{ type: "text"; text: string }>) 
   };
 }
 
-const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Go" }] }];
+const prompt = [user("Go")];
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
@@ -82,7 +91,7 @@ describe("chat output allowances", () => {
       name: "write",
       description: "Write text",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      function: async () => [{ type: "text", text: "done" }],
+      function: async () => output("done"),
     };
     await runMessages(new Client(), model, "", prompt, [tool], { options: { effort } });
     expect(String(fetchMock.mock.calls[0][0])).toBe("http://localhost/api/v1/responses");
@@ -300,10 +309,7 @@ describe("raw request lifetime", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("retains caller cancellation until the body is consumed in the signal fallback", async () => {
-    vi.spyOn(AbortSignal, "any").mockImplementation(() => {
-      throw new Error("Unavailable");
-    });
+  it("retains caller cancellation until the body is consumed", async () => {
     stalledBody();
     const controller = new AbortController();
     const request = new Client().scrape("model", "https://example.com", { signal: controller.signal });
@@ -346,11 +352,7 @@ describe("System One classification", () => {
         }),
       ),
     );
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Hi" }] },
-      { role: "assistant", content: [{ type: "text", text: "Hello" }] },
-      { role: "user", content: [{ type: "text", text: "Review this NDA" }] },
-    ];
+    const messages = [user("Hi"), assistant("Hello"), user("Review this NDA")];
 
     const result = await new Client().classifyChat(
       "jev-latest",
@@ -404,7 +406,7 @@ describe("System One classification", () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ answers: { risk_0: { type: "noul", noul: 0 } } })));
     await new Client().classifyChat(
       "jev-latest",
-      [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+      [user("Hi")],
       [],
       [{ id: "pii", description: "Share personal data" }],
     );
@@ -428,15 +430,15 @@ describe("System One classification", () => {
 
   it("preserves content parts in object state and strips saved message metadata", async () => {
     fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.1 } } }));
-    const latest: Message = {
+    const latest: UIMessage = {
       id: "saved-message",
-      runId: "saved-run",
-      createdAt: "2026-09-30T12:00:00Z",
       role: "user",
-      content: [
-        { type: "text", text: "Explain this diagram." },
-        { type: "image", name: "diagram.png", data: "data:image/png;base64,binary" },
-        { type: "text", text: "Use it only as an educational example." },
+      createdAt: new Date("2026-09-30T12:00:00Z"),
+      metadata: { runId: "saved-run" },
+      parts: [
+        { type: "text", content: "Explain this diagram." },
+        mediaFromDataUrl("data:image/png;base64,binary", "diagram.png"),
+        { type: "text", content: "Use it only as an educational example." },
       ],
     };
     await new Client().classifyChat(
@@ -456,14 +458,11 @@ describe("System One classification", () => {
       },
       earlier_messages: [],
     });
-    expect(latest.content[1]).toMatchObject({ type: "image", data: "data:image/png;base64,binary" });
+    expect(latest.parts[1]).toMatchObject({ type: "image", source: { type: "data", value: "binary" } });
   });
 
   it("skips a blank latest request instead of reclassifying an older one", async () => {
-    const messages: Message[] = [
-      { role: "user", content: [{ type: "text", text: "Rank these candidates" }] },
-      { role: "user", content: [{ type: "text", text: " \n " }] },
-    ];
+    const messages = [user("Rank these candidates"), user(" \n ")];
     expect(
       await new Client().classifyChat("gpt-6-luna", messages, [], [{ id: "hr", description: "Hiring decisions" }]),
     ).toEqual({ categories: [], risks: [] });
@@ -473,25 +472,16 @@ describe("System One classification", () => {
   it("keeps the human request after a long tool loop and excludes tool output and feedback", async () => {
     fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.9 } } }));
     const latest = "Background ".repeat(600) + "Rank these candidates for hiring.";
-    const toolResults: Message[] = Array.from({ length: 8 }, (_, i) => ({
-      role: "user",
-      content: [
-        {
-          type: "tool_result",
-          id: String(i),
-          name: "read",
-          arguments: "{}",
-          result: [{ type: "text", text: "Internal tool output" }],
-        },
-      ],
-    }));
+    const rounds: UIMessage[] = Array.from({ length: 8 }, (_, i) =>
+      toolRoundMessage({ id: String(i), name: "read", arguments: "{}" }, output("Internal tool output")),
+    );
     await new Client().classifyChat(
       "gpt-6-luna",
       [
-        { role: "user", content: [{ type: "text", text: latest }] },
-        ...toolResults,
-        { role: "user", content: [{ type: "runtime_feedback", source: "verification", text: "Internal feedback" }] },
-        { role: "assistant", content: [{ type: "text", text: "Current assistant output" }] },
+        user(latest),
+        ...rounds,
+        feedbackMessage("Internal feedback", "verification"),
+        assistant("Current assistant output"),
       ],
       [],
       [{ id: "hr", description: "Hiring decisions" }],
@@ -506,12 +496,7 @@ describe("System One classification", () => {
     fetchMock.mockResolvedValue(Response.json({ answers: { risk_0: { type: "noul", noul: 0.1 } } }));
     await new Client().classifyChat(
       "gpt-6-luna",
-      [
-        {
-          role: "user",
-          content: [{ type: "image", name: "chart.png", data: "data:image/png;base64,secret" }],
-        },
-      ],
+      [{ id: "m", role: "user", parts: [mediaFromDataUrl("data:image/png;base64,secret", "chart.png")] }],
       [],
       [{ id: "financial", description: "Official financial calculations" }],
     );
@@ -574,13 +559,11 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     async (name, contentType, bytes) => {
       fetchMock.mockResolvedValueOnce(finished(response([textItem("Read")])));
       const data = `data:${contentType};base64,${bytes}`;
-      const history: Message[] = [
+      const history: UIMessage[] = [
         {
+          id: "m",
           role: "user",
-          content: [
-            { type: "text", text: "Read this" },
-            { type: "file", name, data, contentType },
-          ],
+          parts: [{ type: "text", content: "Read this" }, mediaFromDataUrl(data, name, "document")],
         },
       ];
       const before = JSON.stringify(history);
@@ -609,35 +592,37 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         .mockResolvedValueOnce(finished(response([textItem("Saved")])))
         .mockResolvedValueOnce(finished(response([textItem("Continued")])));
       const media: Awaited<ReturnType<Tool["function"]>> = [
-        { type: "text", text: "Created the documents" },
-        {
-          type: "file",
-          name: "notes.docx",
-          data: "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDBA==",
-        },
-        { type: "file", name: "notes.pdf", data: "data:application/pdf;base64,JVBERi0xLjQ=" },
-        { type: "file", name: "archive.bin", data: "data:application/octet-stream;base64,AQ==" },
-        { type: "image", name: "chart.png", data: "data:image/png;base64,AQ==" },
-        { type: "audio", name: "speech.wav", data: "data:audio/wav;base64,AQ==" },
+        ...output("Created the documents"),
+        mediaFromDataUrl(
+          "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDBA==",
+          "notes.docx",
+        ),
+        mediaFromDataUrl("data:application/pdf;base64,JVBERi0xLjQ=", "notes.pdf"),
+        mediaFromDataUrl("data:application/octet-stream;base64,AQ==", "archive.bin"),
+        mediaFromDataUrl("data:image/png;base64,AQ==", "chart.png"),
+        mediaFromDataUrl("data:audio/wav;base64,AQ==", "speech.wav"),
       ];
       const execute = vi.fn<Tool["function"]>(async (_args, context) => {
         context?.setMeta?.({ files: ["/notes.docx", "/notes.pdf"] });
         return media;
       });
       const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
-      const hooks = prepared ? { prepareMessages: (messages: Message[]) => messages } : {};
+      const hooks = prepared ? { prepareMessages: (messages: ModelMessage[]) => messages } : {};
       const client = new Client();
       const first = await run(client, "model", "", prompt, tools, hooks);
       expect(first.status).toBe("completed");
-      const restored: Message[] = JSON.parse(JSON.stringify(first.messages));
-      const next = await run(client, "model", "", [...restored, ...prompt], tools, hooks);
+      const restored: UIMessage[] = JSON.parse(JSON.stringify(first.messages));
+      const next = await run(client, "model", "", [...restored, user("Go")], tools, hooks);
       expect(next.status).toBe("completed");
-      expect(next.messages.at(-1)?.content).toEqual([{ type: "text", text: "Continued" }]);
+      expect(next.messages.at(-1)?.parts).toEqual([{ type: "text", content: "Continued" }]);
       expect(execute).toHaveBeenCalledOnce();
       expect(fetchMock).toHaveBeenCalledTimes(3);
       for (const messages of [first.messages, next.messages]) {
-        expect(messages.find((message) => message.id === "result-call_test")?.content).toEqual([
-          expect.objectContaining({ result: media, meta: { files: ["/notes.docx", "/notes.pdf"] } }),
+        expect(messages.flatMap(toolResults)).toEqual([
+          expect.objectContaining({
+            toolCallId: "call_test",
+            metadata: { result: media, meta: { files: ["/notes.docx", "/notes.pdf"] } },
+          }),
         ]);
       }
       for (const request of fetchMock.mock.calls.slice(1)) {
@@ -678,7 +663,7 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     const result = (
       await runMessages(new Client(), "model", "", prompt, [], { middleware: [observeText(onStream)] })
     ).at(-1)!;
-    expect(result.content).toEqual([{ type: "text", text: "Hello world!" }]);
+    expect(result.parts).toEqual([{ type: "text", content: "Hello world!" }]);
     const updates = [
       ...new Set(
         onStream.mock.calls.flatMap(([parts]) =>
@@ -702,9 +687,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     const answer = (
       await runMessages(new Client(), "team-model", "Instructions", prompt, [], { middleware: [observeText(stream)] })
     ).at(-1)!;
-    expect(answer.content).toEqual([{ type: "text", text: "Hello" }]);
+    expect(answer.parts).toEqual([{ type: "text", content: "Hello" }]);
     expect(stream).toHaveBeenCalledWith(expect.arrayContaining([{ type: "text", text: "Hello" }]));
-    expect(answer.usage).toMatchObject({
+    expect(messageMetadata(answer).usage).toMatchObject({
       model: "resolved-model",
       reasoningContext: "current_turn",
       inputTokens: 10,
@@ -731,9 +716,10 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
       .mockResolvedValueOnce(finished(response([textItem("Next")])));
     const client = new Client();
     const answer = (await runMessages(client, "model", "", prompt, [])).at(-1)!;
-    expect(answer.content).toEqual([
-      { type: "text", text: "Working", phase: "commentary" },
-      { type: "text", text: "Done", phase: "final_answer" },
+    expect(messageText(answer)).toBe("WorkingDone");
+    expect(textSegments(answer)).toEqual([
+      { content: "Working", phase: "commentary" },
+      { content: "Done", phase: "final_answer" },
     ]);
     await runMessages(client, "model", "", [...prompt, answer], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
@@ -747,8 +733,8 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("runs tools with TanStack and sends their results in the next model request", async () => {
     fetchMock
       .mockResolvedValueOnce(finished(response([callItem('{"text":"Save"}')])))
-      .mockResolvedValueOnce(finished(response([textItem("Done")], { id: "resp_final" })));
-    const execute = vi.fn(async () => [{ type: "text" as const, text: "Saved" }]);
+      .mockResolvedValueOnce(finished(response([{ ...textItem("Done"), id: "msg_done" }], { id: "resp_final" })));
+    const execute = vi.fn(async () => output("Saved"));
     const result = await run(new Client(), "model", "", prompt, [
       {
         name: "write",
@@ -758,13 +744,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     ]);
     expect(result.status).toBe("completed");
     expect(execute).toHaveBeenCalledExactlyOnceWith({ text: "Save" }, expect.anything());
-    expect(result.messages.map((message) => message.content.map((part) => part.type))).toEqual([
+    // The Responses adapter keeps one assistant message per run across tool rounds.
+    expect(result.messages.map((message) => message.parts.map((part) => part.type))).toEqual([
       ["text"],
-      ["tool_call"],
-      ["tool_result"],
-      ["text"],
+      ["tool-call", "tool-result", "text"],
     ]);
-    expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(messageText(result.messages.at(-1)!)).toBe("Done");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -779,30 +764,35 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
   it("continues after a failed tool with prepared history and replays it without empty user turns", async () => {
     fetchMock
       .mockResolvedValueOnce(finished(response([callItem()])))
-      .mockResolvedValueOnce(finished(response([textItem("Recovered")], { id: "resp_recovered" })))
-      .mockResolvedValueOnce(finished(response([textItem("Continued")], { id: "resp_continued" })));
+      .mockResolvedValueOnce(
+        finished(response([{ ...textItem("Recovered"), id: "msg_recovered" }], { id: "resp_recovered" })),
+      )
+      .mockResolvedValueOnce(
+        finished(response([{ ...textItem("Continued"), id: "msg_continued" }], { id: "resp_continued" })),
+      );
     const error = { code: "PYTHON_EXECUTION_ERROR", message: "AssertionError on line 31" };
     const execute = vi.fn<Tool["function"]>(async (_args, context) => {
       context?.setError?.(error);
-      return [{ type: "text", text: error.message }];
+      return output(error.message);
     });
     const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
     const client = new Client();
-    const hooks = { prepareMessages: (messages: Message[]) => messages };
+    const hooks = { prepareMessages: (messages: ModelMessage[]) => messages };
     const first = await run(client, "model", "", prompt, tools, hooks);
     expect(first.error).toBeUndefined();
     expect(first.status).toBe("completed");
-    expect(first.messages.at(-1)?.content).toEqual([{ type: "text", text: "Recovered" }]);
+    expect(messageText(first.messages.at(-1)!)).toBe("Recovered");
+    expect(first.messages.at(-1)?.parts.map((part) => part.type)).toEqual(["tool-call", "tool-result", "text"]);
 
-    const restored: Message[] = JSON.parse(JSON.stringify(first.messages));
-    const next = await run(client, "model", "", [...restored, ...prompt], tools, hooks);
+    const restored: UIMessage[] = JSON.parse(JSON.stringify(first.messages));
+    const next = await run(client, "model", "", [...restored, user("Go")], tools, hooks);
     expect(next.status).toBe("completed");
-    expect(next.messages.at(-1)?.content).toEqual([{ type: "text", text: "Continued" }]);
+    expect(messageText(next.messages.at(-1)!)).toBe("Continued");
     expect(execute).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(new Set(next.messages.map((message) => message.id)).size).toBe(next.messages.length);
-    expect(next.messages.filter((message) => message.id === "result-call_test")).toMatchObject([
-      { error, content: [{ type: "tool_result", id: "call_test" }] },
+    expect(next.messages.flatMap(toolResults)).toMatchObject([
+      { toolCallId: "call_test", state: "error", error: error.message, metadata: { error } },
     ]);
     for (const request of fetchMock.mock.calls.slice(1)) {
       const input = JSON.parse(request[1].body).input;
@@ -937,9 +927,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     });
     const result = await run(new Client(), "model", "", prompt, [], { middleware: [observeText(onStream)] });
     expect(result.status).toBe("failed");
-    expect(result.messages.map(({ role, content }) => ({ role, content }))).toEqual([
-      ...prompt,
-      { role: "assistant", content: [{ type: "text", text: "Partial" }] },
+    expect(result.messages.map(({ role, parts }) => ({ role, parts }))).toEqual([
+      { role: "user", parts: [{ type: "text", content: "Go" }] },
+      { role: "assistant", parts: [{ type: "text", content: "Partial" }] },
     ]);
     expect(onStream).toHaveBeenCalledWith([{ type: "text", text: "Partial" }]);
     expect(fetchMock).toHaveBeenCalledOnce();

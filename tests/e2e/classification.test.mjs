@@ -10,7 +10,7 @@ const CREDIT = "Credit or Creditworthiness Decision";
 const PEOPLE = "HR or People Support";
 const PORTFOLIO = "Investment Content Support";
 const OPERATIONS = "Operations, Finance, or Administrative Support";
-const message = (text) => ({ role: "user", content: [{ type: "text", text }] });
+const message = (text, role = "user") => ({ id: crypto.randomUUID(), role, parts: [{ type: "text", content: text }] });
 const slug = (name) => name.trim().toLowerCase().replace(/\s+/g, "_");
 // Allow comparison with the previous config while preserving the actual request labels.
 const categoryName = (name) => name.replace(/ \(Non-(?:Advisory|Determinative|Judgement)\)$/, "");
@@ -175,7 +175,7 @@ const samples = [
     name: "HR follow-up",
     history: [
       message("Rank these candidates and recommend whom to hire."),
-      { role: "assistant", content: [{ type: "text", text: "Candidate A has the most relevant experience." }] },
+      message("Candidate A has the most relevant experience.", "assistant"),
       message("Do the same for the next three CVs."),
     ],
     category: PEOPLE,
@@ -185,7 +185,7 @@ const samples = [
     name: "topic change",
     history: [
       message("Rank these candidates and recommend whom to hire."),
-      { role: "assistant", content: [{ type: "text", text: "Candidate A has the most relevant experience." }] },
+      message("Candidate A has the most relevant experience.", "assistant"),
       message("Thanks. Now write a friendly birthday greeting for my sister."),
     ],
     category: "Social, Personal, or Informal Use",

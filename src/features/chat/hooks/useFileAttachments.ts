@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { notify } from "@/shared/lib/notify";
 import { formatBytes, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent } from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { mediaFromDataUrl, type MediaPart } from "@/shared/lib/messages";
 
 interface UseFileAttachmentsOptions {
   visionFiles: string[];
@@ -42,7 +43,7 @@ export function chatAcceptString(visionFiles: string[], artifactsAvailable: bool
 }
 
 export interface UseFileAttachmentsReturn {
-  attachments: Content[];
+  attachments: ContentPart[];
   pendingFiles: File[];
   /** Original image files aligned 1:1 with `attachments`, persisted at send. */
   pendingImages: (File | null)[];
@@ -61,7 +62,7 @@ export function useFileAttachments({
   artifactsMaxFileSize,
   getTakenFileNames,
 }: UseFileAttachmentsOptions): UseFileAttachmentsReturn {
-  const [attachments, setAttachments] = useState<Content[]>([]);
+  const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   // Original image files aligned 1:1 with `attachments`, persisted at send.
   const [pendingImages, setPendingImages] = useState<(File | null)[]>([]);
@@ -129,15 +130,14 @@ export function useFileAttachments({
           images.map(async ({ file, keepOriginal }) => {
             const blob = await resizeImageBlob(file, 1920, 1920);
             const dataUrl = await readAsDataURL(blob);
-            const content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
+            const content = mediaFromDataUrl(dataUrl, file.name, "image");
             return { content, original: keepOriginal ? file : null };
           }),
         );
 
         const valid = settled
           .filter(
-            (r): r is PromiseFulfilledResult<{ content: ImageContent; original: File | null }> =>
-              r.status === "fulfilled",
+            (r): r is PromiseFulfilledResult<{ content: MediaPart; original: File | null }> => r.status === "fulfilled",
           )
           .map((r) => r.value);
 

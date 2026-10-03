@@ -1,13 +1,8 @@
 import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { getToolDisplayName } from "@/shared/lib/utils";
-import type {
-  Content,
-  Tool,
-  ToolDisplayBlock,
-  ToolDisplayIcon,
-  ToolDisplayState,
-  ToolProvider,
-} from "@/shared/types/chat";
+import type { ContentPart } from "@tanstack/ai";
+import { outputText } from "@/shared/lib/messages";
+import type { Tool, ToolDisplayBlock, ToolDisplayIcon, ToolDisplayState, ToolProvider } from "@/shared/types/chat";
 import { getToolCallPreview } from "./chatMessageUtils";
 import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
 import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
@@ -85,7 +80,7 @@ export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undef
  * block of the textual result. Media (images/audio/files) renders separately, so
  * a pure-media result yields null.
  */
-export function resolveToolOutput(tool: Tool | undefined, result: Content[]): ToolDisplayBlock | null {
+export function resolveToolOutput(tool: Tool | undefined, result: ContentPart[]): ToolDisplayBlock | null {
   const output = tool?.display?.output;
   return output ? output(result) : defaultOutputBlock(result);
 }
@@ -125,8 +120,7 @@ function defaultInputBlocks(rawArgs: string | undefined): ToolDisplayBlock[] {
   return [{ ...jsonOrText(trimmed), name: "Arguments" }];
 }
 
-function defaultOutputBlock(result: Content[]): ToolDisplayBlock | null {
-  const texts = result.filter((c): c is Extract<Content, { type: "text" }> => c.type === "text").map((c) => c.text);
-  if (texts.length === 0) return null; // pure media — rendered separately
-  return { ...jsonOrText(texts.join("\n")), name: "Result" };
+function defaultOutputBlock(result: ContentPart[]): ToolDisplayBlock | null {
+  if (!result.some((part) => part.type === "text")) return null; // pure media — rendered separately
+  return { ...jsonOrText(outputText(result)), name: "Result" };
 }

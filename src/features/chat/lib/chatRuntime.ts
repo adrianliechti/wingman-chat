@@ -1,110 +1,67 @@
-import type { MetadataStore } from "@tanstack/ai";
-import type { ChatPendingInterrupt, ChatPersistedState } from "@tanstack/ai-client";
-import { aiSignature, readAISignature } from "@/shared/lib/aiMessages";
-import type { Compaction, Interrupt, PendingRun } from "@/shared/types/chat";
+import type { MetadataStore, UIMessage } from "@tanstack/ai";
+import { messageMetadata } from "@/shared/lib/messages";
+import type { ChatMetadata, MessageError } from "@/shared/types/chat";
 
-/** Namespace @tanstack/ai-compaction keeps its checkpoints under. */
-const CHECKPOINT_NAMESPACE = "@tanstack/ai-compaction";
-const SUMMARY = /<untrusted-conversation-summary>\n([\s\S]*?)\n<\/untrusted-conversation-summary>/;
-/** Interrupt metadata keys that only the runtime reads (e.g. its resume binding). */
-const RUNTIME_METADATA = "tanstack:";
-
-type ChatResume = ChatPersistedState["resume"];
-
-/** The client tells interrupts apart by which keys are present, so absent fields must stay absent. */
-function defined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-}
-
-/** The chat's pending run as ChatClient's resume snapshot. */
-export function toResume(chatId: string, run?: PendingRun): ChatResume {
-  if (!run) return undefined;
+/**
+ * Middleware state lives on the chat, namespaced the way TanStack's metadata
+ * capability expects. A subagent's context is scoped under the same thread so
+ * its checkpoints never collide with the chat's own.
+ */
+export function chatMetadataStore(
+  read: () => ChatMetadata | undefined,
+  write: (update: (metadata: ChatMetadata) => ChatMetadata) => void,
+  subagentRunId?: string,
+): MetadataStore {
+  const scoped = (key: string) => (subagentRunId ? `${key}/${subagentRunId}` : key);
   return {
-    resumeState: { threadId: readAISignature<{ threadId: string }>(run.signature)?.threadId ?? chatId, runId: run.id },
-    pendingInterrupts: run.interrupts.map(({ subagentId, schema, metadata, signature, ...interrupt }) => {
-      const merged = { ...metadata, ...readAISignature<Record<string, unknown>>(signature) };
-      return defined<ChatPendingInterrupt>({
-        ...interrupt,
-        subagentRunId: subagentId,
-        responseSchema: schema,
-        metadata: Object.keys(merged).length ? merged : undefined,
-      });
-    }),
+    get: async (namespace, key) => read()?.[namespace]?.[scoped(key)] ?? null,
+    set: async (namespace, key, value) =>
+      write((metadata) => ({ ...metadata, [namespace]: { ...metadata[namespace], [scoped(key)]: value } })),
+    delete: async (namespace, key) =>
+      write((metadata) => {
+        const { [scoped(key)]: _removed, ...rest } = metadata[namespace] ?? {};
+        return { ...metadata, [namespace]: rest };
+      }),
   };
 }
 
-/** Only a run waiting on interrupts is kept; a bare in-flight run cannot outlive the page. */
-export function fromResume(resume: ChatResume): PendingRun | undefined {
-  if (!resume?.pendingInterrupts?.length) return undefined;
-  const { threadId, runId } = resume.resumeState;
-  return defined<PendingRun>({
-    id: runId,
-    interrupts: resume.pendingInterrupts.map(
-      ({ id, reason, message, toolCallId, subagentRunId, responseSchema, expiresAt, metadata = {} }) => {
-        const runtime = Object.entries(metadata).filter(([key]) => key.startsWith(RUNTIME_METADATA));
-        const readable = Object.entries(metadata).filter(([key]) => !key.startsWith(RUNTIME_METADATA));
-        return defined<Interrupt>({
-          id,
-          reason,
-          message,
-          toolCallId,
-          subagentId: subagentRunId,
-          schema: responseSchema,
-          expiresAt,
-          metadata: readable.length ? Object.fromEntries(readable) : undefined,
-          signature: aiSignature(Object.fromEntries(runtime)),
-        });
-      },
-    ),
-    signature: aiSignature({ threadId }),
-  });
+/** The native transcript without the empty assistant TanStack opens for a run that produced nothing. */
+function withoutTrailingEmptyAssistant(messages: UIMessage[]): UIMessage[] {
+  const last = messages.at(-1);
+  return last?.role === "assistant" && !last.parts.length && !messageMetadata(last).error
+    ? messages.slice(0, -1)
+    : messages;
 }
 
-function summaryText(checkpoint: unknown): string | undefined {
-  const messages = (checkpoint as { compactedMessages?: { content?: unknown }[] } | null)?.compactedMessages ?? [];
-  for (const { content } of messages) {
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .map((part: { content?: unknown }) => (typeof part.content === "string" ? part.content : ""))
-              .join("")
-          : "";
-    const summary = SUMMARY.exec(text)?.[1];
-    if (summary) return summary;
-  }
-  return undefined;
+/** A failed run ends with its own assistant turn so the transcript shows the error and offers a retry. */
+export function withRunError(messages: UIMessage[], error: MessageError): UIMessage[] {
+  return [
+    ...withoutTrailingEmptyAssistant(messages),
+    { id: crypto.randomUUID(), role: "assistant", parts: [], createdAt: new Date(), metadata: { error } },
+  ];
 }
 
 /**
- * Compaction checkpoints live on the chat, one per context (the chat or a
- * subagent). The runtime validates a checkpoint against the current prefix,
- * so a stale one is recomputed and replaced rather than reused.
+ * What a retry resends: the transcript up to the last committed work. Tool
+ * results stay so the model continues from them; a partial answer, an
+ * unanswered tool call, or reasoning without an answer is regenerated.
  */
-export function compactionStore(
-  read: () => Compaction[] | undefined,
-  write: (update: (compactions: Compaction[]) => Compaction[]) => void,
-  subagentId?: string,
-): MetadataStore {
-  const others = (compactions: Compaction[]) => compactions.filter((item) => item.subagentId !== subagentId);
-  return {
-    get: async (namespace) =>
-      namespace === CHECKPOINT_NAMESPACE
-        ? (readAISignature(read()?.find((item) => item.subagentId === subagentId)?.signature) ?? null)
-        : null,
-    set: async (namespace, _key, value) => {
-      if (namespace !== CHECKPOINT_NAMESPACE) return;
-      const text = summaryText(value);
-      const signature = aiSignature(value as Record<string, unknown>);
-      if (!signature) return;
-      write((compactions) => [
-        ...others(compactions),
-        { ...(subagentId ? { subagentId } : {}), ...(text ? { text } : {}), signature },
-      ]);
-    },
-    delete: async (namespace) => {
-      if (namespace === CHECKPOINT_NAMESPACE) write(others);
-    },
-  };
+export function retryHistory(messages: UIMessage[]): { history: UIMessage[]; resend: UIMessage } | undefined {
+  const trimmed = withoutTrailingEmptyAssistant(messages);
+  const failed = trimmed.at(-1);
+  if (failed?.role !== "assistant" || !messageMetadata(failed).error) return undefined;
+  const { error: _error, ...metadata } = failed.metadata!;
+  const history = [...trimmed.slice(0, -1), { ...failed, metadata }];
+  while (history.length) {
+    const last = history[history.length - 1];
+    if (last.role !== "assistant") break;
+    const committed = last.parts.findLastIndex((part) => part.type === "tool-result");
+    if (committed >= 0) {
+      history[history.length - 1] = { ...last, parts: last.parts.slice(0, committed + 1) };
+      break;
+    }
+    history.pop();
+  }
+  if (!history.some((message) => message.role === "user")) return undefined;
+  return { history: history.slice(0, -1), resend: history[history.length - 1] };
 }

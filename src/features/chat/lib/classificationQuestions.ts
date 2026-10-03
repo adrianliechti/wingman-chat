@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isUserMessage } from "@/shared/lib/requestContext";
-import type { Message } from "@/shared/types/chat";
+import type { UIMessage } from "@tanstack/ai";
+import { isUserPrompt } from "@/shared/lib/messages";
 import { sanitizeForClassification } from "./chatHistory";
 
 type SystemOneQuestion =
@@ -32,16 +32,16 @@ const FOCUS =
  * Returns null when there is nothing to ask.
  */
 export function classificationRequest(
-  history: Message[],
+  history: UIMessage[],
   categories: ClassificationItem[],
   risks: ClassificationItem[],
 ) {
-  const latestIndex = history.findLastIndex(isUserMessage);
+  const latestIndex = history.findLastIndex(isUserPrompt);
   if (latestIndex < 0 || (categories.length === 0 && risks.length === 0)) return null;
 
   const earlier = sanitizeForClassification(history.slice(0, latestIndex + 1));
   const latest = earlier.pop();
-  if (!latest?.content.some((p) => (p.type === "text" || p.type === "summary") && p.text.trim())) return null;
+  if (!latest?.content.some((p) => p.text.trim())) return null;
   const state = { latest_user_message: latest, earlier_messages: earlier };
 
   const questions: Record<string, SystemOneQuestion> = {};
