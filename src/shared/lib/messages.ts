@@ -303,14 +303,17 @@ export function outputText(output: readonly ContentPart[]): string {
 
 /** Apply `update` to every message, recursing into subagent conversations. */
 export function mapMessages(messages: UIMessage[], update: (message: UIMessage) => UIMessage): UIMessage[] {
-  return messages.map((message) => {
-    const parts = message.parts.map((part) =>
-      part.type === "subagent"
-        ? { ...part, subagent: { ...part.subagent, messages: mapMessages(part.subagent.messages, update) } }
-        : part,
-    );
+  const mapped = messages.map((message) => {
+    const parts = message.parts.map((part) => {
+      if (part.type !== "subagent") return part;
+      const children = mapMessages(part.subagent.messages, update);
+      return children === part.subagent.messages
+        ? part
+        : { ...part, subagent: { ...part.subagent, messages: children } };
+    });
     return update(parts.some((part, index) => part !== message.parts[index]) ? { ...message, parts } : message);
   });
+  return mapped.some((message, index) => message !== messages[index]) ? mapped : messages;
 }
 
 /** Replace one tool's metadata without mutating earlier history snapshots. */

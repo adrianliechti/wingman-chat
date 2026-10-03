@@ -7,6 +7,7 @@ import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
 import type { Client } from "@/shared/lib/client";
 import { outputText } from "@/shared/lib/messages";
+import { getErrorInfo } from "@/shared/lib/errors";
 import type { ToolProvider } from "@/shared/types/chat";
 
 type Config = ReturnType<typeof getConfig>;
@@ -28,6 +29,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
       guard = await client.guard(internet.guard ?? "", prompt, { signal });
     } catch (error) {
       signal?.throwIfAborted();
+      if (getErrorInfo(error).code === "TIMEOUT") throw error;
       throw new Error("The Guardrail system is not available. Please try again later.", { cause: error });
     }
     signal?.throwIfAborted();
@@ -53,19 +55,14 @@ export function createInternetProvider(client: Client, internet: Config["interne
         const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
         if (!prompt) throw new Error("prompt is required");
         if (mode === "fast" && !search) throw new Error("Fast search is unavailable; use deep mode.");
-        let signal = context.signal;
-        if (mode === "fast") {
-          const timeout = AbortSignal.timeout(15_000);
-          signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-        }
-
+        const { signal } = context;
         await guardPrompt(prompt, signal);
         if (mode === "fast" && search) {
           return outputText(
             await search.execute(
               { queries: [prompt], limit: 3 },
               {
-                context: { ...context, signal },
+                context,
                 abortSignal: signal,
                 emitCustomEvent() {},
               },

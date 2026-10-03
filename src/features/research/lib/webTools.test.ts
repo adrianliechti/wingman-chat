@@ -71,6 +71,19 @@ it("does not cache errors or empty results, and preserves successful batch membe
   expect(client.search).toHaveBeenCalledTimes(5);
 });
 
+it.each(["search", "fetch"] as const)("fails %s when every request fails, and permits a retry", async (kind) => {
+  const { client, search, fetch } = fixture();
+  const request = kind === "search" ? client.search : client.scrape;
+  request.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  const tool = kind === "search" ? search : fetch;
+  const args = kind === "search" ? { queries: ["topic"] } : { urls: ["https://example.com"] };
+  const execution = { context: undefined, abortSignal: new AbortController().signal, emitCustomEvent() {} };
+  await expect(tool.execute(args, execution)).rejects.toThrow("Failed to fetch");
+  await expect(tool.execute(args, execution)).resolves.toBeDefined();
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[0].at(-1)).toEqual({ signal: execution.abortSignal });
+});
+
 it("reads relevant text beyond the old truncation point and paginates without another fetch", async () => {
   const { fetch, client, context } = fixture();
   const page = "Background. ".repeat(1800) + "The launch date is 14 May 2031. " + "Appendix. ".repeat(300);

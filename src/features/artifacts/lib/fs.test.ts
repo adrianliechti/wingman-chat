@@ -25,6 +25,9 @@ import {
 } from "./executeArtifactCode";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactRevision } from "@/shared/types/artifact";
+import { run as runAgent } from "@/shared/lib/agent";
+import { assistant, calls, testClient, user } from "@/shared/lib/test-support/ai";
+import { createAgentTool } from "@/features/tools/lib/subagent";
 
 describe("FileSystemManager.renameFile", () => {
   beforeEach(() => {
@@ -501,6 +504,37 @@ describe("coordinated artifact tools", () => {
       );
     expect(JSON.stringify(result)).toContain("changed since");
     expect(files.get("/a.txt")?.content).toBe("alpha external");
+  });
+
+  it("retains a native child's read baseline across tool calls and rejects a stale edit", async () => {
+    const fs = new FileSystemManager("native-child");
+    const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(calls(["delegate", "agent", { prompt: "Edit the file" }]))
+      .mockResolvedValueOnce(calls(["read", "artifacts_read", { file_path: "/a.txt" }]))
+      .mockImplementationOnce(async () => {
+        await fs.createFile("/a.txt", "alpha external");
+        return calls([
+          "edit",
+          "artifacts_edit",
+          {
+            edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }],
+          },
+        ]);
+      })
+      .mockResolvedValue(assistant("Done"));
+    const result = await runAgent(
+      testClient(complete),
+      "model",
+      "",
+      [user("Edit")],
+      [createAgentTool("agent", "Edit a file", { instructions: "", tools, inheritHistory: false })],
+    );
+    expect(result.status).toBe("completed");
+    expect(complete).toHaveBeenCalledTimes(5);
+    expect(files.get("/a.txt")?.content).toBe("alpha external");
+    expect(JSON.stringify(result.messages)).toContain("changed since");
   });
 
   it("does not lose the main baseline after many short-lived child runs", async () => {

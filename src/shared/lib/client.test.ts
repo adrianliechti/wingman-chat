@@ -274,6 +274,23 @@ describe("raw request lifetime", () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([" First ", { text: "Second\nline" }, " "])));
     expect(await new Client().segmentText("Source")).toEqual([" First ", "Second\nline"]);
   });
+  it.each([null, {}, { flagged: "false" }, { flagged: false, categories: [null] }])(
+    "rejects malformed guard responses instead of treating them as approval: %j",
+    async (body) => {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body)));
+      await expect(new Client().guard("model", "Text")).rejects.toThrow("guard service returned an invalid response");
+    },
+  );
+
+  it("rejects malformed search and research responses instead of reporting empty findings", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Unavailable" })));
+    await expect(new Client().search("model", "Query")).rejects.toThrow("search service returned an invalid response");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ content: 42 })));
+    await expect(new Client().research("model", "Query")).rejects.toThrow(
+      "research service returned an invalid response",
+    );
+  });
+
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
@@ -311,6 +328,7 @@ describe("raw request lifetime", () => {
     await vi.advanceTimersByTimeAsync(90_000);
     expect(settled).toHaveBeenCalledOnce();
     await expect(request).rejects.toThrow("/api/v1/extract timed out after 90s");
+    await expect(request).rejects.toMatchObject({ name: "TimeoutError" });
     expect(vi.getTimerCount()).toBe(0);
   });
 

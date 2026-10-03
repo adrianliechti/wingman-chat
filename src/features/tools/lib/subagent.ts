@@ -5,6 +5,7 @@ import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
+import { getErrorInfo } from "@/shared/lib/errors";
 import { finalText, toolResultMetadata, userMessage } from "@/shared/lib/messages";
 import { captureRequestContext, injectRequestContext } from "@/shared/lib/requestContext";
 import { artifactDelta, artifactDeltaFromMeta } from "@/shared/types/artifact";
@@ -52,6 +53,8 @@ export function createAgentTool(
     }),
     execute: async (args, execution) => {
       const ctx = execution?.context;
+      const parentSignal = execution?.abortSignal ?? ctx?.signal;
+      parentSignal?.throwIfAborted();
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) {
         return [{ type: "text", content: "Error: prompt is required" }];
@@ -61,13 +64,13 @@ export function createAgentTool(
         if (!ctx?.elicit)
           return [{ type: "text", content: "This task requires confirmation, which is unavailable in this context." }];
         const answer = await ctx.elicit({ message: `${description}\n\n${prompt}` });
-        ctx.signal?.throwIfAborted();
+        parentSignal?.throwIfAborted();
         if (answer.action !== "accept") return [{ type: "text", content: "Cancelled by user." }];
       }
 
       try {
         const timeout = spec.timeoutMs ? AbortSignal.timeout(spec.timeoutMs) : undefined;
-        const signal = timeout && ctx?.signal ? AbortSignal.any([ctx.signal, timeout]) : (timeout ?? ctx?.signal);
+        const signal = timeout && parentSignal ? AbortSignal.any([parentSignal, timeout]) : (timeout ?? parentSignal);
         signal?.throwIfAborted();
         const direct = await spec.direct?.(args, { ...ctx, model, signal });
         signal?.throwIfAborted();
@@ -107,6 +110,7 @@ export function createAgentTool(
             part.type === "tool-result" ? (artifactDeltaFromMeta(toolResultMetadata(part).meta)?.mutations ?? []) : [],
           );
         if (mutations.length) ctx?.setMeta?.({ artifactDelta: artifactDelta(mutations) });
+        parentSignal?.throwIfAborted();
 
         if (runResult.status === "aborted") {
           return [{ type: "text", content: "Subagent interrupted before finishing." }];
@@ -123,7 +127,8 @@ export function createAgentTool(
         const text = last ? finalText(last).trim() : "";
         return [{ type: "text", content: text || "Subagent completed but produced no output." }];
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        parentSignal?.throwIfAborted();
+        const { message } = getErrorInfo(error);
         return [{ type: "text", content: `Subagent error: ${message}` }];
       }
     },

@@ -530,7 +530,7 @@ export class Client {
       90_000,
       requestOptions,
     );
-    if (!Array.isArray(results)) return [];
+    if (!Array.isArray(results)) throw new Error("The search service returned an invalid response");
 
     return results.map((result: SearchResult) => {
       let content = simplifyMarkdown(result.content || "");
@@ -550,10 +550,14 @@ export class Client {
       90_000,
       requestOptions,
     );
-    return {
-      flagged: result?.flagged === true,
-      categories: Array.isArray(result?.categories) ? result.categories : [],
-    };
+    const parsed = z
+      .object({
+        flagged: z.boolean(),
+        categories: z.array(z.object({ name: z.string(), score: z.number() })).nullish(),
+      })
+      .safeParse(result);
+    if (!parsed.success) throw new Error("The guard service returned an invalid response");
+    return { flagged: parsed.data.flagged, categories: parsed.data.categories ?? [] };
   }
 
   async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
@@ -563,7 +567,8 @@ export class Client {
       (resp) => resp.json(),
       requestOptions,
     );
-    return result.content || "";
+    if (typeof result?.content !== "string") throw new Error("The research service returned an invalid response");
+    return result.content;
   }
 
   async generateImage(
@@ -681,10 +686,10 @@ export class Client {
       timeoutController.signal,
       ...(requestOptions.signal ? [requestOptions.signal] : []),
     ]);
-    let timedOut = false;
     const timer = setTimeout(() => {
-      timedOut = true;
-      timeoutController.abort();
+      timeoutController.abort(
+        new DOMException(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`, "TimeoutError"),
+      );
     }, timeoutMs);
     try {
       const resp = await fetch(new URL(path, window.location.origin), {
@@ -707,7 +712,7 @@ export class Client {
       requestOptions.signal?.throwIfAborted();
       // Surface a readable timeout instead of the runtime's opaque abort message
       // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
-      if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
+      timeoutController.signal.throwIfAborted();
       throw error;
     } finally {
       clearTimeout(timer);

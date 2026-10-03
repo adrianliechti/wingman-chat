@@ -56,6 +56,34 @@ it("streams research as a native child with a self-contained brief and child can
   expect(JSON.stringify(complete.mock.calls.at(-1)?.[0].messages)).toContain("Report with sources");
 });
 
+it("allows fast search to finish after a slow guard check within the task deadline", async () => {
+  vi.useFakeTimers();
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("Deadline expired", "TimeoutError")), ms);
+    return controller.signal;
+  });
+  try {
+    const { client, complete, tools } = fixture();
+    client.guard.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16_000));
+      return { flagged: false, categories: [] };
+    });
+    complete
+      .mockResolvedValueOnce(call("web_research", { prompt: brief, mode: "fast" }))
+      .mockResolvedValueOnce(answer("Parent answer"));
+    const task = run(client, "model", "", [userMessage("Research")], tools);
+    await vi.advanceTimersByTimeAsync(16_000);
+    const result = await task;
+    expect(client.search).toHaveBeenCalledOnce();
+    expect(JSON.stringify(result.messages)).toContain("Evidence");
+    expect(complete).toHaveBeenCalledTimes(2);
+  } finally {
+    timeout.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("uses the configured deep-research model while the parent retains its model", async () => {
   const { client, complete, tools } = fixture(false, "cheaper-research-model");
   complete
@@ -318,7 +346,9 @@ it.each(["fast", "deep"])("does not begin %s work when cancellation arrives duri
     return { flagged: false, categories: [] };
   });
   const tool = createInternetProvider(remote, { searcher: "search", researcher: "remote" })!.tools[0];
-  await tool.execute({ prompt: brief, mode }, { context: { signal: controller.signal }, emitCustomEvent() {} });
+  await expect(
+    tool.execute({ prompt: brief, mode }, { context: undefined, abortSignal: controller.signal, emitCustomEvent() {} }),
+  ).rejects.toMatchObject({ name: "AbortError" });
   expect(client.guard).toHaveBeenCalledOnce();
   expect(client.search).not.toHaveBeenCalled();
   expect(remote.research).not.toHaveBeenCalled();
@@ -335,4 +365,17 @@ it.each(["flagged", "unavailable"])("does not call a configured researcher when 
   expect(remote.research).not.toHaveBeenCalled();
   expect(client.guard).toHaveBeenCalledWith("selected-guard", brief, { signal: expect.any(AbortSignal) });
   expect(JSON.stringify(result)).toContain(failure === "flagged" ? "Request blocked" : "not available");
+});
+
+it("reports an expired direct research deadline as a timeout", async () => {
+  const { client, complete, tools } = fixture();
+  client.guard.mockRejectedValue(new DOMException("The operation was aborted", "TimeoutError"));
+  complete
+    .mockResolvedValueOnce(call("web_research", { prompt: brief }))
+    .mockResolvedValueOnce(answer("Could not search"));
+  const result = await run(client, "model", "", [userMessage("Research")], tools);
+  const child = result.messages.flatMap((message) => message.parts).find((part) => part.type === "subagent");
+  expect(child?.subagent.status).toBe("error");
+  expect(JSON.stringify(result.messages)).toContain("timed out");
+  expect(client.search).not.toHaveBeenCalled();
 });

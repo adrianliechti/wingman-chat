@@ -303,6 +303,9 @@ export async function* streamRun(
           let content: Record<string, unknown> | undefined;
           let error: ToolResultMetadata["error"];
           const signal = execution.abortSignal ?? abortController.signal;
+          // Keep TanStack's per-run context identity: file observations belong
+          // to this actor across tool calls, with native middleware cancellation.
+          execution.context.signal = signal;
           const setMeta = (next: Record<string, unknown>) => {
             if (signal.aborted) return;
             meta = next;
@@ -319,7 +322,7 @@ export async function* streamRun(
               interruptible: true,
               inputResponse: execution?.inputResponse,
               runId,
-              invocationContext: { ...execution.context, signal },
+              invocationContext: execution.context,
               signal,
               agentContext: telemetry.toolContext(call.id),
               setMeta,
@@ -358,13 +361,20 @@ export async function* streamRun(
               ? AbortSignal.any([parentSignal, AbortSignal.timeout(spec.timeoutMs)])
               : parentSignal;
             signal.throwIfAborted();
-            const direct = await spec.direct?.(ctx.input as Record<string, unknown>, {
-              model: childModel,
-              signal,
-              interruptible: true,
-              runId: ctx.runId,
-            });
-            signal.throwIfAborted();
+            let direct: string | undefined;
+            try {
+              direct = await spec.direct?.(ctx.input as Record<string, unknown>, {
+                model: childModel,
+                signal,
+                interruptible: true,
+                runId: ctx.runId,
+              });
+              signal.throwIfAborted();
+            } catch (error) {
+              const info = getErrorInfo(signal.aborted ? signal.reason : error);
+              if (info.code === "TIMEOUT") throw Object.assign(new Error(info.message), { code: info.code });
+              throw error;
+            }
             if (direct !== undefined) {
               // Keep the same native approval/result boundary, but return
               // retrieval text without starting a child model generation.
@@ -489,10 +499,11 @@ export async function* streamRun(
     await finish(aborted ? "aborted" : terminal?.outcome?.type === "interrupt" ? "interrupted" : "completed");
     if (terminal) yield terminal;
   } catch (error) {
-    const aborted = abortController.signal.aborted || isAbortError(error);
-    await finish(aborted ? "aborted" : "failed", error);
+    const reason = abortController.signal.aborted ? abortController.signal.reason : error;
+    const info = getErrorInfo(reason);
+    const aborted = info.code !== "TIMEOUT" && (abortController.signal.aborted || isAbortError(reason));
+    await finish(aborted ? "aborted" : "failed", reason);
     if (!aborted) {
-      const info = getErrorInfo(error);
       yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
     }
   } finally {

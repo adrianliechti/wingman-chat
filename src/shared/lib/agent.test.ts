@@ -286,6 +286,9 @@ describe("TanStack agent lifecycle", () => {
     expect(result.status).toBe("completed");
     // Only the parent generated; the child's timeout interrupted request preparation.
     expect(complete).toHaveBeenCalledTimes(2);
+    const child = result.messages.flatMap((message) => message.parts).find((part) => part.type === "subagent");
+    expect(child?.subagent.status).toBe("error");
+    expect(JSON.stringify(complete.mock.calls.at(-1)?.[0].messages)).toContain("timed out");
   });
 
   it("does not execute truncated tool arguments", async () => {

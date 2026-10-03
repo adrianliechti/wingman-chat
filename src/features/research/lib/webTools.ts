@@ -93,7 +93,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
           return [{ type: "text" as const, content: "No queries provided." }];
         }
 
-        const signal = context?.signal;
+        const signal = execution?.abortSignal ?? context?.signal;
         const settled = await webBatch(
           queries,
           (query) =>
@@ -169,7 +169,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
           return [{ type: "text" as const, content: "No URLs provided." }];
         }
 
-        const signal = context?.signal;
+        const signal = execution?.abortSignal ?? context?.signal;
         const settled = await webBatch(
           urls,
           (url) => fetchCache(url, () => client.scrape(scraper, url, { signal }), signal),

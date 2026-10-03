@@ -11,6 +11,7 @@ import {
   isUserPrompt,
   mediaDataUrl,
   mediaFromDataUrl,
+  mapMessages,
   messageMetadata,
   messageText,
   outputText,
@@ -24,6 +25,27 @@ import {
   updateToolResultMeta,
   userMessage,
 } from "./messages";
+
+describe("recursive message transforms", () => {
+  it("preserves unchanged branches and only copies ancestors of an updated child", () => {
+    const child = assistantMessage("Child");
+    const sibling = assistantMessage("Unchanged");
+    const parent = assistantMessage([
+      { type: "subagent", subagent: { id: "s", name: "research", status: "finished", messages: [child, sibling] } },
+    ]);
+    const messages = [userMessage("Go"), parent];
+    expect(mapMessages(messages, (message) => message)).toBe(messages);
+    const updated = { ...child, metadata: { runId: "child-run" } };
+    const result = mapMessages(messages, (message) => (message === child ? updated : message));
+    expect(result[0]).toBe(messages[0]);
+    expect(result[1]).not.toBe(parent);
+    const part = result[1].parts[0];
+    if (part.type !== "subagent") throw new Error("Expected child conversation");
+    expect(part.subagent.messages[0]).toBe(updated);
+    expect(part.subagent.messages[1]).toBe(sibling);
+    expect(child.metadata).toBeUndefined();
+  });
+});
 
 describe("constructors", () => {
   it("builds user and assistant turns with identity and a date", () => {

@@ -38,6 +38,7 @@ export async function queryFileChunks(
   signal?.throwIfAborted();
   if (getModel() !== model) throw new Error("The embedding model changed during search. Please try again.");
   validateEmbeddingVector(embedding.vector);
+  const queryNormSquared = embedding.vector.reduce((sum, value) => sum + value * value, 0);
   const results: FileChunk[] = [];
   // Read membership again after the request. Removed, replaced or unfinished files
   // cannot leak through a stale closure, and IDs need no special delimiter syntax.
@@ -47,16 +48,18 @@ export async function queryFileChunks(
       validateEmbeddingVector(segment.vector);
       if (segment.vector.length !== embedding.vector.length) throw new Error(reindexMessage);
       let dot = 0;
-      let left = 0;
-      let right = 0;
+      let segmentNormSquared = 0;
       for (let index = 0; index < segment.vector.length; index++) {
         const a = embedding.vector[index];
         const b = segment.vector[index];
         dot += a * b;
-        left += a * a;
-        right += b * b;
+        segmentNormSquared += b * b;
       }
-      results.push({ file, text: segment.text, similarity: Math.max(-1, Math.min(1, dot / Math.sqrt(left * right))) });
+      results.push({
+        file,
+        text: segment.text,
+        similarity: Math.max(-1, Math.min(1, dot / Math.sqrt(queryNormSquared * segmentNormSquared))),
+      });
     }
   }
   return results.sort((a, b) => b.similarity - a.similarity).slice(0, topK);
