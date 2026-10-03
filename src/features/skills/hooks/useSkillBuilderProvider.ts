@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { FilePlus2, PenTool, SquarePen } from "lucide-react";
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -16,14 +17,10 @@ export function useSkillBuilderProvider(): ToolProvider {
         name: "list_skills",
         description:
           "List personal library skills (name and description), or pass name to read one skill's full current content and resource paths before editing. This reads the library regardless of which skills are active; it does not activate the skill.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: { type: "string", description: "Exact personal skill name to read; omit to list metadata." },
-          },
-          additionalProperties: false,
-        },
-        function: async (args: Record<string, unknown>) => {
+        inputSchema: z.strictObject({
+          name: z.string().describe("Exact personal skill name to read; omit to list metadata.").optional(),
+        }),
+        execute: async (args: Record<string, unknown>) => {
           if (args.name !== undefined) {
             const name = typeof args.name === "string" ? args.name.trim() : "";
             const skill = name ? getSkill(name) : undefined;
@@ -65,28 +62,20 @@ export function useSkillBuilderProvider(): ToolProvider {
         },
         description:
           "Create a new skill and add it to the library. Skills are reusable, specialized prompts with a name, description, and markdown content body. When an agent is active, the new skill is also enabled on it.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description:
-                "Skill name: lowercase alphanumeric and hyphens only, 1-64 chars. No leading/trailing/consecutive hyphens.",
-            },
-            description: {
-              type: "string",
-              description:
-                "What the skill does and when to use it — this is how the skill is matched to a request (max 1024 chars).",
-            },
-            content: {
-              type: "string",
-              description: "The full markdown content/instructions for the skill.",
-            },
-          },
-          required: ["name", "description", "content"],
-          additionalProperties: false,
-        },
-        function: async (args: Record<string, unknown>) => {
+        inputSchema: z.strictObject({
+          name: z
+            .string()
+            .describe(
+              "Skill name: lowercase alphanumeric and hyphens only, 1-64 chars. No leading/trailing/consecutive hyphens.",
+            ),
+          description: z
+            .string()
+            .describe(
+              "What the skill does and when to use it — this is how the skill is matched to a request (max 1024 chars).",
+            ),
+          content: z.string().describe("The full markdown content/instructions for the skill."),
+        }),
+        execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           const description = (args.description as string)?.trim();
           const content = (args.content as string)?.trim();
@@ -163,26 +152,15 @@ export function useSkillBuilderProvider(): ToolProvider {
         },
         description:
           "Replace an existing personal skill's description and/or content. Fields are replaced wholesale: pass complete values, not diffs. Read the current library content with list_skills({name}) first; load_skill may resolve a different active skill with the same name. Bundled resources are preserved.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "The name of the skill to update.",
-            },
-            description: {
-              type: "string",
-              description: "New description (optional, omit to keep current).",
-            },
-            content: {
-              type: "string",
-              description: "New markdown content/instructions (optional, omit to keep current).",
-            },
-          },
-          required: ["name"],
-          additionalProperties: false,
-        },
-        function: async (args: Record<string, unknown>) => {
+        inputSchema: z.strictObject({
+          name: z.string().describe("The name of the skill to update."),
+          description: z.string().describe("New description (optional, omit to keep current).").optional(),
+          content: z
+            .string()
+            .describe("New markdown content/instructions (optional, omit to keep current).")
+            .optional(),
+        }),
+        execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
             return [{ type: "text" as const, content: JSON.stringify({ error: "Skill name is required" }) }];
@@ -241,18 +219,8 @@ export function useSkillBuilderProvider(): ToolProvider {
         name: "delete_skill",
         description:
           "Permanently delete a skill from the library. This cannot be undone — confirm with the user before deleting a skill you didn't just create. If the active agent has the skill enabled, it is also removed from that agent.",
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "The name of the skill to delete.",
-            },
-          },
-          required: ["name"],
-          additionalProperties: false,
-        },
-        function: async (args: Record<string, unknown>) => {
+        inputSchema: z.strictObject({ name: z.string().describe("The name of the skill to delete.") }),
+        execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
             return [{ type: "text" as const, content: JSON.stringify({ error: "Skill name is required" }) }];

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { maxIterations } from "@tanstack/ai";
+import { convertSchemaToJsonSchema, maxIterations } from "@tanstack/ai";
 import { Document, Packer, Paragraph } from "docx";
 import { z } from "zod";
 import { after, before, describe, test } from "node:test";
@@ -407,13 +407,14 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         name: "lookup_e2e_fixture",
         description: "Return the deterministic value required by the gateway end-to-end test.",
 
-        parameters: {
+        inputSchema: z.fromJSONSchema({
           type: "object",
           properties: { key: { type: "string" } },
           required: ["key"],
           additionalProperties: false,
-        },
-        function: async (args, context) => {
+        }),
+        execute: async (args, execution) => {
+          const context = execution?.context;
           calls.push(args);
           contexts.push(context);
           return [{ type: "text", content: marker }];
@@ -550,18 +551,21 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
         {
           name: "execute_script",
           description: "Production schema compatibility fixture. Do not call this tool in this test.",
-          parameters: executionSchemasModule.SCRIPT_EXECUTION_PARAMETERS,
+          inputSchema: executionSchemasModule.SCRIPT_EXECUTION_SCHEMA,
         },
       ].map((tool) => ({
         ...tool,
-        function: async () => [{ type: "text", content: "unused" }],
+        execute: async () => [{ type: "text", content: "unused" }],
       }));
       const tools = [...fileTools, ...schemaOnlyTools, questionsToolModule.ASK_QUESTIONS_TOOL];
 
       // Keep the production file, execution, and default question schemas
       // union-free for predictable provider behavior; TanStack controls strictness.
       assert.equal(
-        tools.reduce((total, tool) => total + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
+        tools.reduce(
+          (total, tool) => total + toolSchemasModule.countSchemaUnions(convertSchemaToJsonSchema(tool.inputSchema)),
+          0,
+        ),
         0,
       );
 

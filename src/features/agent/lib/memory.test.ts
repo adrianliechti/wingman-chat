@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import * as opfs from "@/shared/lib/opfs-core";
@@ -57,7 +58,7 @@ const candidate = (body = "The user prefers German.", path = "preferences/langua
     },
   ],
 });
-const resultText = (result: Awaited<ReturnType<Tool["function"]>>) =>
+const resultText = (result: Awaited<ReturnType<Tool["execute"]>>) =>
   result.map((part) => (part.type === "text" ? part.content : "")).join("");
 const fileTool = (
   tools: Tool[],
@@ -65,10 +66,9 @@ const fileTool = (
   args: Record<string, unknown>,
   context: ToolContext = { chatId: "chat", runId: "run" },
 ) =>
-  tools
-    .find((tool) => tool.name === `artifacts_${name}`)!
-    .function(args, context)
-    .then(resultText);
+  Promise.resolve(
+    tools.find((tool) => tool.name === `artifacts_${name}`)!.execute(args, { context, emitCustomEvent() {} }),
+  ).then(resultText);
 
 beforeEach(() => {
   parse.mockReset();
@@ -366,8 +366,9 @@ describe("existing file tools at the memory mount", () => {
   it("isolates artifacts, refuses mixed batches and child writes, bounds search, and skips deliverable metadata", async () => {
     const base: Tool = {
       name: "artifacts_read",
-      parameters: {},
-      function: vi.fn().mockResolvedValue([{ type: "text", content: "ordinary artifact" }]),
+      description: "Test tool",
+      inputSchema: z.unknown(),
+      execute: vi.fn().mockResolvedValue([{ type: "text", content: "ordinary artifact" }]),
     };
     const tools = mountMemoryFiles([base], manager());
     expect(await fileTool(tools, "read", { file_path: "/report.md" })).toBe("ordinary artifact");
@@ -389,7 +390,7 @@ describe("existing file tools at the memory mount", () => {
     const output = await fileTool(tools, "grep", { path: "/.memory", pattern: "Line", head_limit: 0 });
     expect(bytes(output)).toBeLessThanOrEqual(8192);
     expect(await fileTool(mountMemoryFiles([base]), "read", { file_path: "/.memory/a.md" })).toContain("disabled");
-    expect(base.function).toHaveBeenCalledTimes(1);
+    expect(base.execute).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -31,7 +31,7 @@ function Harness() {
   return null;
 }
 async function call(provider: ToolProvider, name: string, args: Record<string, unknown> = {}) {
-  const result = await provider.tools.find((tool) => tool.name === name)!.function(args);
+  const result = await provider.tools.find((tool) => tool.name === name)!.execute(args);
   const text = result.find((part) => part.type === "text");
   if (text?.type !== "text") throw new Error("Expected tool text");
   return JSON.parse(text.content);

@@ -1,4 +1,5 @@
-import type { ChatMiddleware, ContentPart, UIMessage } from "@tanstack/ai";
+import type { ChatMiddleware, ContentPart, SchemaInput, Tool as NativeTool, UIMessage } from "@tanstack/ai";
+import type { z } from "zod";
 import type { ChatPersistedState } from "@tanstack/ai-client";
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
 import type { AgentContext } from "./telemetry";
@@ -113,17 +114,21 @@ export interface ToolProvider {
   };
 }
 
-export type Tool = {
-  name: string;
-  title?: string;
-  description?: string;
-  icon?: string;
+type WorkspaceTool = NativeTool<
+  z.ZodType<Record<string, unknown>, Record<string, unknown>>,
+  z.ZodType<ContentPart[], ContentPart[]>,
+  string,
+  ToolContext | undefined
+>;
 
-  /** Let TanStack discover this tool's schema on demand in chat runs. */
-  lazy?: boolean;
-  /** Opt in to TanStack approval; no additional app approval lifecycle. */
-  needsApproval?: boolean;
-  /** Chat uses a native defineAgent; function remains the realtime tool boundary. */
+/** Native tools with rich workspace results and app-owned presentation. */
+export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
+  // Providers include native skill schemas and dynamically discovered MCP schemas.
+  inputSchema: SchemaInput;
+  execute: NonNullable<WorkspaceTool["execute"]>;
+  title?: string;
+  icon?: string;
+  /** Chat uses a native defineAgent; execute remains the realtime tool boundary. */
   subagent?: {
     /** Defaults to the caller's model. */
     model?: string;
@@ -139,10 +144,6 @@ export type Tool = {
     /** Optional retrieval-only path. Undefined continues with the model loop. */
     direct?: (args: Record<string, unknown>, context: ToolContext) => Promise<string | undefined>;
   };
-
-  parameters: Record<string, unknown>;
-
-  function: (args: Record<string, unknown>, context?: ToolContext) => Promise<ContentPart[]>;
 
   /**
    * Optional, tool-owned presentation for how a call renders in chat. Colocating

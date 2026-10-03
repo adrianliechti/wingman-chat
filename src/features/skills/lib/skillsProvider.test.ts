@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
@@ -45,10 +46,10 @@ describe("native skills", () => {
     )!;
     const load = provider.tools.find((tool) => tool.name === "load_skill")!;
 
-    expect(load.parameters).toMatchObject({ properties: { name: { enum: ["reports"] } } });
+    expect(convertSchemaToJsonSchema(load.inputSchema)!).toMatchObject({ properties: { name: { enum: ["reports"] } } });
     expect(provider.instructions).toContain("Personal reports");
     expect(provider.instructions).not.toContain("Create reports");
-    const output = await load.function({ name: "reports" });
+    const output = await load.execute({ name: "reports" });
     expect(output).toEqual([{ type: "text", content: expect.stringContaining("Use the personal template.") }]);
     const files = await mountSkillFiles();
     expect(files["/skills/reports/scripts/check.py"]).toEqual({ content: "print('personal')" });
@@ -213,23 +214,23 @@ describe("native skills", () => {
   it("scopes the realtime native tool activation set to each tools request", async () => {
     const provider = createSkillsProvider([skill], meta)!;
     const load = provider.tools.find((tool) => tool.name === "load_skill")!;
-    const first = await load.function({ name: "reports" });
+    const first = await load.execute({ name: "reports" });
     expect(first).toEqual(
       expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining("Verify the report.") })]),
     );
-    expect(await load.function({ name: "reports" })).toEqual(
+    expect(await load.execute({ name: "reports" })).toEqual(
       expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(ALREADY_LOADED) })]),
     );
-    expect(await provider.tools[0].function({ name: "reports" })).toEqual(first);
+    expect(await provider.tools[0].execute({ name: "reports" })).toEqual(first);
     expect(load.display?.output?.(first)).toMatchObject({ code: "Verify the report.", language: "markdown" });
   });
 
   it("reports native resource errors and renders native resource output", async () => {
     const provider = createSkillsProvider([skill], meta)!;
     const resource = provider.tools.find((tool) => tool.name === "read_skill_resource")!;
-    await expect(resource.function({ skill: "reports", path: "../secret" })).rejects.toThrow("unsafe resource path");
-    await expect(resource.function({ skill: "unknown", path: "scripts/check.py" })).rejects.toThrow("no skill named");
-    const output = await resource.function({ skill: "reports", path: "scripts/check.py" });
+    await expect(resource.execute({ skill: "reports", path: "../secret" })).rejects.toThrow("unsafe resource path");
+    await expect(resource.execute({ skill: "unknown", path: "scripts/check.py" })).rejects.toThrow("no skill named");
+    const output = await resource.execute({ skill: "reports", path: "scripts/check.py" });
     expect(resource.display?.output?.(output)).toMatchObject({
       code: "print('ok')",
       language: "py",

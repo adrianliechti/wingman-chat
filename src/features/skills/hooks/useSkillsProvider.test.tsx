@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/features/agent/types/agent";
@@ -42,10 +43,10 @@ function provider(current: Agent | null = null, personal = false, plugins: Insta
 }
 function catalog(value: ToolProvider) {
   const load = value.tools.find((tool) => tool.name === "load_skill")!;
-  return load.parameters;
+  return convertSchemaToJsonSchema(load.inputSchema)!;
 }
 async function read(value: ToolProvider, name: string) {
-  return value.tools.find((tool) => tool.name === "load_skill")!.function({ name });
+  return value.tools.find((tool) => tool.name === "load_skill")!.execute({ name });
 }
 
 beforeEach(() => {
@@ -83,7 +84,7 @@ describe("default capability skills", () => {
     ]);
     expect(state.loadTemplate).toHaveBeenCalledExactlyOnceWith("/skills/studio/html-artifacts/SKILL.md");
     const resource = value.tools.find((tool) => tool.name === "read_skill_resource")!;
-    expect(await resource.function({ skill: "html-artifacts", path: "references/sdk.md" })).toEqual([
+    expect(await resource.execute({ skill: "html-artifacts", path: "references/sdk.md" })).toEqual([
       { type: "text", content: expect.stringContaining("SDK reference.") },
     ]);
     expect(state.loadResource).toHaveBeenCalledExactlyOnceWith(

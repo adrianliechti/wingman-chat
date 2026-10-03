@@ -1,3 +1,4 @@
+import { z } from "zod";
 // @vitest-environment happy-dom
 import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -404,8 +405,10 @@ describe("chat run integration", () => {
   });
 
   it("hydrates a saved tool approval with the native React hook", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Done"));
-    fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Done"));
+    fixture.tools = [
+      { name: "work", description: "Test tool", inputSchema: z.looseObject({}), needsApproval: true, execute: execute },
+    ];
     fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("Finished"));
     const original = await harness();
     await act(() => original.sendMessage(user("Work")));
@@ -437,14 +440,22 @@ describe("chat run integration", () => {
   });
 
   it("resumes a child's approval from the saved chat alone", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Evidence"));
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Evidence"));
     fixture.tools = [
       createAgentTool("research", "Research a topic", {
         instructions: "Research",
         runtimeContext: "",
         middleware: [],
         inheritHistory: false,
-        tools: [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }],
+        tools: [
+          {
+            name: "work",
+            description: "Test tool",
+            inputSchema: z.looseObject({}),
+            needsApproval: true,
+            execute: execute,
+          },
+        ],
       }),
     ];
     fixture.complete
@@ -482,8 +493,10 @@ describe("chat run integration", () => {
   });
 
   it.each([false, true])("explicit Stop clears an approval without executing the tool (reload=%s)", async (reload) => {
-    const execute = vi.fn<Tool["function"]>();
-    fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
+    const execute = vi.fn<Tool["execute"]>();
+    fixture.tools = [
+      { name: "work", description: "Test tool", inputSchema: z.looseObject({}), needsApproval: true, execute: execute },
+    ];
     fixture.complete.mockResolvedValueOnce(call).mockResolvedValueOnce(assistant("New answer"));
     let context = await harness();
     await act(() => context.sendMessage(user("Work")));
@@ -514,8 +527,9 @@ describe("chat run integration", () => {
     fixture.tools = [
       {
         name: "work",
-        parameters: { type: "object" },
-        function: async () => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async () => {
           const before = (await manager.snapshot()).files.get("preference.md")!;
           await manager.write("/.memory/preference.md", "A different preference.", await memoryRevision(before));
           return output("Done");
@@ -539,8 +553,10 @@ describe("chat run integration", () => {
     fixture.tools = [
       {
         name: "work",
-        parameters: { type: "object" },
-        function: async (_args, context) => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          const context = execution?.context;
           context?.setMeta?.({ artifactDelta: { mutations: [{ operation: "create", path: "/game.html" }] } });
           return output("Saved");
         },
@@ -570,8 +586,10 @@ describe("chat run integration", () => {
     fixture.tools = [
       {
         name: "work",
-        parameters: { type: "object" },
-        function: async (_args, context) => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          const context = execution?.context;
           toolContext = context;
           context?.setMeta?.({ progress: "running", obsolete: true });
           return output("Done");
@@ -701,8 +719,10 @@ describe("chat run integration", () => {
     fixture.tools = [
       {
         name: "work",
-        parameters: { type: "object" },
-        function: async (_args, context) => {
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          const context = execution?.context;
           elicited();
           const result = await context!.elicit!({
             mode: "form",
@@ -749,8 +769,8 @@ describe("chat run integration", () => {
   });
 
   it("retries from committed tool results without running the tool again", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Evidence"));
-    fixture.tools = [{ name: "work", parameters: { type: "object" }, function: execute }];
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Evidence"));
+    fixture.tools = [{ name: "work", description: "Test tool", inputSchema: z.looseObject({}), execute: execute }];
     fixture.complete
       .mockResolvedValueOnce(call)
       .mockRejectedValueOnce(Object.assign(new Error("Server error"), { code: "server_error" }))
@@ -772,8 +792,10 @@ describe("chat run integration", () => {
   });
 
   it("leaves a failed approval continuation to the interrupt card and keeps the saved approval", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Done"));
-    fixture.tools = [{ name: "work", parameters: { type: "object" }, needsApproval: true, function: execute }];
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Done"));
+    fixture.tools = [
+      { name: "work", description: "Test tool", inputSchema: z.looseObject({}), needsApproval: true, execute: execute },
+    ];
     fixture.complete
       .mockResolvedValueOnce(call)
       .mockRejectedValueOnce(Object.assign(new Error("Server error"), { code: "server_error" }))

@@ -1,3 +1,4 @@
+import { z } from "zod";
 // Frozen pre-optimization tool implementation from fa3d5e82. Benchmark only.
 import { Globe, Search } from "lucide-react";
 import type { SearchResult } from "../../../src/features/research/types/search";
@@ -77,7 +78,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
       },
       description:
         "Fast web search. Returns markdown grouped by query, each result with title, URL, snippet, and optional metadata. Pass every related query in one call via the `queries` array.",
-      parameters: {
+      inputSchema: z.fromJSONSchema({
         type: "object",
         properties: {
           queries: {
@@ -94,8 +95,9 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
         },
         required: ["queries"],
         additionalProperties: false,
-      },
-      function: async (args, context) => {
+      }),
+      execute: async (args, execution) => {
+        const context = execution?.context;
         const queries = stringArray(args.queries);
         const domains = stringArray(args.domains);
 
@@ -140,7 +142,7 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
       },
       description:
         "Fetch the full text content of URLs you already have (e.g. from `web_search` results). Pass every URL in one call via the `urls` array.",
-      parameters: {
+      inputSchema: z.fromJSONSchema({
         type: "object",
         properties: {
           urls: {
@@ -152,8 +154,9 @@ export function buildWebTools(client: Client, internet: { searcher?: string; scr
         },
         required: ["urls"],
         additionalProperties: false,
-      },
-      function: async (args, context) => {
+      }),
+      execute: async (args, execution) => {
+        const context = execution?.context;
         const urls = stringArray(args.urls);
         if (urls.length === 0) {
           return [{ type: "text" as const, content: "No URLs provided." }];

@@ -42,13 +42,14 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
         ...tool.display,
         header: (args, state) => memoryFileHeader(tool.name, args, state) ?? tool.display?.header?.(args, state) ?? {},
       },
-      description: `${tool.description ?? ""}${manager ? " Persistent agent notes are mounted at /.memory/; scope searches there explicitly. index.md is generated and read-only. Use file tools for this mount; code runtimes contain only conversation artifacts." : " /.memory/ is reserved and unavailable."}`,
-      function: async (args, context) => {
+      description: `${tool.description}${manager ? " Persistent agent notes are mounted at /.memory/; scope searches there explicitly. index.md is generated and read-only. Use file tools for this mount; code runtimes contain only conversation artifacts." : " /.memory/ is reserved and unavailable."}`,
+      execute: async (args, execution) => {
+        const context = execution?.context;
         const paths = memoryOperationPaths(operation, args);
         const mounted = paths.some(isMemoryPath);
         if (!mounted)
           return (
-            original.get(tool.name)?.function(args, context) ?? [
+            original.get(tool.name)?.execute(args, execution) ?? [
               { type: "text", content: JSON.stringify({ error: "Only /.memory/ is available." }) },
             ]
           );
@@ -87,7 +88,11 @@ export function mountMemoryFiles(tools: Tool[], manager?: MemoryManager): Tool[]
               const definition = createFileTools(files, OPTIONS).find((item) => item.name === tool.name)!;
               // Generic file tools publish artifact metadata; memory is not a deliverable.
               const memoryContext: ToolContext | undefined = context ? { ...context, setMeta: undefined } : undefined;
-              const output = await definition.function(args, memoryContext);
+              const output = await definition.execute(args, {
+                ...execution,
+                context: memoryContext,
+                emitCustomEvent: execution?.emitCustomEvent ?? (() => {}),
+              });
               context?.signal?.throwIfAborted();
               const failure = output.find(
                 (part) =>

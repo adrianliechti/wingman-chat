@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { expect, it, vi } from "vitest";
 import { run } from "@/shared/lib/agent";
@@ -113,17 +114,17 @@ it.each(["flagged", "unavailable"])("does not start a research request when the 
 it("keeps live confirmation for realtime and never silently skips a required confirmation", async () => {
   const { client, complete, tools } = fixture(true);
   const tool = tools[0];
-  expect(await tool.function({ prompt: brief, mode: "deep" }, { model: "model" })).toEqual([
-    { type: "text", content: expect.stringContaining("requires confirmation") },
-  ]);
+  expect(
+    await tool.execute({ prompt: brief, mode: "deep" }, { context: { model: "model" }, emitCustomEvent() {} }),
+  ).toEqual([{ type: "text", content: expect.stringContaining("requires confirmation") }]);
   const elicit = vi.fn().mockResolvedValue({ action: "decline" });
-  await tool.function({ prompt: brief, mode: "deep" }, { model: "model", elicit });
+  await tool.execute({ prompt: brief, mode: "deep" }, { context: { model: "model", elicit }, emitCustomEvent() {} });
   expect(client.guard).not.toHaveBeenCalled();
   elicit.mockResolvedValue({ action: "accept" });
   complete.mockResolvedValueOnce(answer("Research report"));
-  expect(await tool.function({ prompt: brief, mode: "deep" }, { model: "model", elicit })).toEqual([
-    { type: "text", content: "Research report" },
-  ]);
+  expect(
+    await tool.execute({ prompt: brief, mode: "deep" }, { context: { model: "model", elicit }, emitCustomEvent() {} }),
+  ).toEqual([{ type: "text", content: "Research report" }]);
   expect(client.guard).toHaveBeenCalledOnce();
 });
 
@@ -184,14 +185,14 @@ it("fast mode preserves realtime confirmation and skips model calls", async () =
   const { client, complete, tools } = fixture(true);
   const tool = tools[0];
   const args = { prompt: "topic", mode: "fast" };
-  expect(await tool.function(args, { model: "model" })).toEqual([
+  expect(await tool.execute(args, { context: { model: "model" }, emitCustomEvent() {} })).toEqual([
     { type: "text", content: expect.stringContaining("requires confirmation") },
   ]);
   const elicit = vi.fn().mockResolvedValue({ action: "decline" });
-  await tool.function(args, { model: "model", elicit });
+  await tool.execute(args, { context: { model: "model", elicit }, emitCustomEvent() {} });
   expect(client.guard).not.toHaveBeenCalled();
   elicit.mockResolvedValue({ action: "accept" });
-  const result = await tool.function(args, { model: "model", elicit });
+  const result = await tool.execute(args, { context: { model: "model", elicit }, emitCustomEvent() {} });
   expect(JSON.stringify(result)).toContain("Evidence");
   expect(complete).not.toHaveBeenCalled();
   expect(client.guard).toHaveBeenCalledOnce();
@@ -235,7 +236,7 @@ it.each([
   if (!modes.length) expect(provider).toBeNull();
   else {
     expect(provider!.tools).toHaveLength(1);
-    const props = provider!.tools[0].parameters.properties as { mode: { enum: string[] } };
+    const props = convertSchemaToJsonSchema(provider!.tools[0].inputSchema)!.properties as { mode: { enum: string[] } };
     expect(props.mode.enum).toEqual(modes);
   }
 });
@@ -257,7 +258,7 @@ it("routes deep mode to the configured researcher and fast mode to the searcher"
   expect(complete).toHaveBeenCalledTimes(2);
   expect(client.search).not.toHaveBeenCalled();
   expect(client.scrape).not.toHaveBeenCalled();
-  await tools[0].function({ prompt: "topic", mode: "fast" });
+  await tools[0].execute({ prompt: "topic", mode: "fast" });
   expect(client.search).toHaveBeenCalledOnce();
   expect(remote.research).toHaveBeenCalledOnce();
 });
@@ -266,7 +267,7 @@ it("supports researcher-only realtime tasks without a local model", async () => 
   const { client, complete } = fixture();
   const remote = Object.assign(client, { research: vi.fn<Client["research"]>().mockResolvedValue("Gateway findings") });
   const tool = createInternetProvider(remote, { researcher: "remote" })!.tools[0];
-  expect(await tool.function({ prompt: brief })).toEqual([{ type: "text", content: "Gateway findings" }]);
+  expect(await tool.execute({ prompt: brief })).toEqual([{ type: "text", content: "Gateway findings" }]);
   expect(complete).not.toHaveBeenCalled();
   expect(client.guard).toHaveBeenCalledOnce();
 });
@@ -317,7 +318,7 @@ it.each(["fast", "deep"])("does not begin %s work when cancellation arrives duri
     return { flagged: false, categories: [] };
   });
   const tool = createInternetProvider(remote, { searcher: "search", researcher: "remote" })!.tools[0];
-  await tool.function({ prompt: brief, mode }, { signal: controller.signal });
+  await tool.execute({ prompt: brief, mode }, { context: { signal: controller.signal }, emitCustomEvent() {} });
   expect(client.guard).toHaveBeenCalledOnce();
   expect(client.search).not.toHaveBeenCalled();
   expect(remote.research).not.toHaveBeenCalled();
@@ -330,7 +331,7 @@ it.each(["flagged", "unavailable"])("does not call a configured researcher when 
   if (failure === "flagged") client.guard.mockResolvedValue({ flagged: true, categories: [] });
   else client.guard.mockRejectedValue(new Error("offline"));
   const tool = createInternetProvider(remote, { researcher: "remote", guard: "selected-guard" })!.tools[0];
-  const result = await tool.function({ prompt: brief });
+  const result = await tool.execute({ prompt: brief });
   expect(remote.research).not.toHaveBeenCalled();
   expect(client.guard).toHaveBeenCalledWith("selected-guard", brief, { signal: expect.any(AbortSignal) });
   expect(JSON.stringify(result)).toContain(failure === "flagged" ? "Request blocked" : "not available");

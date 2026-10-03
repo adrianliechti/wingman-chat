@@ -92,7 +92,7 @@ function Fixture() {
     read: (chatId, path) => new FileSystemManager(chatId).getFile(path),
     async tool(name, args, chatId) {
       const tool = provider!.tools.find((item: Tool) => item.name === name)!;
-      return tool.function(args, { chatId });
+      return tool.execute(args, { context: { chatId }, emitCustomEvent() {} });
     },
     // Hold one already-read snapshot while later filesystem reads continue.
     // This makes navigation and out-of-order refresh races deterministic.

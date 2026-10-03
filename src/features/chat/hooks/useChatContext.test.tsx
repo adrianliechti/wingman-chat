@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
@@ -129,8 +130,8 @@ describe("chat prompt context", () => {
           {
             name: "list_skills",
             description: "List skills",
-            parameters: { type: "object", properties: {} },
-            function: async () => [],
+            inputSchema: z.looseObject({}),
+            execute: async () => [],
           },
         ],
       },
@@ -152,7 +153,7 @@ describe("chat prompt context", () => {
       expect(tools.map((tool) => tool.name)).toEqual(["ask_questions"]);
       const questions = tools.find((tool) => tool.name === "ask_questions")!;
       const elicit = vi.fn().mockResolvedValue({ action: "accept", content: { format: "html" } });
-      const result = await questions.function(
+      const result = await questions.execute(
         {
           questions: [
             {
@@ -163,7 +164,7 @@ describe("chat prompt context", () => {
             },
           ],
         },
-        { elicit },
+        { context: { elicit }, emitCustomEvent() {} },
       );
       expect(elicit).toHaveBeenCalledExactlyOnceWith({
         message: "A few quick questions:",

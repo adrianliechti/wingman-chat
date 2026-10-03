@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { maxIterations } from "@tanstack/ai";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -19,8 +20,10 @@ const done = assistantMessage("Finished");
 const call = (id: string) => toolCallMessage([{ id, name: "write", arguments: "{}" }]);
 const write = (...batches: ArtifactMutation[][]): Tool => ({
   name: "write",
-  parameters: { type: "object", properties: {} },
-  function: async (_args, ctx) => {
+  description: "Test tool",
+  inputSchema: z.looseObject({}),
+  execute: async (_args, execution) => {
+    const ctx = execution?.context;
     ctx?.setMeta?.({ artifactDelta: { mutations: batches.shift() ?? [] } });
     return [{ type: "text", content: "Saved" }];
   },

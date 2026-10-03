@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Globe } from "lucide-react";
 import { useMemo } from "react";
 import { buildWebTools } from "../lib/webTools";
@@ -60,7 +61,16 @@ export function createInternetProvider(client: Client, internet: Config["interne
 
         await guardPrompt(prompt, signal);
         if (mode === "fast" && search) {
-          return outputText(await search.function({ queries: [prompt], limit: 3 }, { ...context, signal }));
+          return outputText(
+            await search.execute(
+              { queries: [prompt], limit: 3 },
+              {
+                context: { ...context, signal },
+                abortSignal: signal,
+                emitCustomEvent() {},
+              },
+            ),
+          );
         }
         // Undefined continues with the local child agent; remote research and
         // fast search both finish at this same approval/result boundary.
@@ -70,27 +80,24 @@ export function createInternetProvider(client: Client, internet: Config["interne
     },
     { client, needsApproval: internet.elicitation },
   );
-  researchTool.parameters = {
-    ...researchTool.parameters,
-    properties: {
-      ...(researchTool.parameters.properties as Record<string, unknown>),
-      prompt: {
-        type: "string",
-        minLength: 1,
-        description:
-          "For fast mode, a concise search query with the entity and facts needed. For deep mode, a complete research brief with all topics and constraints. Keep answer-format instructions in the parent conversation for fast mode.",
-      },
-      mode: {
-        type: "string",
-        enum: search ? ["fast", "deep"] : ["deep"],
-        description: search
+  researchTool.inputSchema = z.strictObject({
+    prompt: z
+      .string()
+      .min(1)
+      .describe(
+        "For fast mode, a concise search query with the entity and facts needed. For deep mode, a complete research brief with all topics and constraints. Keep answer-format instructions in the parent conversation for fast mode.",
+      ),
+    mode: z
+      .enum(search ? ["fast", "deep"] : ["deep"])
+      .optional()
+      .describe(
+        search
           ? "fast (default): one quick search, no child model. deep: follow-up searches, page reading and synthesis within this task."
           : internet.researcher
             ? "deep: delegate the complete task to the configured researcher."
             : "deep: read and research supplied URLs.",
-      },
-    },
-  };
+      ),
+  });
   researchTool.title = "Web research";
   researchTool.display = {
     input: () => [],

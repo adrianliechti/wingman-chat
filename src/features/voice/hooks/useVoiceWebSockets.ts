@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { RealtimeClient } from "@tanstack/ai-client";
-import { toolDefinition, type ContentPart, type JSONSchema, type UIMessage } from "@tanstack/ai";
-import { z } from "zod";
+import {
+  convertSchemaToJsonSchema,
+  parseWithStandardSchema,
+  toolDefinition,
+  type ContentPart,
+  type UIMessage,
+} from "@tanstack/ai";
 import { gatewayRealtime } from "@/features/voice/lib/gatewayRealtime";
 import { describeToolOutput, text } from "@/shared/lib/messages";
 import type { Tool, ToolContext } from "@/shared/types/chat";
@@ -12,7 +17,11 @@ export function voiceSessionSignature(instructions: string, tools: Tool[], model
   return JSON.stringify([
     model,
     instructions,
-    tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+    tools.map(({ name, description, inputSchema }) => ({
+      name,
+      description,
+      inputSchema: convertSchemaToJsonSchema(inputSchema),
+    })),
   ]);
 }
 
@@ -76,21 +85,19 @@ export function useVoiceWebSockets(
     const { tools, instructions, factory, outputs } = session;
     const signal = session.controller.signal;
     const nativeTools = tools.map((tool) => {
-      const schema = z.fromJSONSchema(tool.parameters);
-      return toolDefinition({
-        name: tool.name,
-        description: tool.description ?? tool.name,
-        // RealtimeClient forwards this schema to the session verbatim. The
-        // original JSON Schema keeps voice and chat tool contracts identical.
-        inputSchema: tool.parameters as JSONSchema,
-      }).client(async (input) => {
+      return toolDefinition({ ...tool, outputSchema: undefined }).client(async (input) => {
         signal.throwIfAborted();
         const identity = session.gateway.toolIdentity(input);
         if (!identity) throw new Error("Voice tool arguments must be an object");
         // RealtimeClient currently forwards parsed inputs without Standard Schema
         // validation; enforce the same schema used by the chat engine.
-        const args = schema.parse(input) as Record<string, unknown>;
-        const result = await tool.function(args, { ...factory?.(identity), runId: identity.runId, signal });
+        const args = parseWithStandardSchema<Record<string, unknown>>(tool.inputSchema, input);
+        const result = await tool.execute(args, {
+          toolCallId: identity.id,
+          abortSignal: signal,
+          context: { ...factory?.(identity), runId: identity.runId, signal },
+          emitCustomEvent() {},
+        });
         signal.throwIfAborted();
         outputs.set(identity.id, result);
         return describeToolOutput(result);

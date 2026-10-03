@@ -54,7 +54,8 @@ export class ArtifactReadWriteManager {
     // Only the schemas/presentation escape; each invocation binds one locked workspace.
     return createFileTools(this.source(requireFs), options).map((definition) => ({
       ...definition,
-      function: async (args, context) => {
+      execute: async (args, execution) => {
+        const context = execution?.context;
         const fs = requireFs(context);
         return fs.withExclusiveAccess(async (access) => {
           context?.signal?.throwIfAborted();
@@ -119,7 +120,7 @@ export class ArtifactReadWriteManager {
             return mutations;
           };
           const tool = createFileTools(source, options).find((candidate) => candidate.name === definition.name)!;
-          return tool.function(args, context);
+          return tool.execute(args, execution);
         });
       },
     }));

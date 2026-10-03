@@ -15,7 +15,6 @@ import {
   type ToolExecutionContext,
   type UIMessage,
 } from "@tanstack/ai";
-import { z } from "zod";
 import type { AgentRunContext, MessageUsage, Tool, ToolContext } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
@@ -171,19 +170,19 @@ export interface StreamRunHooks extends RunHooks {
   onComplete?: (result: AgentRunResult) => void | Promise<void>;
 }
 
-export function chatToolDefinition(tool: Tool) {
-  return toolDefinition({
-    name: tool.name,
-    description: tool.description ?? tool.name,
-    inputSchema: z.fromJSONSchema(tool.parameters),
-    lazy: tool.lazy,
-    needsApproval: tool.needsApproval,
-  });
-}
-
-export function approvalTools(tools: Tool[]): ReturnType<typeof chatToolDefinition>[] {
+export function approvalTools(tools: Tool[]): ReturnType<typeof toolDefinition>[] {
   return tools.flatMap((tool) => [
-    ...(tool.needsApproval ? [chatToolDefinition(tool)] : []),
+    ...(tool.needsApproval
+      ? [
+          toolDefinition({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            lazy: tool.lazy,
+            needsApproval: true,
+          }),
+        ]
+      : []),
     ...(tool.subagent ? approvalTools(tool.subagent.tools) : []),
   ]);
 }
@@ -295,7 +294,7 @@ export async function* streamRun(
     const nativeTools = tools
       .filter((tool) => !tool.subagent)
       .map((tool) =>
-        chatToolDefinition(tool).server<AgentRunContext>(async (input, execution) => {
+        toolDefinition({ ...tool, outputSchema: undefined }).server<AgentRunContext>(async (input, execution) => {
           const call: ToolCall = {
             id: execution?.toolCallId ?? crypto.randomUUID(),
             name: tool.name,
@@ -310,21 +309,26 @@ export async function* streamRun(
             sidecar.result(call.id, { meta });
             hooks.onToolMeta?.(call.id, { ...meta });
           };
-          const output = await tool.function(input as Record<string, unknown>, {
-            ...hooks.createToolContext?.(call, execution),
-            model,
-            interruptible: true,
-            inputResponse: execution?.inputResponse,
-            runId,
-            invocationContext: { ...execution.context, signal },
-            signal,
-            agentContext: telemetry.toolContext(call.id),
-            setMeta,
-            setContent: (next) => {
-              content = next;
-            },
-            setError: (next) => {
-              error = next;
+          const output = await tool.execute(input as Record<string, unknown>, {
+            ...execution,
+            toolCallId: call.id,
+            abortSignal: signal,
+            context: {
+              ...hooks.createToolContext?.(call, execution),
+              model,
+              interruptible: true,
+              inputResponse: execution?.inputResponse,
+              runId,
+              invocationContext: { ...execution.context, signal },
+              signal,
+              agentContext: telemetry.toolContext(call.id),
+              setMeta,
+              setContent: (next) => {
+                content = next;
+              },
+              setError: (next) => {
+                error = next;
+              },
             },
           });
           signal.throwIfAborted();
@@ -344,8 +348,8 @@ export async function* streamRun(
       return [
         defineAgent({
           name: tool.name,
-          description: tool.description ?? tool.name,
-          inputSchema: z.fromJSONSchema(tool.parameters),
+          description: tool.description,
+          inputSchema: tool.inputSchema,
           run: async (ctx) => {
             const { prompt } = ctx.input as { prompt: string };
             const childModel = spec.model ?? model;

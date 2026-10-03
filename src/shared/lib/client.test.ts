@@ -90,8 +90,8 @@ describe("chat output allowances", () => {
     const tool: Tool = {
       name: "write",
       description: "Write text",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-      function: async () => output("done"),
+      inputSchema: z.strictObject({}),
+      execute: async () => output("done"),
     };
     await runMessages(new Client(), model, "", prompt, [tool], { options: { effort } });
     expect(String(fetchMock.mock.calls[0][0])).toBe("http://localhost/api/v1/responses");
@@ -106,13 +106,18 @@ describe("chat output allowances", () => {
 
   it("sends tool schemas unchanged instead of OpenAI's null-widened strict form", async () => {
     fetchMock.mockResolvedValueOnce(finished(response([textItem("OK")])));
-    const parameters = {
+    const parameters: z.core.JSONSchema.JSONSchema = {
       type: "object",
       properties: { pattern: { type: "string" }, mode: { type: "string", enum: ["content", "count"] } },
       required: ["pattern"],
       additionalProperties: false,
     };
-    const tool: Tool = { name: "grep", parameters, function: async () => [] };
+    const tool: Tool = {
+      name: "grep",
+      description: "Test tool",
+      inputSchema: z.fromJSONSchema(parameters),
+      execute: async () => [],
+    };
     await runMessages(new Client(), "claude-sonnet-5-5", "", prompt, [tool]);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.tools[0]).toMatchObject({ name: "grep", strict: false, parameters });
@@ -394,10 +399,7 @@ describe("System One classification", () => {
     expect(body.questions.risk_0).toMatchObject({
       type: "noul",
       criteria: {
-        true: {
-          name: "Personal data disclosure",
-          description: "Share personal data. Do not flag mentions of privacy policy.",
-        },
+        true: "Personal data disclosure: Share personal data. Do not flag mentions of privacy policy.",
       },
     });
   });
@@ -511,16 +513,27 @@ describe("System One classification", () => {
     {},
     { answers: {} },
     {
-      answers: { category: { type: "choice", choice: "unknown", confidence: 0.9 }, risk_0: { type: "noul", noul: 0 } },
-    },
-    { answers: { category: { type: "choice", choice: "legal", confidence: 1.1 }, risk_0: { type: "noul", noul: 0 } } },
-    {
-      answers: { category: { type: "choice", choice: "legal", confidence: 0.8 }, risk_0: { type: "noul", noul: -0.1 } },
+      answers: {
+        category: { type: "choice", choice: "unknown", confidence: 0.9, probabilities: { unknown: 0.9 } },
+        risk_0: { type: "noul", noul: 0 },
+      },
     },
     {
       answers: {
-        category: { type: "choice", choice: "legal", confidence: 0.8 },
-        risk_0: { type: "choice", choice: "yes", confidence: 0.9 },
+        category: { type: "choice", choice: "legal", confidence: 1.1, probabilities: { legal: 0.9 } },
+        risk_0: { type: "noul", noul: 0 },
+      },
+    },
+    {
+      answers: {
+        category: { type: "choice", choice: "legal", confidence: 0.8, probabilities: { legal: 0.9 } },
+        risk_0: { type: "noul", noul: -0.1 },
+      },
+    },
+    {
+      answers: {
+        category: { type: "choice", choice: "legal", confidence: 0.8, probabilities: { legal: 0.9 } },
+        risk_0: { type: "choice", choice: "yes", confidence: 0.9, probabilities: { yes: 0.9 } },
       },
     },
   ])("rejects missing or malformed answers instead of reporting no risks: %j", async (body) => {
@@ -591,7 +604,7 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         .mockResolvedValueOnce(finished(response([callItem()])))
         .mockResolvedValueOnce(finished(response([textItem("Saved")])))
         .mockResolvedValueOnce(finished(response([textItem("Continued")])));
-      const media: Awaited<ReturnType<Tool["function"]>> = [
+      const media: Awaited<ReturnType<Tool["execute"]>> = [
         ...output("Created the documents"),
         mediaFromDataUrl(
           "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDBA==",
@@ -602,11 +615,14 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         mediaFromDataUrl("data:image/png;base64,AQ==", "chart.png"),
         mediaFromDataUrl("data:audio/wav;base64,AQ==", "speech.wav"),
       ];
-      const execute = vi.fn<Tool["function"]>(async (_args, context) => {
+      const execute = vi.fn<Tool["execute"]>(async (_args, execution) => {
+        const context = execution?.context;
         context?.setMeta?.({ files: ["/notes.docx", "/notes.pdf"] });
         return media;
       });
-      const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
+      const tools: Tool[] = [
+        { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: execute },
+      ];
       const hooks = prepared ? { prepareMessages: (messages: ModelMessage[]) => messages } : {};
       const client = new Client();
       const first = await run(client, "model", "", prompt, tools, hooks);
@@ -738,8 +754,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     const result = await run(new Client(), "model", "", prompt, [
       {
         name: "write",
-        parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-        function: execute,
+        description: "Test tool",
+        inputSchema: z.looseObject({ text: z.string() }),
+        execute: execute,
       },
     ]);
     expect(result.status).toBe("completed");
@@ -771,11 +788,14 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         finished(response([{ ...textItem("Continued"), id: "msg_continued" }], { id: "resp_continued" })),
       );
     const error = { code: "PYTHON_EXECUTION_ERROR", message: "AssertionError on line 31" };
-    const execute = vi.fn<Tool["function"]>(async (_args, context) => {
+    const execute = vi.fn<Tool["execute"]>(async (_args, execution) => {
+      const context = execution?.context;
       context?.setError?.(error);
       return output(error.message);
     });
-    const tools: Tool[] = [{ name: "write", parameters: { type: "object", properties: {} }, function: execute }];
+    const tools: Tool[] = [
+      { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: execute },
+    ];
     const client = new Client();
     const hooks = { prepareMessages: (messages: ModelMessage[]) => messages };
     const first = await run(client, "model", "", prompt, tools, hooks);
@@ -818,7 +838,7 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     );
     const execute = vi.fn();
     const result = await run(new Client(), "model", "", prompt, [
-      { name: "write", parameters: { type: "object" }, function: execute },
+      { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: execute },
     ]);
     expect(result.status).toBe("failed");
     expect(execute).not.toHaveBeenCalled();

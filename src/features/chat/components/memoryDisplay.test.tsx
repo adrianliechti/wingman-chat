@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { BrainCircuit, FileText } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -61,8 +62,9 @@ describe("memory operations in chat", () => {
     expect(resolveToolHeader(undefined, "artifacts_create", raw, { error: true }).label).toBe("Could not remember");
     const tool: Tool = {
       name: "artifacts_read",
-      parameters: {},
-      function: async () => [],
+      description: "Test tool",
+      inputSchema: z.unknown(),
+      execute: async () => [],
       display: { header: () => ({ icon: FileText, label: "Read file" }) },
     };
     expect(resolveToolHeader(tool, tool.name, '{"file_path":"/report.md"}', {}).label).toBe("Read file");

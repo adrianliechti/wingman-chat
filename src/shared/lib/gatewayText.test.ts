@@ -147,7 +147,7 @@ it.each([
 
 it.each([false, true])("excludes unfinished reasoning on retry with pending tool call: %s", async (pendingCall) => {
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Recovered")])));
-  const execute = vi.fn<Tool["function"]>(async () => output("Already read"));
+  const execute = vi.fn<Tool["execute"]>(async () => output("Already read"));
   const messages: UIMessage[] = [
     ...prompt,
     assistantMessage([
@@ -173,7 +173,7 @@ it.each([false, true])("excludes unfinished reasoning on retry with pending tool
     "model",
     "",
     [...retry.history, retry.resend],
-    [{ name: "read", parameters: { type: "object", properties: {} }, function: execute }],
+    [{ name: "read", description: "Test tool", inputSchema: z.looseObject({}), execute: execute }],
   );
   expect(result.status).toBe("completed");
   const input = JSON.parse(fetchMock.mock.calls[0][1].body).input;
@@ -433,12 +433,13 @@ it("retains rich results and executes a tool once when completed text rewrites a
     )
     .mockResolvedValueOnce(finished(response([textItem("Done")])));
   const image = mediaFromDataUrl("data:image/png;base64,AQ==");
-  const execute = vi.fn<Tool["function"]>(async (_input, ctx) => {
+  const execute = vi.fn<Tool["execute"]>(async (_input, execution) => {
+    const ctx = execution?.context;
     ctx?.setMeta?.({ file: "/notes.md" });
     return [image];
   });
   const result = await run(new Client(), "model", "", prompt, [
-    { name: "write", parameters: { type: "object", properties: {} }, function: execute },
+    { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: execute },
   ]);
   expect(result.status).toBe("completed");
   expect(execute).toHaveBeenCalledOnce();

@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { describe, expect, it, vi } from "vitest";
 import { createReadonlyFileTools, type ReadonlyFileSource } from "@/shared/lib/file-tools";
 import type { Tool } from "@/shared/types/chat";
@@ -21,7 +22,7 @@ function byName(tools: Tool[], name: string): Tool {
 }
 
 async function resultText(tool: Tool, args: Record<string, unknown>): Promise<string> {
-  const result = await tool.function(args);
+  const result = await tool.execute(args);
   const first = result[0];
   if (!first || first.type !== "text") throw new Error("Expected text result");
   return first.content;
@@ -39,11 +40,15 @@ describe("repository tools", () => {
       createRepositoryTools([repositoryFile({ id: "file", name: "notes.txt" })], query),
       "repository_search",
     );
-    await expect(search.function({ query: "Query" }, { signal: controller.signal })).rejects.toMatchObject({
+    await expect(
+      search.execute({ query: "Query" }, { context: { signal: controller.signal }, emitCustomEvent() {} }),
+    ).rejects.toMatchObject({
       name: "AbortError",
     });
     expect(query).toHaveBeenCalledOnce();
-    await expect(search.function({ query: "Query" }, { signal: controller.signal })).rejects.toMatchObject({
+    await expect(
+      search.execute({ query: "Query" }, { context: { signal: controller.signal }, emitCustomEvent() {} }),
+    ).rejects.toMatchObject({
       name: "AbortError",
     });
     expect(query).toHaveBeenCalledOnce();
@@ -72,8 +77,8 @@ describe("repository tools", () => {
       "repository_search",
     ]);
     for (const operation of ["read", "grep", "glob"]) {
-      expect(byName(tools, `repository_${operation}`).parameters).toEqual(
-        byName(artifactTools, `artifacts_${operation}`).parameters,
+      expect(convertSchemaToJsonSchema(byName(tools, `repository_${operation}`).inputSchema)!).toEqual(
+        convertSchemaToJsonSchema(byName(artifactTools, `artifacts_${operation}`).inputSchema)!,
       );
     }
   });

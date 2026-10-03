@@ -1,5 +1,6 @@
+import { z } from "zod";
 import assert from "node:assert/strict";
-import { maxIterations } from "@tanstack/ai";
+import { convertSchemaToJsonSchema, maxIterations } from "@tanstack/ai";
 import { execFile } from "node:child_process";
 import { after, before, describe, test } from "node:test";
 import { promisify } from "node:util";
@@ -184,13 +185,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             description:
               "Fetch a deterministic fixture. Start with attempt 1; if it reports a transient failure, increment attempt and retry.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { attempt: { type: "integer" } },
               required: ["attempt"],
               additionalProperties: false,
-            },
-            function: async (args, context) => {
+            }),
+            execute: async (args, execution) => {
+              const context = execution?.context;
               attempts.push(args.attempt);
               context.setMeta?.({ phase: "attempt", attempt: args.attempt });
               if (attempts.length === 1) {
@@ -267,13 +269,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "delegate_fixture",
             description: "Delegate the deterministic fixture lookup to a child agent.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { task: { type: "string" } },
               required: ["task"],
               additionalProperties: false,
-            },
-            function: async (_args, context) => {
+            }),
+            execute: async (_args, execution) => {
+              const context = execution?.context;
               assert(context.invocationContext, "The tool did not receive the shared invocation context");
               childResult = await run(
                 client,
@@ -328,8 +331,14 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "wait_for_release",
             description: "Wait until the caller releases or cancels this operation.",
 
-            parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
-            function: async (_args, context) => {
+            inputSchema: z.fromJSONSchema({
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            }),
+            execute: async (_args, execution) => {
+              const context = execution?.context;
               toolStarted = true;
               const signal = context.signal;
               assert(signal, "The tool did not receive the run's abort signal");
@@ -382,13 +391,13 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             name: "continue_loop",
             description: "Return the next loop step. The test requires another call after every result.",
 
-            parameters: {
+            inputSchema: z.fromJSONSchema({
               type: "object",
               properties: { step: { type: "integer" } },
               required: ["step"],
               additionalProperties: false,
-            },
-            function: async (args) => {
+            }),
+            execute: async (args) => {
               calls.push(args.step);
               return [
                 { type: "text", content: `Step ${args.step} complete. Call continue_loop with step ${args.step + 1}.` },
@@ -424,8 +433,9 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
               description:
                 "Execute inline Python. Set language to python, pass code as one JSON string and omit path when unused.",
 
-              parameters: executionSchemasModule.SCRIPT_EXECUTION_PARAMETERS,
-              function: async (args, context) => {
+              inputSchema: executionSchemasModule.SCRIPT_EXECUTION_SCHEMA,
+              execute: async (args, execution) => {
+                const context = execution?.context;
                 parsedCalls.push(args);
                 assert.equal(typeof args.code, "string");
                 assert.equal(args.language, "python");
@@ -441,7 +451,11 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
             };
             const tools = [...productionFileTools(workspace), pythonTool, questionsToolModule.ASK_QUESTIONS_TOOL];
             assert.equal(
-              tools.reduce((count, tool) => count + toolSchemasModule.countSchemaUnions(tool.parameters), 0),
+              tools.reduce(
+                (count, tool) =>
+                  count + toolSchemasModule.countSchemaUnions(convertSchemaToJsonSchema(tool.inputSchema)),
+                0,
+              ),
               0,
             );
 

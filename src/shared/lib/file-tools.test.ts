@@ -1,3 +1,4 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { describe, expect, it } from "vitest";
 import type { File } from "../types/file";
 import { countSchemaUnions } from "./test-support/toolSchemas";
@@ -62,8 +63,8 @@ describe("artifact file tools", () => {
     const tools = createReadonlyFileTools(source, { namespace });
     const pattern = "{policy/returns.md,src/**/*.{ts,tsx}}";
     const results = [
-      await tools.find((tool) => tool.name === `${namespace}_glob`)!.function({ pattern }),
-      await tools.find((tool) => tool.name === `${namespace}_grep`)!.function({ pattern: "needle", glob: pattern }),
+      await tools.find((tool) => tool.name === `${namespace}_glob`)!.execute({ pattern }),
+      await tools.find((tool) => tool.name === `${namespace}_grep`)!.execute({ pattern: "needle", glob: pattern }),
     ];
     for (const result of results) {
       const output = JSON.stringify(result);
@@ -74,17 +75,17 @@ describe("artifact file tools", () => {
     }
     const all = await tools
       .find((tool) => tool.name === `${namespace}_glob`)!
-      .function({ pattern: "{policy/returns.md,**/*}" });
+      .execute({ pattern: "{policy/returns.md,**/*}" });
     expect(JSON.stringify(all)).toContain("# 4 files");
   });
 
   it("matches zero or more directory levels in glob and grep filters", async () => {
     const { source } = memorySource({ "/src/app.ts": "needle", "/src/deep/lib.ts": "needle", "/other.ts": "needle" });
     const tools = artifactTools(source);
-    const glob = await tools.find((tool) => tool.name === "artifacts_glob")!.function({ pattern: "src/**/*.ts" });
+    const glob = await tools.find((tool) => tool.name === "artifacts_glob")!.execute({ pattern: "src/**/*.ts" });
     const grep = await tools
       .find((tool) => tool.name === "artifacts_grep")!
-      .function({ pattern: "needle", glob: "src/**/*.ts" });
+      .execute({ pattern: "needle", glob: "src/**/*.ts" });
     for (const output of [glob, grep]) {
       const text = JSON.stringify(output);
       expect(text).toContain("/src/app.ts");
@@ -110,23 +111,30 @@ describe("artifact file tools", () => {
     };
 
     for (const tool of tools) {
-      expect(tool.parameters.additionalProperties, tool.name).toBe(false);
-      expect(countSchemaUnions(tool.parameters), `${tool.name} must not consume the provider union budget`).toBe(0);
-      expect(tool.parameters.required, tool.name).toEqual(requiredByTool[tool.name]);
-      expect(tool.parameters.properties, tool.name).not.toHaveProperty("baseRevision");
+      expect(convertSchemaToJsonSchema(tool.inputSchema)!.additionalProperties, tool.name).toBe(false);
+      expect(
+        countSchemaUnions(convertSchemaToJsonSchema(tool.inputSchema)!),
+        `${tool.name} must not consume the provider union budget`,
+      ).toBe(0);
+      expect(convertSchemaToJsonSchema(tool.inputSchema)!.required, tool.name).toEqual(requiredByTool[tool.name]);
+      expect(convertSchemaToJsonSchema(tool.inputSchema)!.properties, tool.name).not.toHaveProperty("baseRevision");
     }
 
     expect(create).toBeDefined();
     expect(edit).toBeDefined();
 
-    const edits = (edit?.parameters.properties as Record<string, Record<string, unknown>> | undefined)?.edits;
+    const edits = (
+      convertSchemaToJsonSchema(edit?.inputSchema)!.properties as Record<string, Record<string, unknown>> | undefined
+    )?.edits;
     expect(edits).toBeDefined();
     expect(edits?.minItems).toBe(1);
-    expect(Object.keys(edit?.parameters.properties as Record<string, unknown>)).toEqual(["edits"]);
+    expect(Object.keys(convertSchemaToJsonSchema(edit?.inputSchema)!.properties as Record<string, unknown>)).toEqual([
+      "edits",
+    ]);
     const item = edits?.items as Record<string, unknown>;
     expect(item.additionalProperties).toBe(false);
     expect(item.required).toEqual(["file_path", "old_string", "new_string"]);
-    expect(Object.keys(grep?.parameters.properties as Record<string, unknown>)).toEqual([
+    expect(Object.keys(convertSchemaToJsonSchema(grep?.inputSchema)!.properties as Record<string, unknown>)).toEqual([
       "pattern",
       "path",
       "glob",
@@ -141,7 +149,10 @@ describe("artifact file tools", () => {
       "skip",
       "multiline",
     ]);
-    expect(Object.keys(glob?.parameters.properties as Record<string, unknown>)).toEqual(["pattern", "path"]);
+    expect(Object.keys(convertSchemaToJsonSchema(glob?.inputSchema)!.properties as Record<string, unknown>)).toEqual([
+      "pattern",
+      "path",
+    ]);
   });
 
   it("writes normal string content unchanged", async () => {
@@ -150,7 +161,7 @@ describe("artifact file tools", () => {
     const html = `<!doctype html><div class="card">Hello</div>`;
 
     expect(create).toBeDefined();
-    await create?.function({ file_path: "/index.html", content: html });
+    await create?.execute({ file_path: "/index.html", content: html });
 
     expect(files.get("/index.html")?.content).toBe(html);
   });
@@ -185,7 +196,7 @@ describe("artifact file tools", () => {
       });
       const tool = tools.find((tool) => tool.name === `artifacts_${operation}`)!;
       const invalid = '{"days":}';
-      const result = await tool.function(
+      const result = await tool.execute(
         operation === "create"
           ? { file_path: "/config.json", content: invalid }
           : { edits: [{ file_path: "/config.json", old_string: "30", new_string: "" }] },
@@ -202,7 +213,7 @@ describe("artifact file tools", () => {
       // without another model-facing read, as the prompts instruct.
       const fixed = await tools
         .find((tool) => tool.name === "artifacts_edit")!
-        .function({
+        .execute({
           edits: [{ file_path: "/config.json", old_string: invalid, new_string: '{"days":45}' }],
         });
       const corrected = fixed[0];
@@ -218,7 +229,7 @@ describe("artifact file tools", () => {
     const create = artifactTools(source).find((tool) => tool.name === "artifacts_create");
 
     expect(create).toBeDefined();
-    const result = await create?.function({ file_path: "/bad.html", content: { unexpected: true } });
+    const result = await create?.execute({ file_path: "/bad.html", content: { unexpected: true } });
 
     expect(files.has("/bad.html")).toBe(false);
     const first = result?.[0];
@@ -231,8 +242,8 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource();
     const create = artifactTools(source).find((tool) => tool.name === "artifacts_create");
 
-    const badPath = await create?.function({ path: "/aliased.py", content: "print('hi')" });
-    const badContent = await create?.function({ file_path: "/named.py", text: "print('ho')" });
+    const badPath = await create?.execute({ path: "/aliased.py", content: "print('hi')" });
+    const badContent = await create?.execute({ file_path: "/named.py", text: "print('ho')" });
 
     expect(files.size).toBe(0);
     expect(badPath?.[0]?.type === "text" && JSON.parse(badPath[0].content).error).toContain("file_path is required");
@@ -248,7 +259,7 @@ describe("artifact file tools", () => {
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
     expect(edit).toBeDefined();
-    await edit?.function({
+    await edit?.execute({
       edits: [
         {
           file_path: "/index.html",
@@ -267,7 +278,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/index.html": original });
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
-    await edit?.function({
+    await edit?.execute({
       edits: [
         {
           file_path: "/index.html",
@@ -287,7 +298,7 @@ describe("artifact file tools", () => {
     });
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
-    await edit?.function({
+    await edit?.execute({
       edits: [
         {
           file_path: "/index.html",
@@ -315,7 +326,7 @@ describe("artifact file tools", () => {
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
     let meta: Record<string, unknown> | undefined;
 
-    const result = await edit?.function(
+    const result = await edit?.execute(
       {
         edits: [
           { file_path: "/first.txt", old_string: "one", new_string: "ONE" },
@@ -324,7 +335,7 @@ describe("artifact file tools", () => {
           { file_path: "/created.txt", old_string: "", new_string: "created\n" },
         ],
       },
-      { setMeta: (value) => (meta = value) },
+      { context: { setMeta: (value) => (meta = value) }, emitCustomEvent() {} },
     );
 
     expect(files.get("/first.txt")?.content).toBe("done\n");
@@ -351,7 +362,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/existing.txt": "keep me\n" });
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
-    const result = await edit?.function({
+    const result = await edit?.execute({
       edits: [
         { file_path: "/created.txt", old_string: "", new_string: "must not persist\n" },
         { file_path: "/existing.txt", old_string: "missing", new_string: "replacement" },
@@ -369,7 +380,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/windows.txt": "\uFEFFfirst\r\nsecond\r\n" });
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
-    const result = await edit?.function({
+    const result = await edit?.execute({
       edits: [
         {
           file_path: "/windows.txt",
@@ -395,7 +406,7 @@ describe("artifact file tools", () => {
     });
     const result = await artifactTools(source)
       .find((tool) => tool.name === "artifacts_edit")!
-      .function({
+      .execute({
         edits: [
           ...["/lf.txt", "/cr.txt", "/mixed.txt"].map((file_path) => ({
             file_path,
@@ -425,7 +436,7 @@ describe("artifact file tools", () => {
       ["", { utf8_bom: false, line_endings: "none" }],
       ["data:image/png;base64,aGVsbG8=", undefined],
     ] as const) {
-      const result = await create.function({ file_path: "/file.txt", content });
+      const result = await create.execute({ file_path: "/file.txt", content });
       const first = result[0];
       if (first.type !== "text") throw new Error("Expected a text result");
       expect(JSON.parse(first.content).text_format).toEqual(format);
@@ -443,7 +454,7 @@ describe("artifact file tools", () => {
   ])("read headers expose whole-text format even for empty or partial reads: %j", async (content, bom, endings) => {
     const { source } = memorySource({ "/file.txt": content });
     const read = artifactTools(source).find((tool) => tool.name === "artifacts_read")!;
-    const result = await read.function({ file_path: "/file.txt", limit: 1 });
+    const result = await read.execute({ file_path: "/file.txt", limit: 1 });
     const first = result[0];
     if (first.type !== "text") throw new Error("Expected a text result");
     expect(first.content).toContain(`[UTF-8 BOM: ${bom}; line endings: ${endings}]`);
@@ -455,7 +466,7 @@ describe("artifact file tools", () => {
     const { source } = memorySource({ "/image.png": "data:image/png;base64,aGVsbG8=" });
     const result = await artifactTools(source)
       .find((tool) => tool.name === "artifacts_read")!
-      .function({ file_path: "/image.png" });
+      .execute({ file_path: "/image.png" });
     expect(JSON.stringify(result)).toContain("binary");
     expect(JSON.stringify(result)).not.toContain("UTF-8 BOM");
   });
@@ -464,7 +475,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/quotes.txt": "Title: “Hello”\nOwner: ‘Ada’\n" });
     const edit = artifactTools(source).find((tool) => tool.name === "artifacts_edit");
 
-    await edit?.function({
+    await edit?.execute({
       edits: [
         { file_path: "/quotes.txt", old_string: 'Title: "Hello"', new_string: 'Title: "World"' },
         { file_path: "/quotes.txt", old_string: "Owner: 'Ada'", new_string: "Owner: 'Grace'" },
@@ -478,7 +489,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/large.txt": "too large" });
     const edit = artifactTools(source, { maxEditBytes: 4 }).find((tool) => tool.name === "artifacts_edit");
 
-    const result = await edit?.function({
+    const result = await edit?.execute({
       edits: [{ file_path: "/large.txt", old_string: "too", new_string: "not" }],
     });
 
@@ -492,7 +503,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/bom.txt": "\uFEFFhello\n" });
     const read = artifactTools(source).find((tool) => tool.name === "artifacts_read");
 
-    const result = await read?.function({ file_path: "/bom.txt" });
+    const result = await read?.execute({ file_path: "/bom.txt" });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -516,7 +527,7 @@ describe("artifact file tools", () => {
     ];
     const glob = artifactTools(source, { maxPathResults: 2 }).find((tool) => tool.name === "artifacts_glob");
 
-    const result = await glob?.function({ pattern: "*.txt", path: "/logs" });
+    const result = await glob?.execute({ pattern: "*.txt", path: "/logs" });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -533,7 +544,7 @@ describe("artifact file tools", () => {
     });
     const glob = artifactTools(source).find((tool) => tool.name === "artifacts_glob");
 
-    const result = await glob?.function({ pattern: "**/*" });
+    const result = await glob?.execute({ pattern: "**/*" });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -549,12 +560,12 @@ describe("artifact file tools", () => {
     });
     const grep = artifactTools(source).find((tool) => tool.name === "artifacts_grep");
 
-    const defaults = await grep?.function({ pattern: "Needle", path: "/src", type: "ts" });
+    const defaults = await grep?.execute({ pattern: "Needle", path: "/src", type: "ts" });
     const defaultText = defaults?.[0];
     if (!defaultText || defaultText.type !== "text") throw new Error("Expected a text result");
     expect(defaultText.content).toBe("/src/app.ts");
 
-    const content = await grep?.function({
+    const content = await grep?.execute({
       pattern: "needle",
       path: "/src",
       glob: "*.ts",
@@ -570,7 +581,7 @@ describe("artifact file tools", () => {
     expect(contentText.content).toContain("/src/app.ts:3-after");
     expect(contentText.content).not.toContain("Needle one");
 
-    const count = await grep?.function({
+    const count = await grep?.execute({
       pattern: "Needle[\\s\\S]*after",
       path: "/src/app.ts",
       multiline: true,
@@ -585,7 +596,7 @@ describe("artifact file tools", () => {
     const { source } = memorySource({ "/a.txt": "[" });
     const grep = artifactTools(source).find((tool) => tool.name === "artifacts_grep");
 
-    const result = await grep?.function({ pattern: "[" });
+    const result = await grep?.execute({ pattern: "[" });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -596,7 +607,7 @@ describe("artifact file tools", () => {
     const { source } = memorySource({ "/a.txt": "before\nNeedle\nafter\n" });
     const grep = artifactTools(source).find((tool) => tool.name === "artifacts_grep");
 
-    const result = await grep?.function({ pattern: "^Needle$", multiline: true });
+    const result = await grep?.execute({ pattern: "^Needle$", multiline: true });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -611,7 +622,7 @@ describe("artifact file tools", () => {
       (tool) => tool.name === "artifacts_read",
     );
 
-    const first = await read?.function({ file_path: "/long.txt" });
+    const first = await read?.execute({ file_path: "/long.txt" });
     const firstResult = first?.[0];
     expect(firstResult?.type).toBe("text");
     if (!firstResult || firstResult.type !== "text") throw new Error("Expected a text result");
@@ -619,7 +630,7 @@ describe("artifact file tools", () => {
     expect(firstResult.content).toContain("use offset=2 to continue");
     expect(firstResult.content).not.toContain("2222222222");
 
-    const second = await read?.function({ file_path: "/long.txt", offset: 2 });
+    const second = await read?.execute({ file_path: "/long.txt", offset: 2 });
     const secondResult = second?.[0];
     expect(secondResult?.type).toBe("text");
     if (!secondResult || secondResult.type !== "text") throw new Error("Expected a text result");

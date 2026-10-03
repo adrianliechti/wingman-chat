@@ -9,6 +9,7 @@
  * bridge and the tool consent is a courtesy, not a security boundary.
  */
 
+import { convertSchemaToJsonSchema, parseWithStandardSchema } from "@tanstack/ai";
 import { runLlm } from "@/features/tools/lib/llmCommand";
 import { runOcr } from "@/features/tools/lib/ocrCommand";
 import { runRenderImage } from "@/features/tools/lib/renderCommand";
@@ -495,7 +496,7 @@ class ArtifactDocument {
           name: tool.name,
           title: tool.title,
           description: tool.description,
-          parameters: tool.parameters,
+          parameters: convertSchemaToJsonSchema(tool.inputSchema),
         }));
       case "tools.call": {
         this.require("tools");
@@ -510,7 +511,11 @@ class ArtifactDocument {
           signal: this.controller.signal,
           setMeta() {},
         };
-        return tool.function(isRecord(params[1]) ? params[1] : {}, context);
+        return tool.execute(parseWithStandardSchema<Record<string, unknown>>(tool.inputSchema, params[1] ?? {}), {
+          context,
+          abortSignal: this.controller.signal,
+          emitCustomEvent() {},
+        });
       }
 
       case "duckdb.connect":

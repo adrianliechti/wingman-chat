@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { extractAudioForTranscription } from "../../../src/features/tools/lib/extractAudio";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -102,8 +103,10 @@ let toolStarted = false;
 let elicitationCount = 0;
 const delayedTool: Tool = {
   name: "late_elicitation",
-  parameters: { type: "object", properties: {} },
-  function: async (_args, context) => {
+  description: "Test tool",
+  inputSchema: z.looseObject({}),
+  execute: async (_args, execution) => {
+    const context = execution?.context;
     toolStarted = true;
     await toolGate.promise;
     await context!.elicit!({ message: "Continue?" });

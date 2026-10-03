@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { maxIterations, type ChatMiddleware } from "@tanstack/ai";
 import subagentDescription from "@/features/tools/prompts/subagent-description.txt?raw";
 import subagentSystem from "@/features/tools/prompts/subagent-system.txt?raw";
@@ -41,20 +42,16 @@ export function createAgentTool(
     subagent: spec,
     description,
     needsApproval: options.needsApproval,
-    parameters: {
-      type: "object",
-      properties: {
-        prompt: {
-          type: "string",
-          minLength: 1,
-          description:
-            "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
-        },
-      },
-      required: ["prompt"],
-      additionalProperties: false,
-    },
-    function: async (args, ctx) => {
+    inputSchema: z.strictObject({
+      prompt: z
+        .string()
+        .min(1)
+        .describe(
+          "A clear, self-contained task description for the agent. Include the task goal, constraints, and expected result.",
+        ),
+    }),
+    execute: async (args, execution) => {
+      const ctx = execution?.context;
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) {
         return [{ type: "text", content: "Error: prompt is required" }];

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineSkill, withSkills } from "@tanstack/ai-skills";
@@ -24,8 +25,10 @@ describe("subagent invocation identity", () => {
       [
         {
           name: "inspect",
-          parameters: { type: "object", properties: {}, additionalProperties: false },
-          function: async (_args, context) => {
+          description: "Test tool",
+          inputSchema: z.strictObject({}),
+          execute: async (_args, execution) => {
+            const context = execution?.context;
             child = context;
             work?.(context!);
             return [{ type: "text", content: "ok" }];
@@ -34,7 +37,7 @@ describe("subagent invocation identity", () => {
       ],
       "active_file: /current.md",
     );
-    await tool.function({ prompt: "Inspect the file" }, parent);
+    await tool.execute({ prompt: "Inspect the file" }, { context: parent, emitCustomEvent() {} });
     expect(child?.runId).toBeTruthy();
     expect(state.complete).toHaveBeenCalledTimes(2);
     const request = state.complete.mock.calls[0];
@@ -65,7 +68,7 @@ describe("subagent invocation identity", () => {
         .mockReset()
         .mockResolvedValueOnce(toolCallMessage([{ id: "skill", name: "load_skill", arguments: '{"name":"reports"}' }]))
         .mockResolvedValueOnce(assistantMessage("Verified"));
-      expect(await tool.function({ prompt: "Build a report" }, parent)).toEqual([
+      expect(await tool.execute({ prompt: "Build a report" }, { context: parent, emitCustomEvent() {} })).toEqual([
         { type: "text", content: "Verified" },
       ]);
       expect(JSON.stringify(state.complete.mock.calls[0][0].systemPrompts)).toContain("Create reports");
@@ -80,7 +83,7 @@ describe("subagent invocation identity", () => {
         assistantMessage([text("Working", { phase: "commentary" }), text("Done", { phase: "final_answer" })]),
       );
     const tool = createSubagentTool("model", "Instructions", []);
-    expect(await tool.function({ prompt: "Question" })).toEqual([{ type: "text", content: "Done" }]);
+    expect(await tool.execute({ prompt: "Question" })).toEqual([{ type: "text", content: "Done" }]);
   });
 
   it("asks voice callers to continue in chat when a delegated tool needs native approval", async () => {
@@ -88,12 +91,13 @@ describe("subagent invocation identity", () => {
     const tool = createSubagentTool("model", "", [
       {
         name: "inspect",
-        parameters: { type: "object" },
+        description: "Test tool",
+        inputSchema: z.looseObject({}),
         needsApproval: true,
-        function: execute,
+        execute: execute,
       },
     ]);
-    const result = await tool.function({ prompt: "Inspect" }, { elicit: vi.fn() });
+    const result = await tool.execute({ prompt: "Inspect" }, { context: { elicit: vi.fn() }, emitCustomEvent() {} });
     expect(result).toEqual([{ type: "text", content: "This task needs interactive input. Continue it in chat." }]);
     expect(execute).not.toHaveBeenCalled();
     expect(state.complete).toHaveBeenCalledOnce();

@@ -27,7 +27,10 @@ describe("structured question validation", () => {
   ])("rejects an ambiguous or unanswerable form %j", async (...questions) => {
     const elicit = vi.fn().mockResolvedValue({ action: "accept", content: {} });
     const setError = vi.fn();
-    const result = await ASK_QUESTIONS_TOOL.function({ questions }, { elicit, setError });
+    const result = await ASK_QUESTIONS_TOOL.execute(
+      { questions },
+      { context: { elicit, setError }, emitCustomEvent() {} },
+    );
     expect(elicit).not.toHaveBeenCalled();
     expect(setError).toHaveBeenCalledWith(expect.objectContaining({ code: "QUESTIONS_ERROR" }));
     expect(result).toEqual([{ type: "text", content: expect.stringContaining('"success":false') }]);

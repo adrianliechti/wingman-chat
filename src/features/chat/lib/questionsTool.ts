@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { MCPInputRequiredError } from "@tanstack/ai-mcp";
 import { HelpCircle } from "lucide-react";
 import type { ContentPart } from "@tanstack/ai";
@@ -47,56 +48,37 @@ export const ASK_QUESTIONS_TOOL: Tool = {
       label: state.error ? "Question failed" : state.running ? "Waiting for answer…" : "Asked a question",
     }),
   },
-  parameters: {
-    type: "object",
-    properties: {
-      message: {
-        type: "string",
-        description: "Optional short explanation of why the answers are needed, shown above the form.",
-      },
-      questions: {
-        type: "array",
-        minItems: 1,
-        items: {
-          type: "object",
-          properties: {
-            id: {
-              type: "string",
-              description: 'Unique answer key within this form, e.g. "audience".',
-            },
-            label: { type: "string", description: "The question text." },
-            description: { type: "string", description: "Optional one-line helper text under the question." },
-            type: {
-              type: "string",
-              enum: ["text", "number", "boolean", "select", "multi_select"],
-              description:
-                'Use "select" for one choice, "multi_select" for several, "boolean" for yes/no, or "text"/"number" for free entry. Choice types require options.',
-            },
-            options: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: { value: { type: "string" }, label: { type: "string" } },
-                required: ["value", "label"],
-                additionalProperties: false,
-              },
-              description: 'Nonempty choices for "select" and "multi_select". Values are returned as the answers.',
-            },
-            required: {
-              type: "boolean",
-              description: "Defaults to false. Require an answer only when the task cannot proceed without it.",
-            },
-          },
-          required: ["id", "label", "type"],
-          additionalProperties: false,
-        },
-        description: "Related questions to show and submit together. Include only what is needed to proceed.",
-      },
-    },
-    required: ["questions"],
-    additionalProperties: false,
-  },
-  function: async (args: Record<string, unknown>, context?: ToolContext) => {
+  inputSchema: z.strictObject({
+    message: z
+      .string()
+      .describe("Optional short explanation of why the answers are needed, shown above the form.")
+      .optional(),
+    questions: z
+      .array(
+        z.strictObject({
+          id: z.string().describe('Unique answer key within this form, e.g. "audience".'),
+          label: z.string().describe("The question text."),
+          description: z.string().describe("Optional one-line helper text under the question.").optional(),
+          type: z
+            .enum(["text", "number", "boolean", "select", "multi_select"])
+            .describe(
+              'Use "select" for one choice, "multi_select" for several, "boolean" for yes/no, or "text"/"number" for free entry. Choice types require options.',
+            ),
+          options: z
+            .array(z.strictObject({ value: z.string(), label: z.string() }))
+            .describe('Nonempty choices for "select" and "multi_select". Values are returned as the answers.')
+            .optional(),
+          required: z
+            .boolean()
+            .describe("Defaults to false. Require an answer only when the task cannot proceed without it.")
+            .optional(),
+        }),
+      )
+      .min(1)
+      .describe("Related questions to show and submit together. Include only what is needed to proceed."),
+  }),
+  execute: async (args: Record<string, unknown>, execution) => {
+    const context = execution?.context;
     context?.signal?.throwIfAborted();
     if (!context?.elicit && !context?.interruptible) {
       return errorResult(

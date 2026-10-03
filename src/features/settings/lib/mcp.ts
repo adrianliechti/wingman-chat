@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
@@ -307,8 +308,9 @@ export class MCPClient implements ToolProvider {
       title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
-      parameters: tool.inputSchema || {},
-      function: async (args, context) => {
+      inputSchema: z.fromJSONSchema(tool.inputSchema as Record<string, unknown>),
+      execute: async (args, execution) => {
+        const context = execution?.context;
         annotateMcpSpan(this.url, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();

@@ -98,7 +98,9 @@
           const fs = new FileSystemManager(chatId);
           const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
           const invoke = (name, args) =>
-            tools.find((tool) => tool.name === name).function(args, { runId: "browser-run" });
+            tools
+              .find((tool) => tool.name === name)
+              .execute(args, { context: { runId: "browser-run" }, emitCustomEvent() {} });
           const created = await invoke("artifacts_create", {
             file_path: "/bom.txt",
             content: "\uFEFFalpha\r\nbeta\r\n",

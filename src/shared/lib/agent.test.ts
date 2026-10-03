@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { DISCOVERY_TOOL_NAME, maxIterations, type UIMessage } from "@tanstack/ai";
 import { run } from "./agent";
@@ -9,16 +10,17 @@ import type { Tool } from "../types/chat";
 const prompt: UIMessage[] = [user("go")];
 const done = assistant("Done");
 const call = (id = "call", args = "{}") => calls([id, "write", args]);
-const tool = (execute: Tool["function"] = async () => output("Written")): Tool => ({
+const tool = (execute: Tool["execute"] = async () => output("Written")): Tool => ({
   name: "write",
-  parameters: { type: "object", properties: {} },
-  function: execute,
+  description: "Test tool",
+  inputSchema: z.looseObject({}),
+  execute: execute,
 });
 const results = (messages: UIMessage[]) => messages.flatMap(toolResults);
 
 describe("TanStack agent lifecycle", () => {
   it("discovers deferred tools natively and restores them from saved history", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Written"));
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written"));
     const deferredTool = { ...tool(execute), lazy: true, description: "Write a file. Extended guidance." };
     const discovery = calls(["discover", DISCOVERY_TOOL_NAME, { toolNames: ["write"] }]);
     const complete = vi.fn().mockResolvedValueOnce(discovery).mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
@@ -45,7 +47,7 @@ describe("TanStack agent lifecycle", () => {
   });
 
   it("does not execute a deferred tool before discovery and lets the model correct its call", async () => {
-    const execute = vi.fn<Tool["function"]>().mockResolvedValue(output("Written"));
+    const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written"));
     const complete = vi
       .fn()
       .mockResolvedValueOnce(call("early"))
@@ -68,7 +70,8 @@ describe("TanStack agent lifecycle", () => {
       "Instructions",
       prompt,
       [
-        tool(async (_args, context) => {
+        tool(async (_args, execution) => {
+          const context = execution?.context;
           context?.setMeta?.({ artifactDelta: { mutations: [{ path: "/a.txt" }] } });
           context?.setContent?.({ saved: true });
           return output("Written");
@@ -151,7 +154,8 @@ describe("TanStack agent lifecycle", () => {
       "",
       prompt,
       [
-        tool(async (_args, context) => {
+        tool(async (_args, execution) => {
+          const context = execution?.context;
           controller.abort();
           context?.signal?.throwIfAborted();
           return [];
@@ -164,10 +168,13 @@ describe("TanStack agent lifecycle", () => {
     expect(complete).toHaveBeenCalledOnce();
   });
 
-  it("lets TanStack validate tool inputs without executing invalid arguments", async () => {
+  it.each(["many", -1])("lets TanStack validate tool inputs, including native refinements: %s", async (count) => {
     const execute = vi.fn();
     const resultHook = vi.fn();
-    const complete = vi.fn().mockResolvedValueOnce(call("bad", '{"count":"many"}')).mockResolvedValueOnce(done);
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(call("bad", JSON.stringify({ count })))
+      .mockResolvedValueOnce(done);
     const result = await run(
       testClient(complete),
       "model",
@@ -176,7 +183,12 @@ describe("TanStack agent lifecycle", () => {
       [
         {
           ...tool(execute),
-          parameters: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] },
+          inputSchema: z.looseObject({
+            count: z
+              .number()
+              .int()
+              .refine((value) => value > 0, "Count must be positive"),
+          }),
         },
       ],
       { middleware: [{ onToolPhaseComplete: (_ctx, info) => resultHook(info.results) }] },
@@ -201,7 +213,8 @@ describe("TanStack agent lifecycle", () => {
       "",
       prompt,
       [
-        tool(async (_args, context) => {
+        tool(async (_args, execution) => {
+          const context = execution?.context;
           toolSignal = context?.signal;
           invocationSignal = context?.invocationContext?.signal;
           cancel();
@@ -250,8 +263,9 @@ describe("TanStack agent lifecycle", () => {
       [
         {
           name: "agent",
-          parameters: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] },
-          function: async () => [],
+          description: "Test tool",
+          inputSchema: z.looseObject({ prompt: z.string() }),
+          execute: async () => [],
           subagent: { instructions: "", tools: [], timeoutMs: 10 },
         },
       ],
@@ -288,7 +302,8 @@ describe("TanStack agent lifecycle", () => {
   it("keeps rich error results and reports their failure through the native tool loop", async () => {
     const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
     const result = await run(testClient(complete), "model", "", prompt, [
-      tool(async (_args, context) => {
+      tool(async (_args, execution) => {
+        const context = execution?.context;
         context?.setMeta?.({ toolResource: "ui://error", mcpResult: { isError: true } });
         context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Remote operation failed" });
         return output("Failure details");
@@ -335,7 +350,8 @@ describe("TanStack agent lifecycle", () => {
       "",
       prompt,
       [
-        tool(async (_args, ctx) => {
+        tool(async (_args, execution) => {
+          const ctx = execution?.context;
           const result = await run(testClient(child), "model", "", prompt, [], {
             context: { ...ctx?.invocationContext, subagentRunId: "child" },
             agentLoopStrategy: maxIterations(1),

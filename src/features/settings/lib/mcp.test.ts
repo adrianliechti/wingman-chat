@@ -21,6 +21,8 @@ it("forwards cancellation to the native MCP call and retains stored tool names",
   const tool = boundary.toTool({ name: "cancel", inputSchema: { type: "object" } }, native);
   expect(tool.name).toBe(mcpToolName("test", "cancel"));
   controller.abort();
-  await expect(tool.function({}, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+  await expect(
+    tool.execute({}, { context: { signal: controller.signal }, emitCustomEvent() {} }),
+  ).rejects.toMatchObject({ name: "AbortError" });
   expect(callTool).toHaveBeenCalledWith("cancel", {}, { signal: controller.signal });
 });

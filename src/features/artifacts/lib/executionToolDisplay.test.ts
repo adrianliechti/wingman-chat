@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import type { Tool } from "@/shared/types/chat";
 import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
@@ -6,8 +7,8 @@ import { SCRIPT_EXECUTION_DISPLAY } from "./executionToolDisplay";
 const tool: Tool = {
   name: "execute_script",
   description: "",
-  parameters: {},
-  function: async () => [],
+  inputSchema: z.unknown(),
+  execute: async () => [],
   display: SCRIPT_EXECUTION_DISPLAY,
 };
 

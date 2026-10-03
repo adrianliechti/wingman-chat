@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { MetadataStore, UIMessage } from "@tanstack/ai";
 import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import { expect, it, vi } from "vitest";
@@ -32,8 +33,9 @@ it("compacts after large tool outputs, preserving active skill instructions and 
     [
       {
         name: "read",
-        parameters: { type: "object", properties: { large: { type: "boolean" } } },
-        function: async (args) => output(args.large ? "Large evidence ".repeat(1000) : "Small evidence"),
+        description: "Test tool",
+        inputSchema: z.looseObject({ large: z.boolean().optional() }),
+        execute: async (args) => output(args.large ? "Large evidence ".repeat(1000) : "Small evidence"),
       },
     ],
     {
@@ -90,7 +92,7 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
       "model",
       "",
       messages,
-      [{ name: "read", parameters: { type: "object" }, function: async () => output("Read") }],
+      [{ name: "read", description: "Test tool", inputSchema: z.looseObject({}), execute: async () => output("Read") }],
       {
         threadId: "chat",
         sharedMiddleware: (signal) => [chatCompaction(client, 1000, model, signal, metadata)],

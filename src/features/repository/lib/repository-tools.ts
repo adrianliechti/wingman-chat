@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { createReadonlyFileTools, type FileToolsOptions, type ReadonlyFileSource } from "@/shared/lib/file-tools";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
@@ -95,25 +96,19 @@ function createSearchTool(
     name: "repository_search",
     description:
       "Semantic search across repository documents using natural language. Returns ranked source passages; use repository_grep for exact text or regex patterns.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "A specific natural-language description of the information to find.",
-        },
-        limit: {
-          type: "integer",
-          minimum: 1,
-          maximum: MAX_SEARCH_RESULTS,
-          default: defaultResults,
-          description: `Maximum results to return. Defaults to ${defaultResults}; maximum ${MAX_SEARCH_RESULTS}.`,
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
-    function: async (args, context) => {
+    inputSchema: z.strictObject({
+      query: z.string().describe("A specific natural-language description of the information to find."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_SEARCH_RESULTS)
+        .default(defaultResults)
+        .describe(`Maximum results to return. Defaults to ${defaultResults}; maximum ${MAX_SEARCH_RESULTS}.`)
+        .optional(),
+    }),
+    execute: async (args, execution) => {
+      const context = execution?.context;
       const query = typeof args.query === "string" ? args.query.trim() : "";
       if (!query) return errorResult("query is required");
 

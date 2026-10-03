@@ -1,6 +1,6 @@
 import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
-import { chat, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
+import { chat, decide, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
 import { z } from "zod";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
@@ -11,7 +11,6 @@ import { sanitizeForClassification } from "@/features/chat/lib/chatHistory";
 import {
   type ClassificationItem,
   type ClassificationMatch,
-  classificationMatches,
   classificationRequest,
 } from "@/features/chat/lib/classificationQuestions";
 import type { SearchResult } from "@/features/research/types/search";
@@ -31,6 +30,7 @@ import {
   gatewayTranscription,
 } from "./aiProvider";
 import { decodeBase64, simplifyMarkdown } from "./utils";
+import { GatewayEvaluateAdapter } from "./gatewayEvaluate";
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
@@ -231,15 +231,27 @@ export class Client {
   ): Promise<{ categories: ClassificationMatch[]; risks: ClassificationMatch[] }> {
     const request = classificationRequest(input, categories, risks);
     if (!request) return { categories: [], risks: [] };
-    const result = await this.postRaw(
-      "/api/v1/systemone",
-      JSON.stringify({ model, ...request, effort: requestOptions.effort }),
-      (resp) => resp.json(),
-      { "Content-Type": "application/json" },
-      30_000,
-      requestOptions,
-    );
-    return classificationMatches(result?.answers, categories, risks);
+    const result = await decide({
+      adapter: new GatewayEvaluateAdapter(model, (body, signal) =>
+        this.postRaw(
+          "/api/v1/systemone",
+          JSON.stringify(body),
+          (resp) => resp.json(),
+          { "Content-Type": "application/json" },
+          30_000,
+          { signal },
+        ),
+      ),
+      ...request,
+      modelOptions: { effort: requestOptions.effort },
+      abortSignal: requestOptions.signal,
+      debug: aiDebug,
+      middleware: [aiTelemetry("classify_chat", requestOptions.parentContext)],
+    });
+    return {
+      categories: result.category ? [{ id: result.category.value, confidence: result.category.confidence }] : [],
+      risks: risks.map((risk, index) => ({ id: risk.id, confidence: result[`risk_${index}`].probability })),
+    };
   }
 
   async convertCSV(model: string, text: string): Promise<string> {

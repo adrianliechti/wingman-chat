@@ -1,3 +1,4 @@
+import { z } from "zod";
 /**
  * Shared file tool factory.
  *
@@ -158,28 +159,17 @@ function createReadTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       }),
     },
     description: `Read a file from the ${opts.spaceName} file space with 1-based line numbers. The header reports the text's UTF-8 BOM and line endings; the displayed text omits the BOM and normalizes newlines. Output is capped at ${opts.maxReadLines} lines or ${opts.maxReadChars} characters. Use offset and limit to page through large files.`,
-    parameters: {
-      type: "object",
-      properties: {
-        file_path: {
-          type: "string",
-          description: "The absolute virtual path to the file to read.",
-        },
-        offset: {
-          type: "integer",
-          minimum: 1,
-          description: "1-based line number to start reading from. Defaults to 1.",
-        },
-        limit: {
-          type: "integer",
-          minimum: 1,
-          description: "Positive number of lines to read. Only provide for large files or known ranges.",
-        },
-      },
-      required: ["file_path"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>) => {
+    inputSchema: z.strictObject({
+      file_path: z.string().describe("The absolute virtual path to the file to read."),
+      offset: z.number().int().min(1).describe("1-based line number to start reading from. Defaults to 1.").optional(),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .describe("Positive number of lines to read. Only provide for large files or known ranges.")
+        .optional(),
+    }),
+    execute: async (args: Record<string, unknown>) => {
       const path = typeof args.file_path === "string" ? args.file_path : "";
       if (!path) return error("file_path is required");
 
@@ -279,22 +269,14 @@ function createWriteTool(source: WritableFileSource, opts: ResolvedFileToolsOpti
       "text_format reports the saved text's UTF-8 BOM and line endings.",
       "Recognized structured formats are saved, then validation findings are reported; a successful save can still need corrections.",
     ].join("\n"),
-    parameters: {
-      type: "object",
-      properties: {
-        file_path: {
-          type: "string",
-          description: `The absolute virtual path in the ${opts.spaceName} file space (for example, /data/output.csv).`,
-        },
-        content: {
-          type: "string",
-          description: "The content of the file to create.",
-        },
-      },
-      required: ["file_path", "content"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>, context?: ToolContext) => {
+    inputSchema: z.strictObject({
+      file_path: z
+        .string()
+        .describe(`The absolute virtual path in the ${opts.spaceName} file space (for example, /data/output.csv).`),
+      content: z.string().describe("The content of the file to create."),
+    }),
+    execute: async (args: Record<string, unknown>, execution) => {
+      const context = execution?.context;
       const path = typeof args.file_path === "string" ? args.file_path : "";
       if (!path) {
         return error('file_path is required and must be a string like "/script.py"');
@@ -692,44 +674,31 @@ function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
       "Preserves an existing UTF-8 BOM and uniform line endings automatically; mixed line endings are normalized. text_formats reports the saved format for each path.",
       "Minor whitespace/quote/dash differences are tolerated automatically. Recognized structured formats are saved, then validation findings are reported; a successful save can still need corrections.",
     ].join("\n"),
-    parameters: {
-      type: "object",
-      properties: {
-        edits: {
-          type: "array",
-          minItems: 1,
-          description: "All file creations and replacements to apply in one atomic transaction.",
-          items: {
-            type: "object",
-            properties: {
-              file_path: {
-                type: "string",
-                description: `Absolute virtual path in the ${opts.spaceName} file space, such as /report.md.`,
-              },
-              old_string: {
-                type: "string",
-                description: "Exact text to replace; empty only when creating a file or replacing an empty file.",
-              },
-              new_string: {
-                type: "string",
-                description:
-                  "Replacement text, or complete content for a new file. An empty string deletes matched text.",
-              },
-              replace_all: {
-                type: "boolean",
-                description: "Replace every occurrence instead of requiring a unique match. Defaults to false.",
-                default: false,
-              },
-            },
-            required: ["file_path", "old_string", "new_string"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["edits"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>, context?: ToolContext) => {
+    inputSchema: z.strictObject({
+      edits: z
+        .array(
+          z.strictObject({
+            file_path: z
+              .string()
+              .describe(`Absolute virtual path in the ${opts.spaceName} file space, such as /report.md.`),
+            old_string: z
+              .string()
+              .describe("Exact text to replace; empty only when creating a file or replacing an empty file."),
+            new_string: z
+              .string()
+              .describe("Replacement text, or complete content for a new file. An empty string deletes matched text."),
+            replace_all: z
+              .boolean()
+              .default(false)
+              .describe("Replace every occurrence instead of requiring a unique match. Defaults to false.")
+              .optional(),
+          }),
+        )
+        .min(1)
+        .describe("All file creations and replacements to apply in one atomic transaction."),
+    }),
+    execute: async (args: Record<string, unknown>, execution) => {
+      const context = execution?.context;
       const parsed = parseEdits(args);
       if ("error" in parsed) return error(parsed.error);
 
@@ -822,18 +791,11 @@ function createDeleteTool(source: WritableFileSource, opts: ResolvedFileToolsOpt
       header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
     },
     description: `Delete a file or folder from the ${opts.spaceName} file space. Deleting a folder deletes every file below it.`,
-    parameters: {
-      type: "object",
-      properties: {
-        file_path: {
-          type: "string",
-          description: `The absolute virtual file or folder path in the ${opts.spaceName} file space.`,
-        },
-      },
-      required: ["file_path"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>, context?: ToolContext) => {
+    inputSchema: z.strictObject({
+      file_path: z.string().describe(`The absolute virtual file or folder path in the ${opts.spaceName} file space.`),
+    }),
+    execute: async (args: Record<string, unknown>, execution) => {
+      const context = execution?.context;
       const path = typeof args.file_path === "string" ? args.file_path : "";
       if (!path) return error("file_path is required");
 
@@ -861,22 +823,12 @@ function createMoveTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
       },
     },
     description: `Move or rename a file or folder within the ${opts.spaceName} file space.`,
-    parameters: {
-      type: "object",
-      properties: {
-        from: {
-          type: "string",
-          description: "The source file or folder path.",
-        },
-        to: {
-          type: "string",
-          description: "The destination file or folder path.",
-        },
-      },
-      required: ["from", "to"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>, context?: ToolContext) => {
+    inputSchema: z.strictObject({
+      from: z.string().describe("The source file or folder path."),
+      to: z.string().describe("The destination file or folder path."),
+    }),
+    execute: async (args: Record<string, unknown>, execution) => {
+      const context = execution?.context;
       const from = args.from as string;
       const to = args.to as string;
       if (!from || !to) return error("Both from and to are required");
@@ -1049,78 +1001,45 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       "Content mode supports -A/-B/-C context. Line numbers are on by default; omit -n unless disabling them. Flag parameter names include the leading hyphen. Set multiline only when a pattern must span lines.",
       `Search omits a leading BOM and normalizes newlines. Use ${toolName(opts, "read")}'s header or write results to inspect text format, not grep.`,
     ].join("\n"),
-    parameters: {
-      type: "object",
-      properties: {
-        pattern: {
-          type: "string",
-          description: "Regex pattern to search for.",
-        },
-        path: {
-          type: "string",
-          description: 'File or directory to search. Defaults to "/".',
-        },
-        glob: {
-          type: "string",
-          description: 'Glob filter for files, such as "*.js" or "**/*.{ts,tsx}".',
-        },
-        type: {
-          type: "string",
-          description: `File type filter (${Object.keys(FILE_GREP_TYPES).join(", ")}).`,
-        },
-        output_mode: {
-          type: "string",
-          enum: ["content", "files_with_matches", "count"],
-          description: "content shows matching lines; files_with_matches (default) shows paths; count shows counts.",
-          default: "files_with_matches",
-        },
-        "-B": {
-          type: "integer",
-          minimum: 0,
-          description: "Lines shown before each match in content mode.",
-        },
-        "-A": {
-          type: "integer",
-          minimum: 0,
-          description: "Lines shown after each match in content mode.",
-        },
-        "-C": {
-          type: "integer",
-          minimum: 0,
-          description: "Lines shown before and after each match in content mode.",
-        },
-        "-n": {
-          type: "boolean",
-          description: "Show line numbers in content mode. Defaults to true.",
-          default: true,
-        },
-        "-i": {
-          type: "boolean",
-          description: "Use case-insensitive matching. Defaults to false.",
-          default: false,
-        },
-        head_limit: {
-          type: "integer",
-          minimum: 0,
-          description: `First N result entries. Defaults to ${opts.defaultGrepLimit}; 0 returns all entries.`,
-          default: opts.defaultGrepLimit,
-        },
-        skip: {
-          type: "integer",
-          minimum: 0,
-          description: "Skip the first N result entries for pagination. Defaults to 0.",
-          default: 0,
-        },
-        multiline: {
-          type: "boolean",
-          description: "Allow matches to span lines and make dot match newlines. Defaults to false.",
-          default: false,
-        },
-      },
-      required: ["pattern"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>) => {
+    inputSchema: z.strictObject({
+      pattern: z.string().describe("Regex pattern to search for."),
+      path: z.string().describe('File or directory to search. Defaults to "/".').optional(),
+      glob: z.string().describe('Glob filter for files, such as "*.js" or "**/*.{ts,tsx}".').optional(),
+      type: z
+        .string()
+        .describe(`File type filter (${Object.keys(FILE_GREP_TYPES).join(", ")}).`)
+        .optional(),
+      output_mode: z
+        .enum(["content", "files_with_matches", "count"])
+        .default("files_with_matches")
+        .describe("content shows matching lines; files_with_matches (default) shows paths; count shows counts.")
+        .optional(),
+      "-B": z.number().int().min(0).describe("Lines shown before each match in content mode.").optional(),
+      "-A": z.number().int().min(0).describe("Lines shown after each match in content mode.").optional(),
+      "-C": z.number().int().min(0).describe("Lines shown before and after each match in content mode.").optional(),
+      "-n": z.boolean().default(true).describe("Show line numbers in content mode. Defaults to true.").optional(),
+      "-i": z.boolean().default(false).describe("Use case-insensitive matching. Defaults to false.").optional(),
+      head_limit: z
+        .number()
+        .int()
+        .min(0)
+        .default(opts.defaultGrepLimit)
+        .describe(`First N result entries. Defaults to ${opts.defaultGrepLimit}; 0 returns all entries.`)
+        .optional(),
+      skip: z
+        .number()
+        .int()
+        .min(0)
+        .default(0)
+        .describe("Skip the first N result entries for pagination. Defaults to 0.")
+        .optional(),
+      multiline: z
+        .boolean()
+        .default(false)
+        .describe("Allow matches to span lines and make dot match newlines. Defaults to false.")
+        .optional(),
+    }),
+    execute: async (args: Record<string, unknown>) => {
       const pattern = args.pattern as string;
       if (!pattern) return error("pattern is required");
 
@@ -1244,22 +1163,14 @@ function createGlobTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       }),
     },
     description: `Find files in the ${opts.spaceName} file space matching a glob pattern, newest first. Use "**/*" to list every file. Use path to scope the search to one directory.`,
-    parameters: {
-      type: "object",
-      properties: {
-        pattern: {
-          type: "string",
-          description: "Glob pattern (supports *, **, ?, {a,b}).",
-        },
-        path: {
-          type: "string",
-          description: 'Virtual directory to search in, or "/" for the entire file space. Defaults to "/".',
-        },
-      },
-      required: ["pattern"],
-      additionalProperties: false,
-    },
-    function: async (args: Record<string, unknown>) => {
+    inputSchema: z.strictObject({
+      pattern: z.string().describe("Glob pattern (supports *, **, ?, {a,b})."),
+      path: z
+        .string()
+        .describe('Virtual directory to search in, or "/" for the entire file space. Defaults to "/".')
+        .optional(),
+    }),
+    execute: async (args: Record<string, unknown>) => {
       const pattern = args.pattern as string;
       if (!pattern) return error("pattern is required");
       const searchPath = normalizeArtifactPath(typeof args.path === "string" ? args.path : "/");
