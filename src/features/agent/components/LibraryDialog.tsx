@@ -2,23 +2,25 @@ import { Dialog, Transition } from "@headlessui/react";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   ChevronDown,
   Download,
   Plus,
   Puzzle,
   Search,
   Sparkles,
+  ToggleLeft,
+  ToggleRight,
   Upload,
   X,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { downloadPluginsAsZip } from "@/features/plugins/lib/pluginExport";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { notify } from "@/shared/lib/notify";
+import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import type { SkillCatalogActions, SkillCatalogPanelProps } from "./SkillCatalogPanel";
 import { SkillCatalogPanel } from "./SkillCatalogPanel";
@@ -32,6 +34,25 @@ export interface LibraryDialogProps extends SkillCatalogPanelProps {
   initialSection?: LibrarySection;
   enabledPluginIds?: ReadonlySet<string>;
   onTogglePlugin?: (pluginId: string) => void;
+}
+
+function ActiveIndicator({ enabled, label, onToggle }: { enabled: boolean; label: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={label}
+      title={label}
+      onClick={onToggle}
+      className={cn(
+        "absolute right-1 top-1/2 flex h-6 w-7 -translate-y-1/2 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
+        enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
+      )}
+    >
+      {enabled ? <ToggleRight size={20} aria-hidden="true" /> : <ToggleLeft size={20} aria-hidden="true" />}
+    </button>
+  );
 }
 
 export function LibraryDialog({
@@ -69,6 +90,33 @@ export function LibraryDialog({
   const pluginBackRef = useRef<((destination?: "parent" | "overview") => void) | null>(null);
   const pendingNewSkillRef = useRef(false);
   const confirmSkillDiscardRef = useRef<(() => Promise<boolean>) | null>(null);
+  const escapePressedRef = useRef(false);
+  // Active items are pinned to the top using the state at open time, so rows don't jump while toggling.
+  const [pinnedSkillNames, setPinnedSkillNames] = useState<ReadonlySet<string>>(() => new Set());
+  const [pinnedPluginIds, setPinnedPluginIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  const pinActiveItems = useEffectEvent(() => {
+    setPinnedSkillNames(new Set(enabledSkillNames));
+    setPinnedPluginIds(new Set(enabledPluginIds));
+  });
+
+  useEffect(() => {
+    if (isOpen) pinActiveItems();
+  }, [isOpen]);
+
+  // Headless UI reports Escape and outside clicks through the same onClose; record Escape to tell them apart.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      escapePressedRef.current = true;
+      setTimeout(() => {
+        escapePressedRef.current = false;
+      }, 0);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,16 +128,19 @@ export function LibraryDialog({
       if (initialSection !== "plugins" && initialSkillName) {
         setRequestedSkillName(initialSkillName);
       }
-    } else {
-      setSearch("");
-      setOverview(true);
-      setSkillViewKind("list");
-      setPluginViewKind("list");
-      setRequestedSkillName(undefined);
-      setRequestedPluginId(undefined);
-      pendingNewSkillRef.current = false;
     }
   }, [isOpen, initialSection, initialSkillName, initialView]);
+
+  // Reset only once the leave transition has finished, so the visible view doesn't jump back to the list while fading out.
+  const resetAfterLeave = () => {
+    setSearch("");
+    setOverview(true);
+    setSkillViewKind("list");
+    setPluginViewKind("list");
+    setRequestedSkillName(undefined);
+    setRequestedPluginId(undefined);
+    pendingNewSkillRef.current = false;
+  };
 
   const updatePluginScrollHint = useCallback(() => {
     const list = pluginListRef.current;
@@ -137,10 +188,23 @@ export function LibraryDialog({
         pluginViewKind === "installed-skill" ||
         pluginViewKind === "store-detail";
 
-  const sortedSkills = useMemo(() => [...skills].sort((a, b) => a.name.localeCompare(b.name)), [skills]);
+  const sortedSkills = useMemo(
+    () =>
+      sortActiveFirst(
+        skills,
+        (s) => pinnedSkillNames.has(s.name),
+        (s) => s.name,
+      ),
+    [skills, pinnedSkillNames],
+  );
   const sortedPlugins = useMemo(
-    () => [...plugins].sort((a, b) => (a.title ?? a.id).localeCompare(b.title ?? b.id)),
-    [plugins],
+    () =>
+      sortActiveFirst(
+        plugins,
+        (p) => pinnedPluginIds.has(p.id),
+        (p) => p.title || p.id,
+      ),
+    [plugins, pinnedPluginIds],
   );
   const filteredSkills = useMemo(() => {
     if (!q) return sortedSkills;
@@ -193,12 +257,17 @@ export function LibraryDialog({
   };
 
   const handleDismiss = async () => {
+    // Outside click closes the dialog directly; Escape steps back first.
+    if (!escapePressedRef.current) {
+      await handleClose();
+      return;
+    }
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
       return;
     }
-    // Escape/backdrop navigate detail views before closing the dialog.
+    // Escape navigates detail views before closing the dialog.
     const viewKind = section === "skills" ? skillViewKind : pluginViewKind;
     const backFn = section === "skills" ? skillBackRef.current : pluginBackRef.current;
     // These views return directly to the section overview; editors defer to their own back handler.
@@ -283,7 +352,7 @@ export function LibraryDialog({
   }, [plugins]);
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
+    <Transition appear show={isOpen} as={Fragment} afterLeave={resetAfterLeave}>
       <Dialog as="div" className="relative z-80" onClose={handleDismiss}>
         <Transition.Child
           as={Fragment}
@@ -359,7 +428,7 @@ export function LibraryDialog({
                         trigger={
                           <MenuButton
                             type="button"
-                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
                           >
                             <Plus size={13} aria-hidden="true" />
                             Add skill
@@ -423,7 +492,7 @@ export function LibraryDialog({
                       type="button"
                       onClick={showSkillsList}
                       className={cn(
-                        "flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors",
+                        "flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm transition-colors",
                         section === "skills"
                           ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
                           : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-200",
@@ -437,7 +506,7 @@ export function LibraryDialog({
                         type="button"
                         onClick={showPluginsList}
                         className={cn(
-                          "flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors",
+                          "flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm transition-colors",
                           section === "plugins"
                             ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
                             : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-200",
@@ -498,49 +567,43 @@ export function LibraryDialog({
                                 type="button"
                                 onClick={() => openSkill(skill.name)}
                                 aria-current={active ? "page" : undefined}
-                                className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 hover:bg-neutral-200/40 aria-[current=page]:bg-neutral-200/40 dark:hover:bg-neutral-800/50 dark:aria-[current=page]:bg-neutral-800/50"
+                                className={cn(
+                                  "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 hover:bg-neutral-200/40 aria-[current=page]:bg-neutral-200/40 dark:hover:bg-neutral-800/50 dark:aria-[current=page]:bg-neutral-800/50",
+                                  onToggle && "pr-9",
+                                )}
                               >
-                                <Sparkles size={14} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                                <Sparkles
+                                  size={14}
+                                  className={cn(
+                                    "shrink-0",
+                                    enabled
+                                      ? "text-neutral-600 dark:text-neutral-400"
+                                      : "text-neutral-600 opacity-40 dark:text-neutral-400",
+                                  )}
+                                />
                                 <span className="min-w-0 flex-1">
                                   <span
                                     className={cn(
                                       "block truncate text-[13px] leading-5",
                                       active || enabled
-                                        ? "font-medium text-neutral-900 dark:text-neutral-100"
-                                        : "text-neutral-600 dark:text-neutral-300",
+                                        ? "text-neutral-900 dark:text-neutral-100"
+                                        : "text-neutral-500 dark:text-neutral-400",
                                     )}
                                   >
                                     {skill.name}
                                   </span>
                                 </span>
-                                {onToggle && (
-                                  <span
-                                    role="checkbox"
-                                    aria-checked={enabled}
-                                    aria-label={enabled ? "Disable skill" : "Enable skill"}
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onToggle(skill.name);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        onToggle(skill.name);
-                                      }
-                                    }}
-                                    className={cn(
-                                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors",
-                                      enabled
-                                        ? "border-transparent bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                                        : "border-neutral-300 text-transparent opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500",
-                                    )}
-                                  >
-                                    <Check size={10} strokeWidth={3} />
-                                  </span>
-                                )}
                               </button>
+                              {onToggle && (
+                                <ActiveIndicator
+                                  enabled={enabled}
+                                  label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
+                                  onToggle={() => {
+                                    void openSkill(skill.name);
+                                    onToggle(skill.name);
+                                  }}
+                                />
+                              )}
                             </li>
                           );
                         })}
@@ -606,21 +669,36 @@ export function LibraryDialog({
                                   aria-current={active ? "page" : undefined}
                                   className={cn(
                                     "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 hover:bg-neutral-200/40 aria-[current=page]:bg-neutral-200/40 dark:hover:bg-neutral-800/50 dark:aria-[current=page]:bg-neutral-800/50",
-                                    onTogglePlugin && "pr-8",
+                                    onTogglePlugin && "pr-9",
                                   )}
                                 >
                                   {plugin.icon ? (
-                                    <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
+                                    <img
+                                      src={plugin.icon}
+                                      alt=""
+                                      className={cn(
+                                        "h-4 w-4 shrink-0 rounded object-contain",
+                                        !enabled && "opacity-40",
+                                      )}
+                                    />
                                   ) : (
-                                    <Puzzle size={14} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                                    <Puzzle
+                                      size={14}
+                                      className={cn(
+                                        "shrink-0",
+                                        enabled
+                                          ? "text-neutral-600 dark:text-neutral-400"
+                                          : "text-neutral-600 opacity-40 dark:text-neutral-400",
+                                      )}
+                                    />
                                   )}
                                   <span className="min-w-0 flex-1">
                                     <span
                                       className={cn(
                                         "block truncate text-[13px] leading-5",
                                         active || enabled
-                                          ? "font-medium text-neutral-900 dark:text-neutral-100"
-                                          : "text-neutral-600 dark:text-neutral-300",
+                                          ? "text-neutral-900 dark:text-neutral-100"
+                                          : "text-neutral-500 dark:text-neutral-400",
                                       )}
                                     >
                                       {plugin.title ?? plugin.id}
@@ -628,29 +706,14 @@ export function LibraryDialog({
                                   </span>
                                 </button>
                                 {onTogglePlugin && (
-                                  <button
-                                    type="button"
-                                    role="checkbox"
-                                    aria-checked={enabled}
-                                    aria-label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title ?? plugin.id}`}
-                                    onClick={() => onTogglePlugin(plugin.id)}
-                                    className={cn(
-                                      "absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md transition-opacity focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
-                                      !enabled &&
-                                        "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
-                                    )}
-                                  >
-                                    <span
-                                      className={cn(
-                                        "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                                        enabled
-                                          ? "border-transparent bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                                          : "border-neutral-300 text-transparent hover:border-neutral-400 dark:border-neutral-600 dark:hover:border-neutral-500",
-                                      )}
-                                    >
-                                      <Check size={10} strokeWidth={3} aria-hidden="true" />
-                                    </span>
-                                  </button>
+                                  <ActiveIndicator
+                                    enabled={enabled}
+                                    label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title ?? plugin.id}`}
+                                    onToggle={() => {
+                                      void openPlugin(plugin.id);
+                                      onTogglePlugin(plugin.id);
+                                    }}
+                                  />
                                 )}
                               </li>
                             );
@@ -684,27 +747,53 @@ export function LibraryDialog({
                           {section === "skills" ? (
                             filteredSkills.length > 0 ? (
                               <ul>
-                                {filteredSkills.map((skill) => (
-                                  <li key={skill.id}>
-                                    <button
-                                      type="button"
-                                      onClick={() => openSkill(skill.name)}
-                                      className="flex w-full items-center gap-3 px-5 py-3 sm:py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
-                                    >
-                                      <Sparkles size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
-                                      <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                                          {skill.name}
-                                        </span>
-                                        {skill.description && (
-                                          <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
-                                            {skill.description}
-                                          </span>
+                                {filteredSkills.map((skill) => {
+                                  const enabled = enabledSkillNames?.has(skill.name) ?? false;
+                                  return (
+                                    <li key={skill.id} className="relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => openSkill(skill.name)}
+                                        className={cn(
+                                          "flex w-full items-center gap-3 px-5 py-3 sm:py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40",
+                                          onToggle && "pr-14",
                                         )}
-                                      </span>
-                                    </button>
-                                  </li>
-                                ))}
+                                      >
+                                        <Sparkles
+                                          size={15}
+                                          className="shrink-0 text-neutral-400 dark:text-neutral-500"
+                                        />
+                                        <span className="min-w-0 flex-1">
+                                          <span className="block truncate text-sm text-neutral-800 dark:text-neutral-200">
+                                            {skill.name}
+                                          </span>
+                                          {skill.description && (
+                                            <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
+                                              {skill.description}
+                                            </span>
+                                          )}
+                                        </span>
+                                      </button>
+                                      {onToggle && (
+                                        <button
+                                          type="button"
+                                          role="switch"
+                                          aria-checked={enabled}
+                                          aria-label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
+                                          onClick={() => onToggle(skill.name)}
+                                          className={cn(
+                                            "absolute right-4 top-1/2 -translate-y-1/2",
+                                            enabled
+                                              ? "text-emerald-600 dark:text-emerald-400"
+                                              : "text-neutral-400 dark:text-neutral-500",
+                                          )}
+                                        >
+                                          {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                                        </button>
+                                      )}
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             ) : (
                               <div className="flex min-h-full items-center justify-center px-5">
@@ -744,7 +833,7 @@ export function LibraryDialog({
                                       <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                                     )}
                                     <span className="min-w-0 flex-1">
-                                      <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                                      <span className="block truncate text-sm text-neutral-800 dark:text-neutral-200">
                                         {plugin.title ?? plugin.id}
                                       </span>
                                       {plugin.description && (
@@ -798,6 +887,9 @@ export function LibraryDialog({
                       ) : (
                         <PluginsManagerPanel
                           onShowOverview={showPluginsList}
+                          enabledPluginIds={enabledPluginIds}
+                          pinnedPluginIds={pinnedPluginIds}
+                          onTogglePlugin={onTogglePlugin}
                           isOpen={isOpen}
                           requestedPluginId={requestedPluginId}
                           search={search}

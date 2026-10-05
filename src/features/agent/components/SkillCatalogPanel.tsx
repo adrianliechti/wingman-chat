@@ -226,12 +226,6 @@ export function SkillCatalogPanel({
   }, [requestedSkillName, isOpen]);
 
   useEffect(() => {
-    if (isOpen) return;
-    setSelectedSkill(null);
-    setEditMode(false);
-  }, [isOpen]);
-
-  useEffect(() => {
     if (!isOpen) return;
     if (editMode) {
       editorNameInputRef.current?.focus();

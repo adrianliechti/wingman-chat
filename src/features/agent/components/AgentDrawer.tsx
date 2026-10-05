@@ -50,7 +50,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
       <ToolsSection agent={agent} />
-      <SkillsSection agent={agent} />
+      <SkillsSection key={agent.id} agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection key={agent.id} agent={agent} />}
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
