@@ -1,14 +1,20 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+function embeddingResponse(model = "embed-a", embedding = [1, 0]) {
+  return {
+    model,
+    data: [{ embedding, index: 0 }],
+    usage: { prompt_tokens: 1, total_tokens: 1 },
+  };
+}
+
 async function open(page: Page) {
   await page.route("**/config.json", (route) =>
     route.fulfill({ json: { models: [], repository: { embedder: "embed-a" }, extractor: { files: [".ingest"] } } }),
   );
   await page.route("**/api/v1/extract", (route) => route.fulfill({ body: "Extracted source" }));
   await page.route("**/api/v1/segment", (route) => route.fulfill({ json: ["First chunk", "Second chunk"] }));
-  await page.route("**/api/v1/embeddings", (route) =>
-    route.fulfill({ json: { model: "embed-a", data: [{ embedding: [1, 0], index: 0 }] } }),
-  );
+  await page.route("**/api/v1/embeddings", (route) => route.fulfill({ json: embeddingResponse() }));
   await page.goto("/tests/browser/fixtures/ingestion.html");
   await page.waitForFunction(() => !!window.ingestionE2E);
   const id = await page.evaluate(async () => (await window.ingestionE2E.createAgent("Original")).id);
@@ -67,7 +73,7 @@ test("a search finishing after deletion cannot return the removed file", async (
   await page.evaluate(() => window.ingestionE2E.startQuery("Find source"));
   const route = await pending;
   await page.evaluate(() => window.ingestionE2E.remove(window.ingestionE2E.state().current!.files![0].id));
-  await route.fulfill({ json: { model: "embed-a", data: [{ embedding: [1, 0], index: 0 }] } });
+  await route.fulfill({ json: embeddingResponse() });
   expect(await page.evaluate(() => window.ingestionE2E.finishQuery())).toEqual([]);
 });
 
@@ -114,9 +120,7 @@ test("partial embedding failure aborts active requests, stops queued chunks and 
     segments: undefined,
     error: expect.stringContaining("Embedding quota exhausted"),
   });
-  await page.route("**/api/v1/embeddings", (route) =>
-    route.fulfill({ json: { model: "embed-a", data: [{ embedding: [1, 0], index: 0 }] } }),
-  );
+  await page.route("**/api/v1/embeddings", (route) => route.fulfill({ json: embeddingResponse() }));
   await page.reload();
   await page.getByRole("button", { name: "Retry indexing notes.txt" }).click();
   await page.waitForFunction(() => window.ingestionE2E.state().current?.files?.[0].status === "completed");
@@ -146,9 +150,7 @@ test("model changes require reindexing and the replacement model survives persis
   );
   expect(error).toContain("reindexing");
   await expect(page.getByText("Reindex to enable semantic search with the current model.")).toBeVisible();
-  await page.route("**/api/v1/embeddings", (route) =>
-    route.fulfill({ json: { model: "embed-b", data: [{ embedding: [0, 1], index: 0 }] } }),
-  );
+  await page.route("**/api/v1/embeddings", (route) => route.fulfill({ json: embeddingResponse("embed-b", [0, 1]) }));
   await page.getByRole("button", { name: "Reindex notes.txt", exact: true }).click();
   await page.waitForFunction(() => window.ingestionE2E.state().current?.files?.[0].embeddingModel === "embed-b");
   await page.evaluate(() => window.ingestionE2E.flush());
