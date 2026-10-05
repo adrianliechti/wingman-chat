@@ -87,7 +87,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
             </div>
             {allSkills.length > 0 ? (
               <>
-                <Tooltip content="Filter skills" side="top" className="shrink-0 relative">
+                <Tooltip content="Manage skills" side="top" className="shrink-0 relative">
                   <button
                     type="button"
                     onClick={() => openSkillCatalog()}

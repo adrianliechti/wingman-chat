@@ -78,13 +78,13 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
     setActiveApp({ key: appKey, title: appTitle });
     showDrawer();
   };
-  const panelActionLabel = isFullscreen
-    ? isFullscreenOnly
-      ? "Close panel"
-      : "Show inline"
-    : otherAppInPanel
-      ? "Switch to this app"
-      : "Open in panel";
+  // What the chat card does when clicked, given where the app currently lives.
+  const panelAction = !isFullscreen
+    ? { label: otherAppInPanel ? "Switch to this app" : "Open in panel", Icon: PanelRightOpen, run: openInPanel }
+    : isFullscreenOnly
+      ? { label: "Close panel", Icon: PanelRightClose, run: toggleAppDrawer }
+      : { label: "Show inline", Icon: Minimize2, run: () => void closeApp() };
+  const panelStatus = isFullscreen ? "Showing in panel" : isLoading && !error ? "Loading app…" : panelAction.label;
   const requestDisplayMode = useEffectEvent((mode: string) => {
     if (mode === "fullscreen") {
       // Older fullscreen-only apps initialize in the background.
@@ -224,9 +224,9 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
         // artifact chips) that reflects where it is right now and toggles it.
         <button
           type="button"
-          onClick={isFullscreen ? (isFullscreenOnly ? toggleAppDrawer : () => void closeApp()) : openInPanel}
-          title={panelActionLabel}
-          aria-label={`${panelActionLabel}: ${appTitle}`}
+          onClick={panelAction.run}
+          title={panelAction.label}
+          aria-label={`${panelAction.label}: ${appTitle}`}
           className={cn(
             "group/app inline-flex w-72 max-w-full items-center gap-3 rounded-lg border px-3 py-2 text-left align-top transition-colors",
             isFullscreen
@@ -245,15 +245,7 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
             <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
               {appTitle}
             </span>
-            <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
-              {isFullscreen
-                ? "Showing in panel"
-                : isLoading && !error
-                  ? "Loading app…"
-                  : otherAppInPanel
-                    ? "Switch to this app"
-                    : "Open in panel"}
-            </span>
+            <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">{panelStatus}</span>
           </span>
           <span
             className={cn(
@@ -261,15 +253,7 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
               !isFullscreen && "opacity-0 group-hover/app:opacity-100",
             )}
           >
-            {isFullscreen ? (
-              isFullscreenOnly ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <Minimize2 className="h-4 w-4" />
-              )
-            ) : (
-              <PanelRightOpen className="h-4 w-4" />
-            )}
+            <panelAction.Icon className="h-4 w-4" />
           </span>
         </button>
       ) : (

@@ -50,10 +50,7 @@ const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 /**
  * Validate a skill name against the agentskills.io specification
  */
-export function validateSkillName(name: string): {
-  valid: boolean;
-  error?: string;
-} {
+export function validateSkillName(name: string): { valid: boolean; error?: string } {
   if (!name) {
     return { valid: false, error: "Name is required" };
   }
@@ -77,10 +74,7 @@ export function validateSkillName(name: string): {
  * Validate a bundled resource path: relative to the skill folder, no traversal,
  * and never SKILL.md itself.
  */
-export function validateSkillResourcePath(path: string): {
-  valid: boolean;
-  error?: string;
-} {
+export function validateSkillResourcePath(path: string): { valid: boolean; error?: string } {
   if (
     !path ||
     path === "SKILL.md" ||
@@ -99,10 +93,7 @@ export function validateSkillResourcePath(path: string): {
 /**
  * Validate a skill description (required, max length)
  */
-export function validateSkillDescription(description: string): {
-  valid: boolean;
-  error?: string;
-} {
+export function validateSkillDescription(description: string): { valid: boolean; error?: string } {
   if (!description) {
     return { valid: false, error: "Description is required" };
   }
@@ -185,20 +176,14 @@ export function parseSkillFile(
   } else {
     const nameValidation = validateSkillName(name);
     if (!nameValidation.valid) {
-      errors.push({
-        field: "name",
-        message: nameValidation.error ?? "Invalid skill name",
-      });
+      errors.push({ field: "name", message: nameValidation.error ?? "Invalid skill name" });
     }
   }
 
   // Validate description
   const description = frontmatter.description ?? "";
   if (requireDescription && !description) {
-    errors.push({
-      field: "description",
-      message: "Description is required in frontmatter",
-    });
+    errors.push({ field: "description", message: "Description is required in frontmatter" });
   } else if (description.length > SKILL_DESCRIPTION_MAX_LENGTH) {
     errors.push({
       field: "description",
@@ -340,10 +325,7 @@ export async function parseSkillsFromZip(zip: JSZip, options?: { rootIsSkill?: b
       }
     }
 
-    skills.push({
-      ...result.skill,
-      ...(resources.length ? { resources } : {}),
-    });
+    skills.push({ ...result.skill, ...(resources.length ? { resources } : {}) });
   }
 
   return skills;

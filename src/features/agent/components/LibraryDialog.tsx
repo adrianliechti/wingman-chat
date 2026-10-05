@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Search, Spa
 import type { KeyboardEvent } from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
+import { matchesPluginQuery } from "@/features/plugins/lib/hub";
 import { downloadPluginsAsZip } from "@/features/plugins/lib/pluginExport";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { getConfig } from "@/shared/config";
@@ -158,12 +159,10 @@ export function LibraryDialog({
     if (!q) return sortedSkills;
     return sortedSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [sortedSkills, q]);
-  const filteredPlugins = useMemo(() => {
-    if (!q) return sortedPlugins;
-    return sortedPlugins.filter(
-      (p) => (p.title ?? p.id).toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q),
-    );
-  }, [sortedPlugins, q]);
+  const filteredPlugins = useMemo(
+    () => sortedPlugins.filter((p) => matchesPluginQuery(p, search)),
+    [sortedPlugins, search],
+  );
 
   useEffect(() => {
     if (!isOpen) {

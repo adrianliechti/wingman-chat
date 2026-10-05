@@ -1,5 +1,5 @@
-import { Loader2, Plus, Puzzle, RefreshCw, Search, ToggleLeft, ToggleRight, X } from "lucide-react";
-import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Plus, Puzzle, RefreshCw, ToggleLeft, ToggleRight } from "lucide-react";
+import { type Dispatch, useMemo, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { useHubPlugins } from "@/features/plugins/hooks/useHubPlugins";
 import { matchesPluginQuery } from "@/features/plugins/lib/hub";
@@ -7,6 +7,7 @@ import type { HubPlugin } from "@/features/plugins/lib/types";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
 import type { WizardAction } from "../AgentWizard";
+import { StepFilter } from "../StepFilter";
 import { StepHeader } from "../StepHeader";
 
 interface PluginsStepProps {
@@ -21,16 +22,6 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
   const { plugins: storePlugins, loading: storeLoading, error: storeError, reload: loadStore } = useHubPlugins(hubUrl);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (searchOpen) {
-      requestAnimationFrame(() => searchInputRef.current?.focus());
-    } else {
-      setSearch("");
-    }
-  }, [searchOpen]);
 
   const selectedSet = useMemo(() => new Set(selectedPlugins), [selectedPlugins]);
   const installedIds = useMemo(() => new Set(plugins.map((p) => p.id)), [plugins]);
@@ -69,46 +60,7 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
         <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
           Installed plugins
         </h3>
-        {searchOpen ? (
-          <div className="relative flex-1">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  if (search) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setSearch("");
-                  }
-                }
-              }}
-              onBlur={() => {
-                if (!search) setSearchOpen(false);
-              }}
-              placeholder="Filter…"
-              className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={() => setSearchOpen(false)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-            >
-              <X size={11} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setSearchOpen(true)}
-            className="-mr-2 ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-          >
-            <Search size={11} /> Filter
-          </button>
-        )}
+        <StepFilter value={search} onChange={setSearch} />
       </div>
 
       <div className="space-y-0.5">

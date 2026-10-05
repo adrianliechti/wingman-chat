@@ -92,37 +92,24 @@ export function useSkillBuilderProvider(): ToolProvider {
                 resource: { path: resource.path, content: resource.content },
               });
             }
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify(
-                  skill
-                    ? {
-                        skill: {
-                          name: skill.name,
-                          description: skill.description,
-                          content: skill.content,
-                          compatibility: skill.compatibility,
-                          resources: skill.resources?.map((resource) => resource.path) ?? [],
-                        },
-                      }
-                    : {
-                        error: name ? `Skill "${name}" not found in the personal library` : "Skill name is required",
-                      },
-                ),
-              },
-            ];
+            return jsonResult(
+              skill
+                ? {
+                    skill: {
+                      name: skill.name,
+                      description: skill.description,
+                      content: skill.content,
+                      compatibility: skill.compatibility,
+                      resources: skill.resources?.map((resource) => resource.path) ?? [],
+                    },
+                  }
+                : {
+                    error: name ? `Skill "${name}" not found in the personal library` : "Skill name is required",
+                  },
+            );
           }
-          const list = skills.map((s) => ({
-            name: s.name,
-            description: s.description,
-          }));
-          return [
-            {
-              type: "text" as const,
-              content: JSON.stringify({ skills: list }),
-            },
-          ];
+          const list = skills.map((s) => ({ name: s.name, description: s.description }));
+          return jsonResult({ skills: list });
         },
       },
       {
@@ -165,46 +152,24 @@ export function useSkillBuilderProvider(): ToolProvider {
           const content = (args.content as string)?.trim();
 
           if (!name || !description || !content) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({
-                  error: "name, description, and content are all required",
-                }),
-              },
-            ];
+            return jsonResult({ error: "name, description, and content are all required" });
           }
 
           const nameValidation = validateSkillName(name);
           if (!nameValidation.valid) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: nameValidation.error }),
-              },
-            ];
+            return jsonResult({ error: nameValidation.error });
           }
 
           const descriptionValidation = validateSkillDescription(description);
           if (!descriptionValidation.valid) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: descriptionValidation.error }),
-              },
-            ];
+            return jsonResult({ error: descriptionValidation.error });
           }
 
           const existing = getSkill(name);
           if (existing) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({
-                  error: `Skill "${name}" already exists. Use update_skill to modify it.`,
-                }),
-              },
-            ];
+            return jsonResult({
+              error: `Skill "${name}" already exists. Use update_skill to modify it.`,
+            });
           }
 
           const resources = new Map<string, SkillResource>();
@@ -228,20 +193,15 @@ export function useSkillBuilderProvider(): ToolProvider {
           // Auto-enable the new skill on the current agent
           const enabledOnAgent = setSkillEnabled(name, true)?.agentName ?? null;
 
-          return [
-            {
-              type: "text" as const,
-              content: JSON.stringify({
-                success: true,
-                enabledOnAgent,
-                skill: {
-                  name: skill.name,
-                  description: skill.description,
-                  resources: skill.resources?.map((r) => r.path) ?? [],
-                },
-              }),
+          return jsonResult({
+            success: true,
+            enabledOnAgent,
+            skill: {
+              name: skill.name,
+              description: skill.description,
+              resources: skill.resources?.map((r) => r.path) ?? [],
             },
-          ];
+          });
         },
       },
       {
@@ -269,22 +229,12 @@ export function useSkillBuilderProvider(): ToolProvider {
         execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: "Skill name is required" }),
-              },
-            ];
+            return jsonResult({ error: "Skill name is required" });
           }
 
           const existing = getSkill(name);
           if (!existing) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: `Skill "${name}" not found` }),
-              },
-            ];
+            return jsonResult({ error: `Skill "${name}" not found` });
           }
 
           const updates: Partial<{ description: string; content: string }> = {};
@@ -292,14 +242,7 @@ export function useSkillBuilderProvider(): ToolProvider {
             const desc = (args.description as string).trim();
             const descriptionValidation = validateSkillDescription(desc);
             if (!descriptionValidation.valid) {
-              return [
-                {
-                  type: "text" as const,
-                  content: JSON.stringify({
-                    error: descriptionValidation.error,
-                  }),
-                },
-              ];
+              return jsonResult({ error: descriptionValidation.error });
             }
             updates.description = desc;
           }
@@ -308,27 +251,15 @@ export function useSkillBuilderProvider(): ToolProvider {
           }
 
           if (Object.keys(updates).length === 0) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({
-                  error: "No updates provided. Supply description and/or content.",
-                }),
-              },
-            ];
+            return jsonResult({ error: "No updates provided. Supply description and/or content." });
           }
 
           updateSkillInLibrary(existing.id, updates);
 
-          return [
-            {
-              type: "text" as const,
-              content: JSON.stringify({
-                success: true,
-                skill: { name, ...updates },
-              }),
-            },
-          ];
+          return jsonResult({
+            success: true,
+            skill: { name, ...updates },
+          });
         },
       },
       {
@@ -400,10 +331,7 @@ export function useSkillBuilderProvider(): ToolProvider {
         execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           const path = typeof args.path === "string" ? args.path.trim() : "";
-          if (!name || !path)
-            return jsonResult({
-              error: "Skill name and resource path are required",
-            });
+          if (!name || !path) return jsonResult({ error: "Skill name and resource path are required" });
           const existing = getSkill(name);
           if (!existing) return jsonResult({ error: `Skill "${name}" not found` });
 
@@ -430,22 +358,12 @@ export function useSkillBuilderProvider(): ToolProvider {
         execute: async (args: Record<string, unknown>) => {
           const name = (args.name as string)?.trim();
           if (!name) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: "Skill name is required" }),
-              },
-            ];
+            return jsonResult({ error: "Skill name is required" });
           }
 
           const existing = getSkill(name);
           if (!existing) {
-            return [
-              {
-                type: "text" as const,
-                content: JSON.stringify({ error: `Skill "${name}" not found` }),
-              },
-            ];
+            return jsonResult({ error: `Skill "${name}" not found` });
           }
 
           removeSkill(existing.id);
@@ -456,16 +374,11 @@ export function useSkillBuilderProvider(): ToolProvider {
           const removal = setSkillEnabled(name, false);
           const removedFromAgent = removal?.changed ? removal.agentName : null;
 
-          return [
-            {
-              type: "text" as const,
-              content: JSON.stringify({
-                success: true,
-                deleted: name,
-                removedFromAgent,
-              }),
-            },
-          ];
+          return jsonResult({
+            success: true,
+            deleted: name,
+            removedFromAgent,
+          });
         },
       },
     ];

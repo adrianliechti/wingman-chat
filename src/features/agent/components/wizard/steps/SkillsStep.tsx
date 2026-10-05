@@ -1,7 +1,8 @@
-import { Search, Settings2, ToggleLeft, ToggleRight, X } from "lucide-react";
-import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
+import { Settings2, ToggleLeft, ToggleRight } from "lucide-react";
+import { type Dispatch, useMemo, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { WizardAction } from "../AgentWizard";
+import { StepFilter } from "../StepFilter";
 import { StepHeader } from "../StepHeader";
 
 interface SkillsStepProps {
@@ -12,16 +13,6 @@ interface SkillsStepProps {
 export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
   const { skills, openSkillCatalog } = useSkills();
   const [search, setSearch] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (searchOpen) {
-      requestAnimationFrame(() => searchInputRef.current?.focus());
-    } else {
-      setSearch("");
-    }
-  }, [searchOpen]);
 
   const selected = useMemo(() => new Set(selectedSkills), [selectedSkills]);
 
@@ -47,46 +38,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
         >
           <Settings2 size={11} /> Manage skills
         </button>
-        {searchOpen ? (
-          <div className="relative flex-1">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  if (search) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setSearch("");
-                  }
-                }
-              }}
-              onBlur={() => {
-                if (!search) setSearchOpen(false);
-              }}
-              placeholder="Filter…"
-              className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={() => setSearchOpen(false)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-            >
-              <X size={11} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setSearchOpen(true)}
-            className="-mr-2 ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-          >
-            <Search size={11} /> Filter
-          </button>
-        )}
+        <StepFilter value={search} onChange={setSearch} />
       </div>
 
       {/* Skill list */}
