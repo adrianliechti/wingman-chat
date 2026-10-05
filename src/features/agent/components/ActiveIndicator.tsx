@@ -19,7 +19,8 @@ export function ActiveIndicator({ enabled, label, onToggle, className }: ActiveI
       title={label}
       onClick={onToggle}
       className={cn(
-        "absolute top-1/2 flex h-6 w-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors hover:bg-neutral-200/70 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400 dark:hover:bg-neutral-700/60",
+        "absolute top-1/2 flex h-6 w-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
+        enabled && "hover:bg-neutral-200/70 dark:hover:bg-neutral-700/60",
         className,
       )}
     >
@@ -29,7 +30,7 @@ export function ActiveIndicator({ enabled, label, onToggle, className }: ActiveI
         <Plus
           size={15}
           aria-hidden="true"
-          className="text-neutral-400 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-60 dark:text-neutral-500"
+          className="text-neutral-400 opacity-0 transition-opacity group-hover/row:opacity-100 group-has-focus-visible/row:opacity-100 pointer-coarse:opacity-60 dark:text-neutral-500"
         />
       )}
     </button>

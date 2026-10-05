@@ -1,8 +1,9 @@
-import { Loader2, Plus, Puzzle, RefreshCw, Server, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { Loader2, Plus, Puzzle, RefreshCw, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { loadHubPlugins } from "@/features/plugins/lib/hub";
+import { useHubPlugins } from "@/features/plugins/hooks/useHubPlugins";
+import { matchesPluginQuery } from "@/features/plugins/lib/hub";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
@@ -64,9 +65,7 @@ export function PluginsManagerPanel({
     [onViewKindChange],
   );
 
-  const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
-  const [storeLoading, setStoreLoading] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
+  const { plugins: storePlugins, loading: storeLoading, error: storeError, reload: loadStore } = useHubPlugins(hubUrl);
 
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -81,55 +80,18 @@ export function PluginsManagerPanel({
       }),
     [storePlugins, installedPluginsById],
   );
-  const filteredStorePlugins = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return availableStorePlugins;
-    return availableStorePlugins.filter((plugin) => {
-      const title = plugin.title || plugin.id;
-      return (
-        title.toLowerCase().includes(query) ||
-        (plugin.description ?? "").toLowerCase().includes(query) ||
-        plugin.id.toLowerCase().includes(query)
-      );
-    });
-  }, [availableStorePlugins, search]);
+  const filteredStorePlugins = useMemo(
+    () => availableStorePlugins.filter((plugin) => matchesPluginQuery(plugin, search)),
+    [availableStorePlugins, search],
+  );
   const filteredInstalledPlugins = useMemo(() => {
-    const query = search.trim().toLowerCase();
     const sorted = sortActiveFirst(
       plugins,
       (plugin) => pinnedPluginIds?.has(plugin.id) ?? false,
       (plugin) => plugin.title || plugin.id,
     );
-    if (!query) return sorted;
-    return sorted.filter((plugin) => {
-      const title = plugin.title || plugin.id;
-      return (
-        title.toLowerCase().includes(query) ||
-        (plugin.description ?? "").toLowerCase().includes(query) ||
-        plugin.id.toLowerCase().includes(query)
-      );
-    });
+    return sorted.filter((plugin) => matchesPluginQuery(plugin, search));
   }, [plugins, pinnedPluginIds, search]);
-
-  const loadStore = useCallback(() => {
-    if (!hubUrl) return;
-    setStoreLoading(true);
-    setStoreError(null);
-    void loadHubPlugins(hubUrl)
-      .then((loaded) => {
-        setStorePlugins(loaded);
-        if (loaded.length === 0) setStoreError("Hub returned no plugins");
-      })
-      .catch(() => setStoreError("Failed to reach hub"))
-      .finally(() => setStoreLoading(false));
-  }, [hubUrl]);
-
-  const loadStoreOnMount = useEffectEvent(() => {
-    if (hubUrl) loadStore();
-  });
-  useEffect(() => {
-    loadStoreOnMount();
-  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -264,16 +226,13 @@ export function PluginsManagerPanel({
                       </span>
                     </button>
                     {onTogglePlugin && (
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={enabled}
-                        aria-label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title || plugin.id}`}
-                        onClick={() => onTogglePlugin(plugin.id)}
-                        className={`absolute right-4 top-1/2 -translate-y-1/2 ${enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
-                      >
-                        {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                      </button>
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                        <CatalogToggle
+                          enabled={enabled}
+                          label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title || plugin.id}`}
+                          onToggle={() => onTogglePlugin(plugin.id)}
+                        />
+                      </span>
                     )}
                   </li>
                 );

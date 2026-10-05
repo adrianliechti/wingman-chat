@@ -132,4 +132,20 @@ describe("personal skill reads for editing", () => {
     }
     expect(agents.live.skills).toEqual(["one", "two", "three"]);
   });
+
+  it("reports the agent on delete only when the skill was enabled on it", async () => {
+    let result: unknown;
+    await act(async () => {
+      result = await call(value, "delete_skill", { name: personal.name });
+    });
+    expect(result).toMatchObject({ success: true, removedFromAgent: null });
+
+    agents.live = { ...agents.live, skills: ["one"] };
+    await act(async () => {
+      await call(value, "create_skill", { name: "one", description: "A reusable workflow", content: "Body" });
+      result = await call(value, "delete_skill", { name: "one" });
+    });
+    expect(result).toMatchObject({ success: true, removedFromAgent: "Agent" });
+    expect(agents.live.skills).toEqual([]);
+  });
 });

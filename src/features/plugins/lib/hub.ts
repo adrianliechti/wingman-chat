@@ -185,3 +185,17 @@ export async function downloadHubPlugin(hubUrl: string, plugin: HubPlugin): Prom
 
   return { skills, mcpServers: await parseMcpServers(zip) };
 }
+
+/** Case-insensitive match of a search query against a plugin's id, title and description. */
+export function matchesPluginQuery(
+  plugin: { id: string; title?: string; description?: string },
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    plugin.id.toLowerCase().includes(q) ||
+    (plugin.title ?? "").toLowerCase().includes(q) ||
+    (plugin.description ?? "").toLowerCase().includes(q)
+  );
+}

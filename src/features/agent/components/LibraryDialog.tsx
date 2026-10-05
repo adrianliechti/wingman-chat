@@ -72,7 +72,6 @@ export function LibraryDialog({
   const pluginBackRef = useRef<((destination?: "parent" | "overview") => void) | null>(null);
   const pendingNewSkillRef = useRef(false);
   const confirmSkillDiscardRef = useRef<(() => Promise<boolean>) | null>(null);
-  const escapePressedRef = useRef(false);
   // Active items are pinned to the top using the state at open time, so rows don't jump while toggling.
   const [pinnedSkillNames, setPinnedSkillNames] = useState<ReadonlySet<string>>(() => new Set());
   const [pinnedPluginIds, setPinnedPluginIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -84,20 +83,6 @@ export function LibraryDialog({
 
   useEffect(() => {
     if (isOpen) pinActiveItems();
-  }, [isOpen]);
-
-  // Headless UI reports Escape and outside clicks through the same onClose; record Escape to tell them apart.
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      escapePressedRef.current = true;
-      setTimeout(() => {
-        escapePressedRef.current = false;
-      }, 0);
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [isOpen]);
 
   useEffect(() => {
@@ -238,18 +223,13 @@ export function LibraryDialog({
     onClose();
   };
 
-  const handleDismiss = async () => {
-    // Outside click closes the dialog directly; Escape steps back first.
-    if (!escapePressedRef.current) {
-      await handleClose();
-      return;
-    }
+  // Escape steps back through search and detail views before closing the dialog.
+  const handleEscape = async () => {
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
       return;
     }
-    // Escape navigates detail views before closing the dialog.
     const viewKind = section === "skills" ? skillViewKind : pluginViewKind;
     const backFn = section === "skills" ? skillBackRef.current : pluginBackRef.current;
     // These views return directly to the section overview; editors defer to their own back handler.
@@ -266,6 +246,11 @@ export function LibraryDialog({
       return;
     }
     await handleClose();
+  };
+
+  // Portaled menus bubble React events here, so only clicks on the backdrop itself count.
+  const closeOnBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) void handleClose();
   };
 
   const showSkillsList = useCallback(async () => {
@@ -333,9 +318,10 @@ export function LibraryDialog({
     void downloadPluginsAsZip(plugins).catch((error) => notify.error("Failed to export plugins", error));
   }, [plugins]);
 
+  // Closing is explicit (backdrop click, Escape on the panel) because Headless UI reports both through onClose.
   return (
     <Transition appear show={isOpen} as={Fragment} afterLeave={resetAfterLeave}>
-      <Dialog as="div" className="relative z-80" onClose={handleDismiss}>
+      <Dialog as="div" className="relative z-80" onClose={() => {}}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -348,8 +334,11 @@ export function LibraryDialog({
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
+        <div className="fixed inset-0 overflow-y-auto" onClick={closeOnBackdropClick}>
+          <div
+            className="flex min-h-full items-end justify-center sm:items-center sm:p-4"
+            onClick={closeOnBackdropClick}
+          >
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -359,7 +348,14 @@ export function LibraryDialog({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
+              <Dialog.Panel
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape" || e.defaultPrevented) return;
+                  e.preventDefault();
+                  void handleEscape();
+                }}
+                className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl"
+              >
                 {/* ── Top bar ── */}
                 <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 sm:py-2 dark:border-neutral-800/60">
                   {isDrilledIn && !hasDetailBreadcrumb && (
@@ -581,10 +577,7 @@ export function LibraryDialog({
                                   className="right-1"
                                   enabled={enabled}
                                   label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
-                                  onToggle={() => {
-                                    void openSkill(skill.name);
-                                    onToggle(skill.name);
-                                  }}
+                                  onToggle={() => onToggle(skill.name)}
                                 />
                               )}
                             </li>
@@ -693,10 +686,7 @@ export function LibraryDialog({
                                     className="right-1"
                                     enabled={enabled}
                                     label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title ?? plugin.id}`}
-                                    onToggle={() => {
-                                      void openPlugin(plugin.id);
-                                      onTogglePlugin(plugin.id);
-                                    }}
+                                    onToggle={() => onTogglePlugin(plugin.id)}
                                   />
                                 )}
                               </li>

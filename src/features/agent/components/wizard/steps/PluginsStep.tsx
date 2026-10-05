@@ -1,7 +1,8 @@
 import { Loader2, Plus, Puzzle, RefreshCw, Search, ToggleLeft, ToggleRight, X } from "lucide-react";
-import { type Dispatch, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { loadHubPlugins } from "@/features/plugins/lib/hub";
+import { useHubPlugins } from "@/features/plugins/hooks/useHubPlugins";
+import { matchesPluginQuery } from "@/features/plugins/lib/hub";
 import type { HubPlugin } from "@/features/plugins/lib/types";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
@@ -17,9 +18,7 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
   const { plugins, installPlugin } = usePlugins();
   const hubUrl = getConfig().plugins?.url;
 
-  const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
-  const [storeLoading, setStoreLoading] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
+  const { plugins: storePlugins, loading: storeLoading, error: storeError, reload: loadStore } = useHubPlugins(hubUrl);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -40,37 +39,11 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
     [storePlugins, installedIds],
   );
 
-  const matches = useCallback(
-    (plugin: { id: string; title?: string; description?: string }) => {
-      const q = search.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        plugin.id.toLowerCase().includes(q) ||
-        (plugin.title ?? "").toLowerCase().includes(q) ||
-        (plugin.description ?? "").toLowerCase().includes(q)
-      );
-    },
-    [search],
+  const filteredInstalled = useMemo(() => plugins.filter((p) => matchesPluginQuery(p, search)), [plugins, search]);
+  const filteredAvailable = useMemo(
+    () => availablePlugins.filter((p) => matchesPluginQuery(p, search)),
+    [availablePlugins, search],
   );
-  const filteredInstalled = useMemo(() => plugins.filter(matches), [plugins, matches]);
-  const filteredAvailable = useMemo(() => availablePlugins.filter(matches), [availablePlugins, matches]);
-
-  const loadStore = useCallback(() => {
-    if (!hubUrl) return;
-    setStoreLoading(true);
-    setStoreError(null);
-    loadHubPlugins(hubUrl)
-      .then((loaded) => {
-        setStorePlugins(loaded);
-        if (loaded.length === 0) setStoreError("Hub returned no plugins");
-      })
-      .catch(() => setStoreError("Failed to reach hub"))
-      .finally(() => setStoreLoading(false));
-  }, [hubUrl]);
-
-  useEffect(() => {
-    loadStore();
-  }, [loadStore]);
 
   const handleInstall = async (plugin: HubPlugin) => {
     if (!hubUrl) return;

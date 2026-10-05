@@ -18,10 +18,11 @@ export function useSkillBuilderProvider(): ToolProvider {
       const agent = currentAgent ? (getAgent(currentAgent.id) ?? currentAgent) : undefined;
       if (!agent) return null;
       const current = agent.skills ?? [];
-      if (enabled !== current.includes(name)) {
+      const changed = enabled !== current.includes(name);
+      if (changed) {
         updateAgent(agent.id, { skills: enabled ? [...current, name] : current.filter((s) => s !== name) });
       }
-      return agent.name;
+      return { agentName: agent.name, changed };
     };
 
     const tools: Tool[] = [
@@ -131,7 +132,7 @@ export function useSkillBuilderProvider(): ToolProvider {
           const skill = addSkill({ name, description, content });
 
           // Auto-enable the new skill on the current agent
-          const enabledOnAgent = setSkillEnabled(name, true);
+          const enabledOnAgent = setSkillEnabled(name, true)?.agentName ?? null;
 
           return [
             {
@@ -248,7 +249,8 @@ export function useSkillBuilderProvider(): ToolProvider {
           // Drop the now-deleted skill from the active agent (symmetric with
           // create_skill's auto-enable); references on other agents are harmless
           // — they're filtered out when their skills are resolved.
-          const removedFromAgent = setSkillEnabled(name, false);
+          const removal = setSkillEnabled(name, false);
+          const removedFromAgent = removal?.changed ? removal.agentName : null;
 
           return [
             {
