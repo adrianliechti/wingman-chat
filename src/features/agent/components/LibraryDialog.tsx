@@ -1,6 +1,7 @@
 import { Dialog, Transition } from "@headlessui/react";
 import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Search, Sparkles, Upload, X } from "lucide-react";
-import { Fragment, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { downloadPluginsAsZip } from "@/features/plugins/lib/pluginExport";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -8,6 +9,7 @@ import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { notify } from "@/shared/lib/notify";
 import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
+import { usePinnedActive } from "@/shared/lib/usePinnedActive";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { ActiveIndicator } from "./ActiveIndicator";
 import { CatalogToggle } from "./CatalogToggle";
@@ -61,17 +63,8 @@ export function LibraryDialog({
   const pendingNewSkillRef = useRef(false);
   const confirmSkillDiscardRef = useRef<(() => Promise<boolean>) | null>(null);
   // Active items are pinned to the top using the state at open time, so rows don't jump while toggling.
-  const [pinnedSkillNames, setPinnedSkillNames] = useState<ReadonlySet<string>>(() => new Set());
-  const [pinnedPluginIds, setPinnedPluginIds] = useState<ReadonlySet<string>>(() => new Set());
-
-  const pinActiveItems = useEffectEvent(() => {
-    setPinnedSkillNames(new Set(enabledSkillNames));
-    setPinnedPluginIds(new Set(enabledPluginIds));
-  });
-
-  useEffect(() => {
-    if (isOpen) pinActiveItems();
-  }, [isOpen]);
+  const pinnedSkillNames = usePinnedActive(enabledSkillNames, isOpen);
+  const pinnedPluginIds = usePinnedActive(enabledPluginIds, isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -211,13 +204,8 @@ export function LibraryDialog({
     onClose();
   };
 
-  // Headless UI reports Escape and outside clicks through onClose, synchronously from the triggering event.
-  // Outside clicks close directly; Escape steps back through search and detail views first.
-  const handleDismiss = async () => {
-    if (window.event?.type !== "keydown") {
-      await handleClose();
-      return;
-    }
+  // Escape steps back through search and detail views before closing. Outside clicks close directly.
+  const handleEscape = async () => {
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
@@ -308,7 +296,7 @@ export function LibraryDialog({
 
   return (
     <Transition appear show={isOpen} as={Fragment} afterLeave={resetAfterLeave}>
-      <Dialog as="div" className="relative z-80" onClose={handleDismiss}>
+      <Dialog as="div" className="relative z-80" onClose={handleClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -332,7 +320,15 @@ export function LibraryDialog({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
+              <Dialog.Panel
+                onKeyDown={(e: KeyboardEvent<HTMLElement>) => {
+                  if (e.key !== "Escape" || e.defaultPrevented) return;
+                  // Headless UI skips its own Escape close when the event is already handled.
+                  e.preventDefault();
+                  void handleEscape();
+                }}
+                className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl"
+              >
                 {/* ── Top bar ── */}
                 <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 sm:py-2 dark:border-neutral-800/60">
                   {isDrilledIn && !hasDetailBreadcrumb && (

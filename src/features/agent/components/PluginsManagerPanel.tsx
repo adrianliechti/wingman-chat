@@ -93,21 +93,17 @@ export function PluginsManagerPanel({
     return sorted.filter((plugin) => matchesPluginQuery(plugin, search));
   }, [plugins, pinnedPluginIds, search]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setInternalView({ kind: "list" });
-      setInstallError(null);
-    }
-  }, [isOpen]);
-
-  // Resolves against the plugins at the moment the request changes.
-  const openRequestedPlugin = useEffectEvent((id: string) => {
-    const target = plugins.find((p) => p.id === id);
+  // Opening resets to the list, then jumps to the requested plugin if there is one. Kept in one
+  // effect so the deep link can't be overwritten by the reset.
+  const resetView = useEffectEvent((id: string | undefined) => {
+    setInstallError(null);
+    const target = id ? plugins.find((p) => p.id === id) : undefined;
     if (target) setView({ kind: "installed-detail", plugin: target });
+    else setInternalView({ kind: "list" });
   });
   useEffect(() => {
-    if (requestedPluginId && isOpen) openRequestedPlugin(requestedPluginId);
-  }, [requestedPluginId, isOpen]);
+    if (isOpen) resetView(requestedPluginId);
+  }, [isOpen, requestedPluginId]);
 
   useEffect(() => {
     if (!onNavigateBackChange) return;

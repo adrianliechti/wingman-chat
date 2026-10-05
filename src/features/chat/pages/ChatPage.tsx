@@ -143,8 +143,7 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } =
-    useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
   const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);

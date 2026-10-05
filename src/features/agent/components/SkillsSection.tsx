@@ -1,10 +1,11 @@
 import { Funnel, Puzzle, Settings2, Sparkles, ToggleLeft, ToggleRight } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
+import { usePinnedActive } from "@/shared/lib/usePinnedActive";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { Section } from "./Section";
 
@@ -20,14 +21,8 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
   const agentSkillIds = useMemo(() => new Set(agent.skills || []), [agent.skills]);
   const agentPluginIds = useMemo(() => new Set(agent.plugins || []), [agent.plugins]);
 
-  // Active plugins are listed first using a snapshot, so rows don't jump while toggling.
-  const [pinnedPluginIds, setPinnedPluginIds] = useState<ReadonlySet<string>>(agentPluginIds);
-  const pinActivePlugins = useEffectEvent(() => setPinnedPluginIds(new Set(agentPluginIds)));
-
-  // Re-sort after the Library dialog closes, where plugins may have been toggled.
-  useEffect(() => {
-    if (!showSkillCatalog) pinActivePlugins();
-  }, [showSkillCatalog]);
+  // Active plugins are listed first using a snapshot, re-taken after the Library dialog closes.
+  const pinnedPluginIds = usePinnedActive(agentPluginIds, !showSkillCatalog);
 
   const sortedPlugins = useMemo(
     () =>
