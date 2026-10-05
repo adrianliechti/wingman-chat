@@ -7,4 +7,6 @@ Instructions cover inputs, actions, decisions, outputs and checks. Preserve usef
 
 Before updating, read the full current personal skill with list_skills({name}); list_skills without name supplies metadata only. load_skill activates a selected skill and can resolve a built-in instead of the intended library entry. Reuse complete library content and your subsequent edits from this run; reread by name if that content is missing or truncated.
 
+Resources are bundled text files (references, templates, scripts) stored next to SKILL.md. Attach them with create_skill's resources or write_skill_resource, remove with delete_skill_resource, and read one in full with list_skills({name, resource}). Keep SKILL.md concise and move long reference material, templates or reusable scripts into resources; mention each resource's path and when to use it in the instructions. Paths are relative (e.g. references/guide.md, scripts/run.py); binary files cannot be created here. write_skill_resource replaces the whole file, so read it first and send complete content when editing.
+
 Each supplied update_skill field replaces its value: send complete content, preserve unrelated instructions/resources and never substitute summaries or omission markers. Shorten only as requested; there is no version history. Confirm permanent delete_skill actions unless the skill was created this turn.

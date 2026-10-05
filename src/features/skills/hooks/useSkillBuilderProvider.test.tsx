@@ -93,24 +93,43 @@ describe("personal skill reads for editing", () => {
   it("keeps reads current across edits using the same running turn's tool callbacks", async () => {
     const runningTurn = value;
     await act(async () => {
-      await call(runningTurn, "update_skill", { name: personal.name, content: "Revised full body" });
+      await call(runningTurn, "update_skill", {
+        name: personal.name,
+        content: "Revised full body",
+      });
     });
     expect(await call(runningTurn, "list_skills", { name: personal.name })).toMatchObject({
-      skill: { content: "Revised full body", description: personal.description, resources: ["references/team.md"] },
+      skill: {
+        content: "Revised full body",
+        description: personal.description,
+        resources: ["references/team.md"],
+      },
     });
     await act(async () => {
-      await call(runningTurn, "update_skill", { name: personal.name, description: "Revised description" });
+      await call(runningTurn, "update_skill", {
+        name: personal.name,
+        description: "Revised description",
+      });
     });
     expect(await call(runningTurn, "list_skills", { name: personal.name })).toMatchObject({
-      skill: { content: "Revised full body", description: "Revised description" },
+      skill: {
+        content: "Revised full body",
+        description: "Revised description",
+      },
     });
   });
 
   it("can read a skill created in the same turn and prevents a duplicate creation", async () => {
     const runningTurn = value;
-    const draft = { name: "new-workflow", description: "A reusable workflow", content: "Full instructions" };
+    const draft = {
+      name: "new-workflow",
+      description: "A reusable workflow",
+      content: "Full instructions",
+    };
     await act(async () => {
-      expect(await call(runningTurn, "create_skill", draft)).toMatchObject({ success: true });
+      expect(await call(runningTurn, "create_skill", draft)).toMatchObject({
+        success: true,
+      });
     });
     expect(await call(runningTurn, "list_skills", { name: draft.name })).toMatchObject({ skill: draft });
     expect(await call(runningTurn, "create_skill", draft)).toMatchObject({
@@ -118,8 +137,120 @@ describe("personal skill reads for editing", () => {
     });
   });
 
+  it("creates a skill with bundled text resources", async () => {
+    await act(async () => {
+      expect(
+        await call(value, "create_skill", {
+          name: "with-files",
+          description: "A reusable workflow",
+          content: "Body",
+          resources: [
+            { path: "references/guide.md", content: "Guide" },
+            { path: "scripts/run.py", content: "print(1)" },
+          ],
+        }),
+      ).toMatchObject({
+        success: true,
+        skill: { resources: ["references/guide.md", "scripts/run.py"] },
+      });
+    });
+    expect(
+      await call(value, "list_skills", {
+        name: "with-files",
+        resource: "scripts/run.py",
+      }),
+    ).toEqual({
+      resource: { path: "scripts/run.py", content: "print(1)" },
+    });
+  });
+
+  it("rejects invalid or binary resources without creating the skill", async () => {
+    const base = {
+      name: "bad-files",
+      description: "A reusable workflow",
+      content: "Body",
+    };
+    for (const path of ["../x.md", "/abs.md", "SKILL.md", "a//b.md", "img/logo.png"]) {
+      expect(
+        await call(value, "create_skill", {
+          ...base,
+          resources: [{ path, content: "x" }],
+        }),
+      ).toMatchObject({
+        error: expect.any(String),
+      });
+    }
+    expect(storage.store).not.toHaveBeenCalled();
+  });
+
+  it("writes, replaces and deletes resources while preserving the rest", async () => {
+    const turn = value;
+    await act(async () => {
+      expect(
+        await call(turn, "write_skill_resource", {
+          name: personal.name,
+          path: "templates/a.md",
+          content: "A",
+        }),
+      ).toMatchObject({ success: true, replaced: false });
+    });
+    await act(async () => {
+      expect(
+        await call(turn, "write_skill_resource", {
+          name: personal.name,
+          path: "templates/a.md",
+          content: "A2",
+        }),
+      ).toMatchObject({ success: true, replaced: true });
+    });
+    expect(await call(turn, "list_skills", { name: personal.name })).toMatchObject({
+      skill: {
+        content: personal.content,
+        resources: ["references/team.md", "templates/a.md"],
+      },
+    });
+    expect(
+      await call(turn, "list_skills", {
+        name: personal.name,
+        resource: "templates/a.md",
+      }),
+    ).toEqual({
+      resource: { path: "templates/a.md", content: "A2" },
+    });
+    await act(async () => {
+      expect(
+        await call(turn, "delete_skill_resource", {
+          name: personal.name,
+          path: "references/team.md",
+        }),
+      ).toMatchObject({ success: true });
+    });
+    expect(await call(turn, "list_skills", { name: personal.name })).toMatchObject({
+      skill: { resources: ["templates/a.md"] },
+    });
+    expect(
+      await call(turn, "delete_skill_resource", {
+        name: personal.name,
+        path: "nope.md",
+      }),
+    ).toMatchObject({
+      error: expect.any(String),
+    });
+    expect(
+      await call(turn, "write_skill_resource", {
+        name: "missing",
+        path: "a.md",
+        content: "x",
+      }),
+    ).toMatchObject({
+      error: expect.any(String),
+    });
+  });
+
   it.each(["missing", "", 42, null])("returns an error for an invalid personal skill lookup (%j)", async (name) => {
-    expect(await call(value, "list_skills", { name })).toMatchObject({ error: expect.any(String) });
+    expect(await call(value, "list_skills", { name })).toMatchObject({
+      error: expect.any(String),
+    });
     expect(storage.store).not.toHaveBeenCalled();
   });
 
@@ -127,7 +258,11 @@ describe("personal skill reads for editing", () => {
     const runningTurn = value;
     for (const name of ["one", "two", "three"]) {
       await act(async () => {
-        await call(runningTurn, "create_skill", { name, description: "A reusable workflow", content: "Body" });
+        await call(runningTurn, "create_skill", {
+          name,
+          description: "A reusable workflow",
+          content: "Body",
+        });
       });
     }
     expect(agents.live.skills).toEqual(["one", "two", "three"]);
@@ -142,7 +277,11 @@ describe("personal skill reads for editing", () => {
 
     agents.live = { ...agents.live, skills: ["one"] };
     await act(async () => {
-      await call(value, "create_skill", { name: "one", description: "A reusable workflow", content: "Body" });
+      await call(value, "create_skill", {
+        name: "one",
+        description: "A reusable workflow",
+        content: "Body",
+      });
       result = await call(value, "delete_skill", { name: "one" });
     });
     expect(result).toMatchObject({ success: true, removedFromAgent: "Agent" });

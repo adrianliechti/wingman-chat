@@ -223,8 +223,13 @@ export function LibraryDialog({
     onClose();
   };
 
-  // Escape steps back through search and detail views before closing the dialog.
-  const handleEscape = async () => {
+  // Headless UI reports Escape and outside clicks through onClose, synchronously from the triggering event.
+  // Outside clicks close directly; Escape steps back through search and detail views first.
+  const handleDismiss = async () => {
+    if (window.event?.type !== "keydown") {
+      await handleClose();
+      return;
+    }
     if (search) {
       setSearch("");
       searchInputRef.current?.focus();
@@ -246,11 +251,6 @@ export function LibraryDialog({
       return;
     }
     await handleClose();
-  };
-
-  // Portaled menus bubble React events here, so only clicks on the backdrop itself count.
-  const closeOnBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) void handleClose();
   };
 
   const showSkillsList = useCallback(async () => {
@@ -318,10 +318,9 @@ export function LibraryDialog({
     void downloadPluginsAsZip(plugins).catch((error) => notify.error("Failed to export plugins", error));
   }, [plugins]);
 
-  // Closing is explicit (backdrop click, Escape on the panel) because Headless UI reports both through onClose.
   return (
     <Transition appear show={isOpen} as={Fragment} afterLeave={resetAfterLeave}>
-      <Dialog as="div" className="relative z-80" onClose={() => {}}>
+      <Dialog as="div" className="relative z-80" onClose={handleDismiss}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -334,11 +333,8 @@ export function LibraryDialog({
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-y-auto" onClick={closeOnBackdropClick}>
-          <div
-            className="flex min-h-full items-end justify-center sm:items-center sm:p-4"
-            onClick={closeOnBackdropClick}
-          >
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -348,14 +344,7 @@ export function LibraryDialog({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape" || e.defaultPrevented) return;
-                  e.preventDefault();
-                  void handleEscape();
-                }}
-                className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl"
-              >
+              <Dialog.Panel className="relative flex w-full flex-col overflow-hidden bg-white/95 shadow-xl backdrop-blur-xl dark:bg-neutral-900/95 rounded-t-2xl sm:rounded-xl sm:border sm:border-neutral-200/50 dark:sm:border-neutral-700/50 h-[92dvh] sm:h-[75dvh] sm:max-w-5xl">
                 {/* ── Top bar ── */}
                 <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pr-3 pl-3 sm:pl-4 sm:py-2 dark:border-neutral-800/60">
                   {isDrilledIn && !hasDetailBreadcrumb && (

@@ -3,7 +3,12 @@
  */
 
 import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
-import { parseSkillFile, serializeSkill, validateSkillName } from "@/features/skills/lib/skillParser";
+import {
+  parseSkillFile,
+  serializeSkill,
+  validateSkillName,
+  validateSkillResourcePath,
+} from "@/features/skills/lib/skillParser";
 import { withPersistenceLock } from "./persistence";
 import { writeFileChanges } from "./opfs-transaction";
 import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
@@ -37,14 +42,7 @@ async function writeSkill(skill: Skill): Promise<void> {
   const changes = new Map<string, Blob | undefined>();
   for (const resource of skill.resources ?? []) {
     const path = resource.path;
-    if (
-      !path ||
-      path === "SKILL.md" ||
-      /[\\\0]/.test(path) ||
-      path.startsWith("/") ||
-      path.split("/").some((part) => !part || part === "." || part === "..")
-    )
-      throw new Error(`Invalid skill resource path: ${path}`);
+    if (!validateSkillResourcePath(path).valid) throw new Error(`Invalid skill resource path: ${path}`);
     changes.set(
       `${skillDir}/${path}`,
       isDataUrl(resource.content) ? dataUrlToBlob(resource.content) : new Blob([resource.content]),
