@@ -143,7 +143,7 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } =
     useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
@@ -637,9 +637,9 @@ export function ChatPage() {
         isOpen={showSkillCatalog}
         onClose={closeSkillCatalog}
         enabledSkillNames={agentSkillIds}
-        onToggle={currentAgent && !skillCatalogReadOnly ? handleSkillToggle : undefined}
+        onToggle={currentAgent ? handleSkillToggle : undefined}
         enabledPluginIds={agentPluginIds}
-        onTogglePlugin={currentAgent && !skillCatalogReadOnly ? handlePluginToggle : undefined}
+        onTogglePlugin={currentAgent ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}

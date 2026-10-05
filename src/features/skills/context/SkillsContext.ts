@@ -13,8 +13,7 @@ export interface SkillsContextType {
   showSkillCatalog: boolean;
   skillCatalogTarget: string | null;
   skillCatalogSection: LibrarySection;
-  skillCatalogReadOnly: boolean;
-  openSkillCatalog: (name?: string, readOnly?: boolean, section?: LibrarySection) => void;
+  openSkillCatalog: (name?: string, section?: LibrarySection) => void;
   closeSkillCatalog: () => void;
 }
 

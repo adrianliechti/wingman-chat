@@ -42,11 +42,9 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
   const [showSkillCatalog, setShowSkillCatalog] = useState(false);
   const [skillCatalogTarget, setSkillCatalogTarget] = useState<string | null>(null);
   const [skillCatalogSection, setSkillCatalogSection] = useState<LibrarySection>("skills");
-  const [skillCatalogReadOnly, setSkillCatalogReadOnly] = useState(false);
 
-  const openSkillCatalog = useCallback((name?: string, readOnly?: boolean, section?: LibrarySection) => {
+  const openSkillCatalog = useCallback((name?: string, section?: LibrarySection) => {
     setSkillCatalogTarget(name ?? null);
-    setSkillCatalogReadOnly(readOnly ?? false);
     setSkillCatalogSection(section ?? "skills");
     setShowSkillCatalog(true);
   }, []);
@@ -54,7 +52,6 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
   const closeSkillCatalog = useCallback(() => {
     setShowSkillCatalog(false);
     setSkillCatalogTarget(null);
-    setSkillCatalogReadOnly(false);
     setSkillCatalogSection("skills");
   }, []);
 
@@ -69,7 +66,6 @@ export function SkillsProvider({ children }: { children: ReactNode }) {
         showSkillCatalog,
         skillCatalogTarget,
         skillCatalogSection,
-        skillCatalogReadOnly,
         openSkillCatalog,
         closeSkillCatalog,
       }}

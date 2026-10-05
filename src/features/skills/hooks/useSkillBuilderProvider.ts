@@ -9,9 +9,21 @@ import { useSkills } from "./useSkills";
 
 export function useSkillBuilderProvider(): ToolProvider {
   const { skills, getSkill, addSkill, updateSkill: updateSkillInLibrary, removeSkill } = useSkills();
-  const { currentAgent, updateAgent } = useAgents();
+  const { currentAgent, updateAgent, getAgent } = useAgents();
 
   return useMemo<ToolProvider>(() => {
+    // Read the agent's latest skills at call time: several tool calls can run
+    // before React re-renders, so the captured `currentAgent` may be stale.
+    const setSkillEnabled = (name: string, enabled: boolean) => {
+      const agent = currentAgent ? (getAgent(currentAgent.id) ?? currentAgent) : undefined;
+      if (!agent) return null;
+      const current = agent.skills ?? [];
+      if (enabled !== current.includes(name)) {
+        updateAgent(agent.id, { skills: enabled ? [...current, name] : current.filter((s) => s !== name) });
+      }
+      return agent.name;
+    };
+
     const tools: Tool[] = [
       {
         name: "list_skills",
@@ -119,19 +131,14 @@ export function useSkillBuilderProvider(): ToolProvider {
           const skill = addSkill({ name, description, content });
 
           // Auto-enable the new skill on the current agent
-          if (currentAgent) {
-            const currentSkills = currentAgent.skills || [];
-            if (!currentSkills.includes(name)) {
-              updateAgent(currentAgent.id, { skills: [...currentSkills, name] });
-            }
-          }
+          const enabledOnAgent = setSkillEnabled(name, true);
 
           return [
             {
               type: "text" as const,
               content: JSON.stringify({
                 success: true,
-                enabledOnAgent: currentAgent ? currentAgent.name : null,
+                enabledOnAgent,
                 skill: { name: skill.name, description: skill.description },
               }),
             },
@@ -241,11 +248,7 @@ export function useSkillBuilderProvider(): ToolProvider {
           // Drop the now-deleted skill from the active agent (symmetric with
           // create_skill's auto-enable); references on other agents are harmless
           // — they're filtered out when their skills are resolved.
-          let removedFromAgent: string | null = null;
-          if (currentAgent && (currentAgent.skills || []).includes(name)) {
-            updateAgent(currentAgent.id, { skills: currentAgent.skills.filter((s) => s !== name) });
-            removedFromAgent = currentAgent.name;
-          }
+          const removedFromAgent = setSkillEnabled(name, false);
 
           return [
             {
@@ -265,5 +268,5 @@ export function useSkillBuilderProvider(): ToolProvider {
       instructions: skillBuilderPrompt || undefined,
       tools,
     };
-  }, [skills, getSkill, addSkill, updateSkillInLibrary, removeSkill, currentAgent, updateAgent]);
+  }, [skills, getSkill, addSkill, updateSkillInLibrary, removeSkill, currentAgent, updateAgent, getAgent]);
 }

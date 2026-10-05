@@ -22,6 +22,7 @@ import { cn } from "@/shared/lib/cn";
 import { notify } from "@/shared/lib/notify";
 import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { ActiveIndicator } from "./ActiveIndicator";
 import type { SkillCatalogActions, SkillCatalogPanelProps } from "./SkillCatalogPanel";
 import { SkillCatalogPanel } from "./SkillCatalogPanel";
 import { PluginsManagerPanel } from "./PluginsManagerPanel";
@@ -34,25 +35,6 @@ export interface LibraryDialogProps extends SkillCatalogPanelProps {
   initialSection?: LibrarySection;
   enabledPluginIds?: ReadonlySet<string>;
   onTogglePlugin?: (pluginId: string) => void;
-}
-
-function ActiveIndicator({ enabled, label, onToggle }: { enabled: boolean; label: string; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={label}
-      title={label}
-      onClick={onToggle}
-      className={cn(
-        "absolute right-1 top-1/2 flex h-6 w-7 -translate-y-1/2 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-400",
-        enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
-      )}
-    >
-      {enabled ? <ToggleRight size={20} aria-hidden="true" /> : <ToggleLeft size={20} aria-hidden="true" />}
-    </button>
-  );
 }
 
 export function LibraryDialog({
@@ -596,6 +578,7 @@ export function LibraryDialog({
                               </button>
                               {onToggle && (
                                 <ActiveIndicator
+                                  className="right-1"
                                   enabled={enabled}
                                   label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
                                   onToggle={() => {
@@ -707,6 +690,7 @@ export function LibraryDialog({
                                 </button>
                                 {onTogglePlugin && (
                                   <ActiveIndicator
+                                    className="right-1"
                                     enabled={enabled}
                                     label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title ?? plugin.id}`}
                                     onToggle={() => {

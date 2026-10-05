@@ -173,8 +173,9 @@ export function PluginsManagerPanel({
     setInstallError(null);
     const label = plugin.title || plugin.id;
     try {
-      await installPlugin(hubUrl, plugin);
+      const installed = await installPlugin(hubUrl, plugin);
       notify.success(`Installed "${label}"`);
+      if (onTogglePlugin && !enabledPluginIds?.has(installed.id)) onTogglePlugin(installed.id);
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : "Failed to install plugin");
     }

@@ -12,8 +12,21 @@ vi.mock("@/shared/lib/opfs", () => ({
   loadAllSkills: storage.load,
   saveSkill: storage.store,
 }));
+type AgentState = { id: string; name: string; skills: string[] };
+const agents = vi.hoisted(() => ({
+  // Frozen render-time snapshot, like React state; getAgent reads the live store.
+  stale: { id: "a1", name: "Agent", skills: [] } as AgentState,
+  live: { id: "a1", name: "Agent", skills: [] } as AgentState,
+  active: true,
+}));
 vi.mock("@/features/agent/hooks/useAgents", () => ({
-  useAgents: () => ({ currentAgent: null, updateAgent: vi.fn() }),
+  useAgents: () => ({
+    currentAgent: agents.active ? agents.stale : null,
+    getAgent: () => agents.live,
+    updateAgent: (_id: string, updates: { skills: string[] }) => {
+      agents.live = { ...agents.live, ...updates };
+    },
+  }),
 }));
 
 const personal: Skill = {
@@ -39,6 +52,8 @@ async function call(provider: ToolProvider, name: string, args: Record<string, u
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  agents.live = { id: "a1", name: "Agent", skills: [] };
+  agents.active = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   storage.load.mockResolvedValue([structuredClone(personal)]);
   storage.store.mockResolvedValue(undefined);
@@ -106,5 +121,15 @@ describe("personal skill reads for editing", () => {
   it.each(["missing", "", 42, null])("returns an error for an invalid personal skill lookup (%j)", async (name) => {
     expect(await call(value, "list_skills", { name })).toMatchObject({ error: expect.any(String) });
     expect(storage.store).not.toHaveBeenCalled();
+  });
+
+  it("enables every skill created in one turn on the active agent", async () => {
+    const runningTurn = value;
+    for (const name of ["one", "two", "three"]) {
+      await act(async () => {
+        await call(runningTurn, "create_skill", { name, description: "A reusable workflow", content: "Body" });
+      });
+    }
+    expect(agents.live.skills).toEqual(["one", "two", "three"]);
   });
 });

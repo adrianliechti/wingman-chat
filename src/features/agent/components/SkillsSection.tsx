@@ -39,7 +39,12 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
     [allPlugins, pinnedPluginIds],
   );
 
-  const skillsEnabled = agentSkillIds.size > 0;
+  // The agent may still reference skills that were deleted or renamed; only count ones in the library.
+  const enabledSkillCount = useMemo(
+    () => allSkills.filter((s) => agentSkillIds.has(s.name)).length,
+    [allSkills, agentSkillIds],
+  );
+  const skillsEnabled = enabledSkillCount > 0;
 
   const toggleSkills = () => {
     if (skillsEnabled) {
@@ -97,7 +102,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                   </button>
                   {skillsEnabled && (
                     <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-neutral-500 px-0.5 text-[9px] font-semibold leading-none text-white pointer-events-none">
-                      {agentSkillIds.size}
+                      {enabledSkillCount}
                     </span>
                   )}
                 </Tooltip>
