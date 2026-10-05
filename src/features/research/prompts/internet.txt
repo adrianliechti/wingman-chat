@@ -1,5 +1,6 @@
 ## Web research
 Answer the delegated question with evidence and supporting URLs.
+Complete all necessary searches, page reads and source verification within this task. Return the evidence and remaining gaps so the parent can answer without another research call.
 
 Plan which claims need evidence. Start with one focused search for a simple fact; batch independent lookups (up to 8), not near-identical query variants. Use limit=3 for narrow searches, up to 8 for breadth. Restrict domains only when known; never guess them or use unsupported site: operators. If a filter yields nothing, retry without it.
 

@@ -336,8 +336,13 @@ backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools
 Internet exposes one `web_research` tool. `mode: fast` uses `searcher` directly;
 `mode: deep` uses the configured gateway `researcher`. Without a `researcher`, deep
 mode runs a local agent using `model` (or the parent chat model), with the configured
-`searcher` and/or `scraper`. A researcher-only setup supports deep mode. `elicitation`
-controls user approval; `guard` selects the gateway content checker. An omitted guard
+`searcher` and/or `scraper`. Only `web_research` is exposed to the parent; local
+`web_search` and `web_fetch` calls stay inside the researcher. The parent is instructed
+to submit one complete brief per user prompt and choose deep upfront when follow-up
+work is needed. `elicitation` requires approval of that input; internal searches and
+page reads need no further approval. This is model guidance, not a runtime call cap:
+another `web_research` invocation would require its own approval. A researcher-only
+setup supports deep mode. `guard` selects the gateway content checker. An omitted guard
 uses the gateway default, which passes when no guards are configured.
 
 Enable internet via `internet.yaml` or `INTERNET_ENABLED=true`. Environment overrides

@@ -4,6 +4,11 @@
  * outputs as user turns and runtime state in opaque `@tanstack:` signatures.
  * The result is deterministic, so a chat that is loaded but never saved again
  * migrates to the same record each time.
+ *
+ * The migration never throws for a malformed record. A part, message, or
+ * runtime section it cannot read is dropped with a console warning so the
+ * rest of the conversation still opens; the caller keeps the original file
+ * next to the first native save so nothing dropped here is lost for good.
  */
 
 import type { SubagentPart, ToolCallPart, UIMessage } from "@tanstack/ai";
@@ -23,6 +28,7 @@ import {
   type ToolResultMetadata,
 } from "./messages";
 import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
+import { parseBlobRef } from "./opfs-core";
 import { packGatewayReasoning } from "./reasoning";
 
 // ── The old record ─────────────────────────────────────────────────────────
@@ -107,12 +113,52 @@ export interface LegacyStoredChat {
   compactions?: { subagentId?: string; text?: string; signature: string }[];
 }
 
+/** The old record never carried a version. A record with an unknown version is left alone rather than guessed at. */
 export function isLegacyStoredChat(stored: { version?: unknown; messages?: unknown[] }): stored is LegacyStoredChat {
-  return (
-    stored.version !== STORED_CHAT_VERSION &&
-    Array.isArray(stored.messages) &&
-    stored.messages.every((message) => !!message && typeof message === "object" && !("parts" in message))
-  );
+  return stored.version === undefined;
+}
+
+/** Keep references in every JSON field, including parts too damaged or unfamiliar to migrate. */
+export function collectLegacyChatBlobIds(stored: unknown): string[] {
+  const ids = new Set<string>();
+  const pending = [stored];
+  while (pending.length) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      const id = parseBlobRef(value);
+      if (id) ids.add(id);
+    } else if (value && typeof value === "object") {
+      for (const item of Object.values(value)) pending.push(item);
+    }
+  }
+  return [...ids];
+}
+
+function warn(scope: string, what: string, detail?: unknown): void {
+  console.warn(`Chat migration (${scope}): ${what}`, ...(detail === undefined ? [] : [detail]));
+}
+
+/** Run one migration stage; a stage that throws yields its fallback instead of failing the whole chat. */
+function stage<T>(scope: string, what: string, run: () => T, fallback: T): T {
+  try {
+    return run();
+  } catch (error) {
+    warn(scope, `dropped ${what}`, error);
+    return fallback;
+  }
+}
+
+/** A parseable date, or the fallback. An invalid date would open fine and then fail every save. */
+function validDate(value: unknown, fallback: Date): Date {
+  if (typeof value !== "string" && typeof value !== "number") return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date;
+}
+
+function validIsoDate(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 /** Data the old runtime signed under its realm tag; anything else reads as absent. */
@@ -131,7 +177,13 @@ function defined<T extends object>(value: T): T {
 
 // ── Messages ───────────────────────────────────────────────────────────────
 
+function requireText(value: unknown): string {
+  if (typeof value !== "string") throw new TypeError("part without readable text");
+  return value;
+}
+
 function media(part: LegacyMedia): MediaPart {
+  if (typeof part.data !== "string") throw new TypeError(`${part.type} part without data`);
   const kind = part.type === "file" ? "document" : part.type;
   if (part.data.startsWith("data:")) return mediaFromDataUrl(part.data, part.name, kind);
   // A blob reference or external URL stays a reference; the stored type is kept for rehydration.
@@ -143,27 +195,50 @@ function media(part: LegacyMedia): MediaPart {
 }
 
 function result(parts: LegacyToolResult["result"]) {
-  return parts.map((part) => (part.type === "text" ? text(part.text) : media(part)));
+  if (!Array.isArray(parts)) throw new TypeError("tool result without output parts");
+  return parts.map((part) => (part.type === "text" ? text(requireText(part.text)) : media(part)));
 }
 
 /** Pending approvals keep their native tool-call state so the interrupt card can resume them. */
 function approvalFor(toolCallId: string, chat: LegacyStoredChat) {
-  const interrupt = chat.pendingRun?.interrupts.find(
-    (item) => item.toolCallId === toolCallId && (item.reason === "tool_call" || item.reason === "approval_required"),
+  const interrupts = Array.isArray(chat.pendingRun?.interrupts) ? chat.pendingRun.interrupts : [];
+  const interrupt = interrupts.find(
+    (item) => item?.toolCallId === toolCallId && (item.reason === "tool_call" || item.reason === "approval_required"),
   );
   return interrupt ? { id: interrupt.id, needsApproval: true } : undefined;
 }
 
-export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacyStoredChat, scope = chat.id): UIMessage[] {
-  const answered = new Set(
-    messages.flatMap((message) => message.content.flatMap((part) => (part.type === "tool_result" ? [part.id] : []))),
+function isLegacyMessage(message: unknown): message is LegacyMessage {
+  return (
+    !!message &&
+    typeof message === "object" &&
+    ((message as LegacyMessage).role === "user" || (message as LegacyMessage).role === "assistant") &&
+    Array.isArray((message as LegacyMessage).content)
   );
-  const fallbackCreatedAt = chat.created ?? new Date(0).toISOString();
+}
+
+export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacyStoredChat, scope = chat.id): UIMessage[] {
+  if (!Array.isArray(messages)) {
+    warn(scope, "dropped messages that are not a list");
+    return [];
+  }
+  const answered = new Set(
+    messages.flatMap((message) =>
+      isLegacyMessage(message)
+        ? message.content.flatMap((part) => (part?.type === "tool_result" ? [part.id] : []))
+        : [],
+    ),
+  );
+  const fallbackCreatedAt = validDate(chat.created, new Date(0));
   const native: UIMessage[] = [];
   const owners = new Map<string, UIMessage>();
 
   messages.forEach((message, index) => {
-    const kinds = new Set(message.content.map((part) => part.type));
+    if (!isLegacyMessage(message)) {
+      warn(scope, `dropped message ${index}: not a user or assistant message with content`);
+      return;
+    }
+    const kinds = new Set(message.content.map((part) => part?.type));
     const kind: MessageMetadata["kind"] | undefined =
       kinds.size === 1 && kinds.has("summary")
         ? "summary"
@@ -171,7 +246,7 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
           ? "runtime_feedback"
           : undefined;
     const segments = message.content.flatMap((part): TextSegment[] =>
-      part.type === "text" ? [{ content: part.text, phase: part.phase }] : [],
+      part?.type === "text" && typeof part.text === "string" ? [{ content: part.text, phase: part.phase }] : [],
     );
     const metadata: MessageMetadata = defined({
       runId: message.runId,
@@ -184,22 +259,33 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
       id: message.id ?? `legacy-${scope}-${index}`,
       role: message.role,
       parts: [],
-      createdAt: new Date(message.createdAt ?? fallbackCreatedAt),
+      createdAt: validDate(message.createdAt, fallbackCreatedAt),
       ...(Object.keys(metadata).length ? { metadata } : {}),
     };
 
-    for (const part of message.content) {
+    // Each part migrates on its own: one unreadable part costs that part, not the conversation.
+    message.content.forEach((part, partIndex) => {
+      try {
+        migratePart(part);
+      } catch (error) {
+        warn(scope, `dropped ${part?.type ?? "unknown"} part ${partIndex} of message ${next.id}`, error);
+      }
+    });
+    // A moved tool result leaves an empty user turn behind; a failed assistant turn keeps its error.
+    if (next.parts.length || metadata.error) native.push(next);
+
+    function migratePart(part: LegacyContent): void {
       switch (part.type) {
         case "text": {
           const textMetadata: TextMetadata = defined({ phase: part.phase });
-          next.parts.push(text(part.text, Object.keys(textMetadata).length ? textMetadata : undefined));
+          next.parts.push(text(requireText(part.text), Object.keys(textMetadata).length ? textMetadata : undefined));
           break;
         }
         case "summary":
-          next.parts.push(text(part.text));
+          next.parts.push(text(requireText(part.text)));
           break;
         case "runtime_feedback":
-          next.parts.push(text(part.text, { source: part.source }));
+          next.parts.push(text(requireText(part.text), { source: part.source }));
           break;
         case "artifact_ref":
           next.parts.push(
@@ -223,7 +309,7 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
         case "reasoning":
           next.parts.push({
             type: "thinking",
-            content: part.summary ?? part.text,
+            content: requireText(part.summary ?? part.text),
             stepId: part.id,
             signature: packGatewayReasoning({
               id: part.id,
@@ -290,10 +376,10 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
           });
           break;
         }
+        default:
+          throw new TypeError(`unknown part type ${JSON.stringify((part as { type?: unknown })?.type)}`);
       }
     }
-    // A moved tool result leaves an empty user turn behind; a failed assistant turn keeps its error.
-    if (next.parts.length || metadata.error) native.push(next);
   });
   return native;
 }
@@ -302,7 +388,7 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
 
 function migrateResume(chat: LegacyStoredChat): Chat["resume"] {
   const run = chat.pendingRun;
-  if (!run?.interrupts.length) return undefined;
+  if (!Array.isArray(run?.interrupts) || !run.interrupts.length) return undefined;
   return {
     resumeState: { threadId: readSignature<{ threadId: string }>(run.signature)?.threadId ?? chat.id, runId: run.id },
     pendingInterrupts: run.interrupts.map(({ subagentId, schema, metadata, signature, ...interrupt }) => {
@@ -320,7 +406,7 @@ function migrateResume(chat: LegacyStoredChat): Chat["resume"] {
 const COMPACTION_NAMESPACE = "@tanstack/ai-compaction";
 
 function migrateMetadata(chat: LegacyStoredChat): Chat["metadata"] {
-  const entries = (chat.compactions ?? []).flatMap((compaction) => {
+  const entries = (Array.isArray(chat.compactions) ? chat.compactions : []).flatMap((compaction) => {
     const checkpoint = readSignature<unknown>(compaction.signature);
     const key = compaction.subagentId ? `${chat.id}/${compaction.subagentId}` : chat.id;
     return checkpoint ? [[key, checkpoint] as const] : [];
@@ -329,17 +415,21 @@ function migrateMetadata(chat: LegacyStoredChat): Chat["metadata"] {
 }
 
 export function migrateLegacyChat(chat: LegacyStoredChat): StoredChat {
-  const resume = migrateResume(chat);
-  const metadata = migrateMetadata(chat);
+  const resume = stage(chat.id, "the pending run", () => migrateResume(chat), undefined);
+  const metadata = stage(chat.id, "the compaction checkpoints", () => migrateMetadata(chat), undefined);
+  const created = validIsoDate(chat.created);
+  const updated = validIsoDate(chat.updated);
+  if (chat.created && !created) warn(chat.id, `ignored unreadable created date ${JSON.stringify(chat.created)}`);
+  if (chat.updated && !updated) warn(chat.id, `ignored unreadable updated date ${JSON.stringify(chat.updated)}`);
   return {
     version: STORED_CHAT_VERSION,
     id: chat.id,
-    title: chat.title,
-    customTitle: chat.customTitle,
-    customIndex: chat.customIndex,
-    created: chat.created,
-    updated: chat.updated,
-    model: chat.model,
+    title: typeof chat.title === "string" ? chat.title : undefined,
+    customTitle: typeof chat.customTitle === "string" ? chat.customTitle : undefined,
+    customIndex: typeof chat.customIndex === "number" ? chat.customIndex : undefined,
+    created,
+    updated: updated ?? created,
+    model: chat.model && typeof chat.model === "object" ? chat.model : null,
     messages: migrateLegacyMessages(chat.messages, chat),
     ...(resume ? { resume } : {}),
     ...(metadata ? { metadata } : {}),

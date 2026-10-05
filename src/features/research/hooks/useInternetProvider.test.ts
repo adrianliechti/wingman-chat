@@ -227,7 +227,7 @@ it("fast mode preserves realtime confirmation and skips model calls", async () =
   expect(client.search).toHaveBeenCalledOnce();
 });
 
-it("asks once for a deep task with multiple internal search calls", async () => {
+it("approves the research brief once before multiple internal searches and page reads", async () => {
   const { client, complete, tools } = fixture(true);
   complete
     .mockResolvedValueOnce(call("web_research", { prompt: brief, mode: "deep" }))
@@ -237,16 +237,22 @@ it("asks once for a deep task with multiple internal search calls", async () => 
         { id: "q2", name: "web_search", arguments: JSON.stringify({ queries: ["three"] }) },
       ]),
     )
+    .mockResolvedValueOnce(call("web_fetch", { urls: ["https://example.com"] }))
     .mockResolvedValueOnce(answer("Research report"))
     .mockResolvedValueOnce(answer("Final answer"));
   const session = chatSession(client, tools);
   await session.ai.sendMessage("Research the whole task");
   await expect.poll(() => session.ai.getInterruptState().interrupts.length).toBe(1);
+  const approval = boundInterrupt(session.ai.getInterruptState().interrupts[0]);
+  expect(approval).toMatchObject({ kind: "tool-approval", originalArgs: { prompt: brief, mode: "deep" } });
+  expect(client.guard).not.toHaveBeenCalled();
   expect(client.search).not.toHaveBeenCalled();
-  boundInterrupt(session.ai.getInterruptState().interrupts[0]).resolveInterrupt(true);
+  expect(client.scrape).not.toHaveBeenCalled();
+  approval.resolveInterrupt(true);
   await expect.poll(() => session.finished.at(-1)?.status).toBe("completed");
   expect(client.guard).toHaveBeenCalledOnce();
   expect(client.search).toHaveBeenCalledTimes(3);
+  expect(client.scrape).toHaveBeenCalledOnce();
   expect(session.ai.getInterruptState().interrupts).toHaveLength(0);
   session.ai.dispose();
 });

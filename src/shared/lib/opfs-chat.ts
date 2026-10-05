@@ -275,9 +275,12 @@ export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[]
   return ids;
 }
 
-/** Remove only blobs no longer referenced by an already-persisted chat manifest. */
-export async function deleteUnreferencedChatBlobs(chat: StoredChat): Promise<void> {
-  const referenced = new Set(collectChatBlobIds(chat));
+/** Remove only blobs no longer referenced by a persisted manifest or its recovery record. */
+export async function deleteUnreferencedChatBlobs(
+  chat: StoredChat,
+  retainedBlobIds: readonly string[] = [],
+): Promise<void> {
+  const referenced = new Set([...collectChatBlobIds(chat), ...retainedBlobIds]);
   const stored = await listChatBlobs(chat.id);
   await Promise.all(
     stored.filter((blobId) => !referenced.has(blobId)).map((blobId) => deleteChatBlob(chat.id, blobId)),

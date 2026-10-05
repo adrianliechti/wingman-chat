@@ -10,6 +10,7 @@ import {
   contentParts,
   createResponseFaultInjector,
   lastAssistantText,
+  nativeMessage,
   chunkTypes,
   observeRun,
   REQUEST_TIMEOUT_MS,
@@ -60,9 +61,9 @@ function assertEventContract(events, result) {
 function resultTexts(messages, toolName) {
   return contentParts(messages, "tool_result")
     .filter((part) => !toolName || part.name === toolName)
-    .flatMap((part) => part.result ?? [])
+    .flatMap((part) => part.metadata?.result ?? [])
     .filter((part) => part.type === "text")
-    .map((part) => part.text);
+    .map((part) => part.content);
 }
 
 function productionFileTools(workspace) {
@@ -248,7 +249,8 @@ void describe("Wingman real-model challenge E2E", { concurrency: false }, () => 
           );
           const results = contentParts(result.messages, "tool_result").filter((part) => part.name === tool.name);
           assert.equal(results.length, 2);
-          assert.equal(result.messages.find((message) => message.error)?.error?.code, "TOOL_EXECUTION_ERROR");
+          assert.equal(results[0].state, "error");
+          assert.match(results[0].content, /TRANSIENT_E2E_FAILURE/);
           assert.equal(results[0].id, contentParts(result.messages, "tool_call")[0].id);
           assert.equal(results[1].id, contentParts(result.messages, "tool_call")[1].id);
           assert(metaUpdates.some((meta) => meta.phase === "recovered"));

@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import { loadChat, storeChat } from "@/features/chat/lib/chatStorage";
+import { legacyChatPath, loadChat, storeChat } from "@/features/chat/lib/chatStorage";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
 import { isLegacyStoredChat, migrateLegacyChat, normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import { messageMetadata, textMetadata, toolResultFor, toolResultMetadata } from "./messages";
@@ -12,6 +12,12 @@ vi.mock("@/shared/config", () => ({ getConfig: () => ({ chat: {} }) }));
 
 const signature = (value: object) => `@tanstack:${JSON.stringify(value)}`;
 const BLOB = "blob:sha256-0123456789abcdef";
+// OPFS caches its root handle, so every test that touches storage shares this store and resets it.
+const memory = new MemoryOpfs();
+function useMemoryStorage() {
+  memory.reset();
+  vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
+}
 
 function legacyChat(): LegacyStoredChat {
   return {
@@ -336,8 +342,7 @@ describe("legacy chat migration", () => {
   });
 
   it("keeps blob references so the migrated chat can be saved and loaded with its media", async () => {
-    const memory = new MemoryOpfs();
-    vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
+    useMemoryStorage();
     vi.stubGlobal(
       "FileReader",
       class {
@@ -380,5 +385,247 @@ describe("legacy chat migration", () => {
     expect(JSON.stringify(stored)).not.toContain("@tanstack:");
     expect((await loadChat(legacy.id))!.messages).toMatchObject(loaded);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("legacy chat migration of damaged records", () => {
+  const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+  afterEach(() => {
+    warnings.mockClear();
+    vi.unstubAllGlobals();
+  });
+  /** The fixture with its JSON bent out of shape; the type says what the file claims, not what it holds. */
+  const damaged = (mutate: (chat: Record<string, unknown>) => void): LegacyStoredChat => {
+    const chat = JSON.parse(JSON.stringify(legacyChat())) as Record<string, unknown>;
+    mutate(chat);
+    return chat as unknown as LegacyStoredChat;
+  };
+  const warned = () => warnings.mock.calls.map((call) => String(call[0]));
+
+  it("drops an unknown part with a warning and keeps the rest of the message", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: unknown[] }[];
+      messages[3].content.splice(1, 0, {
+        type: "citation",
+        url: "https://example.com",
+      });
+    });
+    const migrated = migrateLegacyChat(chat);
+    const a2 = migrated.messages.find((message) => message.id === "a2")!;
+    expect(a2.parts.map((part) => part.type)).toEqual(["text", "text"]);
+    expect(warned()).toEqual([expect.stringContaining("dropped citation part 1 of message a2")]);
+  });
+
+  it("drops null and primitive parts without losing readable turns or text phases", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: unknown[] }[];
+      messages[3].content.splice(1, 0, null, 42, "unreadable");
+    });
+    expect(migrateLegacyChat(chat)).toEqual(migrateLegacyChat(legacyChat()));
+    expect(warned()).toEqual([
+      expect.stringContaining("dropped unknown part 1 of message a2"),
+      expect.stringContaining("dropped unknown part 2 of message a2"),
+      expect.stringContaining("dropped unknown part 3 of message a2"),
+    ]);
+  });
+
+  it("keeps a subagent conversation when one of its parts is null", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: Record<string, unknown>[] }[];
+      const child = messages[7].content[1].messages as { content: unknown[] }[];
+      child[0].content.push(null);
+    });
+    expect(migrateLegacyChat(chat)).toEqual(migrateLegacyChat(legacyChat()));
+    expect(warned()).toEqual([expect.stringContaining("dropped unknown part 1 of message legacy-child-0")]);
+  });
+
+  it.each(["text", "summary", "runtime_feedback", "reasoning"])("drops a %s part with unreadable text", (type) => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: unknown[] }[];
+      messages[0].content.push({ type, text: { damaged: true }, source: "verification" });
+      messages[3].content.push({ type: "text", text: null, phase: "final_answer" });
+    });
+    expect(migrateLegacyChat(chat)).toEqual(migrateLegacyChat(legacyChat()));
+    expect(warned()).toEqual([
+      expect.stringContaining(`dropped ${type} part 1 of message u1`),
+      expect.stringContaining("dropped text part 2 of message a2"),
+    ]);
+  });
+
+  it("drops a tool result with unreadable text instead of passing it to the renderer", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: Record<string, unknown>[] }[];
+      (messages[2].content[0].result as Record<string, unknown>[])[0].text = { damaged: true };
+    });
+    const a1 = migrateLegacyChat(chat).messages.find((message) => message.id === "a1")!;
+    expect(a1.parts.map((part) => part.type)).toEqual(["thinking", "tool-call"]);
+    expect(warned()).toEqual([expect.stringContaining("dropped tool_result part 0")]);
+  });
+
+  it("drops a message without content and keeps the surrounding turns", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as Record<string, unknown>[];
+      delete messages[0].content;
+      messages.splice(1, 0, null as unknown as Record<string, unknown>, {
+        role: "system",
+        content: [],
+      });
+    });
+    const migrated = migrateLegacyChat(chat);
+    expect(migrated.messages.map((message) => message.id)).toEqual(
+      migrateLegacyChat(legacyChat())
+        .messages.map((message) => message.id)
+        .filter((id) => id !== "u1"),
+    );
+    expect(warned()).toEqual([
+      expect.stringContaining("dropped message 0"),
+      expect.stringContaining("dropped message 1"),
+      expect.stringContaining("dropped message 2"),
+    ]);
+  });
+
+  it("drops media without data and tool results without output, leaving the call in place", () => {
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: Record<string, unknown>[] }[];
+      delete (messages[2].content[0].result as Record<string, unknown>[])[1].data;
+    });
+    const migrated = migrateLegacyChat(chat);
+    const a1 = migrated.messages.find((message) => message.id === "a1")!;
+    expect(a1.parts.map((part) => part.type)).toEqual(["thinking", "tool-call"]);
+    expect(a1.parts[1]).toMatchObject({
+      type: "tool-call",
+      id: "call-1",
+      state: "complete",
+    });
+    expect(warned()).toEqual([expect.stringContaining("dropped tool_result part 0")]);
+
+    const noOutput = damaged((raw) => {
+      const messages = raw.messages as { content: Record<string, unknown>[] }[];
+      messages[2].content[0].result = "Rendered";
+    });
+    expect(migrateLegacyChat(noOutput).messages.find((message) => message.id === "a1")!.parts).toHaveLength(2);
+  });
+
+  it("replaces unreadable dates so the migrated chat can be saved", async () => {
+    useMemoryStorage();
+    const chat = damaged((raw) => {
+      raw.created = "yesterday";
+      raw.updated = 1735776000000;
+      (raw.messages as Record<string, unknown>[])[0].createdAt = "not a date";
+    });
+    const migrated = migrateLegacyChat(chat);
+    expect(migrated.created).toBeNull();
+    expect(migrated.updated).toBe("2025-01-02T00:00:00.000Z");
+    expect(migrated.messages[0].createdAt).toEqual(new Date(0));
+    expect(warned()).toEqual([expect.stringContaining('unreadable created date "yesterday"')]);
+
+    memory.put(`chats/${chat.id}/chat.json`, JSON.stringify(chat));
+    const loaded = (await loadChat(chat.id, false))!;
+    await expect(storeChat(loaded)).resolves.toBeUndefined();
+    expect((await loadChat(chat.id, false))!.updated).toEqual(new Date("2025-01-02T00:00:00.000Z"));
+  });
+
+  it("tolerates missing or malformed runtime state", () => {
+    const chat = damaged((raw) => {
+      delete raw.messages;
+      raw.pendingRun = { id: "run", interrupts: "none" };
+      raw.compactions = { signature: "@tanstack:{}" };
+      raw.model = "gpt";
+      raw.title = 42;
+    });
+    const migrated = migrateLegacyChat(chat);
+    expect(migrated).toMatchObject({
+      version: STORED_CHAT_VERSION,
+      id: "legacy-chat",
+      messages: [],
+      model: null,
+    });
+    expect(migrated).not.toHaveProperty("resume");
+    expect(migrated).not.toHaveProperty("metadata");
+    expect(migrated.title).toBeUndefined();
+    expect(warned()).toEqual([expect.stringContaining("messages that are not a list")]);
+  });
+
+  it("migrates every unversioned record and leaves unknown versions alone", () => {
+    expect(isLegacyStoredChat({ messages: "nope" as unknown as unknown[] })).toBe(true);
+    expect(isLegacyStoredChat({ version: 3, messages: [] })).toBe(false);
+    const future = {
+      version: 3,
+      id: "x",
+      messages: [],
+    } as unknown as LegacyStoredChat;
+    expect(normalizeStoredChat(future)).toBe(future);
+  });
+
+  it("keeps the original record beside the first native save", async () => {
+    useMemoryStorage();
+    const chat = damaged((raw) => {
+      (raw.messages as { content: unknown[] }[])[3].content.push({
+        type: "citation",
+      });
+    });
+    memory.put(`chats/${chat.id}/chat.json`, JSON.stringify(chat));
+
+    const loaded = (await loadChat(chat.id, false))!;
+    expect(await opfs.readJson(legacyChatPath(chat.id))).toEqual(JSON.parse(JSON.stringify(chat)));
+    expect(await opfs.fileExists(legacyChatPath(chat.id))).toBe(true);
+
+    await storeChat({ ...loaded, title: "Renamed" });
+    expect((await opfs.readJson<{ version: number }>(`chats/${chat.id}/chat.json`))?.version).toBe(STORED_CHAT_VERSION);
+    // The copy is the untouched original, even after the migrated chat was loaded and saved again.
+    await loadChat(chat.id, false);
+    expect(await opfs.readJson(legacyChatPath(chat.id))).toEqual(JSON.parse(JSON.stringify(chat)));
+    expect(JSON.stringify(await opfs.readJson(legacyChatPath(chat.id)))).toContain("citation");
+  });
+
+  it("retains recovery attachments from dropped results and unknown nested parts across saves", async () => {
+    useMemoryStorage();
+    const childBlob = "sha256-child";
+    const chat = damaged((raw) => {
+      const messages = raw.messages as { content: Record<string, unknown>[] }[];
+      (messages[2].content[0].result as unknown[]).push({ type: "image" });
+      const child = messages[7].content[1].messages as { content: unknown[] }[];
+      child[0].content.push({ type: "unknown", payload: [null, { data: `blob:${childBlob}` }] });
+    });
+    const blobId = opfs.parseBlobRef(BLOB)!;
+    memory.put(`chats/${chat.id}/chat.json`, JSON.stringify(chat));
+    memory.put(`chats/${chat.id}/blobs/${blobId}.bin`, "original image");
+    memory.put(`chats/${chat.id}/blobs/${childBlob}.bin`, "child image");
+    memory.put(`chats/${chat.id}/blobs/unused.bin`, "unused image");
+
+    const loaded = (await loadChat(chat.id, false))!;
+    expect(collectChatBlobIds({ messages: loaded.messages })).toEqual([]);
+    await storeChat(loaded);
+    expect(await opfs.listChatBlobs(chat.id)).toEqual(expect.arrayContaining([blobId, childBlob]));
+    expect(await opfs.fileExists(`chats/${chat.id}/blobs/unused.bin`)).toBe(false);
+
+    await storeChat({ ...(await loadChat(chat.id, false))!, title: "Renamed" });
+    expect(await (await opfs.getChatBlob(chat.id, blobId))?.text()).toBe("original image");
+    expect(await (await opfs.getChatBlob(chat.id, childBlob))?.text()).toBe("child image");
+    expect(await opfs.readJson(legacyChatPath(chat.id))).toEqual(JSON.parse(JSON.stringify(chat)));
+  });
+
+  it("skips blob cleanup when the recovery record cannot be read", async () => {
+    useMemoryStorage();
+    const chat = legacyChat();
+    memory.put(`chats/${chat.id}/chat.json`, JSON.stringify(chat));
+    const loaded = (await loadChat(chat.id, false))!;
+    memory.put(`chats/${chat.id}/blobs/recovery.bin`, "recovery bytes");
+    memory.put(legacyChatPath(chat.id), "invalid JSON");
+
+    await expect(storeChat(loaded)).resolves.toBeUndefined();
+    expect(await opfs.fileExists(`chats/${chat.id}/blobs/recovery.bin`)).toBe(true);
+    expect(warned()).toEqual(["Chat blob cleanup failed:"]);
+    expect((await loadChat(chat.id, false))?.messages).toEqual(loaded.messages);
+  });
+
+  it("still opens the chat when the original record cannot be kept", async () => {
+    useMemoryStorage();
+    const chat = legacyChat();
+    memory.put(`chats/${chat.id}/chat.json`, JSON.stringify(chat));
+    // A directory squatting on the copy's path makes the write fail the way a full or locked store would.
+    memory.put(`${legacyChatPath(chat.id)}/blocker`, "");
+    expect((await loadChat(chat.id, false))?.messages.length).toBeGreaterThan(0);
+    expect(warned()).toEqual([expect.stringContaining("Could not keep the pre-migration record")]);
   });
 });

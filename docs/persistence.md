@@ -30,12 +30,16 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
   `UIMessage[]` transcript, its optional resume pointer and middleware metadata.
   Blob extraction walks message parts, native tool-result content, rich tool outputs in metadata
   and subagent conversations. Records saved before version 2 migrate when read:
-  deterministic, idempotent, never written back as a side effect of reading, so
-  older backups remain restorable and restore validation accepts both shapes.
+  deterministic and idempotent, with unreadable parts dropped with a warning.
+  Reading keeps the original JSON in `chat.legacy.json` so the migration can
+  be redone; the migrated record is written on the next save. Older backups remain
+  restorable and restore validation accepts both shapes.
 - Chat attachments are addressed by content hash, retain their MIME type, and
   remain referenced until the new manifest is durable. All sibling blob writes
   settle before the save releases its lock. Missing references remain intact so
-  a later partial restore can repair them.
+  a later partial restore can repair them. Cleanup retains blob references from
+  the original recovery JSON, including dropped parts, and skips deletion if
+  that record cannot be read.
 - Chat startup loads `ChatEntry` metadata from the index. A conversation's manifest
   loads on selection, with concurrent reads coalesced. Attachment references stay
   in stored history; visible messages and model requests resolve separate copies.
@@ -80,8 +84,8 @@ current format without rewriting local data.
 One index scanner serves repair and restore. It preserves custom chat ordering,
 skill identities, and existing timestamps, and never deletes folders. Obsolete
 repository index rebuilding and duplicate generic scanners were removed. Loading
-older records can normalize values in memory; it does not write migrations back
-as a side effect of reading.
+older records can normalize values in memory and keep a recovery copy; it does
+not write the migrated record back as a side effect of reading.
 
 ## Limits
 
