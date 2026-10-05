@@ -1,4 +1,4 @@
-import { Loader2, Maximize2 } from "lucide-react";
+import { AppWindow, Loader2, Maximize2, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AppFrame, type AppBridge } from "@mcp-ui/client";
@@ -8,7 +8,10 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";
 import type { ToolCallPart, ToolResultPart } from "@tanstack/ai";
 import { toolResultContent, toolResultMetadata } from "@/shared/lib/messages";
+import { findTool } from "./toolDisplay";
+import { cn } from "@/shared/lib/cn";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
+import { getToolDisplayName } from "@/shared/lib/utils";
 import { useApp } from "@/shell/hooks/useApp";
 
 interface McpAppProps {
@@ -49,8 +52,9 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [inlineHeight, setInlineHeight] = useState(0);
   const [bridgeReady, setBridgeReady] = useState(false);
-  const { showAppDrawer, closeApp, showDrawer, activeAppKey, setActiveAppKey, drawerTarget } = useApp();
-  const { setProviderEnabled, restoreToolUI } = useToolsContext();
+  const { showAppDrawer, toggleAppDrawer, closeApp, showDrawer, activeApp, setActiveApp, drawerTarget } = useApp();
+  const activeAppKey = activeApp?.key ?? null;
+  const { providers, setProviderEnabled, restoreToolUI } = useToolsContext();
 
   const providerId = data.meta?.toolProvider as string;
   const resourceUri = data.meta?.toolResource as string;
@@ -66,10 +70,21 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
   // The drawer owns fullscreen selection. Deriving it here avoids competing
   // app effects repeatedly claiming the same panel from one another.
   const isFullscreen = showAppDrawer && activeAppKey === appKey;
+  const otherAppInPanel = showAppDrawer && activeAppKey !== null && activeAppKey !== appKey;
+  // Same name the tool row shows; it also labels the edge tab, so it must not change once loaded.
+  const toolTitle = findTool(providers, call.name)?.title;
+  const appTitle = toolTitle ?? getToolDisplayName(call.name);
   const openInPanel = () => {
-    setActiveAppKey(appKey);
+    setActiveApp({ key: appKey, title: appTitle });
     showDrawer();
   };
+  const panelActionLabel = isFullscreen
+    ? isFullscreenOnly
+      ? "Close panel"
+      : "Show inline"
+    : otherAppInPanel
+      ? "Switch to this app"
+      : "Open in panel";
   const requestDisplayMode = useEffectEvent((mode: string) => {
     if (mode === "fullscreen") {
       // Older fullscreen-only apps initialize in the background.
@@ -169,10 +184,10 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
 
   useEffect(() => {
     if (bridgeReady && isFullscreenOnly && isLastFullscreenApp) {
-      setActiveAppKey(appKey);
+      setActiveApp({ key: appKey, title: appTitle });
       showDrawer();
     }
-  }, [bridgeReady, isFullscreenOnly, isLastFullscreenApp, appKey, setActiveAppKey, showDrawer]);
+  }, [bridgeReady, isFullscreenOnly, isLastFullscreenApp, appKey, appTitle, setActiveApp, showDrawer]);
 
   // Push the host-context (display mode + container dimensions) to the live bridge.
   // For fullscreen we wait until the iframe is positioned over the drawer so the
@@ -205,13 +220,57 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
   return (
     <div className="mt-2 mb-2">
       {isFullscreen || isFullscreenOnly ? (
+        // The app lives in the panel, so the chat keeps a card (same design as skill and
+        // artifact chips) that reflects where it is right now and toggles it.
         <button
           type="button"
-          onClick={openInPanel}
-          className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors py-1.5 px-2 rounded-md bg-neutral-100 dark:bg-neutral-900/40"
+          onClick={isFullscreen ? (isFullscreenOnly ? toggleAppDrawer : () => void closeApp()) : openInPanel}
+          title={panelActionLabel}
+          aria-label={`${panelActionLabel}: ${appTitle}`}
+          className={cn(
+            "group/app inline-flex w-72 max-w-full items-center gap-3 rounded-lg border px-3 py-2 text-left align-top transition-colors",
+            isFullscreen
+              ? "border-neutral-300 bg-neutral-100 hover:bg-neutral-200/70 dark:border-neutral-600 dark:bg-neutral-800 dark:hover:bg-neutral-700/60"
+              : "border-neutral-200 bg-neutral-50 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/60 dark:hover:bg-neutral-700/60",
+          )}
         >
-          <Maximize2 size={12} />
-          <span>{showAppDrawer && activeAppKey === appKey ? "Showing in panel" : "Open in panel"}</span>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800">
+            {isLoading && !error ? (
+              <Loader2 className="h-4 w-4 animate-spin text-neutral-400 dark:text-neutral-500" />
+            ) : (
+              <AppWindow className="h-4 w-4 text-neutral-400 dark:text-neutral-500" strokeWidth={1.5} />
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              {appTitle}
+            </span>
+            <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
+              {isFullscreen
+                ? "Showing in panel"
+                : isLoading && !error
+                  ? "Loading app…"
+                  : otherAppInPanel
+                    ? "Switch to this app"
+                    : "Open in panel"}
+            </span>
+          </span>
+          <span
+            className={cn(
+              "shrink-0 text-neutral-400 transition-opacity dark:text-neutral-500",
+              !isFullscreen && "opacity-0 group-hover/app:opacity-100",
+            )}
+          >
+            {isFullscreen ? (
+              isFullscreenOnly ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <Minimize2 className="h-4 w-4" />
+              )
+            ) : (
+              <PanelRightOpen className="h-4 w-4" />
+            )}
+          </span>
         </button>
       ) : (
         !isInlineOnly && (
@@ -234,10 +293,12 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
           When fullscreen the iframe is position:fixed over the drawer, so this collapses. */}
       <div
         className={
-          isFullscreen ? "" : "relative rounded-md overflow-hidden bg-neutral-100 dark:bg-neutral-900/40 min-h-[60px]"
+          isFullscreen || isFullscreenOnly
+            ? ""
+            : "relative rounded-md overflow-hidden bg-neutral-100 dark:bg-neutral-900/40 min-h-[60px]"
         }
       >
-        {isLoading && !isFullscreen && (
+        {isLoading && !isFullscreen && !isFullscreenOnly && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 z-10 min-h-[60px]">
             <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
           </div>

@@ -191,17 +191,7 @@ export function ChatPage() {
     },
     [currentAgent, updateAgent],
   );
-  const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
-
-  // Mutual exclusivity: closing one drawer when another opens
-  useDrawerExclusivity({
-    showApp: showAppDrawer,
-    setShowApp: setShowAppDrawer,
-    showArtifacts: showArtifactsDrawer,
-    setShowArtifacts: setShowArtifactsDrawer,
-    showAgent: showAgentDrawer,
-    setShowAgent: setShowAgentDrawer,
-  });
+  const { showAppDrawer, hasAppContent, activeApp, toggleAppDrawer, setShowAppDrawer } = useApp();
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -267,6 +257,20 @@ export function ChatPage() {
     siblingMinPx: 280,
     show: showArtifactsDrawer,
     setShow: setShowArtifactsDrawer,
+  });
+
+  // Mutual exclusivity: closing one drawer when another opens
+  const isSwapping = useDrawerExclusivity({
+    showApp: showAppDrawer,
+    setShowApp: setShowAppDrawer,
+    appWidthVw,
+    setAppWidthVw,
+    showArtifacts: showArtifactsDrawer,
+    setShowArtifacts: setShowArtifactsDrawer,
+    artifactsWidthVw,
+    setArtifactsWidthVw,
+    showAgent: showAgentDrawer,
+    setShowAgent: setShowAgentDrawer,
   });
 
   // When the agent drawer and a sibling drawer (artifacts or app) are both open on
@@ -563,7 +567,7 @@ export function ChatPage() {
         open={showArtifactsDrawer}
         widthVw={artifactsWidthVw}
         offsetVw={agentOffsetVw}
-        resizing={isArtifactsResizing || isAgentResizing}
+        resizing={isArtifactsResizing || isAgentResizing || isSwapping}
         compact={isMobile}
         className="z-20"
         resizeLabel="Resize artifacts panel"
@@ -575,7 +579,9 @@ export function ChatPage() {
               label="Artifacts"
               icon={<Shapes size={16} className="-rotate-90" />}
               open={showArtifactsDrawer}
-              hidden={showAppDrawer}
+              hidden={isMobile && showAppDrawer}
+              shiftVw={showAppDrawer ? appWidthVw : 0}
+              resizing={isAppResizing || isSwapping}
               compact={isMobile}
               onClick={toggleArtifactsDrawer}
             />
@@ -601,7 +607,7 @@ export function ChatPage() {
         open={showAppDrawer}
         widthVw={appWidthVw}
         offsetVw={agentOffsetVw}
-        resizing={isAppResizing || isAgentResizing}
+        resizing={isAppResizing || isAgentResizing || isSwapping}
         compact={isMobile}
         keepMounted
         className="z-20"
@@ -611,10 +617,13 @@ export function ChatPage() {
         latch={
           hasAppContent && (
             <EdgeLatch
-              label="App"
+              label={activeApp?.title ?? "App"}
+              name={activeApp?.title ?? "app"}
               icon={<AppWindow size={16} className="-rotate-90" />}
               open={showAppDrawer}
-              hidden={showArtifactsDrawer}
+              hidden={isMobile && showArtifactsDrawer}
+              shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
+              resizing={isArtifactsResizing || isSwapping}
               compact={isMobile}
               slot={artifactsAvailable ? 1 : 0}
               onClick={toggleAppDrawer}

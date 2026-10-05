@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 
-import { AppContext } from "./AppContext";
+import { AppContext, type ActiveApp } from "./AppContext";
 
 interface AppProviderProps {
   children: ReactNode;
@@ -10,7 +10,7 @@ interface AppProviderProps {
 export function AppProvider({ children }: AppProviderProps) {
   const [showAppDrawer, setShowAppDrawer] = useState(false);
   const [hasAppContent, setHasAppContent] = useState(false);
-  const [activeAppKey, setActiveAppKey] = useState<string | null>(null);
+  const [activeApp, setActiveApp] = useState<ActiveApp | null>(null);
   const [drawerTarget, setDrawerTarget] = useState<HTMLElement | null>(null);
   const registerDrawerTarget = useCallback((el: HTMLElement | null) => setDrawerTarget(el), []);
 
@@ -21,7 +21,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const closeApp = useCallback(async () => {
     setShowAppDrawer(false);
     setHasAppContent(false);
-    setActiveAppKey(null);
+    setActiveApp(null);
   }, []);
 
   const showDrawer = useCallback(() => {
@@ -36,8 +36,8 @@ export function AppProvider({ children }: AppProviderProps) {
     closeApp,
     hasAppContent,
     showDrawer,
-    activeAppKey,
-    setActiveAppKey,
+    activeApp,
+    setActiveApp,
     drawerTarget,
     registerDrawerTarget,
   };
