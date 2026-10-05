@@ -17,6 +17,7 @@ import { notify } from "@/shared/lib/notify";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 import { CatalogBreadcrumb } from "./CatalogBreadcrumb";
+import { CatalogToggle } from "./CatalogToggle";
 import { SkillResourcesEditor } from "./SkillResourcesEditor";
 
 export interface SkillCatalogActions {
@@ -643,6 +644,13 @@ export function SkillCatalogPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-200/60 pl-4 pr-3 dark:border-neutral-800/60">
           <CatalogBreadcrumb parents={[{ label: "Skills", onClick: onShowOverview }]} title={selectedSkill.name} />
+          {onToggle && (
+            <CatalogToggle
+              enabled={enabledSkillNames.has(selectedSkill.name)}
+              label={`${enabledSkillNames.has(selectedSkill.name) ? "Disable" : "Enable"} skill ${selectedSkill.name}`}
+              onToggle={() => onToggle(selectedSkill.name)}
+            />
+          )}
           <button
             type="button"
             onClick={() => openEditor(selectedSkill)}

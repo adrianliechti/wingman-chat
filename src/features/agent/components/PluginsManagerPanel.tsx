@@ -13,6 +13,7 @@ import { Markdown } from "@/shared/ui/Markdown";
 import { SkillResourcesEditor } from "@/features/agent/components/SkillResourcesEditor";
 
 import { CatalogBreadcrumb } from "./CatalogBreadcrumb";
+import { CatalogToggle } from "./CatalogToggle";
 
 export interface PluginsManagerPanelProps {
   onShowOverview: () => void;
@@ -385,6 +386,13 @@ export function PluginsManagerPanel({
             parents={[{ label: "Plugins", onClick: onShowOverview }]}
             title={plugin.title || plugin.id}
           />
+          {onTogglePlugin && (
+            <CatalogToggle
+              enabled={enabledPluginIds?.has(plugin.id) ?? false}
+              label={`${enabledPluginIds?.has(plugin.id) ? "Disable" : "Enable"} plugin ${plugin.title || plugin.id}`}
+              onToggle={() => onTogglePlugin(plugin.id)}
+            />
+          )}
           {updateAvailable && (
             <button
               type="button"
