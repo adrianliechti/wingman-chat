@@ -85,27 +85,33 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                 My Skills
               </span>
             </div>
-            <Tooltip content="Filter skills" side="top" className="shrink-0 relative">
-              <button
-                type="button"
-                onClick={() => openSkillCatalog()}
-                className="flex items-center justify-center w-5 h-5 text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-              >
-                <Funnel size={13} />
-              </button>
-              {skillsEnabled && (
-                <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-neutral-500 px-0.5 text-[9px] font-semibold leading-none text-white pointer-events-none">
-                  {agentSkillIds.size}
-                </span>
-              )}
-            </Tooltip>
-            <button
-              type="button"
-              onClick={toggleSkills}
-              className={`shrink-0 ${skillsEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
-            >
-              {skillsEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-            </button>
+            {allSkills.length > 0 ? (
+              <>
+                <Tooltip content="Filter skills" side="top" className="shrink-0 relative">
+                  <button
+                    type="button"
+                    onClick={() => openSkillCatalog()}
+                    className="flex items-center justify-center w-5 h-5 text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  >
+                    <Funnel size={13} />
+                  </button>
+                  {skillsEnabled && (
+                    <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-neutral-500 px-0.5 text-[9px] font-semibold leading-none text-white pointer-events-none">
+                      {agentSkillIds.size}
+                    </span>
+                  )}
+                </Tooltip>
+                <button
+                  type="button"
+                  onClick={toggleSkills}
+                  className={`shrink-0 ${skillsEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                >
+                  {skillsEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                </button>
+              </>
+            ) : (
+              <span className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">No skills available</span>
+            )}
           </div>
 
           {sortedPlugins.map((plugin) => {

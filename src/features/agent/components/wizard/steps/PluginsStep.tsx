@@ -1,7 +1,10 @@
-import { Puzzle, Settings2, ToggleLeft, ToggleRight } from "lucide-react";
-import { type Dispatch, useMemo } from "react";
+import { Loader2, Plus, Puzzle, RefreshCw, Search, ToggleLeft, ToggleRight, X } from "lucide-react";
+import { type Dispatch, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { useSkills } from "@/features/skills/hooks/useSkills";
+import { loadHubPlugins } from "@/features/plugins/lib/hub";
+import type { HubPlugin } from "@/features/plugins/lib/types";
+import { getConfig } from "@/shared/config";
+import { notify } from "@/shared/lib/notify";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -11,10 +14,76 @@ interface PluginsStepProps {
 }
 
 export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
-  const { plugins } = usePlugins();
-  const { openSkillCatalog } = useSkills();
+  const { plugins, installPlugin } = usePlugins();
+  const hubUrl = getConfig().plugins?.url;
+
+  const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (searchOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    } else {
+      setSearch("");
+    }
+  }, [searchOpen]);
 
   const selectedSet = useMemo(() => new Set(selectedPlugins), [selectedPlugins]);
+  const installedIds = useMemo(() => new Set(plugins.map((p) => p.id)), [plugins]);
+  const availablePlugins = useMemo(
+    () => storePlugins.filter((p) => !installedIds.has(p.id)),
+    [storePlugins, installedIds],
+  );
+
+  const matches = useCallback(
+    (plugin: { id: string; title?: string; description?: string }) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        plugin.id.toLowerCase().includes(q) ||
+        (plugin.title ?? "").toLowerCase().includes(q) ||
+        (plugin.description ?? "").toLowerCase().includes(q)
+      );
+    },
+    [search],
+  );
+  const filteredInstalled = useMemo(() => plugins.filter(matches), [plugins, matches]);
+  const filteredAvailable = useMemo(() => availablePlugins.filter(matches), [availablePlugins, matches]);
+
+  const loadStore = useCallback(() => {
+    if (!hubUrl) return;
+    setStoreLoading(true);
+    setStoreError(null);
+    loadHubPlugins(hubUrl)
+      .then((loaded) => {
+        setStorePlugins(loaded);
+        if (loaded.length === 0) setStoreError("Hub returned no plugins");
+      })
+      .catch(() => setStoreError("Failed to reach hub"))
+      .finally(() => setStoreLoading(false));
+  }, [hubUrl]);
+
+  useEffect(() => {
+    loadStore();
+  }, [loadStore]);
+
+  const handleInstall = async (plugin: HubPlugin) => {
+    if (!hubUrl) return;
+    setInstallingId(plugin.id);
+    try {
+      const installed = await installPlugin(hubUrl, plugin);
+      notify.success(`Installed "${plugin.title || plugin.id}"`);
+      if (!selectedSet.has(installed.id)) dispatch({ type: "TOGGLE_PLUGIN", id: installed.id });
+    } catch (error) {
+      notify.error(error instanceof Error ? error.message : "Failed to install plugin");
+    }
+    setInstallingId(null);
+  };
 
   return (
     <div className="space-y-3">
@@ -24,17 +93,53 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
       />
 
       <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => openSkillCatalog(undefined, false, "plugins")}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
-        >
-          <Settings2 size={11} /> Manage plugins
-        </button>
+        <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          Installed plugins
+        </h3>
+        {searchOpen ? (
+          <div className="relative flex-1">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  if (search) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearch("");
+                  }
+                }
+              }}
+              onBlur={() => {
+                if (!search) setSearchOpen(false);
+              }}
+              placeholder="Filter…"
+              className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => setSearchOpen(false)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="-mr-2 ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+          >
+            <Search size={11} /> Filter
+          </button>
+        )}
       </div>
 
       <div className="space-y-0.5">
-        {plugins.map((plugin) => {
+        {filteredInstalled.map((plugin) => {
           const isEnabled = selectedSet.has(plugin.id);
           return (
             <div key={plugin.id} className="flex items-center gap-2 py-1.5">
@@ -65,7 +170,72 @@ export function PluginsStep({ selectedPlugins, dispatch }: PluginsStepProps) {
             </div>
           );
         })}
+        {filteredInstalled.length === 0 && (
+          <p className="py-1.5 text-xs text-neutral-400 dark:text-neutral-500">
+            {plugins.length === 0 ? "No plugins installed yet." : "No installed plugins match your search."}
+          </p>
+        )}
       </div>
+
+      {hubUrl && (
+        <div className="space-y-0.5 border-t border-neutral-200/60 pt-2 dark:border-neutral-800/60">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            Available plugins
+          </h3>
+          {storeLoading && storePlugins.length === 0 ? (
+            <div className="flex justify-center py-3">
+              <Loader2 size={16} className="animate-spin text-neutral-300 dark:text-neutral-600" />
+            </div>
+          ) : storeError && storePlugins.length === 0 ? (
+            <div className="flex items-center gap-3 py-1.5">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">{storeError}</p>
+              <button
+                type="button"
+                onClick={loadStore}
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-300/50 px-2 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+              >
+                <RefreshCw size={11} /> Retry
+              </button>
+            </div>
+          ) : filteredAvailable.length === 0 ? (
+            <p className="py-1.5 text-xs text-neutral-400 dark:text-neutral-500">
+              {search.trim() ? "No available plugins match your search." : "No new plugins available"}
+            </p>
+          ) : (
+            filteredAvailable.map((plugin) => (
+              <div key={plugin.id} className="flex items-center gap-2 py-1.5">
+                <span className="text-neutral-600 dark:text-neutral-400">
+                  {plugin.icon ? (
+                    <img src={plugin.icon} alt="" className="w-4 h-4 rounded object-contain" />
+                  ) : (
+                    <Puzzle size={16} />
+                  )}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                    {plugin.title || plugin.id}
+                  </div>
+                  {plugin.description && (
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                      {plugin.description}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleInstall(plugin)}
+                  disabled={installingId !== null}
+                  title={`Install ${plugin.title || plugin.id}`}
+                  aria-label={`Install ${plugin.title || plugin.id}`}
+                  className="shrink-0 rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                >
+                  {installingId === plugin.id ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

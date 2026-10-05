@@ -1,4 +1,4 @@
-import { Check, Search, Settings2, X } from "lucide-react";
+import { Search, Settings2, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { WizardAction } from "../AgentWizard";
@@ -43,7 +43,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
         <button
           type="button"
           onClick={() => openSkillCatalog()}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+          className="-ml-2 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
         >
           <Settings2 size={11} /> Manage skills
         </button>
@@ -82,7 +82,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+            className="-mr-2 ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
           >
             <Search size={11} /> Filter
           </button>
@@ -90,7 +90,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
       </div>
 
       {/* Skill list */}
-      <div className="max-h-64 overflow-y-auto space-y-0.5 -mx-1">
+      <div className="max-h-64 overflow-y-auto space-y-0.5">
         {filtered.length === 0 ? (
           <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-6">
             {skills.length === 0
@@ -101,32 +101,21 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
           filtered.map((skill) => {
             const isSelected = selected.has(skill.name);
             return (
-              <button
-                key={skill.id}
-                type="button"
-                onClick={() => dispatch({ type: "TOGGLE_SKILL", name: skill.name })}
-                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors ${
-                  isSelected
-                    ? "bg-neutral-100/80 dark:bg-neutral-800/30"
-                    : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40"
-                }`}
-              >
-                <div
-                  className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${
-                    isSelected
-                      ? "bg-neutral-800 dark:bg-neutral-200 border-neutral-800 dark:border-neutral-200 text-white dark:text-neutral-900"
-                      : "border-neutral-300 dark:border-neutral-600"
-                  }`}
-                >
-                  {isSelected && <Check size={10} />}
-                </div>
+              <div key={skill.id} className="flex items-center gap-2 py-1.5">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
                   <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
                 </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "TOGGLE_SKILL", name: skill.name })}
+                  className={`shrink-0 ${isSelected ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                >
+                  {isSelected ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                </button>
+              </div>
             );
           })
         )}
