@@ -143,8 +143,7 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, skillCatalogReadOnly, closeSkillCatalog } =
-    useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogSection, closeSkillCatalog } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
   const agentPluginIds = useMemo(() => new Set(currentAgent?.plugins ?? []), [currentAgent]);
@@ -191,17 +190,7 @@ export function ChatPage() {
     },
     [currentAgent, updateAgent],
   );
-  const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
-
-  // Mutual exclusivity: closing one drawer when another opens
-  useDrawerExclusivity({
-    showApp: showAppDrawer,
-    setShowApp: setShowAppDrawer,
-    showArtifacts: showArtifactsDrawer,
-    setShowArtifacts: setShowArtifactsDrawer,
-    showAgent: showAgentDrawer,
-    setShowAgent: setShowAgentDrawer,
-  });
+  const { showAppDrawer, hasAppContent, activeApp, toggleAppDrawer, setShowAppDrawer } = useApp();
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -267,6 +256,20 @@ export function ChatPage() {
     siblingMinPx: 280,
     show: showArtifactsDrawer,
     setShow: setShowArtifactsDrawer,
+  });
+
+  // Mutual exclusivity: closing one drawer when another opens
+  const isSwapping = useDrawerExclusivity({
+    showApp: showAppDrawer,
+    setShowApp: setShowAppDrawer,
+    appWidthVw,
+    setAppWidthVw,
+    showArtifacts: showArtifactsDrawer,
+    setShowArtifacts: setShowArtifactsDrawer,
+    artifactsWidthVw,
+    setArtifactsWidthVw,
+    showAgent: showAgentDrawer,
+    setShowAgent: setShowAgentDrawer,
   });
 
   // When the agent drawer and a sibling drawer (artifacts or app) are both open on
@@ -563,7 +566,7 @@ export function ChatPage() {
         open={showArtifactsDrawer}
         widthVw={artifactsWidthVw}
         offsetVw={agentOffsetVw}
-        resizing={isArtifactsResizing || isAgentResizing}
+        resizing={isArtifactsResizing || isAgentResizing || isSwapping}
         compact={isMobile}
         className="z-20"
         resizeLabel="Resize artifacts panel"
@@ -575,7 +578,9 @@ export function ChatPage() {
               label="Artifacts"
               icon={<Shapes size={16} className="-rotate-90" />}
               open={showArtifactsDrawer}
-              hidden={showAppDrawer}
+              hidden={isMobile && showAppDrawer}
+              shiftVw={showAppDrawer ? appWidthVw : 0}
+              resizing={isAppResizing || isSwapping}
               compact={isMobile}
               onClick={toggleArtifactsDrawer}
             />
@@ -601,7 +606,7 @@ export function ChatPage() {
         open={showAppDrawer}
         widthVw={appWidthVw}
         offsetVw={agentOffsetVw}
-        resizing={isAppResizing || isAgentResizing}
+        resizing={isAppResizing || isAgentResizing || isSwapping}
         compact={isMobile}
         keepMounted
         className="z-20"
@@ -611,10 +616,13 @@ export function ChatPage() {
         latch={
           hasAppContent && (
             <EdgeLatch
-              label="App"
+              label={activeApp?.title ?? "App"}
+              name={activeApp?.title ?? "app"}
               icon={<AppWindow size={16} className="-rotate-90" />}
               open={showAppDrawer}
-              hidden={showArtifactsDrawer}
+              hidden={isMobile && showArtifactsDrawer}
+              shiftVw={showArtifactsDrawer ? artifactsWidthVw : 0}
+              resizing={isArtifactsResizing || isSwapping}
               compact={isMobile}
               slot={artifactsAvailable ? 1 : 0}
               onClick={toggleAppDrawer}
@@ -628,9 +636,9 @@ export function ChatPage() {
         isOpen={showSkillCatalog}
         onClose={closeSkillCatalog}
         enabledSkillNames={agentSkillIds}
-        onToggle={currentAgent && !skillCatalogReadOnly ? handleSkillToggle : undefined}
+        onToggle={currentAgent ? handleSkillToggle : undefined}
         enabledPluginIds={agentPluginIds}
-        onTogglePlugin={currentAgent && !skillCatalogReadOnly ? handlePluginToggle : undefined}
+        onTogglePlugin={currentAgent ? handlePluginToggle : undefined}
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}

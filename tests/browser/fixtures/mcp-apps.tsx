@@ -132,7 +132,7 @@ function Fixture() {
     window.mcpE2E = {
       state: () => ({
         ...stats,
-        active: app.activeAppKey,
+        active: app.activeApp?.key ?? null,
         showing: app.showAppDrawer,
         tools: client.tools.map((value) => value.name),
       }),

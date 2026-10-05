@@ -2,16 +2,19 @@ import { Loader2, Plus, Puzzle, RefreshCw, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { loadHubPlugins } from "@/features/plugins/lib/hub";
+import { useHubPlugins } from "@/features/plugins/hooks/useHubPlugins";
+import { matchesPluginQuery } from "@/features/plugins/lib/hub";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
 import type { ParsedSkill } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
+import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
 import { Markdown } from "@/shared/ui/Markdown";
 import { SkillResourcesEditor } from "@/features/agent/components/SkillResourcesEditor";
 
 import { CatalogBreadcrumb } from "./CatalogBreadcrumb";
+import { CatalogToggle } from "./CatalogToggle";
 
 export interface PluginsManagerPanelProps {
   onShowOverview: () => void;
@@ -24,6 +27,10 @@ export interface PluginsManagerPanelProps {
   onNavigateBackChange?: (fn: ((destination?: "parent" | "overview") => void) | null) => void;
   /** Called after an installed plugin has been deleted. */
   onDeleted?: () => void;
+  enabledPluginIds?: ReadonlySet<string>;
+  /** Plugins listed first, matching the Library dialog sidebar order. */
+  pinnedPluginIds?: ReadonlySet<string>;
+  onTogglePlugin?: (pluginId: string) => void;
 }
 
 type View =
@@ -40,6 +47,9 @@ export function PluginsManagerPanel({
   onViewKindChange,
   onNavigateBackChange,
   onDeleted,
+  enabledPluginIds,
+  pinnedPluginIds,
+  onTogglePlugin,
 }: PluginsManagerPanelProps) {
   const { plugins, installPlugin, uninstallPlugin } = usePlugins();
   const { agents, updateAgent } = useAgents();
@@ -55,9 +65,7 @@ export function PluginsManagerPanel({
     [onViewKindChange],
   );
 
-  const [storePlugins, setStorePlugins] = useState<HubPlugin[]>([]);
-  const [storeLoading, setStoreLoading] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
+  const { plugins: storePlugins, loading: storeLoading, error: storeError, reload: loadStore } = useHubPlugins(hubUrl);
 
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -72,66 +80,30 @@ export function PluginsManagerPanel({
       }),
     [storePlugins, installedPluginsById],
   );
-  const filteredStorePlugins = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return availableStorePlugins;
-    return availableStorePlugins.filter((plugin) => {
-      const title = plugin.title || plugin.id;
-      return (
-        title.toLowerCase().includes(query) ||
-        (plugin.description ?? "").toLowerCase().includes(query) ||
-        plugin.id.toLowerCase().includes(query)
-      );
-    });
-  }, [availableStorePlugins, search]);
+  const filteredStorePlugins = useMemo(
+    () => availableStorePlugins.filter((plugin) => matchesPluginQuery(plugin, search)),
+    [availableStorePlugins, search],
+  );
   const filteredInstalledPlugins = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return plugins;
-    return plugins.filter((plugin) => {
-      const title = plugin.title || plugin.id;
-      return (
-        title.toLowerCase().includes(query) ||
-        (plugin.description ?? "").toLowerCase().includes(query) ||
-        plugin.id.toLowerCase().includes(query)
-      );
-    });
-  }, [plugins, search]);
+    const sorted = sortActiveFirst(
+      plugins,
+      (plugin) => pinnedPluginIds?.has(plugin.id) ?? false,
+      (plugin) => plugin.title || plugin.id,
+    );
+    return sorted.filter((plugin) => matchesPluginQuery(plugin, search));
+  }, [plugins, pinnedPluginIds, search]);
 
-  const loadStore = useCallback(() => {
-    if (!hubUrl) return;
-    setStoreLoading(true);
-    setStoreError(null);
-    void loadHubPlugins(hubUrl)
-      .then((loaded) => {
-        setStorePlugins(loaded);
-        if (loaded.length === 0) setStoreError("Hub returned no plugins");
-      })
-      .catch(() => setStoreError("Failed to reach hub"))
-      .finally(() => setStoreLoading(false));
-  }, [hubUrl]);
-
-  const loadStoreOnMount = useEffectEvent(() => {
-    if (hubUrl) loadStore();
-  });
-  useEffect(() => {
-    loadStoreOnMount();
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setInternalView({ kind: "list" });
-      setInstallError(null);
-    }
-  }, [isOpen]);
-
-  // Resolves against the plugins at the moment the request changes.
-  const openRequestedPlugin = useEffectEvent((id: string) => {
-    const target = plugins.find((p) => p.id === id);
+  // Opening resets to the list, then jumps to the requested plugin if there is one. Kept in one
+  // effect so the deep link can't be overwritten by the reset.
+  const resetView = useEffectEvent((id: string | undefined) => {
+    setInstallError(null);
+    const target = id ? plugins.find((p) => p.id === id) : undefined;
     if (target) setView({ kind: "installed-detail", plugin: target });
+    else setInternalView({ kind: "list" });
   });
   useEffect(() => {
-    if (requestedPluginId && isOpen) openRequestedPlugin(requestedPluginId);
-  }, [requestedPluginId, isOpen]);
+    if (isOpen) resetView(requestedPluginId);
+  }, [isOpen, requestedPluginId]);
 
   useEffect(() => {
     if (!onNavigateBackChange) return;
@@ -159,8 +131,9 @@ export function PluginsManagerPanel({
     setInstallError(null);
     const label = plugin.title || plugin.id;
     try {
-      await installPlugin(hubUrl, plugin);
+      const installed = await installPlugin(hubUrl, plugin);
       notify.success(`Installed "${label}"`);
+      if (onTogglePlugin && !enabledPluginIds?.has(installed.id)) onTogglePlugin(installed.id);
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : "Failed to install plugin");
     }
@@ -204,7 +177,9 @@ export function PluginsManagerPanel({
     // Agents keep plugin ids by reference; drop the dangling ones.
     for (const agent of agents) {
       if (agent.plugins?.includes(plugin.id)) {
-        updateAgent(agent.id, { plugins: agent.plugins.filter((id) => id !== plugin.id) });
+        updateAgent(agent.id, {
+          plugins: agent.plugins.filter((id) => id !== plugin.id),
+        });
       }
     }
     setView({ kind: "list" });
@@ -221,31 +196,43 @@ export function PluginsManagerPanel({
           </h3>
           {filteredInstalledPlugins.length > 0 ? (
             <ul>
-              {filteredInstalledPlugins.map((plugin) => (
-                <li key={plugin.id}>
-                  <button
-                    type="button"
-                    onClick={() => setView({ kind: "installed-detail", plugin })}
-                    className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-neutral-50 sm:py-2 dark:hover:bg-neutral-800/40"
-                  >
-                    {plugin.icon ? (
-                      <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
-                    ) : (
-                      <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                        {plugin.title || plugin.id}
-                      </span>
-                      {plugin.description && (
-                        <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
-                          {plugin.description}
-                        </span>
+              {filteredInstalledPlugins.map((plugin) => {
+                const enabled = enabledPluginIds?.has(plugin.id) ?? false;
+                return (
+                  <li key={plugin.id} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setView({ kind: "installed-detail", plugin })}
+                      className={`flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-neutral-50 sm:py-2 dark:hover:bg-neutral-800/40 ${onTogglePlugin ? "pr-14" : ""}`}
+                    >
+                      {plugin.icon ? (
+                        <img src={plugin.icon} alt="" className="h-4 w-4 shrink-0 rounded object-contain" />
+                      ) : (
+                        <Puzzle size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                       )}
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-neutral-800 dark:text-neutral-200">
+                          {plugin.title || plugin.id}
+                        </span>
+                        {plugin.description && (
+                          <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
+                            {plugin.description}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    {onTogglePlugin && (
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2">
+                        <CatalogToggle
+                          enabled={enabled}
+                          label={`${enabled ? "Disable" : "Enable"} plugin ${plugin.title || plugin.id}`}
+                          onToggle={() => onTogglePlugin(plugin.id)}
+                        />
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="px-5 py-2 text-xs text-neutral-400 dark:text-neutral-500">
@@ -355,6 +342,13 @@ export function PluginsManagerPanel({
             parents={[{ label: "Plugins", onClick: onShowOverview }]}
             title={plugin.title || plugin.id}
           />
+          {onTogglePlugin && (
+            <CatalogToggle
+              enabled={enabledPluginIds?.has(plugin.id) ?? false}
+              label={`${enabledPluginIds?.has(plugin.id) ? "Disable" : "Enable"} plugin ${plugin.title || plugin.id}`}
+              onToggle={() => onTogglePlugin(plugin.id)}
+            />
+          )}
           {updateAvailable && (
             <button
               type="button"
@@ -489,7 +483,10 @@ export function PluginsManagerPanel({
           <CatalogBreadcrumb
             parents={[
               { label: "Plugins", onClick: onShowOverview },
-              { label: plugin.title || plugin.id, onClick: () => setView({ kind: "installed-detail", plugin }) },
+              {
+                label: plugin.title || plugin.id,
+                onClick: () => setView({ kind: "installed-detail", plugin }),
+              },
             ]}
             title={skill.name}
           />

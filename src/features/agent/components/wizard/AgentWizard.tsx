@@ -170,7 +170,8 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
 
-  const hasPlugins = plugins.length > 0;
+  // Keep the step reachable when a hub is configured so the first plugin can be installed here
+  const hasPlugins = plugins.length > 0 || Boolean(getConfig().plugins?.url);
   const steps = useMemo(() => getSteps(hasPlugins), [hasPlugins]);
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;

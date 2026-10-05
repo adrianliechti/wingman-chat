@@ -349,7 +349,7 @@ export function ChatInputAddMenu({
   const { currentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { skills, openSkillCatalog } = useSkills();
   const { plugins } = usePlugins();
-  const openPluginsManager = () => openSkillCatalog(undefined, false, "plugins");
+  const openPluginsManager = () => openSkillCatalog(undefined, "plugins");
   // Show the Plugins entry whenever there's something installed or a hub to
   // browse — otherwise there'd be no way to discover/install the first plugin.
   const showPluginsMenu = !currentAgent && (plugins.length > 0 || Boolean(config.plugins?.url));

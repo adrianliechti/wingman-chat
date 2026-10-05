@@ -71,6 +71,26 @@ export function validateSkillName(name: string): { valid: boolean; error?: strin
 }
 
 /**
+ * Validate a bundled resource path: relative to the skill folder, no traversal,
+ * and never SKILL.md itself.
+ */
+export function validateSkillResourcePath(path: string): { valid: boolean; error?: string } {
+  if (
+    !path ||
+    path === "SKILL.md" ||
+    /[\\\0]/.test(path) ||
+    path.startsWith("/") ||
+    path.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
+    return {
+      valid: false,
+      error: `Invalid resource path "${path}". Use a relative path like "references/guide.md" (no leading slash, "..", backslashes, or SKILL.md).`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validate a skill description (required, max length)
  */
 export function validateSkillDescription(description: string): { valid: boolean; error?: string } {

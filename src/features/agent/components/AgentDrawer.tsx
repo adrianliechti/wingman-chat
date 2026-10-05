@@ -50,7 +50,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
       <ToolsSection agent={agent} />
-      <SkillsSection agent={agent} />
+      <SkillsSection key={agent.id} agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection key={agent.id} agent={agent} />}
       <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
@@ -78,21 +78,23 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer, agentDrawerView } =
-    useAgents();
+  const {
+    agents,
+    currentAgent,
+    setCurrentAgent,
+    updateAgent,
+    deleteAgent,
+    setShowAgentDrawer,
+    agentDrawerView: view,
+    setAgentDrawerView: setView,
+  } = useAgents();
   const config = getConfig();
 
   // On mobile, tapping an agent activates it and closes the drawer instead of opening details.
   const isMobile = !useBreakpoint("md");
 
-  // "list" shows the agent list; "details" shows the selected agent's configuration
-  const [view, setView] = useState<"list" | "details">("list");
-
-  // Sync view whenever the drawer is (re-)opened
-  useEffect(() => {
-    setView(agentDrawerView);
-  }, [agentDrawerView]);
-
+  // "list" shows the agent list; "details" shows the selected agent's configuration.
+  // The view lives in the agent context so it survives the drawer remounting (e.g. when a new chat is created).
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);

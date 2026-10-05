@@ -1,5 +1,10 @@
 import { createContext } from "react";
 
+export interface ActiveApp {
+  key: string;
+  title: string;
+}
+
 export interface AppContextType {
   showAppDrawer: boolean;
   setShowAppDrawer: (show: boolean) => void;
@@ -7,8 +12,9 @@ export interface AppContextType {
   closeApp: () => Promise<void>;
   hasAppContent: boolean;
   showDrawer: () => void;
-  activeAppKey: string | null;
-  setActiveAppKey: (key: string | null) => void;
+  /** The app that owns the panel (or owned it last); its title names the edge tab. */
+  activeApp: ActiveApp | null;
+  setActiveApp: (app: ActiveApp | null) => void;
   /** The drawer's content element — a fullscreen app's iframe overlays this rect. */
   drawerTarget: HTMLElement | null;
   registerDrawerTarget: (el: HTMLElement | null) => void;

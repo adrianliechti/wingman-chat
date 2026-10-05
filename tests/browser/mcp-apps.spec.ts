@@ -44,7 +44,7 @@ test("two real sandboxes keep independent data and survive panel switching witho
   await page.getByTestId("second").getByRole("button").click();
   await expect.poll(() => second.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("fullscreen");
   await expect.poll(() => first.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
-  await page.getByRole("button", { name: "Close panel" }).click();
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
   await expect.poll(() => second.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
   expect(await first.evaluate(() => (window as any).guest.state.instance)).toBe(initial.instance);
   expect(await page.evaluate(() => window.mcpE2E.state().reads)).toBe(2);
@@ -62,7 +62,7 @@ test("fullscreen-only apps share one panel and closing it hides the active ifram
   await page.getByTestId("first").getByRole("button").click();
   await expect(page.getByTestId("first").locator("iframe")).toBeVisible();
   await expect(page.getByTestId("second").locator("iframe")).not.toBeVisible();
-  await page.getByRole("button", { name: "Close panel" }).click();
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
   await expect(page.getByTestId("first").locator("iframe")).not.toBeVisible();
   expect(await first.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("fullscreen");
   expect(errors).toEqual([]);
