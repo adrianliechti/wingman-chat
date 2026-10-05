@@ -17,7 +17,7 @@ export function CatalogToggle({ enabled, label, onToggle }: CatalogToggleProps) 
       title={label}
       onClick={onToggle}
       className={cn(
-        "shrink-0 rounded-md p-1 transition-colors hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:hover:bg-neutral-800",
+        "shrink-0 rounded-md p-1 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400",
         enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
       )}
     >

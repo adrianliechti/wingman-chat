@@ -1,18 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronDown,
-  Download,
-  Plus,
-  Puzzle,
-  Search,
-  Sparkles,
-  ToggleLeft,
-  ToggleRight,
-  Upload,
-  X,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Download, Plus, Puzzle, Search, Sparkles, Upload, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { downloadPluginsAsZip } from "@/features/plugins/lib/pluginExport";
@@ -23,6 +10,7 @@ import { notify } from "@/shared/lib/notify";
 import { sortActiveFirst } from "@/shared/lib/sortActiveFirst";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { ActiveIndicator } from "./ActiveIndicator";
+import { CatalogToggle } from "./CatalogToggle";
 import type { SkillCatalogActions, SkillCatalogPanelProps } from "./SkillCatalogPanel";
 import { SkillCatalogPanel } from "./SkillCatalogPanel";
 import { PluginsManagerPanel } from "./PluginsManagerPanel";
@@ -713,46 +701,52 @@ export function LibraryDialog({
                                 {filteredSkills.map((skill) => {
                                   const enabled = enabledSkillNames?.has(skill.name) ?? false;
                                   return (
-                                    <li key={skill.id} className="relative">
+                                    <li
+                                      key={skill.id}
+                                      className="relative not-first:before:absolute not-first:before:top-0 not-first:before:right-5 not-first:before:left-16 not-first:before:h-px not-first:before:bg-neutral-200/50 dark:not-first:before:bg-neutral-800/60"
+                                    >
                                       <button
                                         type="button"
                                         onClick={() => openSkill(skill.name)}
                                         className={cn(
-                                          "flex w-full items-center gap-3 px-5 py-3 sm:py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40",
-                                          onToggle && "pr-14",
+                                          "flex w-full items-start gap-3 px-5 py-3 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/40",
+                                          onToggle && "pr-16",
                                         )}
                                       >
-                                        <Sparkles
-                                          size={15}
-                                          className="shrink-0 text-neutral-400 dark:text-neutral-500"
-                                        />
+                                        <span
+                                          className={cn(
+                                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800",
+                                            onToggle && !enabled && "opacity-50",
+                                          )}
+                                        >
+                                          <Sparkles size={15} className="text-neutral-500 dark:text-neutral-400" />
+                                        </span>
                                         <span className="min-w-0 flex-1">
-                                          <span className="block truncate text-sm text-neutral-800 dark:text-neutral-200">
+                                          <span
+                                            className={cn(
+                                              "block truncate text-sm leading-8 font-medium",
+                                              onToggle && !enabled
+                                                ? "text-neutral-500 dark:text-neutral-400"
+                                                : "text-neutral-900 dark:text-neutral-100",
+                                            )}
+                                          >
                                             {skill.name}
                                           </span>
                                           {skill.description && (
-                                            <span className="block truncate text-xs text-neutral-400 dark:text-neutral-500">
+                                            <span className="-mt-1 line-clamp-2 block text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                                               {skill.description}
                                             </span>
                                           )}
                                         </span>
                                       </button>
                                       {onToggle && (
-                                        <button
-                                          type="button"
-                                          role="switch"
-                                          aria-checked={enabled}
-                                          aria-label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
-                                          onClick={() => onToggle(skill.name)}
-                                          className={cn(
-                                            "absolute right-4 top-1/2 -translate-y-1/2",
-                                            enabled
-                                              ? "text-emerald-600 dark:text-emerald-400"
-                                              : "text-neutral-400 dark:text-neutral-500",
-                                          )}
-                                        >
-                                          {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                                        </button>
+                                        <span className="absolute top-3.5 right-4">
+                                          <CatalogToggle
+                                            enabled={enabled}
+                                            label={`${enabled ? "Disable" : "Enable"} skill ${skill.name}`}
+                                            onToggle={() => onToggle(skill.name)}
+                                          />
+                                        </span>
                                       )}
                                     </li>
                                   );
