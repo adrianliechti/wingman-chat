@@ -115,7 +115,13 @@ own supported efforts instead of inheriting a vendor profile.
   thinking cannot be disabled, so low is its minimal effort. [Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview)
   has low through max with a high default, plus none, which the gateway sends as
   `between_tools` to turn off up-front thinking. Mythos Preview and Opus/Sonnet 4.6 have
-  max but no xhigh. Haiku and older Sonnet models do not inherit Opus's efforts.
+  max but no xhigh. Haiku 4.5 and older Sonnet models do not inherit Opus's efforts.
+- [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)
+  (reviewed October 8, 2026): low, medium (default), high, xhigh, max, plus
+  gateway `none` to disable thinking. Adaptive thinking is on by default;
+  disabled thinking is accepted only at high effort or below. It has a 1M-token
+  context window and 128,000-token output capacity. The bundled Haiku slider
+  preset selects 5.5 at medium effort when the backend exposes that ID.
 - [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
   3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
   low/high; 3.1 Pro also has medium. Image and live models are not chat profiles.
@@ -146,6 +152,35 @@ Compaction thresholds are operational budgets that leave room for output and
 recovery. They are not advertised context-window sizes. Small/local deployments
 should configure their budget explicitly.
 
+Haiku 5.5 compacts at 90,000 tokens to leave headroom below its 100,000-input-token
+pricing boundary; older Haiku models keep their 176,000-token budget. This is an
+operational target, not a billing guarantee: system prompts, tools, and token
+estimation affect actual input usage. Haiku 5.5's newer tokenizer counts the same
+text as approximately 30% more tokens than Haiku 4.5.
+
+### Haiku 5.5 gateway compatibility
+
+The [migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide)
+requires adaptive thinking instead of manual `budget_tokens`, omission of
+sampling parameters, user-ended requests instead of assistant prefill, and
+type-based response parsing. Wingman sends provider-neutral `/v1/responses`
+requests without sampling or manual thinking parameters. Chat requests ask for
+`reasoning.summary: "auto"`; the gateway must map this to summarized adaptive
+thinking, because Haiku 5.5 otherwise returns signature-only thinking blocks.
+The gateway also maps `reasoning.effort: "none"` to disabled thinking.
+
+Wingman's Anthropic and Bedrock adapters include Haiku 5.5 support as of
+October 8, 2026. Deployed gateways must include those changes
+and expose the model in `/v1/models`. The frontend cannot add a missing provider
+deployment or translate native Claude parameters itself.
+
+The Responses adapter selects text by type, preserves reasoning signatures even
+without visible thinking text, and filters reasoning when switching models.
+It retries rejected reasoning once without the rejected signatures, covering
+prefix-binding failures after history changes or compaction. Structured helpers
+and the compaction summarizer end their requests with user turns. Native Claude
+computer/browser toolsets are not used by this frontend.
+
 ## Chat output allowance
 
 The existing `MODEL_PROFILES` in `models.ts` hold both reasoning capabilities and
@@ -163,7 +198,8 @@ Unknown capacities keep the provider default unless an explicit budget is
 configured; such an override cannot be clamped until the deployment supplies a
 capacity.
 
-Examples of documented capacities (reviewed September 23, 2026):
+Examples of documented capacities (reviewed September 23, 2026; Haiku 5.5 added
+October 8, 2026):
 
 | Model                                                                                                                            | Capacity | Default chat budget |
 | -------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
@@ -172,6 +208,7 @@ Examples of documented capacities (reviewed September 23, 2026):
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)                                                             | 128,000  | 64,000              |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)                                                           | 128,000  | 64,000              |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
+| [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |

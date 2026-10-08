@@ -82,6 +82,8 @@ const MODEL_PROFILES: ModelProfile[] = [
   [/\bopus-5\.5(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   // Sonnet 5.5 can turn off up-front thinking (between_tools), unlike Opus 5.5.
   [/\bsonnet-5\.5(?=$|[-/:])/, ["none", "low", "medium", "high", "xhigh", "max"], "high", 128_000],
+  // Haiku 5.5 supports adaptive thinking, or disabled thinking via gateway none.
+  [/\bhaiku-5\.5(?=$|[-/:])/, ["none", "low", "medium", "high", "xhigh", "max"], "medium", 128_000],
   [/\b(?:opus-4\.[78]|(?:opus|sonnet)-5)(?=$|[-/:])/, ["low", "medium", "high", "xhigh", "max"], "high", 128_000],
   [/\banthropic\.claude-sonnet-4\.6(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 64_000],
   [/\b(?:(?:opus|sonnet)-4\.6|mythos-preview)(?=$|[-/:])/, ["low", "medium", "high", "max"], "high", 128_000],
@@ -178,6 +180,8 @@ export function minimalEffort(model: string | Model): ReasoningEffort | undefine
  */
 export function compactThreshold(id: string): number {
   const lowerId = normalizedModelId(id);
+  // Haiku 5.5 has 1M context, but its higher input-price tier starts above 100k.
+  if (/\bhaiku-5\.5(?=$|[-/:])/.test(lowerId)) return 90_000;
   if (/\bgpt-?4o\b|\bgpt-?4-turbo\b|\bo1\b/.test(lowerId)) return 100_000;
   if (/\bo[34]\b|\bhaiku\b|\bclaude-?[123]\b/.test(lowerId)) return 176_000;
   if (/\b(opus|sonnet)-?4(?:\.[0-5])?(?=$|[-/:])/.test(lowerId)) return 176_000;

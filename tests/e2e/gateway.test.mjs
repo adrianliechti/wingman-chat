@@ -57,7 +57,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
     assert(availableModels.some((model) => model.id === selectedModel));
   });
 
-  for (const model of new Set([compatibilityModel, documentModel, "claude-opus-5-5"])) {
+  for (const model of new Set([compatibilityModel, documentModel, "claude-opus-5-5", "claude-haiku-5-5"])) {
     void test(
       `displays reasoning by default with ${model} and replays it after persistence`,
       async (context) => {
@@ -85,7 +85,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
           {
             options: {
               // Exercise the provider default on a model that thinks by default.
-              ...(model === "claude-opus-5-5" ? {} : { effort: "high" }),
+              ...(["claude-opus-5-5", "claude-haiku-5-5"].includes(model) ? {} : { effort: "high" }),
               signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             },
             middleware: [observeRun(events)],

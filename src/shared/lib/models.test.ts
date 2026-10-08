@@ -149,6 +149,8 @@ describe("model output budgets", () => {
     ["claude-opus-5-5", 64_000],
     ["claude-sonnet-5-5", 64_000],
     ["claude-haiku-4.5", 64_000],
+    ["claude-haiku-5-5", 64_000],
+    ["eu.anthropic.claude-haiku-5-5", 64_000],
     ["google/gemini-3.1-pro-preview", 64_000],
     ["gemini-3.8-flash", 64_000],
     ["gemini-2.5-flash-lite", 64_000],
@@ -335,6 +337,34 @@ describe("reasoning effort levels", () => {
     expect(defaultEffort("poppy")).toBeUndefined();
     expect(supportedEfforts("poppy")).toBeUndefined();
   });
+
+  it.each([
+    "claude-haiku-5-5",
+    "claude-haiku-5.5",
+    "anthropic.claude-haiku-5-5",
+    "eu.anthropic.claude-haiku-5-5",
+    "global.anthropic.claude-haiku-5-5-v1:0",
+  ])("resolves Haiku 5.5 thinking and output capabilities for %s", (id) => {
+    expect(supportedEfforts(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
+    expect(defaultEffort(id)).toBe("medium");
+    expect(minimalEffort(id)).toBe("none");
+    expect(modelMaxOutputTokens(id)).toBe(128_000);
+    expect(compactThreshold(id)).toBe(90_000);
+    expect(configureModels([{ id, name: "Haiku", type: "completer" }], [])[0]).toMatchObject({
+      supportedEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "medium",
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it.each(["claude-haiku-4-5", "claude-haiku-5", "claude-haiku-5-50", "claude-haiku-6"])(
+    "does not give %s Haiku 5.5 capabilities",
+    (id) => {
+      expect(supportedEfforts(id)).toBeUndefined();
+      expect(defaultEffort(id)).toBeUndefined();
+      expect(compactThreshold(id)).toBe(176_000);
+    },
+  );
 });
 
 describe("configured model catalogue", () => {

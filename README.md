@@ -213,9 +213,10 @@ checks. Word and signed-reasoning fixtures use GPT-5.4-mini by default; set
 Word input and conversation replay are also checked with Bedrock Sonnet 4.6,
 along with raw CSV input. Set `WINGMAN_E2E_DOCUMENT_MODEL` to its gateway alias
 (default `claude-sonnet-4-6`); this must resolve to a Bedrock Converse deployment.
-Fixtures are skipped when their deployment is absent. The reasoning replay check
-requires a second model for the switch (the smoke model, or Sonnet 4.6 when they
-are the same). Inline document support depends on the gateway deployment.
+Fixtures are skipped when their deployment is absent. Reasoning replay also
+covers Claude Opus 5.5 and Haiku 5.5 at their default effort when exposed.
+The model-switch fixture requires a second model (the smoke model, or Sonnet 4.6
+when they are the same). Inline document support depends on the gateway deployment.
 
 The Bedrock soak is a focused provider-quality probe: ten byte-exact `create_file` calls and ten real
 `execute_script` calls with `language: "python"` using the production schemas. It reports raw JSON/AntML failures separately from calls

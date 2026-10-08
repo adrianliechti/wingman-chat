@@ -107,6 +107,56 @@ it("preserves both visible signed reasoning and its separate summary on replay",
   });
 });
 
+it("replays Haiku 5.5 signature-only reasoning through a tool round trip", async () => {
+  const model = "claude-haiku-5-5";
+  const item = {
+    type: "reasoning",
+    id: "rs_haiku",
+    encrypted_content: "haiku-signature",
+    summary: [],
+    status: "completed",
+  };
+  fetchMock
+    .mockResolvedValueOnce(finished(response([item, callItem("{}", "lookup", "lookup_1")], { model })))
+    .mockResolvedValueOnce(finished(response([textItem("42")], { model })));
+  const tool: Tool = {
+    name: "lookup",
+    description: "Look up the answer",
+    inputSchema: z.strictObject({}),
+    execute: vi.fn(async () => output("42")),
+  };
+  const result = await run(new Client(), model, "", prompt, [tool], {
+    options: { effort: "medium" },
+  });
+  expect(result.status).toBe("completed");
+  expect(messageText(result.messages.at(-1)!)).toBe("42");
+  expect(tool.execute).toHaveBeenCalledOnce();
+  const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+  expect(body.input.find((part: { type: string }) => part.type === "reasoning")).toMatchObject({
+    id: item.id,
+    encrypted_content: item.encrypted_content,
+    summary: [],
+  });
+  expect(result.messages.flatMap(reasoningOf)).toContainEqual(
+    expect.objectContaining({ id: item.id, encryptedContent: item.encrypted_content, model }),
+  );
+});
+
+it("extracts Haiku 5.5 structured output after a signature-only reasoning block", async () => {
+  fetchMock.mockResolvedValueOnce(
+    finished(
+      response([
+        { type: "reasoning", id: "rs_haiku", encrypted_content: "haiku-signature", summary: [], status: "completed" },
+        textItem('{"answer":"Done"}'),
+      ]),
+    ),
+  );
+  expect(await new Client().parse("claude-haiku-5-5", "", "Go", z.object({ answer: z.string() }), "review")).toEqual({
+    answer: "Done",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_output_tokens).toBe(16_000);
+});
+
 it.each([
   ["invalid_encrypted_content", "Encrypted content could not be verified"],
   ["invalid_request_error", "messages.7: The final block in an assistant message cannot be `thinking`."],
