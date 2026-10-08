@@ -19,6 +19,7 @@ Scale 1 is approximately 72 DPI; large pages may be rendered at a lower scale to
 ## Forms
 
 Read relevant bundled scripts with `read_skill_resource` before running/adapting them:
+
 - `scripts/check_fillable_fields.py`: detect AcroForm fields.
 - `scripts/extract_form_field_info.py`: field names and valid checkbox/radio values.
 - `scripts/fill_fillable_fields.py`: validate and fill AcroForm fields.

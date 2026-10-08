@@ -8,6 +8,7 @@ description: "Extract reusable design tokens and a component inventory from a br
 Inspect the supplied source. Record exact values from code/brand files and label screenshot-derived values as estimates. If no visual source exists, clarify the source or use `frontend-design` for a new direction; do not present invented tokens as extracted.
 
 Capture:
+
 - Color roles and scales, including semantic states and surfaces.
 - Font families/fallbacks, weights, sizes, line heights and named text styles.
 - Spacing, radii, shadows and motion values actually used.

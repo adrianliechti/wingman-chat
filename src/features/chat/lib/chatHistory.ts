@@ -147,7 +147,11 @@ export function sanitizeForClassification(messages: readonly UIMessage[]): Class
 
   for (let i = messages.length - 1; i >= 0 && recent.length < 6; i--) {
     const message = messages[i];
-    if (message.role === "system" || messageMetadata(message).kind === "runtime_feedback") continue;
+    if (
+      (message.role !== "user" && message.role !== "assistant") ||
+      messageMetadata(message).kind === "runtime_feedback"
+    )
+      continue;
     const content = message.parts.flatMap((part): ClassificationMessage["content"] => {
       if (part.type === "text") return [{ type: "text", text: part.content }];
       if (isMediaPart(part)) {

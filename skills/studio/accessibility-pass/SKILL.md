@@ -8,6 +8,7 @@ description: "Review HTML/UI accessibility and fix issues when requested, includ
 Read the artifact and relevant styles; resolve actual values rather than guessing. Follow the requested review scope. If only a screenshot is available, report visible findings and mark interaction/semantics as untested. Do not imply a complete compliance audit from static inspection.
 
 Check:
+
 - Semantic controls and landmarks, descriptive heading hierarchy, input labels, useful image alternatives and decorative images with empty alt text.
 - Keyboard access, logical focus order, visible focus, modal focus containment/restoration and Escape behavior where appropriate.
 - Text/background contrast, including states and overlays. Target at least 4.5:1 for ordinary text and 3:1 for large text (24 CSS px, or about 18.67px bold); essential control boundaries/icons need 3:1 against adjacent colors.

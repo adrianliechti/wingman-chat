@@ -8,6 +8,7 @@ description: "Review or polish an HTML/UI artifact, including hierarchy, spacing
 Read the artifact and identify the user's requested review/fix scope. Preserve the approved direction and working behavior. If structural problems block meaningful polish, address in-scope defects and identify the remainder; do not initiate a mandatory approval interview.
 
 Load only relevant checks:
+
 - `accessibility-pass`: semantics, contrast, keyboard/focus, forms and motion.
 - `interaction-states-pass`: controls, async behavior, validation and recovery.
 - [Visual review](references/visual-review.md): hierarchy, spacing, typography and generic design choices. Read with read_skill_resource, skill polish-pass.

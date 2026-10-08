@@ -10,6 +10,7 @@ Read the source, inspect types, missing values, units and date ranges, and ident
 Use matplotlib/seaborn for static PNG/SVG and publication figures. Save with explicit dimensions/resolution, readable labels and unclipped bounds; close figures after saving. Use ECharts for interactive HTML previews: load `html-artifacts` and read `references/libraries.md`; read `references/duckdb.md` if data should be queried at runtime. Follow its export rules when the user needs a standalone file.
 
 Choose the encoding from the analytical question:
+
 - Time trend: line; preserve chronological order and reveal missing intervals.
 - Category comparison/ranking: bars or dots; sort unless an intrinsic order matters.
 - Distribution: histogram, box or violin; disclose binning and sample size where consequential.

@@ -8,6 +8,7 @@ description: "Create or edit static imagery, illustrations, posters, covers or v
 Read the brief and references for subject, required copy, dimensions, medium and style. Choose a coherent composition, palette, material/texture and type treatment. Preserve the user's visual direction; do not force abstraction, sparse text or a house style.
 
 Choose the production method from the work:
+
 - Use create_image for photographic, painterly or illustrative images, or the interpreter's render helper within a file-processing pipeline. Use supplied reference inputs when editing and supported controls for transparency, shape and quality.
 - Use authored SVG, Pillow, matplotlib or ReportLab for exact geometry, diagrams or typography.
 - Combine generated imagery with deterministic typesetting when required words, logos, labels or numbers must be exact.

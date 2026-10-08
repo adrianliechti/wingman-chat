@@ -8,6 +8,7 @@ description: "Create or apply a reusable visual theme, palette and type system f
 Read the subject, audience, destination medium and source brand. Preserve required assets and existing conventions. For a new direction, connect visual choices to the brief; do not impose a signature color family, font pairing or level of ornament.
 
 Define reusable roles:
+
 - Field/surface, ink, structural and accent colors; semantic states only where needed.
 - Display, body, label and numeric typography, with available fallbacks.
 - Spacing, layout density, borders, radii and shadows.

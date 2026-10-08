@@ -8,6 +8,7 @@ description: "Build an interactive HTML dashboard with coordinated metrics, char
 Identify the decision the dashboard supports, available data, metric definitions and useful filters. Read the schema and sample rows before building. Use real observations; if data is missing, request it or create an explicitly requested, clearly labelled sample. Never manufacture trends or prior-period comparisons.
 
 Load `html-artifacts` for the runtime contract:
+
 - Read `references/libraries.md` for ECharts and browser dependencies.
 - Read `references/duckdb.md` for workspace SQL; prefer it for runtime aggregation over larger datasets.
 - Read `references/sdk.md` only when the page needs saved state, workspace writes, AI or tools.

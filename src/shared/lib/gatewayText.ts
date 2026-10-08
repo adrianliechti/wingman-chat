@@ -141,15 +141,16 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       }
     }
     for await (const chunk of super.processStreamChunks(observe(), ...rest)) {
-      if (chunk.type === "STEP_FINISHED") {
-        const state = readGatewayReasoning(chunk.signature);
+      if (chunk.type === "REASONING_ENCRYPTED_VALUE" && chunk.subtype === "message") {
+        const state = readGatewayReasoning(chunk.encryptedValue);
         yield {
           ...chunk,
-          signature: packGatewayReasoning({ ...state, ...reasoning.get(state.id ?? ""), model: options.model }),
+          encryptedValue: packGatewayReasoning({ ...state, ...reasoning.get(state.id ?? ""), model: options.model }),
         };
         continue;
       }
-      if (chunk.type === "TEXT_MESSAGE_CONTENT") emittedText = chunk.content ?? emittedText + chunk.delta;
+      if (chunk.type === "TEXT_MESSAGE_CONTENT")
+        emittedText = typeof chunk.content === "string" ? chunk.content : emittedText + chunk.delta;
       if (chunk.type === "TEXT_MESSAGE_END" && completed) {
         const fullText = [...segments.values()].map((part) => part.content).join("");
         if (fullText && fullText !== emittedText) {
