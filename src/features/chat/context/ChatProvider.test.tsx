@@ -38,11 +38,13 @@ const fixture = vi.hoisted(() => ({
   chat: {} as NonNullable<ReturnType<typeof getConfig>["chat"]>,
   complete: vi.fn<Parameters<typeof testClient>[0]>(),
   classify: vi.fn(),
+  reportClassification: vi.fn(),
   title: vi.fn(),
   artifacts: false,
   verify: vi.fn<typeof verifyArtifacts>(),
   memory: undefined as MemoryManager | undefined,
 }));
+vi.mock("../lib/classificationTelemetry", () => ({ recordClassification: fixture.reportClassification }));
 vi.mock("@/shared/config", () => ({
   getConfig: () => ({
     client: Object.assign(testClient(fixture.complete), {
@@ -175,6 +177,7 @@ beforeEach(() => {
   fixture.verify.mockReset().mockResolvedValue([]);
   fixture.complete.mockReset();
   fixture.classify.mockReset().mockResolvedValue({ categories: [], risks: [] });
+  fixture.reportClassification.mockReset();
   fixture.title.mockReset().mockResolvedValue("Test");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
@@ -305,6 +308,12 @@ describe("chat classification integration", () => {
     );
     expect(context.pendingConsent).toBeNull();
     expect(fixture.title).toHaveBeenCalledTimes(1);
+    expect(fixture.reportClassification).toHaveBeenCalledTimes(2);
+    expect(fixture.reportClassification).toHaveBeenLastCalledWith(
+      { categories: [{ id: "Writing", confidence: 0.9 }], risks: [] },
+      { categories: fixture.chat.categories, risks: fixture.chat.risks, threshold: 0.6 },
+      { conversationId: saved().id, model: "gpt-6-luna" },
+    );
   });
 
   it.each([0.64, 0.65])("uses each risk's threshold, including the boundary (%s)", async (confidence) => {
@@ -381,6 +390,34 @@ describe("chat classification integration", () => {
     await act(() => context.sendMessage(user("First")));
     await act(() => context.sendMessage(user("Second")));
     await act(async () => old.resolve());
+    expect(context.pendingConsent).toBeNull();
+    expect(fixture.reportClassification).toHaveBeenCalledTimes(1);
+    expect(fixture.reportClassification.mock.calls[0][0]).toEqual({ categories: [], risks: [] });
+  });
+
+  it("does not report classification results after the run is stopped", async () => {
+    const classification = deferred();
+    const completion = deferred();
+    fixture.classify.mockImplementation(async () => {
+      await classification.promise;
+      return { categories: [], risks: [{ id: "HR", confidence: 0.9 }] };
+    });
+    fixture.complete.mockImplementation(async () => {
+      await completion.promise;
+      return assistant("Done");
+    });
+    const context = await harness();
+    let run!: Promise<void>;
+    await act(async () => {
+      run = context.sendMessage(user("Evaluate this candidate"));
+    });
+    act(() => context.stopStreaming());
+    await act(async () => {
+      classification.resolve();
+      completion.resolve();
+      await run;
+    });
+    expect(fixture.reportClassification).not.toHaveBeenCalled();
     expect(context.pendingConsent).toBeNull();
   });
 });

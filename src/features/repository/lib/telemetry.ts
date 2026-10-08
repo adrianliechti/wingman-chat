@@ -1,7 +1,7 @@
 import { metrics } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { AggregationTemporalityPreference, OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
@@ -37,7 +37,11 @@ export function initTelemetry() {
   });
 
   // Metrics
-  const metricExporter = new OTLPMetricExporter({ url: "/telemetry/v1/metrics" });
+  // Insights sums incoming counts/sums, so each export must contain only new observations.
+  const metricExporter = new OTLPMetricExporter({
+    url: "/telemetry/v1/metrics",
+    temporalityPreference: AggregationTemporalityPreference.DELTA,
+  });
   const meterProvider = new MeterProvider({
     resource,
     readers: [

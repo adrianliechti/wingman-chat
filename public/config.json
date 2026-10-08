@@ -39,7 +39,7 @@
     "model": "claude-sonnet-5",
     "effort": "medium",
     "classification": {
-      "model": "gpt-6-luna",
+      "model": "claude-haiku-4-5",
       "threshold": 0.6
     },
     "categories": [
@@ -192,7 +192,7 @@
       }
     ]
   },
-  "_telemetry": {},
+  "telemetry": {},
   "_models": [
     {
       "id": "gpt-5.1",

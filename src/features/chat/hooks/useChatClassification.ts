@@ -6,6 +6,7 @@ import type { UIMessage } from "@tanstack/ai";
 import { isUserPrompt } from "@/shared/lib/messages";
 import type { Chat, Model } from "@/shared/types/chat";
 import type { ConsentResult, PendingConsent } from "@/shared/types/elicitation";
+import { recordClassification } from "../lib/classificationTelemetry";
 
 interface Options {
   models: Model[];
@@ -86,6 +87,11 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
           )
           .then(({ categories: detectedCategories, risks: detectedRisks }) => {
             if (!isCurrentRun()) return;
+            recordClassification(
+              { categories: detectedCategories, risks: detectedRisks },
+              { categories: categoryConfigs, risks: riskConfigs, threshold: defaultThreshold },
+              { conversationId: id, model: classificationModel },
+            );
 
             // Risks take precedence over category consent — they're more severe.
             let next: PendingConsent | null = null;

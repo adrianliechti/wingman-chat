@@ -445,6 +445,84 @@ in the questions rather than encoding them into the content. Questions in one
 request cannot depend on each other's answers; risk warnings take precedence
 over category consent in application code.
 
+### Classification metrics and wingman-insights
+
+With `telemetry` enabled, classification uses the same `wingman` OTel meter
+and `/telemetry/v1/metrics` exporter as native model usage. The chat hook records
+`wingman.classification.score`, a Wingman histogram, once for the winning
+category and once per evaluated risk. Cancelled, superseded, failed, and skipped
+classifications record no scores. Reporting runs before consent selection, so
+acknowledged risks and categories without consent still appear in analytics.
+Reporting failures never block warnings. Native Evaluate spans and metrics
+continue to own classifier latency, tokens, and cost.
+
+Each observation's value is category confidence or the risk's yes probability.
+Its attributes are:
+
+| Attribute                          | Meaning                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `gen_ai.operation.name`            | `evaluate`                                                                                                      |
+| `gen_ai.request.model`             | Configured classifier model                                                                                     |
+| `gen_ai.conversation.id`           | Local chat ID, stored as the existing session ID                                                                |
+| `user.id`                          | Attached by the Go telemetry proxy from `X-Forwarded-User`, when available                                      |
+| `user.email`                       | Attached by the Go telemetry proxy from `X-Forwarded-Email`, falling back to an email-shaped `X-Forwarded-User` |
+| `wingman.classification.kind`      | `category` or `risk`                                                                                            |
+| `wingman.classification.id`        | Category/risk slug                                                                                              |
+| `wingman.classification.threshold` | Effective configured threshold                                                                                  |
+| `wingman.classification.matched`   | Whether confidence is at least the threshold                                                                    |
+
+The resource's `service.name` remains `wingman-chat`. Message/run IDs, message
+text, attachment names, descriptions, and consent text are not metric labels.
+Scores below threshold are recorded too: negative risk results provide the
+denominator for risk rates, and low-confidence categories can appear in a
+below-threshold bucket. These are counts of completed classification evaluations,
+not distinct prompts: editing or retrying a message can produce another score,
+just as it produces another model operation. Identity and delivery are best effort.
+
+The frontend does not supply user identity. The Go server enriches every metric
+data point at `/telemetry/v1/metrics`, including native model-usage metrics, with
+the authenticated proxy headers. It replaces payload-supplied `user.id` and
+`user.email` and removes those keys from resource and scope attributes. Missing
+identity headers leave observations unattributed. The authentication proxy must
+overwrite these headers and prevent direct untrusted access to the Go server,
+matching Wingman's header-auth trust boundary. Directory enrichment and group
+membership remain in Insights; no groups are added as metric labels.
+
+The metrics proxy accepts the browser exporters' OTLP/HTTP JSON format with
+lowerCamelCase structural field names, optionally
+gzip-compressed, with an 8 MiB limit on both compressed and decompressed input.
+Unsupported media types/encodings and malformed payloads are rejected before
+forwarding. Logs and traces retain their existing forwarding behavior. Local Vite
+development proxies directly to the collector, bypassing Go identity enrichment.
+
+The browser metrics exporter uses delta temporality, matching the gateway and
+insights' `SUM(count)` / `SUM(sum)` aggregation. See the
+[OTel metrics data model](https://opentelemetry.io/docs/specs/otel/metrics/data-model/)
+for histogram and temporality semantics. Collectors must preserve delta
+histograms when forwarding to insights.
+
+The wingman-insights `/v1/metrics` handler must be extended to accept the
+`wingman.classification.*` namespace (it currently keeps only `gen_ai.*` and
+`http.*` metrics) and store this histogram in `genai_metrics`: `count` is the
+number of evaluations, `sum` is their total score, and the classification
+attributes remain in its existing JSON `attributes` column. No new log handler,
+table, migration, or retention path is needed. Keep the metrics endpoint routed
+to insights. See the wingman-insights project for the ingest, query, API, and
+dashboard changes required to surface this metric.
+
+Future dashboard queries should filter
+`metric_name = 'wingman.classification.score'` and reuse the existing
+app/user/session/model filters. Group by classification kind, ID, and matched
+status from `attributes`. Sum category counts for category distribution; for
+risk rates divide matched counts by all evaluations of that same risk. Average
+score is `SUM(sum) / SUM(count)`. Count only category observations for a
+classification-volume chart when categories are configured; adding category and
+risk counts would count the same evaluation multiple times. The current store
+does not retain histogram buckets, so these rows support averages and rates,
+not score percentiles or individual-message inspection. Classifier-model
+filters refer to the classifier, not the response model. Cost by category needs
+additional correlation with response-model requests.
+
 ## Verification
 
 Unit integration tests exercise the actual TanStack model loop, OpenAI adapter,

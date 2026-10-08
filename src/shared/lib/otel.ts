@@ -3,7 +3,6 @@ import { otelMiddleware } from "@tanstack/ai/middlewares/otel";
 import type { AgentContext } from "../types/telemetry";
 
 const tracer = trace.getTracer("wingman");
-const meter = metrics.getMeter("wingman");
 
 /** Native spans own their lifecycle; explicit contexts also work without a browser async context manager. */
 export function aiTelemetry(operation: string, parentContext?: AgentContext) {
@@ -19,7 +18,7 @@ export function aiTelemetry(operation: string, parentContext?: AgentContext) {
       },
       startActiveSpan: tracer.startActiveSpan.bind(tracer),
     },
-    meter,
+    meter: metrics.getMeter("wingman"),
     captureContent: false,
     attributeEnricher: () => ({ "wingman.operation.name": operation }),
     onSpanEnd: (info) => {

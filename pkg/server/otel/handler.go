@@ -38,7 +38,7 @@ func New() *Handler {
 	return &Handler{
 		logs:    newHandler(logsURL),
 		traces:  newHandler(tracesURL),
-		metrics: newHandler(metricsURL),
+		metrics: withMetricIdentity(newHandler(metricsURL)),
 	}
 }
 
