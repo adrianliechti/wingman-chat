@@ -254,6 +254,11 @@ its own checkpoint scope, including parallel calls to the same agent.
 Compaction runs on canonical messages before attachment loading and request
 context injection. Those later steps use the compacted provider view and cannot
 restore cleared outputs from presentation metadata.
+The summary request replaces media parts with their names, so neither local
+`blob:` references nor attachment bytes reach the gateway — the summarizer is a
+bare model id whose modality support is unknown, and a rejected summary would
+abort the run. Stored messages and checkpoint source prefixes keep their
+original references.
 
 [Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
 handles provider-only request preparation, progress display, and rich tool

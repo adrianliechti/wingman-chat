@@ -9,12 +9,14 @@ import type { Tool, ToolContext } from "@/shared/types/chat";
 import type { Chat, Model } from "@/shared/types/chat";
 import type { Agent } from "@/features/agent/types/agent";
 import {
+  mediaFromDataUrl,
   messageMetadata,
   messageText,
   toolCalls,
   toolResultMetadata,
   toolResults,
   toolRoundMessage,
+  userMessage,
 } from "@/shared/lib/messages";
 import { ChatContext, type ChatContextType } from "./ChatContext";
 import { ChatProvider } from "./ChatProvider";
@@ -384,6 +386,46 @@ describe("chat classification integration", () => {
 });
 
 describe("chat run integration", () => {
+  it.each([
+    ["image/png", 'image "attachment"'],
+    ["application/pdf", 'file "attachment"'],
+  ])("describes saved %s attachments instead of sending them to the summarizer", async (mimeType, placeholder) => {
+    fixture.chat.compaction = {};
+    fixture.chat.summarizer = "summary-model";
+    const original: Chat = {
+      id: "saved-media",
+      model: fixture.model,
+      created: null,
+      updated: null,
+      messages: [
+        userMessage([mediaFromDataUrl(`data:${mimeType};base64,YWJj`, "attachment")]),
+        assistant("Large evidence ".repeat(1000)),
+      ],
+    };
+    await storeChat(original);
+    fixture.chats = [(await loadChat(original.id, false))!];
+    expect(JSON.stringify(saved().messages)).toContain("blob:sha256-");
+    fixture.complete.mockImplementation(async ({ model, messages }) => {
+      if (JSON.stringify(messages).includes('"value":"blob:')) throw new Error("400 invalid url");
+      // A text-only summarizer rejects attachment bytes just as it rejects local references.
+      if (model === "summary-model" && JSON.stringify(messages).includes('"type":"data"'))
+        throw new Error("400 model does not support image input");
+      return assistant(model === "summary-model" ? "Earlier attachment discussed." : "Continued");
+    });
+    const context = await harness();
+    await act(async () => context.selectChat(original.id));
+    await act(() => context.sendMessage(user("Continue")));
+    expect(lastText()).toBe("Continued");
+    const summaryRequest = fixture.complete.mock.calls.find(([options]) => options.model === "summary-model")?.[0];
+    expect(summaryRequest).toBeDefined();
+    const summaryParts = (summaryRequest?.messages ?? []).flatMap((message) =>
+      Array.isArray(message.content) ? message.content : [],
+    );
+    expect(summaryParts.filter((part) => part.type !== "text")).toEqual([]);
+    expect(summaryParts.some((part) => part.type === "text" && part.content.includes(placeholder))).toBe(true);
+    expect(JSON.stringify(saved().messages)).toContain("blob:sha256-");
+  });
+
   it("keeps voice messages in native history when a text turn follows", async () => {
     fixture.complete.mockResolvedValue(assistant("Text answer"));
     const context = await harness();

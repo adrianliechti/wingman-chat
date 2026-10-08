@@ -4,7 +4,7 @@ import { clearToolResults, composeStrategies, summarizeOldest, withCompaction } 
 import { followAbortSignal } from "@/shared/lib/abortSignals";
 import type { Client } from "@/shared/lib/client";
 import { aiTelemetry } from "@/shared/lib/otel";
-import { preservedSkillMessages } from "./chatHistory";
+import { preservedSkillMessages, stripMediaContent } from "./chatHistory";
 
 /** Native provider-context compaction; saved messages and tool results stay complete. */
 export function chatCompaction(
@@ -28,7 +28,12 @@ export function chatCompaction(
               // A compacted prefix often ends with an assistant/tool turn.
               // Request a new summary instead of an assistant prefill, which
               // several gateway providers reject.
-              messages: [...messages, { role: "user", content: "Summarize the preceding conversation." }],
+              messages: [
+                // Compaction sees canonical storage references, so the prefix
+                // still points at chat blobs the gateway cannot resolve.
+                ...stripMediaContent(messages),
+                { role: "user", content: "Summarize the preceding conversation." },
+              ],
               systemPrompts: [instructions],
               middleware: [aiTelemetry("summarize_history")],
               stream: false,

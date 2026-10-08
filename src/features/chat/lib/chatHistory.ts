@@ -1,7 +1,7 @@
 import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
 import { skillName } from "@/features/skills/lib/skillSource";
-import { isMediaPart, isUserPrompt, mediaName, messageMetadata } from "@/shared/lib/messages";
+import { isMediaPart, isUserPrompt, mediaName, messageMetadata, type MediaPart } from "@/shared/lib/messages";
 import { injectRequestContext } from "@/shared/lib/requestContext";
 
 /*
@@ -98,6 +98,32 @@ export function stripHistoryImages(messages: ModelMessage[]): ModelMessage[] {
               content: `[image "${mediaName(part) ?? "image"}" omitted to save context — read it from the artifacts workspace if you need it]`,
             }
           : part,
+      ),
+    };
+  });
+  return changed ? result : messages;
+}
+
+function describeMedia(part: MediaPart): string {
+  const kind = part.type === "document" ? "file" : part.type;
+  const name = mediaName(part);
+  return `[${kind}${name ? ` "${name}"` : ""} omitted from this summary]`;
+}
+
+/** Describe media instead of sending it, for prose-only requests such as history
+ *  summarization. Those run on `chat.summarizer`, a bare model id with no declared
+ *  modality support, and a rejected request would abort the chat run. Attachment
+ *  bytes add cost without helping a summary, so only their names carry over.
+ *  Model-bound copy only — stored/displayed messages keep their media. */
+export function stripMediaContent(messages: ModelMessage[]): ModelMessage[] {
+  let changed = false;
+  const result = messages.map((message) => {
+    if (!Array.isArray(message.content) || !message.content.some(isMediaPart)) return message;
+    changed = true;
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        isMediaPart(part) ? { type: "text" as const, content: describeMedia(part) } : part,
       ),
     };
   });
