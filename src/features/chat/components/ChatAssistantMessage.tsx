@@ -16,6 +16,7 @@ import {
   messageMetadata,
   messageText,
   toolResultFor,
+  userMessage,
   type MessageMetadata,
 } from "@/shared/lib/messages";
 import type { ToolIcon } from "@/shared/types/chat";
@@ -230,7 +231,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 }: ChatAssistantMessageProps) {
   const { messages, toolMeta } = useChatConversation();
   const { pendingElicitation, status } = useChatRunState();
-  const { resolveElicitation, retryMessage } = useChatActions();
+  const { resolveElicitation, retryMessage, sendMessage } = useChatActions();
   const { providers } = useToolsContext();
   const { openFile, setShowArtifactsDrawer } = useArtifacts();
 
@@ -240,6 +241,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       setShowArtifactsDrawer(true);
     },
     [openFile, setShowArtifactsDrawer],
+  );
+
+  // A ```ui block's "send" buttons continue the conversation as a normal user turn.
+  const handleSendMessage = useCallback(
+    (text: string) => {
+      void sendMessage(userMessage(text)).catch((error) => console.error("Failed to send message", error));
+    },
+    [sendMessage],
   );
 
   // JS-driven hover (not CSS :hover) for the action bar — Safari leaves :hover
@@ -399,7 +408,11 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               .some((p) => p.type === "thinking" || p.type === "tool-call");
             return (
               <div key={partKey} className={cn(hasPrecedingItems && "mt-2")}>
-                <Markdown isStreaming={!!(isLast && isResponding)} onOpenArtifact={handleOpenArtifact}>
+                <Markdown
+                  isStreaming={!!(isLast && isResponding)}
+                  onOpenArtifact={handleOpenArtifact}
+                  onSendMessage={handleSendMessage}
+                >
                   {part.content}
                 </Markdown>
               </div>

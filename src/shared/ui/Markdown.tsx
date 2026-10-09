@@ -34,6 +34,8 @@ import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
+import { UI_FENCE_LANGUAGES } from "@/shared/lib/intelligentUi/schema";
+import { UiRenderer } from "@/shared/ui/intelligent/UiRenderer";
 import { loadKatex, loadMathPlugins, type MathPlugins } from "./markdownMath";
 import { prepareMarkdown } from "./markdownInput";
 import { EmojiContext, type EmojiMode } from "@/shell/context/EmojiContext";
@@ -591,6 +593,7 @@ const MarkdownRenderContext = createContext<{
   compact: boolean;
   resolveAsset: (url: string) => string | undefined;
   onOpenArtifact?: (path: string) => void;
+  onSendMessage?: (text: string) => void;
 }>({ isStreaming: false, compact: false, resolveAsset: () => undefined });
 
 // Stable component types preserve tables, previews, and code blocks when math
@@ -861,7 +864,7 @@ const markdownComponents: Partial<Components> = {
     );
   },
   code: function Code({ children, className, ...rest }) {
-    const { isStreaming } = useContext(MarkdownRenderContext);
+    const { isStreaming, onOpenArtifact, onSendMessage } = useContext(MarkdownRenderContext);
     const match = /language-(\w+)/.exec(className || "");
     const text = extractText(children).replace(/\n$/, "");
     const isMultiLine = text.includes("\n");
@@ -890,6 +893,21 @@ const markdownComponents: Partial<Components> = {
 
     if (language === "svg") {
       return <SvgRenderer svg={text} language={language} />;
+    }
+
+    if (UI_FENCE_LANGUAGES.has(language)) {
+      return (
+        <UiRenderer
+          source={text}
+          isStreaming={isStreaming}
+          onSendMessage={onSendMessage}
+          renderText={(markdown) => (
+            <Markdown compact onOpenArtifact={onOpenArtifact}>
+              {markdown}
+            </Markdown>
+          )}
+        />
+      );
     }
 
     if (language === "html" || language === "htm") {
@@ -958,6 +976,8 @@ type MarkdownProps = {
   basePath?: string;
   /** Opens a link the model emitted to a generated artifact (e.g. `sandbox:`) in the artifact panel. */
   onOpenArtifact?: (path: string) => void;
+  /** Posts text to the chat as the user; lets a ```ui block's buttons continue the conversation. */
+  onSendMessage?: (text: string) => void;
 };
 
 const NonMemoizedMarkdown = ({
@@ -967,14 +987,15 @@ const NonMemoizedMarkdown = ({
   fs,
   basePath,
   onOpenArtifact,
+  onSendMessage,
 }: MarkdownProps) => {
   const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
   const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
   const renderOptions = useMemo(
-    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact }),
-    [isStreaming, compact, resolveAsset, onOpenArtifact],
+    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage }),
+    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage],
   );
   const processor = useMemo(() => createMarkdownProcessor(mathPlugins, emojiMode), [mathPlugins, emojiMode]);
 
@@ -1028,7 +1049,8 @@ export const Markdown = memo(
     prev.compact === next.compact &&
     prev.fs === next.fs &&
     prev.basePath === next.basePath &&
-    prev.onOpenArtifact === next.onOpenArtifact,
+    prev.onOpenArtifact === next.onOpenArtifact &&
+    prev.onSendMessage === next.onSendMessage,
 );
 
 const extractFilename = (code: string): string | undefined => {

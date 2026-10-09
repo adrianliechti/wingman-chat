@@ -1,6 +1,6 @@
 ---
 name: data-visualization
-description: "Create static or interactive charts from real data. Use for analytical or publication figures in PNG/SVG, or an HTML chart; use visualize for conceptual illustrations."
+description: "Create static or interactive chart files from real data. Use for analytical or publication figures in PNG/SVG, or an HTML chart; use visualize for conceptual illustrations and the inline ui chart (intelligent-ui) for a quick chart in the reply."
 ---
 
 # Data visualization

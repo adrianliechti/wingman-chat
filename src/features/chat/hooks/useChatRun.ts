@@ -11,6 +11,7 @@ import {
 } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
+import { uiDiagnostics } from "@/shared/lib/intelligentUi/diagnostics";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { parseArtifactReference } from "../components/chatMessageUtils";
 import type { ChatContextType } from "../context/ChatContext";
@@ -167,6 +168,7 @@ export function useChatRun({
           middleware: [
             ...chatMiddleware(),
             ...(runFs ? [artifactVerification(runFs, sidecar, conversation)] : []),
+            uiDiagnostics(conversation),
             {
               onIteration: () => {
                 if (active()) setRunPhase("thinking");

@@ -55,6 +55,22 @@ function getAttributeValue(attributeName: string, value: string): string | numbe
   return value;
 }
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const SVG_ATTRIBUTE_NAME_MAP: Record<string, string> = {
+  class: "className",
+  "xlink:href": "xlinkHref",
+  "xml:space": "xmlSpace",
+  "xml:lang": "xmlLang",
+};
+
+/** React wants camelCase for hyphenated SVG presentation attributes (`stroke-width` → `strokeWidth`). */
+export function svgAttributeName(name: string): string {
+  const mapped = SVG_ATTRIBUTE_NAME_MAP[name];
+  if (mapped) return mapped;
+  if (name.startsWith("data-") || name.startsWith("aria-")) return name;
+  return name.includes("-") ? toCamelCase(name) : name;
+}
+
 function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent;
@@ -68,8 +84,11 @@ function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   const tagName = element.tagName.toLowerCase();
   const props: Record<string, unknown> = { key };
 
+  const isSvg = element.namespaceURI === SVG_NAMESPACE;
   for (const attribute of Array.from(element.attributes)) {
-    const attributeName = ATTRIBUTE_NAME_MAP[attribute.name] ?? attribute.name;
+    const attributeName = isSvg
+      ? svgAttributeName(attribute.name)
+      : (ATTRIBUTE_NAME_MAP[attribute.name] ?? attribute.name);
     props[attributeName] = getAttributeValue(attributeName, attribute.value);
   }
 
