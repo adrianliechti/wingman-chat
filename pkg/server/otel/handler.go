@@ -17,6 +17,8 @@ type Handler struct {
 func New() *Handler {
 	base := strings.TrimRight(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "/")
 
+	insights := strings.TrimRight(os.Getenv("INSIGHTS_ENDPOINT"), "/")
+
 	logsURL := os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")
 
 	if logsURL == "" && base != "" {
@@ -35,10 +37,12 @@ func New() *Handler {
 		metricsURL = base + "/v1/metrics"
 	}
 
+	// Insights discards logs, so only traces and metrics are copied to it,
+	// matching wingman's INSIGHTS_ENDPOINT exporters.
 	return &Handler{
 		logs:    newHandler(logsURL),
-		traces:  newHandler(tracesURL),
-		metrics: withMetricIdentity(newHandler(metricsURL)),
+		traces:  withInsights(newHandler(tracesURL), insightsEndpoint(insights, "/v1/traces")),
+		metrics: withMetricIdentity(withInsights(newHandler(metricsURL), insightsEndpoint(insights, "/v1/metrics"))),
 	}
 }
 

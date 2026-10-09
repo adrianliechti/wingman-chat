@@ -492,7 +492,7 @@ The metrics proxy accepts the browser exporters' OTLP/HTTP JSON format with
 lowerCamelCase structural field names, optionally
 gzip-compressed, with an 8 MiB limit on both compressed and decompressed input.
 Unsupported media types/encodings and malformed payloads are rejected before
-forwarding. Logs and traces retain their existing forwarding behavior. Local Vite
+forwarding. Logs and traces are forwarded unmodified. Local Vite
 development proxies directly to the collector, bypassing Go identity enrichment.
 
 The browser metrics exporter uses delta temporality, matching the gateway and
@@ -522,6 +522,26 @@ does not retain histogram buckets, so these rows support averages and rates,
 not score percentiles or individual-message inspection. Classifier-model
 filters refer to the classifier, not the response model. Cost by category needs
 additional correlation with response-model requests.
+
+### Direct insights delivery
+
+Like the Wingman gateway, the Go telemetry proxy honors `INSIGHTS_ENDPOINT` and
+copies every trace and metric export to it in addition to the primary
+`OTEL_EXPORTER_OTLP_*` collector. A bare endpoint receives the default OTLP path
+(`/v1/traces`, `/v1/metrics`); an endpoint that already carries a path is used
+verbatim, matching the gateway's handling of the same variable. Logs are not
+copied, because insights discards them and the gateway exports no logs there
+either.
+
+Metrics are copied after identity enrichment, so insights and the collector
+receive byte-identical payloads. Only `Content-Type` and `Content-Encoding`
+travel with the copy: identity already lives in the payload, and browser
+credentials must never reach a second backend. Delivery is best effort and
+independent of the primary collector — insights keeps receiving exports while the
+collector is down, failures never affect the browser's response, exports above
+the 8 MiB buffer limit reach only the collector, and copies are dropped rather
+than queued without bound when insights cannot keep up. With `INSIGHTS_ENDPOINT`
+unset, forwarding behaves exactly as before.
 
 ## Verification
 
