@@ -1,13 +1,13 @@
 ---
 name: visualize
-description: "Create a conceptual explanation as a saved diagram, mechanism drawing or HTML explainer artifact. Use when architecture-diagram, process-diagram, mind-map or data-visualization does not fit; use intelligent-ui for an explorable drawing inline in the reply."
+description: "Create a saved conceptual diagram, mechanism drawing or HTML explainer when a file/export is requested or the task exceeds inline components. Use when architecture-diagram, process-diagram, mind-map or data-visualization does not fit. For visual explanations in chat, including an 'illustrate' follow-up without a file requirement, prefer intelligent-ui."
 ---
 
 # Visualize
 
 Choose the form that exposes the relationship: Mermaid for flows, sequences, schemas and trees; authored SVG for spatial mechanisms; HTML with SVG/canvas and controls when changing a parameter helps understanding. A mechanism drawing should show the actual parts and forces, not replace them with generic process boxes. Split a dense topic into focused views.
 
-Everything here produces a workspace artifact: a file the user keeps, exports or iterates on. When one drawing with a slider or a part selector answers the question inside the reply and nobody needs the file, use the inline ```ui fence (`intelligent-ui`, `svg` component with `slider` or `segmented` controls) instead. Dense multi-view explainers, Mermaid, bundled libraries and exports stay here.
+Everything here produces a workspace artifact: a file the user keeps, exports or iterates on. Establish that need from the request and conversation before choosing this skill. A short follow-up such as "illustrate" after an explanation asks for a visual of that topic; it does not by itself request a file. Prefer the inline ```ui fence (`intelligent-ui`, `svg` component, with `slider` or `segmented` controls when useful) when one drawing answers the question inside the reply. A static drawing can also be inline. Dense multi-view explainers, Mermaid, bundled libraries and requested exports stay here.
 
 Ground labels and relationships in the supplied material. Label illustrative numbers and assumptions; use `data-visualization` for measured datasets. Keep explanation close to the relevant visual and omit decorative complexity.
 

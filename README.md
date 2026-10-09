@@ -10,7 +10,7 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
-- **Rich Markdown rendering** — GitHub-flavored Markdown, syntax highlighting (Shiki), math (KaTeX),
+- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
 - **Intelligent UI** — replies can embed small interactive interfaces (what-if calculators, filtered
   tables, charts, option buttons) as a validated JSON component tree with reactive state. See

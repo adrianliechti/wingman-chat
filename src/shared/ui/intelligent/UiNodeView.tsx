@@ -1,3 +1,4 @@
+import { Description, Field as HeadlessField, Label, Switch } from "@headlessui/react";
 import { useSelector } from "@tanstack/react-store";
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
 import { createContext, type CSSProperties, lazy, memo, Suspense, useContext, useId, useState } from "react";
@@ -12,6 +13,8 @@ import {
 } from "@/shared/lib/intelligentUi/expression";
 import type { UiAction, UiNode, UiProps } from "@/shared/lib/intelligentUi/schema";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
+import { SelectMenu } from "@/shared/ui/SelectMenu";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { UiContext, type UiHostContext } from "./UiContext";
 import type { UiChartProps } from "./UiChart";
 import { HtmlPreview } from "@/shared/ui/HtmlPreview";
@@ -642,40 +645,15 @@ function NodeContent({
         />
       );
     case "segmented": {
-      const options = toOptions(props.options);
-      const current = stringify(value);
       return (
-        <div className="flex min-w-0 flex-col gap-1 text-sm">
-          {props.label ? (
-            <span className="font-medium text-neutral-700 dark:text-neutral-300">{stringify(props.label)}</span>
-          ) : null}
-          <div role="radiogroup" aria-label={stringify(props.label) || undefined} className="flex flex-wrap gap-1.5">
-            {options.map((option) => {
-              const active = current === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={bool(props.disabled)}
-                  onClick={() => set(coerceOption(option.value, props.options))}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-sm transition-colors disabled:opacity-50",
-                    active
-                      ? "border-neutral-800 bg-neutral-800 text-white dark:border-neutral-200 dark:bg-neutral-200 dark:text-neutral-900"
-                      : "border-neutral-300 text-neutral-700 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800",
-                  )}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-          {props.description ? (
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">{stringify(props.description)}</span>
-          ) : null}
-        </div>
+        <SegmentedControl
+          label={typeof props.label === "string" ? props.label : undefined}
+          description={typeof props.description === "string" ? props.description : undefined}
+          value={stringify(value)}
+          options={toOptions(props.options)}
+          disabled={bool(props.disabled)}
+          onChange={(next) => set(coerceOption(next, props.options))}
+        />
       );
     }
     case "timeline": {
@@ -1047,26 +1025,17 @@ function NodeContent({
       const options = toOptions(props.options);
       const current = stringify(value);
       return (
-        <Field
+        <SelectMenu
           label={typeof props.label === "string" ? props.label : undefined}
-          description={typeof props.description === "string" ? props.description : undefined}
-        >
-          <select
-            className={inputClass}
-            value={options.some((option) => option.value === current) ? current : ""}
-            disabled={bool(props.disabled)}
-            onChange={(event) => set(coerceOption(event.target.value, props.options))}
-          >
-            <option value="" disabled={!!options.length}>
-              {typeof props.placeholder === "string" ? props.placeholder : "Select…"}
-            </option>
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+          hint={typeof props.description === "string" ? props.description : undefined}
+          placeholder={typeof props.placeholder === "string" ? props.placeholder : undefined}
+          value={options.some((option) => option.value === current) ? current : null}
+          options={options}
+          disabled={bool(props.disabled) || options.length === 0}
+          onChange={(next) => {
+            if (next !== null) set(coerceOption(next, props.options));
+          }}
+        />
       );
     }
     case "multiselect": {
@@ -1139,19 +1108,28 @@ function NodeContent({
     }
     case "toggle":
       return (
-        <Field
-          inline
-          label={typeof props.label === "string" ? props.label : undefined}
-          description={typeof props.description === "string" ? props.description : undefined}
-        >
-          <input
-            type="checkbox"
-            checked={bool(value)}
-            disabled={bool(props.disabled)}
-            onChange={(event) => set(event.target.checked)}
-            className="h-4 w-4 rounded accent-neutral-800 dark:accent-neutral-200"
-          />
-        </Field>
+        <HeadlessField disabled={bool(props.disabled)} className="flex min-w-0 flex-col gap-1.5 text-sm">
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={bool(value)}
+              onChange={set}
+              className="group inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-neutral-300 p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 focus-visible:ring-offset-2 data-checked:bg-neutral-900 data-disabled:cursor-not-allowed data-disabled:opacity-50 dark:bg-neutral-700 dark:focus-visible:ring-neutral-500/60 dark:focus-visible:ring-offset-neutral-900 dark:data-checked:bg-neutral-200"
+            >
+              <span
+                aria-hidden="true"
+                className="size-5 rounded-full bg-white shadow-sm transition-transform group-data-checked:translate-x-5 motion-reduce:transition-none dark:bg-neutral-300 dark:group-data-checked:bg-neutral-900"
+              />
+            </Switch>
+            {props.label ? (
+              <Label className="text-neutral-800 dark:text-neutral-200">{stringify(props.label)}</Label>
+            ) : null}
+          </div>
+          {props.description ? (
+            <Description className="text-xs text-neutral-500 dark:text-neutral-400">
+              {stringify(props.description)}
+            </Description>
+          ) : null}
+        </HeadlessField>
       );
     case "button":
       return <Button props={props} context={context} extra={extra} />;

@@ -166,7 +166,7 @@ it("renders controls, recomputes derived values, and sends templated messages", 
   expect(metricValue()).toMatch(/123\.75/);
   expect(container.textContent).toContain("Big tip");
 
-  const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
   await act(async () => {
     toggle.click();
   });

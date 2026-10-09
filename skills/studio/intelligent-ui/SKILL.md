@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Render a small interactive interface inline in a chat reply with a ```ui fence: calculators, parameter explorers, sortable tables, charts, explorable drawings and option buttons with reactive state. Use when adjusting inputs in place helps more than prose and the result is part of the answer; use visualize, data-visualization or html-artifacts for a file to keep."
+description: "Render visual explanations and small interactive interfaces inline in a chat reply with a ```ui fence: drawings, calculators, charts, sortable tables and option buttons. Prefer for 'illustrate' or 'show me how it works' in an explanatory conversation without a file requirement. Use visualize, data-visualization or html-artifacts for a requested file/export or needs beyond inline components."
 ---
 
 # Intelligent UI
@@ -9,7 +9,7 @@ A ```ui fence holds a JSON document that the app renders as native components wi
 
 ## Choose the least complex presentation
 
-Pick the simplest form that completely answers the request. Interaction earns its place only when it lets the user do something prose cannot: move an input, narrow data, pick one of several, or explore a structure.
+Pick the simplest form that completely answers the request, including its requested visual format. Interaction earns its place only when it lets the user do something prose cannot: move an input, narrow data, pick one of several, or explore a structure. A requested illustration can use `svg` without controls when a static drawing is sufficient.
 
 | The user wants to…                        | Use                                                              |
 | ----------------------------------------- | ---------------------------------------------------------------- |
@@ -22,7 +22,7 @@ Pick the simplest form that completely answers the request. Interaction earns it
 | Switch between alternatives               | `segmented` or `tabs` with `visible` or looked-up content        |
 | Pick one of several next steps            | `button` with `send`, one per option, or an `each` over the data |
 | Follow a procedure or a plan              | `checklist`, `timeline`, or step cards with Back / Next          |
-| See how parts of a thing relate           | `svg` whose parts respond to a control                           |
+| See how parts of a thing relate           | `svg`, with a selector or slider when it aids understanding      |
 | Keep, share or export the result          | An artifact, not a fence                                         |
 
 Do not render a chart for one number, a form where one question would do, a card around plain text, or a control nothing reacts to. The prose must carry the answer on its own; the interface refines it.
@@ -30,6 +30,8 @@ Do not render a chart for one number, a form where one question would do, a card
 ## Inline interface or artifact
 
 Decide by what the user keeps, not by how visual the request sounds.
+
+Resolve short follow-ups from the conversation before choosing a skill. After "explain how a car works", "illustrate" normally calls for an inline drawing; a system selector can highlight parts and update their explanation. After a request for a printable handout, the same follow-up keeps that deliverable. Do not infer a file requirement from "illustrate", "diagram" or the use of SVG alone, and do not require the user to name this skill or explicitly ask for interactivity.
 
 | Inline ```ui fence                                      | Artifact (`visualize`, `data-visualization`, `html-artifacts`, `build-dashboard`) |
 | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -55,7 +57,7 @@ Neighbouring skills draw the same boundary from their side: `visualize` owns sav
 
 ## Before emitting a fence
 
-1. Would prose or a Markdown table answer as well? Then use that.
+1. Would prose or a Markdown table satisfy both the question and the requested format? Then use that. A request to illustrate still needs a visual.
 2. Every component, prop and helper exists in `references/components.md`; nothing is invented.
 3. Every `bind` key is in `state`; everything derived is in `computed`; no expression calls a method or an unknown function.
 4. Every control changes something visible; every button's label says what its action does.

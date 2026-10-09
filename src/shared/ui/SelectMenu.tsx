@@ -1,6 +1,7 @@
-import { Listbox } from "@headlessui/react";
+import { Description, Field, Label, Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { cn } from "@/shared/lib/cn";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,9 @@ interface SelectMenuProps<T> {
   label?: string;
   /** Supporting text displayed inside the selected value. */
   description?: string;
+  /** Help text below the control, associated with its accessible description. */
+  hint?: string;
+  disabled?: boolean;
   /** Placeholder shown when value is null/undefined and doesn't match any option. */
   placeholder?: string;
   /** Extra classes on the root wrapper. */
@@ -33,16 +37,23 @@ export function SelectMenu<T extends string | null>({
   options,
   label,
   description,
+  hint,
+  disabled = false,
   placeholder = "Select…",
   className,
 }: SelectMenuProps<T>) {
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div className={className}>
-      {label && <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</p>}
+    <Field className={cn("min-w-0", className)} disabled={disabled}>
+      {label && (
+        <Label className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</Label>
+      )}
       <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full rounded-lg border border-neutral-300/50 bg-white/50 py-2.5 pl-3 pr-10 text-left text-sm text-neutral-900 transition-colors backdrop-blur-sm focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:border-transparent data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-100">
+        <ListboxButton
+          aria-label={label ? undefined : placeholder}
+          className="relative w-full rounded-lg border border-neutral-300/50 bg-white/50 py-2.5 pl-3 pr-10 text-left text-sm text-neutral-900 transition-colors backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-400/60 data-open:border-neutral-400/70 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-100 dark:focus-visible:ring-neutral-500/60 dark:data-open:border-neutral-500/70"
+        >
           <span className="flex min-w-0 items-center gap-2 text-neutral-800 dark:text-neutral-200">
             {selected?.icon && <span className="shrink-0 text-neutral-400">{selected.icon}</span>}
             <span className="min-w-0 flex-1">
@@ -57,15 +68,16 @@ export function SelectMenu<T extends string | null>({
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
             <ChevronsUpDown size={14} className="text-neutral-400" aria-hidden="true" />
           </span>
-        </Listbox.Button>
+        </ListboxButton>
 
-        <Listbox.Options
+        <ListboxOptions
           anchor="bottom"
+          modal={false}
           transition
           className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200/80 dark:border-white/10 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl shadow-xl shadow-black/15 dark:shadow-black/60 p-1 z-[200] transition duration-100 ease-in data-closed:opacity-0"
         >
           {options.map((option) => (
-            <Listbox.Option
+            <ListboxOption
               key={String(option.value)}
               value={option.value}
               className="group relative flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5"
@@ -83,10 +95,11 @@ export function SelectMenu<T extends string | null>({
                   </span>
                 )}
               </span>
-            </Listbox.Option>
+            </ListboxOption>
           ))}
-        </Listbox.Options>
+        </ListboxOptions>
       </Listbox>
-    </div>
+      {hint && <Description className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">{hint}</Description>}
+    </Field>
   );
 }

@@ -13,6 +13,13 @@ The prompt in
 `src/features/chat/prompts/intelligent-ui.txt` and the `intelligent-ui`
 built-in skill give the model that decision rule.
 
+Short visual follow-ups inherit the topic and output preferences of the
+conversation. After an explanation, "illustrate" defaults to an inline drawing,
+with controls when they help understanding. A static SVG can also render inline;
+SVG alone does not imply a downloadable file. An established handout, file or
+export request still calls for an artifact. This boundary appears in the shared
+chat prompt and both skill descriptions so it is available before skill loading.
+
 ## Authoring contract
 
 Wingman's JSON format is defined by its implementation. DIL-style examples are
@@ -112,6 +119,12 @@ under a hash of its source (bounded to the most recent 200 interfaces), so a
 reload keeps the user's adjustments. Saved values are only applied to keys the
 document still declares. The fence text stays in the transcript, so the model
 sees the document it produced and copies and exports keep it as code.
+
+Selection controls share the app's Headless UI components: `select` uses
+`SelectMenu`, and `segmented` uses the same `SegmentedControl` as Settings.
+Toggles render as switches. Labels, help text, keyboard selection and disabled
+states are handled by these components; the JSON format and state bindings stay
+the same. Dropdown options render in a portal so chat containers do not clip them.
 
 ### Diagnostics back to the model
 

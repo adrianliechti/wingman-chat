@@ -40,6 +40,7 @@ import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode } from "@/shared/types/settings";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { SelectMenu } from "@/shared/ui/SelectMenu";
+import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 
@@ -70,57 +71,6 @@ const emojiOptions: { value: EmojiMode; label: string }[] = [
   { value: "monochrome", label: "Minimal" },
   { value: "native", label: "Native" },
 ];
-
-// Compact segmented control for small option sets
-function SegmentedControl<T extends string>({
-  label,
-  description,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  description?: React.ReactNode;
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <div>
-      <p className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
-      {description && (
-        <p className="mb-2.5 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">{description}</p>
-      )}
-      <div
-        role="radiogroup"
-        aria-label={label}
-        className="inline-flex w-full gap-1 rounded-xl border border-neutral-200/70 bg-neutral-100/70 p-1 dark:border-neutral-700/60 dark:bg-neutral-800/60"
-      >
-        {options.map((opt) => {
-          const selected = value === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => onChange(opt.value)}
-              className={cn(
-                "flex-1 truncate rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:focus-visible:ring-neutral-500/60",
-                selected
-                  ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5 dark:bg-neutral-700 dark:text-neutral-50 dark:ring-white/10"
-                  : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
-              )}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function SettingsViewHeader({ id, title, description }: { id?: string; title: string; description: string }) {
   return (

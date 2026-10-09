@@ -1,10 +1,13 @@
 import { Dialog, Transition } from "@headlessui/react";
-import type { Components } from "hast-util-to-jsx-runtime";
-import type { Root as MarkdownRoot } from "mdast";
+import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
+import { Markdown as TanStackMarkdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import { Copy, CopyCheck, Download, Maximize2, Printer, X } from "lucide-react";
 import {
-  memo,
+  Children,
   createContext,
+  Fragment,
+  isValidElement,
+  memo,
   useCallback,
   useContext,
   useDeferredValue,
@@ -14,20 +17,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import rehypeReact from "rehype-react";
-import remarkBreaks from "remark-breaks";
-import remarkGemoji from "remark-gemoji";
-import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import { type PluggableList, unified } from "unified";
 import { cn } from "@/shared/lib/cn";
 import { useStreamingText } from "@/shared/hooks/useStreamingText";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
-import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import {
+  MARKDOWN_PARSE_OPTIONS,
+  markdownExtensions,
+  markdownUrlTransform,
+  MATH_TAG,
+  prepareMarkdownSource,
+} from "@/shared/lib/markdownExtensions";
 import { getArtifactLinkPath } from "@/shared/lib/sandbox";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { downloadBlob } from "@/shared/lib/utils";
@@ -36,9 +37,8 @@ import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
 import { UI_FENCE_LANGUAGES } from "@/shared/lib/intelligentUi/schema";
 import { UiRenderer } from "@/shared/ui/intelligent/UiRenderer";
-import { loadKatex, loadMathPlugins, type MathPlugins } from "./markdownMath";
-import { prepareMarkdown } from "./markdownInput";
-import { EmojiContext, type EmojiMode } from "@/shell/context/EmojiContext";
+import { loadKatex, type Katex } from "./markdownMath";
+import { EmojiContext } from "@/shell/context/EmojiContext";
 import { MediaPlayer } from "./MediaPlayer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
@@ -131,6 +131,49 @@ function LatexRenderer({ code, filename }: { code: string; filename?: string }) 
       <div ref={containerRef} className="overflow-x-auto" />
     </div>
   );
+}
+
+/**
+ * A `$$ … $$` or `\( … \)` expression from the math extension. KaTeX loads
+ * on first use; until then, and when it fails, the source shows as text.
+ */
+function MathNode({ source, display }: { source?: string; display?: string }) {
+  const [katex, setKatex] = useState<Katex | null>(null);
+  const expression = source ?? "";
+  const isDisplay = display === "true";
+  useEffect(() => {
+    let cancelled = false;
+    loadKatex()
+      .then((loaded) => {
+        if (!cancelled) setKatex(loaded);
+      })
+      .catch((error) => {
+        if (!cancelled) console.warn("KaTeX rendering failed:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const html = useMemo(
+    () => katex?.renderToString(expression, { displayMode: isDisplay, throwOnError: false, strict: "ignore" }) ?? null,
+    [katex, expression, isDisplay],
+  );
+  if (html === null) {
+    return <span className={cn("font-mono text-sm", isDisplay && "block my-4 overflow-x-auto")}>{expression}</span>;
+  }
+  // KaTeX output is generated from the expression, not copied from the source.
+  return (
+    <span className={isDisplay ? "block my-4 overflow-x-auto" : undefined} dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
+/** Whether a rendered list item (or a list of them) starts with a task checkbox. */
+function containsCheckbox(children: ReactNode, depth: number): boolean {
+  return Children.toArray(children).some((child) => {
+    if (!isValidElement<{ type?: string; children?: ReactNode }>(child)) return false;
+    if (child.props.type === "checkbox") return true;
+    return depth > 0 && containsCheckbox(child.props.children, depth - 1);
+  });
 }
 
 const MIN_COLUMN_WIDTH = 60;
@@ -598,10 +641,19 @@ const MarkdownRenderContext = createContext<{
 
 // Stable component types preserve tables, previews, and code blocks when math
 // loads or streaming ends. Runtime options travel through context, not closures.
-const markdownComponents: Partial<Components> = {
+const markdownComponents = {
   pre: ({ children }) => {
     return <>{children}</>;
   },
+  // A titled fence arrives wrapped in a figure with a caption; the code block shows its own name.
+  figure: ({ children, className, ...props }) =>
+    typeof className === "string" && className.includes("tm-code-frame") ? (
+      <>{Children.toArray(children).filter((child) => isValidElement(child) && child.type !== "figcaption")}</>
+    ) : (
+      <figure className={className} {...props}>
+        {children}
+      </figure>
+    ),
   p: function Paragraph({ children, ...props }) {
     const { compact } = useContext(MarkdownRenderContext);
     return (
@@ -627,7 +679,8 @@ const markdownComponents: Partial<Components> = {
   },
   li: function ListItem({ children, className, ...props }) {
     const { compact } = useContext(MarkdownRenderContext);
-    const isTask = typeof className === "string" && className.includes("task-list-item");
+    const isTask =
+      (typeof className === "string" && className.includes("task-list-item")) || containsCheckbox(children, 1);
     return (
       <li
         className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
@@ -638,7 +691,8 @@ const markdownComponents: Partial<Components> = {
     );
   },
   ul: ({ children, className, ...props }) => {
-    const isTaskList = typeof className === "string" && className.includes("contains-task-list");
+    const isTaskList =
+      (typeof className === "string" && className.includes("contains-task-list")) || containsCheckbox(children, 2);
     return (
       <ul className={cn(isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0")} {...props}>
         {children}
@@ -677,7 +731,7 @@ const markdownComponents: Partial<Components> = {
       );
     }
 
-    if (url && !url.startsWith("http") && !url.startsWith("#")) {
+    if (url && !/^(?:[a-z][a-z\d+.-]*:|[#/.?])/i.test(url)) {
       url = `https://${url}`;
     }
 
@@ -846,6 +900,47 @@ const markdownComponents: Partial<Components> = {
       </blockquote>
     );
   },
+  details: ({ children, ...props }) => (
+    <details
+      className="my-3 rounded-md border border-neutral-200 px-3 py-2 open:pb-3 dark:border-neutral-700"
+      {...props}
+    >
+      {children}
+    </details>
+  ),
+  summary: ({ children, ...props }) => (
+    <summary className="cursor-pointer select-none font-medium [&>p]:inline [&>p]:my-0" {...props}>
+      {children}
+    </summary>
+  ),
+  dl: ({ children, ...props }) => (
+    <dl className="my-3 grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]" {...props}>
+      {children}
+    </dl>
+  ),
+  dt: ({ children, ...props }) => (
+    <dt className="font-semibold [&>p]:my-0" {...props}>
+      {children}
+    </dt>
+  ),
+  dd: ({ children, ...props }) => (
+    <dd className="ml-0 mb-1 text-neutral-700 dark:text-neutral-300 [&>p]:my-0" {...props}>
+      {children}
+    </dd>
+  ),
+  kbd: ({ children, ...props }) => (
+    <kbd
+      className="rounded border border-neutral-300 bg-neutral-100 px-1.5 py-0.5 font-mono text-[0.8em] dark:border-neutral-600 dark:bg-neutral-800"
+      {...props}
+    >
+      {children}
+    </kbd>
+  ),
+  mark: ({ children, ...props }) => (
+    <mark className="rounded bg-amber-200/70 px-0.5 text-inherit dark:bg-amber-500/40" {...props}>
+      {children}
+    </mark>
+  ),
   hr: ({ ...props }) => {
     return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
   },
@@ -866,7 +961,7 @@ const markdownComponents: Partial<Components> = {
   code: function Code({ children, className, ...rest }) {
     const { isStreaming, onOpenArtifact, onSendMessage } = useContext(MarkdownRenderContext);
     const match = /language-([\w-]+)/.exec(className || "");
-    const text = extractText(children).replace(/\n$/, "");
+    const text = extractText(children);
     const isMultiLine = text.includes("\n");
 
     if (!match && !isMultiLine) {
@@ -929,32 +1024,10 @@ const markdownComponents: Partial<Components> = {
     const filename = extractFilename(text);
     return <CodeRenderer code={text} language={language} name={filename} isStreaming={isStreaming} />;
   },
-};
+} satisfies MarkdownComponents;
 
-const baseRehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
-  Fragment,
-  jsx,
-  jsxs,
-  ignoreInvalidStyle: true,
-  passKeys: true,
-};
-
-function createMarkdownProcessor(math: MathPlugins | null, emojiMode: EmojiMode) {
-  // remark-math + rehype-katex are wired in only once the content is known to
-  // contain `$$…$$` math, keeping KaTeX out of first paint.
-  const remarkPlugins: PluggableList = [remarkParse, remarkGfm, remarkBreaks, remarkGemoji];
-  if (math) remarkPlugins.push([math.remarkMath, { singleDollarTextMath: false }]);
-
-  const rehypePlugins: PluggableList = [];
-  if (math) rehypePlugins.push([math.rehypeKatex, { strict: "ignore", errorColor: "transparent" }]);
-  rehypePlugins.push([rehypeNotoEmoji, { mode: emojiMode }]);
-
-  return unified()
-    .use(remarkPlugins)
-    .use(remarkRehype, { allowDangerousHtml: true })
-    .use(rehypePlugins)
-    .use(rehypeReact, { ...baseRehypeReactOptions, components: markdownComponents });
-}
+// Custom nodes from the extensions render through the same map.
+const components = { ...markdownComponents, [MATH_TAG]: MathNode };
 
 type MarkdownProps = {
   children: string;
@@ -990,53 +1063,38 @@ const NonMemoizedMarkdown = ({
   onSendMessage,
 }: MarkdownProps) => {
   const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
-  const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
   const renderOptions = useMemo(
     () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage }),
     [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage],
   );
-  const processor = useMemo(() => createMarkdownProcessor(mathPlugins, emojiMode), [mathPlugins, emojiMode]);
+  // The streaming profile keeps unfinished constructs predictable while text arrives.
+  const extensions = useMemo(
+    () =>
+      isStreaming ? [...markdownExtensions(emojiMode), streamingMarkdownExtension()] : markdownExtensions(emojiMode),
+    [emojiMode, isStreaming],
+  );
 
   // Native chunks may contain whole sentences. Reveal them over a few frames;
   // defer Markdown work so typing and Stop stay responsive during parsing.
   const input = useDeferredValue(useStreamingText(children, isStreaming));
-  const { result, hasMath } = useMemo(() => {
-    if (!input) return { result: null, hasMath: false };
-    const parsed = processor.parse(input);
-    const prepared = prepareMarkdown(input, parsed as MarkdownRoot, isStreaming);
-    // Usually the original parse is enough. Reparse only when normalization
-    // actually changed the source (math aliases or an unfinished link).
-    const tree = prepared.content === input ? parsed : processor.parse(prepared.content);
-    return {
-      result: processor.stringify(processor.runSync(tree, { value: prepared.content })),
-      hasMath: prepared.hasMath,
-    };
-  }, [input, isStreaming, processor]);
-
-  // Load the KaTeX pipeline the first time content actually contains `$$…$$`
-  // math, then re-render with math support. Until then the raw `$$` shows.
-  useEffect(() => {
-    if (mathPlugins || !hasMath) return;
-    let cancelled = false;
-    loadMathPlugins()
-      .then((plugins) => {
-        if (!cancelled) setMathPlugins(plugins);
-      })
-      .catch((error) => {
-        // Leave math unrendered (raw `$$`) on a failed chunk load; the registry
-        // evicts the failure so a later render can retry.
-        console.warn("Failed to load math plugins:", error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [hasMath, mathPlugins]);
+  const source = prepareMarkdownSource(input, isStreaming);
 
   return (
     <RendererActionsContext value={actionsEnabled}>
-      <MarkdownRenderContext value={renderOptions}>{result}</MarkdownRenderContext>
+      <MarkdownRenderContext value={renderOptions}>
+        {source ? (
+          <TanStackMarkdown
+            {...MARKDOWN_PARSE_OPTIONS}
+            components={components}
+            extensions={extensions}
+            urlTransform={markdownUrlTransform}
+          >
+            {source}
+          </TanStackMarkdown>
+        ) : null}
+      </MarkdownRenderContext>
     </RendererActionsContext>
   );
 };

@@ -20,6 +20,13 @@ frontend.
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
 - `@tanstack/ai-skills` owns skill catalogs, loading, resource tools, and per-run
   activation through its portable skills API.
+- `@tanstack/markdown` owns Markdown parsing and rendering for chat replies,
+  artifact previews, clipboard HTML and Word export. Chat behaviour the docs
+  profile lacks (bare URL autolinks, single-newline line breaks, `$$` and
+  `\( \)` math, `:shortcode:` emoji, Noto emoji spans) lives in
+  `src/shared/lib/markdownExtensions.ts` as synchronous extensions; the
+  streaming profile keeps unfinished constructs stable while a reply arrives.
+  KaTeX and Shiki stay lazy and outside the parser.
 - `@tanstack/react-query` owns remote inventories: the model catalog, MCP
   availability and the skill template index. One shared `QueryClient`
   (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
@@ -35,6 +42,62 @@ The integration follows [TanStack AI](https://tanstack.com/ai/latest),
 [MCP Apps](https://tanstack.com/ai/latest/docs/mcp/apps). Examples that put
 orchestration in a server route are adapted to the application's browser-only
 execution requirement. The installed package sources define the precise APIs.
+
+## Markdown compatibility
+
+TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
+is a subset of CommonMark/GFM, so this migration does not claim complete parity
+with the former remark pipeline. Shared extensions add indented code, basic
+setext headings (text lines followed by `===` or `---`), entities in prose,
+destinations and titles, explicit/bare URL and email links, and emoji shortcodes.
+Chat additionally enables soft line breaks, math and Noto emoji. Clipboard and
+Word export use the same syntax extensions, but keep math as source and soft
+newlines as prose. KaTeX remains lazy and ordinary math disallows trusted commands.
+
+`markdownSource.ts` shares the literal-region guards used by math-alias
+normalization and streaming-link cleanup. Code fences (including quoted/list
+fences), indented code, multiline code spans, complete links, reference
+definitions and HTML tags are protected from these source edits. The React
+components retain table actions, code previews, artifact resolution and state
+across streaming updates. Word export preserves workspace links and renders
+footnote references and bodies as numbered text.
+
+Multiline setext headings are accepted only when TanStack classifies the text
+before the underline as one paragraph. Tables, HTML blocks and math must not
+become headings when a trailing `---` arrives. Display math uses a block node,
+so React never nests its block container inside a paragraph. Titles are decoded
+once with their escapes intact; image alt text is left as TanStack parsed it,
+because its AST no longer distinguishes escaped entities from ordinary ones.
+
+The compatibility layer deliberately avoids rewriting quote markers or trailing
+spaces: doing so requires duplicating the parser's block/container rules, and
+the attempted rewrites changed blank paragraphs, headings and nested quotes
+during streaming. Remaining gaps have executable expected-failure tests in
+`markdownParity.test.ts`:
+
+| Syntax                          | Remaining difference                                                                                                                                                                 | Workaround                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Lazy blockquote continuation    | Unmarked continuation lines become outside paragraphs, including in nested quotes.                                                                                                   | Prefix every quoted line with the full `>` depth.                             |
+| Entities in image alt text      | `&amp;` stays literal. Escaped entities and entities inside code spans are preserved.                                                                                                | Use the actual character in alt text.                                         |
+| Two-space hard break in exports | TanStack trims trailing spaces, so the break becomes a soft newline. A backslash immediately before those spaces can also be consumed as a break. Chat already breaks soft newlines. | Use a backslash immediately before the newline; escape any literal backslash. |
+
+Other boundaries: display math should have a blank line before its opening
+delimiter; incomplete math stays literal. Raw HTML uses the explicit allowlist
+in `markdownHtml.ts`; arbitrary tags/attributes are not preserved. This differs
+from both the old chat HTML handling and the old clipboard HTML passthrough.
+The DOCX converter's pre-existing limitations remain: nested list content and
+non-paragraph blockquote children are not fully exported. These tests are a
+targeted application parity suite, not a full CommonMark conformance claim.
+
+`markdownStreaming.test.ts` feeds every character prefix (including split UTF-16
+pairs) and every word prefix through the same `prepareMarkdownSource` entry point
+as the UI, then parsing and rendering. It checks fence contents against the
+unmodified parser, safe output, table stability and quote boundaries during the
+stream. Browser tests feed both chunk sizes through the React component,
+including deferred rendering, then verify math, links, emoji, tables and tasks,
+and that existing code-preview state survives the stream. Incomplete constructs
+can change presentation as their closing syntax arrives; code source must stay
+intact, and completed input must match the non-streaming render.
 
 ## Shared execution and removed code
 
