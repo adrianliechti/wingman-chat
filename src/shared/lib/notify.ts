@@ -11,6 +11,7 @@ function describe(detail?: unknown): string | undefined {
 // plain string. Centralizes the sonner dependency.
 export const notify = {
   success: (title: string, description?: string) => toast.success(title, description ? { description } : undefined),
+  warning: (title: string, description?: string) => toast.warning(title, description ? { description } : undefined),
   error: (title: string, detail?: unknown) => {
     const description = describe(detail);
     return toast.error(title, description ? { description } : undefined);

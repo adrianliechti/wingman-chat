@@ -19,7 +19,8 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
 - Collection and index locks use Web Locks across tabs, with an in-process fallback.
   Index updates lock the complete read/modify/write operation. Lock order is
   collection, workspace when needed, index, then file; callers must not reacquire
-  a lock they already hold.
+  a lock they already hold. Plugin installs and removals also take their collection
+  lock, so backups wait for them to finish. Plugin icons are fetched before the lock.
 - A file stream closes only after a successful write. Failure aborts the stream
   and removes a newly created empty placeholder. Existing good bytes survive a
   failed write. Invalid JSON raises an error rather than looking like a missing file.
@@ -55,16 +56,27 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
 
 ## Backup, restore, and compatibility
 
-Export flushes registered queues before taking a snapshot. Read errors fail the
-export; they do not produce an apparently successful partial ZIP. Downloads open
-the save-file picker before taking the snapshot when the browser supports it,
-then stream compressed ZIP chunks directly to disk with backpressure. Other
-browsers download a Blob assembled from those chunks. Cancelling the picker
-does no snapshot work; failed disk writes abort the output and report an error.
+Export flushes registered queues before taking a snapshot, then locks every
+collection it reads. Writers that stay outside those locks (artifact state, an
+index repair, the copy a reopened pre-migration chat keeps) can still touch a
+file mid-snapshot, so a `NotReadableError` is retried; a file or folder that
+has been deleted since it was listed is reported and left out, because its data
+is gone rather than unreadable. Any other read error fails the export; it does
+not produce an apparently successful partial ZIP.
+
+Downloads open the save-file picker before taking the snapshot when the browser
+supports it, then stream compressed ZIP chunks directly to disk with
+backpressure. The chosen file is opened for writing only once the snapshot is
+ready: the browser stages the bytes in a sibling file and renames it on close,
+and synced or scanned folders can lock that staging file. A browser write failure
+is retried once and otherwise delivered as an ordinary download, so a locked folder does not
+lose the backup. Other browsers download a Blob assembled from those chunks.
+Cancelling the picker does no snapshot work and leaves the chosen file untouched.
 
 Restore decodes and checks the archive before mutation. Matching file paths are
-replaced, while files absent from a partial backup remain untouched. Collection
-indexes are rebuilt from actual records; imported indexes provide only identity
+replaced, while files absent from a partial backup remain untouched. An incoming
+legacy agent definition also removes newer local definitions that would shadow it.
+Collection indexes are rebuilt from actual records; imported indexes provide only identity
 and timestamp hints. A reported write or rebuild failure restores prior bytes
 and indexes. Invalid JSON in known metadata skips the owning record, including
 its sibling files, while preserving any existing copy. Invalid profile JSON skips
@@ -75,11 +87,22 @@ rejected before writing. Artifact content is preserved as supplied, including
 arbitrary JSON files.
 
 The settings drawer restores full or partial OPFS ZIP backups, including chats.
-Agent import accepts ZIPs containing current `AGENTS.md` definitions: full
-backups, collection exports, or single agent packages, including bundled skills.
-Legacy agent/repository imports and pre-OPFS chat JSON imports are no longer
-supported. Existing saved agents remain readable, and agent exports use the
-current format without rewriting local data.
+Restore also accepts an archive that carries a record without its collection
+folder — `chat.json`, `one/chat.json`, `AGENTS.md`, `one/agent.json` and the
+like — and files it under the collection its definition identifies, with blobs,
+artifacts and agent files following the record. A flat chat keeps its stored ID,
+so re-importing it updates the same conversation. A flat `SKILL.md` uses its
+declared skill name as the folder name. Ambiguous record folders stay unchanged;
+folders without a definition follow a flat record when present and otherwise
+stay unchanged. Conflicting normalized paths are rejected before writing.
+
+Agent import accepts ZIPs whose agent folders carry `AGENTS.md`, the older
+`AGENT.md`, or `agent.json`: full backups, collection exports, or single agent
+packages, including bundled skills. An agent folder with none of those is
+reported as skipped rather than dropped silently. Pre-agent `repository.json`
+archives and pre-OPFS chat/agent JSON exports are not supported. Existing saved
+agents remain readable, and agent exports use the current format without
+rewriting local data.
 
 One index scanner serves repair and restore. It preserves custom chat ordering,
 skill identities, and existing timestamps, and never deletes folders. Obsolete

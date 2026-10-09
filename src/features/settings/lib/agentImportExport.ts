@@ -66,23 +66,27 @@ export async function exportSingleAgentAsZip(
   });
 }
 
+/** Supported agent definition filenames. */
+const AGENT_DEFINITIONS = ["AGENTS.md", "AGENT.md", "agent.json"] as const;
+
 /** Accept full backups, collection exports, and a single shareable agent. */
 export async function importAgentsFromZip(file: Blob): Promise<RestoreResult> {
   const files = await readZipFiles(file);
   const mapped = new Map<string, Blob>();
+  const skipped: RestoreResult["skipped"] = [];
   const paths = [...files.keys()];
-  const flat = files.has("AGENTS.md");
-  const roots = flat
-    ? [""]
-    : [
-        ...new Set(
-          paths.flatMap((path) => {
-            const match = path.match(/^((?:agents\/)?[^/]+)\/AGENTS\.md$/);
-            return match ? [match[1]] : [];
-          }),
-        ),
-      ];
-  if (!roots.length) throw new Error("Unrecognized archive: expected an AGENTS.md definition");
+  const flat = AGENT_DEFINITIONS.some((definition) => files.has(definition));
+  const roots = new Set(
+    flat ? [""] : paths.flatMap((path) => path.match(/^((?:agents\/)?[^/]+)\/(AGENTS?\.md|agent\.json)$/)?.[1] ?? []),
+  );
+  // Agent folders without any definition would otherwise vanish from a mixed
+  // archive without a word, leaving the user with a successful-looking import.
+  const agentFolders = new Set(paths.flatMap((path) => path.match(/^agents\/[^/]+(?=\/)/)?.[0] ?? []));
+  for (const folder of agentFolders) {
+    if (!roots.has(folder))
+      skipped.push({ path: folder, reason: "No AGENTS.md, AGENT.md or agent.json definition; skipped the agent." });
+  }
+  if (!roots.size) throw new Error("Unrecognized archive: expected an AGENTS.md, AGENT.md or agent.json definition");
   for (const root of roots) {
     const prefix = root ? `${root}/` : "";
     const id = flat ? crypto.randomUUID() : root.split("/").at(-1)!;
@@ -101,7 +105,8 @@ export async function importAgentsFromZip(file: Blob): Promise<RestoreResult> {
   // Full backups store skills beside agents; shareable exports bundle them.
   for (const [path, blob] of files) if (path.startsWith("skills/")) mapped.set(path, blob);
   if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
-  return restoreFiles(mapped);
+  const result = await restoreFiles(mapped);
+  return { ...result, skipped: [...skipped, ...result.skipped] };
 }
 
 export function triggerAgentImport(): void {

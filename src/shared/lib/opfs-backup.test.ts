@@ -225,6 +225,77 @@ describe("backup and restore", () => {
     await expect(opfs.exportFolderAsZip("chats")).rejects.toThrow("read denied");
   });
 
+  it("fails an export when a file stays unreadable", async () => {
+    memory.put("chats/one/chat.json", storedChat("one"));
+    memory.beforeRead = async () => {
+      throw new DOMException("The file changed", "NotReadableError");
+    };
+    await expect(opfs.exportFolderAsZip("/")).rejects.toThrow("The file changed");
+  });
+
+  it("retries a concurrently rewritten profile in a selected backup", async () => {
+    memory.put("profile.json", '{"name":"Test"}');
+    let attempts = 0;
+    memory.beforeRead = async () => {
+      if (attempts++ === 0) throw new DOMException("The file changed", "NotReadableError");
+    };
+    await opfs.downloadFoldersAsZip(["profile.json"], "backup.zip");
+    const [blob] = vi.mocked(downloadBlob).mock.calls.at(-1)!;
+    const archive = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(await archive.file("profile.json")!.async("string")).toBe('{"name":"Test"}');
+    expect(attempts).toBe(2);
+  });
+
+  it("retries a file that a concurrent writer rewrote while it was read", async () => {
+    memory.put("chats/one/chat.json", storedChat("one"));
+    let attempts = 0;
+    memory.beforeRead = async (path) => {
+      if (path === "chats/one/chat.json" && attempts++ === 0)
+        throw new DOMException("The file changed", "NotReadableError");
+    };
+    const archive = await JSZip.loadAsync(await (await opfs.exportFolderAsZip("/")).arrayBuffer());
+    expect(await archive.file("chats/one/chat.json")!.async("string")).toBe(storedChat("one"));
+    expect(attempts).toBe(2);
+  });
+
+  it("skips a file deleted while the export was running and reports it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    memory.put("chats/one/chat.json", storedChat("one"));
+    memory.put("chats/one/blobs/gone.bin", "bytes");
+    memory.beforeRead = async (path) => {
+      if (path === "chats/one/blobs/gone.bin") throw new DOMException("Missing file", "NotFoundError");
+    };
+    const archive = await JSZip.loadAsync(await (await opfs.exportFolderAsZip("/")).arrayBuffer());
+    expect(Object.keys(archive.files).filter((path) => !path.endsWith("/"))).toEqual(["chats/one/chat.json"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("chats/one/blobs/gone.bin"));
+    warn.mockRestore();
+  });
+
+  it("skips a folder deleted while the export was running", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const vanished = {
+      kind: "directory",
+      name: "gone",
+      entries: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.reject(new DOMException("Missing directory", "NotFoundError")),
+        }),
+      }),
+    } as unknown as FileSystemDirectoryHandle;
+    const chats = {
+      kind: "directory",
+      name: "chats",
+      entries: async function* () {
+        yield ["gone", vanished];
+      },
+    } as unknown as FileSystemDirectoryHandle;
+    const zip = new JSZip();
+    await opfs.addDirectoryToZip(chats, zip, "chats");
+    expect(Object.keys(zip.files)).toEqual(["gone/"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("chats/gone"));
+    warn.mockRestore();
+  });
+
   it("rebuilds only recognizable records and preserves skill IDs and old timestamps", async () => {
     memory.put("skills/index.json", JSON.stringify([{ id: "stable-id", title: "valid", updated: "2020-01-02" }]));
     memory.put("skills/valid/SKILL.md", "---\nname: valid\ndescription: A skill\n---\nBody");

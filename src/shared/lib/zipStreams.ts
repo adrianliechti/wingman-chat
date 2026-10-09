@@ -1,8 +1,11 @@
 import type JSZip from "jszip";
+import { notify } from "./notify";
 import { downloadBlob } from "./utils";
 
 type Progress = (fraction: number) => void;
 const ZIP_TYPE = "application/zip";
+/** Allow a transient file lock to clear before retrying. */
+const WRITE_RETRY_DELAY_MS = 500;
 
 /** Bridge JSZip's pause/resume API to a stream with backpressure. */
 function readable(
@@ -88,13 +91,36 @@ export async function downloadZip(
       if (!(error instanceof DOMException) || !["SecurityError", "NotAllowedError"].includes(error.name)) throw error;
     }
   }
-  const writable = await handle?.createWritable();
-  try {
-    const zip = await createZip();
-    if (writable) await zipStream(zip, onProgress).pipeTo(writable);
-    else await downloadBlob(await generateZipBlob(zip, onProgress), filename, { usePicker: false });
-  } catch (error) {
-    await writable?.abort(error).catch(() => {});
-    throw error;
+  const zip = await createZip();
+  if (handle) {
+    // Open the output after the snapshot to shorten the lifetime of its staging file.
+    if (await writeToFile(handle, zip, onProgress)) return;
+  }
+  onProgress?.(0);
+  await downloadBlob(await generateZipBlob(zip, onProgress), filename, { usePicker: false });
+  if (handle) {
+    notify.warning("Archive download started", "The chosen file could not be written. Check your browser downloads.");
+  }
+}
+
+/** Retry browser write failures once, then let the caller download the archive. */
+async function writeToFile(handle: FileSystemFileHandle, zip: JSZip, onProgress?: Progress): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    let writable: FileSystemWritableFileStream | undefined;
+    onProgress?.(0);
+    try {
+      writable = await handle.createWritable();
+      await zipStream(zip, onProgress).pipeTo(writable);
+      return true;
+    } catch (error) {
+      // Closing after a failed write can commit a truncated archive.
+      await writable?.abort(error).catch(() => {});
+      if (!(error instanceof DOMException)) throw error;
+      if (attempt > 0) {
+        console.warn("Could not write the archive to the chosen file:", error);
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, WRITE_RETRY_DELAY_MS));
+    }
   }
 }

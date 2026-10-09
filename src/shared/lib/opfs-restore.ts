@@ -124,6 +124,24 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
   ) {
     const value = parseBackupJson(path, await blob.text());
     if (!value || typeof value !== "object") throw new Error(`Invalid metadata in backup: ${path}`);
+    if (/^agents\/[^/]+\/agent\.json$/.test(path)) {
+      const agent = value as Record<string, unknown>;
+      if (
+        Array.isArray(agent) ||
+        typeof agent.name !== "string" ||
+        ["instructions", "model", "effort", "verbosity"].some(
+          (key) => agent[key] != null && typeof agent[key] !== "string",
+        ) ||
+        ["skills", "plugins", "tools"].some(
+          (key) =>
+            agent[key] != null &&
+            (!Array.isArray(agent[key]) || agent[key].some((item: unknown) => typeof item !== "string")),
+        ) ||
+        (agent.servers != null && !Array.isArray(agent.servers)) ||
+        (agent.memory != null && typeof agent.memory !== "boolean")
+      )
+        throw new Error(`Invalid agent definition: ${path}`);
+    }
     if (/^chats\/(?:[^/]+\/chat|[^/]+)\.json$/.test(path)) {
       // The native transcript keeps `parts`; chats saved before it keep `content` and migrate on load.
       const messages = (value as { messages?: unknown }).messages;
@@ -258,6 +276,15 @@ export async function restoreFiles(
     .map((key) => `${key}/index.json`);
   const apply = async () => {
     const changes = new Map<string, Blob | undefined>(files);
+    // A restored legacy definition must not be shadowed by a newer local one.
+    // Include removals in the transaction so failed imports restore all formats.
+    for (const path of files.keys()) {
+      const legacy = path.match(/^(agents\/[^/]+)\/(AGENT\.md|agent\.json)$/);
+      if (!legacy || files.has(`${legacy[1]}/AGENTS.md`)) continue;
+      changes.set(`${legacy[1]}/AGENTS.md`, undefined);
+      if (legacy[2] === "agent.json" && !files.has(`${legacy[1]}/AGENT.md`))
+        changes.set(`${legacy[1]}/AGENT.md`, undefined);
+    }
     await prepareMemoryImport(changes);
     return writeFileChanges(changes, {
       extraPaths: indexes,
