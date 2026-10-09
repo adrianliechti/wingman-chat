@@ -20,6 +20,11 @@ frontend.
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
 - `@tanstack/ai-skills` owns skill catalogs, loading, resource tools, and per-run
   activation through its portable skills API.
+- `@tanstack/react-query` owns remote inventories: the model catalog, MCP
+  availability and the skill template index. One shared `QueryClient`
+  (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
+  `resolveModel` and the pickers read the same cached list, refreshed on focus,
+  reconnect and age.
 - MCP apps use `AppFrame` and `AppBridge` from `@mcp-ui/client`, the renderer used
   by TanStack's `MCPAppResource`. It owns iframe initialization and delivery of
   initial tool input and results.

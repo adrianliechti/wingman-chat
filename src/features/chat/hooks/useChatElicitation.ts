@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 
@@ -5,16 +6,22 @@ import type { Elicitation, ElicitationResult, PendingElicitation } from "@/share
 export function useChatElicitation() {
   const [pendingElicitation, setPending] = useState<PendingElicitation | null>(null);
   const pending = useRef<PendingElicitation | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const publish = useCallback((next: PendingElicitation | null) => {
     pending.current = next;
     setPending(next);
   }, []);
+  // A completed URL elicitation stays visible briefly, then clears itself.
+  const hideCompleted = useDebouncer(
+    (completed: PendingElicitation) => {
+      if (pending.current === completed) publish(null);
+    },
+    { wait: 1500 },
+  );
   const clearElicitation = useCallback(() => {
-    clearTimeout(timer.current);
+    hideCompleted.cancel();
     pending.current?.resolve({ action: "cancel" });
     publish(null);
-  }, [publish]);
+  }, [hideCompleted, publish]);
 
   const requestElicitation = useCallback(
     (
@@ -66,11 +73,9 @@ export function useChatElicitation() {
       current.resolve({ action: "accept" });
       const completed = { ...current, waiting: false, completed: true };
       publish(completed);
-      timer.current = setTimeout(() => {
-        if (pending.current === completed) publish(null);
-      }, 1500);
+      hideCompleted.maybeExecute(completed);
     },
-    [publish],
+    [hideCompleted, publish],
   );
 
   useEffect(() => () => clearElicitation(), [clearElicitation]);

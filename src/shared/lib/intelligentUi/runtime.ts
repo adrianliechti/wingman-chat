@@ -8,13 +8,14 @@
  * drive a different renderer, and the state engine can be tested on its own.
  */
 
+import { debounce } from "@tanstack/pacer";
 import { createAtom, createStore, type ReadonlyAtom, type Store } from "@tanstack/store";
 import {
   evaluate,
   ExpressionError,
+  extendScope,
   isTemplate,
   type JsonValue,
-  referencedIdentifiers,
   resolveTemplate,
   type Scope,
   stringify,
@@ -50,29 +51,8 @@ export interface UiRuntime {
   condition: (value: unknown, scope?: Scope) => boolean;
   setValue: (key: string, value: unknown) => void;
   reset: (keys?: string[]) => void;
-  run: (actions: UiAction[], host: ActionHost) => Promise<void>;
-}
-
-/** Order computed values so each sees the ones it references, falling back to declaration order on cycles. */
-function orderComputed(computed: UiDocument["computed"]): UiDocument["computed"] {
-  const byKey = new Map(computed.map((entry) => [entry.key, entry]));
-  const ordered: UiDocument["computed"] = [];
-  const visited = new Set<string>();
-  const visiting = new Set<string>();
-  const visit = (key: string) => {
-    if (visited.has(key) || visiting.has(key)) return;
-    const entry = byKey.get(key);
-    if (!entry) return;
-    visiting.add(key);
-    for (const dependency of referencedIdentifiers(entry.expression)) {
-      if (dependency !== key && byKey.has(dependency)) visit(dependency);
-    }
-    visiting.delete(key);
-    visited.add(key);
-    ordered.push(entry);
-  };
-  for (const entry of computed) visit(entry.key);
-  return ordered;
+  /** Run button actions; `extra` adds iteration values (`item`, `index`) to what templates see. */
+  run: (actions: UiAction[], host: ActionHost, extra?: Scope) => Promise<void>;
 }
 
 function initialState(document: UiDocument): Scope {
@@ -87,7 +67,6 @@ function cloneJson<T>(value: T): T {
 }
 
 export function createUiRuntime(document: UiDocument, saved?: Scope): UiRuntime {
-  const computed = orderComputed(document.computed);
   const defaults = initialState(document);
   // Saved values only fill keys the document still declares; a renamed key starts fresh.
   const restored = saved
@@ -98,12 +77,37 @@ export function createUiRuntime(document: UiDocument, saved?: Scope): UiRuntime 
   const scope = createAtom<ScopeSnapshot>(() => {
     const values: Scope = { ...state.get() };
     const errors: Record<string, string> = {};
-    for (const { key, expression } of computed) {
+    const evaluating = new Set<string>();
+    // Resolve dependencies when they are read, including inside map/filter
+    // expressions supplied by state. Each result replaces its getter so it
+    // is evaluated only once per state snapshot.
+    for (const { key, expression } of document.computed) {
+      Object.defineProperty(values, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          if (evaluating.has(key)) throw new ExpressionError(`Circular computed dependency: ${key}`);
+          evaluating.add(key);
+          let value: unknown = null;
+          try {
+            value = isTemplate(expression) ? resolveTemplate(expression, values) : evaluate(expression, values);
+            return value;
+          } catch (error) {
+            errors[key] = error instanceof Error ? error.message : String(error);
+            throw error;
+          } finally {
+            evaluating.delete(key);
+            Object.defineProperty(values, key, { value, writable: true, configurable: true, enumerable: true });
+          }
+        },
+      });
+    }
+    // Publish ordinary values and all errors, never lazy getters, to the UI.
+    for (const { key } of document.computed) {
       try {
-        values[key] = isTemplate(expression) ? resolveTemplate(expression, values) : evaluate(expression, values);
-      } catch (error) {
-        values[key] = null;
-        errors[key] = error instanceof Error ? error.message : String(error);
+        void values[key];
+      } catch {
+        // The getter recorded the error and replaced itself with null.
       }
     }
     return { values, errors };
@@ -144,9 +148,10 @@ export function createUiRuntime(document: UiDocument, saved?: Scope): UiRuntime 
     });
   };
 
-  const run = async (actions: UiAction[], host: ActionHost) => {
+  const run = async (actions: UiAction[], host: ActionHost, extra?: Scope) => {
     for (const action of actions) {
-      const current = scope.get().values;
+      // Re-read after every action so a `set` followed by a `send` carries the new values.
+      const current = extra ? extendScope(scope.get().values, extra) : scope.get().values;
       switch (action.type) {
         case "set": {
           const updates: Scope = {};
@@ -167,8 +172,12 @@ export function createUiRuntime(document: UiDocument, saved?: Scope): UiRuntime 
           break;
         }
         case "copy": {
+          if (!host.copyText) {
+            host.notify?.("Copying text is not available here", "error");
+            return;
+          }
           const text = stringify(resolve(action.text, current));
-          await host.copyText?.(text);
+          await host.copyText(text);
           host.notify?.("Copied", "info");
           break;
         }
@@ -263,11 +272,7 @@ export function getUiRuntime(source: string, document: UiDocument): UiRuntime {
   }
   const key = hashSource(source);
   const runtime = createUiRuntime(document, loadSavedState(key));
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  runtime.state.subscribe((value) => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => saveState(key, value), 300);
-  });
+  runtime.state.subscribe(debounce((value: Scope) => saveState(key, value), { wait: 300 }));
   runtimes.set(source, runtime);
   while (runtimes.size > MAX_RUNTIMES) runtimes.delete(runtimes.keys().next().value as string);
   return runtime;

@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiRenderer } from "./UiRenderer";
+import { Markdown } from "@/shared/ui/Markdown";
 
 vi.mock("@/shared/lib/notify", () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/shared/lib/confirm", () => ({ confirm: vi.fn(async () => true) }));
@@ -46,6 +47,92 @@ async function render(source: string, props: Partial<Parameters<typeof UiRendere
     root!.render(<UiRenderer source={source} {...props} />);
   });
 }
+
+it("keeps form submission disabled while streaming and submits through the form event", async () => {
+  const source = JSON.stringify({
+    state: { name: "Ada" },
+    children: [
+      {
+        type: "form",
+        submit: "Create",
+        required: ["name"],
+        message: "Create {{ name }}",
+        children: [{ type: "input", bind: "name", label: "Name" }],
+      },
+    ],
+  });
+  const onSendMessage = vi.fn();
+  await render(source, { isStreaming: true, onSendMessage });
+  expect(buttonNamed("Create").disabled).toBe(true);
+  await act(async () => {
+    container.querySelector("form")!.requestSubmit();
+  });
+  expect(onSendMessage).not.toHaveBeenCalled();
+  await render(source, { onSendMessage });
+  expect(buttonNamed("Create").type).toBe("submit");
+  await act(async () => {
+    container.querySelector("form")!.requestSubmit();
+  });
+  expect(onSendMessage).toHaveBeenCalledExactlyOnceWith('Create Ada\n\nCurrent values: {"name":"Ada"}');
+});
+
+it("requires meaningful text in required form fields", async () => {
+  await render(
+    JSON.stringify({
+      state: { name: "   " },
+      children: [{ type: "form", submit: "Save", required: ["name"], children: [{ type: "input", bind: "name" }] }],
+    }),
+  );
+  expect(buttonNamed("Save").disabled).toBe(true);
+});
+
+it("preserves SVG element case for gradients and animation", async () => {
+  await render(
+    JSON.stringify({
+      children: [
+        {
+          type: "svg",
+          label: "Gradient",
+          markup:
+            "<svg viewBox='0 0 20 20'><defs><linearGradient id='fade'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='20' height='20' fill='url(#fade)'/></svg>",
+        },
+      ],
+    }),
+  );
+  expect(container.querySelector("#fade")?.localName).toBe("linearGradient");
+});
+
+it.each(["wingman-ui", "intelligent-ui"])("renders the %s fence alias through Markdown", async (language) => {
+  const source = JSON.stringify({ children: [{ type: "heading", text: "Alias rendered" }] });
+  await act(async () => {
+    root!.render(<Markdown>{`\`\`\`${language}\n${source}\n\`\`\``}</Markdown>);
+  });
+  expect(container.querySelector("h3")?.textContent).toBe("Alias rendered");
+});
+
+it("keeps radios in separate interfaces independent even when their state keys match", async () => {
+  const source = (title: string) =>
+    JSON.stringify({
+      title,
+      state: { choice: "A" },
+      children: [{ type: "radio", label: title, bind: "choice", options: ["A", "B"] }],
+    });
+  await act(async () => {
+    root!.render(
+      <>
+        <UiRenderer source={source("First choice")} />
+        <UiRenderer source={source("Second choice")} />
+      </>,
+    );
+  });
+  const radios = container.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+  expect(radios[0].name).not.toBe(radios[2].name);
+  await act(async () => {
+    radios[3].click();
+  });
+  expect(radios[0].checked).toBe(true);
+  expect(radios[3].checked).toBe(true);
+});
 
 /** Set a controlled input's value through the native setter so React sees the change. */
 function setInputValue(input: HTMLInputElement, value: string) {
@@ -199,6 +286,115 @@ it("tracks a checklist and renders key-value summaries", async () => {
   expect(metricValue()).toBe("1");
 });
 
+it("enables state controls, actions and saved state only after streaming finishes", async () => {
+  const source = JSON.stringify({
+    title: "Streaming preview",
+    state: { guests: 4 },
+    children: [
+      { type: "metric", label: "Guests", value: "{{ guests }}" },
+      { type: "stepper", bind: "guests", label: "Guests", min: 1 },
+      { type: "button", label: "Continue", action: { send: "Plan for {{ guests }} guests" } },
+    ],
+  });
+  const onSendMessage = vi.fn();
+  const getItem = vi.fn(() => JSON.stringify({ guests: 7 }));
+  vi.stubGlobal("localStorage", { getItem, setItem: vi.fn(), removeItem: vi.fn() });
+
+  // A valid prefix and complete JSON still belong to the preview until the
+  // host marks the fence finished.
+  for (const preview of [source.slice(0, -2) + ",", source]) {
+    await render(preview, { isStreaming: true, onSendMessage });
+    expect(metricValue()).toBe("4");
+    expect(buttonNamed("+").disabled).toBe(true);
+    expect(buttonNamed("Continue").disabled).toBe(true);
+    expect(container.querySelector('input[type="number"]')?.hasAttribute("disabled")).toBe(true);
+    await act(async () => {
+      buttonNamed("+").click();
+      buttonNamed("Continue").click();
+    });
+    expect(metricValue()).toBe("4");
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(getItem).not.toHaveBeenCalled();
+  }
+
+  await render(source, { isStreaming: false, onSendMessage });
+  expect(getItem).toHaveBeenCalled();
+  expect(metricValue()).toBe("7");
+  expect(buttonNamed("+").disabled).toBe(false);
+  expect(buttonNamed("Continue").disabled).toBe(false);
+  await act(async () => {
+    buttonNamed("+").click();
+  });
+  expect(metricValue()).toBe("8");
+  await act(async () => {
+    buttonNamed("Continue").click();
+  });
+  expect(onSendMessage).toHaveBeenCalledExactlyOnceWith("Plan for 8 guests");
+});
+
+it("renders icons from the shared Lucide set with tolerant names", async () => {
+  await render(
+    JSON.stringify({
+      children: [
+        { type: "icon", name: "ChefHat", label: "Chef" },
+        { type: "icon", name: "no-such-icon" },
+        { type: "button", label: "Duplicate", icon: "copy", action: { copy: "x" } },
+      ],
+    }),
+  );
+  // The icon set loads asynchronously on first use.
+  for (let i = 0; i < 20 && !container.querySelector('[data-icon="ChefHat"] path'); i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+  }
+  expect(container.querySelector('[data-icon="ChefHat"] path')).not.toBeNull();
+  expect(container.querySelector('[role="img"][aria-label="Chef"]')).not.toBeNull();
+  expect(container.querySelector('[data-icon="NoSuchIcon"] path')).not.toBeNull();
+  expect(buttonNamed("Duplicate").querySelector('[data-icon="Copy"]')).not.toBeNull();
+});
+
+it("submits a form with every bound value and renders links safely", async () => {
+  const onSendMessage = vi.fn();
+  await render(
+    JSON.stringify({
+      state: { city: "", days: 2 },
+      children: [
+        {
+          type: "form",
+          submit: "Plan",
+          required: ["city"],
+          message: "Plan a trip.",
+          children: [
+            { type: "input", bind: "city", label: "City" },
+            { type: "stepper", bind: "days", label: "Days", min: 1 },
+          ],
+        },
+        { type: "link", text: "Guide", href: "https://example.com/guide" },
+        { type: "link", text: "Nope", href: "javascript:alert(1)" },
+      ],
+    }),
+    { onSendMessage },
+  );
+  expect(buttonNamed("Plan").disabled).toBe(true);
+  await act(async () => {
+    setInputValue(container.querySelector<HTMLInputElement>('input[type="text"]')!, "Lisbon");
+  });
+  expect(buttonNamed("Plan").disabled).toBe(false);
+  await act(async () => {
+    buttonNamed("Plan").click();
+  });
+  expect(onSendMessage).toHaveBeenCalledWith(
+    `Plan a trip.\n\nCurrent values: ${JSON.stringify({ city: "Lisbon", days: 2 })}`,
+  );
+
+  const anchors = container.querySelectorAll("a");
+  expect(anchors).toHaveLength(1);
+  expect(anchors[0].getAttribute("rel")).toContain("noopener");
+  expect(anchors[0].getAttribute("href")).toBe("https://example.com/guide");
+  expect(container.textContent).toContain("Nope");
+});
+
 it("shows a placeholder while streaming and the JSON when a document is invalid", async () => {
   await render('{"children": [', { isStreaming: true });
   expect(container.textContent).toContain("Building interface");
@@ -230,4 +426,54 @@ it("keeps state when the same document is rendered again", async () => {
   root = createRoot(container);
   await render(source);
   expect(metricValue()).toBe("2");
+});
+
+it("repeats children per item with item and index in scope, actions included", async () => {
+  const onSendMessage = vi.fn();
+  await render(
+    JSON.stringify({
+      state: {
+        budget: 50,
+        plans: [
+          { name: "Starter", price: 0 },
+          { name: "Pro", price: 29 },
+          { name: "Max", price: 99 },
+        ],
+      },
+      computed: { affordable: "filter(plans, 'price <= budget')" },
+      children: [
+        { type: "keyvalue", items: [{ label: "Budget", value: "{{ budget }} CHF" }] },
+        {
+          type: "each",
+          items: "{{ affordable }}",
+          as: "plan",
+          children: [
+            {
+              type: "badge",
+              text: "{{ index + 1 }}. {{ plan.name }}",
+              tone: "{{ plan.price == 0 ? 'success' : 'info' }}",
+            },
+            {
+              type: "button",
+              label: "Pick {{ plan.name }}",
+              action: { send: "I take {{ plan.name }} at {{ plan.price }}" },
+            },
+          ],
+        },
+        { type: "input", bind: "when", kind: "date", label: "Start" },
+        { type: "code", text: "budget = {{ budget }}", language: "python" },
+      ],
+    }),
+    { onSendMessage },
+  );
+  expect(container.querySelector("dd")?.textContent).toBe("50 CHF");
+  expect(container.textContent).toContain("1. Starter");
+  expect(container.textContent).toContain("2. Pro");
+  expect(container.textContent).not.toContain("Max");
+  expect(container.textContent).toContain("budget = 50");
+  expect(container.querySelector('input[type="date"]')).not.toBeNull();
+  await act(async () => {
+    buttonNamed("Pick Pro").click();
+  });
+  expect(onSendMessage).toHaveBeenCalledWith("I take Pro at 29");
 });

@@ -215,10 +215,119 @@ Work through a problem one step at a time with Back and Next; `visible` shows th
 }
 ```
 
+## Switching between alternatives
+
+"Which plan should I pick?" The verdict is in prose; the interface shows what each tier includes without a table of everything at once.
+
+```ui
+{
+  "state": {
+    "tier": "pro",
+    "plans": {
+      "starter": { "price": 0, "projects": "1 project", "support": "Community", "fit": "Trying it out" },
+      "pro": { "price": 29, "projects": "Unlimited projects", "support": "Email, 1 business day", "fit": "A team shipping weekly" },
+      "team": { "price": 99, "projects": "Unlimited projects + SSO", "support": "Priority", "fit": "Several teams, compliance needs" }
+    }
+  },
+  "computed": { "plan": "plans[tier]" },
+  "children": [
+    { "type": "segmented", "bind": "tier", "options": [
+      { "value": "starter", "label": "Starter" }, { "value": "pro", "label": "Pro" }, { "value": "team", "label": "Team" }
+    ] },
+    { "type": "row", "align": "center", "children": [
+      { "type": "metric", "label": "Per month", "value": "{{ plan.price }}", "format": "currency", "currency": "EUR", "digits": 0 },
+      { "type": "badge", "text": "{{ tier == 'pro' ? 'Recommended for you' : 'Also possible' }}", "tone": "{{ tier == 'pro' ? 'success' : 'neutral' }}" }
+    ] },
+    { "type": "keyvalue", "items": [
+      { "label": "Projects", "value": "{{ plan.projects }}" }, { "label": "Support", "value": "{{ plan.support }}" }, { "label": "Best for", "value": "{{ plan.fit }}" }
+    ] },
+    { "type": "button", "label": "Draft the upgrade email for {{ tier }}", "action": { "send": "Draft an email to my team announcing we move to the {{ tier }} plan at EUR {{ plan.price }} per month." } }
+  ]
+}
+```
+
+## Options that follow data
+
+"Which of these restaurants fit a group of six under 40 each?" The list came from a search tool earlier in the turn; `each` turns the matches into working buttons.
+
+```ui
+{
+  "state": {
+    "budget": 40,
+    "places": [
+      { "name": "Trattoria Rosa", "price": 32, "note": "Books tables of 6" },
+      { "name": "Hanoi Kitchen", "price": 24, "note": "Walk-in only" },
+      { "name": "The Grange", "price": 58, "note": "Tasting menu" }
+    ]
+  },
+  "computed": { "fit": "sortBy(filter(places, 'price <= budget'), 'price')" },
+  "children": [
+    { "type": "slider", "bind": "budget", "label": "Budget per person", "min": 15, "max": 80, "step": 5, "format": "currency", "currency": "CHF" },
+    { "type": "each", "items": "{{ fit }}", "as": "place", "children": [
+      { "type": "row", "align": "center", "children": [
+        { "type": "text", "text": "**{{ place.name }}** · {{ currency(place.price, 'CHF') }} · {{ place.note }}" },
+        { "type": "button", "label": "Book {{ place.name }}", "action": { "send": "Draft a reservation request to {{ place.name }} for 6 people." } }
+      ] }
+    ] },
+    { "type": "text", "tone": "muted", "size": "sm", "visible": "len(fit) == 0", "text": "Nothing fits that budget; raise it or ask for more options." }
+  ]
+}
+```
+
+## Compose and copy a configuration
+
+"Give me a data source config." Controls feed a `code` block that always shows the exact text the copy button will copy; the button stays disabled until the name is filled in.
+
+```ui
+{
+  "state": { "name": "", "engine": "postgresql", "pool": 10 },
+  "computed": {
+    "config": "'[datasource]\nname = "' + trim(name) + '"\nengine = "' + engine + '"\npool_size = ' + pool"
+  },
+  "children": [
+    { "type": "row", "children": [
+      { "type": "input", "bind": "name", "label": "Data source name", "placeholder": "customer_database" },
+      { "type": "select", "bind": "engine", "label": "Engine", "options": [
+        { "value": "postgresql", "label": "PostgreSQL" }, { "value": "mysql", "label": "MySQL" }, { "value": "duckdb", "label": "DuckDB" }
+      ] },
+      { "type": "stepper", "bind": "pool", "label": "Pool size", "min": 1, "max": 100 }
+    ] },
+    { "type": "code", "language": "toml", "text": "{{ config }}" },
+    { "type": "button", "label": "Copy configuration", "variant": "primary", "disabled": "trim(name) == ''", "action": { "copy": "{{ config }}" } }
+  ]
+}
+```
+
+## A short form
+
+Several answers at once, sent together. The submit button stays disabled until the required keys are filled.
+
+```ui
+{
+  "state": { "city": "", "days": 3, "pace": "relaxed", "interests": [] },
+  "children": [
+    { "type": "form", "title": "Trip brief", "submit": "Plan my trip", "required": ["city"],
+      "message": "Plan a city trip with these preferences.",
+      "children": [
+        { "type": "input", "bind": "city", "label": "City", "placeholder": "Lisbon" },
+        { "type": "row", "children": [
+          { "type": "stepper", "bind": "days", "label": "Days", "min": 1, "max": 14 },
+          { "type": "segmented", "bind": "pace", "label": "Pace", "options": ["relaxed", "packed"] }
+        ] },
+        { "type": "multiselect", "bind": "interests", "label": "Interests", "columns": 2,
+          "options": ["food", "museums", "architecture", "nightlife", "nature", "shopping"] }
+      ]
+    }
+  ]
+}
+```
+
 ## Patterns to avoid
 
 - A `text` component holding the whole answer: write prose outside the fence instead.
 - Buttons without `action`, or `send` messages that do not include the values the user changed.
 - Large data pasted into `state` (hundreds of rows): save a file and build an artifact.
 - Several unrelated charts side by side: one chart answers one question.
-- Fabricated "live" figures: show only what the conversation or a tool produced, and say when a number is an estimate.
+- Fabricated "live" figures: show only what the conversation or a tool produced, and caption estimates or examples as illustrative.
+- A button labelled "Save" or "Book" that only changes local state: say what really happens, or `send` the request to the assistant.
+- A badge on everything: one badge for the one status that matters.

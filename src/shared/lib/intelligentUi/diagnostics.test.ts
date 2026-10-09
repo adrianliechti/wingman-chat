@@ -6,6 +6,8 @@ const good = '```ui\n{"children": [{"type": "text", "text": "hi"}]}\n```';
 const broken = '```ui\n{"children": [{"type": "hologram"}, {"type": "slider", "label": "x"}]}\n```';
 const invalid = "```ui\n{not json\n```";
 const typo = '```ui\n{"state": {"guests": 2}, "children": [{"type": "text", "text": "{{ guest }}"}]}\n```';
+const unrunnable =
+  '```ui\n{"state": {"a": 2}, "computed": {"b": "a.toFixed(1)"}, "children": [{"type": "text", "text": "{{ nope(a) }}"}]}\n```';
 
 describe("extractUiFences", () => {
   it("finds ui fences and ignores other code blocks", () => {
@@ -18,6 +20,9 @@ describe("collectUiDiagnostics", () => {
   it("is empty for valid blocks and lists problems otherwise", () => {
     expect(collectUiDiagnostics(good)).toEqual([]);
     expect(collectUiDiagnostics(typo)).toEqual(["ui block 1: references undeclared state keys: guest"]);
+    expect(collectUiDiagnostics(unrunnable)).toEqual([
+      'ui block 1: computed "b": Unexpected token "("; {{ nope(a) }}: Unknown function "nope"',
+    ]);
     expect(collectUiDiagnostics(`${good}\n${broken}\n${invalid}`)).toEqual([
       'ui block 2: Unknown component "hologram"; A slider needs a "bind" state key',
       expect.stringMatching(/^ui block 3: not rendered, /),

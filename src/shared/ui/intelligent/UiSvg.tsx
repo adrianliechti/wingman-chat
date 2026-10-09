@@ -81,7 +81,7 @@ function innerNodes(nodes: ReactNode[]): ReactNode[] {
 export const UiSvg = memo(function UiSvg({ markup, height, label }: UiSvgProps) {
   const drawing = useMemo(() => {
     const source = stripOuterWrapper(markup);
-    const nodes = innerNodes(sanitizeHtmlToReact(source, { config: SVG_CONFIG }));
+    const nodes = innerNodes(sanitizeHtmlToReact(source, { config: SVG_CONFIG, namespace: "svg" }));
     if (!nodes.length) return null;
     return createElement("svg", { xmlns: "http://www.w3.org/2000/svg", ...rootAttributes(source) }, ...nodes);
   }, [markup]);

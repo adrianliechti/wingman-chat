@@ -1,11 +1,21 @@
 import { useSelector } from "@tanstack/react-store";
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
-import { type CSSProperties, lazy, memo, Suspense, useContext, useState } from "react";
+import { createContext, type CSSProperties, lazy, memo, Suspense, useContext, useId, useState } from "react";
 import { cn } from "@/shared/lib/cn";
-import { formatValue, isTemplate, type Scope, stringify, truthy } from "@/shared/lib/intelligentUi/expression";
+import {
+  extendScope,
+  formatValue,
+  isTemplate,
+  type Scope,
+  stringify,
+  truthy,
+} from "@/shared/lib/intelligentUi/expression";
 import type { UiAction, UiNode, UiProps } from "@/shared/lib/intelligentUi/schema";
+import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { UiContext, type UiHostContext } from "./UiContext";
 import type { UiChartProps } from "./UiChart";
+import { HtmlPreview } from "@/shared/ui/HtmlPreview";
+import { UiIcon } from "./UiIcon";
 import { UiSvg } from "./UiSvg";
 import { UiTable, type UiTableProps } from "./UiTable";
 
@@ -27,18 +37,35 @@ function resolveDeep(value: unknown, resolve: (value: unknown) => unknown, depth
   return value;
 }
 
+/** Props that hold child components or deferred actions rather than values, so templates inside them stay raw. */
+const RAW_PROPS: Partial<Record<UiNode["type"], Set<string>>> = {
+  tabs: new Set(["items"]),
+  button: new Set(["action"]),
+  form: new Set(["action"]),
+  html: new Set(["markup"]),
+};
+
 function resolveProps(
+  type: UiNode["type"],
   props: UiProps,
   resolve: (value: unknown) => unknown,
   condition: (value: unknown) => boolean,
 ): UiProps {
+  const raw = RAW_PROPS[type];
   const out: UiProps = {};
   for (const [key, value] of Object.entries(props)) {
-    out[key] =
-      key === "action" || key === "items" ? value : key === "disabled" ? condition(value) : resolveDeep(value, resolve);
+    out[key] = raw?.has(key) ? value : key === "disabled" ? condition(value) : resolveDeep(value, resolve);
   }
   return out;
 }
+
+/**
+ * Values an `each` component adds for its children (`item`, `index` and the
+ * `as` name). Nested iterations merge with the enclosing one.
+ */
+const IterationContext = createContext<Scope | null>(null);
+const BADGE_TONES = new Set(["neutral", "info", "success", "warning", "error"]);
+const MAX_ITERATIONS = 200;
 
 function num(value: unknown, fallback: number): number {
   if (value === null || value === undefined || value === "") return fallback;
@@ -90,6 +117,18 @@ function Field({
       {label && inline && <span className="text-neutral-800 dark:text-neutral-200">{label}</span>}
       {description && <span className="text-xs text-neutral-500 dark:text-neutral-400">{description}</span>}
     </label>
+  );
+}
+
+/** A source or "illustrative values" note under a chart or table. */
+function Captioned({ caption, children }: { caption: unknown; children: React.ReactNode }) {
+  const text = stringify(caption);
+  if (!text) return <>{children}</>;
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      {children}
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">{text}</p>
+    </div>
   );
 }
 
@@ -224,29 +263,40 @@ const CALLOUT: Record<string, { icon: typeof Info; className: string }> = {
   },
 };
 
-function Button({ props, context }: { props: UiProps; context: UiHostContext }) {
+function Button({
+  props,
+  context,
+  extra,
+  formContent,
+}: {
+  props: UiProps;
+  context: UiHostContext;
+  extra: Scope | null;
+  /** A form and its submit button share the same action and pending state. */
+  formContent?: React.ReactNode;
+}) {
   const [busy, setBusy] = useState(false);
-  const disabled = bool(props.disabled) || busy;
+  const disabled = !!context.streaming || bool(props.disabled) || busy;
   const variant = typeof props.variant === "string" ? props.variant : "secondary";
   const actions = (Array.isArray(props.action) ? props.action : []) as UiAction[];
   const onClick = async () => {
     if (disabled) return;
     if (typeof props.confirm === "string" && props.confirm.trim()) {
-      const ok = await (context.host.confirm?.(stringify(context.runtime.resolve(props.confirm))) ?? true);
+      const ok = await (context.host.confirm?.(stringify(props.confirm)) ?? true);
       if (!ok) return;
     }
     setBusy(true);
-    const failure = await context.runtime.run(actions, context.host).then(
+    const failure = await context.runtime.run(actions, context.host, extra ?? undefined).then(
       () => null,
       (error: unknown) => (error instanceof Error ? error.message : "The action failed"),
     );
     setBusy(false);
     if (failure) context.host.notify?.(failure, "error");
   };
-  return (
+  const button = (
     <button
-      type="button"
-      onClick={() => void onClick()}
+      type={formContent === undefined ? "button" : "submit"}
+      onClick={formContent === undefined ? () => void onClick() : undefined}
       disabled={disabled}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
@@ -258,9 +308,27 @@ function Button({ props, context }: { props: UiProps; context: UiHostContext }) 
         variant === "danger" && "bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600",
       )}
     >
-      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : typeof props.icon === "string" && props.icon ? (
+        <UiIcon name={props.icon} size={14} />
+      ) : null}
       {stringify(props.label)}
     </button>
+  );
+  if (formContent === undefined) return button;
+  return (
+    <form
+      className="flex min-w-0 flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40"
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void onClick();
+      }}
+    >
+      {formContent}
+      <div className="flex justify-end">{button}</div>
+    </form>
   );
 }
 
@@ -310,6 +378,15 @@ function Input({ props, value, onChange }: { props: UiProps; value: unknown; onC
     >
       {kind === "multiline" ? (
         <textarea {...common} rows={3} value={stringify(value)} onChange={(event) => onChange(event.target.value)} />
+      ) : kind === "date" ? (
+        <input
+          {...common}
+          type="date"
+          value={/^\d{4}-\d{2}-\d{2}/.test(stringify(value)) ? stringify(value).slice(0, 10) : ""}
+          min={typeof props.min === "string" ? props.min : undefined}
+          max={typeof props.max === "string" ? props.max : undefined}
+          onChange={(event) => onChange(event.target.value || null)}
+        />
       ) : kind === "number" ? (
         <input
           {...common}
@@ -346,13 +423,16 @@ function NodeContent({
   props,
   values,
   context,
+  extra,
 }: {
   node: Exclude<UiNode, { type: "error" }>;
   props: UiProps;
   values: Scope;
   context: UiHostContext;
+  extra: Scope | null;
 }) {
   const { runtime, renderText } = context;
+  const controlId = useId();
   const bind = node.bind ?? "";
   const value = bind ? values[bind] : undefined;
   const set = (next: unknown) => runtime.setValue(bind, next);
@@ -418,6 +498,43 @@ function NodeContent({
       );
     case "tabs":
       return <Tabs items={node.tabs ?? []} />;
+    case "each": {
+      const items = Array.isArray(props.items) ? props.items.slice(0, MAX_ITERATIONS) : [];
+      const name = typeof props.as === "string" && props.as.trim() ? props.as.trim() : "item";
+      return (
+        <>
+          {items.map((item, index) => (
+            <IterationContext key={index} value={{ ...extra, item, index, [name]: item }}>
+              <Children nodes={node.children} />
+            </IterationContext>
+          ))}
+        </>
+      );
+    }
+    case "badge": {
+      const tone = BADGE_TONES.has(str(props.tone, "")) ? str(props.tone, "") : "neutral";
+      return (
+        <span
+          className={cn(
+            "inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+            tone === "neutral" &&
+              "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200",
+            tone === "info" &&
+              "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-200",
+            tone === "success" &&
+              "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200",
+            tone === "warning" &&
+              "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200",
+            tone === "error" &&
+              "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200",
+          )}
+        >
+          {stringify(props.text)}
+        </span>
+      );
+    }
+    case "code":
+      return <CodeRenderer code={stringify(props.text)} language={str(props.language, "text")} subtle />;
     case "divider":
       return <hr className="border-neutral-200 dark:border-neutral-800" />;
     case "heading": {
@@ -764,6 +881,105 @@ function NodeContent({
         </div>
       );
     }
+    case "icon": {
+      const size = props.size === "sm" ? 14 : props.size === "lg" ? 28 : 20;
+      const tone = str(props.tone, "default");
+      return (
+        <span
+          role={props.label ? "img" : undefined}
+          aria-label={typeof props.label === "string" ? props.label : undefined}
+          aria-hidden={props.label ? undefined : true}
+          className={cn(
+            "inline-flex shrink-0 items-center",
+            tone === "muted" && "text-neutral-500 dark:text-neutral-400",
+            tone === "accent" && "text-neutral-900 dark:text-neutral-100",
+            tone === "success" && "text-emerald-700 dark:text-emerald-400",
+            tone === "warning" && "text-amber-700 dark:text-amber-400",
+            tone === "error" && "text-red-700 dark:text-red-400",
+          )}
+        >
+          <UiIcon name={props.name} size={size} />
+        </span>
+      );
+    }
+    case "link": {
+      const href = stringify(props.href).trim();
+      if (!/^(https?:\/\/|mailto:)/i.test(href)) {
+        return <span className="text-sm text-neutral-500">{stringify(props.text) || href}</span>;
+      }
+      const chip = props.kind === "chip";
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          title={typeof props.description === "string" ? props.description : undefined}
+          className={cn(
+            chip
+              ? "inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-700 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              : "text-sm text-neutral-900 underline decoration-neutral-400 underline-offset-2 hover:decoration-neutral-900 dark:text-neutral-100 dark:decoration-neutral-600 dark:hover:decoration-neutral-100",
+          )}
+        >
+          <span className="truncate">{stringify(props.text) || href}</span>
+          {chip && <UiIcon name="external-link" size={11} />}
+        </a>
+      );
+    }
+    case "html": {
+      // The page is self-contained: it is not template-resolved, so scripts may use `{{` freely.
+      const markup = stringify(node.props.markup);
+      const height = Math.max(120, Math.min(800, num(props.height, 320)));
+      return (
+        <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
+          <HtmlPreview
+            content={markup}
+            title={typeof props.title === "string" ? props.title : "Embedded page"}
+            className="w-full"
+            style={{ height }}
+            reloadDebounceMs={250}
+          />
+        </div>
+      );
+    }
+    case "form": {
+      const required = Array.isArray(props.required) ? props.required.map(stringify) : [];
+      const missing = required.some((key) => {
+        const current = values[key];
+        return (
+          current === null ||
+          current === undefined ||
+          (typeof current === "string" && !current.trim()) ||
+          (Array.isArray(current) && !current.length)
+        );
+      });
+      const action = Array.isArray(node.props.action)
+        ? (node.props.action as UiAction[])
+        : [{ type: "send" as const, message: stringify(props.message ?? props.submit ?? "Submitted"), context: true }];
+      return (
+        <Button
+          props={{ label: stringify(props.submit ?? "Submit"), action, variant: "primary", disabled: missing }}
+          context={context}
+          extra={extra}
+          formContent={
+            <>
+              {props.title || props.description ? (
+                <header className="flex flex-col gap-0.5">
+                  {props.title ? (
+                    <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {stringify(props.title)}
+                    </h4>
+                  ) : null}
+                  {props.description ? (
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{stringify(props.description)}</p>
+                  ) : null}
+                </header>
+              ) : null}
+              <Children nodes={node.children} />
+            </>
+          }
+        />
+      );
+    }
     case "list": {
       const items = Array.isArray(props.items) ? props.items.slice(0, 500) : [];
       const Tag = bool(props.ordered) ? "ol" : "ul";
@@ -793,11 +1009,13 @@ function NodeContent({
     }
     case "table":
       return (
-        <UiTable
-          {...(props as unknown as UiTableProps)}
-          sortable={props.sortable === undefined ? true : bool(props.sortable)}
-          pageSize={props.pageSize === undefined ? undefined : num(props.pageSize, 15)}
-        />
+        <Captioned caption={props.caption}>
+          <UiTable
+            {...(props as unknown as UiTableProps)}
+            sortable={props.sortable === undefined ? true : bool(props.sortable)}
+            pageSize={props.pageSize === undefined ? undefined : num(props.pageSize, 15)}
+          />
+        </Captioned>
       );
     case "chart":
       return (
@@ -811,12 +1029,14 @@ function NodeContent({
             </div>
           }
         >
-          <UiChart
-            {...(props as unknown as UiChartProps)}
-            stacked={bool(props.stacked)}
-            horizontal={bool(props.horizontal)}
-            height={props.height === undefined ? undefined : num(props.height, 260)}
-          />
+          <Captioned caption={props.caption}>
+            <UiChart
+              {...(props as unknown as UiChartProps)}
+              stacked={bool(props.stacked)}
+              horizontal={bool(props.horizontal)}
+              height={props.height === undefined ? undefined : num(props.height, 260)}
+            />
+          </Captioned>
         </Suspense>
       );
     case "slider":
@@ -902,7 +1122,7 @@ function NodeContent({
             <label key={option.value} className="flex items-center gap-2">
               <input
                 type="radio"
-                name={bind}
+                name={controlId}
                 value={option.value}
                 checked={current === option.value}
                 onChange={() => set(coerceOption(option.value, props.options))}
@@ -934,7 +1154,7 @@ function NodeContent({
         </Field>
       );
     case "button":
-      return <Button props={props} context={context} />;
+      return <Button props={props} context={context} extra={extra} />;
     default:
       return null;
   }
@@ -942,6 +1162,7 @@ function NodeContent({
 
 export const UiNodeView = memo(function UiNodeView({ node }: { node: UiNode }) {
   const context = useContext(UiContext);
+  const extra = useContext(IterationContext);
   const snapshot = useSelector(context?.runtime.scope ?? EMPTY_SCOPE);
   if (!context) return null;
   if (node.type === "error") {
@@ -954,12 +1175,15 @@ export const UiNodeView = memo(function UiNodeView({ node }: { node: UiNode }) {
       </p>
     );
   }
-  const values = snapshot.values;
+  const values = extra ? extendScope(snapshot.values, extra) : snapshot.values;
   const resolve = (value: unknown) => context.runtime.resolve(value, values);
   const condition = (value: unknown) => context.runtime.condition(value, values);
   if (node.visible !== undefined && !condition(node.visible)) return null;
-  const props = resolveProps(node.props, resolve, condition);
-  return <NodeContent node={node} props={props} values={values} context={context} />;
+  const props = resolveProps(node.type, node.props, resolve, condition);
+  // Preview state is discarded as the source grows; only a finished fence
+  // accepts input or dispatches actions.
+  if (context.streaming && (node.bind || node.type === "button")) props.disabled = true;
+  return <NodeContent node={node} props={props} values={values} context={context} extra={extra} />;
 });
 
 const EMPTY_SCOPE = { get: () => ({ values: {}, errors: {} }), subscribe: () => ({ unsubscribe: () => {} }) };

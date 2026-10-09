@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { isTemplate, type JsonValue, referencedIdentifiers } from "./expression";
+import { isTemplate, type JsonValue, referencedIdentifiers, validateExpression } from "./expression";
 import { completePartialJson, parseLooseJson } from "./looseJson";
 
 export const UI_FENCE_LANGUAGES = new Set(["ui", "wingman-ui", "intelligent-ui", "iui"]);
@@ -27,6 +27,9 @@ const jsonValue: z.ZodType<JsonValue> = z.lazy(() =>
 );
 /** An array prop, or a template that resolves to one. */
 const list = <T extends z.ZodTypeAny>(item: T) => z.union([z.array(item), z.string()]);
+/** One of a fixed set of values, or a template that resolves to one (`"tone": "{{ ok ? 'success' : 'error' }}"`). */
+const choice = <const T extends readonly [string, ...string[]]>(values: T) =>
+  z.union([z.enum(values), z.string().refine(isTemplate, { message: `expected one of ${values.join("|")}` })]);
 
 const option = z.union([
   z.string(),
@@ -35,8 +38,8 @@ const option = z.union([
 ]);
 
 export const NUMBER_FORMATS = ["number", "integer", "currency", "percent", "compact", "text"] as const;
-const format = z.enum(NUMBER_FORMATS);
-const gap = z.enum(["none", "sm", "md", "lg"]);
+const format = choice(NUMBER_FORMATS);
+const gap = choice(["none", "sm", "md", "lg"]);
 
 // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -80,12 +83,12 @@ const actions = z.preprocess(
 
 // ── Component registry ─────────────────────────────────────────────────────
 
-const column = z.object({ gap: gap.optional(), align: z.enum(["start", "center", "end", "stretch"]).optional() });
+const column = z.object({ gap: gap.optional(), align: choice(["start", "center", "end", "stretch"]).optional() });
 const row = z.object({
   gap: gap.optional(),
   wrap: bool.optional(),
-  align: z.enum(["start", "center", "end", "stretch"]).optional(),
-  justify: z.enum(["start", "center", "end", "between"]).optional(),
+  align: choice(["start", "center", "end", "stretch"]).optional(),
+  justify: choice(["start", "center", "end", "between"]).optional(),
 });
 const grid = z.object({ columns: num.optional(), gap: gap.optional() });
 const card = z.object({ title: str.optional(), description: str.optional() });
@@ -95,9 +98,9 @@ const tabs = z.object({ items: z.array(z.object({ label: str, children: z.array(
 const heading = z.object({ text: str, level: num.optional() });
 const text = z.object({
   text: str,
-  tone: z.enum(["default", "muted", "accent"]).optional(),
-  size: z.enum(["sm", "md", "lg"]).optional(),
-  align: z.enum(["start", "center", "end"]).optional(),
+  tone: choice(["default", "muted", "accent"]).optional(),
+  size: choice(["sm", "md", "lg"]).optional(),
+  align: choice(["start", "center", "end"]).optional(),
 });
 const metric = z.object({
   label: str,
@@ -111,13 +114,28 @@ const metric = z.object({
   description: str.optional(),
 });
 const callout = z.object({
-  tone: z.enum(["info", "success", "warning", "error"]).optional(),
+  tone: choice(["info", "success", "warning", "error"]).optional(),
   title: str.optional(),
   text: str,
 });
+const badge = z.object({
+  text: str,
+  tone: choice(["neutral", "info", "success", "warning", "error"]).optional(),
+});
+const code = z.object({ text: str, language: str.optional() });
+/** Repeats its children once per item; children see `item` (or the `as` name) and `index`. */
+const each = z.object({ items: list(z.unknown()), as: str.optional() });
 const progress = z.object({ label: str.optional(), value: num, max: num.optional(), format: format.optional() });
 const image = z.object({ src: str, alt: str.optional(), caption: str.optional() });
 const svg = z.object({ markup: str, height: num.optional(), label: str.optional() });
+const icon = z.object({
+  name: str,
+  size: z.enum(["sm", "md", "lg"]).optional(),
+  tone: z.enum(["default", "muted", "accent", "success", "warning", "error"]).optional(),
+  label: str.optional(),
+});
+const link = z.object({ text: str, href: str, description: str.optional(), kind: z.enum(["link", "chip"]).optional() });
+const html = z.object({ markup: str, height: num.optional(), title: str.optional() });
 const keyvalue = z.object({
   items: list(z.object({ label: str, value: z.union([z.string(), z.number(), z.boolean(), z.null()]) })),
   columns: num.optional(),
@@ -140,7 +158,7 @@ const listComponent = z.object({
 const tableColumn = z.object({
   key: z.union([z.string(), z.number()]),
   label: str.optional(),
-  align: z.enum(["start", "center", "end"]).optional(),
+  align: choice(["start", "center", "end"]).optional(),
   format: format.optional(),
   currency: str.optional(),
   digits: num.optional(),
@@ -151,11 +169,12 @@ const table = z.object({
   sortable: bool.optional(),
   pageSize: num.optional(),
   emptyText: str.optional(),
+  caption: str.optional(),
 });
 
 const chartSeries = z.union([z.string(), z.object({ key: str, label: str.optional() })]);
 const chart = z.object({
-  kind: z.enum(["line", "area", "bar", "pie", "donut", "scatter"]),
+  kind: choice(["line", "area", "bar", "pie", "donut", "scatter"]),
   data: list(z.unknown()),
   x: str.optional(),
   y: str.optional(),
@@ -168,6 +187,7 @@ const chart = z.object({
   currency: str.optional(),
   xLabel: str.optional(),
   yLabel: str.optional(),
+  caption: str.optional(),
 });
 
 const control = {
@@ -187,7 +207,7 @@ const slider = z.object({
 });
 const input = z.object({
   ...control,
-  kind: z.enum(["text", "number", "multiline"]).optional(),
+  kind: choice(["text", "number", "multiline", "date"]).optional(),
   placeholder: str.optional(),
   min: num.optional(),
   max: num.optional(),
@@ -214,10 +234,22 @@ const checklist = z.object({
 const segmented = z.object({ ...control, options: list(option) });
 const radio = z.object({ ...control, options: list(option) });
 const toggle = z.object({ ...control });
+const form = z.object({
+  title: str.optional(),
+  description: str.optional(),
+  /** Label of the submit button. */
+  submit: str.optional(),
+  /** Message sent on submit; every bound value is attached. */
+  message: str.optional(),
+  action: actions.optional(),
+  /** State keys that must be filled before submitting. */
+  required: z.array(z.string()).optional(),
+});
 const button = z.object({
   label: str,
+  icon: str.optional(),
   action: actions,
-  variant: z.enum(["primary", "secondary", "ghost", "danger"]).optional(),
+  variant: choice(["primary", "secondary", "ghost", "danger"]).optional(),
   disabled: bool.optional(),
   confirm: str.optional(),
 });
@@ -241,14 +273,21 @@ export const COMPONENTS = {
   text: { props: text },
   metric: { props: metric },
   callout: { props: callout },
+  badge: { props: badge },
+  code: { props: code },
   progress: { props: progress },
   image: { props: image },
   svg: { props: svg },
+  icon: { props: icon },
+  link: { props: link },
+  html: { props: html },
+  form: { props: form, children: true },
   timeline: { props: timeline },
   keyvalue: { props: keyvalue },
   list: { props: listComponent },
   table: { props: table },
   chart: { props: chart },
+  each: { props: each, children: true },
   slider: { props: slider, bind: true },
   input: { props: input, bind: true },
   select: { props: select, bind: true },
@@ -277,6 +316,20 @@ const ALIASES: Record<string, ComponentType> = {
   paragraph: "text",
   markdown: "text",
   label: "text",
+  caption: "text",
+  tag: "badge",
+  chip: "badge",
+  status: "badge",
+  pill: "badge",
+  codeblock: "code",
+  pre: "code",
+  snippet: "code",
+  repeat: "each",
+  foreach: "each",
+  for: "each",
+  loop: "each",
+  date: "input",
+  datepicker: "input",
   stat: "metric",
   kpi: "metric",
   alert: "callout",
@@ -285,6 +338,15 @@ const ALIASES: Record<string, ComponentType> = {
   progressbar: "progress",
   img: "image",
   drawing: "svg",
+  cite: "link",
+  source: "link",
+  anchor: "link",
+  a: "link",
+  app: "html",
+  iframe: "html",
+  page: "html",
+  webpage: "html",
+  embed: "html",
   steps: "timeline",
   details: "keyvalue",
   summary: "keyvalue",
@@ -392,15 +454,32 @@ export function normalizeNode(raw: unknown, budget: Budget = { nodes: 0 }, depth
   if (typeof record.children === "string" && (type === "heading" || type === "text" || type === "button")) {
     merged[type === "button" ? "label" : "text"] ??= record.children;
   }
-  if (type === "svg") {
-    // The drawing may arrive under several names.
-    merged.markup ??= merged.source ?? merged.svg ?? merged.content ?? merged.code;
+  if (type === "chart" && typeof merged.series === "string") {
+    // One series is often written as a plain key.
+    merged.series = [merged.series];
   }
+  if (type === "svg" || type === "html") {
+    // The drawing or page may arrive under several names.
+    merged.markup ??= merged.source ?? merged.svg ?? merged.html ?? merged.content ?? merged.code;
+  }
+  if (type === "link") {
+    merged.href ??= merged.url;
+    merged.text ??= merged.title ?? merged.label ?? merged.href;
+  }
+  if (type === "icon" && typeof record.icon === "string") merged.name ??= record.icon;
   if (type === "input" && typeof record.type === "string") {
     const lowered = record.type.toLowerCase();
     if (lowered === "number") merged.kind ??= "number";
     if (lowered === "textarea") merged.kind ??= "multiline";
+    if (lowered === "date" || lowered === "datepicker") merged.kind ??= "date";
   }
+  if (type === "text" && typeof record.type === "string" && record.type.toLowerCase() === "caption") {
+    merged.tone ??= "muted";
+    merged.size ??= "sm";
+  }
+  if (type === "badge") merged.text ??= merged.label;
+  if (type === "code") merged.text ??= merged.code ?? merged.source ?? merged.value;
+  if (type === "each") merged.items ??= merged.of ?? merged.data ?? merged.rows;
 
   const parsed = definition.props.safeParse(merged);
   if (!parsed.success) {
@@ -547,6 +626,18 @@ export function collectBindings(nodes: UiNode[], into = new Set<string>()): Set<
 
 const ITERATION_NAMES = new Set(["item", "index", "key"]);
 
+/** Names iteration components (`each … as`) bring into scope for their children. */
+function iterationNames(nodes: UiNode[], into = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.type === "error") continue;
+    if (node.type === "each" && typeof node.props.as === "string" && node.props.as.trim())
+      into.add(node.props.as.trim());
+    iterationNames(node.children, into);
+    if (node.tabs) for (const tab of node.tabs) iterationNames(tab.children, into);
+  }
+  return into;
+}
+
 function templateExpressions(value: unknown, into: string[], depth = 0): void {
   if (depth > 8) return;
   if (typeof value === "string") {
@@ -564,6 +655,7 @@ function nodeExpressions(nodes: UiNode[], into: string[]): void {
     if (node.type === "error") continue;
     if (typeof node.visible === "string") into.push(node.visible);
     for (const [key, value] of Object.entries(node.props)) {
+      if ((node.type === "html" && key === "markup") || (node.type === "tabs" && key === "items")) continue;
       if (key === "disabled" && typeof value === "string") into.push(value);
       else templateExpressions(value, into);
     }
@@ -582,6 +674,7 @@ function nodeExpressions(nodes: UiNode[], into: string[]): void {
 export function collectUnresolvedReferences(document: UiDocument): string[] {
   const declared = new Set([...Object.keys(document.state), ...document.computed.map((entry) => entry.key)]);
   for (const key of collectBindings(document.children)) declared.add(key);
+  for (const name of iterationNames(document.children)) declared.add(name);
   const expressions: string[] = document.computed.map((entry) => entry.expression);
   nodeExpressions(document.children, expressions);
   const unresolved = new Set<string>();
@@ -591,4 +684,31 @@ export function collectUnresolvedReferences(document: UiDocument): string[] {
     }
   }
   return [...unresolved].sort();
+}
+
+/**
+ * Expressions that cannot run: bad syntax or a call to a function that does
+ * not exist, found by parsing every computed value and template prop without
+ * evaluating anything. The renderer shows these inline; this list lets the
+ * diagnostics middleware tell the model exactly which expression to fix.
+ */
+export function collectExpressionErrors(document: UiDocument): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const check = (label: string, expression: string) => {
+    const problem = validateExpression(expression);
+    if (!problem) return;
+    const message = `${label}: ${problem}`;
+    if (!seen.has(message)) {
+      seen.add(message);
+      problems.push(message);
+    }
+  };
+  for (const entry of document.computed) check(`computed "${entry.key}"`, entry.expression);
+  const expressions: string[] = [];
+  nodeExpressions(document.children, expressions);
+  for (const expression of expressions) {
+    check(expression.length > 60 ? `${expression.slice(0, 57)}…` : expression, expression);
+  }
+  return problems;
 }

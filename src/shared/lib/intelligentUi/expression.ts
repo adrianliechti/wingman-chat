@@ -379,6 +379,8 @@ export function parseExpression(source: string): Node {
 
 // ── Helpers available to expressions ───────────────────────────────────────
 
+const TEMPLATE = /\{\{\s*([\s\S]+?)\s*\}\}/g;
+
 const MAX_COLLECTION = 10_000;
 
 function toNumber(value: unknown): number {
@@ -403,17 +405,16 @@ function numbers(value: unknown): number[] {
 }
 
 /** Evaluate a nested expression (a string) once per item, with `item`/`index`/`key` in scope. */
-function iterate(scope: Scope, items: unknown[], expression: unknown, extra?: (item: unknown) => Scope) {
+function* iterate(scope: Scope, items: unknown[], expression: unknown): Generator<unknown> {
   const node = typeof expression === "string" ? parseExpression(expression) : null;
-  return items.map((item, index) => {
-    if (!node) return expression;
-    const child: Scope = Object.create(scope);
-    child.item = item;
-    child.index = index;
-    if (item && typeof item === "object") Object.assign(child, item);
-    if (extra) Object.assign(child, extra(item));
-    return evaluateNode(node, child);
-  });
+  for (const [index, item] of items.entries()) {
+    if (!node) {
+      yield expression;
+      continue;
+    }
+    const child = extendScope(scope, { ...(item && typeof item === "object" ? item : {}), item, index });
+    yield evaluateNode(node, child);
+  }
 }
 
 function compare(a: unknown, b: unknown): number {
@@ -493,27 +494,36 @@ const HELPERS: Record<string, Helper> = {
     }
     return out;
   },
-  map: (scope, [xs, expr]) => iterate(scope, toArray(xs), expr),
+  map: (scope, [xs, expr]) => [...iterate(scope, toArray(xs), expr)],
   filter: (scope, [xs, expr]) => {
     const items = toArray(xs);
-    const keep = iterate(scope, items, expr);
+    const keep = [...iterate(scope, items, expr)];
     return items.filter((_, i) => truthy(keep[i]));
   },
   find: (scope, [xs, expr]) => {
     const items = toArray(xs);
-    const keep = iterate(scope, items, expr);
-    const index = keep.findIndex(truthy);
-    return index >= 0 ? items[index] : null;
+    let index = 0;
+    for (const keep of iterate(scope, items, expr)) {
+      if (truthy(keep)) return items[index];
+      index++;
+    }
+    return null;
   },
-  some: (scope, [xs, expr]) => iterate(scope, toArray(xs), expr).some(truthy),
-  every: (scope, [xs, expr]) => iterate(scope, toArray(xs), expr).every(truthy),
+  some: (scope, [xs, expr]) => {
+    for (const result of iterate(scope, toArray(xs), expr)) if (truthy(result)) return true;
+    return false;
+  },
+  every: (scope, [xs, expr]) => {
+    for (const result of iterate(scope, toArray(xs), expr)) if (!truthy(result)) return false;
+    return true;
+  },
   pluck: (_, [xs, key]) => toArray(xs).map((item) => readProperty(item, String(key))),
   sortBy: (scope, [xs, keyOrExpr, direction]) => {
     const items = toArray(xs);
     const keys =
       typeof keyOrExpr === "string" && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(keyOrExpr)
         ? items.map((item) => readProperty(item, keyOrExpr))
-        : iterate(scope, items, keyOrExpr);
+        : [...iterate(scope, items, keyOrExpr)];
     const sign = stringify(direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
     return items
       .map((item, i) => ({ item, key: keys[i] }))
@@ -567,6 +577,78 @@ const HELPERS: Record<string, Helper> = {
 };
 
 export const HELPER_NAMES = Object.keys(HELPERS);
+
+/** Helpers whose second argument is a nested expression string evaluated per item. */
+const ITERATION_HELPERS = new Set(["map", "filter", "find", "some", "every", "sortBy"]);
+
+/**
+ * Check an expression or template without evaluating it: syntax errors and
+ * calls to functions that do not exist are reported, nested expression strings
+ * given to `map`, `filter` and friends included. Returns null when it is sound.
+ * Identifiers are not checked here; see `collectUnresolvedReferences`.
+ */
+export function validateExpression(source: string): string | null {
+  const expressions = isTemplate(source) ? [...source.matchAll(TEMPLATE)].map((match) => match[1]) : [source];
+  for (const expression of expressions) {
+    let node: Node;
+    try {
+      node = parseExpression(expression);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    const problem = findCallProblem(node);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+function findCallProblem(node: Node): string | null {
+  switch (node.type) {
+    case "call": {
+      if (!Object.hasOwn(HELPERS, node.callee)) return `Unknown function "${node.callee}"`;
+      for (const arg of node.args) {
+        const problem = findCallProblem(arg);
+        if (problem) return problem;
+      }
+      const nested = node.args[1];
+      if (ITERATION_HELPERS.has(node.callee) && nested?.type === "literal" && typeof nested.value === "string") {
+        // sortBy accepts a plain key as well as an expression; a key always parses.
+        const problem = validateExpression(nested.value);
+        if (problem) return `in ${node.callee}: ${problem}`;
+      }
+      return null;
+    }
+    case "member":
+      return findCallProblem(node.object);
+    case "index":
+      return findCallProblem(node.object) ?? findCallProblem(node.index);
+    case "unary":
+      return findCallProblem(node.operand);
+    case "binary":
+    case "logical":
+      return findCallProblem(node.left) ?? findCallProblem(node.right);
+    case "conditional":
+      return findCallProblem(node.test) ?? findCallProblem(node.consequent) ?? findCallProblem(node.alternate);
+    case "array":
+      for (const item of node.items) {
+        const problem = findCallProblem(item);
+        if (problem) return problem;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * A scope that reads `extra` first and falls back to `base`: iteration
+ * components give their children `item` and `index` this way, so lookups and
+ * `bind` reads see both without copying the document state per item.
+ */
+export function extendScope(base: Scope, extra: Scope): Scope {
+  // Define own properties so item fields can shadow lazy computed getters.
+  return Object.create(base, Object.getOwnPropertyDescriptors(extra)) as Scope;
+}
 
 /** Locale-aware number formatting shared by expressions and components. */
 export function formatValue(value: unknown, style: string, digits?: unknown, currency?: unknown): string {
@@ -761,8 +843,6 @@ export function evaluate(source: string, scope: Scope): unknown {
 }
 
 // ── Templates ──────────────────────────────────────────────────────────────
-
-const TEMPLATE = /\{\{\s*([\s\S]+?)\s*\}\}/g;
 
 export function isTemplate(value: unknown): value is string {
   return typeof value === "string" && value.includes("{{");

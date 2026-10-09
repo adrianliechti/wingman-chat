@@ -1,3 +1,4 @@
+import { useThrottler } from "@tanstack/react-pacer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface InteractiveTextProps {
@@ -30,7 +31,8 @@ export function InteractiveText({
   const [hoveredWord, setHoveredWord] = useState<string | null>(null);
   const [selectedWord, setSelectedWord] = useState<WordInfo | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const lastSelectionTimeRef = useRef<number>(0);
+  // Rapid repeated selections collapse into one callback.
+  const selectionThrottle = useThrottler((emit: () => void) => emit(), { wait: 100, leading: true, trailing: false });
 
   const displayText = previewText || text;
 
@@ -83,39 +85,36 @@ export function InteractiveText({
     const selectedText = selection.toString().trim();
     if (!selectedText) return;
 
-    // Debounce rapid selections
-    const now = Date.now();
-    if (now - lastSelectionTimeRef.current < 100) return;
-    lastSelectionTimeRef.current = now;
+    selectionThrottle.maybeExecute(() => {
+      // Skip single short words (handled by word click)
+      if (selectedText.split(/\s+/).length === 1 && selectedText.length < 20) return;
 
-    // Skip single short words (handled by word click)
-    if (selectedText.split(/\s+/).length === 1 && selectedText.length < 20) return;
+      // Clear word selection
+      setSelectedWord(null);
 
-    // Clear word selection
-    setSelectedWord(null);
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
 
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+      if (!containerRef.current) return;
 
-    if (!containerRef.current) return;
+      // Calculate position in text
+      const fullRange = document.createRange();
+      fullRange.setStart(containerRef.current, 0);
+      fullRange.setEnd(range.startContainer, range.startOffset);
+      const positionStart = fullRange.toString().length;
+      const positionEnd = positionStart + selectedText.length;
 
-    // Calculate position in text
-    const fullRange = document.createRange();
-    fullRange.setStart(containerRef.current, 0);
-    fullRange.setEnd(range.startContainer, range.startOffset);
-    const positionStart = fullRange.toString().length;
-    const positionEnd = positionStart + selectedText.length;
-
-    onTextSelect(
-      selectedText,
-      {
-        x: rect.left + rect.width / 2,
-        y: rect.bottom + 5,
-      },
-      positionStart,
-      positionEnd,
-    );
-  }, [onTextSelect]);
+      onTextSelect(
+        selectedText,
+        {
+          x: rect.left + rect.width / 2,
+          y: rect.bottom + 5,
+        },
+        positionStart,
+        positionEnd,
+      );
+    });
+  }, [onTextSelect, selectionThrottle]);
 
   useEffect(() => {
     const container = containerRef.current;

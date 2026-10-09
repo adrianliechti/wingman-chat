@@ -19,6 +19,26 @@ const loan = () =>
   });
 
 describe("createUiRuntime", () => {
+  it("runs actions inside an iteration scope and re-reads state between actions", async () => {
+    const runtime = createUiRuntime(
+      normalizeDocument({
+        state: { picked: "", n: 1 },
+        children: [{ type: "button", label: "Go", action: { send: "x" } }],
+      }),
+    );
+    const sendMessage = vi.fn();
+    await runtime.run(
+      [
+        { type: "set", values: { picked: "{{ item.name }}", n: "{{ n + index }}" } },
+        { type: "send", message: "Chose {{ picked }} ({{ n }}) at {{ index }}" },
+      ],
+      { sendMessage },
+      { item: { name: "Pro" }, index: 3 },
+    );
+    expect(runtime.state.get()).toMatchObject({ picked: "Pro", n: 4 });
+    expect(sendMessage).toHaveBeenCalledWith("Chose Pro (4) at 3");
+  });
+
   it("evaluates computed values in dependency order and reacts to state", () => {
     const runtime = createUiRuntime(loan());
     expect(runtime.scope.get().values.interest).toBe(100);
@@ -39,6 +59,41 @@ describe("createUiRuntime", () => {
     runtime.setValue("rate", 10);
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.calls[0][0].values.interest).toBe(200);
+  });
+
+  it("resolves dependencies inside collection expressions without depending on declaration order", () => {
+    const runtime = createUiRuntime(
+      normalizeDocument({
+        state: { rows: [{ price: 10 }, { price: 30 }], budget: 10, predicate: "price <= limit" },
+        computed: {
+          affordable: "filter(rows, predicate)",
+          totals: "map(rows, 'item.price * multiplier')",
+          shadowed: "map(rows, 'price')",
+          limit: "budget * 2",
+          multiplier: "3",
+          price: "999",
+        },
+        children: [{ type: "text", text: "{{ affordable }}" }],
+      }),
+    );
+    expect(runtime.scope.get().errors).toEqual({});
+    expect(runtime.scope.get().values.affordable).toEqual([{ price: 10 }]);
+    expect(runtime.scope.get().values.totals).toEqual([30, 90]);
+    expect(runtime.scope.get().values.shadowed).toEqual([10, 30]);
+    runtime.setValue("budget", 20);
+    expect(runtime.scope.get().values.affordable).toHaveLength(2);
+  });
+
+  it("reports circular computed dependencies instead of presenting partial results", () => {
+    const runtime = createUiRuntime(
+      normalizeDocument({
+        computed: { a: "b + 1", b: "a + 1", self: "self + 1", independent: "42" },
+        children: [{ type: "text", text: "{{ independent }}" }],
+      }),
+    );
+    expect(runtime.scope.get().values).toMatchObject({ a: null, b: null, self: null, independent: 42 });
+    expect(Object.keys(runtime.scope.get().errors).sort()).toEqual(["a", "b", "self"]);
+    expect(runtime.scope.get().errors.a).toMatch(/circular/i);
   });
 
   it("resolves templates and reports expression errors inline", () => {
@@ -100,6 +155,43 @@ describe("createUiRuntime", () => {
     const notify = vi.fn();
     await runtime.run([{ type: "send", message: "hi" }], { notify });
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("not available"), "error");
+  });
+
+  it("does not report a copy or continue its actions when copying is unavailable", async () => {
+    const runtime = createUiRuntime(loan());
+    const notify = vi.fn();
+    await runtime.run(
+      [
+        { type: "copy", text: "hello" },
+        { type: "set", values: { agree: true } },
+      ],
+      { notify },
+    );
+    expect(notify).toHaveBeenCalledExactlyOnceWith("Copying text is not available here", "error");
+    expect(runtime.state.get().agree).toBeNull();
+  });
+
+  it("reports a copy only after the clipboard handler succeeds", async () => {
+    const runtime = createUiRuntime(loan());
+    const notify = vi.fn();
+    let completeCopy!: () => void;
+    const clipboard = new Promise<void>((resolve) => {
+      completeCopy = resolve;
+    });
+    const copyText = vi.fn(() => clipboard);
+    const pending = runtime.run([{ type: "copy", text: "hello" }], { copyText, notify });
+    expect(copyText).toHaveBeenCalledWith("hello");
+    expect(notify).not.toHaveBeenCalled();
+    completeCopy();
+    await pending;
+    expect(notify).toHaveBeenCalledExactlyOnceWith("Copied", "info");
+
+    notify.mockClear();
+    copyText.mockRejectedValueOnce(new Error("Clipboard denied"));
+    await expect(runtime.run([{ type: "copy", text: "hello" }], { copyText, notify })).rejects.toThrow(
+      "Clipboard denied",
+    );
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("does not let actions mutate the defaults used by reset", async () => {

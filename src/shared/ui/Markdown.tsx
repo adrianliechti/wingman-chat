@@ -865,7 +865,7 @@ const markdownComponents: Partial<Components> = {
   },
   code: function Code({ children, className, ...rest }) {
     const { isStreaming, onOpenArtifact, onSendMessage } = useContext(MarkdownRenderContext);
-    const match = /language-(\w+)/.exec(className || "");
+    const match = /language-([\w-]+)/.exec(className || "");
     const text = extractText(children).replace(/\n$/, "");
     const isMultiLine = text.includes("\n");
 

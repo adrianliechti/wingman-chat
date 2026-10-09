@@ -22,17 +22,17 @@ import { ToolsContext, type ToolsContextValue } from "../../../src/features/tool
 import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
-import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
+import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
 import type { Model } from "../../../src/shared/types/chat";
 import { assistantMessage, messageText, userMessage } from "../../../src/shared/lib/messages";
 import type { ElicitationResult } from "../../../src/shared/types/elicitation";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 
-const config = await loadConfig();
-if (!config) throw new Error("Missing config");
+const loaded = await loadConfig();
+if (!loaded) throw new Error("Missing config");
+const config = loaded;
 let inventory: Model[] = [{ id: "fixture", name: "Fixture", supportedEfforts: ["low", "high"] }];
 config.client.listModels = async () => inventory;
-const catalog = getModelCatalog(config);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
 const calls: {
   model: string;
@@ -163,7 +163,7 @@ function Fixture() {
     setModel: chat.setModel,
     refreshModels: async (models: Model[]) => {
       inventory = models;
-      await catalog.refresh(true);
+      await fetchModelCatalog(config, true);
     },
     load: chat.loadChat,
     create: chat.createChat,

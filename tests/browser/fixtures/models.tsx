@@ -5,12 +5,12 @@ import { useRendererModels } from "../../../src/features/canvas/hooks/useRendere
 import { resolveModel } from "../../../src/shared/lib/modelSelection";
 import { loadConfig } from "../../../src/shared/config";
 import { useModelCatalog } from "../../../src/shared/hooks/useModelCatalog";
-import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
+import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
 import type { Model } from "../../../src/shared/types/chat";
 
-const config = await loadConfig();
-if (!config) throw new Error("Missing fixture config");
-const catalog = getModelCatalog(config);
+const loaded = await loadConfig();
+if (!loaded) throw new Error("Missing fixture config");
+const config = loaded;
 
 function Consumer() {
   const chat = useModels();
@@ -20,7 +20,7 @@ function Consumer() {
   window.modelsE2E = {
     state: () => state,
     select: chat.setSelectedModel,
-    refresh: () => catalog.refresh(true).then(() => undefined),
+    refresh: () => fetchModelCatalog(config, true).then(() => undefined),
     resolveRenderer: () => resolveModel(undefined, "renderer"),
   };
   return <pre data-testid="state">{JSON.stringify(state)}</pre>;

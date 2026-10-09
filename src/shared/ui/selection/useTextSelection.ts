@@ -1,3 +1,4 @@
+import { Debouncer } from "@tanstack/pacer";
 import { useCallback, useEffect, useState } from "react";
 
 export interface TextSelectionSnapshot {
@@ -120,7 +121,6 @@ export function useTextSelection(
       setObserved(null);
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | null = null;
     let detach: (() => void) | null = null;
 
     const attach = () => {
@@ -132,21 +132,16 @@ export function useTextSelection(
         return;
       }
       setObserved(context.doc);
-      const update = () => {
-        timer = null;
-        setSelection(snapshot(context));
-      };
-      const schedule = () => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(update, debounceMs);
-      };
+      const update = () => setSelection(snapshot(context));
+      const debounced = new Debouncer(update, { wait: debounceMs });
+      const schedule = () => debounced.maybeExecute();
+      // Pointer and key releases settle the selection at once.
       const flush = () => {
-        if (timer) clearTimeout(timer);
+        debounced.cancel();
         update();
       };
       const reset = () => {
-        if (timer) clearTimeout(timer);
-        timer = null;
+        debounced.cancel();
         setSelection(null);
       };
       const { doc, win } = context;
@@ -164,8 +159,7 @@ export function useTextSelection(
         doc.removeEventListener("touchend", flush);
         doc.removeEventListener("scroll", reset, true);
         win.removeEventListener("resize", reset);
-        if (timer) clearTimeout(timer);
-        timer = null;
+        debounced.cancel();
       };
     };
 

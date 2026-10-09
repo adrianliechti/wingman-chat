@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   collectBindings,
+  collectExpressionErrors,
   collectUnresolvedReferences,
   normalizeDocument,
   normalizeNode,
@@ -15,6 +16,11 @@ const okDocument = (source: unknown) => {
 };
 
 describe("parseUiDocument", () => {
+  it("treats embedded HTML templates as page content instead of UI expressions", () => {
+    const doc = okDocument({ children: [{ type: "html", markup: "<p>{{ pageHelper(pageValue) }}</p>" }] });
+    expect(collectExpressionErrors(doc)).toEqual([]);
+    expect(collectUnresolvedReferences(doc)).toEqual([]);
+  });
   it("parses state, computed and children", () => {
     const doc = okDocument({
       title: "Loan",
@@ -137,6 +143,31 @@ describe("parseUiDocument", () => {
     expect(doc.children[4]).toMatchObject({ type: "input", props: { kind: "number" } });
   });
 
+  it("accepts icon, link, html and form components with their aliases", () => {
+    const doc = okDocument({
+      children: [
+        { type: "icon", icon: "ChefHat", label: "Chef" },
+        { type: "cite", title: "Source", url: "https://example.com", kind: "chip" },
+        { type: "app", html: "<!doctype html><p>hi</p>", height: 200 },
+        { type: "form", submit: "Go", required: ["city"], children: [{ type: "input", bind: "city" }] },
+        { type: "button", label: "Copy", icon: "copy", action: { copy: "x" } },
+      ],
+    });
+    expect(doc.children.map((node) => node.type)).toEqual(["icon", "link", "html", "form", "button"]);
+    expect(doc.children[0]).toMatchObject({ props: { name: "ChefHat" } });
+    expect(doc.children[1]).toMatchObject({ props: { text: "Source", href: "https://example.com", kind: "chip" } });
+    expect(doc.children[2]).toMatchObject({ props: { markup: "<!doctype html><p>hi</p>", height: 200 } });
+    const form = doc.children[3];
+    if (form.type !== "error") expect(form.children).toHaveLength(1);
+  });
+
+  it("accepts a single chart series written as a string", () => {
+    const doc = okDocument({
+      children: [{ type: "chart", kind: "pie", data: [{ name: "a", value: 1 }], x: "name", series: "value" }],
+    });
+    expect(doc.children[0]).toMatchObject({ type: "chart", props: { series: ["value"] } });
+  });
+
   it("accepts timeline steps", () => {
     const doc = okDocument({
       children: [
@@ -178,6 +209,28 @@ describe("parseUiDocument", () => {
     }
   });
 
+  it("accepts each, badge, code, caption and date inputs", () => {
+    const doc = okDocument({
+      state: { rows: [{ name: "a" }], when: "2026-10-09" },
+      children: [
+        { type: "repeat", items: "{{ rows }}", as: "row", children: [{ type: "tag", label: "{{ row.name }}" }] },
+        { type: "caption", text: "Illustrative values" },
+        { type: "snippet", code: "x = {{ len(rows) }}", language: "python" },
+        { type: "date", bind: "when", label: "When" },
+        { type: "chart", kind: "bar", data: "{{ rows }}", caption: "Source: the table above" },
+      ],
+    });
+    expect(doc.children[0]).toMatchObject({ type: "each", props: { items: "{{ rows }}", as: "row" } });
+    if (doc.children[0].type === "each") {
+      expect(doc.children[0].children[0]).toMatchObject({ type: "badge", props: { text: "{{ row.name }}" } });
+    }
+    expect(doc.children[1]).toMatchObject({ type: "text", props: { tone: "muted", size: "sm" } });
+    expect(doc.children[2]).toMatchObject({ type: "code", props: { text: "x = {{ len(rows) }}", language: "python" } });
+    expect(doc.children[3]).toMatchObject({ type: "input", bind: "when", props: { kind: "date" } });
+    expect(doc.children[4]).toMatchObject({ type: "chart", props: { caption: "Source: the table above" } });
+    expect(collectUnresolvedReferences(doc)).toEqual([]);
+  });
+
   it("collects bindings across the tree", () => {
     const doc = okDocument({
       children: [
@@ -202,6 +255,27 @@ describe("collectUnresolvedReferences", () => {
       ],
     });
     expect(collectUnresolvedReferences(doc)).toEqual(["locked", "nope", "price", "showTotal", "totl"]);
+  });
+});
+
+describe("collectExpressionErrors", () => {
+  it("lists computed values and props that cannot run", () => {
+    const doc = normalizeDocument({
+      state: { rows: [], a: 1 },
+      computed: { total: "sum(pluck(rows, 'v'))", bad: "a +", worse: "a.toFixed(2)" },
+      children: [
+        { type: "text", text: "{{ format(a, 'currency') }}" },
+        { type: "metric", label: "x", value: "{{ nope(a) }}" },
+        { type: "button", label: "Go", action: { send: "{{ a +" }, disabled: "a >" },
+      ],
+    });
+    expect(collectExpressionErrors(doc)).toEqual([
+      'computed "bad": Unexpected end of expression',
+      'computed "worse": Unexpected token "("',
+      '{{ nope(a) }}: Unknown function "nope"',
+      "a >: Unexpected end of expression",
+    ]);
+    expect(collectExpressionErrors(normalizeDocument({ children: [{ type: "text", text: "{{ a }}" }] }))).toEqual([]);
   });
 });
 

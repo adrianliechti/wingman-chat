@@ -59,9 +59,8 @@ function ComputedErrors({ runtime }: { runtime: UiRuntime }) {
 
 /**
  * Renders a ```ui fence: a declarative component tree with reactive state.
- * While the fence is still streaming the block shows a placeholder; a document
- * the schema rejects falls back to its JSON with the reason, so the reply
- * stays readable either way.
+ * Streaming prefixes render as previews with state controls and actions
+ * disabled. A rejected document falls back to its JSON with the reason.
  */
 export const UiRenderer = memo(function UiRenderer({
   source,
@@ -72,16 +71,17 @@ export const UiRenderer = memo(function UiRenderer({
   const actionsEnabled = useContext(RendererActionsContext);
   const [showCode, setShowCode] = useState(false);
   const parsed = useMemo(() => parseUiDocument(source, { streaming: isStreaming }), [source, isStreaming]);
+  const streaming = isStreaming || parsed.status === "partial";
   // A finished document keeps its state across remounts and reloads; a streaming
-  // prefix gets a throwaway runtime so partial sources never enter the caches.
+  // preview gets a throwaway runtime, even when its JSON already parses.
   const runtime = useMemo(
     () =>
-      parsed.status === "ok"
-        ? getUiRuntime(source, parsed.document)
-        : parsed.status === "partial"
+      parsed.status === "ok" || parsed.status === "partial"
+        ? streaming
           ? createUiRuntime(parsed.document)
-          : null,
-    [parsed, source],
+          : getUiRuntime(source, parsed.document)
+        : null,
+    [parsed, source, streaming],
   );
   const host = useMemo<ActionHost>(
     () => ({
@@ -95,7 +95,6 @@ export const UiRenderer = memo(function UiRenderer({
     }),
     [onSendMessage],
   );
-  const streaming = parsed.status === "partial";
   const context = useMemo<UiHostContext | null>(
     () => (runtime ? { runtime, host, renderText, streaming } : null),
     [runtime, host, renderText, streaming],
@@ -144,7 +143,7 @@ export const UiRenderer = memo(function UiRenderer({
         <CodeRenderer code={source} language="json" />
       ) : (
         <UiContext value={context}>
-          <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-3" aria-busy={streaming}>
             {document.children.map((node, index) => (
               <UiNodeView key={`${node.type}-${index}`} node={node} />
             ))}

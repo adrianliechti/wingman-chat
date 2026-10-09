@@ -1,3 +1,4 @@
+import { Debouncer } from "@tanstack/pacer";
 import type { Client } from "@/shared/lib/client";
 import { downloadFromUrl, formatBytes } from "@/shared/lib/utils";
 
@@ -46,7 +47,8 @@ export class TranslationSession {
     ...emptyResult,
   };
   private readonly listeners = new Set<() => void>();
-  private timer?: ReturnType<typeof setTimeout>;
+  /** Typing pauses for a second before a translation request starts. */
+  private readonly scheduler = new Debouncer(() => void this.translate(), { wait: 1000 });
   private request?: { controller: AbortController; key: string; file: File | null; promise: Promise<void> };
   private completed?: { key: string; file: File | null };
 
@@ -72,8 +74,7 @@ export class TranslationSession {
   }
 
   private cancel(): void {
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.scheduler.cancel();
     this.request?.controller.abort();
     this.request = undefined;
   }
@@ -89,9 +90,7 @@ export class TranslationSession {
     this.completed = undefined;
     this.publish({ ...patch, ...emptyResult });
     if (this.state.sourceText.trim() && !this.state.selectedFile) {
-      this.timer = setTimeout(() => {
-        void this.translate();
-      }, 1000);
+      this.scheduler.maybeExecute();
     }
   };
 
@@ -113,8 +112,7 @@ export class TranslationSession {
     const input = this.state;
     const key = JSON.stringify([input.sourceText, input.provider, input.targetLang, input.tone, input.style]);
     const file = input.selectedFile;
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.scheduler.cancel();
     if (this.request?.key === key && this.request.file === file) return this.request.promise;
     if (this.completed?.key === key && this.completed.file === file) return Promise.resolve();
     this.cancel();

@@ -4,6 +4,7 @@
  * worker factory and RPC dispatcher.
  */
 
+import { Debouncer } from "@tanstack/pacer";
 import type {
   CodeExecutionRequest,
   CodeExecutionResult,
@@ -64,7 +65,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
 
   let worker: Worker | null = null;
   let executionTail: Promise<CodeExecutionResult> | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  // A reusable worker is terminated after sitting idle; a new execution cancels that.
+  const idleShutdown = new Debouncer(
+    (target: Worker) => {
+      if (worker !== target || activeBridge) return;
+      worker = null;
+      target.terminate();
+    },
+    { wait: config.idleTimeoutMs ?? 60_000 },
+  );
 
   // Each in-flight execution registers a "worker died" callback so it settles
   // with an error instead of hanging on a reply port that will never arrive.
@@ -103,7 +112,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   }
 
   function getWorker(): Worker {
-    clearTimeout(idleTimer);
+    idleShutdown.cancel();
     if (!worker) {
       const created = config.createWorker();
       created.addEventListener("message", (event: MessageEvent<WorkerToMainMessage>) => {
@@ -194,7 +203,6 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
     // error that also tears down the wedged worker.
     return new Promise<CodeExecutionResult>((resolve) => {
       const { port1, port2 } = new MessageChannel();
-      let timer: ReturnType<typeof setTimeout> | null = null;
       let inFlight = 0;
       let settled = false;
       let started = false;
@@ -209,32 +217,28 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
         target.terminate();
         settle({ success: false, output: "", error });
       };
-      // (Re)arm the stall timer — only while no bridge call is in flight, so it
-      // measures uninterrupted compute time, not wall-clock.
+      // The stall watchdog fires after uninterrupted compute time, not wall-clock:
+      // it is armed only while no bridge call is in flight and re-armed on progress.
+      const watchdog = new Debouncer(
+        () =>
+          fail(
+            started
+              ? `Code execution stalled — no progress for ${Math.round(stallMs / 1000)}s (worker terminated)`
+              : `Interpreter startup timed out after ${Math.round(startupStallMs / 1000)}s (worker terminated)`,
+          ),
+        { wait: () => (started ? stallMs : startupStallMs) },
+      );
       const arm = () => {
         if (settled) return;
-        const ms = started ? stallMs : startupStallMs;
-        if (ms <= 0) return;
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(
-          () =>
-            fail(
-              started
-                ? `Code execution stalled — no progress for ${Math.round(stallMs / 1000)}s (worker terminated)`
-                : `Interpreter startup timed out after ${Math.round(startupStallMs / 1000)}s (worker terminated)`,
-            ),
-          ms,
-        );
+        if ((started ? stallMs : startupStallMs) <= 0) return;
+        watchdog.maybeExecute();
       };
       const bridge = {
         signal: bridgeSignal,
         context: options?.context,
         enter: () => {
           inFlight++;
-          if (timer) {
-            clearTimeout(timer);
-            timer = null;
-          }
+          watchdog.cancel();
         },
         leave: () => {
           if (--inFlight <= 0) arm();
@@ -246,7 +250,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       function settle(result: CodeExecutionResult) {
         if (settled) return;
         settled = true;
-        if (timer) clearTimeout(timer);
+        watchdog.cancel();
         if (activeBridge === bridge) activeBridge = null; // only the owner clears the shared slot
         pendingFailures.delete(onCrash);
         signal?.removeEventListener("abort", onAbort);
@@ -259,11 +263,7 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
             worker = null;
             target.terminate();
           } else {
-            idleTimer = setTimeout(() => {
-              if (worker !== target || activeBridge) return;
-              worker = null;
-              target.terminate();
-            }, config.idleTimeoutMs ?? 60_000);
+            idleShutdown.maybeExecute(target);
           }
         }
         resolve(result);

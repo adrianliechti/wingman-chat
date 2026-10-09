@@ -1,3 +1,4 @@
+import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -84,23 +85,20 @@ export function ChatSidebar() {
   );
 
   const [searchResult, setSearchResult] = useState<{ query: string; ids: Set<string> } | null>(null);
+  // Full-text search waits for typing to pause; title filtering below stays immediate.
+  const [debouncedQuery] = useDebouncedValue(searchQuery, { wait: 250 });
   useEffect(() => {
-    if (!searchQuery.trim()) return;
+    if (!debouncedQuery.trim()) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      void searchChats(searchQuery, controller.signal)
-        .then((ids) => {
-          if (!controller.signal.aborted) setSearchResult({ query: searchQuery, ids });
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted) notify.error("Couldn't search saved chats", error);
-        });
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [searchQuery, chats, searchChats]);
+    void searchChats(debouncedQuery, controller.signal)
+      .then((ids) => {
+        if (!controller.signal.aborted) setSearchResult({ query: debouncedQuery, ids });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) notify.error("Couldn't search saved chats", error);
+      });
+    return () => controller.abort();
+  }, [debouncedQuery, chats, searchChats]);
 
   const filteredChats = useMemo(() => {
     if (!searchQuery.trim()) return sortedChats;

@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { memo, useEffect, useMemo, useState } from "react";
 import { highlightCode } from "@/shared/lib/highlight";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
@@ -62,6 +63,8 @@ const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle =
   const normalizedLanguage = language.toLowerCase();
   const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
   const [highlighted, setHighlighted] = useState(() => ({ key: cacheKey, html: highlightCache.get(cacheKey) ?? "" }));
+  // While a block streams, wait for a pause before highlighting the growing source.
+  const scheduleHighlight = useDebouncer((run: () => void) => run(), { wait: isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0 });
 
   useEffect(() => {
     if (!code) {
@@ -69,7 +72,6 @@ const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle =
     }
 
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const cached = getCacheEntry(highlightCache, cacheKey);
 
     if (cached) {
@@ -94,15 +96,13 @@ const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle =
       }
     };
 
-    timer = setTimeout(highlight, isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0);
+    scheduleHighlight.maybeExecute(() => void highlight());
 
     return () => {
       cancelled = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
+      scheduleHighlight.cancel();
     };
-  }, [cacheKey, code, isDark, isStreaming, normalizedLanguage]);
+  }, [cacheKey, code, isDark, isStreaming, normalizedLanguage, scheduleHighlight]);
 
   // Never show an older snapshot while the new source waits for highlighting.
   const effectiveHtml = code && highlighted.key === cacheKey ? highlighted.html : "";

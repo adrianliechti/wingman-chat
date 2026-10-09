@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { pickModel, resolveModel } from "./modelSelection";
-import { getModelCatalog, MODEL_CATALOG_MAX_AGE_MS } from "@/shared/lib/modelCatalog";
+import { fetchModelCatalog, MODEL_CATALOG_MAX_AGE_MS } from "@/shared/lib/modelCatalog";
+import { queryClient } from "@/shared/lib/queryClient";
 import type { Model } from "@/shared/types/chat";
 
 const config = vi.hoisted(() => ({
@@ -8,13 +9,16 @@ const config = vi.hoisted(() => ({
   models: [] as Model[],
 }));
 vi.mock("@/shared/config", () => ({ getConfig: () => config }));
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  queryClient.clear();
+});
 
 it("shares configured aliases with the UI catalogue and replaces expired helper defaults", async () => {
   vi.useFakeTimers();
   config.models = [{ id: "alias", name: "Studio", type: "renderer" }];
   config.client.listModels.mockReset().mockResolvedValueOnce([{ id: "alias", name: "Alias", type: "completer" }]);
-  await getModelCatalog(config).refresh();
+  await fetchModelCatalog(config);
   expect(await resolveModel(undefined, "renderer")).toBe("alias");
   expect(await resolveModel("explicit", "renderer")).toBe("explicit");
   expect(config.client.listModels).toHaveBeenCalledTimes(1);
@@ -49,7 +53,7 @@ it("falls back to the backend default when the catalogue is unreachable", async 
   config.models = [];
   config.client.listModels.mockReset().mockRejectedValueOnce(new Error("offline"));
   vi.spyOn(console, "warn").mockImplementation(() => {});
-  await expect(getModelCatalog(config).refresh(true)).rejects.toThrow("offline");
+  await expect(fetchModelCatalog(config, true)).rejects.toThrow("offline");
   config.client.listModels.mockRejectedValueOnce(new Error("offline"));
   expect(await resolveModel(undefined, "realtime")).toBe("");
 });

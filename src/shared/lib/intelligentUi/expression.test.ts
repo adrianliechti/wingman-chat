@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { evaluate, ExpressionError, formatValue, referencedIdentifiers, resolveTemplate } from "./expression";
+import { describe, expect, it, vi } from "vitest";
+import {
+  evaluate,
+  ExpressionError,
+  extendScope,
+  formatValue,
+  referencedIdentifiers,
+  resolveTemplate,
+  validateExpression,
+} from "./expression";
 
 describe("evaluate", () => {
   it("handles arithmetic with precedence and exponentiation", () => {
@@ -93,6 +101,22 @@ describe("evaluate", () => {
     expect(evaluate("sum(pluck(rows, 'v'))", scope)).toBe(9);
   });
 
+  it("stops collection searches as soon as their result is known", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      expect(evaluate("find(range(10000), 'random() > 0')", {})).toBe(0);
+      expect(random).toHaveBeenCalledTimes(1);
+      random.mockClear();
+      expect(evaluate("some(range(10000), 'random() > 0')", {})).toBe(true);
+      expect(random).toHaveBeenCalledTimes(1);
+      random.mockClear();
+      expect(evaluate("every(range(10000), 'random() < 0')", {})).toBe(false);
+      expect(random).toHaveBeenCalledTimes(1);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
   it("formats numbers", () => {
     expect(evaluate("fixed(2.5, 2)", {})).toBe("2.50");
     expect(formatValue(1234.5, "number")).toMatch(/1,234\.5|1.234,5|1’234\.5|1 234,5/);
@@ -134,5 +158,30 @@ describe("referencedIdentifiers", () => {
     expect([...referencedIdentifiers("a + b.c * round(d, 2)")].sort()).toEqual(["a", "b", "d"]);
     expect([...referencedIdentifiers("bad +")]).toEqual([]);
     expect([...referencedIdentifiers("{{ a }} and {{ b.c }}")].sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("validateExpression", () => {
+  it("accepts sound expressions and templates", () => {
+    expect(validateExpression("round(a * b, 2)")).toBeNull();
+    expect(validateExpression("{{ a }} of {{ sum(map(rows, 'item.v * 2')) }}")).toBeNull();
+    expect(validateExpression("sortBy(rows, 'price', 'desc')")).toBeNull();
+    expect(validateExpression("Math.max(a, 1)")).toBeNull();
+  });
+
+  it("reports syntax errors and unknown functions, nested expressions included", () => {
+    expect(validateExpression("a +")).toMatch(/Unexpected end/);
+    expect(validateExpression("toFixed(a)")).toBe('Unknown function "toFixed"');
+    expect(validateExpression("{{ ok }} {{ a.toFixed(2) }}")).toMatch(/Unexpected token/);
+    expect(validateExpression("map(rows, 'item.v +')")).toMatch(/^in map: Unexpected end/);
+    expect(validateExpression("filter(rows, 'nope(item)')")).toBe('in filter: Unknown function "nope"');
+  });
+});
+
+describe("extendScope", () => {
+  it("reads extra values first and falls back to the base scope", () => {
+    const scope = extendScope({ a: 1, item: "base" }, { item: { v: 2 }, index: 0 });
+    expect(evaluate("a + item.v + index", scope)).toBe(3);
+    expect(evaluate("item.v", extendScope(scope, { item: { v: 5 } }))).toBe(5);
   });
 });

@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { Code, Download, Eye, Loader2, MoreVertical, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -117,7 +118,8 @@ export function SkillCatalogPanel({
   const editorContentInputId = useId();
   const editorNameInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // dragover fires continuously; the highlight ends shortly after the last event.
+  const endDragOver = useDebouncer(() => setIsDragOver(false), { wait: 100 });
 
   // Two-panel state
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
@@ -160,12 +162,6 @@ export function SkillCatalogPanel({
     },
     [resourcesWidth],
   );
-
-  useEffect(() => {
-    return () => {
-      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    };
-  }, []);
 
   // editMode is a deliberate extra dep: it triggers remeasurement when the switcher mounts.
   useEffect(() => {
@@ -361,10 +357,7 @@ export function SkillCatalogPanel({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
-    }
+    endDragOver.cancel();
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       (f) => f.name.endsWith(".md") || f.name.endsWith(".zip"),
     );
@@ -377,11 +370,7 @@ export function SkillCatalogPanel({
     e.preventDefault();
     e.stopPropagation();
     if (!isDragOver) setIsDragOver(true);
-    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    dragTimeoutRef.current = setTimeout(() => {
-      setIsDragOver(false);
-      dragTimeoutRef.current = null;
-    }, 100);
+    endDragOver.maybeExecute();
   };
 
   const viewKind: "list" | "skill-detail" | "skill-edit" = editMode

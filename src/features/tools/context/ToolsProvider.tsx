@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Coffee } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
@@ -16,6 +17,7 @@ import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
+import { queryClient } from "@/shared/lib/queryClient";
 import type { ContentPart } from "@tanstack/ai";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
@@ -171,19 +173,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // MCP ids the backend reports as available (RBAC-filtered), mirroring how
   // useModels filters config models against /v1/models. null = not yet loaded
   // or the endpoint is unavailable → fall back to showing all configured MCPs.
-  const [availableMcpIds, setAvailableMcpIds] = useState<Set<string> | null>(null);
+  const { data: availableMcpList, error: mcpListError } = useQuery(
+    { queryKey: ["mcps"], queryFn: () => config.client.listMCPs() },
+    queryClient,
+  );
+  const availableMcpIds = useMemo(() => (availableMcpList ? new Set(availableMcpList) : null), [availableMcpList]);
   useEffect(() => {
-    let cancelled = false;
-    config.client
-      .listMCPs()
-      .then((ids) => {
-        if (!cancelled) setAvailableMcpIds(new Set(ids));
-      })
-      .catch((error) => console.error("error loading mcps", error));
-    return () => {
-      cancelled = true;
-    };
-  }, [config.client]);
+    if (mcpListError) console.error("error loading mcps", mcpListError);
+  }, [mcpListError]);
 
   // Config MCP clients visible to the user: relative ones are hidden unless the
   // backend lists them as available.

@@ -10,7 +10,13 @@
 
 import type { ChatMiddleware, UIMessage } from "@tanstack/ai";
 import { isUserPrompt, textParts } from "../messages";
-import { collectUnresolvedReferences, parseUiDocument, UI_FENCE_LANGUAGES, type UiNode } from "./schema";
+import {
+  collectExpressionErrors,
+  collectUnresolvedReferences,
+  parseUiDocument,
+  UI_FENCE_LANGUAGES,
+  type UiNode,
+} from "./schema";
 
 const FENCE = /^([`~]{3,})[ \t]*([\w-]+)[^\n]*\n([\s\S]*?)^\1[ \t]*$/gm;
 
@@ -47,6 +53,7 @@ export function collectUiDiagnostics(markdown: string): string[] {
     }
     if (parsed.status !== "ok") return;
     const errors = [...new Set(nodeErrors(parsed.document.children, []))];
+    errors.push(...collectExpressionErrors(parsed.document).slice(0, 5));
     const unresolved = collectUnresolvedReferences(parsed.document);
     if (unresolved.length) {
       errors.push(`references undeclared state keys: ${unresolved.slice(0, 8).join(", ")}`);
