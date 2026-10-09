@@ -74,8 +74,17 @@ lose the backup. Other browsers download a Blob assembled from those chunks.
 Cancelling the picker does no snapshot work and leaves the chosen file untouched.
 
 Restore decodes and checks the archive before mutation. Matching file paths are
-replaced, while files absent from a partial backup remain untouched. An incoming
-legacy agent definition also removes newer local definitions that would shadow it.
+replaced, while files absent from a partial backup remain untouched. After validation,
+import migrates older layouts into the current storage paths. Flat `chats/<id>.json`
+records become `chats/<id>/chat.json`; if the archive supplies both, its folder record
+wins. Legacy agent definitions become `AGENTS.md`, and inline `agent.json` servers
+become `servers.json`, including an explicit empty list. Missing server settings in
+a partial import preserve the destination's servers. Obsolete local definition paths
+are removed in the same rollback transaction. Converted `agent.json` source bytes
+are retained as `agent.legacy.json` so unrecognized fields remain recoverable.
+When older attached-file exports omit `files/index.json`, imported files are added
+to the destination's committed membership without reviving excluded local folders.
+An explicit archive file index remains authoritative.
 Collection indexes are rebuilt from actual records; imported indexes provide only identity
 and timestamp hints. A reported write or rebuild failure restores prior bytes
 and indexes. Invalid JSON in known metadata skips the owning record, including
@@ -92,7 +101,8 @@ folder — `chat.json`, `one/chat.json`, `AGENTS.md`, `one/agent.json` and the
 like — and files it under the collection its definition identifies, with blobs,
 artifacts and agent files following the record. A flat chat keeps its stored ID,
 so re-importing it updates the same conversation. A flat `SKILL.md` uses its
-declared skill name as the folder name. Ambiguous record folders stay unchanged;
+declared skill name as the folder name. Named record folders keep their identity,
+including single-agent exports containing bundled skills. Ambiguous record folders stay unchanged;
 folders without a definition follow a flat record when present and otherwise
 stay unchanged. Conflicting normalized paths are rejected before writing.
 
@@ -103,6 +113,13 @@ reported as skipped rather than dropped silently. Pre-agent `repository.json`
 archives and pre-OPFS chat/agent JSON exports are not supported. Existing saved
 agents remain readable, and agent exports use the current format without
 rewriting local data.
+
+Settings restore also installs skills bundled under `agents/<id>/skills/` into
+the shared `skills/` library after skipping malformed agents and their bundles.
+Identical copies shared by several agents are deduplicated; conflicting copies are
+rejected before writing. Legacy chat transcript
+content stays intact during import and uses the existing migration and recovery-copy
+behavior when opened.
 
 One index scanner serves repair and restore. It preserves custom chat ordering,
 skill identities, and existing timestamps, and never deletes folders. Obsolete

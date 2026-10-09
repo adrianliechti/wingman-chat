@@ -7,6 +7,106 @@ async function open(page: Page) {
   await page.waitForFunction(() => window.persistenceE2E?.state().ready && window.profileE2E?.isLoaded);
 }
 
+test("migrates historical chat and agent ZIPs in real OPFS without losing files or servers", async ({ page }) => {
+  await open(page);
+  const ids = await page.evaluate(async () => {
+    const api = window.persistenceE2E;
+    const agent = await api.createAgent("Existing");
+    api.addServer(agent.id, {
+      name: "Existing MCP",
+      description: "Old server",
+      url: "https://existing.test",
+      enabled: true,
+    });
+    api.upsertFile(agent.id, {
+      id: "local",
+      name: "local.txt",
+      text: "Keep local file",
+      status: "completed",
+      progress: 100,
+      uploadedAt: new Date(),
+    });
+    const chat = await api.createChat();
+    api.updateChat(chat.id, () => ({ customTitle: "Existing chat" }));
+    await api.flush();
+    return { agent: agent.id, chat: chat.id };
+  });
+  const agentJson = JSON.stringify({
+    name: "Migrated",
+    instructions: "Instructions",
+    skills: ["historical"],
+    servers: [],
+    unknownSetting: { preserved: true },
+  });
+  const archive = new JSZip();
+  archive.file(`agents/${ids.agent}/agent.json`, agentJson);
+  archive.file(
+    `agents/${ids.agent}/skills/historical/SKILL.md`,
+    "---\nname: historical\ndescription: Historical skill\n---\nBody",
+  );
+  archive.file(`agents/${ids.agent}/skills/historical/scripts/run.py`, "print(1)");
+  archive.file(
+    `agents/${ids.agent}/files/imported/metadata.json`,
+    JSON.stringify({ name: "imported.txt", status: "completed", progress: 100, uploadedAt: "2026-03-01" }),
+  );
+  archive.file(`agents/${ids.agent}/files/imported/content.txt`, "Imported source");
+  archive.file(`agents/${ids.agent}/files/imported/segments.json`, '["Imported chunk"]');
+  archive.file(
+    `agents/${ids.agent}/files/imported/embeddings.bin`,
+    new Uint8Array(new Float32Array([2, 0.5, -1]).buffer),
+  );
+  const chat = {
+    id: ids.chat,
+    title: "Historical chat",
+    created: "2026-03-01",
+    updated: "2026-03-02",
+    model: null,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Historical message" },
+          { type: "image", data: "blob:old-image", contentType: "image/png" },
+        ],
+      },
+    ],
+  };
+  archive.file(`chats/${ids.chat}.json`, JSON.stringify(chat));
+  archive.file(`chats/${ids.chat}/blobs/old-image.bin`, "Image bytes");
+  archive.file(`chats/${ids.chat}/artifacts/report.txt`, "Historical artifact");
+  const bytes = Array.from(await archive.generateAsync({ type: "uint8array" }));
+  const result = await page.evaluate((bytes) => window.persistenceE2E.restore(bytes), bytes);
+  expect(result.skipped).toEqual([]);
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/servers.json`), ids.agent)).toEqual([]);
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/agent.legacy.json`), ids.agent)).toEqual(
+    JSON.parse(agentJson),
+  );
+  await page.reload();
+  await page.waitForFunction(
+    (id) =>
+      window.persistenceE2E?.state().ready &&
+      window.persistenceE2E.state().agents.some((agent) => agent.id === id && agent.name === "Migrated"),
+    ids.agent,
+  );
+  const state = await page.evaluate(() => window.persistenceE2E.state());
+  expect(state.agents.find((agent) => agent.id === ids.agent)).toMatchObject({
+    name: "Migrated",
+    servers: [],
+    skills: ["historical"],
+    files: [
+      { id: "local", text: "Keep local file" },
+      { id: "imported", text: "Imported source", segments: [{ text: "Imported chunk", vector: [0.5, -1] }] },
+    ],
+  });
+  expect(state.skills).toEqual(expect.arrayContaining([expect.objectContaining({ name: "historical" })]));
+  const loaded = await page.evaluate((id) => window.persistenceE2E.loadChat(id), ids.chat);
+  expect(loaded.messages[0].parts[0]).toMatchObject({ type: "text", content: "Historical message" });
+  expect(loaded.messages[0].parts[1]).toMatchObject({ type: "image", source: { value: "blob:old-image" } });
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`chats/${id}/chat.legacy.json`), ids.chat)).toEqual(
+    chat,
+  );
+});
+
 test("streams a ZIP to a file and reports malformed JSON before reloading a partial restore", async ({ page }) => {
   await open(page);
   const { id, bytes } = await page.evaluate(async () => {

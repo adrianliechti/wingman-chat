@@ -10,8 +10,8 @@ export function serializeAgentMd(agent: Agent): string {
   const lines: string[] = ["---"];
   lines.push(`name: ${JSON.stringify(agent.name)}`);
   if (agent.model) lines.push(`model: ${JSON.stringify(agent.model)}`);
-  if (agent.effort) lines.push(`effort: ${agent.effort}`);
-  if (agent.verbosity) lines.push(`verbosity: ${agent.verbosity}`);
+  if (agent.effort) lines.push(`effort: ${JSON.stringify(agent.effort)}`);
+  if (agent.verbosity) lines.push(`verbosity: ${JSON.stringify(agent.verbosity)}`);
   if (agent.skills.length > 0) lines.push(`skills: ${JSON.stringify(agent.skills)}`);
   if (agent.plugins.length > 0) lines.push(`plugins: ${JSON.stringify(agent.plugins)}`);
   const tools = agent.tools.filter((id) => id !== "studio");

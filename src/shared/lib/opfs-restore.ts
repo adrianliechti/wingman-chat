@@ -14,6 +14,7 @@ import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoo
 import type { IndexEntry } from "./opfs-core";
 import { writeFileChanges } from "./opfs-transaction";
 import { rebuildFolderIndexUnlocked, STORAGE_COLLECTIONS } from "./opfs-index";
+import { migrateImportedRecords, normalizeBundledSkills, prepareAgentFileImport } from "./opfs-import";
 import { isJunkZipEntry } from "./opfs-zip";
 import { flushPersistence, withPersistenceLock } from "./persistence";
 import { readZipEntryBlob } from "./zipStreams";
@@ -40,6 +41,8 @@ export interface RestoreResult {
 class InvalidBackupJsonError extends Error {}
 
 function recordScope(path: string): string {
+  const flatChat = path.match(/^chats\/([^/]+)\.json$/);
+  if (flatChat && flatChat[1] !== "index") return `chats/${flatChat[1]}/`;
   return path.match(/^(?:agents|chats|images|plugins)\/[^/]+\//)?.[0] ?? path;
 }
 
@@ -70,6 +73,10 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
     )
       break;
     const stripped = paths.map((path) => path.slice(prefix.length + 1));
+    // A single agent folder can contain a bundled skills/ collection. Its
+    // definition marks a record, not a backup wrapper: keep the folder's ID.
+    if (["chat.json", "AGENTS.md", "AGENT.md", "agent.json", "SKILL.md"].some((marker) => stripped.includes(marker)))
+      break;
     if (
       !stripped.some(
         (path) => (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) || path === "profile.json",
@@ -106,9 +113,9 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     validateMemoryState(parseBackupJson(path, await blob.text()));
     return;
   }
-  if (/^skills\/[^/]+\/SKILL\.md$/.test(path)) {
+  if (/^(?:skills|agents\/[^/]+\/skills)\/[^/]+\/SKILL\.md$/.test(path)) {
     const parsed = parseSkillFileForImport(await blob.text());
-    if (!parsed.success || parsed.skill.name !== path.split("/")[1])
+    if (!parsed.success || parsed.skill.name !== path.split("/").at(-2))
       throw new Error(`Invalid skill definition: ${path}`);
     return;
   }
@@ -180,7 +187,7 @@ export async function restoreFiles(
   input: ReadonlyMap<string, Blob>,
   onProgress?: RestoreProgressHandler,
 ): Promise<RestoreResult> {
-  const files = new Map<string, Blob>();
+  let files = new Map<string, Blob>();
   const indexHints = new Map<string, IndexEntry[]>();
   const skipped: RestoreResult["skipped"] = [];
   const skippedRecords = new Set<string>();
@@ -242,6 +249,8 @@ export async function restoreFiles(
   for (const path of files.keys()) {
     if (skippedRecords.has(recordScope(path))) files.delete(path);
   }
+  // Preserve record ownership until malformed agents and their bundles are skipped.
+  files = await normalizeBundledSkills(files);
   if (!files.size) {
     if (skipped.length) return { restoredFiles: 0, skipped };
     throw new Error("No restorable files were found in the archive");
@@ -263,6 +272,7 @@ export async function restoreFiles(
     )
       throw new Error(`Invalid embeddings in backup: ${path}`);
   }
+  const removals = await migrateImportedRecords(files);
   await flushPersistence();
   const keys = [
     ...new Set([...files.keys()].map((path) => (path === "profile.json" ? "profile" : path.split("/")[0]))),
@@ -276,15 +286,8 @@ export async function restoreFiles(
     .map((key) => `${key}/index.json`);
   const apply = async () => {
     const changes = new Map<string, Blob | undefined>(files);
-    // A restored legacy definition must not be shadowed by a newer local one.
-    // Include removals in the transaction so failed imports restore all formats.
-    for (const path of files.keys()) {
-      const legacy = path.match(/^(agents\/[^/]+)\/(AGENT\.md|agent\.json)$/);
-      if (!legacy || files.has(`${legacy[1]}/AGENTS.md`)) continue;
-      changes.set(`${legacy[1]}/AGENTS.md`, undefined);
-      if (legacy[2] === "agent.json" && !files.has(`${legacy[1]}/AGENT.md`))
-        changes.set(`${legacy[1]}/AGENT.md`, undefined);
-    }
+    for (const path of removals) changes.set(path, undefined);
+    await prepareAgentFileImport(changes);
     await prepareMemoryImport(changes);
     return writeFileChanges(changes, {
       extraPaths: indexes,
