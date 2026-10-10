@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { Globe } from "lucide-react";
 import { useMemo } from "react";
-import { buildWebTools } from "../lib/webTools";
+import { buildWebTools, RECENCY, type Recency } from "../lib/webTools";
+import { MAX_TOOL_CALLS } from "../lib/researchBudget";
 import internetInstructionsText from "@/features/research/prompts/internet.txt?raw";
 import { getConfig } from "@/shared/config";
 import { createAgentTool } from "@/features/tools/lib/subagent";
@@ -12,14 +13,31 @@ import type { ToolProvider } from "@/shared/types/chat";
 
 type Config = ReturnType<typeof getConfig>;
 
+const FAST_RESULT_LIMIT = 5;
+
+/** Focus and recency travel with the single approved brief, so one approval covers the whole task. */
+export function researchBrief(args: Record<string, unknown>, categories: string[]): string {
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+  const lines: string[] = [];
+  const category = typeof args.category === "string" ? args.category.trim() : "";
+  if (category && categories.includes(category)) lines.push(`Search focus: ${category}.`);
+  const recency = typeof args.recency === "string" ? args.recency.trim() : "";
+  if (RECENCY.includes(recency as Recency)) lines.push(`Recency: prefer sources published within the past ${recency}.`);
+  return lines.length ? `${prompt}\n\n${lines.join("\n")}` : prompt;
+}
+
 export function createInternetProvider(client: Client, internet: Config["internet"]): ToolProvider | null {
   if (!internet?.searcher && !internet?.scraper && !internet?.researcher) {
     return null;
   }
 
+  const categories = (internet.categories ?? []).map((entry) => entry.name?.trim()).filter(Boolean);
   const webTools = buildWebTools(client, {
     searcher: internet.searcher,
     scraper: internet.researcher ? undefined : internet.scraper,
+    categories: internet.categories,
+    location: internet.location,
+    summarizer: internet.summarizer,
   });
   const search = webTools.find((tool) => tool.name === "web_search");
   const defaultMode = search ? "fast" : "deep";
@@ -47,8 +65,10 @@ export function createInternetProvider(client: Client, internet: Config["interne
       instructions: internetInstructionsText,
       tools: internet.researcher ? [] : webTools,
       inheritHistory: false,
-      maxIterations: 12,
-      timeoutMs: 120_000,
+      // The tool-call budget ends a run gracefully; iterations and time are backstops.
+      maxIterations: MAX_TOOL_CALLS + 4,
+      timeoutMs: 180_000,
+      brief: (args) => researchBrief(args, categories),
       direct: async (args, context) => {
         const mode = args.mode ?? defaultMode;
         if (mode !== "fast" && mode !== "deep") throw new Error("mode must be fast or deep");
@@ -56,11 +76,17 @@ export function createInternetProvider(client: Client, internet: Config["interne
         if (!prompt) throw new Error("prompt is required");
         if (mode === "fast" && !search) throw new Error("Fast search is unavailable; use deep mode.");
         const { signal } = context;
-        await guardPrompt(prompt, signal);
+        const brief = researchBrief(args, categories);
+        await guardPrompt(brief, signal);
         if (mode === "fast" && search) {
           return outputText(
             await search.execute(
-              { queries: [prompt], limit: 3 },
+              {
+                queries: [prompt],
+                limit: FAST_RESULT_LIMIT,
+                ...(typeof args.category === "string" && args.category ? { category: args.category } : {}),
+                ...(typeof args.recency === "string" && args.recency ? { recency: args.recency } : {}),
+              },
               {
                 context,
                 abortSignal: signal,
@@ -71,7 +97,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
         }
         // Undefined continues with the local child agent; remote research and
         // fast search both finish at this same approval/result boundary.
-        if (internet.researcher) return client.research(internet.researcher, prompt, { signal });
+        if (internet.researcher) return client.research(internet.researcher, brief, { signal });
         return undefined;
       },
     },
@@ -93,6 +119,22 @@ export function createInternetProvider(client: Client, internet: Config["interne
           : internet.researcher
             ? "deep: delegate the complete task to the configured researcher."
             : "deep: read and research supplied URLs.",
+      ),
+    ...(categories.length
+      ? {
+          category: z
+            .enum(categories as [string, ...string[]])
+            .optional()
+            .describe(
+              `Search focus when the whole request clearly fits one vertical (${categories.join(", ")}); omit for general questions. Fast mode applies it to the search; deep mode passes it to the researcher.`,
+            ),
+        }
+      : {}),
+    recency: z
+      .enum(RECENCY)
+      .optional()
+      .describe(
+        "Only sources published within this window. Use for news, prices, releases and other time-sensitive questions; omit for stable facts.",
       ),
   });
   researchTool.title = "Web research";
@@ -122,7 +164,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
     description: "Access up-to-date information",
     icon: Globe,
     instructions:
-      "Use web_research at most once per user prompt. Combine all web information needs into one self-contained brief in that call; the tool handles any required approval of the input. Choose deep upfront if follow-up searches, page reading or verification might be needed; the researcher handles those internally under the approved input. Do not split a question across research calls or call again to refine a query, fetch a page or switch modes. Use the returned evidence to answer and state any remaining gaps.",
+      "Use web_research at most once per user prompt. Combine all web information needs into one self-contained brief in that call; the tool handles any required approval of the input. Choose deep upfront if follow-up searches, page reading or verification might be needed; the researcher handles those internally under the approved input. Set recency for time-sensitive questions and a category only when the whole request fits one vertical. Do not split a question across research calls or call again to refine a query, fetch a page or switch modes. Use the returned evidence to answer with its URLs and state any remaining gaps.",
     tools: [researchTool],
   };
 }

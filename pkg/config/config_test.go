@@ -19,10 +19,11 @@ func TestInternetOverrides(t *testing.T) {
 		{"explicit disable", &Internet{Searcher: "web"}, map[string]string{"INTERNET_ENABLED": "false"}, nil},
 		{"selector alone does not enable", nil, map[string]string{"INTERNET_RESEARCHER": "web"}, nil},
 		{"clear gateway to use local model", &Internet{Researcher: "web", Model: "gpt-6-luna", Elicitation: true}, map[string]string{"INTERNET_RESEARCHER": "", "INTERNET_ELICITATION": "false"}, &Internet{Model: "gpt-6-luna"}},
-		{"all selectors", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_MODEL": " gpt-6-luna ", "INTERNET_GUARD": "guard", "INTERNET_SEARCHER": "search", "INTERNET_SCRAPER": "scrape", "INTERNET_RESEARCHER": "research", "INTERNET_ELICITATION": "true"}, &Internet{Model: "gpt-6-luna", Guard: "guard", Searcher: "search", Scraper: "scrape", Researcher: "research", Elicitation: true}},
+		{"all selectors", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_MODEL": " gpt-6-luna ", "INTERNET_GUARD": "guard", "INTERNET_SEARCHER": "search", "INTERNET_SCRAPER": "scrape", "INTERNET_RESEARCHER": "research", "INTERNET_ELICITATION": "true", "INTERNET_LOCATION": "CH", "INTERNET_CATEGORIES": "news, research paper"}, &Internet{Model: "gpt-6-luna", Guard: "guard", Searcher: "search", Scraper: "scrape", Researcher: "research", Elicitation: true, Location: "CH", Categories: []SearchCategory{{Name: "news"}, {Name: "research paper"}}}},
+		{"clear categories", &Internet{Categories: []SearchCategory{{Name: "news", Description: "News"}}}, map[string]string{"INTERNET_CATEGORIES": ""}, &Internet{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, key := range []string{"INTERNET_ENABLED", "INTERNET_MODEL", "INTERNET_GUARD", "INTERNET_SEARCHER", "INTERNET_SCRAPER", "INTERNET_RESEARCHER", "INTERNET_ELICITATION"} {
+			for _, key := range []string{"INTERNET_ENABLED", "INTERNET_MODEL", "INTERNET_GUARD", "INTERNET_SEARCHER", "INTERNET_SCRAPER", "INTERNET_RESEARCHER", "INTERNET_ELICITATION", "INTERNET_LOCATION", "INTERNET_SUMMARIZER", "INTERNET_CATEGORIES"} {
 				// Preserve the caller environment while making absence testable.
 				t.Setenv(key, "")
 				os.Unsetenv(key)

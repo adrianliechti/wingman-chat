@@ -303,6 +303,42 @@ describe("raw request lifetime", () => {
     );
   });
 
+  it("sends search categories, inclusive calendar dates, country bias and domain filters to the gateway", async () => {
+    const results = [
+      {
+        source: "https://example.com/paper",
+        title: "Paper",
+        content: "Evidence",
+        metadata: { published: "2026-10-10T12:00:00Z" },
+      },
+    ];
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(results)));
+    expect(
+      await new Client().search("web", "papers", {
+        limit: 5,
+        category: "publication",
+        location: "CH",
+        since: "2026-10-01",
+        until: "2026-10-10",
+        domains: ["example.com", "example.org"],
+        exclude: ["spam.example"],
+      }),
+    ).toEqual(results);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/search");
+    const data = options.body as FormData;
+    expect(Object.fromEntries(data.entries())).toMatchObject({
+      model: "web",
+      query: "papers",
+      limit: "5",
+      category: "publication",
+      location: "CH",
+      since: "2026-10-01",
+      until: "2026-10-10",
+    });
+    expect(data.getAll("domain")).toEqual(["example.com", "example.org", "!spam.example"]);
+  });
+
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));

@@ -178,7 +178,7 @@ func applyInternetOverrides(cfg *Config) {
 		for key, target := range map[string]*string{
 			"INTERNET_MODEL": &i.Model, "INTERNET_GUARD": &i.Guard,
 			"INTERNET_SCRAPER": &i.Scraper, "INTERNET_SEARCHER": &i.Searcher,
-			"INTERNET_RESEARCHER": &i.Researcher,
+			"INTERNET_RESEARCHER": &i.Researcher, "INTERNET_LOCATION": &i.Location, "INTERNET_SUMMARIZER": &i.Summarizer,
 		} {
 			if value, exists := os.LookupEnv(key); exists {
 				*target = strings.TrimSpace(value)
@@ -187,6 +187,15 @@ func applyInternetOverrides(cfg *Config) {
 		if value, exists := os.LookupEnv("INTERNET_ELICITATION"); exists {
 			if enabled, err := strconv.ParseBool(value); err == nil {
 				i.Elicitation = enabled
+			}
+		}
+		// Comma-separated category names; an explicitly empty value clears the YAML list.
+		if value, exists := os.LookupEnv("INTERNET_CATEGORIES"); exists {
+			i.Categories = nil
+			for _, name := range strings.Split(value, ",") {
+				if name = strings.TrimSpace(name); name != "" {
+					i.Categories = append(i.Categories, SearchCategory{Name: name})
+				}
 			}
 		}
 	}

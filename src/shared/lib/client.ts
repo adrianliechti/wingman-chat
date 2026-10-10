@@ -13,7 +13,7 @@ import {
   type ClassificationMatch,
   classificationRequest,
 } from "@/features/chat/lib/classificationQuestions";
-import type { SearchResult } from "@/features/research/types/search";
+import type { SearchOptions, SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type { UIMessage } from "@tanstack/ai";
 import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
@@ -513,7 +513,7 @@ export class Client {
   async search(
     model: string,
     query: string,
-    options?: { domains?: string[]; limit?: number },
+    options?: SearchOptions,
     requestOptions: ClientRequestOptions = {},
   ): Promise<SearchResult[]> {
     const data = new FormData();
@@ -521,6 +521,11 @@ export class Client {
     data.append("query", query);
     data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
+    for (const domain of options?.exclude ?? []) data.append("domain", `!${domain}`);
+    if (options?.category) data.append("category", options.category);
+    if (options?.location) data.append("location", options.location);
+    if (options?.since) data.append("since", options.since);
+    if (options?.until) data.append("until", options.until);
 
     const results = await this.postRaw(
       "/api/v1/search",

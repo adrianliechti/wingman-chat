@@ -54,7 +54,7 @@ function InterruptRequest({ interrupt }: { interrupt: ChatInterrupt | ToolApprov
     const input = interrupt.originalArgs;
     const brief =
       tool?.subagent && input && typeof input === "object" && "prompt" in input && typeof input.prompt === "string"
-        ? input.prompt
+        ? (tool.subagent.brief?.(input as Record<string, unknown>) ?? input.prompt)
         : undefined;
     return (
       <div className="flex min-w-0 items-start gap-2">

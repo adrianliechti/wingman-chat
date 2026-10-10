@@ -33,7 +33,14 @@
     "elicitation": true,
     "searcher": "web",
     "scraper": "web",
-    "researcher": "web"
+    "categories": [
+      { "name": "news", "description": "News articles and current-events coverage from media outlets." },
+      { "name": "publication", "description": "Academic papers, journals and other research publications." },
+      { "name": "company", "description": "Specific companies or organizations (e.g. SaaS vendors, public companies). Domain exclusions and date filters are not supported in this category." },
+      { "name": "people", "description": "Specific people or profile pages (e.g. LinkedIn-style biographies). Domain exclusions and date filters are not supported in this category." },
+      { "name": "personal site", "description": "Personal websites, blogs, and homepages." },
+      { "name": "financial report", "description": "Earnings releases, 10-K/10-Q filings, and other financial reports." }
+    ]
   },
   "chat": {
     "model": "claude-sonnet-5",
