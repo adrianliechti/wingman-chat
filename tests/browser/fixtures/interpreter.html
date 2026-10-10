@@ -102,13 +102,13 @@
               .find((tool) => tool.name === name)
               .execute(args, { context: { runId: "browser-run" }, emitCustomEvent() {} });
           const created = await invoke("artifacts_create", {
-            file_path: "/bom.txt",
+            path: "/bom.txt",
             content: "\uFEFFalpha\r\nbeta\r\n",
           });
           const edited = await invoke("artifacts_edit", {
-            edits: [{ file_path: "/bom.txt", old_string: "alpha", new_string: "ALPHA" }],
+            edits: [{ path: "/bom.txt", old_string: "alpha", new_string: "ALPHA" }],
           });
-          const read = await invoke("artifacts_read", { file_path: "/bom.txt" });
+          const read = await invoke("artifacts_read", { path: "/bom.txt" });
           const listed = await invoke("artifacts_glob", { pattern: "{missing.txt,**/*}" });
           return { created, edited, read, listed, file: await fs.getFile("/bom.txt") };
         },

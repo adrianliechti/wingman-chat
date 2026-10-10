@@ -8,6 +8,7 @@ import { Client } from "@/shared/lib/client";
 import { testClient, response, callItem, textItem, finished } from "@/shared/lib/test-support/ai";
 import { assistantMessage, userMessage } from "@/shared/lib/messages";
 import { createSkillsProvider } from "./skillsProvider";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 afterEach(() => {
   setSkillResourceResolver("test-skills", null);
@@ -30,6 +31,18 @@ const call = (id: string, name: string, args: object) =>
   toolCallMessage([{ id, name, arguments: JSON.stringify(args) }]);
 
 describe("native skills", () => {
+  it("previews skill names and resource paths while reading", () => {
+    const provider = createSkillsProvider([skill], meta)!;
+    const load = provider.tools.find((tool) => tool.name === "load_skill")!;
+    const resource = provider.tools.find((tool) => tool.name === "read_skill_resource")!;
+    expect(resolveToolHeader(load, load.name, '{"name":"reports"}', { running: true })).toMatchObject({
+      label: "Reading skill…",
+      preview: "reports",
+    });
+    expect(
+      resolveToolHeader(resource, resource.name, '{"skill":"reports","path":"scripts/check.py"}', { running: true }),
+    ).toMatchObject({ label: "Reading skill resource…", preview: "reports/scripts/check.py" });
+  });
   it("uses one winning entry for duplicate names across the voice catalog, loader, and mounts", async () => {
     const loadContent = vi.fn(
       () => "---\nname: reports\ndescription: Personal reports\n---\nUse the personal template.",

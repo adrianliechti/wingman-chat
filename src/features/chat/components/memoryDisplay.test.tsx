@@ -30,6 +30,22 @@ const round = (message: UIMessage) => ({
 });
 
 describe("memory operations in chat", () => {
+  it.each(["path", "file_path"])("recognizes the %s selector in saved memory calls", (key) => {
+    const args = JSON.stringify({ [key]: "/.memory/preferences/writing.md" });
+    expect(resolveToolHeader(undefined, "artifacts_read", args, {})).toMatchObject({
+      label: "Read memory",
+      preview: "preferences/writing",
+    });
+  });
+
+  it("includes the search pattern in memory hints", () => {
+    const args = JSON.stringify({ path: "/.memory", pattern: "tone" });
+    expect(resolveToolHeader(undefined, "artifacts_grep", args, {})).toMatchObject({
+      label: "Searched memory",
+      preview: "tone in All notes",
+    });
+  });
+
   it.each([
     ["read", "Read memory"],
     ["create", "Remembered"],

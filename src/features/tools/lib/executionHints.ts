@@ -68,7 +68,7 @@ function missingFileHint(rawPath: string, context: ExecutionHintContext): string
   const path = rawPath.trim();
   const sandboxed = context.language === "javascript" ? path : path.replace(/^\/home\/user\/?/, "/");
   const suggestions = suggestWorkspaceFiles(path, context.files);
-  const parts: string[] = [`No workspace file matches "${path}".`];
+  const parts: string[] = [`Could not open "${path}" from the sandbox.`];
   if (suggestions.length) {
     parts.push(`Similar workspace files: ${suggestions.join(", ")}.`);
   } else if (context.files.length) {
@@ -92,11 +92,14 @@ const RULES: HintRule[] = [
       const module = match[1];
       const root = module.split(".")[0];
       const alternative = PYTHON_MODULE_ALTERNATIVES[root];
+      if (alternative) {
+        return `Module "${module}" could not be imported. ${alternative} Packages cannot be installed with pip/micropip or downloaded from the network.`;
+      }
       return (
         `Module "${module}" could not be imported. For a bundled package, add an explicit \`import ${root}\` ` +
         "so the loader can preload it; also check the full import path and any local modules. " +
         "Packages cannot be installed with pip/micropip or downloaded from the network. " +
-        (alternative ?? "Use a bundled package listed in the code execution instructions or the standard library.")
+        "Use a bundled package listed in the code execution instructions or the standard library."
       );
     },
   },
@@ -115,8 +118,21 @@ const RULES: HintRule[] = [
   {
     languages: ["python", "bash"],
     group: "missing-file",
-    pattern: /No such file or directory: '([^']+)'|(\S+): No such file or directory|Script file not found: (\S+)/,
-    hint: (match, context) => missingFileHint(match[1] ?? match[2] ?? match[3], context),
+    pattern: /No such file or directory: (?:'([^']+)'|"([^"]+)")/,
+    hint: (match, context) => missingFileHint(match[1] ?? match[2], context),
+  },
+  {
+    languages: ["bash"],
+    group: "missing-file",
+    pattern: /^([^\n]+): No such file or directory/m,
+    hint: (match, context) =>
+      missingFileHint(match[1].replace(/^[^:\s]+:\s+/, "").replace(/^["']|["']$/g, ""), context),
+  },
+  {
+    languages: ["python", "bash"],
+    group: "missing-file",
+    pattern: /Script file not found: ([^\n]+)/,
+    hint: (match, context) => missingFileHint(match[1], context),
   },
   {
     languages: ["javascript"],
@@ -147,8 +163,12 @@ const RULES: HintRule[] = [
   },
   {
     languages: ["python", "javascript"],
-    pattern:
-      /MemoryError|out of memory|Out of memory|Maximum call stack size exceeded|RangeError: Array buffer allocation failed/,
+    pattern: /RecursionError|Maximum call stack size exceeded|too much recursion/i,
+    hint: "The call stack limit was reached. Check for unintended recursion or recursive cycles; use an iterative loop or an explicit work queue for deep traversals.",
+  },
+  {
+    languages: ["python", "javascript"],
+    pattern: /MemoryError|out of memory|Out of memory|RangeError: Array buffer allocation failed/,
     hint: "The sandbox has limited memory. Process data in chunks, stream with DuckDB COPY or pyarrow readers, or reduce the dataset before loading it.",
   },
   {
@@ -177,10 +197,24 @@ const RULES: HintRule[] = [
   {
     languages: ["bash"],
     group: "command-not-found",
-    pattern:
-      /(?:^|: )(python3?|pip3?|node|npm|npx|deno|ruby|perl|java|go|cargo|gcc|make)(?:[.\d]*)?: command not (?:found|available)/m,
+    pattern: /(?:^|: )(python3?|node|deno)(?:[.\d]*)?: command not (?:found|available)/m,
     hint: (match) =>
-      `Bash has no ${match[1]} runtime. Run that code with execute_script and language ${/^node|npm|npx|deno/.test(match[1]) ? "javascript" : "python"} instead.`,
+      match[1].startsWith("python")
+        ? "Bash has no Python runtime. Run Python code with execute_script and language python instead."
+        : "Bash has no JavaScript runtime. Use execute_script with language javascript for standalone JavaScript; that runtime is a Web Worker with bundled globals, not Node or Deno.",
+  },
+  {
+    languages: ["bash"],
+    group: "command-not-found",
+    pattern: /(?:^|: )(?:pip3?|npm|npx)(?:[.\d]*)?: command not (?:found|available)/m,
+    hint: "Package installation and npm command-line tools are unavailable. Use a bundled Python or JavaScript library with execute_script in that language; packages cannot be installed or downloaded at runtime.",
+  },
+  {
+    languages: ["bash"],
+    group: "command-not-found",
+    pattern: /(?:^|: )(ruby|perl|java|go|cargo|gcc|make)(?:[.\d]*)?: command not (?:found|available)/m,
+    hint: (match) =>
+      `The sandbox does not provide ${match[1]} or host compilers. Rewrite the required operation in Python, JavaScript or the virtual Bash commands; changing execute_script's language does not run code from an unsupported language.`,
   },
   {
     languages: ["bash"],

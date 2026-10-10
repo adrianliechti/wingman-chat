@@ -8,6 +8,7 @@ import { createAgentTool } from "@/features/tools/lib/subagent";
 import type { Client } from "@/shared/lib/client";
 import { outputText } from "@/shared/lib/messages";
 import { getErrorInfo } from "@/shared/lib/errors";
+import { toolPreviewText } from "@/shared/lib/toolPreview";
 import type { ToolProvider } from "@/shared/types/chat";
 
 type Config = ReturnType<typeof getConfig>;
@@ -143,6 +144,7 @@ export function createInternetProvider(client: Client, internet: Config["interne
       const fast = (args?.mode ?? defaultMode) === "fast";
       return {
         icon: Globe,
+        preview: toolPreviewText(args?.prompt),
         label: state.error
           ? "Research failed"
           : state.running

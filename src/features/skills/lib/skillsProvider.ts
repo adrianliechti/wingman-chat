@@ -8,6 +8,7 @@ import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { toolPreviewResource, toolPreviewText } from "@/shared/lib/toolPreview";
 import { createSkillSource } from "./skillSource";
 
 /** Provider id for the app's single skills tool. */
@@ -146,12 +147,14 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   };
 }
 
-/** Keep native schemas and results; only adapt the workspace's display/storage boundary. */
+/** Keep native schemas and results; adapt model guidance and the workspace's display/storage boundary. */
 function displaySkillTool(tool: NativeTool): Tool {
   const resource = tool.name === "read_skill_resource";
   return {
     name: tool.name,
-    description: tool.description,
+    description: resource
+      ? "Read one bundled resource of an available skill, including scripts, references and assets. skill is the exact listed skill name; path is relative to its root, such as scripts/check.py, not the /skills/... interpreter mount path. Use paths returned by load_skill. Returns content and encoding (utf8 or base64). For editing personal library resources, read with list_skills({name, path}) instead."
+      : tool.description,
     inputSchema: tool.inputSchema!,
     execute: async (args, execution) => {
       return [{ type: "text", content: JSON.stringify(await tool.execute!(args, execution)) }];
@@ -163,13 +166,14 @@ function displaySkillTool(tool: NativeTool): Tool {
           ? resource
             ? "Resource unavailable"
             : "Skill unavailable"
-          : resource
-            ? "Read skill resource"
-            : "Read skill",
-        preview:
-          resource && typeof args?.skill === "string" && typeof args?.path === "string"
-            ? `${args.skill}/${args.path}`
-            : undefined,
+          : state.running
+            ? resource
+              ? "Reading skill resource…"
+              : "Reading skill…"
+            : resource
+              ? "Read skill resource"
+              : "Read skill",
+        preview: resource ? toolPreviewResource(args?.skill, args?.path) : toolPreviewText(args?.name),
       }),
       input: () => [],
       output: (result) => {

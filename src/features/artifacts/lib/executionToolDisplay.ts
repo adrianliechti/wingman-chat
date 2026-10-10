@@ -1,6 +1,7 @@
 import { SquareCode } from "lucide-react";
 import type { ToolDisplay } from "@/shared/types/chat";
 import { scriptLanguageFromPath } from "@/features/tools/lib/scriptLanguage";
+import { toolPreviewPath } from "@/shared/lib/toolPreview";
 
 const RUNNING_CODE_WORDS = [
   "Coding",
@@ -29,10 +30,20 @@ function runningCodeLabel(callId = "script"): string {
 }
 
 export const SCRIPT_EXECUTION_DISPLAY: ToolDisplay = {
-  header: (_args, state) => ({
-    icon: SquareCode,
-    label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(state.toolCallId) : "Ran code",
-  }),
+  header: (args, state) => {
+    const inline = typeof args?.code === "string" && !!args.code.trim();
+    const languages: Record<string, string> = { python: "Python", javascript: "JavaScript", bash: "Bash" };
+    return {
+      icon: SquareCode,
+      label: state.error ? "Code hit a snag" : state.running ? runningCodeLabel(state.toolCallId) : "Ran code",
+      preview: inline
+        ? typeof args?.language === "string"
+          ? (languages[args.language] ?? null)
+          : null
+        : (toolPreviewPath(args?.path) ??
+          (typeof args?.language === "string" ? (languages[args.language] ?? null) : null)),
+    };
+  },
   input: (args) => {
     const code = typeof args?.code === "string" ? args.code : "";
     const language =

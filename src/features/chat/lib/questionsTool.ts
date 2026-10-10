@@ -4,6 +4,7 @@ import { HelpCircle } from "lucide-react";
 import type { ContentPart } from "@tanstack/ai";
 import type { Tool, ToolContext } from "@/shared/types/chat";
 import type { ElicitationPrimitiveSchema, ElicitationResult, ElicitationSchema } from "@/shared/types/elicitation";
+import { toolPreviewList } from "@/shared/lib/toolPreview";
 
 type QuestionOption = { value?: unknown; label?: unknown };
 
@@ -43,10 +44,24 @@ export const ASK_QUESTIONS_TOOL: Tool = {
   description:
     "Ask for missing information that materially changes the result, using one structured form. Prefer choices where useful and combine related questions. Make routine decisions yourself and proceed when the request is clear. A single simple free-text question can be asked in chat. Returns the user's answers or a skipped/cancelled result.",
   display: {
-    header: (_args, state) => ({
-      icon: HelpCircle,
-      label: state.error ? "Question failed" : state.running ? "Waiting for answer…" : "Asked a question",
-    }),
+    header: (args, state) => {
+      const questions = Array.isArray(args?.questions) ? args.questions : [];
+      const multiple = questions.length > 1;
+      return {
+        icon: HelpCircle,
+        label: state.error
+          ? "Question failed"
+          : state.running
+            ? "Waiting for answer…"
+            : multiple
+              ? "Asked questions"
+              : "Asked a question",
+        preview: toolPreviewList(
+          questions.map((question) => question?.label),
+          "questions",
+        ),
+      };
+    },
   },
   inputSchema: z.strictObject({
     message: z

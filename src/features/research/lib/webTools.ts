@@ -9,6 +9,7 @@ import { integer, MAX_WEB_BATCH, runCache, stringArray, webBatch } from "./webRe
 import { efficiencyHint, runBudget, type RunBudget } from "./researchBudget";
 import { runMessages } from "@/shared/lib/agent";
 import { finalText, userMessage } from "@/shared/lib/messages";
+import { toolPreviewList } from "@/shared/lib/toolPreview";
 
 // Caps prevent a few full-page web_fetch results from blowing past the
 // inner agent's input limit on the next turn.
@@ -273,9 +274,7 @@ export function buildWebTools(client: Client, internet: WebToolsConfig): Tool[] 
           return {
             icon: Search,
             label: state.error ? "Search failed" : state.running ? "Searching the web…" : "Searched the web",
-            preview: Array.isArray(queries)
-              ? queries.filter((q): q is string => typeof q === "string").join(", ")
-              : undefined,
+            preview: toolPreviewList(queries, "queries"),
           };
         },
       },
@@ -348,17 +347,24 @@ export function buildWebTools(client: Client, internet: WebToolsConfig): Tool[] 
           return {
             icon: Globe,
             label: state.error ? "Fetch failed" : state.running ? "Fetching…" : "Fetched",
-            preview: Array.isArray(urls)
-              ? urls.filter((u): u is string => typeof u === "string").join(", ")
-              : undefined,
+            preview: toolPreviewList(urls, "URLs"),
           };
         },
       },
       description:
-        "Read up to 8 URLs in parallel. Returns verbatim excerpts; fetched pages are reused within this run.",
+        "Read up to 8 known URLs in parallel; fetched pages are reused within this run. " +
+        (internet.summarizer
+          ? "Default reads may summarize long pages. For verbatim source text or quotations, pass query to select passages or offset=0 to read from the beginning."
+          : "Returns verbatim excerpts with source character offsets. Use query for relevant passages or offset for sequential reading."),
       inputSchema: z.strictObject({
         urls: z.array(z.string()).min(1).max(MAX_WEB_BATCH).describe("Known URLs to read."),
-        query: z.string().max(500).describe("Keywords to select relevant passages anywhere on each page.").optional(),
+        query: z
+          .string()
+          .max(500)
+          .describe(
+            "Literal keywords or phrases to rank verbatim passages anywhere on each page; not a question answered by a model. Omit offset when using query.",
+          )
+          .optional(),
         offset: z
           .number()
           .int()

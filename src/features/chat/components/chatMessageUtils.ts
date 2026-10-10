@@ -1,5 +1,5 @@
 import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
-import { tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { toolArgumentPath, tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { artifactDeltaFromMeta, updateArtifactPaths } from "@/shared/types/artifact";
 import {
   isMediaPart,
@@ -380,13 +380,7 @@ export function summarizeToolGroup(messages: readonly UIMessage[], indices: numb
         }
       }
       const argumentPath =
-        typeof args?.file_path === "string"
-          ? args.file_path
-          : typeof args?.path === "string"
-            ? args.path
-            : typeof args?.from === "string"
-              ? args.from
-              : `${call.name}:${call.id}`;
+        toolArgumentPath(args) ?? (typeof args?.from === "string" ? args.from : `${call.name}:${call.id}`);
 
       if (family === "read") readTargets.add(argumentPath);
       else if (family === "edit") {
@@ -413,71 +407,4 @@ export function summarizeToolGroup(messages: readonly UIMessage[], indices: numb
   return segments.join(", ");
 }
 
-export function getToolCallPreview(args: Record<string, unknown> | null): string | null {
-  if (!args) return null;
-
-  // Common parameter names to look for (in order of preference)
-  // Prioritize short, descriptive fields over potentially long content
-  const commonParams = [
-    // Identification (short & descriptive)
-    "title",
-    "name",
-    "label",
-    // Location (usually short)
-    "city",
-    "location",
-    "place",
-    // Web & Network (usually concise)
-    "url",
-    "link",
-    "uri",
-    "endpoint",
-    "address",
-    // Files & Paths (usually concise)
-    "filename",
-    "file",
-    "path",
-    "filepath",
-    "folder",
-    "directory",
-    // Communication (usually short)
-    "subject",
-    "email",
-    "recipient",
-    "to",
-    // Commands (usually short)
-    "command",
-    // Search & Query (can vary in length, but often short)
-    "query",
-    "search",
-    "keyword",
-    "q",
-    "search_query",
-    "term",
-    // Short inputs
-    "question",
-    "input",
-    "value",
-    // Potentially long content (last resort)
-    "message",
-    "prompt",
-    "instruction",
-    "text",
-    "content",
-    "body",
-    "data",
-  ];
-
-  // Path-type params are shown workspace-relative — drop any leading slash.
-  const pathParams = new Set(["filename", "file", "path", "filepath", "folder", "directory"]);
-
-  // Find the first matching parameter
-  for (const param of commonParams) {
-    const value = args[param];
-    if (value && typeof value === "string") {
-      return pathParams.has(param) ? value.replace(/^\/+/, "") : value;
-    }
-  }
-
-  return null;
-}
+export { getToolCallPreview } from "@/shared/lib/toolPreview";

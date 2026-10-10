@@ -7,6 +7,7 @@ import { testClient } from "@/shared/lib/test-support/ai";
 import { pageExcerpt } from "./webContent";
 import { FETCH_CHAR_TARGET, runBudget, TOOL_CALL_TARGET } from "./researchBudget";
 import { buildWebTools, recencySince } from "./webTools";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 function fixture() {
   const client = {
@@ -19,6 +20,18 @@ function fixture() {
   const context = { signal: new AbortController().signal };
   return { client, tools, search, fetch, context };
 }
+
+it("previews batched queries and URLs without falling back to search filters", () => {
+  const { search, fetch } = fixture();
+  expect(
+    resolveToolHeader(search, search.name, '{"queries":["one","two","three"],"location":"US"}', { running: true }),
+  ).toMatchObject({ label: "Searching the web…", preview: "3 queries: one, two" });
+  expect(resolveToolHeader(search, search.name, '{"location":"US"}', {}).preview).toBeNull();
+  expect(
+    resolveToolHeader(fetch, fetch.name, '{"urls":["https://a.com","https://b.com"],"query":"extract this"}', {})
+      .preview,
+  ).toBe("2 URLs: https://a.com, https://b.com");
+});
 
 it("deduplicates batches and passes the requested result limit to the backend", async () => {
   const { search, client, context } = fixture();
@@ -406,6 +419,8 @@ describe("run budget", () => {
     });
     const tools = buildWebTools(client, { scraper: "scrape", summarizer: "mini" });
     const fetch = tools.find(({ name }) => name === "web_fetch")!;
+    expect(fetch.description).toContain("Default reads may summarize long pages");
+    expect(fetch.description).toContain("offset=0");
     const context = { signal: new AbortController().signal };
     complete.mockResolvedValueOnce(assistantMessage("## https://example.com/long\n- Launch date: 14 May 2031"));
     const text = getTextFromContent(

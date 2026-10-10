@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { Search } from "lucide-react";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { createReadonlyFileTools, type FileToolsOptions, type ReadonlyFileSource } from "@/shared/lib/file-tools";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { splitLines, truncateLine } from "@/shared/lib/text-utils";
+import { toolPreviewText } from "@/shared/lib/toolPreview";
 import type { ContentPart } from "@tanstack/ai";
 import type { Tool } from "@/shared/types/chat";
 import type { File, FileEntry } from "@/shared/types/file";
@@ -94,8 +96,15 @@ function createSearchTool(
 ): Tool {
   return {
     name: "repository_search",
+    display: {
+      header: (args, state) => ({
+        icon: Search,
+        label: state.error ? "Search failed" : state.running ? "Searching repository…" : "Searched repository",
+        preview: toolPreviewText(args?.query),
+      }),
+    },
     description:
-      "Semantic search across repository documents using natural language. Returns ranked source passages; use repository_grep for exact text or regex patterns.",
+      "Semantic search across repository documents using natural language. Returns ranked source snippets with paths and line ranges when known. Similarity measures relevance, not confidence in a claim; read the source for surrounding context. Use repository_grep for exact text or regex patterns.",
     inputSchema: z.strictObject({
       query: z.string().describe("A specific natural-language description of the information to find."),
       limit: z
@@ -136,7 +145,7 @@ function createSearchTool(
           const location = startLine
             ? `${file.path}:${startLine}${endLine && endLine !== startLine ? `-${endLine}` : ""}`
             : file.path;
-          const rank = result.similarity !== undefined ? `${(result.similarity * 100).toFixed(0)}%` : `${index + 1}`;
+          const rank = `rank ${index + 1}${result.similarity !== undefined ? `; similarity ${result.similarity.toFixed(3)}` : ""}`;
           const snippet = truncateLine(result.text.replace(/\s+/g, " ").trim(), MAX_SEARCH_SNIPPET_CHARS);
           return [`[${rank}] ${location}: ${snippet}`];
         });

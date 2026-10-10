@@ -152,8 +152,8 @@ export async function executeArtifactCode(options: {
 
     if (!hasCode && !path) {
       return failure(
-        "Error executing code: no `code` was received. If inline code failed to parse, escape quotes and " +
-          `backslashes or write it to ${extension ? `a \`.${extension}\` artifact` : "a script artifact"} and run it with \`path\`.`,
+        "No executable input received. Pass nonempty code with language, or path to an existing " +
+          `${extension ? `.${extension} artifact` : "artifact or selected-skill script"}. path selects a script, not a working directory.`,
       );
     }
 

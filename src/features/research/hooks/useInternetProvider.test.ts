@@ -7,10 +7,20 @@ import { chatSession, boundInterrupt } from "@/shared/lib/test-support/chatSessi
 import type { Client } from "@/shared/lib/client";
 import { assistantMessage, userMessage } from "@/shared/lib/messages";
 import { createInternetProvider } from "./useInternetProvider";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 const answer = (text: string) => assistantMessage(text);
 const call = (name: string, args: object) => toolCallMessage([{ id: name, name, arguments: JSON.stringify(args) }]);
 const brief = "Find sources about the requested topic";
+
+it("previews the research task in both fast and deep modes", () => {
+  const tool = fixture().tools[0];
+  for (const mode of ["fast", "deep"]) {
+    expect(
+      resolveToolHeader(tool, tool.name, JSON.stringify({ prompt: brief, mode, recency: "week" }), {}).preview,
+    ).toBe(brief);
+  }
+});
 function fixture(elicitation = false, researchModel?: string) {
   const complete = vi.fn<Parameters<typeof testClient>[0]>();
   const client = Object.assign(testClient(complete), {

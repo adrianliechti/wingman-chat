@@ -53,6 +53,32 @@ function artifactTools(
 }
 
 describe("artifact file tools", () => {
+  it("keeps legacy file_path calls working while publishing only path in schemas", async () => {
+    const { files, source } = memorySource();
+    const tools = artifactTools(source);
+    const tool = (operation: string) => tools.find((item) => item.name === `artifacts_${operation}`)!;
+    await tool("create").execute({ file_path: "/legacy.txt", content: "before" });
+    expect(JSON.stringify(await tool("read").execute({ file_path: "/legacy.txt" }))).toContain("before");
+    await tool("edit").execute({
+      edits: [{ file_path: "/legacy.txt", old_string: "before", new_string: "after" }],
+    });
+    expect(files.get("/legacy.txt")?.content).toBe("after");
+    await tool("delete").execute({ file_path: "/legacy.txt" });
+    expect(files.size).toBe(0);
+    for (const item of tools) {
+      expect(JSON.stringify(convertSchemaToJsonSchema(item.inputSchema))).not.toContain("file_path");
+    }
+  });
+
+  it("uses the canonical path when a legacy alias is also present", async () => {
+    const { files, source } = memorySource();
+    const create = artifactTools(source).find((tool) => tool.name === "artifacts_create")!;
+    await create.execute({ path: "/canonical.txt", file_path: "/legacy.txt", content: "correct target" });
+    expect([...files.keys()]).toEqual(["/canonical.txt"]);
+    await create.execute({ path: 42, file_path: "/legacy.txt", content: "invalid target" });
+    expect([...files.keys()]).toEqual(["/canonical.txt"]);
+  });
+
   it.each(["artifacts", "repository"])("%s glob and grep share nested wildcard brace matching", async (namespace) => {
     const { source } = memorySource({
       "/policy/returns.md": "needle",
@@ -101,10 +127,10 @@ describe("artifact file tools", () => {
     const grep = tools.find((tool) => tool.name === "artifacts_grep");
     const glob = tools.find((tool) => tool.name === "artifacts_glob");
     const requiredByTool: Record<string, string[]> = {
-      artifacts_read: ["file_path"],
-      artifacts_create: ["file_path", "content"],
+      artifacts_read: ["path"],
+      artifacts_create: ["path", "content"],
       artifacts_edit: ["edits"],
-      artifacts_delete: ["file_path"],
+      artifacts_delete: ["path"],
       artifacts_move: ["from", "to"],
       artifacts_grep: ["pattern"],
       artifacts_glob: ["pattern"],
@@ -133,7 +159,7 @@ describe("artifact file tools", () => {
     ]);
     const item = edits?.items as Record<string, unknown>;
     expect(item.additionalProperties).toBe(false);
-    expect(item.required).toEqual(["file_path", "old_string", "new_string"]);
+    expect(item.required).toEqual(["path", "old_string", "new_string"]);
     expect(Object.keys(convertSchemaToJsonSchema(grep?.inputSchema)!.properties as Record<string, unknown>)).toEqual([
       "pattern",
       "path",
@@ -161,7 +187,7 @@ describe("artifact file tools", () => {
     const html = `<!doctype html><div class="card">Hello</div>`;
 
     expect(create).toBeDefined();
-    await create?.execute({ file_path: "/index.html", content: html });
+    await create?.execute({ path: "/index.html", content: html });
 
     expect(files.get("/index.html")?.content).toBe(html);
   });
@@ -198,8 +224,8 @@ describe("artifact file tools", () => {
       const invalid = '{"days":}';
       const result = await tool.execute(
         operation === "create"
-          ? { file_path: "/config.json", content: invalid }
-          : { edits: [{ file_path: "/config.json", old_string: "30", new_string: "" }] },
+          ? { path: "/config.json", content: invalid }
+          : { edits: [{ path: "/config.json", old_string: "30", new_string: "" }] },
       );
       const saved = result[0];
       if (saved.type !== "text") throw new Error("Expected a text result");
@@ -214,7 +240,7 @@ describe("artifact file tools", () => {
       const fixed = await tools
         .find((tool) => tool.name === "artifacts_edit")!
         .execute({
-          edits: [{ file_path: "/config.json", old_string: invalid, new_string: '{"days":45}' }],
+          edits: [{ path: "/config.json", old_string: invalid, new_string: '{"days":45}' }],
         });
       const corrected = fixed[0];
       if (corrected.type !== "text") throw new Error("Expected a text result");
@@ -229,7 +255,7 @@ describe("artifact file tools", () => {
     const create = artifactTools(source).find((tool) => tool.name === "artifacts_create");
 
     expect(create).toBeDefined();
-    const result = await create?.execute({ file_path: "/bad.html", content: { unexpected: true } });
+    const result = await create?.execute({ path: "/bad.html", content: { unexpected: true } });
 
     expect(files.has("/bad.html")).toBe(false);
     const first = result?.[0];
@@ -238,15 +264,15 @@ describe("artifact file tools", () => {
     expect(parsed.error).toContain("content is required and must be a string");
   });
 
-  it("requires the one canonical file_path/content shape", async () => {
+  it("requires the one canonical path/content shape", async () => {
     const { files, source } = memorySource();
     const create = artifactTools(source).find((tool) => tool.name === "artifacts_create");
 
-    const badPath = await create?.execute({ path: "/aliased.py", content: "print('hi')" });
-    const badContent = await create?.execute({ file_path: "/named.py", text: "print('ho')" });
+    const badPath = await create?.execute({ filename: "/aliased.py", content: "print('hi')" });
+    const badContent = await create?.execute({ path: "/named.py", text: "print('ho')" });
 
     expect(files.size).toBe(0);
-    expect(badPath?.[0]?.type === "text" && JSON.parse(badPath[0].content).error).toContain("file_path is required");
+    expect(badPath?.[0]?.type === "text" && JSON.parse(badPath[0].content).error).toContain("path is required");
     expect(badContent?.[0]?.type === "text" && JSON.parse(badContent[0].content).error).toContain(
       "content is required",
     );
@@ -262,7 +288,7 @@ describe("artifact file tools", () => {
     await edit?.execute({
       edits: [
         {
-          file_path: "/index.html",
+          path: "/index.html",
           old_string: `<h1 class="old">Hi</h1>`,
           new_string: `<h1 class="new">Hello</h1>`,
           replace_all: false,
@@ -281,7 +307,7 @@ describe("artifact file tools", () => {
     await edit?.execute({
       edits: [
         {
-          file_path: "/index.html",
+          path: "/index.html",
           old_string: "<p>Target - value</p>",
           new_string: "<p>Changed</p>",
           replace_all: false,
@@ -301,13 +327,13 @@ describe("artifact file tools", () => {
     await edit?.execute({
       edits: [
         {
-          file_path: "/index.html",
+          path: "/index.html",
           old_string: "<p>“same”</p>",
           new_string: "<p>curly</p>",
           replace_all: false,
         },
         {
-          file_path: "/index.html",
+          path: "/index.html",
           old_string: "<p>Target - value</p>",
           new_string: "<p>changed</p>",
           replace_all: false,
@@ -329,10 +355,10 @@ describe("artifact file tools", () => {
     const result = await edit?.execute(
       {
         edits: [
-          { file_path: "/first.txt", old_string: "one", new_string: "ONE" },
-          { file_path: "/first.txt", old_string: "ONE two", new_string: "done" },
-          { file_path: "/second.txt", old_string: "blue", new_string: "green" },
-          { file_path: "/created.txt", old_string: "", new_string: "created\n" },
+          { path: "/first.txt", old_string: "one", new_string: "ONE" },
+          { path: "/first.txt", old_string: "ONE two", new_string: "done" },
+          { path: "/second.txt", old_string: "blue", new_string: "green" },
+          { path: "/created.txt", old_string: "", new_string: "created\n" },
         ],
       },
       { context: { setMeta: (value) => (meta = value) }, emitCustomEvent() {} },
@@ -364,8 +390,8 @@ describe("artifact file tools", () => {
 
     const result = await edit?.execute({
       edits: [
-        { file_path: "/created.txt", old_string: "", new_string: "must not persist\n" },
-        { file_path: "/existing.txt", old_string: "missing", new_string: "replacement" },
+        { path: "/created.txt", old_string: "", new_string: "must not persist\n" },
+        { path: "/existing.txt", old_string: "missing", new_string: "replacement" },
       ],
     });
 
@@ -383,7 +409,7 @@ describe("artifact file tools", () => {
     const result = await edit?.execute({
       edits: [
         {
-          file_path: "/windows.txt",
+          path: "/windows.txt",
           old_string: "first\nsecond",
           new_string: "first\nchanged",
         },
@@ -408,12 +434,12 @@ describe("artifact file tools", () => {
       .find((tool) => tool.name === "artifacts_edit")!
       .execute({
         edits: [
-          ...["/lf.txt", "/cr.txt", "/mixed.txt"].map((file_path) => ({
-            file_path,
+          ...["/lf.txt", "/cr.txt", "/mixed.txt"].map((path) => ({
+            path,
             old_string: "old",
             new_string: "new",
           })),
-          { file_path: "/new.txt", old_string: "", new_string: "created" },
+          { path: "/new.txt", old_string: "", new_string: "created" },
         ],
       });
     const first = result[0];
@@ -436,7 +462,7 @@ describe("artifact file tools", () => {
       ["", { utf8_bom: false, line_endings: "none" }],
       ["data:image/png;base64,aGVsbG8=", undefined],
     ] as const) {
-      const result = await create.execute({ file_path: "/file.txt", content });
+      const result = await create.execute({ path: "/file.txt", content });
       const first = result[0];
       if (first.type !== "text") throw new Error("Expected a text result");
       expect(JSON.parse(first.content).text_format).toEqual(format);
@@ -454,7 +480,7 @@ describe("artifact file tools", () => {
   ])("read headers expose whole-text format even for empty or partial reads: %j", async (content, bom, endings) => {
     const { source } = memorySource({ "/file.txt": content });
     const read = artifactTools(source).find((tool) => tool.name === "artifacts_read")!;
-    const result = await read.execute({ file_path: "/file.txt", limit: 1 });
+    const result = await read.execute({ path: "/file.txt", limit: 1 });
     const first = result[0];
     if (first.type !== "text") throw new Error("Expected a text result");
     expect(first.content).toContain(`[UTF-8 BOM: ${bom}; line endings: ${endings}]`);
@@ -466,7 +492,7 @@ describe("artifact file tools", () => {
     const { source } = memorySource({ "/image.png": "data:image/png;base64,aGVsbG8=" });
     const result = await artifactTools(source)
       .find((tool) => tool.name === "artifacts_read")!
-      .execute({ file_path: "/image.png" });
+      .execute({ path: "/image.png" });
     expect(JSON.stringify(result)).toContain("binary");
     expect(JSON.stringify(result)).not.toContain("UTF-8 BOM");
   });
@@ -477,8 +503,8 @@ describe("artifact file tools", () => {
 
     await edit?.execute({
       edits: [
-        { file_path: "/quotes.txt", old_string: 'Title: "Hello"', new_string: 'Title: "World"' },
-        { file_path: "/quotes.txt", old_string: "Owner: 'Ada'", new_string: "Owner: 'Grace'" },
+        { path: "/quotes.txt", old_string: 'Title: "Hello"', new_string: 'Title: "World"' },
+        { path: "/quotes.txt", old_string: "Owner: 'Ada'", new_string: "Owner: 'Grace'" },
       ],
     });
 
@@ -490,7 +516,7 @@ describe("artifact file tools", () => {
     const edit = artifactTools(source, { maxEditBytes: 4 }).find((tool) => tool.name === "artifacts_edit");
 
     const result = await edit?.execute({
-      edits: [{ file_path: "/large.txt", old_string: "too", new_string: "not" }],
+      edits: [{ path: "/large.txt", old_string: "too", new_string: "not" }],
     });
 
     expect(files.get("/large.txt")?.content).toBe("too large");
@@ -503,7 +529,7 @@ describe("artifact file tools", () => {
     const { files, source } = memorySource({ "/bom.txt": "\uFEFFhello\n" });
     const read = artifactTools(source).find((tool) => tool.name === "artifacts_read");
 
-    const result = await read?.execute({ file_path: "/bom.txt" });
+    const result = await read?.execute({ path: "/bom.txt" });
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
@@ -592,6 +618,62 @@ describe("artifact file tools", () => {
     expect(countText.content).toBe("/src/app.ts:1");
   });
 
+  it.each(["files_with_matches", "count", "content"])(
+    "returns usable next offsets for %s searches",
+    async (output_mode) => {
+      const { source } = memorySource({
+        "/a.txt": "before\nneedle one\nafter\nneedle two\nend",
+        "/b.txt": "needle three",
+      });
+      const grep = artifactTools(source).find((tool) => tool.name === "artifacts_grep")!;
+      const pages: string[] = [];
+      let skip = 0;
+      for (let page = 0; page < 4; page++) {
+        const result = await grep.execute({ pattern: "needle", output_mode, head_limit: 1, skip, "-C": 1 });
+        const text = result[0];
+        if (text.type !== "text") throw new Error("Expected text result");
+        pages.push(text.content);
+        const next = text.content.match(/use skip=(\d+) to continue/);
+        if (!next) break;
+        expect(Number(next[1])).toBeGreaterThan(skip);
+        skip = Number(next[1]);
+      }
+      const combined = pages.join("\n");
+      expect(combined).toContain("/a.txt");
+      expect(combined).toContain("/b.txt");
+      if (output_mode === "content") {
+        expect(pages).toHaveLength(3);
+        expect(combined).toContain("/a.txt:2:needle one");
+        expect(combined).toContain("/a.txt:4:needle two");
+        expect(combined).toContain("/b.txt:1:needle three");
+      } else {
+        expect(pages).toHaveLength(2);
+      }
+      const end = await grep.execute({ pattern: "needle", output_mode, skip: 999 });
+      expect(JSON.stringify(end)).toContain("No more results");
+    },
+  );
+
+  it.each(["artifacts", "repository"])(
+    "distinguishes unavailable search scopes, excluded files and genuine misses in %s",
+    async (namespace) => {
+      const { source } = memorySource({
+        "/notes/a.md": "no keyword here",
+        "/notes/empty.md": "",
+        "/image.png": "data:image/png;base64,aA==",
+      });
+      const grep = createReadonlyFileTools(source, { namespace }).find((tool) => tool.name === `${namespace}_grep`)!;
+      const missing = await grep.execute({ pattern: "needle", path: "/missing" });
+      expect(JSON.stringify(missing)).toContain("Search path not found");
+      const filtered = await grep.execute({ pattern: "needle", path: "/notes", glob: "*.csv" });
+      expect(JSON.stringify(filtered)).toContain("No file contents were searched");
+      const binary = await grep.execute({ pattern: "needle", path: "/image.png" });
+      expect(JSON.stringify(binary)).toContain("No searchable text files");
+      const miss = await grep.execute({ pattern: "needle", path: "/notes" });
+      expect(JSON.stringify(miss)).toContain("No matches found in 2 text files");
+    },
+  );
+
   it("reports invalid grep regexes instead of silently treating them as literals", async () => {
     const { source } = memorySource({ "/a.txt": "[" });
     const grep = artifactTools(source).find((tool) => tool.name === "artifacts_grep");
@@ -611,7 +693,7 @@ describe("artifact file tools", () => {
 
     const first = result?.[0];
     if (!first || first.type !== "text") throw new Error("Expected a text result");
-    expect(first.content).toBe("No matches found");
+    expect(first.content).toBe("No matches found in 1 text file.");
   });
 
   it("continues read pagination from the last line actually returned", async () => {
@@ -622,7 +704,7 @@ describe("artifact file tools", () => {
       (tool) => tool.name === "artifacts_read",
     );
 
-    const first = await read?.execute({ file_path: "/long.txt" });
+    const first = await read?.execute({ path: "/long.txt" });
     const firstResult = first?.[0];
     expect(firstResult?.type).toBe("text");
     if (!firstResult || firstResult.type !== "text") throw new Error("Expected a text result");
@@ -630,7 +712,7 @@ describe("artifact file tools", () => {
     expect(firstResult.content).toContain("use offset=2 to continue");
     expect(firstResult.content).not.toContain("2222222222");
 
-    const second = await read?.execute({ file_path: "/long.txt", offset: 2 });
+    const second = await read?.execute({ path: "/long.txt", offset: 2 });
     const secondResult = second?.[0];
     expect(secondResult?.type).toBe("text");
     if (!secondResult || secondResult.type !== "text") throw new Error("Expected a text result");

@@ -3,6 +3,6 @@ Read-only extracted text from uploaded documents; separate from artifacts even w
 
 Use repository_glob for paths, repository_grep for regex search, repository_search for concepts and repository_read for passages. Go directly to known files or focused searches. Glob "**/*" discovers files; "**/" matches zero or more directory levels.
 
-repository_read takes file_path and optional 1-based offset/limit. Metadata and line numbers describe extracted text, not the original encoding or PDF pages. Pending/failed extractions may be absent; search errors do not prove no match.
+repository_read takes path and optional 1-based offset/limit. repository_grep accepts a file or folder scope; repository_glob accepts a folder scope. Use glob filters such as "*.pdf" for document extensions; grep's type selects only a listed language/type alias. Metadata and line numbers describe extracted text, not the original encoding or PDF pages. Pending/failed extractions may be absent; search errors do not prove no match.
 
 Read sufficient surrounding text, base claims on retrieved content and cite canonical paths. State unsupported claims or missing evidence. Create or edit deliverables in the artifact workspace.

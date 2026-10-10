@@ -187,8 +187,8 @@ export type ToolDisplay = {
     icon?: ToolDisplayIcon;
     label?: string;
     mono?: boolean;
-    /** Short text shown beside the label; overrides the generic argument preview. */
-    preview?: string;
+    /** Short text beside the label; null hides it, undefined uses the generic argument preview. */
+    preview?: string | null;
     /** Hide the preview entirely (the label already carries the detail). */
     suppressPreview?: boolean;
   };

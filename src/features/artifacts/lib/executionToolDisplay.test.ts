@@ -13,6 +13,16 @@ const tool: Tool = {
 };
 
 describe("execution tool progress", () => {
+  it("previews the inline language or script path, respecting that inline code wins", () => {
+    const preview = (args: object) => resolveToolHeader(tool, tool.name, JSON.stringify(args), {}).preview;
+    expect(preview({ language: "python", code: "print('hello')" })).toBe("Python");
+    expect(preview({ language: "javascript", code: "console.log('hello')" })).toBe("JavaScript");
+    expect(preview({ language: "bash", code: "cat /input.csv" })).toBe("Bash");
+    expect(preview({ path: "/scripts/analysis.py", language: "python" })).toBe("scripts/analysis.py");
+    expect(preview({ path: "/ignored.py", language: "bash", code: "ls" })).toBe("Bash");
+    expect(preview({ code: "print('raw code is not a hint')" })).toBeNull();
+  });
+
   it("keeps the label stable while partial code arguments stream", () => {
     const args = JSON.stringify({ language: "python", code: "print('a long script arrives one token at a time')" });
     const labels = new Set(
