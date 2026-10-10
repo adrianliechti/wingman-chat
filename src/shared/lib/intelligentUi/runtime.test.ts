@@ -218,9 +218,9 @@ describe("persistence", () => {
     });
     vi.useFakeTimers();
     try {
-      const key = hashSource("persisted");
+      const key = "v2:" + hashSource(JSON.stringify(["saved-owner", "persisted"]));
       saved.set(`ui-state:${key}`, JSON.stringify({ principal: 4000, stale: 1 }));
-      const runtime = getUiRuntime("persisted", loan());
+      const runtime = getUiRuntime("saved-owner", "persisted", loan());
       expect(runtime.state.get().principal).toBe(4000);
       expect(runtime.state.get()).not.toHaveProperty("stale");
       runtime.setValue("rate", 9);
@@ -237,10 +237,13 @@ describe("persistence", () => {
 describe("getUiRuntime", () => {
   it("reuses the runtime for the same source", () => {
     const doc = loan();
-    const first = getUiRuntime("source-a", doc);
+    const first = getUiRuntime("owner-a", "source-a", doc);
     first.setValue("principal", 42);
-    expect(getUiRuntime("source-a", doc)).toBe(first);
-    expect(getUiRuntime("source-b", doc)).not.toBe(first);
-    expect(getUiRuntime("source-a", doc).state.get().principal).toBe(42);
+    expect(getUiRuntime("owner-a", "source-a", doc)).toBe(first);
+    expect(getUiRuntime("owner-a", "source-b", doc)).not.toBe(first);
+    const other = getUiRuntime("owner-b", "source-a", doc);
+    expect(other).not.toBe(first);
+    expect(other.state.get().principal).toBe(doc.state.principal);
+    expect(getUiRuntime("owner-a", "source-a", doc).state.get().principal).toBe(42);
   });
 });

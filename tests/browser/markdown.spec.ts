@@ -29,6 +29,66 @@ const intelligentControls =
   }) +
   "\n```";
 
+test("identical UI blocks stay independent across owners and reloads", async ({ page }) => {
+  const source =
+    "```ui\n" +
+    JSON.stringify({
+      state: { n: 1 },
+      children: [
+        { type: "text", text: "Count: {{n}}" },
+        { type: "button", label: "Increment", action: { set: { n: "{{n + 1}}" } } },
+      ],
+    }) +
+    "\n```";
+  const content = source + "\n\n" + source;
+  const show = (owner: string) =>
+    page.evaluate(({ content, owner }) => window.markdownE2E.render(content, false, false, false, owner), {
+      content,
+      owner,
+    });
+  await show("chat-a/message-a/part-a");
+  await page.getByRole("button", { name: "Increment", exact: true }).first().click();
+  await expect(page.getByTestId("markdown")).toContainText("Count: 2");
+  await expect(page.getByText("Count: 1", { exact: true })).toHaveCount(1);
+  await page.waitForFunction(() =>
+    Object.keys(localStorage).some(
+      (key) => key.startsWith("ui-state:v2:") && JSON.parse(localStorage.getItem(key)!).n === 2,
+    ),
+  );
+  await page.reload();
+  await page.waitForFunction(() => window.markdownE2E);
+  await show("chat-a/message-a/part-a");
+  await expect(page.getByText("Count: 2", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("Count: 1", { exact: true })).toHaveCount(1);
+  await show("chat-b/message-a/part-a");
+  await expect(page.getByText("Count: 1", { exact: true })).toHaveCount(2);
+  await show("chat-a/message-a/part-a");
+  await expect(page.getByText("Count: 2", { exact: true })).toHaveCount(1);
+});
+
+test("a chart with an unset series keeps neighbouring controls usable", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const source =
+    "```ui\n" +
+    JSON.stringify({
+      state: { selected: null },
+      children: [
+        { type: "chart", kind: "bar", data: [{ name: "A", value: 1 }], x: "name", series: ["{{selected}}"] },
+        { type: "button", label: "Choose series", action: { set: { selected: "value" } } },
+        { type: "text", text: "Selection: {{selected}}" },
+      ],
+    }) +
+    "\n```";
+  await page.evaluate((source) => window.markdownE2E.render(source), source);
+  await expect(page.getByText("No data to chart", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Choose series", exact: true }).click();
+  await expect(page.getByText("Selection: value", { exact: true })).toBeVisible();
+  await expect(page.getByText("No data to chart", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("markdown").locator("svg[role=img]")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
 for (const dark of [false, true]) {
   test(`intelligent controls support keyboard selection and bound values (${dark ? "dark narrow" : "light"})`, async ({
     page,

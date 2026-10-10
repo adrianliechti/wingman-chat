@@ -1,8 +1,12 @@
+import { convertSchemaToJsonSchema } from "@tanstack/ai";
 import { describe, expect, it, vi } from "vitest";
 import type { Client } from "@/shared/lib/client";
 import { outputText as getTextFromContent } from "@/shared/lib/messages";
+import { assistantMessage } from "@/shared/lib/messages";
+import { testClient } from "@/shared/lib/test-support/ai";
 import { pageExcerpt } from "./webContent";
-import { buildWebTools } from "./webTools";
+import { FETCH_CHAR_TARGET, runBudget, TOOL_CALL_TARGET } from "./researchBudget";
+import { buildWebTools, recencySince } from "./webTools";
 
 function fixture() {
   const client = {
@@ -228,4 +232,214 @@ describe("verbatim excerpts", () => {
     expect(result).toContain(page.slice(Number(range[1]), Number(range[2])));
     expect(pageExcerpt(page, "", 2, 1000)).toContain(page.slice(2, 1002));
   });
+});
+
+describe("search filters", () => {
+  function configured() {
+    const client = {
+      search: vi.fn<Client["search"]>().mockResolvedValue([]),
+      scrape: vi.fn<Client["scrape"]>(),
+    };
+    const tools = buildWebTools(client as unknown as Client, {
+      searcher: "search",
+      categories: [{ name: "news", description: "Current events" }, { name: "publication" }],
+      location: "ch",
+    });
+    const context = { signal: new AbortController().signal };
+    return { client, search: tools[0], context };
+  }
+
+  it("resolves category, recency, location and domain filters into gateway options", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T10:00:00Z"));
+    try {
+      const { client, search, context } = configured();
+      expect(JSON.stringify(convertSchemaToJsonSchema(search.inputSchema))).toContain("Current events");
+      const text = getTextFromContent(
+        await search.execute(
+          { queries: ["q"], category: "News", recency: "month", location: "de", exclude_domains: ["spam.example"] },
+          { context, emitCustomEvent() {} },
+        ),
+      );
+      expect(client.search).toHaveBeenCalledExactlyOnceWith(
+        "search",
+        "q",
+        { category: "news", since: "2026-02-01", location: "DE", exclude: ["spam.example"], limit: 8 },
+        { signal: context.signal },
+      );
+      expect(text).toContain(
+        "Filters: category: news · published since 2026-02-01 · location: DE · excluding: spam.example",
+      );
+      await search.execute(
+        { queries: ["q"], since: "2026-01-01", until: "2026-01-31" },
+        { context, emitCustomEvent() {} },
+      );
+      expect(client.search).toHaveBeenLastCalledWith(
+        "search",
+        "q",
+        { since: "2026-01-01", until: "2026-01-31", location: "CH", limit: 8 },
+        { signal: context.signal },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects unknown categories, malformed dates, conflicting windows and bad locations", async () => {
+    const { search, context } = configured();
+    const exec = (args: Record<string, unknown>) => search.execute(args, { context, emitCustomEvent() {} });
+    await expect(exec({ queries: ["q"], category: "sports" })).rejects.toThrow(/news, publication/);
+    await expect(exec({ queries: ["q"], since: "last week" })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(exec({ queries: ["q"], since: "2026-02-30" })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(exec({ queries: ["q"], until: "2026-04-31" })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(exec({ queries: ["q"], recency: "week", since: "2026-01-01" })).rejects.toThrow(/not both/);
+    await expect(exec({ queries: ["q"], since: "2026-02-01", until: "2026-01-01" })).rejects.toThrow(/after/);
+    await expect(exec({ queries: ["q"], location: "Swiss" })).rejects.toThrow(/two-letter/);
+  });
+
+  it("preserves distinct excerpts from one URL while removing repeated evidence", async () => {
+    const { search, client, context } = fixture();
+    expect(JSON.stringify(convertSchemaToJsonSchema(search.inputSchema))).not.toContain('"category"');
+    client.search.mockImplementation(async (_model, query) =>
+      query === "a"
+        ? [
+            {
+              source: "https://www.example.com/page/",
+              title: "Page",
+              content: "A",
+              metadata: { published: "2031-05-14T09:00:00Z" },
+            },
+          ]
+        : [
+            { source: "https://example.com/page#top", title: "Page", content: "B" },
+            {
+              source: "https://example.com/page",
+              title: "Page",
+              content: "A",
+              metadata: { published: "2031-05-14T09:00:00Z" },
+            },
+            { source: "https://example.com/other", title: "Other", content: "C" },
+          ],
+    );
+    const text = getTextFromContent(await search.execute({ queries: ["a", "b"] }, { context, emitCustomEvent() {} }));
+    expect(text).toContain("Published: 2031-05-14T09:00:00Z");
+    expect(text.match(/### Page/g)).toHaveLength(2);
+    expect(text).toContain("\nA");
+    expect(text).toContain("\nB");
+    expect(text).toContain("### Other");
+    expect(text).toContain("1 result already listed above omitted");
+    expect(text).not.toContain("Filters:");
+  });
+});
+
+describe("run budget", () => {
+  it("keeps tools available beyond the efficiency target and warns as usage grows", async () => {
+    const { search, client, context } = fixture();
+    const exec = (query = "q") => search.execute({ queries: [query] }, { context, emitCustomEvent() {} });
+    const texts: string[] = [];
+    for (let i = 0; i < TOOL_CALL_TARGET; i++) texts.push(getTextFromContent(await exec()));
+    expect(client.search).toHaveBeenCalledTimes(1);
+    expect(texts[0]).not.toContain("Research has used");
+    expect(texts.at(-1)).toContain("Prefer answering from the evidence gathered");
+    const more = getTextFromContent(await exec("important gap"));
+    expect(more).toContain("## Query: important gap");
+    expect(client.search).toHaveBeenCalledTimes(2);
+    expect(runBudget(context.signal).calls).toBe(TOOL_CALL_TARGET + 1);
+    const other = { signal: new AbortController().signal };
+    expect(
+      getTextFromContent(await search.execute({ queries: ["q"] }, { context: other, emitCustomEvent() {} })),
+    ).toContain("Evidence");
+  });
+
+  it("compacts repeated evidence and allows further fetches beyond the cumulative target", async () => {
+    const { search, fetch, client, context } = fixture();
+    const first = getTextFromContent(await search.execute({ queries: ["a"] }, { context, emitCustomEvent() {} }));
+    expect(first).toContain("Evidence");
+    const second = getTextFromContent(await search.execute({ queries: ["b"] }, { context, emitCustomEvent() {} }));
+    expect(second).toContain("_Same evidence listed in an earlier search._");
+    expect(second).not.toContain("\nEvidence");
+
+    client.scrape.mockResolvedValue("x".repeat(50_000));
+    const urls = Array.from({ length: 8 }, (_, i) => `https://example.com/${i}`);
+    const text = getTextFromContent(await fetch.execute({ urls, max_chars: 12000 }, { context, emitCustomEvent() {} }));
+    expect(text.match(/## https:\/\/example.com\//g)).toHaveLength(8);
+    expect(text.match(/x{12000}/g)).toHaveLength(8);
+    expect(runBudget(context.signal).fetchedChars).toBeGreaterThan(FETCH_CHAR_TARGET);
+    expect(text).toContain("Prefer answering from the evidence gathered");
+    const more = getTextFromContent(
+      await fetch.execute({ urls: ["https://example.com/9"] }, { context, emitCustomEvent() {} }),
+    );
+    expect(more).toContain("x".repeat(6000));
+    expect(client.scrape).toHaveBeenCalledTimes(9);
+  });
+
+  it("accounts for concurrent summarizer results and bounds each output", async () => {
+    const complete = vi
+      .fn<Parameters<typeof testClient>[0]>()
+      .mockResolvedValue(assistantMessage("证据".repeat(10_000)));
+    const client = Object.assign(testClient(complete), {
+      scrape: vi.fn<Client["scrape"]>().mockResolvedValue("Source text. ".repeat(1000)),
+    });
+    const fetch = buildWebTools(client, { scraper: "scrape", summarizer: "mini" })[0];
+    const context = { signal: new AbortController().signal };
+    const budget = runBudget(context.signal);
+    budget.fetchedChars = FETCH_CHAR_TARGET - 5000;
+    const results = await Promise.all(
+      [0, 1].map(async (i) => fetch.execute({ urls: [`https://example.com/${i}`] }, { context, emitCustomEvent() {} })),
+    );
+    const texts = results.map(getTextFromContent);
+    const excerpts = texts.map((text) => text.split("\n").slice(1).join("\n").split("\n\n[Research has used")[0]);
+    expect(complete).toHaveBeenCalledTimes(2);
+    for (const excerpt of excerpts) {
+      expect(excerpt.length).toBeLessThanOrEqual(6512);
+      expect(excerpt).toContain("[Fetch result truncated; omitted text is not evidence.]");
+    }
+    expect(budget.fetchedChars).toBe(FETCH_CHAR_TARGET - 5000 + excerpts.reduce((sum, text) => sum + text.length, 0));
+    expect(budget.fetchedChars).toBeGreaterThan(FETCH_CHAR_TARGET);
+  });
+
+  it("condenses long pages through the configured summarizer and falls back when it fails", async () => {
+    const complete = vi.fn<Parameters<typeof testClient>[0]>();
+    const client = Object.assign(testClient(complete), {
+      search: vi.fn<Client["search"]>(),
+      scrape: vi.fn<Client["scrape"]>().mockResolvedValue("Launch date notes: 14 May 2031. ".repeat(400)),
+    });
+    const tools = buildWebTools(client, { scraper: "scrape", summarizer: "mini" });
+    const fetch = tools.find(({ name }) => name === "web_fetch")!;
+    const context = { signal: new AbortController().signal };
+    complete.mockResolvedValueOnce(assistantMessage("## https://example.com/long\n- Launch date: 14 May 2031"));
+    const text = getTextFromContent(
+      await fetch.execute({ urls: ["https://example.com/long"] }, { context, emitCustomEvent() {} }),
+    );
+    expect(text).toContain("- Launch date: 14 May 2031");
+    expect(text).toContain("[Summarized evidence;");
+    expect(text).not.toContain("Launch date notes: 14 May 2031. Launch date notes");
+    expect(complete.mock.calls[0][0].model).toBe("mini");
+    expect(JSON.stringify(complete.mock.calls[0][0].messages)).toContain("Research question:");
+
+    for (const passage of [{ query: "launch date" }, { offset: 0 }]) {
+      const verbatim = getTextFromContent(
+        await fetch.execute({ urls: ["https://example.com/long"], ...passage }, { context, emitCustomEvent() {} }),
+      );
+      expect(verbatim).toContain("Launch date notes: 14 May 2031. Launch date notes");
+      expect(verbatim).not.toContain("[Summarized evidence;");
+    }
+    expect(complete).toHaveBeenCalledTimes(1);
+
+    complete.mockRejectedValueOnce(new Error("summarizer offline"));
+    const fallback = getTextFromContent(
+      await fetch.execute({ urls: ["https://example.com/other"] }, { context, emitCustomEvent() {} }),
+    );
+    expect(fallback).toContain("Launch date notes: 14 May 2031. Launch date notes");
+  });
+});
+
+it.each([
+  ["month", "2026-03-31T12:00:00Z", "2026-02-28"],
+  ["month", "2024-03-31T12:00:00Z", "2024-02-29"],
+  ["month", "2026-01-31T12:00:00Z", "2025-12-31"],
+  ["year", "2024-02-29T12:00:00Z", "2023-02-28"],
+  ["year", "2026-03-31T12:00:00Z", "2025-03-31"],
+] as const)("clamps %s recency from %s to %s", (recency, now, expected) => {
+  expect(recencySince(recency, new Date(now))).toBe(expected);
 });

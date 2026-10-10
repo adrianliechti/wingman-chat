@@ -303,7 +303,7 @@ it("enables state controls, actions and saved state only after streaming finishe
   // A valid prefix and complete JSON still belong to the preview until the
   // host marks the fence finished.
   for (const preview of [source.slice(0, -2) + ",", source]) {
-    await render(preview, { isStreaming: true, onSendMessage });
+    await render(preview, { isStreaming: true, onSendMessage, stateKey: "streaming-owner" });
     expect(metricValue()).toBe("4");
     expect(buttonNamed("+").disabled).toBe(true);
     expect(buttonNamed("Continue").disabled).toBe(true);
@@ -317,7 +317,7 @@ it("enables state controls, actions and saved state only after streaming finishe
     expect(getItem).not.toHaveBeenCalled();
   }
 
-  await render(source, { isStreaming: false, onSendMessage });
+  await render(source, { isStreaming: false, onSendMessage, stateKey: "streaming-owner" });
   expect(getItem).toHaveBeenCalled();
   expect(metricValue()).toBe("7");
   expect(buttonNamed("+").disabled).toBe(false);
@@ -415,7 +415,7 @@ it("keeps state when the same document is rendered again", async () => {
       { type: "button", label: "Inc", action: { set: { n: "{{ n + 1 }}" } } },
     ],
   });
-  await render(source);
+  await render(source, { stateKey: "remount-owner" });
   await act(async () => {
     buttonNamed("Inc").click();
   });
@@ -424,7 +424,7 @@ it("keeps state when the same document is rendered again", async () => {
     root!.unmount();
   });
   root = createRoot(container);
-  await render(source);
+  await render(source, { stateKey: "remount-owner" });
   expect(metricValue()).toBe("2");
 });
 
@@ -476,4 +476,73 @@ it("repeats children per item with item and index in scope, actions included", a
     buttonNamed("Pick Pro").click();
   });
   expect(onSendMessage).toHaveBeenCalledWith("I take Pro at 29");
+});
+
+const counter = JSON.stringify({
+  state: { n: 1 },
+  children: [
+    { type: "metric", label: "N", value: "{{n}}" },
+    { type: "button", label: "Increment", action: { set: { n: "{{n + 1}}" } } },
+  ],
+});
+
+it.each([false, true])("keeps identical UI instances independent (scoped=%s)", async (scoped) => {
+  await act(async () => {
+    root!.render(
+      <>
+        <UiRenderer source={counter} stateKey={scoped ? "counter-a" : undefined} />
+        <UiRenderer source={counter} stateKey={scoped ? "counter-b" : undefined} />
+      </>,
+    );
+  });
+  await act(async () => {
+    buttonNamed("Increment").click();
+  });
+  expect([...container.querySelectorAll(".text-2xl")].map((node) => node.textContent)).toEqual(["2", "1"]);
+});
+
+it("scopes identical Markdown fences by block and message owner", async () => {
+  const fence = "```ui\n" + counter + "\n```";
+  const content = fence + "\n\n" + fence;
+  const show = async (owner: string) => {
+    await act(async () => {
+      root!.render(<Markdown uiStateKey={owner}>{content}</Markdown>);
+    });
+  };
+  await show("chat-a/message-a/part-a");
+  await act(async () => {
+    buttonNamed("Increment").click();
+  });
+  expect([...container.querySelectorAll(".text-2xl")].map((node) => node.textContent)).toEqual(["2", "1"]);
+  await show("chat-a/message-b/part-a");
+  expect([...container.querySelectorAll(".text-2xl")].map((node) => node.textContent)).toEqual(["1", "1"]);
+  await show("chat-b/message-a/part-a");
+  expect([...container.querySelectorAll(".text-2xl")].map((node) => node.textContent)).toEqual(["1", "1"]);
+  await show("chat-a/message-a/part-a");
+  expect([...container.querySelectorAll(".text-2xl")].map((node) => node.textContent)).toEqual(["2", "1"]);
+});
+
+it("contains a component render error and recovers when its values are corrected", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await render(
+      JSON.stringify({
+        state: { details: [null] },
+        children: [
+          { type: "text", text: "Still usable" },
+          { type: "keyvalue", items: "{{details}}" },
+          { type: "button", label: "Repair", action: { set: { details: [{ label: "Status", value: "Ready" }] } } },
+        ],
+      }),
+    );
+    expect(container.textContent).toContain("Still usable");
+    expect(container.textContent).toContain("This component could not be rendered");
+    await act(async () => {
+      buttonNamed("Repair").click();
+    });
+    expect(container.textContent).toContain("Ready");
+    expect(container.textContent).not.toContain("This component could not be rendered");
+  } finally {
+    errors.mockRestore();
+  }
 });

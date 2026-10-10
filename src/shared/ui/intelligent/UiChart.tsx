@@ -26,7 +26,7 @@ export interface UiChartProps {
   yLabel?: string;
 }
 
-// Categorical slots in fixed order (never cycled), stepped for each surface.
+// Categorical colours in fixed order, stepped for each surface.
 const LIGHT_SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 const DARK_SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
 const MAX_SERIES = LIGHT_SERIES.length;
@@ -47,7 +47,8 @@ function rows(data: unknown): Row[] {
 }
 
 function numeric(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !value.trim()) return null;
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -79,8 +80,8 @@ function Legend({ items }: { items: LegendItem[] }) {
   if (items.length === 0) return null;
   return (
     <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
-      {items.map((item) => (
-        <li key={item.label} className="flex items-center gap-1.5">
+      {items.map((item, index) => (
+        <li key={index} className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.color }} aria-hidden />
           <span className="text-neutral-800 dark:text-neutral-200">{item.label}</span>
           {item.detail && <span className="tabular-nums">{item.detail}</span>}
@@ -95,10 +96,24 @@ function buildModel(props: UiChartProps): Model {
   const keys = data.length ? Object.keys(data[0]) : [];
   // The category axis: the declared `x`, else the first non-numeric column, else the first column.
   const xKey = props.x ?? keys.find((key) => !isNumericColumn(data, key)) ?? keys[0] ?? "x";
-  const declared: Series[] =
-    props.series?.map((s) => (typeof s === "string" ? { key: s } : s)) ?? (props.y ? [{ key: props.y }] : []);
+  // Schema-valid templates can resolve to null, objects or arrays. Validate
+  // the resolved values before accessing series keys or labels.
+  const declared: Series[] = Array.isArray(props.series)
+    ? props.series.flatMap((s): Series[] => {
+        if (typeof s === "string" && s.trim()) return [{ key: s }];
+        if (s && typeof s === "object" && typeof s.key === "string" && s.key.trim()) {
+          return [{ key: s.key, label: typeof s.label === "string" ? s.label : undefined }];
+        }
+        return [];
+      })
+    : typeof props.y === "string" && props.y.trim()
+      ? [{ key: props.y }]
+      : [];
   const inferred: Series[] = keys.filter((key) => key !== xKey && isNumericColumn(data, key)).map((key) => ({ key }));
-  const series: Series[] = (declared.length ? declared : inferred).slice(0, MAX_SERIES);
+  const series: Series[] = (props.series !== undefined || props.y !== undefined ? declared : inferred).slice(
+    0,
+    MAX_SERIES,
+  );
   const xNumeric = props.kind === "scatter" ? isNumericColumn(data, xKey) : false;
   const points = data.flatMap((row) =>
     series.map((s) => ({
@@ -155,7 +170,8 @@ export function UiChart(props: UiChartProps) {
     };
 
     if (props.kind === "pie" || props.kind === "donut") {
-      const slices = model.data.slice(0, MAX_SERIES).map((row) => ({
+      const slices = model.data.map((row, index) => ({
+        id: index,
         name: stringify(row[model.xKey]),
         value: Math.max(0, numeric(row[model.series[0]?.key ?? ""]) ?? 0),
       }));
@@ -173,8 +189,8 @@ export function UiChart(props: UiChartProps) {
               polar({
                 marks: [
                   radialArc(pie(slices, { value: "value", gapAngle: 0.02 }), {
-                    key: "name",
-                    color: "name",
+                    key: "id",
+                    color: "id",
                     innerRadius: donut ? (context) => context.radius * 0.55 : 0,
                     cornerRadius: 2,
                   }),
@@ -184,7 +200,10 @@ export function UiChart(props: UiChartProps) {
               }),
             ],
             scales: { x: null, y: null },
-            color: { domain: slices.map((slice) => slice.name), range: palette },
+            color: {
+              domain: slices.map((slice) => slice.id),
+              range: slices.map((_, index) => palette[index % palette.length]),
+            },
             theme,
             margin: 4,
           },

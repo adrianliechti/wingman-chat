@@ -303,6 +303,42 @@ describe("raw request lifetime", () => {
     );
   });
 
+  it("sends search categories, inclusive calendar dates, country bias and domain filters to the gateway", async () => {
+    const results = [
+      {
+        source: "https://example.com/paper",
+        title: "Paper",
+        content: "Evidence",
+        metadata: { published: "2026-10-10T12:00:00Z" },
+      },
+    ];
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(results)));
+    expect(
+      await new Client().search("web", "papers", {
+        limit: 5,
+        category: "publication",
+        location: "CH",
+        since: "2026-10-01",
+        until: "2026-10-10",
+        domains: ["example.com", "example.org"],
+        exclude: ["spam.example"],
+      }),
+    ).toEqual(results);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/search");
+    const data = options.body as FormData;
+    expect(Object.fromEntries(data.entries())).toMatchObject({
+      model: "web",
+      query: "papers",
+      limit: "5",
+      category: "publication",
+      location: "CH",
+      since: "2026-10-01",
+      until: "2026-10-10",
+    });
+    expect(data.getAll("domain")).toEqual(["example.com", "example.org", "!spam.example"]);
+  });
+
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
@@ -791,10 +827,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     ]);
     expect(result.status).toBe("completed");
     expect(execute).toHaveBeenCalledExactlyOnceWith({ text: "Save" }, expect.anything());
-    // The Responses adapter keeps one assistant message per run across tool rounds.
+    // Since @tanstack/ai 0.68 the tool round keeps its own message id, so the
+    // reply after the tool results is a separate assistant message.
     expect(result.messages.map((message) => message.parts.map((part) => part.type))).toEqual([
       ["text"],
-      ["tool-call", "tool-result", "text"],
+      ["tool-call", "tool-result"],
+      ["text"],
     ]);
     expect(messageText(result.messages.at(-1)!)).toBe("Done");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
@@ -832,7 +870,10 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     expect(first.error).toBeUndefined();
     expect(first.status).toBe("completed");
     expect(messageText(first.messages.at(-1)!)).toBe("Recovered");
-    expect(first.messages.at(-1)?.parts.map((part) => part.type)).toEqual(["tool-call", "tool-result", "text"]);
+    expect(first.messages.slice(-2).map((message) => message.parts.map((part) => part.type))).toEqual([
+      ["tool-call", "tool-result"],
+      ["text"],
+    ]);
 
     const restored: UIMessage[] = JSON.parse(JSON.stringify(first.messages));
     const next = await run(client, "model", "", [...restored, user("Go")], tools, hooks);

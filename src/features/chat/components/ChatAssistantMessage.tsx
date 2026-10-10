@@ -229,7 +229,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { messages, toolMeta } = useChatConversation();
+  const { chat, messages, toolMeta } = useChatConversation();
   const { pendingElicitation, status } = useChatRunState();
   const { resolveElicitation, retryMessage, sendMessage } = useChatActions();
   const { providers } = useToolsContext();
@@ -412,6 +412,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                   isStreaming={!!(isLast && isResponding)}
                   onOpenArtifact={handleOpenArtifact}
                   onSendMessage={handleSendMessage}
+                  uiStateKey={chat?.id ? JSON.stringify([chat.id, message.id, partKey]) : undefined}
                 >
                   {part.content}
                 </Markdown>

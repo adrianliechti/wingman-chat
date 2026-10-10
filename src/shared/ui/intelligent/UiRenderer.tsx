@@ -17,6 +17,8 @@ import { useState } from "react";
 export interface UiRendererProps {
   /** The ```ui fence body. */
   source: string;
+  /** Stable chat/message/block identity; enables persistence for this instance. */
+  stateKey?: string;
   isStreaming?: boolean;
   /** Post a message to the chat as the user; buttons with a `send` action need it. */
   onSendMessage?: (text: string) => void;
@@ -64,6 +66,7 @@ function ComputedErrors({ runtime }: { runtime: UiRuntime }) {
  */
 export const UiRenderer = memo(function UiRenderer({
   source,
+  stateKey,
   isStreaming = false,
   onSendMessage,
   renderText,
@@ -77,11 +80,11 @@ export const UiRenderer = memo(function UiRenderer({
   const runtime = useMemo(
     () =>
       parsed.status === "ok" || parsed.status === "partial"
-        ? streaming
+        ? streaming || !stateKey
           ? createUiRuntime(parsed.document)
-          : getUiRuntime(source, parsed.document)
+          : getUiRuntime(stateKey, source, parsed.document)
         : null,
-    [parsed, source, streaming],
+    [parsed, source, stateKey, streaming],
   );
   const host = useMemo<ActionHost>(
     () => ({

@@ -166,12 +166,7 @@ it("exposes one tool and runs fast mode without a child model call", async () =>
   expect(result.status).toBe("completed");
   expect(complete).toHaveBeenCalledTimes(2);
   expect(client.guard).toHaveBeenCalledOnce();
-  expect(client.search).toHaveBeenCalledWith(
-    "search",
-    "topic",
-    { domains: [], limit: 3 },
-    { signal: expect.any(AbortSignal) },
-  );
+  expect(client.search).toHaveBeenCalledWith("search", "topic", { limit: 5 }, { signal: expect.any(AbortSignal) });
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Evidence");
 });
 
@@ -385,3 +380,77 @@ it("reports an expired direct research deadline as a timeout", async () => {
   expect(JSON.stringify(result.messages)).toContain("timed out");
   expect(client.search).not.toHaveBeenCalled();
 });
+
+it("applies focus and recency to the single approved fast search and shows them in the approval", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+  try {
+    const { client, complete } = fixture();
+    const tools = createInternetProvider(client, {
+      searcher: "search",
+      scraper: "scrape",
+      guard: "guard",
+      elicitation: true,
+      categories: [{ name: "news", description: "Current events" }],
+      location: "ch",
+    })!.tools;
+    const schema = JSON.stringify(convertSchemaToJsonSchema(tools[0].inputSchema));
+    expect(schema).toContain('"news"');
+    expect(schema).toContain('"recency"');
+    const elicit = vi.fn().mockResolvedValue({ action: "accept" });
+    const args = { prompt: "topic", mode: "fast", category: "news", recency: "week" };
+    const result = await tool_execute(tools[0], args, elicit);
+    expect(elicit.mock.calls[0][0].message).toContain("Search focus: news.");
+    expect(client.guard.mock.calls[0][1]).toContain("Recency: prefer sources published within the past week.");
+    expect(client.search).toHaveBeenCalledExactlyOnceWith(
+      "search",
+      "topic",
+      { category: "news", since: "2026-10-03", location: "CH", limit: 5 },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(JSON.stringify(result)).toContain("Filters: category: news");
+    expect(complete).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("carries focus and recency inside the one brief to the local and the gateway researcher", async () => {
+  const { client, complete } = fixture();
+  const tools = createInternetProvider(client, {
+    searcher: "search",
+    scraper: "scrape",
+    guard: "guard",
+    categories: [{ name: "publication" }],
+  })!.tools;
+  complete
+    .mockResolvedValueOnce(
+      call("web_research", { prompt: brief, mode: "deep", category: "publication", recency: "year" }),
+    )
+    .mockResolvedValueOnce(answer("Report"))
+    .mockResolvedValueOnce(answer("Parent"));
+  const result = await run(client, "model", "", [userMessage("Question")], tools);
+  expect(result.status).toBe("completed");
+  const child = JSON.stringify(complete.mock.calls[1][0].messages);
+  expect(child).toContain(
+    `${brief}\\n\\nSearch focus: publication.\\nRecency: prefer sources published within the past year.`,
+  );
+  expect(JSON.stringify(convertSchemaToJsonSchema(tools[0].inputSchema))).not.toContain('"news"');
+
+  const remote = Object.assign(client, { research: vi.fn<Client["research"]>().mockResolvedValue("Gateway findings") });
+  const remoteTools = createInternetProvider(remote, { researcher: "remote", categories: [{ name: "news" }] })!.tools;
+  expect(JSON.stringify(convertSchemaToJsonSchema(remoteTools[0].inputSchema))).toContain('"news"');
+  await remoteTools[0].execute(
+    { prompt: brief, category: "news", recency: "day" },
+    { context: { model: "model" }, emitCustomEvent() {} },
+  );
+  expect(remote.research).toHaveBeenCalledWith(
+    "remote",
+    `${brief}\n\nSearch focus: news.\nRecency: prefer sources published within the past day.`,
+    { signal: expect.any(AbortSignal) },
+  );
+});
+
+function tool_execute(tool: { execute: Function }, args: object, elicit: unknown) {
+  return tool.execute(args, { context: { model: "model", elicit }, emitCustomEvent() {} });
+}

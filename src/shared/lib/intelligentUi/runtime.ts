@@ -200,9 +200,8 @@ export function createUiRuntime(document: UiDocument, saved?: Scope): UiRuntime 
 // ── Persistence ────────────────────────────────────────────────────────────
 
 // The user's adjustments survive a reload: each document's state is saved in
-// localStorage under a hash of its source, with a bounded index so old
-// interfaces age out. Identical documents share saved state, as they share a
-// runtime.
+// localStorage under a hash of its owner and source, with a bounded index so
+// old interfaces age out. Unscoped documents never read or write saved state.
 const STORAGE_PREFIX = "ui-state:";
 const STORAGE_INDEX = "ui-state-index";
 const MAX_SAVED = 200;
@@ -257,23 +256,24 @@ function saveState(key: string, value: Scope): void {
 // ── Runtime cache ──────────────────────────────────────────────────────────
 
 // A document's state survives the renderer unmounting (switching chats, a
-// parent re-keying its children) by keying runtimes on the fence source. Two
-// identical documents share a runtime, which is harmless: they would show the
-// same defaults anyway.
+// parent re-keying its children) by keying runtimes on the chat/message/block
+// identity and source. Identical documents in different places stay independent.
 const runtimes = new Map<string, UiRuntime>();
 const MAX_RUNTIMES = 100;
 
-export function getUiRuntime(source: string, document: UiDocument): UiRuntime {
-  const existing = runtimes.get(source);
+export function getUiRuntime(stateKey: string, source: string, document: UiDocument): UiRuntime {
+  const cacheKey = JSON.stringify([stateKey, source]);
+  const existing = runtimes.get(cacheKey);
   if (existing) {
-    runtimes.delete(source);
-    runtimes.set(source, existing);
+    runtimes.delete(cacheKey);
+    runtimes.set(cacheKey, existing);
     return existing;
   }
-  const key = hashSource(source);
+  // Old source-only entries cannot be attributed to an owner safely.
+  const key = "v2:" + hashSource(cacheKey);
   const runtime = createUiRuntime(document, loadSavedState(key));
   runtime.state.subscribe(debounce((value: Scope) => saveState(key, value), { wait: 300 }));
-  runtimes.set(source, runtime);
+  runtimes.set(cacheKey, runtime);
   while (runtimes.size > MAX_RUNTIMES) runtimes.delete(runtimes.keys().next().value as string);
   return runtime;
 }

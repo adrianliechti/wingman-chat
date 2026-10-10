@@ -35,8 +35,8 @@ import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
-import { UI_FENCE_LANGUAGES } from "@/shared/lib/intelligentUi/schema";
 import { UiRenderer } from "@/shared/ui/intelligent/UiRenderer";
+import { UI_TAG, uiFenceExtension } from "./markdownUi";
 import { loadKatex, type Katex } from "./markdownMath";
 import { EmojiContext } from "@/shell/context/EmojiContext";
 import { MediaPlayer } from "./MediaPlayer";
@@ -637,7 +637,25 @@ const MarkdownRenderContext = createContext<{
   resolveAsset: (url: string) => string | undefined;
   onOpenArtifact?: (path: string) => void;
   onSendMessage?: (text: string) => void;
+  uiStateKey?: string;
 }>({ isStreaming: false, compact: false, resolveAsset: () => undefined });
+
+function UiFence({ source, blockIndex }: { source?: string; blockIndex?: string }) {
+  const { isStreaming, onOpenArtifact, onSendMessage, uiStateKey } = useContext(MarkdownRenderContext);
+  return (
+    <UiRenderer
+      source={source ?? ""}
+      stateKey={uiStateKey ? JSON.stringify([uiStateKey, blockIndex]) : undefined}
+      isStreaming={isStreaming}
+      onSendMessage={onSendMessage}
+      renderText={(markdown) => (
+        <Markdown compact onOpenArtifact={onOpenArtifact}>
+          {markdown}
+        </Markdown>
+      )}
+    />
+  );
+}
 
 // Stable component types preserve tables, previews, and code blocks when math
 // loads or streaming ends. Runtime options travel through context, not closures.
@@ -959,7 +977,7 @@ const markdownComponents = {
     );
   },
   code: function Code({ children, className, ...rest }) {
-    const { isStreaming, onOpenArtifact, onSendMessage } = useContext(MarkdownRenderContext);
+    const { isStreaming } = useContext(MarkdownRenderContext);
     const match = /language-([\w-]+)/.exec(className || "");
     const text = extractText(children);
     const isMultiLine = text.includes("\n");
@@ -990,21 +1008,6 @@ const markdownComponents = {
       return <SvgRenderer svg={text} language={language} />;
     }
 
-    if (UI_FENCE_LANGUAGES.has(language)) {
-      return (
-        <UiRenderer
-          source={text}
-          isStreaming={isStreaming}
-          onSendMessage={onSendMessage}
-          renderText={(markdown) => (
-            <Markdown compact onOpenArtifact={onOpenArtifact}>
-              {markdown}
-            </Markdown>
-          )}
-        />
-      );
-    }
-
     if (language === "html" || language === "htm") {
       return <HtmlRenderer html={text} language={language} />;
     }
@@ -1027,7 +1030,7 @@ const markdownComponents = {
 } satisfies MarkdownComponents;
 
 // Custom nodes from the extensions render through the same map.
-const components = { ...markdownComponents, [MATH_TAG]: MathNode };
+const components = { ...markdownComponents, [MATH_TAG]: MathNode, [UI_TAG]: UiFence };
 
 type MarkdownProps = {
   children: string;
@@ -1051,6 +1054,8 @@ type MarkdownProps = {
   onOpenArtifact?: (path: string) => void;
   /** Posts text to the chat as the user; lets a ```ui block's buttons continue the conversation. */
   onSendMessage?: (text: string) => void;
+  /** Stable chat/message/text-part identity for independent UI fence state. */
+  uiStateKey?: string;
 };
 
 const NonMemoizedMarkdown = ({
@@ -1061,18 +1066,18 @@ const NonMemoizedMarkdown = ({
   basePath,
   onOpenArtifact,
   onSendMessage,
+  uiStateKey,
 }: MarkdownProps) => {
   const actionsEnabled = useContext(RendererActionsContext) && !isStreaming;
   const emojiMode = useContext(EmojiContext)?.emojiMode ?? "monochrome";
   const resolveAsset = useAssetUrlResolver(fs, basePath);
   const renderOptions = useMemo(
-    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage }),
-    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage],
+    () => ({ isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey }),
+    [isStreaming, compact, resolveAsset, onOpenArtifact, onSendMessage, uiStateKey],
   );
   // The streaming profile keeps unfinished constructs predictable while text arrives.
   const extensions = useMemo(
-    () =>
-      isStreaming ? [...markdownExtensions(emojiMode), streamingMarkdownExtension()] : markdownExtensions(emojiMode),
+    () => [...markdownExtensions(emojiMode), ...(isStreaming ? [streamingMarkdownExtension()] : []), uiFenceExtension],
     [emojiMode, isStreaming],
   );
 
@@ -1108,7 +1113,8 @@ export const Markdown = memo(
     prev.fs === next.fs &&
     prev.basePath === next.basePath &&
     prev.onOpenArtifact === next.onOpenArtifact &&
-    prev.onSendMessage === next.onSendMessage,
+    prev.onSendMessage === next.onSendMessage &&
+    prev.uiStateKey === next.uiStateKey,
 );
 
 const extractFilename = (code: string): string | undefined => {

@@ -325,7 +325,7 @@ restart and browser refresh in production, or a browser refresh during frontend 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_MODEL`, `INTERNET_GUARD`, `INTERNET_ELICITATION`)
+- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_MODEL`, `INTERNET_GUARD`, `INTERNET_ELICITATION`, `INTERNET_CATEGORIES`, `INTERNET_LOCATION`, `INTERNET_SUMMARIZER`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
@@ -348,6 +348,27 @@ page reads need no further approval. This is model guidance, not a runtime call 
 another `web_research` invocation would require its own approval. A researcher-only
 setup supports deep mode. `guard` selects the gateway content checker. An omitted guard
 uses the gateway default, which passes when no guards are configured.
+
+`categories` lists the searcher verticals the local research agent may pick per query and
+the parent may set as the focus of its one brief (Exa: `company`, `people`, `news`,
+`publication`, `personal site`, `financial report`; Tavily: `news`, `finance`). Each entry
+is a `name` with an optional `description`; `INTERNET_CATEGORIES` takes comma-separated
+names. `location` sets a default two-letter country bias (`INTERNET_LOCATION`). Inside the
+approved brief the research agent can also bound results by `recency` or publication dates
+(`since`/`until`), bias by `location`, and include or exclude domains; the gateway `/v1/search`
+endpoint accepts the same `category`, `location`, `since`, `until` and `domain` fields.
+
+A local deep-research run has a budget of 20 tool calls and 80,000 fetched characters,
+mirroring the gateway agent. Near the end the tools append a closing hint; once exhausted they
+return an instruction to answer from the evidence gathered, so a run ends with an answer rather
+than a cutoff. URLs listed by an earlier search in the same run are repeated by heading only.
+`summarizer` (`INTERNET_SUMMARIZER`) optionally names a model that condenses fetched pages of
+4,000 characters or more to the facts relevant to the fetch query before they enter the context.
+`until` includes the whole specified UTC calendar day. Exa maps the legacy
+`research paper` category to `publication`; `company` and `people` reject date
+filters and domain exclusions. Tavily supports country bias only for general
+searches and omits undated sources when date filters are set. The DuckDuckGo HTML
+adapter and current custom gRPC protocol reject date filters explicitly.
 
 Enable internet via `internet.yaml` or `INTERNET_ENABLED=true`. Environment overrides
 also apply when YAML enables it; `INTERNET_ENABLED=false` disables it. An explicitly

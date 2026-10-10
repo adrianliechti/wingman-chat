@@ -354,7 +354,9 @@ export async function* streamRun(
           description: tool.description,
           inputSchema: tool.inputSchema,
           run: async (ctx) => {
-            const { prompt } = ctx.input as { prompt: string };
+            const input = ctx.input as { prompt: string };
+            // The brief carries focus and recency with the one approved prompt.
+            const prompt = (spec.brief?.(ctx.input as Record<string, unknown>) ?? input.prompt).trim();
             const childModel = spec.model ?? model;
             const parentSignal = ctx.abortSignal ?? abortController.signal;
             const signal = spec.timeoutMs

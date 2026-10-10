@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { UiChart } from "./UiChart";
+import { UiChart, type UiChartProps } from "./UiChart";
 
 vi.mock("@/shell/hooks/useTheme", () => ({ useTheme: () => ({ theme: "light", isDark: false, setTheme: () => {} }) }));
 
@@ -93,4 +93,26 @@ it("shows an empty state without data", async () => {
   await render(<UiChart kind="bar" data={[]} />);
   expect(container.textContent).toContain("No data to chart");
   expect(container.querySelector("svg")).toBeNull();
+});
+
+it.each(["pie", "donut"] as const)(
+  "keeps all %s categories and calculates shares from the full total",
+  async (kind) => {
+    await render(
+      <UiChart kind={kind} data={Array.from({ length: 10 }, (_, i) => ({ name: `Category ${i + 1}`, value: 1 }))} />,
+    );
+    const items = container.querySelectorAll("li");
+    expect(items).toHaveLength(10);
+    for (const [index, item] of [...items].entries()) {
+      expect(item.textContent).toBe(`Category ${index + 1}10%`);
+    }
+  },
+);
+
+it.each([null, [null], [7], [{ key: null }]])("handles invalid resolved chart series %j", async (series) => {
+  await render(<UiChart kind="bar" data={sales} series={series as unknown as UiChartProps["series"]} />);
+  expect(container.textContent).toContain("No data to chart");
+  expect(container.querySelector("svg")).toBeNull();
+  await render(<UiChart kind="bar" data={sales} series={["eu"]} />);
+  expect(container.querySelector("svg")).not.toBeNull();
 });

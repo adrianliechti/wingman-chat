@@ -1,5 +1,6 @@
 import { Client } from "./lib/client";
 import type { MCP, Model, ReasoningEffort } from "./types/chat";
+import type { SearchCategory } from "@/features/research/types/search";
 
 interface BackgroundConfig {
   url: string;
@@ -77,6 +78,12 @@ interface InternetConfig {
   model?: string;
   scraper?: string;
   searcher?: string;
+  /** Searcher verticals offered to the research agent and the parent as a focus, e.g. news or publication. */
+  categories?: SearchCategory[];
+  /** Default ISO 3166-1 alpha-2 country code that biases searches; the research agent can override it per query. */
+  location?: string;
+  /** Optional model that condenses long fetched pages to query-relevant facts during deep research. */
+  summarizer?: string;
   /** Gateway researcher for deep mode; takes precedence over the local model and retrieval tools. */
   researcher?: string;
   guard?: string;

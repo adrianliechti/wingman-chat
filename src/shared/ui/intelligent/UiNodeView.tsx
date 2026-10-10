@@ -1,7 +1,18 @@
 import { Description, Field as HeadlessField, Label, Switch } from "@headlessui/react";
 import { useSelector } from "@tanstack/react-store";
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from "lucide-react";
-import { createContext, type CSSProperties, lazy, memo, Suspense, useContext, useId, useState } from "react";
+import {
+  Component,
+  createContext,
+  type CSSProperties,
+  lazy,
+  memo,
+  type ReactNode,
+  Suspense,
+  useContext,
+  useId,
+  useState,
+} from "react";
 import { cn } from "@/shared/lib/cn";
 import {
   extendScope,
@@ -1138,6 +1149,32 @@ function NodeContent({
   }
 }
 
+/** A malformed resolved prop should leave neighbouring controls usable. */
+class NodeBoundary extends Component<
+  { resetKey: UiProps; children: ReactNode },
+  { failed: boolean; resetKey?: UiProps }
+> {
+  override state: { failed: boolean; resetKey?: UiProps } = { failed: false };
+
+  static getDerivedStateFromProps(props: { resetKey: UiProps }, state: { resetKey?: UiProps }) {
+    return props.resetKey === state.resetKey ? null : { failed: false, resetKey: props.resetKey };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override render() {
+    return this.state.failed ? (
+      <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+        This component could not be rendered. Check its values.
+      </p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 export const UiNodeView = memo(function UiNodeView({ node }: { node: UiNode }) {
   const context = useContext(UiContext);
   const extra = useContext(IterationContext);
@@ -1161,7 +1198,11 @@ export const UiNodeView = memo(function UiNodeView({ node }: { node: UiNode }) {
   // Preview state is discarded as the source grows; only a finished fence
   // accepts input or dispatches actions.
   if (context.streaming && (node.bind || node.type === "button")) props.disabled = true;
-  return <NodeContent node={node} props={props} values={values} context={context} extra={extra} />;
+  return (
+    <NodeBoundary resetKey={props}>
+      <NodeContent node={node} props={props} values={values} context={context} extra={extra} />
+    </NodeBoundary>
+  );
 });
 
 const EMPTY_SCOPE = { get: () => ({ values: {}, errors: {} }), subscribe: () => ({ unsubscribe: () => {} }) };

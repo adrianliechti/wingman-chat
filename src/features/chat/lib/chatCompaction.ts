@@ -23,7 +23,7 @@ export function chatCompaction(
         summarize: async (messages) => {
           const { controller: abortController, cleanup } = followAbortSignal(signal);
           try {
-            return await chat({
+            const result = await chat({
               adapter: client.textAdapter(model, signal),
               // A compacted prefix often ends with an assistant/tool turn.
               // Request a new summary instead of an assistant prefill, which
@@ -39,6 +39,7 @@ export function chatCompaction(
               stream: false,
               abortController,
             });
+            return result.text;
           } finally {
             cleanup();
           }
