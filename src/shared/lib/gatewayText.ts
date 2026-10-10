@@ -1,18 +1,14 @@
 import { OpenAITextAdapter, type OpenAIChatModel } from "@tanstack/ai-openai";
-import type { AdapterYieldChunk } from "@tanstack/ai";
+import type { AdapterYieldChunk, TextPart } from "@tanstack/ai";
 import { isReasoningReplayError } from "./errors";
 import { packGatewayReasoning, readGatewayReasoning, type GatewayReasoning } from "./reasoning";
-
-export interface GatewayTextSegment {
-  content: string;
-  phase?: "commentary" | "final_answer";
-}
+import { text, textMetadata, type TextPhase } from "./messages";
 
 /** Gateway compatibility around TanStack's native Responses parsing and tool loop. */
 export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITextAdapter<TModel> {
   responseInfo?: { model: string; reasoningContext?: "current_turn" | "all_turns" };
   readonly rejectedReasoning = new Set<string>();
-  readonly textSegments = new Map<string, GatewayTextSegment[]>();
+  readonly textParts = new Map<string, TextPart[]>();
   needsMessageSnapshot = false;
 
   // A gateway response may contain commentary as well as schema JSON. Use
@@ -69,7 +65,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     this.responseInfo = undefined;
     const [stream, ...rest] = args;
     const options = rest[1];
-    const segments = new Map<string, GatewayTextSegment>();
+    const segments = new Map<string, TextPart>();
     const reasoning = new Map<string, GatewayReasoning>();
     let activeReasoningId: string | undefined;
     let completed = false;
@@ -77,17 +73,19 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
     const capture = (item: {
       id: string;
       type: string;
-      phase?: GatewayTextSegment["phase"];
+      phase?: TextPhase;
       content?: { type: string; text?: string }[];
       summary?: { type: string; text?: string }[];
       encrypted_content?: string;
     }) => {
       if (item.type === "message")
-        segments.set(item.id, {
-          content:
+        segments.set(
+          item.id,
+          text(
             item.content?.flatMap((part) => (part.type === "output_text" ? [part.text ?? ""] : [])).join("") ?? "",
-          phase: item.phase,
-        });
+            item.phase ? { phase: item.phase } : undefined,
+          ),
+        );
       if (item.type === "reasoning") {
         activeReasoningId = item.id;
         const previous = reasoning.get(item.id) ?? reasoning.get("");
@@ -119,7 +117,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
         if (event.type === "response.output_item.added" || event.type === "response.output_item.done")
           capture(event.item as Parameters<typeof capture>[0]);
         else if (event.type === "response.output_text.delta") {
-          const segment = segments.get(event.item_id) ?? { content: "" };
+          const segment = segments.get(event.item_id) ?? text("");
           segments.set(event.item_id, { ...segment, content: segment.content + event.delta });
         } else if (
           event.type === "response.reasoning_text.delta" ||
@@ -141,6 +139,8 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       }
     }
     for await (const chunk of super.processStreamChunks(observe(), ...rest)) {
+      if (chunk.type.startsWith("TEXT_MESSAGE_") && "messageId" in chunk && chunk.messageId)
+        this.textParts.set(chunk.messageId, [...segments.values()]);
       if (chunk.type === "REASONING_ENCRYPTED_VALUE" && chunk.subtype === "message") {
         const state = readGatewayReasoning(chunk.encryptedValue);
         yield {
@@ -161,14 +161,13 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
             messageId: chunk.messageId,
             delta: append ? fullText.slice(emittedText.length) : "",
             content: fullText,
-            metadata: { textSegments: [...segments.values()] },
           } as AdapterYieldChunk;
           emittedText = fullText;
         }
       }
       if (chunk.type === "RUN_FINISHED" && completed && options.outputSchema && chunk.finishReason === "stop") {
         const parts = [...segments.values()];
-        const raw = (parts.findLast((part) => part.phase === "final_answer") ?? parts.at(-1))?.content;
+        const raw = (parts.findLast((part) => textMetadata(part).phase === "final_answer") ?? parts.at(-1))?.content;
         if (raw) {
           try {
             yield { type: "CUSTOM", name: "structured-output.complete", value: { object: JSON.parse(raw), raw } };
@@ -182,16 +181,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
           }
         }
       }
-      if (chunk.type.startsWith("TEXT_MESSAGE_")) {
-        if ("messageId" in chunk && chunk.messageId) this.textSegments.set(chunk.messageId, [...segments.values()]);
-        yield {
-          ...chunk,
-          metadata: {
-            ...("metadata" in chunk ? chunk.metadata : {}),
-            textSegments: [...segments.values()].map((segment) => ({ ...segment })),
-          },
-        };
-      } else yield chunk;
+      yield chunk;
     }
   }
 
@@ -240,9 +230,18 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
   protected override convertMessagesToInput(
     ...args: Parameters<OpenAITextAdapter<TModel>["convertMessagesToInput"]>
   ): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> {
-    const phased = new Map<string, GatewayTextSegment[][]>();
+    const phased = new Map<string, TextPart[][]>();
     const reasoning = new Map<string, GatewayReasoning>();
     const messages = args[0].map((message) => {
+      const parts =
+        message.role === "assistant"
+          ? Array.isArray(message.content) && message.content.every((part) => part.type === "text")
+            ? message.content
+            : this.textParts.get(message.id ?? "")
+          : undefined;
+      const content = parts?.map((part) => part.content).join("");
+      if (message.role === "assistant" && content && parts?.some((part) => textMetadata(part).phase))
+        phased.set(content, [...(phased.get(content) ?? []), parts]);
       let rejected = false;
       // An interrupted response can leave a signed reasoning item without
       // text or a tool call. Keep it visible in history, but do not replay an
@@ -268,6 +267,7 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       });
       return {
         ...message,
+        ...(Array.isArray(message.content) && parts === message.content ? { content } : {}),
         thinking,
         // Persisted item ids depend on their original reasoning item. call_id
         // still correlates results when the rejected reasoning is removed.
@@ -281,14 +281,6 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
           : {}),
       };
     });
-    for (const message of messages) {
-      if (message.role !== "assistant") continue;
-      const parts =
-        (message.metadata?.textSegments as GatewayTextSegment[] | undefined) ?? this.textSegments.get(message.id ?? "");
-      if (!parts) continue;
-      const text = parts.map((part) => part.content).join("");
-      if (text) phased.set(text, [...(phased.get(text) ?? []), parts]);
-    }
     return super
       .convertMessagesToInput(messages)
       .flatMap((item): ReturnType<OpenAITextAdapter<TModel>["convertMessagesToInput"]> => {
@@ -307,8 +299,12 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
         }
         if (item.type !== "message" || item.role !== "assistant" || typeof item.content !== "string") return [item];
         const parts = phased.get(item.content)?.shift();
-        return parts?.some((part) => part.phase)
-          ? parts.map((part) => ({ ...item, content: part.content, ...(part.phase ? { phase: part.phase } : {}) }))
+        return parts
+          ? parts.map((part) => ({
+              ...item,
+              content: part.content,
+              ...(textMetadata(part).phase ? { phase: textMetadata(part).phase } : {}),
+            }))
           : [item];
       });
   }

@@ -9,23 +9,27 @@ import {
   toolDefinition,
   type AgentLoopStrategy,
   type ChatMiddleware,
+  type ContentPart,
   type ModelMessage,
   type RunAgentResumeItem,
   type StreamChunk,
+  type TextPart,
   type ToolExecutionContext,
   type UIMessage,
 } from "@tanstack/ai";
-import type { AgentRunContext, MessageUsage, Tool, ToolContext } from "../types/chat";
+import type { AgentRunContext, MessageError, MessageUsage, Tool, ToolContext } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { followAbortSignal } from "./abortSignals";
 import {
-  describeToolOutput,
+  describeToolMessages,
   mapMessages,
   messageMetadata,
+  textMetadata,
+  textParts,
   userMessage,
+  withTextPhases,
   type MessageMetadata,
-  type TextSegment,
   type ToolResultMetadata,
 } from "./messages";
 import { artifactDelta, artifactDeltaFromMeta, type ArtifactMutation } from "../types/artifact";
@@ -95,23 +99,30 @@ export interface RunHooks {
 }
 
 /**
- * What the runtime holds only as text, kept beside the run and attached to the
- * transcript it persists: each tool's rich output and display data, and the
- * run and usage of every model turn.
+ * Application data attached to the native transcript: tool display data and
+ * rich error content, plus the run and usage of every model turn.
  */
 export class RunSidecar {
-  private readonly results = new Map<string, ToolResultMetadata>();
+  private readonly results = new Map<
+    string,
+    { metadata: Pick<ToolResultMetadata, "meta" | "content">; content?: ContentPart[] }
+  >();
   private readonly turns = new Map<string, Pick<MessageMetadata, "runId" | "usage">>();
   private readonly rejectedReasoning = new Set<string>();
   /** The gateway's output phases per assistant message; a snapshot rebuilt from the provider view loses them. */
-  private readonly textSegments = new Map<string, TextSegment[]>();
+  private readonly phasedText = new Map<string, TextPart[]>();
 
-  result(toolCallId: string, data: ToolResultMetadata) {
-    this.results.set(toolCallId, { ...this.results.get(toolCallId), ...data });
+  result(toolCallId: string, metadata: Pick<ToolResultMetadata, "meta" | "content">, content?: ContentPart[]) {
+    const previous = this.results.get(toolCallId);
+    this.results.set(toolCallId, {
+      ...previous,
+      metadata: { ...previous?.metadata, ...metadata },
+      ...(content !== undefined ? { content } : {}),
+    });
   }
 
   toolMeta(toolCallId: string) {
-    return this.results.get(toolCallId)?.meta;
+    return this.results.get(toolCallId)?.metadata.meta;
   }
 
   turn(id: string, runId: string, usage?: MessageUsage) {
@@ -126,20 +137,49 @@ export class RunSidecar {
     for (const payload of payloads) this.rejectedReasoning.add(payload);
   }
 
-  captureTextSegments(segments: ReadonlyMap<string, TextSegment[]>) {
-    for (const [id, parts] of segments) this.textSegments.set(id, parts);
+  captureTextParts(messages: ReadonlyMap<string, TextPart[]>) {
+    for (const [id, parts] of messages) this.phasedText.set(id, parts);
+  }
+
+  captureHistory(messages: UIMessage[]) {
+    mapMessages(messages, (message) => {
+      const parts = textParts(message);
+      if (parts.some((part) => textMetadata(part).phase)) this.phasedText.set(message.id, parts);
+      else this.phasedText.delete(message.id);
+      return message;
+    });
+  }
+
+  /** Native all-text conversion drops part metadata; restore it only for matching provider context. */
+  applyModelPhases(messages: ModelMessage[]): ModelMessage[] {
+    return messages.map((message) => {
+      const parts = message.id ? this.phasedText.get(message.id) : undefined;
+      return message.role === "assistant" &&
+        parts?.some((part) => textMetadata(part).phase) &&
+        typeof message.content === "string" &&
+        message.content === parts.map((part) => part.content).join("")
+        ? { ...message, content: parts }
+        : message;
+    });
   }
 
   apply(messages: UIMessage[]): UIMessage[] {
-    if (!this.results.size && !this.turns.size && !this.rejectedReasoning.size && !this.textSegments.size)
+    if (!this.results.size && !this.turns.size && !this.rejectedReasoning.size && !this.phasedText.size)
       return messages;
     return mapMessages(messages, (message) => {
       const turn = this.turns.get(message.id);
-      const segments = this.textSegments.get(message.id);
+      const phased = this.phasedText.get(message.id);
+      if (phased) message = withTextPhases(message, phased);
       const parts = message.parts.map((part) => {
         if (part.type === "tool-result") {
           const data = this.results.get(part.toolCallId);
-          return data ? { ...part, metadata: { ...part.metadata, ...data } } : part;
+          return data
+            ? {
+                ...part,
+                ...(data.content !== undefined ? { content: data.content } : {}),
+                metadata: { ...part.metadata, ...data.metadata },
+              }
+            : part;
         }
         // A provider rejected this ciphertext once; it must not come back after a reload.
         if (part.type === "thinking" && part.signature && this.rejectedReasoning.size) {
@@ -150,13 +190,11 @@ export class RunSidecar {
         }
         return part;
       });
-      if (!turn && !segments && parts.every((part, index) => part === message.parts[index])) return message;
+      if (!turn && parts.every((part, index) => part === message.parts[index])) return message;
       return {
         ...message,
         parts,
-        ...(turn || segments
-          ? { metadata: { ...message.metadata, ...turn, ...(segments ? { textSegments: segments } : {}) } }
-          : {}),
+        ...(turn ? { metadata: { ...message.metadata, ...turn } } : {}),
       };
     });
   }
@@ -223,6 +261,7 @@ export async function* streamRun(
   };
   const runId = hooks.runId ?? crypto.randomUUID();
   const { sidecar } = hooks;
+  sidecar.captureHistory(messages);
   const childCalls = new Map<string, string>();
   const childMutations = new Map<string, ArtifactMutation[]>();
   let snapshot = () => messages;
@@ -239,7 +278,7 @@ export async function* streamRun(
     let aborted = false;
     const captureAdapterMetadata = () => {
       sidecar.rejectReasoning(adapter.rejectedReasoning ?? []);
-      if (adapter.textSegments) sidecar.captureTextSegments(adapter.textSegments);
+      if (adapter.textParts) sidecar.captureTextParts(adapter.textParts);
     };
     const remember = (ctx: Parameters<NonNullable<ChatMiddleware["onStart"]>>[0]) => {
       captureAdapterMetadata();
@@ -262,12 +301,14 @@ export async function* streamRun(
                 : native,
             ),
           };
-        if (ctx.phase !== "beforeModel" || !hooks.prepareMessages) return;
+        if (ctx.phase !== "beforeModel") return;
+        const providerMessages = describeToolMessages(
+          sidecar.applyModelPhases(config.providerMessages ?? config.messages),
+        );
         return {
-          providerMessages: await hooks.prepareMessages(
-            config.providerMessages ?? config.messages,
-            abortController.signal,
-          ),
+          providerMessages: hooks.prepareMessages
+            ? await hooks.prepareMessages(providerMessages, abortController.signal)
+            : providerMessages,
         };
       },
       onIteration: (ctx) => {
@@ -301,7 +342,7 @@ export async function* streamRun(
           };
           let meta: Record<string, unknown> = {};
           let content: Record<string, unknown> | undefined;
-          let error: ToolResultMetadata["error"];
+          let error: MessageError | undefined;
           const signal = execution.abortSignal ?? abortController.signal;
           // Keep TanStack's per-run context identity: file observations belong
           // to this actor across tool calls, with native middleware cancellation.
@@ -335,14 +376,12 @@ export async function* streamRun(
             },
           });
           signal.throwIfAborted();
-          sidecar.result(call.id, {
-            result: output,
-            meta,
-            ...(content ? { content } : {}),
-            ...(error ? { error } : {}),
-          });
+          // TanStack emits its error response when execution throws; restore
+          // the tool's rich details as native content in the displayed transcript.
+          sidecar.result(call.id, { meta, ...(content ? { content } : {}) }, error ? output : undefined);
           if (error) throw Object.assign(new Error(error.message), { code: error.code });
-          return describeToolOutput(output);
+          // TanStack treats an empty array as JSON data rather than content.
+          return output.length ? output : "";
         }),
       );
     const agents = tools.flatMap((tool) => {
@@ -473,6 +512,7 @@ export async function* streamRun(
     });
     for await (const chunk of stream) {
       abortController.signal.throwIfAborted();
+      captureAdapterMetadata();
       if (chunk.type === "SUBAGENT_STARTED" && chunk.parentToolCallId)
         childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
       if (

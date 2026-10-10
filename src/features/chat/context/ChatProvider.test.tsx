@@ -646,9 +646,10 @@ describe("chat run integration", () => {
     await act(() => context.sendMessage(user("Work")));
     const [result] = saved().messages.flatMap(toolResults);
     expect(toolResultMetadata(result)).toMatchObject({
-      result: output("Done"),
       meta: { progress: "finished", link: "/result" },
     });
+    expect(result.content).toEqual(output("Done"));
+    expect(toolResultMetadata(result)).not.toHaveProperty("result");
     expect(toolResultMetadata(result).meta).not.toHaveProperty("obsolete");
   });
 

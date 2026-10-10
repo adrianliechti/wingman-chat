@@ -284,8 +284,8 @@ export function useChatRun({
         // useChat stops disposed clients; their cleanup must not erase a saved
         // approval or overwrite the conversation opened by their replacement.
         if (storageOwnerRef.current !== session) return;
-        // The runtime owns the live transcript; the chat store receives it as is,
-        // with the rich tool outputs the runtime only holds as text.
+        // The runtime owns the live transcript; the chat store receives native
+        // parts with application metadata and text phases attached below.
         session.native = state.messages;
         // A draft has no durable record until the first send or attachment.
         if (!getChat(session.id)) return;

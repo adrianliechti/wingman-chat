@@ -1,6 +1,6 @@
-import type { ContentPart, TextOptions, ToolCallPart, UIMessage } from "@tanstack/ai";
+import type { ContentPart, TextOptions, TextPart, ToolCallPart, UIMessage } from "@tanstack/ai";
 import type { Client } from "../client";
-import { assistantMessage, text, textSegments, userMessage, type TextMetadata } from "@/shared/lib/messages";
+import { assistantMessage, text, textParts, userMessage, type TextMetadata } from "@/shared/lib/messages";
 
 /** Test provider: the real TanStack engine still owns validation and tool execution. */
 export function testClient(
@@ -12,6 +12,7 @@ export function testClient(
       kind: "text",
       name: "test",
       model,
+      textParts: new Map<string, TextPart[]>(),
       async *chatStream(options: TextOptions<Record<string, unknown>>) {
         const id = crypto.randomUUID();
         const pending: { type: "TEXT_MESSAGE_CONTENT"; messageId: string; delta: string }[] = [];
@@ -39,17 +40,21 @@ export function testClient(
         const response = await result;
         const finalText = response.parts.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("");
         if (streamedText) {
+          this.textParts.set(id, textParts(response));
           if (finalText.startsWith(streamedText) && finalText.length > streamedText.length)
             yield { type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: finalText.slice(streamedText.length) };
         }
+        const emittedParts: TextPart[] = [];
         for (const part of response.parts) {
-          if (part.type === "text" && !streamedText)
+          if (part.type === "text" && !streamedText) {
+            emittedParts.push(part);
+            this.textParts.set(id, [...emittedParts]);
             yield {
               type: "TEXT_MESSAGE_CONTENT",
               messageId: id,
               delta: part.content,
-              metadata: { textSegments: textSegments(response) },
             };
+          }
           if (part.type === "tool-call") {
             yield { type: "TOOL_CALL_START", toolCallId: part.id, toolCallName: part.name, parentMessageId: id };
             yield { type: "TOOL_CALL_ARGS", toolCallId: part.id, delta: part.arguments };

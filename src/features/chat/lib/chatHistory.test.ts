@@ -2,7 +2,7 @@ import { feedbackMessage } from "@/shared/lib/test-support/ai";
 import type { ModelMessage } from "@tanstack/ai";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
 import { describe, expect, it } from "vitest";
-import { assistantMessage, mediaFromDataUrl, userMessage } from "@/shared/lib/messages";
+import { assistantMessage, mediaFromDataUrl, text, userMessage } from "@/shared/lib/messages";
 import { prepareChatMessages, sanitizeForClassification } from "./chatHistory";
 
 const user = (content: string): ModelMessage => ({ role: "user", content });
@@ -19,47 +19,54 @@ const feedback: ModelMessage = {
   metadata: { kind: "runtime_feedback" },
 };
 describe("saved chat history", () => {
-  it("retains native skill instructions and inventories, ignoring duplicate-load markers", () => {
-    const loaded = (id: string, name: string, value: object, args = "{}"): ModelMessage[] => [
-      { role: "assistant", content: null, toolCalls: [{ id, type: "function", function: { name, arguments: args } }] },
-      { role: "tool", toolCallId: id, content: JSON.stringify(value) },
-    ];
-    const messages: ModelMessage[] = [
-      user("Work"),
-      ...loaded("personal", "read_skill", { name: "reports", instructions: "Personal instructions" }),
-      ...loaded(
-        "old-plugin",
-        "read_skill",
-        { name: "reports", instructions: "Old plugin instructions" },
-        '{"plugin":"one"}',
-      ),
-      ...loaded("updated", "load_skill", {
-        skill: "one:reports",
-        content: "Updated plugin instructions",
-        resources: ["scripts/verify.py"],
-        scripts: [],
-        compatibility: "Browser Python",
-      }),
-      ...loaded("other", "load_skill", {
-        skill: "two:reports",
-        content: "Other plugin instructions",
-        resources: [],
-        scripts: [],
-      }),
-      ...loaded("again", "load_skill", { skill: "one:reports", content: ALREADY_LOADED, resources: [], scripts: [] }),
-      { role: "assistant", content: "Prior work", metadata: { kind: "summary" } },
-      user("Continue"),
-    ];
-    const prepared = JSON.stringify(prepareChatMessages(messages));
-    expect(prepared).toContain("Personal instructions");
-    expect(prepared).toContain("Updated plugin instructions");
-    expect(prepared).toContain("Other plugin instructions");
-    expect(prepared).toContain("scripts/verify.py");
-    expect(prepared).toContain("Browser Python");
-    expect(prepared).not.toContain("Old plugin instructions");
-    expect(prepared).not.toContain(ALREADY_LOADED);
-    expect(prepared).not.toContain('"role":"tool"');
-  });
+  it.each([false, true])(
+    "retains skill instructions and inventories, ignoring duplicate-load markers (rich=%s)",
+    (rich) => {
+      const loaded = (id: string, name: string, value: object, args = "{}"): ModelMessage[] => [
+        {
+          role: "assistant",
+          content: null,
+          toolCalls: [{ id, type: "function", function: { name, arguments: args } }],
+        },
+        { role: "tool", toolCallId: id, content: rich ? [text(JSON.stringify(value))] : JSON.stringify(value) },
+      ];
+      const messages: ModelMessage[] = [
+        user("Work"),
+        ...loaded("personal", "read_skill", { name: "reports", instructions: "Personal instructions" }),
+        ...loaded(
+          "old-plugin",
+          "read_skill",
+          { name: "reports", instructions: "Old plugin instructions" },
+          '{"plugin":"one"}',
+        ),
+        ...loaded("updated", "load_skill", {
+          skill: "one:reports",
+          content: "Updated plugin instructions",
+          resources: ["scripts/verify.py"],
+          scripts: [],
+          compatibility: "Browser Python",
+        }),
+        ...loaded("other", "load_skill", {
+          skill: "two:reports",
+          content: "Other plugin instructions",
+          resources: [],
+          scripts: [],
+        }),
+        ...loaded("again", "load_skill", { skill: "one:reports", content: ALREADY_LOADED, resources: [], scripts: [] }),
+        { role: "assistant", content: "Prior work", metadata: { kind: "summary" } },
+        user("Continue"),
+      ];
+      const prepared = JSON.stringify(prepareChatMessages(messages));
+      expect(prepared).toContain("Personal instructions");
+      expect(prepared).toContain("Updated plugin instructions");
+      expect(prepared).toContain("Other plugin instructions");
+      expect(prepared).toContain("scripts/verify.py");
+      expect(prepared).toContain("Browser Python");
+      expect(prepared).not.toContain("Old plugin instructions");
+      expect(prepared).not.toContain(ALREADY_LOADED);
+      expect(prepared).not.toContain('"role":"tool"');
+    },
+  );
 
   it("keeps current-turn images after tool results and strips only older images", () => {
     const image = (value: string): ModelMessage => ({

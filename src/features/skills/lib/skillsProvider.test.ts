@@ -6,7 +6,7 @@ import { mountSkillFiles, setSkillResourceResolver } from "@/features/tools/lib/
 import { run } from "@/shared/lib/agent";
 import { Client } from "@/shared/lib/client";
 import { testClient, response, callItem, textItem, finished } from "@/shared/lib/test-support/ai";
-import { assistantMessage, userMessage } from "@/shared/lib/messages";
+import { assistantMessage, outputText, toolResultContent, userMessage } from "@/shared/lib/messages";
 import { createSkillsProvider } from "./skillsProvider";
 import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
@@ -193,9 +193,7 @@ describe("native skills", () => {
     expect(JSON.stringify(firstRequest.systemPrompts)).toContain("before proceeding");
     const results = result.messages
       .flatMap((message) => message.parts)
-      .flatMap((part) =>
-        part.type === "tool-result" && typeof part.content === "string" ? [JSON.parse(part.content)] : [],
-      );
+      .flatMap((part) => (part.type === "tool-result" ? [JSON.parse(outputText(toolResultContent(part)))] : []));
     expect(results).toEqual([
       {
         skill: "reports",

@@ -16,15 +16,17 @@ import type { Chat, MessageError, MessageUsage, Model } from "@/shared/types/cha
 import {
   artifactRefPart,
   artifactSelectionPart,
-  describeToolOutput,
+  mapMessages,
   mediaFromDataUrl,
+  messageText,
   text,
+  withTextPhases,
   type ArtifactRef,
   type ArtifactSelection,
   type MediaPart,
   type MessageMetadata,
   type TextMetadata,
-  type TextSegment,
+  type TextPhase,
   type ToolResultMetadata,
 } from "./messages";
 import { STORED_CHAT_VERSION, type StoredChat } from "./opfs-chat";
@@ -34,7 +36,7 @@ import { packGatewayReasoning } from "./reasoning";
 // ── The old record ─────────────────────────────────────────────────────────
 
 type LegacyMedia = { type: "image" | "audio" | "file"; name?: string; data: string; contentType?: string };
-type LegacyText = { type: "text"; text: string; phase?: TextSegment["phase"] };
+type LegacyText = { type: "text"; text: string; phase?: TextPhase };
 type LegacyReasoning = {
   type: "reasoning";
   id: string;
@@ -245,15 +247,11 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
         : kinds.size === 1 && kinds.has("runtime_feedback")
           ? "runtime_feedback"
           : undefined;
-    const segments = message.content.flatMap((part): TextSegment[] =>
-      part?.type === "text" && typeof part.text === "string" ? [{ content: part.text, phase: part.phase }] : [],
-    );
     const metadata: MessageMetadata = defined({
       runId: message.runId,
       usage: message.usage,
       error: message.role === "assistant" ? (message.error ?? undefined) : undefined,
       kind,
-      textSegments: segments.some((segment) => segment.phase) ? segments : undefined,
     });
     const next: UIMessage = {
       id: message.id ?? `legacy-${scope}-${index}`,
@@ -347,11 +345,11 @@ export function migrateLegacyMessages(messages: LegacyMessage[], chat: LegacySto
           if (!owner) break;
           const error = message.error ?? undefined;
           const output = result(part.result);
-          const data: ToolResultMetadata = defined({ result: output, meta: part.meta, content: part.content, error });
+          const data: ToolResultMetadata = defined({ meta: part.meta, content: part.content });
           owner.parts.push({
             type: "tool-result",
             toolCallId: part.id,
-            content: describeToolOutput(output),
+            content: output,
             state: error ? "error" : "complete",
             ...(error ? { error: error.message } : {}),
             metadata: data as Record<string, unknown>,
@@ -438,5 +436,27 @@ export function migrateLegacyChat(chat: LegacyStoredChat): StoredChat {
 
 /** Whatever shape is on disk, as the current record. */
 export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): StoredChat {
-  return isLegacyStoredChat(stored) ? migrateLegacyChat(stored) : stored;
+  if (isLegacyStoredChat(stored)) return migrateLegacyChat(stored);
+  if (stored.version !== STORED_CHAT_VERSION) return stored;
+  const messages = mapMessages(stored.messages, (message) => {
+    const legacy = message.metadata?.textSegments;
+    if (!Array.isArray(legacy)) return message;
+    const phased = legacy.flatMap((segment) =>
+      segment && typeof segment.content === "string"
+        ? [
+            text(
+              segment.content,
+              segment.phase === "commentary" || segment.phase === "final_answer" ? { phase: segment.phase } : undefined,
+            ),
+          ]
+        : [],
+    );
+    // Keep unfamiliar or damaged metadata intact rather than discard readable text.
+    if (messageText(message) !== phased.map((part) => part.content).join("")) return message;
+    const next = withTextPhases(message, phased);
+    const { textSegments: _legacy, ...metadata } = message.metadata!;
+    const { metadata: _metadata, ...rest } = next;
+    return Object.keys(metadata).length ? { ...rest, metadata } : rest;
+  });
+  return messages === stored.messages ? stored : { ...stored, messages };
 }

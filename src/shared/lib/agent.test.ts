@@ -2,7 +2,7 @@ import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { DISCOVERY_TOOL_NAME, maxIterations, type UIMessage } from "@tanstack/ai";
 import { run } from "./agent";
-import { messageMetadata, toolResultMetadata, toolResults } from "./messages";
+import { mediaFromDataUrl, messageMetadata, toolResultMetadata, toolResults } from "./messages";
 import { assistantMessage } from "./messages";
 import { assistant, calls, output, testClient, toolCall, user } from "./test-support/ai";
 import type { Tool } from "../types/chat";
@@ -89,10 +89,11 @@ describe("TanStack agent lifecycle", () => {
     expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
     expect(result.messages[1].parts.map((part) => part.type)).toEqual(["tool-call", "tool-result"]);
     expect(toolResultMetadata(results(result.messages)[0])).toMatchObject({
-      result: output("Written"),
       meta: { artifactDelta: { mutations: [{ path: "/a.txt" }] } },
       content: { saved: true },
     });
+    expect(results(result.messages)[0].content).toEqual(output("Written"));
+    expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("result");
     expect(messageMetadata(result.messages.at(-1)!).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
     expect(messageMetadata(result.messages.at(-1)!).runId).toEqual(expect.any(String));
     expect(resultHook).toHaveBeenCalledOnce();
@@ -304,25 +305,36 @@ describe("TanStack agent lifecycle", () => {
 
   it("keeps rich error results and reports their failure through the native tool loop", async () => {
     const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
+    const details = [...output("Failure details"), mediaFromDataUrl("data:image/png;base64,AQ==", "diagnostic.png")];
     const result = await run(testClient(complete), "model", "", prompt, [
       tool(async (_args, execution) => {
         const context = execution?.context;
         context?.setMeta?.({ toolResource: "ui://error", mcpResult: { isError: true } });
         context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Remote operation failed" });
-        return output("Failure details");
+        return details;
       }),
     ]);
     expect(result.status).toBe("completed");
     expect(results(result.messages)[0]).toMatchObject({
       state: "error",
       error: "Remote operation failed",
+      content: details,
       metadata: {
-        result: output("Failure details"),
         meta: { toolResource: "ui://error", mcpResult: { isError: true } },
-        error: { code: "MCP_TOOL_ERROR", message: "Remote operation failed" },
       },
     });
+    expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("result");
+    expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("error");
     expect(complete.mock.calls[1][0].messages).toContainEqual(
+      expect.objectContaining({
+        role: "tool",
+        error: "Remote operation failed",
+        content: JSON.stringify({ error: "Remote operation failed" }),
+      }),
+    );
+    const next = vi.fn().mockResolvedValue(done);
+    await run(testClient(next), "model", "", JSON.parse(JSON.stringify(result.messages)), []);
+    expect(next.mock.calls[0][0].messages).toContainEqual(
       expect.objectContaining({
         role: "tool",
         error: "Remote operation failed",

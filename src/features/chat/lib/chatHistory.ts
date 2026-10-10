@@ -1,7 +1,14 @@
 import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
 import { skillName } from "@/features/skills/lib/skillSource";
-import { isMediaPart, isUserPrompt, mediaName, messageMetadata, type MediaPart } from "@/shared/lib/messages";
+import {
+  describeToolOutput,
+  isMediaPart,
+  isUserPrompt,
+  mediaName,
+  messageMetadata,
+  type MediaPart,
+} from "@/shared/lib/messages";
 import { injectRequestContext } from "@/shared/lib/requestContext";
 
 /*
@@ -32,14 +39,15 @@ export function preservedSkillMessages(messages: readonly ModelMessage[], only?:
   const skills = new Map<string, string>();
 
   for (const message of messages) {
-    if (message.role !== "tool" || !message.toolCallId || typeof message.content !== "string") continue;
+    if (message.role !== "tool" || !message.toolCallId || message.content == null) continue;
     if (only && !only.has(message.toolCallId)) continue;
     const call = calls.get(message.toolCallId);
     const tool = message.name ?? call?.name;
     if (tool !== "read_skill" && tool !== "load_skill") continue;
 
     try {
-      const parsed = JSON.parse(message.content);
+      const content = typeof message.content === "string" ? message.content : describeToolOutput(message.content);
+      const parsed = JSON.parse(content);
       const name = tool === "load_skill" ? parsed.skill : parsed.name;
       const instructions = tool === "load_skill" ? parsed.content : parsed.instructions;
       if (typeof name !== "string" || typeof instructions !== "string" || instructions === ALREADY_LOADED) continue;
@@ -50,7 +58,7 @@ export function preservedSkillMessages(messages: readonly ModelMessage[], only?:
       // Refresh insertion order when a skill was read more than once so the
       // most recently loaded instructions win without duplicating them.
       skills.delete(key);
-      skills.set(key, tool === "load_skill" ? message.content : instructions);
+      skills.set(key, tool === "load_skill" ? content : instructions);
     } catch {
       // Failed skill reads and legacy non-JSON results are not durable guidance.
     }

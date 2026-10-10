@@ -217,8 +217,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         }
 
         // Return the image inline. The harness strips it to a text placeholder
-        // before the model (serializeToolResultForApi) and persists it as a blob
-        // reference, not base64 — so it bloats neither context nor storage. The
+        // at the model boundary and persists its bytes in a chat blob. The
         // placeholder keeps `name`, so the model learns the artifact path and can
         // reference it to edit the image later.
         return [mediaFromDataUrl(dataUrl, name, "image")];

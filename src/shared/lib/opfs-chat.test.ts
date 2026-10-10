@@ -49,16 +49,25 @@ describe("chat blobs", () => {
       if (dataUrl) media.source = { type: "url", value: "data:image/jpeg;base64,YWJj" };
       const value = chat([
         assistantMessage([
-          { type: "tool-call", id: "call", name: "render", arguments: "{}", state: "complete" },
+          {
+            type: "tool-call",
+            id: "call",
+            name: "render",
+            arguments: "{}",
+            state: "complete",
+            output: [text("Look"), media],
+          },
           { type: "tool-result", toolCallId: "call", content: [text("Look"), media], state: "complete" },
         ]),
       ]);
       const stored = await extractChatBlobs(value);
+      expect(JSON.stringify(stored)).not.toContain("YWJj");
       expect(collectChatBlobIds(stored)).toHaveLength(1);
       expect(hasStoredMedia(stored.messages[0].parts)).toBe(true);
       await deleteUnreferencedChatBlobs(stored);
       expect(await listChatBlobs("chat")).toHaveLength(1);
       const loaded = await rehydrateChatBlobs(JSON.parse(JSON.stringify(stored)));
+      expect(loaded.messages[0].parts[0]).toMatchObject({ output: [text("Look"), image()] });
       expect(loaded.messages[0].parts[1]).toMatchObject({ content: [text("Look"), image()] });
     },
   );

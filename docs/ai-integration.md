@@ -141,14 +141,21 @@ chat store and OPFS persistence queue, skips the echo the runtime writes back
 during hydration, and applies every later mutation (a failed run, retry, voice or
 external messages, editing an earlier turn) to the native transcript. App data
 rides in the `metadata` records TanStack reserves for it (`src/shared/lib/messages.ts`):
-on a message `runId`, `usage`, `error`, `kind` (`summary` or `runtime_feedback`)
-and the gateway's `textSegments`; on a text part `phase`, `artifactRef`,
-`artifactSelection` or `source`; on a tool-result part `result` (the rich output),
-`meta`, `content` (MCP app data) and `error`; on a media part `filename` and
-`contentType`. A `RunSidecar` per thread collects each tool's rich output and
-display data and each turn's run and usage while a run streams, and attaches
-them when the transcript is persisted; execution and history replay send the
-same text descriptions of binary outputs to the provider. Inline user
+on a message `runId`, `usage`, `error` and `kind` (`summary` or `runtime_feedback`);
+on a text part `phase`, `artifactRef`, `artifactSelection` or `source`; on a
+tool-result part `meta` and `content` (MCP app data); on a media part `filename`
+and `contentType`. Rich tool output uses native result `content`, and failures
+use native `state` and `error`. Older saved tool `metadata.result` and
+`metadata.error` remain readable. Message-level `error` records a failed run
+for retry; usage events are attached to messages so token counts survive reload.
+A `RunSidecar` per thread collects tool display data, rich failure details,
+text phases and each turn's run and usage while streaming. It restores these
+on native parts when the transcript is persisted. Commentary and final-answer
+phases live on text parts, without duplicating text in message metadata; saved
+`textSegments` migrate on loading. Because TanStack joins all-text content when
+building model history, the request boundary restores phased text parts before
+gateway serialization. Execution and history replay send the same text
+descriptions of binary tool outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
@@ -311,8 +318,10 @@ provider context before each model call, including after tool output. Its
 `clearToolResults()` strategy runs first, followed by `summarizeOldest()` when
 needed. Summaries use native `chat()` and telemetry. The configured model and
 threshold remain respected; disabling compaction disables these strategies.
-The full saved transcript stays intact. Custom context estimation, summary
-replacement, the summarizer client method, and overflow retry branches are gone.
+The full saved transcript stays intact. The native token estimator receives the
+same text descriptions of tool media as the provider, so binary bytes do not
+trigger compaction. Custom summary replacement, the summarizer client method,
+and overflow retry branches are gone.
 Old saved summary markers remain readable.
 The native metadata capability stores checkpoints in the chat record's
 `metadata` field, namespaced by middleware and scoped by thread and child. TanStack
@@ -327,6 +336,8 @@ The summary request replaces media parts with their names, so neither local
 bare model id whose modality support is unknown, and a rejected summary would
 abort the run. Stored messages and checkpoint source prefixes keep their
 original references.
+Checkpoint provider views retain text descriptions of tool media rather than
+duplicating its bytes in middleware metadata.
 
 [Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
 handles provider-only request preparation, progress display, and rich tool

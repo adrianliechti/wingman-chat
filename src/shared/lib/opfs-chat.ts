@@ -7,7 +7,7 @@
  * needs it.
  */
 
-import type { MessagePart, UIMessage } from "@tanstack/ai";
+import { isContentPartArray, type MessagePart, type UIMessage } from "@tanstack/ai";
 import type { Chat } from "@/shared/types/chat";
 import {
   isMediaPart,
@@ -95,6 +95,7 @@ function mediaBlobRef(part: MediaPart): string | null {
 function* mediaParts(parts: readonly MessagePart[]): Generator<MediaPart> {
   for (const part of parts) {
     if (isMediaPart(part)) yield part;
+    else if (part.type === "tool-call" && isContentPartArray(part.output)) yield* mediaParts(part.output);
     else if (part.type === "tool-result") {
       if (Array.isArray(part.content)) yield* mediaParts(part.content);
       yield* mediaParts(toolResultMetadata(part).result ?? []);
@@ -109,11 +110,18 @@ export function hasStoredMedia(parts: readonly MessagePart[]): boolean {
   return false;
 }
 
-async function extractMediaPart(chatId: string, part: MediaPart): Promise<MediaPart> {
+async function extractMediaPart(
+  chatId: string,
+  part: MediaPart,
+  blobs: Map<string, Promise<string>>,
+): Promise<MediaPart> {
   const dataUrl = mediaDataUrl(part);
   if (!dataUrl || !isDataUrl(dataUrl)) return part;
   const blob = dataUrlToBlob(dataUrl);
-  const blobId = await storeChatBlob(chatId, blob);
+  // Native tool-call output and result content can share the same bytes.
+  const pending = blobs.get(dataUrl) ?? storeChatBlob(chatId, blob);
+  blobs.set(dataUrl, pending);
+  const blobId = await pending;
   return {
     ...part,
     source: { type: "url", value: createBlobRef(blobId) },
@@ -155,6 +163,8 @@ async function mapMediaParts<T extends MessagePart>(
   return finishBlobWrites(
     parts.map(async (part): Promise<T> => {
       if (isMediaPart(part)) return (await transform(part)) as T;
+      if (part.type === "tool-call" && isContentPartArray(part.output))
+        return { ...part, output: await mapMediaParts(part.output, transform) };
       if (part.type === "tool-result") {
         const result = toolResultMetadata(part).result;
         return {
@@ -218,6 +228,7 @@ function runtimeFields({ resume, metadata }: Pick<Chat, "resume" | "metadata">) 
  * Note: Artifacts should be saved separately via saveArtifacts().
  */
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
+  const blobs = new Map<string, Promise<string>>();
   return {
     version: STORED_CHAT_VERSION,
     id: chat.id,
@@ -227,7 +238,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
     created: isoDate(chat.created),
     updated: isoDate(chat.updated),
     model: chat.model,
-    messages: await mapMessageMedia(chat.messages, (part) => extractMediaPart(chat.id, part)),
+    messages: await mapMessageMedia(chat.messages, (part) => extractMediaPart(chat.id, part, blobs)),
     ...runtimeFields(chat),
   };
 }
@@ -272,7 +283,7 @@ export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[]
       if (blobId) ids.push(blobId);
     }
   }
-  return ids;
+  return [...new Set(ids)];
 }
 
 /** Remove only blobs no longer referenced by a persisted manifest or its recovery record. */

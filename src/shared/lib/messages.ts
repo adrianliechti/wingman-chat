@@ -17,7 +17,7 @@ import type { MessageError, MessageUsage } from "../types/chat";
  * Native TanStack messages are the only transcript. App data rides in the
  * `metadata` records TanStack reserves for it: on a message, the run that
  * produced it, its usage, and the failure that ended it; on a tool-result part,
- * the rich result the provider never sees. Nothing here is a second format.
+ * display and policy data. Rich outputs use native result content.
  */
 
 /** App data on a message. */
@@ -28,23 +28,19 @@ export interface MessageMetadata {
   error?: MessageError;
   /** A whole-message marker: a compaction summary, or internal feedback the UI hides. */
   kind?: "summary" | "runtime_feedback";
-  /** Gateway output phases of this assistant turn, in order. */
-  textSegments?: TextSegment[];
 }
 
-export interface TextSegment {
-  content: string;
-  phase?: "commentary" | "final_answer";
-}
+export type TextPhase = "commentary" | "final_answer";
 
-/** App data on a tool-result part: what the tool produced, beyond the text the model received. */
+/** App data on a tool-result part, beyond its native content. */
 export interface ToolResultMetadata {
-  /** Rich output (text, images, audio, files) shown to the user. */
+  /** @deprecated Older saved output; new results use native content. */
   result?: ContentPart[];
   /** Tool-owned display and policy data (artifact deltas, status, MCP app bindings). */
   meta?: Record<string, unknown>;
   /** Structured content an MCP app renders. */
   content?: Record<string, unknown>;
+  /** @deprecated Older saved tool errors; new results use native state and error. */
   error?: MessageError;
 }
 
@@ -65,7 +61,7 @@ export interface ArtifactSelection {
 
 /** App data on a text part. */
 export interface TextMetadata {
-  phase?: TextSegment["phase"];
+  phase?: TextPhase;
   /** The part is a workspace file reference, shown as a chip. */
   artifactRef?: ArtifactRef;
   /** The part is a passage the user highlighted in an artifact. */
@@ -89,7 +85,7 @@ export function toolResultMetadata(part: ToolResultPart): ToolResultMetadata {
   return (part.metadata ?? {}) as ToolResultMetadata;
 }
 
-/** App tools attach rich output; native middleware tools keep their output in content. */
+/** Native result content, with rich error details and older saved outputs supported. */
 export function toolResultContent(part: ToolResultPart): ContentPart[] {
   return toolResultMetadata(part).result ?? (typeof part.content === "string" ? [text(part.content)] : part.content);
 }
@@ -166,9 +162,8 @@ export function toolRoundMessage(
       {
         type: "tool-result",
         toolCallId: call.id,
-        content: describeToolOutput(output),
+        content: output,
         state: "complete",
-        metadata: { result: output } satisfies ToolResultMetadata,
       },
     ],
     init,
@@ -201,20 +196,51 @@ export function promptText(message: UIMessage): string {
     .join("");
 }
 
-/** Output phases of an assistant turn: the gateway's segments when present, else its text parts. */
-export function textSegments(message: UIMessage): TextSegment[] {
-  const segments = messageMetadata(message).textSegments;
-  if (segments?.length) return segments;
-  return textParts(message).map((part) => ({ content: part.content, phase: textMetadata(part).phase }));
-}
-
 /** Prefer the last explicit final answer, or the last unphased segment from older providers. */
 export function finalText(message: UIMessage): string {
-  const segments = textSegments(message);
+  const parts = textParts(message);
   return (
-    (segments.findLast((segment) => segment.phase === "final_answer") ?? segments.findLast((segment) => !segment.phase))
-      ?.content ?? ""
+    (
+      parts.findLast((part) => textMetadata(part).phase === "final_answer") ??
+      parts.findLast((part) => !textMetadata(part).phase)
+    )?.content ?? ""
   );
+}
+
+/** Restore phases after TanStack merges text, preserving intervening tools and other part metadata. */
+export function withTextPhases(message: UIMessage, phased: readonly TextPart[]): UIMessage {
+  if (messageText(message) !== phased.map((part) => part.content).join("")) return message;
+  const source = phased.filter((part) => part.content);
+  let index = 0;
+  let offset = 0;
+  const parts = message.parts.flatMap((part): MessagePart[] => {
+    if (part.type !== "text" || !part.content) return [part];
+    const split: TextPart[] = [];
+    let consumed = 0;
+    while (consumed < part.content.length) {
+      const phase = textMetadata(source[index]).phase;
+      const size = Math.min(source[index].content.length - offset, part.content.length - consumed);
+      if (size === part.content.length && textMetadata(part).phase === phase) split.push(part);
+      else {
+        const metadata: TextMetadata = { ...textMetadata(part) };
+        delete metadata.phase;
+        if (phase) metadata.phase = phase;
+        split.push(
+          text(part.content.slice(consumed, consumed + size), Object.keys(metadata).length ? metadata : undefined),
+        );
+      }
+      consumed += size;
+      offset += size;
+      if (offset === source[index].content.length) {
+        index++;
+        offset = 0;
+      }
+    }
+    return split;
+  });
+  return parts.length === message.parts.length && parts.every((part, index) => part === message.parts[index])
+    ? message
+    : { ...message, parts };
 }
 
 export function toolCalls(message: UIMessage): ToolCallPart[] {
@@ -289,6 +315,21 @@ export function describeToolOutput(output: readonly ContentPart[]): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** Model-bound tool outputs are text; the canonical transcript keeps native rich content. */
+export function describeToolMessages(messages: ModelMessage[]): ModelMessage[] {
+  let changed = false;
+  const described = messages.map((message) => {
+    if (message.role !== "tool" || !Array.isArray(message.content)) return message;
+    changed = true;
+    return {
+      ...message,
+      content:
+        message.error !== undefined ? JSON.stringify({ error: message.error }) : describeToolOutput(message.content),
+    };
+  });
+  return changed ? described : messages;
 }
 
 /** The text of a tool's rich output, for display hooks and tool-reading callers. */

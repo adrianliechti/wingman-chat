@@ -1,9 +1,16 @@
 import instructions from "../prompts/summarize-history.txt?raw";
 import { chat, MetadataCapability, provideMetadata, type MetadataStore, type ChatMiddleware } from "@tanstack/ai";
-import { clearToolResults, composeStrategies, summarizeOldest, withCompaction } from "@tanstack/ai-compaction";
+import {
+  clearToolResults,
+  composeStrategies,
+  estimateMessageTokens,
+  summarizeOldest,
+  withCompaction,
+} from "@tanstack/ai-compaction";
 import { followAbortSignal } from "@/shared/lib/abortSignals";
 import type { Client } from "@/shared/lib/client";
 import { aiTelemetry } from "@/shared/lib/otel";
+import { describeToolMessages } from "@/shared/lib/messages";
 import { preservedSkillMessages, stripMediaContent } from "./chatHistory";
 
 /** Native provider-context compaction; saved messages and tool results stay complete. */
@@ -14,38 +21,46 @@ export function chatCompaction(
   signal?: AbortSignal,
   metadata?: MetadataStore,
 ): ChatMiddleware {
+  const strategy = composeStrategies(
+    clearToolResults(),
+    summarizeOldest({
+      summarize: async (messages) => {
+        const { controller: abortController, cleanup } = followAbortSignal(signal);
+        try {
+          const result = await chat({
+            adapter: client.textAdapter(model, signal),
+            // A compacted prefix often ends with an assistant/tool turn.
+            // Request a new summary instead of an assistant prefill, which
+            // several gateway providers reject.
+            messages: [
+              // Compaction sees canonical storage references, so the prefix
+              // still points at chat blobs the gateway cannot resolve.
+              ...stripMediaContent(describeToolMessages(messages)),
+              { role: "user", content: "Summarize the preceding conversation." },
+            ],
+            systemPrompts: [instructions],
+            middleware: [aiTelemetry("summarize_history")],
+            stream: false,
+            abortController,
+          });
+          return result.text;
+        } finally {
+          cleanup();
+        }
+      },
+    }),
+  );
   const compaction = withCompaction({
     maxTokens,
-    strategyKey: `wingman-summary-v2:${model}:${instructions}`,
-    strategy: composeStrategies(
-      clearToolResults(),
-      summarizeOldest({
-        summarize: async (messages) => {
-          const { controller: abortController, cleanup } = followAbortSignal(signal);
-          try {
-            const result = await chat({
-              adapter: client.textAdapter(model, signal),
-              // A compacted prefix often ends with an assistant/tool turn.
-              // Request a new summary instead of an assistant prefill, which
-              // several gateway providers reject.
-              messages: [
-                // Compaction sees canonical storage references, so the prefix
-                // still points at chat blobs the gateway cannot resolve.
-                ...stripMediaContent(messages),
-                { role: "user", content: "Summarize the preceding conversation." },
-              ],
-              systemPrompts: [instructions],
-              middleware: [aiTelemetry("summarize_history")],
-              stream: false,
-              abortController,
-            });
-            return result.text;
-          } finally {
-            cleanup();
-          }
-        },
-      }),
-    ),
+    strategyKey: `wingman-summary-v3:${model}:${instructions}`,
+    // The provider reads descriptions of tool media; their bytes are not prompt tokens.
+    estimateTokens: (message) => estimateMessageTokens(describeToolMessages([message])[0]),
+    strategy: async (messages, context) => {
+      const compacted = await strategy(messages, context);
+      // Checkpoints are provider views. Keep binary tool output in the transcript,
+      // outside middleware state, so persisted checkpoints cannot duplicate its bytes.
+      return compacted ? describeToolMessages(compacted) : null;
+    },
   });
   return metadata
     ? {
@@ -62,15 +77,18 @@ export function preserveSkillContext(): ChatMiddleware {
     name: "wingman-skill-context",
     onConfig(ctx, config) {
       if (ctx.phase !== "beforeModel" || !config.providerMessages) return;
+      const canonical = describeToolMessages([...ctx.messages]);
       const retained = new Set(
-        config.providerMessages.filter((message) => message.role === "tool").map((message) => message.content),
+        describeToolMessages(config.providerMessages)
+          .filter((message) => message.role === "tool")
+          .map((message) => message.content),
       );
       const missing = new Set(
-        ctx.messages
+        canonical
           .filter((message) => message.role === "tool" && !retained.has(message.content))
           .flatMap((message) => (message.toolCallId ? [message.toolCallId] : [])),
       );
-      const skills = preservedSkillMessages(ctx.messages, missing);
+      const skills = preservedSkillMessages(canonical, missing);
       if (!skills.length) return;
       return { providerMessages: [...skills, ...config.providerMessages] };
     },

@@ -29,8 +29,10 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
   lives in `files/index.json`; cleanup of removed folders follows the commit.
 - A chat record (`chats/<id>/chat.json`, version 2) holds the runtime's native
   `UIMessage[]` transcript, its optional resume pointer and middleware metadata.
-  Blob extraction walks message parts, native tool-result content, rich tool outputs in metadata
-  and subagent conversations. Records saved before version 2 migrate when read:
+  Blob extraction walks message parts, native tool-call output and tool-result
+  content, legacy rich tool outputs in metadata and subagent conversations.
+  Saved message `textSegments` become text parts with phase metadata when loaded.
+  Records saved before version 2 migrate when read:
   deterministic and idempotent, with unreadable parts dropped with a warning.
   Reading keeps the original JSON in `chat.legacy.json` so the migration can
   be redone; the migrated record is written on the next save. Older backups remain

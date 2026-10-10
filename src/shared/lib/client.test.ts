@@ -10,7 +10,8 @@ import {
   mediaFromDataUrl,
   messageMetadata,
   messageText,
-  textSegments,
+  text,
+  textParts,
   toolResults,
   toolRoundMessage,
 } from "./messages";
@@ -703,7 +704,8 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         expect(messages.flatMap(toolResults)).toEqual([
           expect.objectContaining({
             toolCallId: "call_test",
-            metadata: { result: media, meta: { files: ["/notes.docx", "/notes.pdf"] } },
+            content: media,
+            metadata: { meta: { files: ["/notes.docx", "/notes.pdf"] } },
           }),
         ]);
       }
@@ -799,11 +801,13 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     const client = new Client();
     const answer = (await runMessages(client, "model", "", prompt, [])).at(-1)!;
     expect(messageText(answer)).toBe("WorkingDone");
-    expect(textSegments(answer)).toEqual([
-      { content: "Working", phase: "commentary" },
-      { content: "Done", phase: "final_answer" },
+    expect(textParts(answer)).toEqual([
+      text("Working", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
     ]);
-    await runMessages(client, "model", "", [...prompt, answer], []);
+    expect(answer.metadata).not.toHaveProperty("textSegments");
+    const restored: UIMessage = JSON.parse(JSON.stringify(answer));
+    await runMessages(client, "model", "", [...prompt, restored], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
@@ -883,8 +887,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(new Set(next.messages.map((message) => message.id)).size).toBe(next.messages.length);
     expect(next.messages.flatMap(toolResults)).toMatchObject([
-      { toolCallId: "call_test", state: "error", error: error.message, metadata: { error } },
+      { toolCallId: "call_test", state: "error", error: error.message, content: output(error.message) },
     ]);
+    expect(next.messages.flatMap(toolResults)[0].metadata).not.toHaveProperty("error");
     for (const request of fetchMock.mock.calls.slice(1)) {
       const input = JSON.parse(request[1].body).input;
       expect(input.filter((item: { type: string }) => item.type === "function_call_output")).toEqual([

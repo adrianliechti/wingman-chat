@@ -250,13 +250,10 @@ describe("voice request context and tool lifecycle", () => {
         {
           id: "a2",
           role: "assistant",
-          parts: [{ type: "text", content: "ProgressFinal answer" }],
-          metadata: {
-            textSegments: [
-              { content: "Progress", phase: "commentary" },
-              { content: "Final answer", phase: "final_answer" },
-            ],
-          },
+          parts: [
+            { type: "text", content: "Progress", metadata: { phase: "commentary" } },
+            { type: "text", content: "Final answer", metadata: { phase: "final_answer" } },
+          ],
         },
       ],
       [],

@@ -4,10 +4,60 @@ import { inlineSkill, withSkills } from "@tanstack/ai-skills";
 import { expect, it, vi } from "vitest";
 import { run } from "@/shared/lib/agent";
 import { assistant, calls, output, testClient, toolCall, user } from "@/shared/lib/test-support/ai";
-import { assistantMessage, userMessage } from "@/shared/lib/messages";
+import { assistantMessage, mediaFromDataUrl, toolRoundMessage, userMessage } from "@/shared/lib/messages";
 import { chatCompaction, preserveSkillContext } from "./chatCompaction";
 import { prepareChatMessages } from "./chatHistory";
 import instructions from "../prompts/summarize-history.txt?raw";
+
+it("budgets tool media by its model description without compacting its bytes", async () => {
+  const image = mediaFromDataUrl(`data:image/png;base64,${"YWJj".repeat(10000)}`, "report.png");
+  const complete = vi.fn<Parameters<typeof testClient>[0]>().mockImplementation(async ({ messages }) => {
+    expect(JSON.stringify(messages)).toContain("[Image: report.png - displayed to user]");
+    expect(JSON.stringify(messages)).not.toContain("YWJj");
+    return assistant("Done");
+  });
+  const client = testClient(complete);
+  const messages = [
+    user("Draw a report"),
+    toolRoundMessage({ id: "render", name: "render", arguments: "{}" }, [image]),
+  ];
+  const result = await run(client, "model", "", messages, [], {
+    sharedMiddleware: (signal) => [chatCompaction(client, 1000, "model", signal)],
+  });
+  expect(result.status).toBe("completed");
+  expect(complete).toHaveBeenCalledOnce();
+  expect(result.messages[1]).toEqual(messages[1]);
+});
+
+it("keeps loaded app skill output without adding a duplicate instruction message", async () => {
+  const complete = vi
+    .fn<Parameters<typeof testClient>[0]>()
+    .mockResolvedValueOnce(calls(["skill", "read_skill", { name: "reports" }]))
+    .mockImplementationOnce(async ({ messages }) => {
+      expect(messages.filter((message) => message.role === "user")).toHaveLength(1);
+      expect(messages.find((message) => message.role === "tool")?.content).toContain("Verify reports");
+      return assistant("Done");
+    });
+  const result = await run(
+    testClient(complete),
+    "model",
+    "",
+    [user("Build a report")],
+    [
+      {
+        name: "read_skill",
+        description: "Test tool",
+        inputSchema: z.looseObject({ name: z.string() }),
+        execute: async () => output(JSON.stringify({ name: "reports", instructions: "Verify reports" })),
+      },
+    ],
+    {
+      sharedMiddleware: () => [preserveSkillContext()],
+    },
+  );
+  expect(result.status).toBe("completed");
+  expect(complete).toHaveBeenCalledTimes(2);
+});
 
 it("compacts after large tool outputs, preserving active skill instructions and the complete transcript", async () => {
   const complete = vi
@@ -102,6 +152,9 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
   const original: UIMessage[] = [
     user("Previous request"),
     assistant("Large evidence ".repeat(1000)),
+    toolRoundMessage({ id: "render", name: "render", arguments: "{}" }, [
+      mediaFromDataUrl("data:image/png;base64,YWJj", "report.png"),
+    ]),
     user("Current request"),
   ];
   const first = await execute(original);
@@ -109,6 +162,9 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
   expect(turns).toBe(3);
   expect(summaries).toBe(1);
   expect(entries.size).toBe(1);
+  expect(JSON.stringify([...entries.values()])).toContain("[Image: report.png - displayed to user]");
+  expect(JSON.stringify([...entries.values()])).not.toContain("YWJj");
+  expect(JSON.stringify(first.messages)).toContain("YWJj");
   expect(JSON.stringify(first.messages)).toContain("Large evidence ".repeat(1000));
   expect(JSON.stringify(first.messages)).not.toContain("untrusted-conversation-summary");
   const restored: UIMessage[] = JSON.parse(JSON.stringify(first.messages));

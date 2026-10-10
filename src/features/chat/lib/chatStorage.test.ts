@@ -73,13 +73,13 @@ describe("chat persistence", () => {
       assistantMessage(
         [
           text("Working", { phase: "commentary" }),
-          { type: "tool-call", id: "call", name: "vision", arguments: "{}", state: "complete" },
+          { type: "tool-call", id: "call", name: "vision", arguments: "{}", state: "complete", output: [image()] },
           {
             type: "tool-result",
             toolCallId: "call",
-            content: "[Image - displayed to user]",
+            content: [image()],
             state: "complete",
-            metadata: { result: [image()], meta: { revision: 2 } },
+            metadata: { meta: { revision: 2 } },
           },
         ],
         {
@@ -88,7 +88,6 @@ describe("chat persistence", () => {
           metadata: {
             runId: "run",
             usage: { outputTokens: 3 },
-            textSegments: [{ content: "Working", phase: "commentary" }],
           },
         },
       ),

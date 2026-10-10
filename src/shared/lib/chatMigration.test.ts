@@ -3,7 +3,15 @@ import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { legacyChatPath, loadChat, storeChat } from "@/features/chat/lib/chatStorage";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
 import { isLegacyStoredChat, migrateLegacyChat, normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
-import { messageMetadata, textMetadata, toolResultFor, toolResultMetadata } from "./messages";
+import {
+  assistantMessage,
+  messageMetadata,
+  text,
+  textMetadata,
+  toolResultContent,
+  toolResultFor,
+  toolResultMetadata,
+} from "./messages";
 import { collectChatBlobIds, STORED_CHAT_VERSION } from "./opfs-chat";
 import { readGatewayReasoning } from "./reasoning";
 import * as opfs from "./opfs";
@@ -204,6 +212,41 @@ describe("legacy chat migration", () => {
     expect(normalizeStoredChat(JSON.parse(JSON.stringify(first)))).toEqual(JSON.parse(JSON.stringify(first)));
   });
 
+  it("moves saved native text segments onto text parts, including nested conversations", () => {
+    const old = assistantMessage("WorkingDone", {
+      id: "phased",
+      metadata: {
+        runId: "run",
+        textSegments: [
+          { content: "Working", phase: "commentary" },
+          { content: "Done", phase: "final_answer" },
+        ],
+      },
+    });
+    const stored = {
+      ...migrateLegacyChat(legacyChat()),
+      messages: [
+        old,
+        assistantMessage([
+          {
+            type: "subagent",
+            subagent: { id: "child", name: "research", status: "finished", messages: [{ ...old, id: "nested" }] },
+          },
+        ]),
+      ],
+    };
+    const normalized = normalizeStoredChat(stored);
+    expect(normalized.messages[0]).toMatchObject({
+      id: "phased",
+      parts: [text("Working", { phase: "commentary" }), text("Done", { phase: "final_answer" })],
+      metadata: { runId: "run" },
+    });
+    expect(JSON.stringify(normalized.messages)).not.toContain("textSegments");
+    expect(JSON.stringify(normalized.messages)).toContain('"id":"nested"');
+    expect(old.parts).toEqual([text("WorkingDone")]);
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
   it("rebuilds the native transcript with ids, metadata and folded tool rounds", () => {
     const stored = migrateLegacyChat(legacyChat());
     expect(stored.version).toBe(STORED_CHAT_VERSION);
@@ -240,10 +283,7 @@ describe("legacy chat migration", () => {
     const result = toolResultFor(a1, "call-1")!;
     expect(result).toMatchObject({
       state: "complete",
-      content: "Rendered\n[Image: chart.png - displayed to user]",
-    });
-    expect(toolResultMetadata(result)).toEqual({
-      result: [
+      content: [
         { type: "text", content: "Rendered" },
         {
           type: "image",
@@ -251,6 +291,8 @@ describe("legacy chat migration", () => {
           metadata: { filename: "chart.png", contentType: "image/png" },
         },
       ],
+    });
+    expect(toolResultMetadata(result)).toEqual({
       meta: { artifactDelta: { mutations: [{ operation: "create", path: "/chart.png" }] } },
       content: { structured: true },
     });
@@ -259,10 +301,7 @@ describe("legacy chat migration", () => {
       { type: "text", content: "Here it is. ", metadata: { phase: "commentary" } },
       { type: "text", content: "Done.", metadata: { phase: "final_answer" } },
     ]);
-    expect(messageMetadata(a2).textSegments).toEqual([
-      { content: "Here it is. ", phase: "commentary" },
-      { content: "Done.", phase: "final_answer" },
-    ]);
+    expect(a2.metadata).not.toHaveProperty("textSegments");
 
     expect(messageMetadata(s1)).toEqual({ kind: "summary" });
     expect(s1.parts).toEqual([{ type: "text", content: "Earlier the user asked for a chart." }]);
@@ -289,7 +328,9 @@ describe("legacy chat migration", () => {
       metadata: { tanstack: { subagentPlan: { agent: "research" } } },
     });
     expect(card.subagent.messages.map((message) => message.id)).toEqual(["legacy-child-0", "c1"]);
-    expect(toolResultFor(card.subagent.messages[1], "inner")).toMatchObject({ content: "Evidence" });
+    expect(toolResultFor(card.subagent.messages[1], "inner")).toMatchObject({
+      content: [{ type: "text", content: "Evidence" }],
+    });
 
     expect(e1.parts).toEqual([]);
     expect(messageMetadata(e1)).toEqual({ error: { code: "SERVER_ERROR", message: "Server error." } });
@@ -302,7 +343,10 @@ describe("legacy chat migration", () => {
     });
     // The delegate call keeps the result its child produced; the card renders the work.
     expect(a3.parts[0]).toMatchObject({ type: "tool-call", id: "delegate", state: "complete" });
-    expect(toolResultFor(a3, "delegate")).toMatchObject({ state: "complete", content: "Checked." });
+    expect(toolResultFor(a3, "delegate")).toMatchObject({
+      state: "complete",
+      content: [{ type: "text", content: "Checked." }],
+    });
   });
 
   it("restores the resume snapshot and compaction checkpoints", () => {
@@ -371,7 +415,7 @@ describe("legacy chat migration", () => {
     expect(collectChatBlobIds({ messages: manifest.messages })).toEqual([blobId]);
     expect(manifest.resume?.pendingInterrupts).toHaveLength(1);
     const loaded = await createAttachmentLoader(legacy.id)(manifest.messages);
-    expect(toolResultMetadata(toolResultFor(loaded[1], "call-1")!).result?.[1]).toMatchObject({
+    expect(toolResultContent(toolResultFor(loaded[1], "call-1")!)[1]).toMatchObject({
       type: "image",
       source: { type: "data", value: "YWJj", mimeType: "image/png" },
     });
