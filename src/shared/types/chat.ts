@@ -141,6 +141,8 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
     /** Optional bounds for a delegated run, including its tools and middleware. */
     maxIterations?: number;
     timeoutMs?: number;
+    /** Builds the child brief (and approval text) from the call arguments; defaults to `prompt`. */
+    brief?: (args: Record<string, unknown>) => string;
     /** Optional retrieval-only path. Undefined continues with the model loop. */
     direct?: (args: Record<string, unknown>, context: ToolContext) => Promise<string | undefined>;
   };

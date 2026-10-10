@@ -55,7 +55,8 @@ export function createAgentTool(
       const ctx = execution?.context;
       const parentSignal = execution?.abortSignal ?? ctx?.signal;
       parentSignal?.throwIfAborted();
-      const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+      const base = typeof args.prompt === "string" ? args.prompt.trim() : "";
+      const prompt = base ? (spec.brief?.(args) ?? base).trim() : "";
       if (!prompt) {
         return [{ type: "text", content: "Error: prompt is required" }];
       }

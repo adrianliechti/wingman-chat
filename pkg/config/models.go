@@ -110,6 +110,18 @@ type Internet struct {
 	Scraper     string `json:"scraper,omitempty" yaml:"scraper,omitempty"`
 	Researcher  string `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 	Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
+	// Categories lists the searcher verticals (e.g. news, publication) offered
+	// to the research agent; the gateway searcher must accept them.
+	Categories []SearchCategory `json:"categories,omitempty" yaml:"categories,omitempty"`
+	// Location is the default ISO 3166-1 alpha-2 country code that biases searches.
+	Location string `json:"location,omitempty" yaml:"location,omitempty"`
+	// Summarizer optionally condenses long fetched pages during deep research.
+	Summarizer string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
+}
+
+type SearchCategory struct {
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 type Renderer struct {
