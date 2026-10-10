@@ -14,6 +14,7 @@ vi.mock("./utils", async (importOriginal) => ({
 const memory = new MemoryOpfs();
 const storedChat = (id: string, extra = {}) =>
   JSON.stringify({
+    version: opfs.STORED_CHAT_VERSION,
     id,
     created: "2020-01-01",
     updated: "2020-01-02",
@@ -312,6 +313,7 @@ describe("backup and restore", () => {
     memory.put(
       "chats/legacy.json",
       storedChat("embedded-id", {
+        version: undefined,
         title: "Original title",
         customTitle: "My title",
         customIndex: 3,

@@ -9,15 +9,7 @@
 
 import { isContentPartArray, type MessagePart, type UIMessage } from "@tanstack/ai";
 import type { Chat } from "@/shared/types/chat";
-import {
-  isMediaPart,
-  mapMessages,
-  mediaDataUrl,
-  mediaMetadata,
-  mediaMimeType,
-  toolResultMetadata,
-  type MediaPart,
-} from "./messages";
+import { isMediaPart, mapMessages, mediaDataUrl, mediaMetadata, mediaMimeType, type MediaPart } from "./messages";
 import {
   blobToDataUrl,
   createBlobRef,
@@ -83,6 +75,36 @@ export interface StoredChat extends Omit<Chat, "created" | "updated"> {
   updated: string | null;
 }
 
+/** Accept the current native transcript format at persistence boundaries. */
+export function isStoredChat(value: unknown): value is StoredChat {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  const nativeMessages = (messages: unknown): boolean =>
+    Array.isArray(messages) &&
+    messages.every(
+      (message) =>
+        message &&
+        typeof message.id === "string" &&
+        ["user", "assistant", "system"].includes(message.role) &&
+        Array.isArray(message.parts) &&
+        message.parts.every(
+          (part: unknown) =>
+            !!part &&
+            typeof part === "object" &&
+            typeof (part as MessagePart).type === "string" &&
+            ((part as MessagePart).type !== "subagent" ||
+              nativeMessages((part as Extract<MessagePart, { type: "subagent" }>).subagent?.messages)),
+        ),
+    );
+  return (
+    record.version === STORED_CHAT_VERSION &&
+    typeof record.id === "string" &&
+    (record.created === null || typeof record.created === "string") &&
+    (record.updated === null || typeof record.updated === "string") &&
+    nativeMessages(record.messages)
+  );
+}
+
 // ============================================================================
 // Media parts: data <-> blob reference
 // ============================================================================
@@ -98,7 +120,6 @@ function* mediaParts(parts: readonly MessagePart[]): Generator<MediaPart> {
     else if (part.type === "tool-call" && isContentPartArray(part.output)) yield* mediaParts(part.output);
     else if (part.type === "tool-result") {
       if (Array.isArray(part.content)) yield* mediaParts(part.content);
-      yield* mediaParts(toolResultMetadata(part).result ?? []);
     } else if (part.type === "subagent") {
       for (const message of part.subagent.messages) yield* mediaParts(message.parts);
     }
@@ -124,8 +145,7 @@ async function extractMediaPart(
   const blobId = await pending;
   return {
     ...part,
-    source: { type: "url", value: createBlobRef(blobId) },
-    metadata: { ...mediaMetadata(part), contentType: blob.type || mediaMimeType(part) },
+    source: { type: "url", value: createBlobRef(blobId), mimeType: blob.type || mediaMimeType(part) },
   } as MediaPart;
 }
 
@@ -143,7 +163,7 @@ async function rehydrateMediaPart(chatId: string, part: MediaPart): Promise<Medi
   // the file name, and let blobToDataUrl stamp it — never trust the `.bin` read-back.
   const metadata = mediaMetadata(part);
   const contentType =
-    (metadata.contentType || lookupContentType(fileExtension(metadata.filename ?? ""))) ??
+    (part.source.mimeType || lookupContentType(fileExtension(metadata.filename ?? ""))) ??
     (part.type === "image" ? "image/png" : part.type === "audio" ? "audio/wav" : undefined);
   const dataUrl = await blobToDataUrl(blob, contentType);
   const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
@@ -151,7 +171,6 @@ async function rehydrateMediaPart(chatId: string, part: MediaPart): Promise<Medi
   return {
     ...part,
     source: { type: "data", value: base64, mimeType },
-    metadata: { ...metadata, contentType: mimeType },
   } as MediaPart;
 }
 
@@ -166,11 +185,9 @@ async function mapMediaParts<T extends MessagePart>(
       if (part.type === "tool-call" && isContentPartArray(part.output))
         return { ...part, output: await mapMediaParts(part.output, transform) };
       if (part.type === "tool-result") {
-        const result = toolResultMetadata(part).result;
         return {
           ...part,
           ...(Array.isArray(part.content) ? { content: await mapMediaParts(part.content, transform) } : {}),
-          ...(result ? { metadata: { ...part.metadata, result: await mapMediaParts(result, transform) } } : {}),
         };
       }
       if (part.type === "subagent")
@@ -211,7 +228,7 @@ async function finishBlobWrites<T>(writes: Promise<T>[]): Promise<T[]> {
 // ============================================================================
 
 function isoDate(value: Date | null): string | null {
-  return value instanceof Date ? value.toISOString() : (value as unknown as string) || null;
+  return value?.toISOString() ?? null;
 }
 
 /** Runtime state is kept only while it has content, so idle chats stay small. */
@@ -286,7 +303,7 @@ export function collectChatBlobIds(chat: Pick<StoredChat, "messages">): string[]
   return [...new Set(ids)];
 }
 
-/** Remove only blobs no longer referenced by a persisted manifest or its recovery record. */
+/** Retain the original record's attachments until its conversion can be discarded. */
 export async function deleteUnreferencedChatBlobs(
   chat: StoredChat,
   retainedBlobIds: readonly string[] = [],

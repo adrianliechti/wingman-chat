@@ -220,7 +220,6 @@ export interface ToolContext {
   onElicitationComplete?(elicitationId: string): void;
   setMeta?(meta: Record<string, unknown>): void;
   setError?(error: MessageError): void;
-  setContent?(content: Record<string, unknown>): void;
   /** Trace context for nested agents spawned from this tool. */
   agentContext?: AgentContext;
 }

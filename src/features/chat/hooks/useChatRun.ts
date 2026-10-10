@@ -101,11 +101,7 @@ export function useChatRun({
     useChatElicitation();
   const { classify, pendingConsent, resolveConsent } = useChatClassification({ models, chatId, chatIdRef, updateChat });
   const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
-  const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: UIMessage } | null>(null);
-  const updateToolMeta = useCallback((id: string, meta: Record<string, unknown>) => {
-    setToolMeta((prev) => ({ ...prev, [id]: { ...prev[id], ...meta } }));
-  }, []);
 
   const connect = useCallback(
     async function* (
@@ -181,11 +177,6 @@ export function useChatRun({
                 setRunPhase("thinking");
                 if (!results.length) return;
                 clearElicitation();
-                setToolMeta((prev) => {
-                  const next = { ...prev };
-                  for (const { toolCallId } of results) delete next[toolCallId];
-                  return next;
-                });
               },
             },
           ],
@@ -222,7 +213,6 @@ export function useChatRun({
           }),
           onToolMeta: (callId, meta) => {
             if (signal?.aborted) return;
-            if (active()) updateToolMeta(callId, meta);
             updateChat(id, (prev) => ({ messages: updateToolResultMeta(prev.messages, callId, meta) }));
           },
           onComplete: async (result) => {
@@ -256,7 +246,6 @@ export function useChatRun({
       requestElicitation,
       completeElicitation,
       clearElicitation,
-      updateToolMeta,
       updateChat,
     ],
   );
@@ -330,7 +319,6 @@ export function useChatRun({
   });
   useEffect(() => {
     setStreamingMessage(null);
-    setToolMeta({});
     clearElicitation();
   }, [threadId, clearElicitation]);
 
@@ -451,7 +439,6 @@ export function useChatRun({
     stop();
     clearElicitation();
     setStreamingMessage(null);
-    setToolMeta({});
     setRunPhase("idle");
   }, [stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
@@ -489,7 +476,6 @@ export function useChatRun({
     interruptState,
     pendingElicitation,
     pendingConsent,
-    toolMeta,
     addMessage,
     sendMessage,
     retryMessage,
@@ -498,7 +484,6 @@ export function useChatRun({
     stopStreaming,
     resolveElicitation,
     requestElicitation,
-    updateToolMeta,
     resolveConsent,
   };
 }

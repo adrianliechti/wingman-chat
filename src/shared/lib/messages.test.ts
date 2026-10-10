@@ -100,7 +100,6 @@ describe("readers", () => {
     expect(toolResultContent(result)).toEqual([text("Skill instructions")]);
     const media = [mediaFromDataUrl("data:image/png;base64,AQ==")];
     expect(toolResultContent({ ...result, content: media })).toBe(media);
-    expect(toolResultContent({ ...result, metadata: { result: media } })).toBe(media);
   });
 
   it("separates typed prose from references and keeps the provider text intact", () => {
@@ -165,7 +164,7 @@ describe("media", () => {
     expect(part).toEqual({
       type: "image",
       source: { type: "data", value: "YWJj", mimeType: "image/jpeg" },
-      metadata: { filename: "photo.jpg", contentType: "image/jpeg" },
+      metadata: { filename: "photo.jpg" },
     });
     expect(mediaDataUrl(part)).toBe("data:image/jpeg;base64,YWJj");
     expect(mediaFromDataUrl("data:text/plain;base64,aGk=").type).toBe("document");
@@ -223,13 +222,13 @@ describe("transforms", () => {
   it("replaces one tool's metadata and keeps the rest of the record", () => {
     const message = assistantMessage([
       call("a"),
-      { ...result("a"), metadata: { result: [text("x")], meta: { old: 1 } } },
+      { ...result("a"), content: [text("x")], metadata: { meta: { old: 1 } } },
     ]);
     const [updated] = updateToolResultMeta([message], "a", { progress: "done" });
     expect(toolResultMetadata(toolResultFor(updated, "a")!)).toEqual({
-      result: [text("x")],
       meta: { progress: "done" },
     });
+    expect(toolResultContent(toolResultFor(updated, "a")!)).toEqual([text("x")]);
     expect(updateToolResultMeta([message], "missing", {})[0].parts).toEqual(message.parts);
   });
 });

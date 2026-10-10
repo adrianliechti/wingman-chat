@@ -14,27 +14,6 @@ import {
 import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
 import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
 
-// Artifacts-provider tools that produce or write files.
-const ARTIFACT_WRITE_TOOLS = new Set([
-  "artifacts_create",
-  "artifacts_edit",
-  "artifacts_move",
-  "artifacts_delete",
-  "create",
-  "edit",
-  "move",
-  "delete",
-  "execute_script",
-  // Interpreter names retained only for persisted conversations.
-  "execute_python_code",
-  "execute_javascript_code",
-  // Render artifacts from conversations saved before the concise tool rename.
-  "create_file",
-  "edit_file",
-  "move_file",
-  "delete_file",
-]);
-
 // User attachments are uploaded into the artifacts workspace and referenced in
 // the sent message by this prose line so the model knows to read them. The UI
 // parses it back to render clickable artifact chips instead of the raw text.
@@ -55,11 +34,6 @@ export function parseArtifactReference(text: string): string[] {
     .split("\n")
     .map((p) => p.trim())
     .filter(Boolean);
-}
-
-function parsePathFromJson(raw: string | undefined): string | null {
-  const obj = tryParseToolArguments(raw);
-  return obj && typeof obj.path === "string" ? obj.path : null;
 }
 
 // ── Tool rounds ─────────────────────────────────────────────────────────────
@@ -83,7 +57,7 @@ export function subagentToolCallIds(messages: readonly UIMessage[]): Set<string>
 }
 
 function isFailedResult(result: ToolResultPart | undefined): boolean {
-  return !!result && (result.state === "error" || !!toolResultMetadata(result).error);
+  return result?.state === "error";
 }
 
 /**
@@ -98,19 +72,6 @@ export function toolRounds(message: UIMessage, delegated?: ReadonlySet<string>):
     const result = results.get(part.id);
     return delegated?.has(part.id) && !isFailedResult(result) ? [] : [{ call: part, result }];
   });
-}
-
-/** Artifact file paths a single tool round wrote, if any. */
-function roundArtifactPaths({ call, result }: ToolRound): string[] {
-  const meta = result ? toolResultMetadata(result).meta : undefined;
-  if (call.name === "artifacts_create" || call.name === "create" || call.name === "create_file") {
-    const output = result ? toolResultContent(result) : undefined;
-    const path = parsePathFromJson(output ? outputText(output) : undefined) ?? parsePathFromJson(call.arguments);
-    return path ? [path] : [];
-  }
-  // Code execution tools report written files via meta (including historical names).
-  const files = meta?.artifactFiles;
-  return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
 }
 
 function turnStart(messages: readonly UIMessage[], assistantIndex: number): number {
@@ -141,10 +102,7 @@ export function collectTurnArtifactPaths(messages: readonly UIMessage[], assista
       const delta = round.result ? artifactDeltaFromMeta(toolResultMetadata(round.result).meta) : null;
       if (delta) {
         updateArtifactPaths(seen, delta.mutations);
-        continue;
       }
-      if (!round.result || !ARTIFACT_WRITE_TOOLS.has(round.call.name)) continue;
-      for (const path of roundArtifactPaths(round)) seen.add(path);
     }
   }
   return [...seen].filter((path) => !isMemoryPath(path));
@@ -226,16 +184,15 @@ export function isToolOnlyMessage(message: UIMessage): boolean {
     !hasText(message) &&
     !hasReasoning(message) &&
     !hasMedia(message) &&
-    !message.parts.some((part) => part.type === "subagent" || part.type === "structured-output")
+    !message.parts.some(
+      (part) => part.type === "subagent" || part.type === "structured-output" || part.type === "ui-resource",
+    )
   );
 }
 
 /** A result that must stay visible standalone (interactive/rich), never folded. */
 export function isRichToolResult(result: ToolResultPart): boolean {
-  const data = toolResultMetadata(result);
   if (isFailedResult(result)) return true;
-  // MCP UI app — the app itself is the primary renderer.
-  if (typeof data.meta?.toolProvider === "string" && typeof data.meta?.toolResource === "string") return true;
   // Inline media (images/audio/files) is worth keeping in view.
   return toolResultContent(result).some(isMediaPart);
 }

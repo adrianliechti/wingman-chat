@@ -207,7 +207,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
             );
             context?.signal?.throwIfAborted();
             if (saved.mutations.length) {
-              context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });
+              context?.setMeta?.({ artifactDelta: artifactDelta(saved.mutations) });
             }
             name = saved.paths[0];
           } catch (error) {

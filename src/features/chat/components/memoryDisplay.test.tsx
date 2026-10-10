@@ -3,25 +3,26 @@ import { BrainCircuit, FileText } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
-import { assistantMessage, type ToolResultMetadata } from "@/shared/lib/messages";
+import { assistantMessage } from "@/shared/lib/messages";
 import type { Tool } from "@/shared/types/chat";
 import { resolveToolHeader } from "./toolDisplay";
 import { ChatToolMessage } from "./ChatToolMessage";
 import { collectTurnArtifactPaths, summarizeToolGroup } from "./chatMessageUtils";
 
 vi.mock("@/features/tools/hooks/useToolsContext", () => ({ useToolsContext: () => ({ providers: [] }) }));
-vi.mock("@/features/chat/hooks/useChat", () => ({ useChatConversation: () => ({ chat: null, messages: [] }) }));
-const result = (name: string, args: Record<string, unknown>): UIMessage =>
+vi.mock("@/features/chat/hooks/useChat", () => ({
+  useChatConversation: () => ({ chat: null, messages: [] }),
+  useChatActions: () => ({ sendMessage: vi.fn() }),
+}));
+const result = (name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): UIMessage =>
   assistantMessage([
     { type: "tool-call", id: name, name, arguments: JSON.stringify(args), state: "complete" },
     {
       type: "tool-result",
       toolCallId: name,
-      content: "",
+      content: [{ type: "text", content: JSON.stringify({ success: true, path: args.file_path }) }],
       state: "complete",
-      metadata: {
-        result: [{ type: "text", content: JSON.stringify({ success: true, path: args.file_path }) }],
-      } satisfies ToolResultMetadata,
+      ...(meta ? { metadata: { meta } } : {}),
     },
   ]);
 const round = (message: UIMessage) => ({
@@ -91,7 +92,13 @@ describe("memory operations in chat", () => {
       result("artifacts_read", { file_path: "/.memory/preferences/writing.md" }),
       result("artifacts_create", { file_path: "/.memory/preferences/writing.md" }),
       result("artifacts_delete", { file_path: "/.memory/old.md" }),
-      result("artifacts_create", { file_path: "/report.md" }),
+      result(
+        "artifacts_create",
+        { path: "/report.md" },
+        {
+          artifactDelta: { mutations: [{ operation: "create", path: "/report.md" }] },
+        },
+      ),
     ];
     expect(collectTurnArtifactPaths(messages, 3)).toEqual(["/report.md"]);
     expect(summarizeToolGroup(messages, [0, 1, 2, 3])).toBe(

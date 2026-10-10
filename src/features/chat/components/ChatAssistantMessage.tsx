@@ -203,19 +203,17 @@ function getMessagePartKey(part: UIMessage["parts"][number], index: number, scop
 function RunningToolRow({
   header,
   icon,
-  status,
   className,
 }: {
   header: ResolvedToolHeader;
   icon?: ToolIcon;
-  status?: string | null;
   className?: string;
 }) {
   return (
     <ActivityRow
       running
       label={header.label}
-      detail={status ?? header.preview}
+      detail={header.preview}
       mono={header.mono}
       icon={header.Icon ?? icon}
       className={className}
@@ -229,7 +227,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { chat, messages, toolMeta } = useChatConversation();
+  const { chat, messages } = useChatConversation();
   const { pendingElicitation, status } = useChatRunState();
   const { resolveElicitation, retryMessage, sendMessage } = useChatActions();
   const { providers } = useToolsContext();
@@ -323,11 +321,9 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       );
     // An unanswered call is only shown while it is still running.
     if (!isLast || !isResponding) return null;
-    const meta = toolMeta[part.id];
-    const liveStatus = typeof meta?.status === "string" ? meta.status : null;
     const tool = findTool(providers, part.name);
     const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id });
-    return <RunningToolRow key={key} header={header} icon={tool?.icon} status={liveStatus} className={className} />;
+    return <RunningToolRow key={key} header={header} icon={tool?.icon} className={className} />;
   };
 
   // Handle loading states (no text content yet)

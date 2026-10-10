@@ -13,6 +13,7 @@ import { parseSkillFileForImport } from "@/features/skills/lib/skillParser";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import type { IndexEntry } from "./opfs-core";
 import { writeFileChanges } from "./opfs-transaction";
+import { isStoredChat } from "./opfs-chat";
 import { rebuildFolderIndexUnlocked, STORAGE_COLLECTIONS } from "./opfs-index";
 import { isJunkZipEntry } from "./opfs-zip";
 import { flushPersistence, withPersistenceLock } from "./persistence";
@@ -144,6 +145,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     }
     if (/^chats\/(?:[^/]+\/chat|[^/]+)\.json$/.test(path)) {
       // The native transcript keeps `parts`; chats saved before it keep `content` and migrate on load.
+      const version = (value as { version?: unknown }).version;
       const messages = (value as { messages?: unknown }).messages;
       const typedParts = (parts: unknown) =>
         Array.isArray(parts) &&
@@ -152,6 +154,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
             !!part && typeof part === "object" && typeof (part as { type?: unknown }).type === "string",
         );
       if (
+        (version !== undefined && !isStoredChat(value)) ||
         !Array.isArray(messages) ||
         messages.some(
           (message) =>

@@ -9,6 +9,7 @@ import type {
   ToolCallPart,
   ToolResultPart,
   UIMessage,
+  UIResourcePart,
   VideoPart,
 } from "@tanstack/ai";
 import type { MessageError, MessageUsage } from "../types/chat";
@@ -34,14 +35,8 @@ export type TextPhase = "commentary" | "final_answer";
 
 /** App data on a tool-result part, beyond its native content. */
 export interface ToolResultMetadata {
-  /** @deprecated Older saved output; new results use native content. */
-  result?: ContentPart[];
-  /** Tool-owned display and policy data (artifact deltas, status, MCP app bindings). */
+  /** Tool-owned data, such as artifact deltas. */
   meta?: Record<string, unknown>;
-  /** Structured content an MCP app renders. */
-  content?: Record<string, unknown>;
-  /** @deprecated Older saved tool errors; new results use native state and error. */
-  error?: MessageError;
 }
 
 export interface ArtifactRef {
@@ -74,7 +69,6 @@ export type MediaPart = ImagePart | AudioPart | VideoPart | DocumentPart;
 
 export interface MediaMetadata {
   filename?: string;
-  contentType?: string;
 }
 
 export function messageMetadata(message: Pick<UIMessage, "metadata">): MessageMetadata {
@@ -85,9 +79,9 @@ export function toolResultMetadata(part: ToolResultPart): ToolResultMetadata {
   return (part.metadata ?? {}) as ToolResultMetadata;
 }
 
-/** Native result content, with rich error details and older saved outputs supported. */
+/** Native result content, including rich error details. */
 export function toolResultContent(part: ToolResultPart): ContentPart[] {
-  return toolResultMetadata(part).result ?? (typeof part.content === "string" ? [text(part.content)] : part.content);
+  return typeof part.content === "string" ? [text(part.content)] : part.content;
 }
 
 export function textMetadata(part: TextPart): TextMetadata {
@@ -255,6 +249,12 @@ export function toolResultFor(message: UIMessage, toolCallId: string): ToolResul
   return toolResults(message).find((part) => part.toolCallId === toolCallId);
 }
 
+export function uiResourceFor(message: UIMessage, toolCallId: string): UIResourcePart | undefined {
+  return message.parts.find(
+    (part): part is UIResourcePart => part.type === "ui-resource" && part.toolCallId === toolCallId,
+  );
+}
+
 export function isMediaPart(part: MessagePart): part is MediaPart {
   return part.type === "image" || part.type === "audio" || part.type === "video" || part.type === "document";
 }
@@ -271,7 +271,7 @@ export function mediaFromDataUrl(dataUrl: string, name?: string, kind?: MediaPar
   return {
     type,
     source: match ? { type: "data", value: match[2], mimeType } : { type: "url", value: dataUrl },
-    metadata: { ...(name ? { filename: name } : {}), contentType: mimeType } satisfies MediaMetadata,
+    ...(name ? { metadata: { filename: name } satisfies MediaMetadata } : {}),
   } as MediaPart;
 }
 
@@ -283,11 +283,7 @@ function mediaKind(mimeType: string): MediaPart["type"] {
 }
 
 export function mediaMimeType(part: MediaPart): string | undefined {
-  return (
-    mediaMetadata(part).contentType ??
-    (part.source.type === "data" ? part.source.mimeType : undefined) ??
-    (part.source.type === "url" ? DATA_URL.exec(part.source.value)?.[1] : undefined)
-  );
+  return part.source.mimeType ?? (part.source.type === "url" ? DATA_URL.exec(part.source.value)?.[1] : undefined);
 }
 
 export function mediaName(part: MediaPart): string | undefined {

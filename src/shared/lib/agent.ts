@@ -103,16 +103,13 @@ export interface RunHooks {
  * rich error content, plus the run and usage of every model turn.
  */
 export class RunSidecar {
-  private readonly results = new Map<
-    string,
-    { metadata: Pick<ToolResultMetadata, "meta" | "content">; content?: ContentPart[] }
-  >();
+  private readonly results = new Map<string, { metadata: ToolResultMetadata; content?: ContentPart[] }>();
   private readonly turns = new Map<string, Pick<MessageMetadata, "runId" | "usage">>();
   private readonly rejectedReasoning = new Set<string>();
   /** The gateway's output phases per assistant message; a snapshot rebuilt from the provider view loses them. */
   private readonly phasedText = new Map<string, TextPart[]>();
 
-  result(toolCallId: string, metadata: Pick<ToolResultMetadata, "meta" | "content">, content?: ContentPart[]) {
+  result(toolCallId: string, metadata: ToolResultMetadata, content?: ContentPart[]) {
     const previous = this.results.get(toolCallId);
     this.results.set(toolCallId, {
       ...previous,
@@ -341,7 +338,6 @@ export async function* streamRun(
             name: tool.name,
           };
           let meta: Record<string, unknown> = {};
-          let content: Record<string, unknown> | undefined;
           let error: MessageError | undefined;
           const signal = execution.abortSignal ?? abortController.signal;
           // Keep TanStack's per-run context identity: file observations belong
@@ -367,9 +363,6 @@ export async function* streamRun(
               signal,
               agentContext: telemetry.toolContext(call.id),
               setMeta,
-              setContent: (next) => {
-                content = next;
-              },
               setError: (next) => {
                 error = next;
               },
@@ -378,7 +371,7 @@ export async function* streamRun(
           signal.throwIfAborted();
           // TanStack emits its error response when execution throws; restore
           // the tool's rich details as native content in the displayed transcript.
-          sidecar.result(call.id, { meta, ...(content ? { content } : {}) }, error ? output : undefined);
+          sidecar.result(call.id, { meta }, error ? output : undefined);
           if (error) throw Object.assign(new Error(error.message), { code: error.code });
           // TanStack treats an empty array as JSON data rather than content.
           return output.length ? output : "";

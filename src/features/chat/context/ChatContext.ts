@@ -73,10 +73,6 @@ export interface ChatContextType {
   resolveElicitation: (result: ElicitationResult) => void;
   requestElicitation: (toolCallId: string, toolName: string, elicitation: Elicitation) => Promise<ElicitationResult>;
 
-  /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
-  toolMeta: Record<string, Record<string, unknown>>;
-  updateToolMeta: (toolCallId: string, meta: Record<string, unknown>) => void;
-
   // Post-turn advisory overlay — covers both category consent and risk warnings.
   pendingConsent: PendingConsent | null;
   resolveConsent: (result: ConsentResult) => void;
@@ -96,7 +92,7 @@ export type ChatModelContextType = Pick<
 >;
 export const ChatModelContext = createContext<ChatModelContextType | undefined>(undefined);
 
-export type ChatConversationContextType = Pick<ChatContextType, "chat" | "messages" | "toolMeta">;
+export type ChatConversationContextType = Pick<ChatContextType, "chat" | "messages">;
 export const ChatConversationContext = createContext<ChatConversationContextType | undefined>(undefined);
 
 export type ChatRunStateContextType = Pick<
@@ -122,7 +118,6 @@ export type ChatActionsContextType = Pick<
   | "setVoiceToolCall"
   | "resolveElicitation"
   | "requestElicitation"
-  | "updateToolMeta"
   | "resolveConsent"
 >;
 export const ChatActionsContext = createContext<ChatActionsContextType | undefined>(undefined);

@@ -253,7 +253,6 @@ function Owner() {
       return { action: "cancel" };
     },
     setVoiceToolCall: noop,
-    updateToolMeta: noop,
   } as unknown as ChatContextType;
   return show ? (
     <ChatContextProviders value={context}>

@@ -1,9 +1,9 @@
 import type { ToolCallPart, ToolResultPart, UIMessage } from "@tanstack/ai";
 import { memo, useMemo, useState } from "react";
-import { useChatConversation } from "@/features/chat/hooks/useChat";
+import { useChatActions, useChatConversation } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { isMediaPart, toolResultContent, toolResultMetadata } from "@/shared/lib/messages";
+import { isMediaPart, toolResultContent, uiResourceFor, userMessage } from "@/shared/lib/messages";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -33,14 +33,14 @@ export const ChatToolMessage = memo(function ChatToolMessage({
 }: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const { chat, messages: chatMessages } = useChatConversation();
+  const { sendMessage } = useChatActions();
   const messages = scope ?? chatMessages;
   const { providers } = useToolsContext();
-  const isLastFullscreenApp = useLastFullscreenApp(messages, index, result);
+  const app = uiResourceFor(message, call.id);
+  const isLastFullscreenApp = useLastFullscreenApp(messages, index, app);
 
-  const data = result ? toolResultMetadata(result) : {};
   const toolDef = useMemo(() => findTool(providers, call.name), [providers, call.name]);
-  const error =
-    data.error ?? (result?.state === "error" ? { code: "TOOL_ERROR", message: result.error ?? "" } : undefined);
+  const error = result?.state === "error" ? { code: "TOOL_ERROR", message: result.error ?? "" } : undefined;
   const isToolError = !!error;
   // When a result carries an MCP UI app, the app is the primary renderer; per the
   // MCP Apps spec the `content` blocks are for model context / text-only fallback,
@@ -50,10 +50,10 @@ export const ChatToolMessage = memo(function ChatToolMessage({
   // belongs to an inactive agent (or an MCP filtered out by RBAC) means the client
   // isn't available, so we fall back to the raw result instead of a broken app. Once
   // the provider appears (e.g. the agent is activated) this flips true and McpApp mounts.
-  const appProviderId = data.meta?.toolProvider;
+  const appProviderId = app?.serverId;
   const hasMcpApp =
     typeof appProviderId === "string" &&
-    typeof data.meta?.toolResource === "string" &&
+    app?.resource.uri.startsWith("ui://") &&
     providers.some((p) => p.id === appProviderId);
   const header = resolveToolHeader(toolDef, call.name, call.arguments, { error: isToolError });
   const inputBlocks = useMemo(() => resolveToolInput(toolDef, call.arguments), [toolDef, call.arguments]);
@@ -111,13 +111,15 @@ export const ChatToolMessage = memo(function ChatToolMessage({
           </div>
         )}
 
-        {/* Render the MCP UI app (inline or fullscreen) for tool results with UI metadata */}
-        {hasMcpApp && result && (
+        {/* Render the native UI resource alongside its originating tool result. */}
+        {hasMcpApp && app && result && (
           <McpApp
             key={`${chat?.id}-${message.id}-${call.id}`}
             call={call}
+            app={app}
             result={result}
             isLastFullscreenApp={isLastFullscreenApp}
+            onPrompt={(text) => sendMessage(userMessage(text))}
           />
         )}
       </div>

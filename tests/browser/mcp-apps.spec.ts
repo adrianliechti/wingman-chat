@@ -47,7 +47,7 @@ test("two real sandboxes keep independent data and survive panel switching witho
   await page.getByRole("button", { name: "Close panel", exact: true }).click();
   await expect.poll(() => second.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
   expect(await first.evaluate(() => (window as any).guest.state.instance)).toBe(initial.instance);
-  expect(await page.evaluate(() => window.mcpE2E.state().reads)).toBe(2);
+  expect(await page.evaluate(() => window.mcpE2E.state().reads)).toBe(0);
 });
 
 test("fullscreen-only apps share one panel and closing it hides the active iframe", async ({ page }) => {
@@ -66,6 +66,28 @@ test("fullscreen-only apps share one panel and closing it hides the active ifram
   await expect(page.getByTestId("first").locator("iframe")).not.toBeVisible();
   expect(await first.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("fullscreen");
   expect(errors).toEqual([]);
+});
+
+test("the initial display hint opens the latest app when the handshake supports fullscreen", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/mcp-apps.html?preferred=fullscreen");
+  const first = await guest(page, "first");
+  const second = await guest(page, "second");
+  await expect.poll(() => page.evaluate(() => window.mcpE2E.state().active)).toContain("second");
+  await expect.poll(() => second.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("fullscreen");
+  await expect.poll(() => first.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
+  await expect.poll(() => second.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
+});
+
+test("the handshake overrides an unsupported initial display hint", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/mcp-apps.html?inline&preferred=fullscreen");
+  const first = await guest(page, "first");
+  await guest(page, "second");
+  await expect.poll(() => first.evaluate(() => (window as any).guest.state.host.displayMode)).toBe("inline");
+  expect(await page.evaluate(() => window.mcpE2E.state().showing)).toBe(false);
+  expect((await request(first, "fullscreen", "ui/request-display-mode", { mode: "fullscreen" })).result.mode).toBe(
+    "inline",
+  );
 });
 
 test("server notifications reach both apps and updated visibility is enforced on guest calls", async ({ page }) => {
@@ -98,6 +120,54 @@ test("server notifications reach both apps and updated visibility is enforced on
   expect(await page.evaluate(() => window.mcpE2E.state().calls)).toEqual(["guest_only", "added"]);
 });
 
+test("interactive calls retain structured results, private metadata and tool errors", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/mcp-apps.html");
+  const first = await guest(page, "first");
+  const args = { count: 2 };
+  expect((await request(first, "data", "tools/call", { name: "guest_only", arguments: args })).result).toEqual({
+    content: [{ type: "text", text: "guest_only" }],
+    structuredContent: { tool: "guest_only", args },
+    _meta: { widgetState: "private", origin: "fixture" },
+  });
+  expect((await request(first, "failure", "tools/call", { name: "fail", arguments: {} })).result).toMatchObject({
+    content: [{ type: "text", text: "fail" }],
+    structuredContent: { tool: "fail", args: {} },
+    _meta: { widgetState: "private", origin: "fixture" },
+    isError: true,
+  });
+  expect(await page.evaluate(() => window.mcpE2E.state().calls)).toEqual(["guest_only", "fail"]);
+});
+
+test("widget prompt actions reach the chat handler without making an MCP tool call", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/mcp-apps.html");
+  const first = await guest(page, "first");
+  const second = await guest(page, "second");
+  expect(
+    (
+      await request(first, "prompt", "ui/message", {
+        role: "user",
+        content: [
+          { type: "text", text: "Explain " },
+          { type: "text", text: "this chart" },
+        ],
+      })
+    ).result,
+  ).toEqual({});
+  expect(
+    (
+      await request(second, "second-prompt", "ui/message", {
+        role: "user",
+        content: [{ type: "text", text: "Compare the results" }],
+      })
+    ).result,
+  ).toEqual({});
+  expect(await page.evaluate(() => window.mcpE2E.state().prompts)).toEqual([
+    "Explain this chart",
+    "Compare the results",
+  ]);
+  expect(await page.evaluate(() => window.mcpE2E.state().calls)).toEqual([]);
+});
+
 test("unmount during resource loading cannot revive the removed app or disturb another iframe", async ({ page }) => {
   await page.goto("/tests/browser/fixtures/mcp-apps.html");
   const second = await guest(page, "second");
@@ -105,7 +175,7 @@ test("unmount during resource loading cannot revive the removed app or disturb a
     window.mcpE2E.hold();
     window.mcpE2E.add("late");
   });
-  await expect.poll(() => page.evaluate(() => window.mcpE2E.state().reads)).toBe(3);
+  await expect.poll(() => page.evaluate(() => window.mcpE2E.state().reads)).toBe(1);
   await page.evaluate(() => window.mcpE2E.remove("late"));
   await page.evaluate(() => window.mcpE2E.release());
   await expect(page.getByTestId("late")).toHaveCount(0);

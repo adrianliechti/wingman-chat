@@ -80,9 +80,9 @@ describe("chat blobs", () => {
         {
           type: "tool-result",
           toolCallId: "call",
-          content: "[Image - displayed to user]",
+          content: [image("ZGVm")],
           state: "complete",
-          metadata: { result: [image("ZGVm")], meta: { file: "/a.png" } },
+          metadata: { meta: { file: "/a.png" } },
         },
         {
           type: "subagent",
@@ -100,7 +100,8 @@ describe("chat blobs", () => {
     expect(stored.version).toBe(2);
     expect(json).not.toContain("base64");
     expect(json).not.toMatch(/"value":"(YWJj|ZGVm|bm90ZXM=)"/);
-    expect(json).toContain('"contentType":"image/jpeg"');
+    expect(json).toContain('"mimeType":"image/jpeg"');
+    expect(json).not.toContain("contentType");
     expect(json).toContain('"filename":"photo.jpg"');
     expect(stored.created).toBe("2026-01-01T00:00:00.000Z");
     const ids = collectChatBlobIds(stored);

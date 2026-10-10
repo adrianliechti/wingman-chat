@@ -68,13 +68,29 @@ afterEach(async () => {
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
-  it("discovers every page, filters app-only tools and persists UI metadata without fetching HTML", async () => {
+  it("discovers every page, filters app-only tools and emits native UI resources with their HTML", async () => {
     list.mockImplementation(async (cursor) =>
       cursor === undefined
-        ? { tools: [tool("app", { resourceUri: "ui://app" })], nextCursor: "page-2" }
+        ? {
+            tools: [
+              tool("app", {
+                resourceUri: "ui://app",
+                defaultDisplayMode: "fullscreen",
+                availableDisplayModes: ["fullscreen"],
+              }),
+            ],
+            nextCursor: "page-2",
+          }
         : { tools: [tool("hidden", { visibility: ["app"] }), tool("plain")] },
     );
     call.mockResolvedValue({ ...result, structuredContent: { count: 2 } });
+    const resource = {
+      uri: "ui://app",
+      mimeType: "text/html;profile=mcp-app",
+      text: "<p>Widget</p>",
+      _meta: { ui: { csp: { connectDomains: ["https://example.test"] }, permissions: { microphone: {} } } },
+    };
+    read.mockResolvedValue({ contents: [resource] });
     await provider.connect();
     expect(list.mock.calls.slice(0, 2)).toEqual([[undefined], ["page-2"]]);
     expect(provider.tools.map((value) => value.name)).toEqual([
@@ -83,13 +99,32 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     ]);
     expect(provider.tools.some((value) => value.lazy)).toBe(false);
     const setMeta = vi.fn();
-    const setContent = vi.fn();
-    await provider.tools[0].execute({}, { context: { setMeta, setContent }, emitCustomEvent() {} });
-    expect(setMeta).toHaveBeenCalledWith(
-      expect.objectContaining({ toolProvider: "test", toolResource: "ui://app", mcpResult: expect.any(Object) }),
-    );
-    expect(setContent).toHaveBeenCalledWith({ count: 2 });
-    expect(read).not.toHaveBeenCalled();
+    const emitCustomEvent = vi.fn();
+    await provider.tools[0].execute({}, { context: { setMeta }, toolCallId: "call", emitCustomEvent });
+    expect(setMeta).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledOnce();
+    expect(emitCustomEvent).toHaveBeenCalledWith("ui-resource", {
+      resource: { uri: resource.uri, mimeType: resource.mimeType, text: resource.text },
+      toolCallId: "call",
+      serverId: "test",
+      toolName: "app",
+      meta: {
+        ...resource._meta,
+        mcpResult: { ...result, structuredContent: { count: 2 } },
+        appDisplayMode: "fullscreen",
+      },
+    });
+  });
+
+  it("keeps tool output when the UI resource cannot be read", async () => {
+    list.mockResolvedValue({ tools: [tool("app", { resourceUri: "ui://app" })] });
+    read.mockRejectedValue(new Error("Resource expired"));
+    await provider.connect();
+    const emitCustomEvent = vi.fn();
+    expect(await provider.tools[0].execute({}, { context: undefined, emitCustomEvent })).toEqual([
+      { type: "text", content: "done" },
+    ]);
+    expect(emitCustomEvent).not.toHaveBeenCalled();
   });
 
   it("connects a resource-only server without asking it for tools", async () => {
@@ -107,11 +142,19 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await provider.connect();
     const setError = vi.fn();
     const setMeta = vi.fn();
-    expect(await provider.tools[0].execute({}, { context: { setError, setMeta }, emitCustomEvent() {} })).toEqual([
+    read.mockResolvedValue({
+      contents: [{ uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Error</p>" }],
+    });
+    const emitCustomEvent = vi.fn();
+    expect(await provider.tools[0].execute({}, { context: { setError, setMeta }, emitCustomEvent })).toEqual([
       { type: "text", content: "done" },
     ]);
     expect(setError).toHaveBeenCalledWith({ code: "MCP_TOOL_ERROR", message: "done" });
-    expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ mcpResult: failed }));
+    expect(setMeta).not.toHaveBeenCalled();
+    expect(emitCustomEvent).toHaveBeenCalledWith(
+      "ui-resource",
+      expect.objectContaining({ meta: expect.objectContaining({ mcpResult: failed }) }),
+    );
   });
 
   it("coalesces notifications during initial discovery and never publishes the invalidated scan", async () => {

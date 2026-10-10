@@ -8,8 +8,8 @@ import type { ToolContextFactory } from "@/features/voice/hooks/useVoiceWebSocke
 import { useVoiceWebSockets, voiceSessionSignature } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
 import { notify } from "@/shared/lib/notify";
-import type { ContentPart } from "@tanstack/ai";
-import { assistantMessage, toolRoundMessage, userMessage } from "@/shared/lib/messages";
+import type { UIMessage } from "@tanstack/ai";
+import { assistantMessage, userMessage } from "@/shared/lib/messages";
 import type { ToolContext } from "@/shared/types/chat";
 import type { Elicitation } from "@/shared/types/elicitation";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
@@ -34,7 +34,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const lastLevelUpdateRef = useRef(0);
   const config = getConfig();
   const isAvailable = !!config.voice;
-  const { addMessage, ensureChat, setVoiceToolCall, requestElicitation, updateToolMeta } = useChatActions();
+  const { addMessage, ensureChat, setVoiceToolCall, requestElicitation } = useChatActions();
   const { models, model, setModel } = useChatModel();
   const { chatId } = useChatList();
   const { currentAgent } = useAgents();
@@ -67,14 +67,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
   const requestElicitationRef = useRef(requestElicitation);
-  const updateToolMetaRef = useRef(updateToolMeta);
   const pauseAudioRef = useRef(pauseAudio);
   const setModelRef = useRef(setModel);
   const modelsRef = useRef(models);
   useLayoutEffect(() => {
     setVoiceToolCallRef.current = setVoiceToolCall;
     requestElicitationRef.current = requestElicitation;
-    updateToolMetaRef.current = updateToolMeta;
     pauseAudioRef.current = pauseAudio;
     setModelRef.current = setModel;
     modelsRef.current = models;
@@ -124,10 +122,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     notify.error("Voice service error", error.message);
   }
 
-  function onToolResultCallback(toolName: string, callId: string, result: ContentPart[], args: string) {
+  function onToolResultCallback(message: UIMessage) {
     const sessionChatId = voiceChatIdRef.current;
     if (!sessionChatId) return;
-    void addMessage(toolRoundMessage({ id: callId, name: toolName, arguments: args }, result), sessionChatId);
+    void addMessage(message, sessionChatId);
   }
 
   const buildToolContextFactory = useCallback(
@@ -140,9 +138,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         return {
           model: currentModel,
           chatId,
-          setMeta: (meta: Record<string, unknown>) => {
-            updateToolMetaRef.current(toolCall.id, { ...meta });
-          },
           elicit: async (elicitation: Elicitation) => {
             requireOwner();
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);

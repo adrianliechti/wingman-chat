@@ -94,6 +94,89 @@ function toolCall(socket: Socket, args: Record<string, unknown>) {
 }
 
 describe("voice request context and tool lifecycle", () => {
+  it("delivers native widget parts with voice tool output while keeping app data out of the voice model", async () => {
+    const app = {
+      resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Private widget HTML</p>" },
+      serverId: "server",
+      toolName: "app",
+      meta: { mcpResult: { content: [], structuredContent: { secret: "private result" } } },
+    };
+    const { hook, start, onResult } = createHarness([
+      {
+        name: "edit",
+        description: "Test widget",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          execution?.context?.setMeta?.({ artifactDelta: { mutations: [{ operation: "create", path: "/app.html" }] } });
+          execution?.emitCustomEvent("ui-resource", app);
+          return [{ type: "text", content: "Visible result" }];
+        },
+      },
+    ]);
+    try {
+      const socket = await start();
+      toolCall(socket, {});
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
+      expect(onResult.mock.calls[0][0]).toMatchObject({
+        role: "assistant",
+        parts: [
+          { type: "tool-call", id: "call", name: "edit", arguments: "{}", state: "complete" },
+          {
+            type: "tool-result",
+            toolCallId: "call",
+            content: [{ type: "text", content: "Visible result" }],
+            state: "complete",
+            metadata: { meta: { artifactDelta: { mutations: [{ operation: "create", path: "/app.html" }] } } },
+          },
+          { ...app, type: "ui-resource", toolCallId: "call" },
+        ],
+      });
+      expect(JSON.stringify(socket.sent)).toContain("Visible result");
+      expect(JSON.stringify(socket.sent)).not.toContain("Private widget HTML");
+      expect(JSON.stringify(socket.sent)).not.toContain("private result");
+      expect(JSON.stringify(socket.sent)).not.toContain("artifactDelta");
+    } finally {
+      await hook.stop();
+    }
+  });
+  it.each(["returned", "thrown"])("stores %s tool errors in native result fields", async (mode) => {
+    const delta = { mutations: [{ operation: "create", path: "/partial.txt" }] };
+    const { hook, start, onResult } = createHarness([
+      {
+        name: "edit",
+        description: "Failing tool",
+        inputSchema: z.looseObject({}),
+        execute: async (_args, execution) => {
+          execution?.context?.setMeta?.({ artifactDelta: delta });
+          if (mode === "thrown") throw new Error("Failed");
+          execution?.context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Failed" });
+          return [{ type: "image", source: { type: "data", value: "AQ==", mimeType: "image/png" } }];
+        },
+      },
+    ]);
+    try {
+      const socket = await start();
+      toolCall(socket, {});
+      await vi.waitFor(() => expect(onResult).toHaveBeenCalledOnce());
+      const result = onResult.mock.calls[0][0].parts[1];
+      expect(result).toMatchObject({
+        type: "tool-result",
+        toolCallId: "call",
+        state: "error",
+        error: "Failed",
+        metadata: { meta: { artifactDelta: delta } },
+      });
+      expect(result.content).toEqual(
+        mode === "thrown"
+          ? [{ type: "text", content: "Failed" }]
+          : [{ type: "image", source: { type: "data", value: "AQ==", mimeType: "image/png" } }],
+      );
+      expect(JSON.stringify(socket.sent)).toContain("Failed");
+      expect(JSON.stringify(socket.sent)).not.toContain("artifactDelta");
+    } finally {
+      await hook.stop();
+    }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     Socket.instances = [];
@@ -452,6 +535,7 @@ describe("voice request context and tool lifecycle", () => {
       toolCall(socket, args);
       await vi.waitFor(() => expect(onResult).toHaveBeenCalled());
       expect(handler).not.toHaveBeenCalled();
+      expect(onResult.mock.calls[0][0].parts[1]).toMatchObject({ type: "tool-result", state: "error" });
       await hook.stop();
     },
   );

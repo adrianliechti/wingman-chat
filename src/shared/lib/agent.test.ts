@@ -19,6 +19,39 @@ const tool = (execute: Tool["execute"] = async () => output("Written")): Tool =>
 const results = (messages: UIMessage[]) => messages.flatMap(toolResults);
 
 describe("TanStack agent lifecycle", () => {
+  it("persists native widgets with the originating tool call without sending their HTML to the model", async () => {
+    const complete = vi.fn().mockResolvedValueOnce(call()).mockResolvedValueOnce(done);
+    const resource = { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Private widget HTML</p>" };
+    const result = await run(testClient(complete), "model", "", prompt, [
+      tool(async (_args, execution) => {
+        execution?.emitCustomEvent("ui-resource", {
+          resource,
+          serverId: "server",
+          toolName: "app",
+          meta: { appDisplayMode: "inline" },
+        });
+        return output("Written");
+      }),
+    ]);
+    expect(result.messages[1].parts).toContainEqual({
+      type: "ui-resource",
+      resource,
+      serverId: "server",
+      toolName: "app",
+      toolCallId: "call",
+      meta: { appDisplayMode: "inline" },
+    });
+    expect(
+      JSON.stringify(complete.mock.calls[1][0].messages.map((message: { content: unknown }) => message.content)),
+    ).not.toContain(resource.text);
+    const next = vi.fn().mockResolvedValue(done);
+    const saved = JSON.parse(JSON.stringify(result.messages));
+    const reopened = await run(testClient(next), "model", "", saved, []);
+    expect(reopened.messages[1].parts).toEqual(saved[1].parts);
+    expect(
+      JSON.stringify(next.mock.calls[0][0].messages.map((message: { content: unknown }) => message.content)),
+    ).not.toContain(resource.text);
+  });
   it("discovers deferred tools natively and restores them from saved history", async () => {
     const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written"));
     const deferredTool = { ...tool(execute), lazy: true, description: "Write a file. Extended guidance." };
@@ -73,7 +106,6 @@ describe("TanStack agent lifecycle", () => {
         tool(async (_args, execution) => {
           const context = execution?.context;
           context?.setMeta?.({ artifactDelta: { mutations: [{ path: "/a.txt" }] } });
-          context?.setContent?.({ saved: true });
           return output("Written");
         }),
       ],
@@ -90,10 +122,10 @@ describe("TanStack agent lifecycle", () => {
     expect(result.messages[1].parts.map((part) => part.type)).toEqual(["tool-call", "tool-result"]);
     expect(toolResultMetadata(results(result.messages)[0])).toMatchObject({
       meta: { artifactDelta: { mutations: [{ path: "/a.txt" }] } },
-      content: { saved: true },
     });
     expect(results(result.messages)[0].content).toEqual(output("Written"));
     expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("result");
+    expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("content");
     expect(messageMetadata(result.messages.at(-1)!).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
     expect(messageMetadata(result.messages.at(-1)!).runId).toEqual(expect.any(String));
     expect(resultHook).toHaveBeenCalledOnce();
@@ -309,7 +341,12 @@ describe("TanStack agent lifecycle", () => {
     const result = await run(testClient(complete), "model", "", prompt, [
       tool(async (_args, execution) => {
         const context = execution?.context;
-        context?.setMeta?.({ toolResource: "ui://error", mcpResult: { isError: true } });
+        execution?.emitCustomEvent("ui-resource", {
+          resource: { uri: "ui://error", mimeType: "text/html;profile=mcp-app", text: "<p>Error</p>" },
+          serverId: "server",
+          toolName: "app",
+          meta: { mcpResult: { isError: true } },
+        });
         context?.setError?.({ code: "MCP_TOOL_ERROR", message: "Remote operation failed" });
         return details;
       }),
@@ -319,10 +356,14 @@ describe("TanStack agent lifecycle", () => {
       state: "error",
       error: "Remote operation failed",
       content: details,
-      metadata: {
-        meta: { toolResource: "ui://error", mcpResult: { isError: true } },
-      },
     });
+    expect(result.messages[1].parts).toContainEqual(
+      expect.objectContaining({
+        type: "ui-resource",
+        toolCallId: "call",
+        meta: { mcpResult: { isError: true } },
+      }),
+    );
     expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("result");
     expect(toolResultMetadata(results(result.messages)[0])).not.toHaveProperty("error");
     expect(complete.mock.calls[1][0].messages).toContainEqual(

@@ -143,10 +143,45 @@ external messages, editing an earlier turn) to the native transcript. App data
 rides in the `metadata` records TanStack reserves for it (`src/shared/lib/messages.ts`):
 on a message `runId`, `usage`, `error` and `kind` (`summary` or `runtime_feedback`);
 on a text part `phase`, `artifactRef`, `artifactSelection` or `source`; on a
-tool-result part `meta` and `content` (MCP app data); on a media part `filename`
-and `contentType`. Rich tool output uses native result `content`, and failures
+tool-result part `meta`; on a media part `filename`. MIME types use native
+`source.mimeType`, including persisted blob references. Rich tool output uses native result `content`, and failures
 use native `state` and `error`. Older saved tool `metadata.result` and
-`metadata.error` remain readable. Message-level `error` records a failed run
+`metadata.error` migrate to native fields when loaded. The old structured
+`metadata.content` copy migrates into the UI part's `meta.mcpResult` for apps, or is dropped
+when unused. MCP app bindings use native `UIResourcePart.serverId`,
+`resource.uri`, `toolName` and `toolCallId`. Its `meta.ui` retains resource CSP
+and permissions; `meta.appDisplayMode` is an initial hint, and `meta.mcpResult`
+preserves the original MCP response for app replay: structured content, app-only
+`_meta`, and original content blocks that native conversion resolves or simplifies.
+Legacy app fields move off tool-result metadata onto the UI resource part on
+load, including nested conversations. Older duplicate MIME types move onto the native
+source; generated-file lists become artifact deltas. This conversion remains at the
+storage boundary so old chats stay readable. The renderer reads current fields only.
+Supported modes come from the app handshake.
+
+The application-owned metadata fields are:
+
+| Owner                       | Field                     | Purpose                                                                               |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------- |
+| Message `metadata`          | `runId`                   | Correlates a turn with its run and trace.                                             |
+| Message `metadata`          | `usage`                   | Model, input/cached/output/reasoning token counts and reasoning replay scope.         |
+| Message `metadata`          | `error`                   | The run failure (`code`, `message`), displayed with retry.                            |
+| Message `metadata`          | `kind`                    | Marks a compaction summary or hidden internal feedback.                               |
+| Text `metadata`             | `phase`                   | Distinguishes commentary from the final answer.                                       |
+| Text `metadata`             | `artifactRef`             | Identifies a workspace file reference, revision and display name.                     |
+| Text `metadata`             | `artifactSelection`       | Stores a highlighted passage, path and optional line range.                           |
+| Text `metadata`             | `source`                  | Identifies verification or guardrail feedback.                                        |
+| Media `metadata`            | `filename`                | Names previews and downloads.                                                         |
+| Tool result `metadata.meta` | `artifactDelta`           | Records file mutations for verification and generated-file tracking.                  |
+| UI resource `meta`          | `ui`                      | Preserves server resource metadata; CSP and permissions are applied.                  |
+| UI resource `meta`          | `appDisplayMode`          | Initial display preference; the handshake defines supported modes.                    |
+| UI resource `meta`          | `mcpResult`               | Original content, structured content, private metadata and error flag for the widget. |
+| Chat `metadata`             | `@tanstack/ai-compaction` | Middleware checkpoints, scoped by thread and child.                                   |
+
+TanStack and adapters also retain their own protocol metadata, such as provider
+tool-call identifiers and `metadata.tanstack` wire state. These are library-owned.
+
+Message-level `error` records a failed run
 for retry; usage events are attached to messages so token counts survive reload.
 A `RunSidecar` per thread collects tool display data, rich failure details,
 text phases and each turn's run and usage while streaming. It restores these
@@ -383,8 +418,9 @@ content-guard middleware. It receives the model-written brief and its own resume
 work, keeping unrelated parent history out of research requests. Search and fetch
 progress use native child parts during execution and ordinary child messages in
 storage and the UI, replacing the separate research runner
-and manually maintained parent status. Realtime uses the shared text-result
-adapter and its live confirmation callback.
+and manually maintained parent status. Realtime delivers native assistant messages with tool-call/result parts and UI resources
+to storage. Tool metadata and failures live on the result; only the tool's text output
+reaches the voice model. Its confirmation callback remains live during the session.
 The chat renders one disclosure per child conversation. A child's parent tool
 call/result stays in the saved history and model context but does not add a
 duplicate UI row. Research uses readable queries and Markdown sources in the
@@ -494,9 +530,25 @@ Calls and discovery use the native client's APIs.
 `MCPAppResource` wrapper does not accept the initial tool result or the display
 mode callbacks needed by saved widgets. The host boundary supplies existing
 capabilities, tool visibility policy, display mode, theme, CSP, and permissions.
-Raw MCP results, including `_meta`, are persisted for widgets; older records use
-the existing display-content fallback. The iframe stays mounted when switching
-between inline and fullscreen display.
+Tools emit TanStack's native `ui-resource` event after eagerly reading the linked
+HTML. The part persists the HTML and original MCP result; reopening uses those
+bytes without another resource read or tool call. A failed resource read leaves
+the normal tool result available. Migrated URI-only parts read their HTML when
+opened; records without an original MCP result reconstruct it from native content.
+Voice execution also forwards UI resource events into its stored tool round.
+The iframe stays mounted when switching between inline and fullscreen display.
+
+Connecting the MCP client alone does not wire interactive widgets. TanStack's
+`useMcpAppBridge` sends calls to an explicit HTTP endpoint; its
+`createMcpAppCallHandler` reconnects from a serializable transport descriptor on
+each call. Wingman's browser OAuth transport is a live custom transport, whose
+native `getInfo()` cannot supply that descriptor. The host instead forwards
+`tools/call` through the current authenticated connection, checks app visibility,
+and preserves the full MCP response. Widget `ui/message` actions call chat's
+`sendMessage`; links use the host's URL policy. These paths are covered by browser
+tests with real SDK bridges and sandboxed iframes against a fixture MCP transport.
+The initial `ui/notifications/tool-input` and `ui/notifications/tool-result`
+delivery follows the MCP Apps protocol; it replays the original call's data.
 
 Gateway-only extraction, rendering, search, translation, segmentation, and guard
 endpoints keep their existing request helpers; TanStack has no equivalent for

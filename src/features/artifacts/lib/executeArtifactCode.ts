@@ -194,7 +194,6 @@ export async function executeArtifactCode(options: {
       await options.onCommit?.(fs, summary.mutations);
       if (summary.mutations.length > 0) {
         context?.setMeta?.({
-          artifactFiles: [...summary.createdPaths, ...summary.updatedPaths],
           artifactDelta: artifactDelta(summary.mutations),
         });
       }

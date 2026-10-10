@@ -18,7 +18,7 @@ import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/f
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import { queryClient } from "@/shared/lib/queryClient";
-import type { ContentPart } from "@tanstack/ai";
+import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
@@ -532,15 +532,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Restore an MCP app UI from persisted chat data
   const restoreToolUI = useCallback(
-    async (
-      providerId: string,
-      toolName: string,
-      resourceUri: string,
-      args: Record<string, unknown>,
-      result: ContentPart[],
-      content: Record<string, unknown> | undefined,
-      options: McpAppOptions,
-    ) => {
+    async (app: UIResourcePart, args: Record<string, unknown>, result: ToolResultPart, options: McpAppOptions) => {
+      const providerId = app.serverId;
+      if (!providerId) throw new Error("Cannot restore tool UI: missing MCP server ID");
       const client = allMcpClients.find((c) => c.id === providerId);
       if (!client) {
         throw new Error(`Cannot restore tool UI: MCP client ${providerId} not found`);
@@ -557,7 +551,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }
 
       options.signal?.throwIfAborted();
-      return client.restoreToolUI(toolName, resourceUri, args, result, content, options);
+      return client.restoreToolUI(app, args, result, options);
     },
     [allMcpClients, connectMcp],
   );

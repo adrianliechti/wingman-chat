@@ -51,6 +51,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("replays native widgets without sending their HTML, metadata or structured app data to the gateway", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const history = [
+    ...prompt,
+    assistantMessage([
+      toolCall("app-call", "app"),
+      {
+        type: "ui-resource",
+        toolCallId: "app-call",
+        serverId: "server",
+        toolName: "app",
+        resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Private widget HTML</p>" },
+        meta: {
+          ui: { private: "resource secret" },
+          mcpResult: {
+            content: [],
+            structuredContent: { private: "structured secret" },
+            _meta: { private: "tool secret" },
+          },
+        },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "app-call",
+        state: "complete",
+        content: "Visible result",
+      },
+    ]),
+    ...prompt,
+  ];
+  const result = await run(new Client(), "model", "", history, []);
+  expect(result.status).toBe("completed");
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(JSON.stringify(body)).toContain("Visible result");
+  expect(JSON.stringify(body)).not.toContain("Private widget HTML");
+  expect(JSON.stringify(body)).not.toContain("resource secret");
+  expect(JSON.stringify(body)).not.toContain("structured secret");
+  expect(JSON.stringify(body)).not.toContain("tool secret");
+});
+
 it("parses final-answer JSON when a response also contains commentary", async () => {
   fetchMock.mockResolvedValueOnce(
     finished(

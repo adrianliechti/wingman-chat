@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ToolResultPart } from "@tanstack/ai";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { legacyChatPath, loadChat, storeChat } from "@/features/chat/lib/chatStorage";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
 import { isLegacyStoredChat, migrateLegacyChat, normalizeStoredChat, type LegacyStoredChat } from "./chatMigration";
 import {
   assistantMessage,
+  mediaFromDataUrl,
   messageMetadata,
   text,
   textMetadata,
   toolResultContent,
   toolResultFor,
   toolResultMetadata,
+  uiResourceFor,
 } from "./messages";
 import { collectChatBlobIds, STORED_CHAT_VERSION } from "./opfs-chat";
 import { readGatewayReasoning } from "./reasoning";
@@ -25,6 +28,19 @@ const memory = new MemoryOpfs();
 function useMemoryStorage() {
   memory.reset();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => memory.root } });
+  vi.stubGlobal(
+    "FileReader",
+    class {
+      result = "";
+      onload = () => {};
+      readAsDataURL(blob: Blob) {
+        void blob.arrayBuffer().then((bytes) => {
+          this.result = `data:${blob.type};base64,${Buffer.from(bytes).toString("base64")}`;
+          this.onload();
+        });
+      }
+    },
+  );
 }
 
 function legacyChat(): LegacyStoredChat {
@@ -212,6 +228,97 @@ describe("legacy chat migration", () => {
     expect(normalizeStoredChat(JSON.parse(JSON.stringify(first)))).toEqual(JSON.parse(JSON.stringify(first)));
   });
 
+  it("converts duplicate MIME and generated-file metadata once, preserving native values and the original", async () => {
+    useMemoryStorage();
+    const media = {
+      type: "image" as const,
+      source: { type: "url" as const, value: BLOB, mimeType: "image/webp" },
+      metadata: { filename: "chart.png", contentType: "image/png" },
+    };
+    const message = assistantMessage([
+      { type: "tool-call", id: "call", name: "execute_script", arguments: "{}", state: "complete", output: [media] },
+      {
+        type: "tool-result",
+        toolCallId: "call",
+        state: "complete",
+        content: [media],
+        metadata: { meta: { artifactFiles: ["/chart.webp"], status: "done" } },
+      },
+    ]);
+    const record = { ...migrateLegacyChat(legacyChat()), messages: [message] };
+    memory.put(`chats/${record.id}/chat.json`, JSON.stringify(record));
+    const loaded = (await loadChat(record.id, false))!;
+    expect(loaded.messages[0].parts[0]).toMatchObject({
+      output: [{ source: { mimeType: "image/webp" }, metadata: { filename: "chart.png" } }],
+    });
+    expect(toolResultFor(loaded.messages[0], "call")).toMatchObject({
+      content: [{ source: { mimeType: "image/webp" }, metadata: { filename: "chart.png" } }],
+      metadata: { meta: { artifactDelta: { mutations: [{ operation: "create", path: "/chart.webp" }] } } },
+    });
+    expect(JSON.stringify(loaded.messages)).not.toMatch(/contentType|artifactFiles|status/);
+    expect(await opfs.readJson(legacyChatPath(record.id))).toEqual(JSON.parse(JSON.stringify(record)));
+    await storeChat(loaded);
+    expect((await loadChat(record.id, false))!.messages).toEqual(loaded.messages);
+    expect(normalizeStoredChat((await opfs.readJson<opfs.StoredChat>(`chats/${record.id}/chat.json`))!)).toEqual(
+      await opfs.readJson(`chats/${record.id}/chat.json`),
+    );
+  });
+
+  it("moves readable parts of damaged saved tool output into native content and preserves the recovery record", async () => {
+    useMemoryStorage();
+    const output = mediaFromDataUrl("data:image/png;base64,AQ==");
+    const record = {
+      ...migrateLegacyChat(legacyChat()),
+      messages: [
+        assistantMessage([
+          {
+            type: "tool-result",
+            toolCallId: "damaged",
+            content: "Old summary",
+            state: "complete",
+            metadata: { result: [output, { type: "image" }] },
+          },
+        ]),
+      ],
+    };
+    memory.put(`chats/${record.id}/chat.json`, JSON.stringify(record));
+    const loaded = (await loadChat(record.id, false))!;
+    expect(toolResultFor(loaded.messages[0], "damaged")).toMatchObject({ content: [output] });
+    expect(toolResultFor(loaded.messages[0], "damaged")).not.toHaveProperty("metadata");
+    await storeChat(loaded);
+    expect(await opfs.readJson(legacyChatPath(record.id))).toEqual(JSON.parse(JSON.stringify(record)));
+    expect((await loadChat(record.id))!.messages).toEqual(loaded.messages);
+  });
+
+  it("converts saved create paths and interpreter file lists into artifact deltas", () => {
+    const record = {
+      ...migrateLegacyChat(legacyChat()),
+      messages: [
+        assistantMessage([
+          { type: "tool-call", id: "create", name: "create_file", arguments: '{"path":"/old.txt"}', state: "complete" },
+          { type: "tool-result", toolCallId: "create", content: '{"path":"/actual.txt"}', state: "complete" },
+          { type: "tool-call", id: "script", name: "execute_python_code", arguments: "{}", state: "complete" },
+          {
+            type: "tool-result",
+            toolCallId: "script",
+            content: "Created",
+            state: "complete",
+            metadata: { meta: { artifactFiles: ["/generated.txt"] } },
+          },
+        ]),
+      ],
+    };
+    const normalized = normalizeStoredChat(record);
+    expect(toolResultFor(normalized.messages[0], "create")).toMatchObject({
+      metadata: { meta: { artifactDelta: { mutations: [{ operation: "create", path: "/actual.txt" }] } } },
+    });
+    expect(toolResultFor(normalized.messages[0], "script")).toMatchObject({
+      metadata: { meta: { artifactDelta: { mutations: [{ operation: "create", path: "/generated.txt" }] } } },
+    });
+    expect(JSON.stringify(normalized)).not.toContain("artifactFiles");
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
   it("moves saved native text segments onto text parts, including nested conversations", () => {
     const old = assistantMessage("WorkingDone", {
       id: "phased",
@@ -244,6 +351,173 @@ describe("legacy chat migration", () => {
     expect(JSON.stringify(normalized.messages)).not.toContain("textSegments");
     expect(JSON.stringify(normalized.messages)).toContain('"id":"nested"');
     expect(old.parts).toEqual([text("WorkingDone")]);
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
+  it("migrates legacy tool fields recursively while retaining the original MCP response", () => {
+    const output = [text("Failed"), mediaFromDataUrl(BLOB, "report.png", "image")];
+    const original = {
+      content: [{ type: "resource_link", uri: "report://saved", name: "Report" }],
+      structuredContent: { current: true },
+      _meta: { private: "app-only" },
+      isError: true,
+    };
+    const old: ToolResultPart = {
+      type: "tool-result",
+      toolCallId: "call",
+      content: "Old summary",
+      state: "complete",
+      metadata: {
+        result: output,
+        error: { code: "MCP_TOOL_ERROR", message: "Failed" },
+        content: { stale: true },
+        meta: {
+          toolProvider: "provider",
+          toolResource: "ui://app",
+          mcpResult: original,
+          defaultDisplayMode: "fullscreen",
+          appDisplayModes: ["fullscreen"],
+          status: "done",
+        },
+        unrelated: "kept",
+      },
+    };
+    const call = { type: "tool-call" as const, id: "call", name: "app", arguments: "{}", state: "complete" as const };
+    const messages = [
+      assistantMessage([call, old]),
+      assistantMessage([
+        {
+          type: "subagent",
+          subagent: { id: "child", name: "research", status: "finished", messages: [assistantMessage([call, old])] },
+        },
+      ]),
+    ];
+    const stored = { ...migrateLegacyChat(legacyChat()), messages };
+    const normalized = normalizeStoredChat(stored);
+    const expected = {
+      type: "tool-result",
+      toolCallId: "call",
+      content: output,
+      state: "error",
+      error: "Failed",
+      metadata: { unrelated: "kept" },
+    };
+    expect(toolResultFor(normalized.messages[0], "call")).toEqual(expected);
+    const nested = normalized.messages[1].parts[0];
+    if (nested.type !== "subagent") throw new Error("Expected subagent");
+    expect(toolResultFor(nested.subagent.messages[0], "call")).toEqual(expected);
+    const app = {
+      type: "ui-resource",
+      resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app" },
+      serverId: "provider",
+      toolCallId: "call",
+      toolName: "app",
+      meta: { appDisplayMode: "fullscreen", mcpResult: original },
+    };
+    expect(uiResourceFor(normalized.messages[0], "call")).toEqual(app);
+    expect(uiResourceFor(nested.subagent.messages[0], "call")).toEqual(app);
+    expect(collectChatBlobIds(normalized)).toEqual([BLOB.slice(5)]);
+    expect(old.metadata).toHaveProperty("result", output);
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
+  it("retains legacy structured app data without duplicating it and omits unused copies", () => {
+    const old: ToolResultPart = {
+      type: "tool-result",
+      toolCallId: "call",
+      content: [text("Saved")],
+      state: "complete",
+      metadata: {
+        content: { count: 2 },
+        meta: {
+          toolProvider: "provider",
+          toolResource: "ui://app",
+          appDisplayMode: "inline",
+          defaultDisplayMode: "fullscreen",
+        },
+      },
+    };
+    const plain = { ...old, toolCallId: "plain", metadata: { content: { unused: true } } };
+    const empty = { ...old, toolCallId: "empty", metadata: { result: [] } };
+    const unreadable = { ...old, toolCallId: "unreadable", metadata: { result: [{ type: "image" }] } };
+    const stored = {
+      ...migrateLegacyChat(legacyChat()),
+      messages: [assistantMessage([old, plain, empty, unreadable])],
+    };
+    const normalized = normalizeStoredChat(stored);
+    expect(toolResultMetadata(toolResultFor(normalized.messages[0], "call")!)).toEqual({
+      meta: {
+        toolProvider: "provider",
+        toolResource: "ui://app",
+        appDisplayMode: "inline",
+        mcpResult: { structuredContent: { count: 2 } },
+      },
+    });
+    expect(toolResultFor(normalized.messages[0], "plain")!).not.toHaveProperty("metadata");
+    expect(toolResultFor(normalized.messages[0], "empty")!).toMatchObject({ content: [] });
+    expect(toolResultFor(normalized.messages[0], "unreadable")).toEqual({
+      type: "tool-result",
+      toolCallId: "unreadable",
+      content: [text("Saved")],
+      state: "complete",
+    });
+    expect(normalizeStoredChat(normalized)).toBe(normalized);
+  });
+
+  it("migrates structured app data from records saved before the native transcript", () => {
+    const legacy = legacyChat();
+    const old = legacy.messages[2].content[0];
+    if (old.type !== "tool_result") throw new Error("Expected legacy result");
+    old.meta = {
+      toolProvider: "provider",
+      toolResource: "ui://app",
+      defaultDisplayMode: "inline",
+      appDisplayModes: ["inline"],
+    };
+    const migrated = migrateLegacyChat(legacy);
+    expect(toolResultFor(migrated.messages[1], "call-1")).not.toHaveProperty("metadata");
+    expect(uiResourceFor(migrated.messages[1], "call-1")).toEqual({
+      type: "ui-resource",
+      resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app" },
+      serverId: "provider",
+      toolCallId: "call-1",
+      toolName: "render",
+      meta: { appDisplayMode: "inline", mcpResult: { structuredContent: { structured: true } } },
+    });
+    expect(normalizeStoredChat(migrated)).toBe(migrated);
+  });
+
+  it("moves legacy results onto existing native widgets while preserving native data", () => {
+    const app = {
+      type: "ui-resource" as const,
+      resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Saved</p>" },
+      serverId: "provider",
+      toolCallId: "call",
+      toolName: "app",
+      meta: {
+        ui: { permissions: { microphone: {} } },
+        appDisplayMode: "inline",
+        mcpResult: { content: [], structuredContent: { current: true } },
+      },
+    };
+    const result: ToolResultPart = {
+      type: "tool-result",
+      toolCallId: "call",
+      content: "Saved",
+      state: "complete",
+      metadata: { meta: { mcpResult: { structuredContent: { stale: true } }, appDisplayMode: "fullscreen" } },
+    };
+    const emptyApp = { ...app, toolCallId: "other", meta: undefined };
+    const other = { ...result, toolCallId: "other" };
+    const stored = { ...migrateLegacyChat(legacyChat()), messages: [assistantMessage([app, result, emptyApp, other])] };
+    const normalized = normalizeStoredChat(stored);
+    expect(uiResourceFor(normalized.messages[0], "call")).toEqual(app);
+    expect(uiResourceFor(normalized.messages[0], "other")).toMatchObject({
+      resource: app.resource,
+      meta: { appDisplayMode: "fullscreen", mcpResult: { structuredContent: { stale: true } } },
+    });
+    expect(toolResultFor(normalized.messages[0], "call")).not.toHaveProperty("metadata");
+    expect(toolResultFor(normalized.messages[0], "other")).not.toHaveProperty("metadata");
     expect(normalizeStoredChat(normalized)).toBe(normalized);
   });
 
@@ -287,14 +561,13 @@ describe("legacy chat migration", () => {
         { type: "text", content: "Rendered" },
         {
           type: "image",
-          source: { type: "url", value: BLOB },
-          metadata: { filename: "chart.png", contentType: "image/png" },
+          source: { type: "url", value: BLOB, mimeType: "image/png" },
+          metadata: { filename: "chart.png" },
         },
       ],
     });
     expect(toolResultMetadata(result)).toEqual({
       meta: { artifactDelta: { mutations: [{ operation: "create", path: "/chart.png" }] } },
-      content: { structured: true },
     });
 
     expect(a2.parts).toEqual([
@@ -387,19 +660,6 @@ describe("legacy chat migration", () => {
 
   it("keeps blob references so the migrated chat can be saved and loaded with its media", async () => {
     useMemoryStorage();
-    vi.stubGlobal(
-      "FileReader",
-      class {
-        result = "";
-        onload = () => {};
-        readAsDataURL(blob: Blob) {
-          void blob.arrayBuffer().then((bytes) => {
-            this.result = `data:${blob.type};base64,${Buffer.from(bytes).toString("base64")}`;
-            this.onload();
-          });
-        }
-      },
-    );
     const legacy = legacyChat();
     const blobId = await opfs.storeChatBlob(
       legacy.id,

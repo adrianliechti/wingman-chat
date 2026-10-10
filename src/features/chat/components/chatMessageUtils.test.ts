@@ -13,7 +13,7 @@ function result(id: string, name: string, args: Record<string, unknown>, meta?: 
         toolCallId: id,
         content: "",
         state: "complete",
-        metadata: { result: [], meta } satisfies ToolResultMetadata,
+        metadata: { meta } satisfies ToolResultMetadata,
       },
     ],
     { id: `turn-${id}` },
@@ -21,6 +21,19 @@ function result(id: string, name: string, args: Record<string, unknown>, meta?: 
 }
 
 describe("summarizeToolGroup", () => {
+  it("keeps native widgets visible outside folded tool groups", () => {
+    const widget = result("app", "app", {});
+    widget.parts.push({
+      type: "ui-resource",
+      resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>App</p>" },
+      serverId: "server",
+      toolCallId: "app",
+      toolName: "app",
+    });
+    expect(groupRenderUnits([result("a", "read", {}), widget, result("b", "read", {})], false)).toEqual(
+      [0, 1, 2].map((index) => ({ kind: "message", index })),
+    );
+  });
   it("shows a delegated conversation once, while keeping other results and failures", () => {
     const messages: UIMessage[] = [
       userMessage("Research"),
@@ -93,25 +106,23 @@ describe("summarizeToolGroup", () => {
     expect(summarizeToolGroup([result("3", "custom_tool", {})], [0])).toBe("Used 1 tool");
   });
 
-  it.each(["execute_python_code", "execute_javascript_code"])("keeps historical %s results readable", (name) => {
-    const messages: UIMessage[] = [
-      userMessage("Run it"),
-      result("legacy", name, { code: "legacy script" }, { artifactFiles: ["/legacy.txt"] }),
-      assistantMessage("Done"),
-    ];
-    expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/legacy.txt"]);
-    expect(summarizeToolGroup(messages, [1])).toBe("Ran 1 command");
-  });
-
-  it("still renders persisted calls that use the former file-tool names", () => {
-    const messages: UIMessage[] = [
+  it("collects generated files from deltas without guessing from a failed call's arguments", () => {
+    const failed = result("failed", "create", { path: "/missing.txt" });
+    failed.parts[1] = { ...failed.parts[1], state: "error", error: "Disk full" } as never;
+    const messages = [
       userMessage("Create it"),
-      result("1", "create_file", { path: "/legacy.txt" }),
+      failed,
+      result(
+        "done",
+        "execute_script",
+        {},
+        {
+          artifactDelta: { mutations: [{ operation: "create", path: "/created.txt" }] },
+        },
+      ),
       assistantMessage("Done"),
     ];
-
-    expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/legacy.txt"]);
-    expect(summarizeToolGroup(messages, [1])).toBe("Edited 1 file");
+    expect(collectTurnArtifactPaths(messages, 3)).toEqual(["/created.txt"]);
   });
 
   it("shows subagent outputs and retires moved or deleted files without appended references", () => {

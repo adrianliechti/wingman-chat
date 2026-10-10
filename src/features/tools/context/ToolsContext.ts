@@ -1,7 +1,7 @@
 import { createContext } from "react";
 import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
-import type { ContentPart } from "@tanstack/ai";
+import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import type { ProviderState, ToolProvider } from "@/shared/types/chat";
 
 export interface ToolsContextValue {
@@ -20,12 +20,9 @@ export interface ToolsContextValue {
   companionEnabled: boolean;
   toggleCompanion: () => void;
   restoreToolUI: (
-    providerId: string,
-    toolName: string,
-    resourceUri: string,
+    app: UIResourcePart,
     args: Record<string, unknown>,
-    result: ContentPart[],
-    content: Record<string, unknown> | undefined,
+    result: ToolResultPart,
     options: McpAppOptions,
   ) => Promise<McpAppData>;
 }
