@@ -74,6 +74,25 @@ export type FormElicitation = {
   mode?: "form";
   message: string;
   requestedSchema?: ElicitationSchema;
+  /** Local presentation hints for ask_questions; never alter a remote MCP schema. */
+  presentation?: {
+    kind: "questions";
+    /** JSON object keys may be reordered while an interrupt is serialized. */
+    fieldOrder?: string[];
+    fields: Record<string, QuestionPresentation>;
+  };
+};
+
+export type QuestionChoice = {
+  value: string;
+  label: string;
+  description?: string;
+  recommended?: boolean;
+};
+
+export type QuestionPresentation = {
+  options?: QuestionChoice[];
+  allowOther?: boolean;
 };
 
 export type UrlElicitation = {

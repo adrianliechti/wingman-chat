@@ -1,5 +1,8 @@
 import type { UIMessage } from "@tanstack/ai";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { z } from "zod";
+import { run as runAgent } from "../agent";
+import { calls, output, testClient } from "../test-support/ai";
 import { assistantMessage, userMessage } from "../messages";
 import { submissionText, uiDiagnostics } from "./diagnostics";
 import type { UiSubmission } from "./runtime";
@@ -13,7 +16,7 @@ const run = (messages: UIMessage[]) => {
     ) as { providerMessages: { role: string; content: string }[] } | undefined;
   return { first: invoke(), second: invoke() };
 };
-it("forwards structured action context once without changing visible history", () => {
+it("forwards structured action context on every model request without changing visible history", () => {
   const submission: UiSubmission = {
     message: {
       version: "v1.0",
@@ -32,15 +35,64 @@ it("forwards structured action context once without changing visible history", (
   const messages = [userMessage(submissionText(submission), { metadata: { a2ui: submission } })];
   const original = structuredClone(messages);
   const { first, second } = run(messages);
-  expect(first?.providerMessages[1].content).toContain(JSON.stringify(submission));
-  expect(second).toBeUndefined();
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining(JSON.stringify(submission)),
+  });
+  expect(second).toEqual(first);
   expect(messages).toEqual(original);
 });
 it("reports invalid UI and stays silent for valid history", () => {
-  expect(
-    run([assistantMessage('```ui\n{"children":[]}\n```'), userMessage("Fix it")]).first?.providerMessages[1].content,
-  ).toContain("A2UI diagnostics");
+  const { first, second } = run([assistantMessage('```ui\n{"children":[]}\n```'), userMessage("Fix it")]);
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining("A2UI diagnostics"),
+  });
+  expect(second).toBeUndefined();
   expect(
     run([assistantMessage("```ui\n" + JSON.stringify(fixtures.Text) + "\n```"), userMessage("Thanks")]).first,
   ).toBeUndefined();
+});
+
+it("retains action values throughout a real tool continuation", async () => {
+  const submission: UiSubmission = {
+    message: {
+      version: "v1.0",
+      action: {
+        name: "save",
+        surfaceId: "main",
+        sourceComponentId: "button",
+        timestamp: "2026-10-11T12:00:00Z",
+        context: { destination: "Vaduz", seats: 12 },
+      },
+    },
+    metadata: { a2uiRendererCapabilities: { supportedVersions: ["v1.0"] } },
+  };
+  const messages = [userMessage("Save", { metadata: { a2ui: submission } })];
+  const requests: string[] = [];
+  const complete = vi.fn<Parameters<typeof testClient>[0]>().mockImplementation(async ({ messages }) => {
+    requests.push(messages.map((message) => JSON.stringify(message.content)).join("\n"));
+    return requests.length === 1 ? calls(["read", "lookup", {}]) : assistantMessage("Saved");
+  });
+  const result = await runAgent(
+    testClient(complete),
+    "model",
+    "",
+    messages,
+    [
+      {
+        name: "lookup",
+        description: "Read context",
+        inputSchema: z.strictObject({}),
+        execute: async () => output("Ready"),
+      },
+    ],
+    { middleware: [uiDiagnostics(messages)] },
+  );
+  expect(result.status).toBe("completed");
+  expect(requests).toHaveLength(2);
+  for (const request of requests) {
+    expect(request).toContain("Vaduz");
+    expect(request.match(/a2uiRendererCapabilities/g)).toHaveLength(1);
+  }
 });

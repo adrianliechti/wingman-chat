@@ -7,6 +7,7 @@ import { getToolCallPreview, toolPreviewList, toolPreviewText } from "@/shared/l
 import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
 import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
 import { Search } from "lucide-react";
+import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 
 export interface ResolvedToolHeader {
   Icon?: ToolDisplayIcon;
@@ -31,7 +32,8 @@ export function findTool(providers: readonly ToolProvider[], name: string | unde
     const tool = find(provider.tools);
     if (tool) return tool;
   }
-  return undefined;
+  // Chat injects this tool only when no provider supplies the same name.
+  return name === ASK_QUESTIONS_TOOL.name ? ASK_QUESTIONS_TOOL : undefined;
 }
 
 /**
@@ -84,9 +86,13 @@ export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undef
  * block of the textual result. Media (images/audio/files) renders separately, so
  * a pure-media result yields null.
  */
-export function resolveToolOutput(tool: Tool | undefined, result: ContentPart[]): ToolDisplayBlock | null {
+export function resolveToolOutput(
+  tool: Tool | undefined,
+  result: ContentPart[],
+  rawArgs?: string,
+): ToolDisplayBlock | null {
   const output = tool?.display?.output;
-  return output ? output(result) : defaultOutputBlock(result);
+  return output ? output(result, tryParseToolArguments(rawArgs ?? "")) : defaultOutputBlock(result);
 }
 
 // ── Best-effort default formatting ──────────────────────────────────────────

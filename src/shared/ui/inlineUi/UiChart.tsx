@@ -118,7 +118,7 @@ function buildModel(props: UiChartProps): Model {
   const points = data.flatMap((row) =>
     series.map((s) => ({
       x: xNumeric ? (numeric(row[xKey]) ?? 0) : stringify(row[xKey]),
-      series: s.label ?? s.key,
+      series: s.key,
       value: numeric(row[s.key]),
     })),
   );
@@ -152,10 +152,10 @@ export function UiChart(props: UiChartProps) {
         ? formatValue(value, props.format, undefined, props.currency)
         : stringify(value);
     const multi = model.series.length > 1;
-    const seriesNames = model.series.map((s) => s.label ?? s.key);
-    const color = { domain: seriesNames, range: palette };
+    const seriesLabels = new Map(model.series.map((s) => [s.key, s.label ?? s.key]));
+    const color = { domain: model.series.map((s) => s.key), range: palette };
     const seriesLegend: LegendItem[] = multi
-      ? seriesNames.map((label, index) => ({ label, color: palette[index % palette.length] }))
+      ? model.series.map((s, index) => ({ label: s.label ?? s.key, color: palette[index % palette.length] }))
       : [];
     const options = {
       keyboard: true,
@@ -164,7 +164,7 @@ export function UiChart(props: UiChartProps) {
         use: tooltip,
         format: (point: { datum: Point }) =>
           multi
-            ? `${point.datum.series}: ${fmt(point.datum.value)}`
+            ? `${seriesLabels.get(point.datum.series) ?? point.datum.series}: ${fmt(point.datum.value)}`
             : `${stringify(point.datum.x)}: ${fmt(point.datum.value)}`,
       },
     };

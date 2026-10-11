@@ -6,13 +6,13 @@ import { PanelShell } from "../../../src/features/chat/components/PanelShell";
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
-import type { UIMessage } from "@tanstack/ai";
+import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { assistantMessage, userMessage } from "../../../src/shared/lib/messages";
 import "../../../src/index.css";
 
 const parameters = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById("root")!);
-const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "" };
+const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "", input: [] as ModelMessage[] };
 let stream = (_text: string) => {};
 let finish = (_text: string) => {};
 let callTool = (_name: string, _args: object) => {};
@@ -92,6 +92,7 @@ if (parameters.has("panels")) {
         state.calls++;
         state.tools = options.tools?.map((tool) => tool.name) ?? [];
         state.instructions = JSON.stringify(options.systemPrompts);
+        state.input = options.messages;
         stream = (text) => handler?.(text);
         finish = (text) => resolve(assistantMessage(text));
         callTool = (name, args) =>
@@ -138,7 +139,7 @@ if (parameters.has("panels")) {
 declare global {
   interface Window {
     reactUiE2E: {
-      state(): { effects: number; calls: number; tools: string[]; instructions: string };
+      state(): { effects: number; calls: number; tools: string[]; instructions: string; input: ModelMessage[] };
       stream(text: string): void;
       finish(text: string): void;
       callTool(name: string, args: object): void;

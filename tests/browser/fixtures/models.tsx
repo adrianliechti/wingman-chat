@@ -1,4 +1,6 @@
 import { StrictMode, useState } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../../../src/shared/lib/queryClient";
 import { createRoot } from "react-dom/client";
 import { useModels } from "../../../src/features/chat/hooks/useModels";
 import { useRendererModels } from "../../../src/features/canvas/hooks/useRendererModels";
@@ -49,6 +51,8 @@ declare global {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Fixture />
+    <QueryClientProvider client={queryClient}>
+      <Fixture />
+    </QueryClientProvider>
   </StrictMode>,
 );

@@ -2,7 +2,7 @@ import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
 import { describe, expect, it } from "vitest";
 import { createFileTools, type WritableFileSource } from "@/shared/lib/file-tools";
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
-import { resolveToolHeader, resolveToolInput } from "./toolDisplay";
+import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
 
 const source: WritableFileSource = {
   list: async () => [],
@@ -14,6 +14,24 @@ const source: WritableFileSource = {
 };
 const tools = createFileTools(source, { namespace: "artifacts" });
 const tool = (operation: string) => tools.find((item) => item.name === `artifacts_${operation}`)!;
+
+it("resolves provider questions before the built-in fallback, preserving their display and approval definition", () => {
+  const providerTool = { ...tool("read"), name: "ask_questions", title: "Survey questions", display: undefined };
+  const providers = [{ id: "survey", name: "Survey", tools: [providerTool] }];
+  const resolved = findTool(providers, "ask_questions");
+  expect(resolved).toBe(providerTool);
+  expect(resolveToolInput(resolved, '{"survey":"customer"}')).toEqual([
+    { name: "Arguments", code: '{\n  "survey": "customer"\n}', language: "json" },
+  ]);
+  expect(resolveToolOutput(resolved, [{ type: "text", content: "Survey complete" }])).toEqual({
+    name: "Result",
+    code: "Survey complete",
+    language: "text",
+  });
+  expect(resolveToolHeader(resolved, "ask_questions", "{}", {}).label).toBe("Survey questions");
+  expect(findTool([], "ask_questions")).toBe(ASK_QUESTIONS_TOOL);
+  expect(findTool(providers, "missing")).toBeUndefined();
+});
 
 describe("tool headers", () => {
   it.each(["read", "create", "delete"])("shows the target for %s in every state", (operation) => {

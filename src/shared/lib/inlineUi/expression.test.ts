@@ -139,6 +139,16 @@ describe("evaluate", () => {
     const deep = `${"(".repeat(100)}1${")".repeat(100)}`;
     expect(() => evaluate(deep, {})).toThrow(/nested too deeply/);
   });
+
+  it("bounds total nested collection work and resets the budget for the next evaluation", () => {
+    expect(() => evaluate("map(range(400), \"map(range(400), 'item * 2')\")", {})).toThrow(/budget/);
+    expect(() => evaluate('map(range(50), "range(10000)")', {})).toThrow(/budget/);
+    expect(evaluate('sum(map(range(10000), "item * 2"))', {})).toBe(99_990_000);
+  });
+
+  it("bounds recursive nested expression strings before exhausting the JavaScript stack", () => {
+    expect(() => evaluate("map([1], expression)", { expression: "map([1], expression)" })).toThrow(/nested too deeply/);
+  });
 });
 
 describe("resolveTemplate", () => {

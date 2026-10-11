@@ -84,6 +84,27 @@ for (const legacySelection of [false, true]) {
   });
 }
 
+test("sidebar resizing keeps its cursor and releases the drag overlay", async ({ page }) => {
+  test.setTimeout(45_000);
+  await open(page, "?seed");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeVisible();
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  const handle = page.getByRole("button", { name: "Resize sidebar", exact: true });
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveCSS("cursor", "ew-resize");
+  await handle.hover();
+  const before = await handle.boundingBox();
+  await page.mouse.down();
+  await page.mouse.move(before!.x + 90, before!.y + 30, { steps: 5 });
+  await expect(input).toHaveCSS("cursor", "ew-resize");
+  await expect.poll(async () => (await handle.boundingBox())!.x - before!.x).toBeGreaterThan(50);
+  await page.mouse.up();
+  await expect(input).not.toHaveCSS("cursor", "ew-resize");
+  await input.fill("The resize overlay is gone");
+  await expect(input).toHaveValue("The resize overlay is gone");
+});
+
 test("Canvas loads optional image styles from the shared design reference", async ({ page }) => {
   const loaded: string[] = [];
   page.on("request", (request) => {
@@ -308,30 +329,14 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   const input = page.getByRole("textbox", { name: "Chat message input" });
   await expect(input).toBeVisible();
   await expect(page.locator('[data-role="assistant"]')).toContainText("A long answer.");
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const footer = document.querySelector("footer")!;
-        const message = document.querySelector('[data-role="assistant"]')!;
-        const content = message.parentElement!.parentElement!;
-        return Math.abs(
-          parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24,
-        );
-      }),
-    )
-    .toBeLessThan(1);
+  const composerGap = () =>
+    page.locator("main > div.overflow-auto > div").evaluate((content) => {
+      const footer = document.querySelector("footer")!;
+      return Math.abs(parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24);
+    });
+  await expect.poll(composerGap).toBeLessThan(1);
   await input.fill("A taller draft\n".repeat(8));
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const footer = document.querySelector("footer")!;
-        const content = document.querySelector('[data-role="assistant"]')!.parentElement!.parentElement!;
-        return Math.abs(
-          parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24,
-        );
-      }),
-    )
-    .toBeLessThan(1);
+  await expect.poll(composerGap).toBeLessThan(1);
   await input.fill("Follow up");
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);

@@ -323,6 +323,16 @@ renders native generic form interrupts and opt-in
 native batching, cancellation, staging, and resume. Questions in a parallel tool
 batch wait for all answers. No blanket approval policy is added. The existing
 schema-driven form renders the controls; native interrupts own their lifecycle.
+The tool asks 1–3 questions and shares its controls with Inline UI. Choices may
+include a short `description` and a `recommended` badge; recommendations never
+preselect an answer. Choice questions permit a written answer by default
+(`allow_other: false` enforces a fixed set). Booleans require an explicit Yes/No
+choice, and unanswered optional fields are omitted. Local presentation hints
+preserve question order without changing remote MCP schemas. Accepted answers
+are validated again after resume and retain the typed `{ answered, answers }`
+result contract. Completed tool messages show readable answer summaries using
+the original question and option labels, including after reload. Skip retains
+the existing `{ answered: false, action: "decline" }` contract.
 Configured image and research confirmations use `needsApproval`, including
 approvals on research's synthetic subagent tool. Server and client share the same
 input schema so a saved approval remains bound after reload. Approval happens

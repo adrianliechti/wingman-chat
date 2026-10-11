@@ -3,9 +3,9 @@ import { QueryClient } from "@tanstack/react-query";
 /**
  * The one query cache for remote inventories (models, MCP availability, skill
  * templates). Hooks pass it explicitly and helper code calls `fetchQuery` on
- * it, so React and non-React callers share the same entries and nothing needs
- * a provider to work. `App` still mounts it in a `QueryClientProvider` so
- * devtools and future hooks find it.
+ * it, so React and non-React callers share the same entries. `App` mounts it
+ * in a `QueryClientProvider`, which also subscribes the cache to visibility
+ * and reconnect events.
  *
  * Retries are off: inventories refetch on focus, reconnect and their own
  * schedule, which matches the previous hand-written caches and keeps failures

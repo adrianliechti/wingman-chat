@@ -3,85 +3,54 @@ import { MCPInputRequiredError } from "@tanstack/ai-mcp";
 import { HelpCircle } from "lucide-react";
 import type { ContentPart } from "@tanstack/ai";
 import type { Tool, ToolContext } from "@/shared/types/chat";
-import type { ElicitationPrimitiveSchema, ElicitationResult, ElicitationSchema } from "@/shared/types/elicitation";
+import type {
+  ElicitationPrimitiveSchema,
+  ElicitationResult,
+  ElicitationValue,
+  FormElicitation,
+  QuestionPresentation,
+} from "@/shared/types/elicitation";
+import { outputText } from "@/shared/lib/messages";
 import { toolPreviewList } from "@/shared/lib/toolPreview";
+import { validateElicitationForm } from "./elicitationForm";
 
-type QuestionOption = { value?: unknown; label?: unknown };
-
-type QuestionSpec = {
-  id?: unknown;
-  label?: unknown;
-  description?: unknown;
-  type?: unknown;
-  options?: unknown;
-  required?: unknown;
-};
-
-function errorResult(error: string, context?: ToolContext): ContentPart[] {
-  context?.setError?.({ code: "QUESTIONS_ERROR", message: error });
-  return [{ type: "text", content: JSON.stringify({ success: false, error }) }];
-}
-
-function asPrimitiveString(value: unknown): string {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
-}
-
-function toOptions(raw: unknown): Array<{ const: string; title: string }> {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((o): o is QuestionOption => !!o && typeof o === "object")
-    .map((o) => {
-      const value = asPrimitiveString(o.value);
-      const label = asPrimitiveString(o.label);
-      return { const: value, title: label || value };
-    })
-    .filter((o) => o.const !== "");
-}
-
-/** Core chat tool. Uses the shared elicitation UI without an optional service. */
-export const ASK_QUESTIONS_TOOL: Tool = {
-  name: "ask_questions",
-  description:
-    "Ask for missing information that materially changes the result, using one structured form. Prefer choices where useful and combine related questions. Make routine decisions yourself and proceed when the request is clear. A single simple free-text question can be asked in chat. Returns the user's answers or a skipped/cancelled result.",
-  display: {
-    header: (args, state) => {
-      const questions = Array.isArray(args?.questions) ? args.questions : [];
-      const multiple = questions.length > 1;
-      return {
-        icon: HelpCircle,
-        label: state.error
-          ? "Question failed"
-          : state.running
-            ? "Waiting for answer…"
-            : multiple
-              ? "Asked questions"
-              : "Asked a question",
-        preview: toolPreviewList(
-          questions.map((question) => question?.label),
-          "questions",
-        ),
-      };
-    },
-  },
-  inputSchema: z.strictObject({
-    message: z
-      .string()
-      .describe("Optional short explanation of why the answers are needed, shown above the form.")
-      .optional(),
+export const questionsInputSchema = z
+  .strictObject({
+    message: z.string().describe("Optional short explanation of why the answers matter.").optional(),
     questions: z
       .array(
         z.strictObject({
-          id: z.string().describe('Unique answer key within this form, e.g. "audience".'),
-          label: z.string().describe("The question text."),
-          description: z.string().describe("Optional one-line helper text under the question.").optional(),
+          id: z.string().trim().min(1).describe('Unique answer key, e.g. "audience".'),
+          label: z.string().trim().min(1).describe("A concise, self-contained question."),
+          description: z.string().describe("Optional helper text about the decision or tradeoff.").optional(),
           type: z
             .enum(["text", "number", "boolean", "select", "multi_select"])
             .describe(
-              'Use "select" for one choice, "multi_select" for several, "boolean" for yes/no, or "text"/"number" for free entry. Choice types require options.',
+              "Use select for one choice, multi_select for several, boolean for an explicit Yes/No, or text/number for free entry.",
             ),
           options: z
-            .array(z.strictObject({ value: z.string(), label: z.string() }))
-            .describe('Nonempty choices for "select" and "multi_select". Values are returned as the answers.')
+            .array(
+              z.strictObject({
+                value: z.string().trim().min(1),
+                label: z.string().trim().min(1),
+                description: z.string().describe("Briefly explain the impact or tradeoff of this option.").optional(),
+                recommended: z
+                  .boolean()
+                  .describe(
+                    "Marks a recommendation without selecting it. Put it first; use at most one for a single-choice question.",
+                  )
+                  .optional(),
+              }),
+            )
+            .describe(
+              "Required for choice questions. Prefer 2–4 distinct options; do not add an Other option—the form provides written answers.",
+            )
+            .optional(),
+          allow_other: z
+            .boolean()
+            .describe(
+              "Choice questions allow a written answer by default. Set false only when a fixed set of values is necessary.",
+            )
             .optional(),
           required: z
             .boolean()
@@ -90,103 +59,203 @@ export const ASK_QUESTIONS_TOOL: Tool = {
         }),
       )
       .min(1)
-      .describe("Related questions to show and submit together. Include only what is needed to proceed."),
+      .max(3)
+      .describe("Ask 1–3 related questions together, preferably just one."),
+  })
+  .superRefine(({ questions }, ctx) => {
+    const ids = new Set<string>();
+    questions.forEach((q, index) => {
+      const issue = (message: string) => ctx.addIssue({ code: "custom", path: ["questions", index], message });
+      if (ids.has(q.id)) issue(`Duplicate question id: ${q.id}.`);
+      ids.add(q.id);
+      const choice = q.type === "select" || q.type === "multi_select";
+      if (choice && !q.options?.length) issue(`Question ${q.id} needs at least one option.`);
+      if (!choice && (q.options !== undefined || q.allow_other !== undefined))
+        issue("Only choice questions accept options or allow_other.");
+      if (q.options && new Set(q.options.map((option) => option.value)).size !== q.options.length)
+        issue("Use unique option values.");
+      if (q.type === "select" && (q.options?.filter((option) => option.recommended).length ?? 0) > 1)
+        issue("Recommend at most one option for a single-choice question.");
+    });
+  });
+
+type QuestionsInput = z.infer<typeof questionsInputSchema>;
+
+export function questionRequest(input: QuestionsInput): FormElicitation {
+  const properties: Record<string, ElicitationPrimitiveSchema> = Object.create(null);
+  const fields: Record<string, QuestionPresentation> = Object.create(null);
+  const required: string[] = [];
+  for (const q of input.questions) {
+    const common = { title: q.label, ...(q.description ? { description: q.description } : {}) };
+    const allowOther = q.allow_other !== false;
+    const options = q.options?.map((option) => ({ const: option.value, title: option.label })) ?? [];
+    switch (q.type) {
+      case "boolean":
+        properties[q.id] = { ...common, type: "boolean" };
+        break;
+      case "number":
+        properties[q.id] = { ...common, type: "number" };
+        break;
+      case "select":
+        properties[q.id] = { ...common, type: "string", ...(!allowOther && { oneOf: options }) };
+        fields[q.id] = { options: q.options, allowOther };
+        break;
+      case "multi_select":
+        properties[q.id] = { ...common, type: "array", items: allowOther ? { type: "string" } : { anyOf: options } };
+        fields[q.id] = { options: q.options, allowOther };
+        break;
+      default:
+        properties[q.id] = { ...common, type: "string" };
+    }
+    if (q.required) required.push(q.id);
+  }
+  return {
+    message: input.message?.trim() || "",
+    requestedSchema: { type: "object", properties, ...(required.length ? { required } : {}) },
+    presentation: { kind: "questions", fieldOrder: input.questions.map((q) => q.id), fields },
+  };
+}
+
+function errorResult(error: string, context?: ToolContext): ContentPart[] {
+  context?.setError?.({ code: "QUESTIONS_ERROR", message: error });
+  return [{ type: "text", content: JSON.stringify({ success: false, error }) }];
+}
+
+const resultSchema = z.discriminatedUnion("answered", [
+  z.object({
+    answered: z.literal(true),
+    answers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
   }),
-  execute: async (args: Record<string, unknown>, execution) => {
+  z.object({ answered: z.literal(false), action: z.enum(["decline", "cancel"]) }),
+]);
+
+function readResult(result?: ContentPart[]) {
+  if (!result) return null;
+  try {
+    return resultSchema.safeParse(JSON.parse(outputText(result))).data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function answerLabel(value: ElicitationValue, options?: QuestionsInput["questions"][number]["options"]): string {
+  const label = (value: string) => {
+    const option = Array.isArray(options) ? options.find((option) => option?.value === value) : undefined;
+    return typeof option?.label === "string" ? option.label : value;
+  };
+  return typeof value === "boolean"
+    ? value
+      ? "Yes"
+      : "No"
+    : Array.isArray(value)
+      ? value.map(label).join(", ")
+      : label(String(value));
+}
+
+// Answers are plain text, even when they contain Markdown or an Inline UI fence.
+const escapeMarkdown = (value: string) => value.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}[\]()<>#+.!|~$-]/g, "\\$&");
+
+/** Core chat tool. The form shares controls with Inline UI; interrupts own its lifecycle. */
+export const ASK_QUESTIONS_TOOL: Tool = {
+  name: "ask_questions",
+  description:
+    "Ask 1–3 concise questions for missing information that materially changes the result. Prefer 2–4 choices with short tradeoff descriptions and, when useful, a recommended option. Users can write their own answer unless choices must be fixed. Recommendations are never preselected. Combine related questions, make routine decisions yourself, and proceed when the request is clear. Returns typed answers or a skipped/cancelled result.",
+  inputSchema: questionsInputSchema,
+  display: {
+    header: (args, state) => {
+      const questions = (Array.isArray(args?.questions) ? args.questions : []).filter(
+        (q) => q && typeof q === "object",
+      );
+      const result = readResult(state.result);
+      return {
+        icon: HelpCircle,
+        label: state.error
+          ? "Question failed"
+          : state.running
+            ? "Waiting for answer…"
+            : result?.answered
+              ? "Answers received"
+              : result
+                ? result.action === "decline"
+                  ? "Questions skipped"
+                  : "Questions cancelled"
+                : questions.length > 1
+                  ? "Asked questions"
+                  : "Asked a question",
+        preview: result?.answered
+          ? toolPreviewList(
+              Object.entries(result.answers).map(([id, value]) =>
+                answerLabel(value, questions.find((q) => q.id === id)?.options),
+              ),
+              "answers",
+            )
+          : result
+            ? null
+            : toolPreviewList(
+                questions.map((q) => q.label),
+                "questions",
+              ),
+      };
+    },
+    input: () => [],
+    output: (parts, args) => {
+      const result = readResult(parts);
+      if (!result) return { code: outputText(parts), language: "text", name: "Result" };
+      if (!result.answered)
+        return {
+          code: result.action === "decline" ? "Questions skipped." : "Questions cancelled.",
+          language: "markdown",
+        };
+      const questions = questionsInputSchema.safeParse(args).data?.questions ?? [];
+      const lines = Object.entries(result.answers).map(([id, value]) => {
+        const question = questions.find((q) => q.id === id);
+        return `**${escapeMarkdown(question?.label ?? id)}**  \n${escapeMarkdown(answerLabel(value, question?.options))}`;
+      });
+      return { code: lines.join("\n\n") || "No optional answers supplied.", language: "markdown", name: "Answers" };
+    },
+  },
+  execute: async (args, execution) => {
     const context = execution?.context;
     context?.signal?.throwIfAborted();
-    if (!context?.elicit && !context?.interruptible) {
+    if (!context?.elicit && !context?.interruptible)
       return errorResult(
         "Structured questions aren't available in this context — ask in plain chat text instead.",
         context,
       );
-    }
-
-    const questions = Array.isArray(args.questions) ? (args.questions as QuestionSpec[]) : [];
-    if (questions.length === 0) {
-      return errorResult("`questions` must include at least one question.", context);
-    }
-
-    const properties = Object.create(null) as Record<string, ElicitationPrimitiveSchema>;
-    const required: string[] = [];
-
-    for (const q of questions) {
-      if (!q || typeof q !== "object") return errorResult("Each question must be an object.", context);
-
-      const id = typeof q.id === "string" ? q.id.trim() : "";
-      const label = typeof q.label === "string" ? q.label.trim() : "";
-      if (!id || !label) return errorResult("Each question needs a nonempty id and label.", context);
-      if (Object.hasOwn(properties, id))
-        return errorResult(`Duplicate question id: ${id}. Use a unique id for each question.`, context);
-
-      const description = typeof q.description === "string" ? q.description : undefined;
-      const options = toOptions(q.options);
-      if (q.type === "select" || q.type === "multi_select") {
-        if (options.length === 0) return errorResult(`Question ${id} needs at least one nonempty option.`, context);
-        if (new Set(options.map((option) => option.const)).size !== options.length) {
-          return errorResult(
-            `Question ${id} has duplicate option values. Use a unique value for each choice.`,
-            context,
-          );
-        }
-      }
-
-      switch (q.type) {
-        case "boolean":
-          properties[id] = { type: "boolean", title: label, ...(description !== undefined ? { description } : {}) };
-          break;
-        case "number":
-          properties[id] = { type: "number", title: label, ...(description !== undefined ? { description } : {}) };
-          break;
-        case "select":
-          properties[id] = {
-            type: "string",
-            title: label,
-            ...(description !== undefined ? { description } : {}),
-            oneOf: options,
-          };
-          break;
-        case "multi_select":
-          properties[id] = {
-            type: "array",
-            title: label,
-            ...(description !== undefined ? { description } : {}),
-            items: { anyOf: options },
-          };
-          break;
-        default:
-          properties[id] = { type: "string", title: label, ...(description !== undefined ? { description } : {}) };
-      }
-
-      if (q.required === true) required.push(id);
-    }
-
-    if (Object.keys(properties).length === 0) {
-      return errorResult("No valid questions to ask — each needs an `id`, `label`, and `type`.", context);
-    }
-
-    const requestedSchema: ElicitationSchema = {
-      type: "object",
-      properties,
-      ...(required.length ? { required } : {}),
-    };
-
-    const message =
-      typeof args.message === "string" && args.message.trim() ? args.message.trim() : "A few quick questions:";
-
-    if (context.interruptible && !context.inputResponse) {
-      throw new MCPInputRequiredError("form", { message, requestedSchema });
-    }
+    const parsed = questionsInputSchema.safeParse(args);
+    if (!parsed.success) return errorResult(parsed.error.issues[0].message, context);
+    const request = questionRequest(parsed.data);
+    if (context.interruptible && !context.inputResponse) throw new MCPInputRequiredError("form", request);
     const result: ElicitationResult = context.inputResponse
       ? context.inputResponse.status === "cancelled"
         ? { action: "cancel" }
         : (context.inputResponse.payload as ElicitationResult)
-      : await context.elicit!({ message, requestedSchema });
-
-    if (result.action !== "accept") {
+      : await context.elicit!(request);
+    if (!result || !["accept", "decline", "cancel"].includes(result.action))
+      return errorResult("Invalid question response.", context);
+    if (result.action !== "accept")
       return [{ type: "text", content: JSON.stringify({ answered: false, action: result.action }) }];
+    const content = result.content ?? {};
+    if (typeof content !== "object" || Array.isArray(content)) return errorResult("Invalid question answers.", context);
+    const properties = request.requestedSchema!.properties;
+    // Validate resumed answers too, so stale or malformed responses cannot bypass the form.
+    for (const [id, value] of Object.entries(content)) {
+      const schema = properties[id];
+      if (
+        !Object.hasOwn(properties, id) ||
+        !schema ||
+        (schema.type === "array"
+          ? !Array.isArray(value) || value.some((item) => typeof item !== "string")
+          : typeof value !== schema.type)
+      ) {
+        return errorResult(`Invalid answer for ${id}.`, context);
+      }
     }
-
-    return [{ type: "text", content: JSON.stringify({ answered: true, answers: result.content ?? {} }) }];
+    const draft = Object.fromEntries(
+      Object.entries(content).map(([id, value]) => [id, typeof value === "number" ? String(value) : value]),
+    );
+    const validation = validateElicitationForm(request.requestedSchema!, draft);
+    if (validation.errors) return errorResult(Object.values(validation.errors)[0], context);
+    return [{ type: "text", content: JSON.stringify({ answered: true, answers: validation.content ?? {} }) }];
   },
 };

@@ -95,6 +95,22 @@ it("shows an empty state without data", async () => {
   expect(container.querySelector("svg")).toBeNull();
 });
 
+it("keeps distinct series separate when their display labels match", async () => {
+  await render(
+    <UiChart
+      kind="line"
+      data={sales}
+      x="quarter"
+      series={[
+        { key: "eu", label: "Revenue" },
+        { key: "us", label: "Revenue" },
+      ]}
+    />,
+  );
+  expect(container.querySelectorAll('svg path[stroke="#2a78d6"]')).toHaveLength(1);
+  expect(container.querySelectorAll('svg path[stroke="#eb6834"]')).toHaveLength(1);
+});
+
 it.each(["pie", "donut"] as const)(
   "keeps all %s categories and calculates shares from the full total",
   async (kind) => {

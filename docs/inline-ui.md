@@ -15,10 +15,11 @@ Read the [component reference](../skills/studio/inline-ui/references/components.
 - The registered Basic Catalog ID is `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json`; Wingman's is `urn:wingman:inline-ui:catalog:1`. Catalog IDs select trusted bundled implementations and never fetch code.
 - `createSurface`, `updateComponents`, `updateDataModel` and `deleteSurface` operate across replies within one conversation. Agent function responses can be parsed; this host does not expose an agent RPC caller.
 - Complete streaming messages apply progressively. Partial messages never invent values. Controls remain disabled while their reply streams.
-- Named `action.event` interactions send the standard A2UI action envelope, renderer capabilities and opted-in data models through the normal user-turn flow. Readable action text appears in chat; metadata carries the exact payload to the next model call.
+- Named `action.event` interactions send the standard A2UI action envelope, renderer capabilities and opted-in data models through the normal user-turn flow. Readable action text appears in chat; metadata carries the exact payload to every model request in that run, including tool continuations.
 - `action.functionCall` invokes registered user-activated local functions. Persisted fences **reject renderer RPC requests**, so reloading history never opens URLs, copies text or sends actions. This is a persisted-surface profile, not full directional RPC support.
 - Basic controls retain standard types: TextField writes strings, CheckBox booleans, ChoicePicker string arrays and Slider numbers. Writable values use bindings; literals and calculated values are read-only. Standard `required` accepts false and whitespace.
 - Basic Text supports the catalog's limited Markdown. Wingman's Html and Svg have their existing sandbox/sanitization boundaries. Form validates descendants and provides accessible feedback.
+- Expressions share a work budget across nested collection helpers and bound evaluation depth. Oversized or recursive calculations report an expression error instead of blocking the interface.
 
 ## Architecture and persistence
 

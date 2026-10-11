@@ -383,6 +383,16 @@ const TEMPLATE = /\{\{\s*([\s\S]+?)\s*\}\}/g;
 
 const MAX_COLLECTION = 10_000;
 
+interface EvaluationBudget {
+  remaining: number;
+  depth: number;
+}
+
+function spend(budget: EvaluationBudget, amount = 1): void {
+  budget.remaining -= amount;
+  if (budget.remaining < 0) throw new ExpressionError("Expression exceeds its evaluation budget");
+}
+
 function toNumber(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "boolean") return value ? 1 : 0;
@@ -405,7 +415,7 @@ function numbers(value: unknown): number[] {
 }
 
 /** Evaluate a nested expression (a string) once per item, with `item`/`index`/`key` in scope. */
-function* iterate(scope: Scope, items: unknown[], expression: unknown): Generator<unknown> {
+function* iterate(scope: Scope, items: unknown[], expression: unknown, budget: EvaluationBudget): Generator<unknown> {
   const node = typeof expression === "string" ? parseExpression(expression) : null;
   for (const [index, item] of items.entries()) {
     if (!node) {
@@ -413,7 +423,7 @@ function* iterate(scope: Scope, items: unknown[], expression: unknown): Generato
       continue;
     }
     const child = extendScope(scope, { ...(item && typeof item === "object" ? item : {}), item, index });
-    yield evaluateNode(node, child);
+    yield evaluateNode(node, child, budget);
   }
 }
 
@@ -425,7 +435,7 @@ function compare(a: unknown, b: unknown): number {
   return stringify(a).localeCompare(stringify(b));
 }
 
-type Helper = (scope: Scope, args: unknown[]) => unknown;
+type Helper = (scope: Scope, args: unknown[], budget: EvaluationBudget) => unknown;
 
 const HELPERS: Record<string, Helper> = {
   // Math
@@ -494,36 +504,36 @@ const HELPERS: Record<string, Helper> = {
     }
     return out;
   },
-  map: (scope, [xs, expr]) => [...iterate(scope, toArray(xs), expr)],
-  filter: (scope, [xs, expr]) => {
+  map: (scope, [xs, expr], budget) => [...iterate(scope, toArray(xs), expr, budget)],
+  filter: (scope, [xs, expr], budget) => {
     const items = toArray(xs);
-    const keep = [...iterate(scope, items, expr)];
+    const keep = [...iterate(scope, items, expr, budget)];
     return items.filter((_, i) => truthy(keep[i]));
   },
-  find: (scope, [xs, expr]) => {
+  find: (scope, [xs, expr], budget) => {
     const items = toArray(xs);
     let index = 0;
-    for (const keep of iterate(scope, items, expr)) {
+    for (const keep of iterate(scope, items, expr, budget)) {
       if (truthy(keep)) return items[index];
       index++;
     }
     return null;
   },
-  some: (scope, [xs, expr]) => {
-    for (const result of iterate(scope, toArray(xs), expr)) if (truthy(result)) return true;
+  some: (scope, [xs, expr], budget) => {
+    for (const result of iterate(scope, toArray(xs), expr, budget)) if (truthy(result)) return true;
     return false;
   },
-  every: (scope, [xs, expr]) => {
-    for (const result of iterate(scope, toArray(xs), expr)) if (!truthy(result)) return false;
+  every: (scope, [xs, expr], budget) => {
+    for (const result of iterate(scope, toArray(xs), expr, budget)) if (!truthy(result)) return false;
     return true;
   },
   pluck: (_, [xs, key]) => toArray(xs).map((item) => readProperty(item, String(key))),
-  sortBy: (scope, [xs, keyOrExpr, direction]) => {
+  sortBy: (scope, [xs, keyOrExpr, direction], budget) => {
     const items = toArray(xs);
     const keys =
       typeof keyOrExpr === "string" && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(keyOrExpr)
         ? items.map((item) => readProperty(item, keyOrExpr))
-        : [...iterate(scope, items, keyOrExpr)];
+        : [...iterate(scope, items, keyOrExpr, budget)];
     const sign = stringify(direction ?? "asc").toLowerCase() === "desc" ? -1 : 1;
     return items
       .map((item, i) => ({ item, key: keys[i] }))
@@ -744,51 +754,72 @@ function lookup(scope: Scope, name: string): unknown {
 
 // ── Evaluator ──────────────────────────────────────────────────────────────
 
-export function evaluateNode(node: Node, scope: Scope): unknown {
+export function evaluateNode(
+  node: Node,
+  scope: Scope,
+  budget: EvaluationBudget = { remaining: 100_000, depth: 0 },
+): unknown {
+  spend(budget);
+  if (budget.depth >= 100) throw new ExpressionError("Expression is nested too deeply");
+  budget.depth++;
+  try {
+    return resolveNode(node, scope, budget);
+  } finally {
+    budget.depth--;
+  }
+}
+
+function resolveNode(node: Node, scope: Scope, budget: EvaluationBudget): unknown {
   switch (node.type) {
     case "literal":
       return node.value;
     case "ident":
       return lookup(scope, node.name);
     case "array":
-      return node.items.map((item) => evaluateNode(item, scope));
+      return node.items.map((item) => evaluateNode(item, scope, budget));
     case "member":
-      return readProperty(evaluateNode(node.object, scope), node.property);
+      return readProperty(evaluateNode(node.object, scope, budget), node.property);
     case "index": {
-      const index = evaluateNode(node.index, scope);
-      return readProperty(evaluateNode(node.object, scope), stringify(index));
+      const index = evaluateNode(node.index, scope, budget);
+      return readProperty(evaluateNode(node.object, scope, budget), stringify(index));
     }
     case "call": {
       const helper = Object.hasOwn(HELPERS, node.callee) ? HELPERS[node.callee] : undefined;
       if (!helper) throw new ExpressionError(`Unknown function "${node.callee}"`);
-      return helper(
-        scope,
-        node.args.map((arg) => evaluateNode(arg, scope)),
-      );
+      const args = node.args.map((arg) => evaluateNode(arg, scope, budget));
+      // Account for helper loops and generated collections as well as AST
+      // visits. Nested maps share this budget instead of resetting it.
+      for (const arg of args) if (Array.isArray(arg)) spend(budget, arg.length);
+      const result = helper(scope, args, budget);
+      if (Array.isArray(result)) spend(budget, result.length);
+      return result;
     }
     case "unary": {
-      const value = evaluateNode(node.operand, scope);
+      const value = evaluateNode(node.operand, scope, budget);
       if (node.op === "!") return !truthy(value);
       if (node.op === "-") return -toNumber(value);
       return toNumber(value);
     }
     case "logical": {
-      const left = evaluateNode(node.left, scope);
-      if (node.op === "&&") return truthy(left) ? evaluateNode(node.right, scope) : left;
-      if (node.op === "||") return truthy(left) ? left : evaluateNode(node.right, scope);
-      return left === null || left === undefined ? evaluateNode(node.right, scope) : left;
+      const left = evaluateNode(node.left, scope, budget);
+      if (node.op === "&&") return truthy(left) ? evaluateNode(node.right, scope, budget) : left;
+      if (node.op === "||") return truthy(left) ? left : evaluateNode(node.right, scope, budget);
+      return left === null || left === undefined ? evaluateNode(node.right, scope, budget) : left;
     }
     case "conditional":
-      return truthy(evaluateNode(node.test, scope))
-        ? evaluateNode(node.consequent, scope)
-        : evaluateNode(node.alternate, scope);
+      return truthy(evaluateNode(node.test, scope, budget))
+        ? evaluateNode(node.consequent, scope, budget)
+        : evaluateNode(node.alternate, scope, budget);
     case "binary": {
-      const left = evaluateNode(node.left, scope);
-      const right = evaluateNode(node.right, scope);
+      const left = evaluateNode(node.left, scope, budget);
+      const right = evaluateNode(node.right, scope, budget);
       switch (node.op) {
         case "+":
           if (typeof left === "string" || typeof right === "string") return stringify(left) + stringify(right);
-          if (Array.isArray(left) && Array.isArray(right)) return [...left, ...right];
+          if (Array.isArray(left) && Array.isArray(right)) {
+            spend(budget, left.length + right.length);
+            return [...left, ...right];
+          }
           return toNumber(left) + toNumber(right);
         case "-":
           return toNumber(left) - toNumber(right);

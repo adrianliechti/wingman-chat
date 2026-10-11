@@ -55,12 +55,12 @@ export const ChatToolMessage = memo(function ChatToolMessage({
     typeof appProviderId === "string" &&
     app?.resource.uri.startsWith("ui://") &&
     providers.some((p) => p.id === appProviderId);
-  const header = resolveToolHeader(toolDef, call.name, call.arguments, { error: isToolError });
   const inputBlocks = useMemo(() => resolveToolInput(toolDef, call.arguments), [toolDef, call.arguments]);
   const toolOutput = useMemo(() => (result ? toolResultContent(result) : undefined), [result]);
+  const header = resolveToolHeader(toolDef, call.name, call.arguments, { error: isToolError, result: toolOutput });
   const outputBlock = useMemo(
-    () => (error || !toolOutput ? null : resolveToolOutput(toolDef, toolOutput)),
-    [toolDef, error, toolOutput],
+    () => (error || !toolOutput ? null : resolveToolOutput(toolDef, toolOutput, call.arguments)),
+    [toolDef, error, toolOutput, call.arguments],
   );
 
   return (

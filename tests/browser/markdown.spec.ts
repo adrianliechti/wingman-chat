@@ -92,6 +92,8 @@ test("Inline UI validates forms and preserves disclosure inputs", async ({ page 
   const disclosure = page.locator("summary").filter({ hasText: "Details" });
   await disclosure.focus();
   await disclosure.press("Enter");
+  await expect(disclosure).toHaveCSS("outline-style", "solid");
+  await expect(disclosure).toHaveCSS("outline-width", "2px");
   await page.getByLabel("Notes", { exact: true }).fill("Keep this value");
   await disclosure.focus();
   await disclosure.press("Space");
@@ -135,6 +137,34 @@ const controls = ui(
   ],
   { gear: "1", mode: "road", locked: false },
 );
+
+test("Inline UI table sorting works with the keyboard and pagination follows updated rows", async ({ page }) => {
+  const rows = Array.from({ length: 20 }, (_, index) => ({ value: index + 1 }));
+  const source = ui(
+    [
+      { id: "root", component: "Column", children: ["table", "button"] },
+      custom("table", "Table", { columns: [{ key: "value", label: "Value" }], rows: bind("/rows"), pageSize: 2 }),
+      { id: "button", component: "Button", child: "label", action: set("/rows", rows.slice(0, 4)) },
+      { id: "label", component: "Text", text: "Limit rows" },
+    ],
+    { rows },
+  );
+  await page.evaluate((source) => window.markdownE2E.render(source), source);
+  for (let i = 0; i < 8; i++) await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page.locator("tbody td")).toHaveText(["17", "18"]);
+  await page.getByRole("button", { name: "Limit rows" }).click();
+  await expect(page.locator("tbody td")).toHaveText(["3", "4"]);
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect(page.locator("tbody td")).toHaveText(["1", "2"]);
+  const sort = page.getByRole("button", { name: "Value", exact: true });
+  await sort.focus();
+  await sort.press("Enter");
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveAttribute("aria-sort", "descending");
+  await expect(page.locator("tbody td")).toHaveText(["4", "3"]);
+  await sort.press("Space");
+  await expect(page.getByRole("columnheader", { name: "Value" })).toHaveAttribute("aria-sort", "ascending");
+  await expect(page.locator("tbody td")).toHaveText(["1", "2"]);
+});
 
 test("identical UI blocks stay independent across owners and reloads", async ({ page }) => {
   const source = ui(
@@ -209,6 +239,7 @@ for (const dark of [false, true]) {
     );
     const gear = page.getByRole("button", { name: /^Gear/ });
     await expect(gear).toHaveAccessibleDescription("Choose a gear");
+    await expect(gear).toHaveCSS("cursor", "pointer");
     await gear.click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
@@ -230,6 +261,7 @@ for (const dark of [false, true]) {
     await page.keyboard.press("Space");
     await expect(toggle).toBeChecked();
     await expect(gear).toBeDisabled();
+    await expect(gear).toHaveCSS("cursor", "not-allowed");
     await expect(modes.getByRole("radio", { name: "road", exact: true })).toBeDisabled();
     await toggle.click();
     await gear.click();
@@ -458,6 +490,21 @@ for (const mode of ["characters", "words"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test("mixed task lists preserve ordinary bullet and number markers", async ({ page }) => {
+  const markdown = "- [x] Completed task\n- Ordinary bullet\n\n1. [ ] Pending task\n2. Ordinary numbered item";
+  await page.evaluate(({ source, markdown }) => window.markdownE2E.render(source + "\n\n" + markdown), {
+    source: ui([{ id: "root", component: "Text", text: markdown }], {}),
+    markdown,
+  });
+  const bullets = page.getByRole("listitem").filter({ hasText: /^Ordinary bullet$/ });
+  const numbers = page.getByRole("listitem").filter({ hasText: /^Ordinary numbered item$/ });
+  await expect(bullets).toHaveCount(2);
+  await expect(numbers).toHaveCount(2);
+  for (const bullet of await bullets.all()) await expect(bullet).toHaveCSS("list-style-type", "disc");
+  for (const number of await numbers.all()) await expect(number).toHaveCSS("list-style-type", "decimal");
+  await expect(page.getByRole("checkbox")).toHaveCount(4);
+});
 
 for (const dark of [false, true]) {
   test(`Inline UI choices and Markdown stay readable and keyboard accessible (${dark ? "dark narrow" : "light"})`, async ({

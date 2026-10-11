@@ -1,3 +1,4 @@
+/** Shared form appearance for app-owned and agent-created controls. */
 export const fieldLabelClass = "text-xs font-medium leading-5 text-neutral-500 dark:text-neutral-400";
 export const inputClass =
   "min-h-10 w-full rounded-lg border border-neutral-300/70 bg-white px-3 py-2 text-sm text-neutral-900 shadow-xs transition-colors placeholder:text-neutral-400 hover:border-neutral-400 focus-visible:border-neutral-500 focus-visible:ring-2 focus-visible:ring-neutral-400/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-red-400 aria-invalid:focus-visible:ring-red-400/20 motion-reduce:transition-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:border-neutral-600 dark:focus-visible:border-neutral-500 dark:aria-invalid:border-red-500";

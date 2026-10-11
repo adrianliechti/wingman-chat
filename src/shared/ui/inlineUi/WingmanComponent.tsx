@@ -11,8 +11,8 @@ import { UiIcon } from "./UiIcon";
 import { UiSvg } from "./UiSvg";
 import { UiTable, type UiTableProps } from "./UiTable";
 import type { UiChartProps } from "./UiChart";
-import { ChoiceControl } from "./ChoiceControl";
-import { buttonClass, fieldLabelClass, inputClass } from "./controlStyles";
+import { ChoiceControl } from "@/shared/ui/forms/ChoiceControl";
+import { buttonClass, fieldLabelClass, inputClass } from "@/shared/ui/forms/controlStyles";
 import { FieldValidationContext } from "./validationContext";
 
 type UiProps = Record<string, unknown>;

@@ -33,8 +33,8 @@ import {
   dateTimeModelValue,
   safeMediaUrl,
 } from "./BasicContent";
-import { ChoiceControl } from "./ChoiceControl";
-import { buttonClass, fieldLabelClass, inputClass, primaryButtonClass } from "./controlStyles";
+import { ChoiceControl } from "@/shared/ui/forms/ChoiceControl";
+import { buttonClass, fieldLabelClass, inputClass, primaryButtonClass } from "@/shared/ui/forms/controlStyles";
 import { FieldValidationContext } from "./validationContext";
 
 export function useSignalValue<T>(signal: Signal<T>): T {

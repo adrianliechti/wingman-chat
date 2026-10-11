@@ -163,6 +163,8 @@ export type ToolDisplayState = {
   error?: boolean;
   /** Stable identity while arguments stream and the tool runs. */
   toolCallId?: string;
+  /** Completed output, when available, for a concise result preview. */
+  result?: ContentPart[];
 };
 
 /** A code/text block rendered in a tool call's expanded view. */
@@ -195,7 +197,7 @@ export type ToolDisplay = {
   /** Expanded input blocks; return `[]` to hide input, omit to fall back to generic arguments. */
   input?: (args: Record<string, unknown> | null) => ToolDisplayBlock[];
   /** Expanded success output; return `null` to fall back to generic result rendering. */
-  output?: (result: ContentPart[]) => ToolDisplayBlock | null;
+  output?: (result: ContentPart[], args?: Record<string, unknown> | null) => ToolDisplayBlock | null;
 };
 
 /** Application context passed through native chat middleware and tool execution. */

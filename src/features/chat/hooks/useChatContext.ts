@@ -110,7 +110,9 @@ export function useChatContext(
         const baseTools = mountMemoryFiles([...toolsArrays.flat(), ...(imageTool ? [imageTool] : [])], memory());
         // Clarification is a core chat capability, independent of provider
         // selections and model allowlists; native child runs can ask too.
-        const tools = [...baseTools, ASK_QUESTIONS_TOOL];
+        const tools = baseTools.some((tool) => tool.name === ASK_QUESTIONS_TOOL.name)
+          ? baseTools
+          : [...baseTools, ASK_QUESTIONS_TOOL];
 
         const subagentModel =
           mode === "voice"

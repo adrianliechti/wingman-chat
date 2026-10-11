@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
-/** Native selection semantics with a shared appearance across both catalogs. */
+/** Native selection semantics shared by Inline UI and question forms. */
 export function ChoiceControl({
   children,
   chip = false,

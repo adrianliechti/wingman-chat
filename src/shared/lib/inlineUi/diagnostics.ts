@@ -1,5 +1,6 @@
 import type { ChatMiddleware, UIMessage } from "@tanstack/ai";
 import { isUserPrompt, textParts } from "../messages";
+import { injectRequestContext } from "../requestContext";
 import { extractUiFences, type UiBlock } from "./protocol.ts";
 import { InlineUiRuntime, type UiSubmission } from "./runtime.ts";
 
@@ -11,28 +12,32 @@ export function submissionText(submission: UiSubmission): string {
 }
 
 export function uiDiagnostics(messages: UIMessage[]): ChatMiddleware {
-  let emitted = false;
+  let diagnosed = false;
   return {
     name: "a2ui-context",
     onConfig: (ctx, config) => {
-      if (ctx.phase !== "beforeModel" || emitted) return;
-      emitted = true;
+      if (ctx.phase !== "beforeModel") return;
       const lastUser = messages.findLast(isUserPrompt);
       const submission = (lastUser?.metadata as { a2ui?: UiSubmission } | undefined)?.a2ui;
-      const blocks: UiBlock[] = messages
-        .filter((message) => message.role === "assistant")
-        .flatMap((message) =>
-          textParts(message).flatMap((part, partIndex) =>
-            extractUiFences(part.content).map((source, i) => ({ key: `${message.id}/${partIndex}/${i}`, source })),
-          ),
-        );
-      const runtime = new InlineUiRuntime();
-      let errors: string[];
-      try {
-        runtime.sync(blocks);
-        errors = [...runtime.errors].map(([key, error]) => `${key}: ${error}`);
-      } finally {
-        runtime.dispose();
+      let errors: string[] = [];
+      // Diagnostics are a one-time repair hint; action values belong to every
+      // model request in the run, including requests after tools finish.
+      if (!diagnosed) {
+        diagnosed = true;
+        const blocks: UiBlock[] = messages
+          .filter((message) => message.role === "assistant")
+          .flatMap((message) =>
+            textParts(message).flatMap((part, partIndex) =>
+              extractUiFences(part.content).map((source, i) => ({ key: `${message.id}/${partIndex}/${i}`, source })),
+            ),
+          );
+        const runtime = new InlineUiRuntime();
+        try {
+          runtime.sync(blocks);
+          errors = [...runtime.errors].map(([key, error]) => `${key}: ${error}`);
+        } finally {
+          runtime.dispose();
+        }
       }
       const notes = [
         ...(submission
@@ -48,10 +53,7 @@ export function uiDiagnostics(messages: UIMessage[]): ChatMiddleware {
       ];
       if (!notes.length) return;
       return {
-        providerMessages: [
-          ...(config.providerMessages ?? config.messages),
-          { role: "user", content: notes.join("\n\n") },
-        ],
+        providerMessages: injectRequestContext(config.providerMessages ?? config.messages, notes.join("\n\n")),
       };
     },
   };

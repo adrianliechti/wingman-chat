@@ -30,7 +30,7 @@ test("a native question survives reload and resumes from the saved tool call", a
   await expect(page.getByLabel("Which destination?", { exact: false })).toBeVisible();
   expect(await page.evaluate(() => window.chatE2E.state().calls.length)).toBe(0);
   await page.getByLabel("Which destination?", { exact: false }).fill("Vaduz");
-  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
   expect(await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[0].input))).toContain("Vaduz");
   await page.evaluate(() => window.chatE2E.finish(0, "Destination selected"));

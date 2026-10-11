@@ -76,7 +76,11 @@ export function UiTable({ columns: declared, rows: raw, sortable = true, pageSiz
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [page, setPage] = useState(0);
-  const size = Math.max(1, Math.min(200, pageSize ?? (rows.length > 25 ? 15 : rows.length || 1)));
+  const defaultSize = rows.length > 25 ? 15 : rows.length || 1;
+  const size = Math.max(
+    1,
+    Math.min(200, Math.floor(typeof pageSize === "number" && Number.isFinite(pageSize) ? pageSize : defaultSize)),
+  );
 
   const columnDefs = useMemo<ColumnDef<typeof features, Row>[]>(
     () =>
@@ -128,22 +132,33 @@ export function UiTable({ columns: declared, rows: raw, sortable = true, pageSiz
                   const align = meta.column.align ?? (meta.numeric ? "end" : "start");
                   const sortDir = header.column.getIsSorted();
                   const canSort = sortable && header.column.getCanSort();
+                  const label = (
+                    <>
+                      {header.isPlaceholder ? null : (header.column.columnDef.header as () => string)()}
+                      {sortDir === "asc" && <ArrowUp aria-hidden="true" className="h-3 w-3" />}
+                      {sortDir === "desc" && <ArrowDown aria-hidden="true" className="h-3 w-3" />}
+                    </>
+                  );
                   return (
                     <th
                       key={header.id}
                       className={cn(
                         "px-3 py-2 font-medium whitespace-nowrap select-none",
                         align === "end" ? "text-right" : align === "center" ? "text-center" : "text-left",
-                        canSort && "cursor-pointer hover:text-neutral-900 dark:hover:text-neutral-100",
                       )}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                       aria-sort={sortDir === "asc" ? "ascending" : sortDir === "desc" ? "descending" : undefined}
                     >
-                      <span className="inline-flex items-center gap-1">
-                        {header.isPlaceholder ? null : (header.column.columnDef.header as () => string)()}
-                        {sortDir === "asc" && <ArrowUp className="h-3 w-3" />}
-                        {sortDir === "desc" && <ArrowDown className="h-3 w-3" />}
-                      </span>
+                      {canSort ? (
+                        <button
+                          type="button"
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:text-neutral-100"
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {label}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">{label}</span>
+                      )}
                     </th>
                   );
                 })}
@@ -184,7 +199,7 @@ export function UiTable({ columns: declared, rows: raw, sortable = true, pageSiz
           <button
             type="button"
             className="rounded p-0.5 hover:bg-neutral-200 disabled:opacity-40 dark:hover:bg-neutral-800"
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            onClick={() => setPage(Math.max(0, current - 1))}
             disabled={current === 0}
             aria-label="Previous page"
           >
@@ -193,7 +208,7 @@ export function UiTable({ columns: declared, rows: raw, sortable = true, pageSiz
           <button
             type="button"
             className="rounded p-0.5 hover:bg-neutral-200 disabled:opacity-40 dark:hover:bg-neutral-800"
-            onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+            onClick={() => setPage(Math.min(pages - 1, current + 1))}
             disabled={current >= pages - 1}
             aria-label="Next page"
           >
