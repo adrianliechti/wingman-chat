@@ -3,7 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiRenderer, InlineUiProvider } from "./UiRenderer";
-import { BASIC_CATALOG_ID, WINGMAN_CATALOG_ID } from "@/shared/lib/inlineUi/catalog";
+import { BASIC_CATALOG_ID, WINGMAN_CATALOG_ID, basicCatalog, wingmanCatalog } from "@/shared/lib/inlineUi/catalog";
+import { basicRenderers, customRenderers } from "./NodeView";
 import fixtures from "@/shared/lib/inlineUi/fixtures/components.json";
 import { Markdown } from "@/shared/ui/Markdown";
 
@@ -43,7 +44,82 @@ it.each(Object.entries(fixtures))("renders the registered %s component", async (
   await render(fixture);
   expect(container.querySelector(`[data-a2ui-component="${name}"]`)).not.toBeNull();
   expect(container.textContent).not.toContain("Interface could not be rendered");
+  expect(container.textContent).not.toContain("could not be displayed");
   expect(container.textContent).not.toContain("Unsupported component");
+});
+
+it("has an explicit renderer for every component in each catalog", () => {
+  expect(Object.keys(basicRenderers).sort()).toEqual([...basicCatalog.components.keys()].sort());
+  expect(Object.keys(customRenderers).sort()).toEqual([...wingmanCatalog.components.keys()].sort());
+});
+
+it.each(["Button", "Form"] as const)("shows %s action progress and prevents duplicate submissions", async (name) => {
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const onSubmit = vi.fn(() => pending);
+  const source = JSON.stringify(fixtures[name]);
+  await act(async () =>
+    root.render(
+      <InlineUiProvider blocks={[{ key: "action", source }]} onSubmit={onSubmit}>
+        <UiRenderer source={source} stateKey="action" />
+      </InlineUiProvider>,
+    ),
+  );
+  const button = container.querySelector<HTMLButtonElement>(`[data-a2ui-component="${name}"] button`)!;
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(button.textContent).toContain("Working…");
+  await act(async () => finish());
+  expect(button.disabled).toBe(false);
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  expect(button.textContent).not.toContain("Working…");
+});
+
+it("keeps failed action details collapsed and allows an explicit retry", async () => {
+  const onSendMessage = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Connection unavailable (E_NETWORK)"))
+    .mockResolvedValue(undefined);
+  await render(fixtures.Button, { onSendMessage });
+  const button = container.querySelector<HTMLButtonElement>('[data-a2ui-component="Button"] button')!;
+  await act(async () => button.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("This action could not be completed.");
+  expect(container.textContent).not.toContain("E_NETWORK");
+  expect(button.disabled).toBe(false);
+  const details = container.querySelector("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(container.textContent).toContain("E_NETWORK");
+  await act(async () => button.click());
+  expect(onSendMessage).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("keeps invalid surface source behind technical details and recovers after correction", async () => {
+  const invalid = { version: "v1.0", createSurface: { surfaceId: "bad", catalogId: "urn:unknown:catalog" } };
+  await render(invalid);
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("This interface could not be displayed.");
+  expect(container.querySelector("pre")).toBeNull();
+  expect(container.textContent).not.toContain("urn:unknown:catalog");
+  const details = container.querySelector("details")!;
+  expect(details.open).toBe(false);
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(container.textContent).toContain("urn:unknown:catalog");
+  await render(fixtures.Text);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain("Hello");
 });
 
 it.each(["ui", "a2ui", "wingman-ui"])("renders %s messages through Markdown", async (language) => {

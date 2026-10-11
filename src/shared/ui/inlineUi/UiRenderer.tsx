@@ -7,6 +7,7 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { PreviewButton } from "@/shared/ui/PreviewButton";
 import { RendererActionsContext } from "@/shared/ui/renderers/RendererFrame";
 import { InlineUiViewContext, NodeView, useSignalValue } from "./NodeView";
+import { UiError } from "./UiFeedback";
 import type { NodeResolver } from "@a2ui/web_core/v1_0";
 
 const RuntimeContext = createContext<InlineUiRuntime | null>(null);
@@ -134,37 +135,41 @@ function UiBlockView({ source, stateKey, isStreaming = false, renderText }: UiRe
         </div>
       )}
       {error && (
-        <p role="alert" className="mb-2 text-xs text-amber-700 dark:text-amber-400">
-          Interface could not be rendered: {error}
-        </p>
+        <UiError title="This interface could not be displayed." detail={error} source={showCode ? undefined : source} />
       )}
-      {showCode || error ? (
+      {showCode ? (
         <CodeRenderer code={source} language="json" />
       ) : (
-        <InlineUiViewContext value={view}>
-          {ids.map((id) => {
-            const resolver = snapshot.resolvers.get(id);
-            return resolver ? (
-              <div key={id}>
-                {snapshot.errors.has(id) && (
-                  <p role="alert" className="text-xs text-amber-700">
-                    {snapshot.errors.get(id)}
-                  </p>
-                )}
-                <Surface resolver={resolver} />
-              </div>
-            ) : (
-              <p key={id} className="text-xs text-neutral-500">
-                {runtime ? "Interface removed." : "Building interface…"}
+        !error && (
+          <InlineUiViewContext value={view}>
+            {ids.map((id) => {
+              const resolver = snapshot.resolvers.get(id);
+              return resolver ? (
+                <div key={id}>
+                  {snapshot.actionErrors.has(id) && (
+                    <UiError title="This action could not be completed." detail={snapshot.actionErrors.get(id)!} />
+                  )}
+                  {snapshot.errors.has(id) && (
+                    <UiError
+                      title="Some parts of this interface could not be displayed."
+                      detail={snapshot.errors.get(id)!}
+                    />
+                  )}
+                  <Surface resolver={resolver} />
+                </div>
+              ) : (
+                <p key={id} className="text-xs text-neutral-500">
+                  {runtime ? "Interface removed." : "Building interface…"}
+                </p>
+              );
+            })}
+            {!ids.length && (
+              <p className="text-xs text-neutral-500">
+                {parsed.pending || !parsed.messages.length ? "Building interface…" : "Interface updated."}
               </p>
-            );
-          })}
-          {!ids.length && (
-            <p className="text-xs text-neutral-500">
-              {parsed.pending || !parsed.messages.length ? "Building interface…" : "Interface updated."}
-            </p>
-          )}
-        </InlineUiViewContext>
+            )}
+          </InlineUiViewContext>
+        )
       )}
     </div>
   );

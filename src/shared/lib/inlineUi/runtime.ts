@@ -27,6 +27,7 @@ export const EMPTY_UI_SNAPSHOT = {
   revision: 0,
   resolvers: new Map<string, NodeResolver>(),
   errors: new Map<string, string>(),
+  actionErrors: new Map<string, string>(),
 };
 
 /** One conversation owns one processor. Replaying a transcript never executes RPCs or user actions. */
@@ -34,6 +35,7 @@ export class InlineUiRuntime {
   processor: MessageProcessor;
   readonly resolvers = new Map<string, NodeResolver>();
   readonly errors = new Map<string, string>();
+  private actionErrors = new Map<string, string>();
   private messageErrors = new Map<string, string>();
   private applied: string[] = [];
   private listeners = new Set<() => void>();
@@ -42,6 +44,7 @@ export class InlineUiRuntime {
   private snapshot = EMPTY_UI_SNAPSHOT;
   private syncing = false;
   private restored = false;
+  private disposed = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   onSubmit?: (submission: UiSubmission) => void | Promise<void>;
 
@@ -55,17 +58,34 @@ export class InlineUiRuntime {
     const processor = new MessageProcessor(
       catalogs,
       async (action) => {
-        const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
-        if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
-        await this.onSubmit({
-          message,
-          metadata: {
-            a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
-            ...(processor.getRendererDataModel(A2UI_VERSION) && {
-              a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
-            }),
-          },
-        });
+        if (this.disposed || this.processor !== processor) return;
+        const surface = processor.getSurface(action.surfaceId);
+        if (this.actionErrors.delete(action.surfaceId)) this.changed();
+        try {
+          const message = ActionMessageSchema.parse({ version: A2UI_VERSION, action });
+          if (!this.onSubmit) throw new Error("Sending an action is unavailable here");
+          await this.onSubmit({
+            message,
+            metadata: {
+              a2uiRendererCapabilities: processor.getRendererCapabilities({ versions: [A2UI_VERSION] }),
+              ...(processor.getRendererDataModel(A2UI_VERSION) && {
+                a2uiRendererDataModel: processor.getRendererDataModel(A2UI_VERSION),
+              }),
+            },
+          });
+        } catch (error) {
+          // The SDK's EventEmitter logs and swallows listener rejections. Keep
+          // submission failures observable, without replaying the action.
+          if (
+            !this.disposed &&
+            this.processor === processor &&
+            processor.getSurface(action.surfaceId) === surface &&
+            surface
+          ) {
+            this.actionErrors.set(action.surfaceId, error instanceof Error ? error.message : String(error));
+            this.changed();
+          }
+        }
       },
       {
         version: A2UI_VERSION,
@@ -103,6 +123,7 @@ export class InlineUiRuntime {
       this.resolvers.get(id)?.dispose();
       this.resolvers.delete(id);
       this.errors.delete(id);
+      this.actionErrors.delete(id);
     });
     return processor;
   }
@@ -115,7 +136,12 @@ export class InlineUiRuntime {
   };
   getSnapshot = () => this.snapshot;
   private changed() {
-    this.snapshot = { revision: ++this.revision, resolvers: new Map(this.resolvers), errors: new Map(this.errors) };
+    this.snapshot = {
+      revision: ++this.revision,
+      resolvers: new Map(this.resolvers),
+      errors: new Map(this.errors),
+      actionErrors: new Map(this.actionErrors),
+    };
     for (const listener of this.listeners) listener();
   }
 
@@ -260,11 +286,14 @@ export class InlineUiRuntime {
   private clearProcessor() {
     for (const resolver of this.resolvers.values()) resolver.dispose();
     this.resolvers.clear();
+    this.actionErrors.clear();
     for (const subscription of this.subscriptions) subscription.unsubscribe();
     this.subscriptions = [];
     this.processor.dispose();
   }
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     this.flush();
     this.clearProcessor();
     this.listeners.clear();

@@ -28,7 +28,7 @@ const string = DynamicStringSchema.describe("REF:#/$defs/DynamicString");
 const number = DynamicNumberSchema.describe("REF:#/$defs/DynamicNumber");
 const boolean = DynamicBooleanSchema.describe("REF:#/$defs/DynamicBoolean");
 const value = DynamicValueSchema.describe("REF:#/$defs/DynamicValue");
-const dynamic = (literal: z.ZodTypeAny) =>
+const dynamic = <T extends z.ZodTypeAny>(literal: T) =>
   z.union([
     literal,
     DataBindingSchema.describe("REF:#/$defs/DataBinding"),
@@ -46,7 +46,7 @@ const options = z.array(z.object({ value: z.string(), label: string }).strict())
 const item = z.object({ label: string, time: value.optional(), description: string.optional() }).strict();
 const numericFormat = { format, currency: string.optional(), digits: number.optional() };
 
-function component(name: string, props: z.ZodRawShape): ComponentApi {
+function component<const Name extends string, Props extends z.ZodRawShape>(name: Name, props: Props) {
   return { name, schema: z.object({ ...common, ...props }).strict() };
 }
 
@@ -145,32 +145,6 @@ export const WINGMAN_COMPONENTS = [
   component("Checklist", { ...control, value: strings, items: z.array(z.union([z.string(), item])) }),
   component("Form", { children, action, submit: string, checks }),
 ] satisfies ComponentApi[];
-
-export const WINGMAN_PRESENTATIONS = {
-  Grid: "grid",
-  Collapsible: "collapsible",
-  Heading: "heading",
-  Metric: "metric",
-  Callout: "callout",
-  Badge: "badge",
-  Code: "code",
-  Progress: "progress",
-  Svg: "svg",
-  Link: "link",
-  Html: "html",
-  Timeline: "timeline",
-  KeyValue: "keyvalue",
-  TextList: "list",
-  Table: "table",
-  Chart: "chart",
-  Select: "select",
-  MultiSelect: "multiselect",
-  Segmented: "segmented",
-  Radio: "radio",
-  Toggle: "toggle",
-  Stepper: "stepper",
-  Checklist: "checklist",
-} as const;
 
 export const WINGMAN_FUNCTIONS: FunctionImplementation[] = [
   {

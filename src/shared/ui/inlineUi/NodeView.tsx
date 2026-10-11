@@ -15,15 +15,20 @@ import {
   useCallback,
   useContext,
   useId,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type ComponentType,
   type CSSProperties,
 } from "react";
-import { WINGMAN_CATALOG_ID, WINGMAN_PRESENTATIONS } from "@/shared/lib/inlineUi/catalog";
+import { BASIC_CATALOG_ID, WINGMAN_CATALOG_ID } from "@/shared/lib/inlineUi/catalog";
 import { cn } from "@/shared/lib/cn";
 import { stringify as str } from "@/shared/lib/inlineUi/expression";
-import { WingmanComponent } from "./WingmanComponent";
+import { wingmanRenderers } from "./WingmanComponent";
+import type { BasicProps } from "@/shared/lib/inlineUi/rendererTypes";
+import type { BasicRenderers, WingmanRenderers, RendererContext } from "./rendererRegistry";
+import { ActionProgress, UiError } from "./UiFeedback";
 import {
   BasicIcon,
   BasicImage,
@@ -35,7 +40,6 @@ import {
 } from "./BasicContent";
 import { ChoiceControl } from "@/shared/ui/forms/ChoiceControl";
 import { buttonClass, fieldLabelClass, inputClass, primaryButtonClass } from "@/shared/ui/forms/controlStyles";
-import { FieldValidationContext } from "./validationContext";
 
 export function useSignalValue<T>(signal: Signal<T>): T {
   const subscribe = useCallback(
@@ -90,6 +94,7 @@ function UiForm({
   children,
   submitted,
   disabled,
+  busy,
   submit,
   onAttempt,
   onValidSubmit,
@@ -97,6 +102,7 @@ function UiForm({
   children: unknown;
   submitted: boolean;
   disabled: boolean;
+  busy: boolean;
   submit: string;
   onAttempt: () => void;
   onValidSubmit: () => void;
@@ -130,7 +136,13 @@ function UiForm({
             Check the highlighted fields.
           </p>
         )}
-        <button type="submit" disabled={disabled} className={cn(buttonClass, primaryButtonClass)}>
+        <button
+          type="submit"
+          disabled={disabled}
+          aria-busy={busy || undefined}
+          className={cn(buttonClass, primaryButtonClass, "inline-flex items-center justify-center gap-2")}
+        >
+          {busy && <ActionProgress />}
           {submit}
         </button>
       </form>
@@ -138,10 +150,10 @@ function UiForm({
   );
 }
 
-function UiTabs({ tabs }: { tabs: unknown }) {
+function UiTabs({ tabs }: { tabs: BasicProps["Tabs"]["tabs"] }) {
   const [selected, setSelected] = useState(0);
   const id = useId();
-  const items = Array.isArray(tabs) ? tabs.map(obj) : [];
+  const items = Array.isArray(tabs) ? tabs : [];
   const active = Math.min(selected, items.length - 1);
   return (
     <div>
@@ -199,7 +211,7 @@ function UiTabs({ tabs }: { tabs: unknown }) {
   );
 }
 
-function UiModal({ trigger, content }: { trigger: unknown; content: unknown }) {
+function UiModal({ trigger, content }: Pick<BasicProps["Modal"], "trigger" | "content">) {
   const [open, setOpen] = useState(false);
   const { streaming } = useContext(InlineUiViewContext);
   return (
@@ -233,14 +245,14 @@ function ChoicePicker({
   change,
   validation,
 }: {
-  props: Record<string, unknown>;
+  props: BasicProps["ChoicePicker"];
   disabled: boolean;
-  change: (value: unknown) => void;
+  change: (value: string[]) => void;
   validation: Record<string, unknown>;
 }) {
   const [query, setQuery] = useState("");
   const id = useId();
-  const options = Array.isArray(props.options) ? props.options.map(obj) : [];
+  const options = Array.isArray(props.options) ? props.options : [];
   const selected = Array.isArray(props.value) ? props.value.map(str) : [];
   const multiple = props.variant === "multipleSelection";
   return (
@@ -328,6 +340,7 @@ function ResolvedNodeView({ node, bindings }: { node: ComponentNode; bindings: R
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
+  const pendingAction = useRef(false);
   const id = useId();
   if (node.isPlaceholder)
     return (
@@ -348,7 +361,8 @@ function ResolvedNodeView({ node, bindings }: { node: ComponentNode; bindings: R
     if (!disabled && bindings.value instanceof WritableBinding) bindings.value.set(value);
   };
   const invoke = async () => {
-    if (disabled || props.isValid === false || typeof props.action !== "function") return;
+    if (pendingAction.current || disabled || props.isValid === false || typeof props.action !== "function") return;
+    pendingAction.current = true;
     setBusy(true);
     setActionError("");
     try {
@@ -356,6 +370,7 @@ function ResolvedNodeView({ node, bindings }: { node: ComponentNode; bindings: R
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
+      pendingAction.current = false;
       setBusy(false);
     }
   };
@@ -365,245 +380,38 @@ function ResolvedNodeView({ node, bindings }: { node: ComponentNode; bindings: R
       {control}
     </label>
   );
-  const readonly = !(bindings.value instanceof WritableBinding);
-  let content: ReactNode;
-  const wingman = node.context?.componentModel.catalog?.id === WINGMAN_CATALOG_ID;
-  const presentation = wingman ? WINGMAN_PRESENTATIONS[node.type as keyof typeof WINGMAN_PRESENTATIONS] : undefined;
-  if (presentation) {
-    content = (
-      <FieldValidationContext value={validation}>
-        <WingmanComponent
-          type={presentation}
-          props={{
-            ...props,
-            disabled:
-              disabled ||
-              ("value" in props &&
-                readonly &&
-                ["Select", "MultiSelect", "Segmented", "Radio", "Toggle", "Stepper", "Checklist"].includes(node.type)),
-          }}
-          value={props.value}
-          onChange={change}
-          renderText={view.renderText}
-        >
-          <Child value={props.children} />
-        </WingmanComponent>
-      </FieldValidationContext>
-    );
-  } else
-    switch (node.type) {
-      case "Column":
-      case "Row":
-      case "List": {
-        const horizontal = node.type === "Row" || (node.type === "List" && props.direction === "horizontal");
-        const justify: Record<string, CSSProperties["justifyContent"]> = {
-          start: "flex-start",
-          end: "flex-end",
-          center: "center",
-          spaceBetween: "space-between",
-          spaceAround: "space-around",
-          spaceEvenly: "space-evenly",
-          stretch: "stretch",
-        };
-        const align: Record<string, CSSProperties["alignItems"]> = {
-          start: "flex-start",
-          end: "flex-end",
-          center: "center",
-          stretch: "stretch",
-        };
-        content = (
-          <div
-            className={cn(
-              "flex min-w-0 gap-3",
-              horizontal ? "flex-row" : "flex-col",
-              node.type === "List" && "overflow-auto",
-            )}
-            style={{
-              justifyContent: justify[str(props.justify)] ?? "flex-start",
-              alignItems: align[str(props.align)] ?? "stretch",
-            }}
-          >
-            <Child value={props.children} />
-          </div>
-        );
-        break;
-      }
-      case "Text":
-        content = <BasicText text={str(props.text)} variant={props.variant} />;
-        break;
-      case "Image":
-        content = (
-          <BasicImage url={props.url} description={props.description} variant={props.variant} fit={props.fit} />
-        );
-        break;
-      case "Icon":
-        content = <BasicIcon name={props.name} />;
-        break;
-      case "Video":
-        content = (
-          <video
-            controls
-            preload="metadata"
-            src={safeMediaUrl(props.url)}
-            poster={safeMediaUrl(props.posterUrl)}
-            className="max-h-96 max-w-full"
-          />
-        );
-        break;
-      case "AudioPlayer":
-        content = (
-          <audio
-            controls
-            preload="metadata"
-            src={safeMediaUrl(props.url)}
-            aria-label={str(props.description)}
-            className="max-w-full"
-          />
-        );
-        break;
-      case "Card":
-        content = (
-          <section className="rounded-xl border border-neutral-200/80 bg-white p-4 shadow-xs dark:border-neutral-800 dark:bg-neutral-900/40">
-            <Child value={props.child} />
-          </section>
-        );
-        break;
-      case "Divider":
-        content = (
-          <div
-            role="separator"
-            aria-orientation={props.axis === "vertical" ? "vertical" : "horizontal"}
-            className={
-              props.axis === "vertical"
-                ? "h-full min-h-4 border-l border-neutral-300 dark:border-neutral-700"
-                : "w-full border-t border-neutral-300 dark:border-neutral-700"
-            }
-          />
-        );
-        break;
-      case "Tabs":
-        content = <UiTabs tabs={props.tabs} />;
-        break;
-      case "Modal":
-        content = <UiModal trigger={props.trigger} content={props.content} />;
-        break;
-      case "Button":
-        content = (
-          <button
-            type="button"
-            disabled={disabled || props.isValid === false}
-            onClick={() => void invoke()}
-            className={cn(
-              buttonClass,
-              props.variant === "primary" && primaryButtonClass,
-              props.variant === "borderless" &&
-                "border-transparent bg-transparent shadow-none dark:border-transparent dark:bg-transparent",
-            )}
-          >
-            <Child value={props.child} />
-          </button>
-        );
-        break;
-      case "TextField": {
-        const input = {
-          id,
-          className: inputClass,
-          value: str(props.value),
-          disabled,
-          readOnly: readonly,
-          placeholder: str(props.placeholder),
-          ...validation,
-          onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => change(event.target.value),
-        };
-        content = label(
-          props.variant === "longText" ? (
-            <textarea {...input} rows={3} />
-          ) : (
-            <input
-              {...input}
-              type={props.variant === "obscured" ? "password" : props.variant === "number" ? "number" : "text"}
-            />
-          ),
-        );
-        break;
-      }
-      case "CheckBox":
-        content = (
-          <ChoiceControl
-            type="checkbox"
-            checked={props.value === true}
-            disabled={disabled || readonly}
-            onChange={(event) => change(event.target.checked)}
-            {...validation}
-          >
-            {str(props.label)}
-          </ChoiceControl>
-        );
-        break;
-      case "Slider": {
-        const min = Number(props.min ?? 0),
-          max = Number(props.max);
-        content = label(
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={min}
-              max={max}
-              step={props.steps ? (max - min) / Number(props.steps) : "any"}
-              value={Number(props.value ?? min)}
-              disabled={disabled || readonly}
-              onChange={(event) => change(event.target.valueAsNumber)}
-              className="w-full cursor-pointer accent-neutral-800 focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-neutral-400/50 disabled:cursor-not-allowed disabled:opacity-50 dark:accent-neutral-200"
-              {...validation}
-            />
-            <output className="min-w-10 rounded-md bg-neutral-100 px-2 py-1 text-center text-xs font-medium tabular-nums text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-              {str(props.value)}
-            </output>
-          </div>,
-        );
-        break;
-      }
-      case "ChoicePicker":
-        content = (
-          <ChoicePicker props={props} disabled={disabled || readonly} change={change} validation={validation} />
-        );
-        break;
-      case "DateTimeInput": {
-        const type = dateTimeInputType(props.enableDate, props.enableTime);
-        content = label(
-          <input
-            type={type}
-            value={dateTimeInputValue(props.value, type)}
-            min={dateTimeInputValue(props.min, type)}
-            max={dateTimeInputValue(props.max, type)}
-            step={type === "time" || type === "datetime-local" ? "any" : undefined}
-            disabled={disabled}
-            readOnly={readonly || type === "text"}
-            className={inputClass}
-            onChange={(event) => {
-              if (type !== "text") change(dateTimeModelValue(event.target.value, props.value, type));
-            }}
-            {...validation}
-          />,
-        );
-        break;
-      }
-      case "Form":
-        content = (
-          <UiForm
-            submitted={formSubmitted}
-            disabled={disabled}
-            submit={str(props.submit)}
-            onAttempt={() => setFormSubmitted(true)}
-            onValidSubmit={() => void invoke()}
-          >
-            {props.children}
-          </UiForm>
-        );
-        break;
-      default:
-        content = <span role="alert">Unsupported component: {node.type}</span>;
-    }
+  const readOnly = !(bindings.value instanceof WritableBinding);
+  const catalogId = node.context?.componentModel.catalog?.id;
+  const registry =
+    catalogId === WINGMAN_CATALOG_ID ? customRenderers : catalogId === BASIC_CATALOG_ID ? basicRenderers : undefined;
+  // This is the sole dynamic dispatch boundary: the SDK validated the wire schema
+  // and resolved its bindings. Every registry entry below is schema-typed.
+  const Render =
+    registry && Object.hasOwn(registry, node.type)
+      ? (registry[node.type as keyof typeof registry] as ComponentType<
+          { props: Record<string, unknown> } & RendererContext
+        >)
+      : undefined;
+  const content = Render ? (
+    <Render
+      props={{ ...props, disabled: disabled || (readOnly && "value" in props) }}
+      disabled={disabled}
+      readOnly={readOnly}
+      busy={busy}
+      fieldId={id}
+      validation={validation}
+      change={change}
+      invoke={() => void invoke()}
+      label={label}
+      formSubmitted={formSubmitted}
+      submitForm={() => setFormSubmitted(true)}
+      renderText={view.renderText}
+    >
+      <Child value={props.children} />
+    </Render>
+  ) : (
+    <span role="alert">Unsupported component: {node.type}</span>
+  );
   return (
     <div
       data-a2ui-component={node.type}
@@ -629,11 +437,224 @@ function ResolvedNodeView({ node, bindings }: { node: ComponentNode; bindings: R
           {errors.join(". ")}
         </p>
       )}
-      {actionError && (
-        <p role="alert" className="text-xs text-red-600">
-          {actionError}
-        </p>
-      )}
+      {actionError && <UiError title="This action could not be completed." detail={actionError} />}
     </div>
   );
 }
+
+function LayoutView({
+  props,
+  horizontal,
+  scroll,
+}: {
+  props: BasicProps["Row"] | BasicProps["Column"] | BasicProps["List"];
+  horizontal: boolean;
+  scroll?: boolean;
+}) {
+  const justify: Record<string, CSSProperties["justifyContent"]> = {
+    start: "flex-start",
+    end: "flex-end",
+    center: "center",
+    spaceBetween: "space-between",
+    spaceAround: "space-around",
+    spaceEvenly: "space-evenly",
+    stretch: "stretch",
+  };
+  const align: Record<string, CSSProperties["alignItems"]> = {
+    start: "flex-start",
+    end: "flex-end",
+    center: "center",
+    stretch: "stretch",
+  };
+  return (
+    <div
+      className={cn("flex min-w-0 gap-3", horizontal ? "flex-row" : "flex-col", scroll && "overflow-auto")}
+      style={{
+        justifyContent: justify[str("justify" in props ? props.justify : undefined)] ?? "flex-start",
+        alignItems: align[str(props.align)] ?? "stretch",
+      }}
+    >
+      <Child value={props.children} />
+    </div>
+  );
+}
+
+export const basicRenderers = {
+  Row: ({ props }) => <LayoutView props={props} horizontal />,
+  Column: ({ props }) => <LayoutView props={props} horizontal={false} />,
+  List: ({ props }) => <LayoutView props={props} horizontal={props.direction === "horizontal"} scroll />,
+  Text: function TextView({ props }) {
+    return <BasicText text={str(props.text)} variant={props.variant} />;
+  },
+  Image: function ImageView({ props }) {
+    return <BasicImage url={props.url} description={props.description} variant={props.variant} fit={props.fit} />;
+  },
+  Icon: function IconView({ props }) {
+    return <BasicIcon name={props.name} />;
+  },
+  Video: function VideoView({ props }) {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={safeMediaUrl(props.url)}
+        poster={safeMediaUrl(props.posterUrl)}
+        className="max-h-96 max-w-full"
+      />
+    );
+  },
+  AudioPlayer: function AudioPlayerView({ props }) {
+    return (
+      <audio
+        controls
+        preload="metadata"
+        src={safeMediaUrl(props.url)}
+        aria-label={str(props.description)}
+        className="max-w-full"
+      />
+    );
+  },
+  Card: function CardView({ props }) {
+    return (
+      <section className="rounded-xl border border-neutral-200/80 bg-white p-4 shadow-xs dark:border-neutral-800 dark:bg-neutral-900/40">
+        <Child value={props.child} />
+      </section>
+    );
+  },
+  Divider: function DividerView({ props }) {
+    return (
+      <div
+        role="separator"
+        aria-orientation={props.axis === "vertical" ? "vertical" : "horizontal"}
+        className={
+          props.axis === "vertical"
+            ? "h-full min-h-4 border-l border-neutral-300 dark:border-neutral-700"
+            : "w-full border-t border-neutral-300 dark:border-neutral-700"
+        }
+      />
+    );
+  },
+  Tabs: function TabsView({ props }) {
+    return <UiTabs tabs={props.tabs} />;
+  },
+  Modal: function ModalView({ props }) {
+    return <UiModal trigger={props.trigger} content={props.content} />;
+  },
+  Button: function ButtonView({ props, disabled, busy, invoke }) {
+    return (
+      <button
+        type="button"
+        disabled={disabled || props.isValid === false}
+        aria-busy={busy || undefined}
+        onClick={invoke}
+        className={cn(
+          buttonClass,
+          "inline-flex items-center justify-center gap-2",
+          props.variant === "primary" && primaryButtonClass,
+          props.variant === "borderless" &&
+            "border-transparent bg-transparent shadow-none dark:border-transparent dark:bg-transparent",
+        )}
+      >
+        {busy && <ActionProgress />}
+        <Child value={props.child} />
+      </button>
+    );
+  },
+  TextField: function TextFieldView({ props, disabled, readOnly, validation, change, fieldId, label }) {
+    const input = {
+      id: fieldId,
+      className: inputClass,
+      value: str(props.value),
+      disabled,
+      readOnly: readOnly,
+      placeholder: str(props.placeholder),
+      ...validation,
+      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => change(event.target.value),
+    };
+    return label(
+      props.variant === "longText" ? (
+        <textarea {...input} rows={3} />
+      ) : (
+        <input
+          {...input}
+          type={props.variant === "obscured" ? "password" : props.variant === "number" ? "number" : "text"}
+        />
+      ),
+    );
+  },
+  CheckBox: function CheckBoxView({ props, disabled, readOnly, validation, change }) {
+    return (
+      <ChoiceControl
+        type="checkbox"
+        checked={props.value === true}
+        disabled={disabled || readOnly}
+        onChange={(event) => change(event.target.checked)}
+        {...validation}
+      >
+        {str(props.label)}
+      </ChoiceControl>
+    );
+  },
+  Slider: function SliderView({ props, disabled, readOnly, validation, change, label }) {
+    const min = Number(props.min ?? 0),
+      max = Number(props.max);
+    return label(
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={props.steps ? (max - min) / Number(props.steps) : "any"}
+          value={Number(props.value ?? min)}
+          disabled={disabled || readOnly}
+          onChange={(event) => change(event.target.valueAsNumber)}
+          className="w-full cursor-pointer accent-neutral-800 focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-neutral-400/50 disabled:cursor-not-allowed disabled:opacity-50 dark:accent-neutral-200"
+          {...validation}
+        />
+        <output className="min-w-10 rounded-md bg-neutral-100 px-2 py-1 text-center text-xs font-medium tabular-nums text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+          {str(props.value)}
+        </output>
+      </div>,
+    );
+  },
+  ChoicePicker: function ChoicePickerView({ props, disabled, readOnly, validation, change }) {
+    return <ChoicePicker props={props} disabled={disabled || readOnly} change={change} validation={validation} />;
+  },
+  DateTimeInput: function DateTimeInputView({ props, disabled, readOnly, validation, change, label }) {
+    const type = dateTimeInputType(props.enableDate, props.enableTime);
+    return label(
+      <input
+        type={type}
+        value={dateTimeInputValue(props.value, type)}
+        min={dateTimeInputValue(props.min, type)}
+        max={dateTimeInputValue(props.max, type)}
+        step={type === "time" || type === "datetime-local" ? "any" : undefined}
+        disabled={disabled}
+        readOnly={readOnly || type === "text"}
+        className={inputClass}
+        onChange={(event) => {
+          if (type !== "text") change(dateTimeModelValue(event.target.value, props.value, type));
+        }}
+        {...validation}
+      />,
+    );
+  },
+} satisfies BasicRenderers;
+
+export const customRenderers = {
+  ...wingmanRenderers,
+  Form: function FormView({ props, disabled, busy, invoke, formSubmitted, submitForm }) {
+    return (
+      <UiForm
+        submitted={formSubmitted}
+        disabled={disabled}
+        busy={busy}
+        submit={str(props.submit)}
+        onAttempt={submitForm}
+        onValidSubmit={invoke}
+      >
+        {props.children}
+      </UiForm>
+    );
+  },
+} satisfies WingmanRenderers;

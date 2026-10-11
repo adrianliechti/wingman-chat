@@ -112,6 +112,32 @@ it("dispatches the standard action envelope with current context and opted-in da
   );
 });
 
+it.each(["delete", "replace", "dispose"])("ignores late action failures after a surface %s", async (operation) => {
+  const ui = runtime();
+  let reject!: (error: Error) => void;
+  ui.onSubmit = vi.fn(
+    () =>
+      new Promise<void>((_resolve, rejectPromise) => {
+        reject = rejectPromise;
+      }),
+  );
+  const first = block(fixtures.Button);
+  ui.sync([first]);
+  const node = getValue(ui.resolvers.get("fixture-Button")!.rootNode)!;
+  const pending = (getValue(node.props).action as () => Promise<void>)();
+  expect(ui.onSubmit).toHaveBeenCalledOnce();
+  if (operation === "dispose") ui.dispose();
+  else if (operation === "delete")
+    ui.sync([first, block({ version: "v1.0", deleteSurface: { surfaceId: "fixture-Button" } }, "delete")]);
+  else
+    ui.sync([
+      block({ ...fixtures.Text, createSurface: { ...fixtures.Text.createSurface, surfaceId: "fixture-Button" } }),
+    ]);
+  reject(new Error("Late failure"));
+  await pending;
+  expect(ui.getSnapshot().actionErrors.size).toBe(0);
+});
+
 it("replays saved edits before applying new agent updates and isolates conversations", () => {
   const first = block(fixtures.TextField);
   const ui = runtime("chat-a");

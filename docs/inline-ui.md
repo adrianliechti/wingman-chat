@@ -8,7 +8,7 @@ The Basic Catalog supplies 18 standard components. Wingman's versioned catalog s
 
 Emit strict JSON in a `ui` or `a2ui` fence: one message, an array of messages, or newline-separated messages. Each carries `version: "v1.0"`. Use `createSurface` with a unique surface ID and a flat component list containing `root`. Child references are IDs. Bind inputs with `{"@path":"/seats"}` and calculations with `{"@call":"evaluate","catalogId":"urn:wingman:inline-ui:catalog:1","args":{"expression":"seats * 12","values":{"seats":{"@path":"/seats"}}}}`.
 
-Read the [component reference](../skills/studio/inline-ui/references/components.md) and [complete examples](../skills/studio/inline-ui/references/examples.md). The built-in `inline-ui` skill and chat prompt teach the same contract. Markdown explains the answer; Inline UI lets users explore assumptions or choose a next step. Requested deliverables or arbitrary applications use artifacts.
+Load the [inline-ui skill](../skills/studio/inline-ui/SKILL.md), which routes to focused references for protocol, layout/content, controls/forms, data display and functions. Read only the groups needed for the current interface; examples and full JSON schemas remain separate resources. Markdown explains the answer; Inline UI lets users explore assumptions or choose a next step. Requested deliverables or arbitrary applications use artifacts.
 
 ## Supported profile
 
@@ -25,13 +25,21 @@ Read the [component reference](../skills/studio/inline-ui/references/components.
 
 `src/shared/lib/inlineUi/catalog.ts` registers upstream schemas/functions and Wingman extensions. `protocol.ts` parses bounded strict messages and uses the same Markdown parser as display. `runtime.ts` owns one SDK MessageProcessor per conversation, its resolvers and local persistence. `src/shared/ui/inlineUi` renders resolved nodes with native React components. `diagnostics.ts` supplies bounded diagnostics and structured interaction context to the model.
 
+Both catalogs have explicit renderer maps checked against their schemas, including nested props and control write types. `rendererTypes.ts` infers resolved values from schema branches before the SDK's dynamic-expression `any` can erase their types; child references become SDK ComponentNodes. One dispatch boundary connects SDK nodes to these typed renderers. Type regression tests and catalog coverage tests guard this mapping alongside the existing wire-format snapshots.
+
+Buttons and forms show progress while an action is pending. Submission failures are tracked explicitly because the SDK event emitter swallows listener rejections; late failures from deleted or replaced surfaces are discarded. Rendering and action errors show concise feedback with technical details collapsed. Actions are never retried automatically.
+
 User edits are stored in localStorage under `wingman:a2ui:1:` and bounded to 100 owners / 1 MB per record. A contract fingerprint includes protocol, SDK and Wingman catalog versions. Saved values apply only to the matching transcript prefix, before later agent updates. Edited transcripts rebuild; different conversations have separate state. Storage failure leaves interaction usable.
 
 The former private IntelligentUI payload was prelaunch and is replaced, without a migration layer. Historical fence names remain recognized, but their contents must be A2UI. After launch, incompatible catalog changes require a new catalog ID plus explicit migration fixtures. Do not silently reinterpret persisted documents or restore data across a changed contract.
 
 ## Compatibility checks
 
-`npm run generate:ui-reference` generates prompt/skill references and catalog JSON from the registered schemas. `npm run check:ui-reference` detects drift and runs during check/build.
+`npm run generate:ui-reference` generates the grouped skill references and catalog JSON from the registered schemas. The always-loaded chat prompt contains only presentation routing and essential constraints, with no component catalog. `npm run check:ui-reference` detects drift and enforces character budgets during check/build: 1,200 for the chat prompt, 3,600 for the skill entrypoint, and 7,200 per focused reference (roughly 300, 900 and 1,800 tokens at four characters per token; actual tokenization varies).
+
+Every component/function belongs to exactly one generated lookup group. Tests verify complete coverage, consistent shared properties, valid reference links and lazy loading through the real skill tools. Full JSON schemas remain published for exact contract/debugging lookups, but normal authoring uses the smaller references. Examples remain individually loadable.
+
+This follows the useful pattern in [CopilotKit's skill](https://github.com/CopilotKit/CopilotKit/blob/main/skills/copilotkit/SKILL.md): a compact lookup index backed by source-generated API details. Our reference source is the pinned installed A2UI schemas, so external examples cannot silently change the supported contract.
 
 Tests cover all 42 registered components with explicit wire fixtures, resolution snapshots and renderer dispatch. Schema tests lock required properties, unknown-property rejection, structured data, function inputs and protocol envelopes. Runtime tests cover relative template bindings, actions, replay, transcript edits, storage isolation and unsafe paths. Browser tests exercise real charts, keyboard controls, validation and reload persistence.
 

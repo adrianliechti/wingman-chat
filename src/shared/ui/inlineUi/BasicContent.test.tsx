@@ -20,9 +20,11 @@ import { InlineUiViewContext, NodeView } from "./NodeView";
 import { iconKey } from "./UiIcon";
 
 vi.mock("./WingmanComponent", () => ({
-  WingmanComponent: ({ props }: { props: Record<string, unknown> }) => {
-    if (props.value === "broken") throw new Error("Invalid resolved value");
-    return <span>{String(props.value)}</span>;
+  wingmanRenderers: {
+    Metric: ({ props }: { props: Record<string, unknown> }) => {
+      if (props.value === "broken") throw new Error("Invalid resolved value");
+      return <span>{String(props.value)}</span>;
+    },
   },
 }));
 

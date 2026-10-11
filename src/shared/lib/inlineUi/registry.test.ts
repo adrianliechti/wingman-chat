@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 import { format } from "vite-plus/fmt";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,7 +10,7 @@ import {
   ResolvedBinding,
 } from "@a2ui/web_core/v1_0";
 import { A2UI_VERSION, catalogs, basicCatalog, wingmanCatalog, WINGMAN_COMPONENTS, WINGMAN_FUNCTIONS } from "./catalog";
-import { componentReference, updateComponentReference, publishedCatalog } from "./registry";
+import { REFERENCE_GROUPS, componentReference, updateComponentReference, publishedCatalog } from "./registry";
 import { InlineUiRuntime } from "./runtime";
 import fixtures from "./fixtures/components.json";
 
@@ -27,13 +28,72 @@ it("locks the published catalog schemas and generated references to registered d
     expect(disk).toEqual(publishedCatalog(catalog));
     expect(disk).toMatchSnapshot();
   }
-  for (const path of ["src/features/chat/prompts/inline-ui.txt", "skills/studio/inline-ui/references/components.md"]) {
+  for (const group of Object.values(REFERENCE_GROUPS)) {
+    const path = `skills/studio/inline-ui/${group.path}`;
     const source = readFileSync(path, "utf8");
-    const reference = updateComponentReference(source);
-    expect(path.endsWith(".md") ? (await format(path, reference, { printWidth: 120 })).code : reference).toBe(source);
+    const reference = updateComponentReference(source, group);
+    expect((await format(path, reference, { printWidth: 120 })).code).toBe(source);
   }
-  expect(componentReference()).toContain("ChoicePicker");
-  expect(componentReference()).toContain("evaluate");
+});
+
+it("gives every registered component and function exactly one focused lookup", () => {
+  const groups = Object.values(REFERENCE_GROUPS);
+  const skill = readFileSync("skills/studio/inline-ui/SKILL.md", "utf8");
+  for (const group of groups) expect(skill).toContain(`](${group.path})`);
+  for (const [key, catalog] of [
+    ["basic", basicCatalog],
+    ["wingman", wingmanCatalog],
+  ] as const) {
+    for (const kind of ["components", "functions"] as const) {
+      const documented = groups.flatMap((group) => group[key]?.[kind] ?? []);
+      expect(documented.sort()).toEqual([...catalog[kind].keys()].sort());
+    }
+  }
+});
+
+it("only factors out properties whose schemas and optionality are shared", () => {
+  for (const [catalog, shared] of [
+    [basicCatalog, ["weight"]],
+    [wingmanCatalog, ["visible", "disabled", "weight"]],
+  ] as const) {
+    const { components } = catalog.catalogSchema as {
+      components: Record<string, { properties: Record<string, unknown>; required?: string[] }>;
+    };
+    const first = Object.values(components)[0];
+    for (const schema of Object.values(components)) {
+      for (const prop of shared) {
+        expect(schema.properties[prop]).toBeDefined();
+        expect(schema.properties[prop]).toEqual(first.properties[prop]);
+        expect(schema.required?.includes(prop) ?? false).toBe(false);
+      }
+    }
+  }
+});
+
+it("keeps unions inside collection types unambiguous in generated signatures", () => {
+  expect(componentReference(REFERENCE_GROUPS.data)).toContain(
+    "series?: (string|{ key: string, label?: DynamicString })[]",
+  );
+  expect(componentReference(REFERENCE_GROUPS.data)).toContain("active?: string|number|DataBinding|FunctionCall");
+});
+
+it("keeps every skill reference link readable after splitting the catalog", () => {
+  const base = resolve("skills/studio/inline-ui");
+  const pending = [resolve(base, "SKILL.md")];
+  const visited = new Set<string>();
+  while (pending.length) {
+    const path = pending.pop()!;
+    if (visited.has(path)) continue;
+    visited.add(path);
+    const source = readFileSync(path, "utf8");
+    for (const match of source.matchAll(/\]\(([^)]+)\)/g)) {
+      if (/^(?:https?:|#)/.test(match[1])) continue;
+      const target = resolve(dirname(path), match[1].split("#")[0]);
+      expect(target.startsWith(base + "/")).toBe(true);
+      expect(readFileSync(target).length).toBeGreaterThan(0);
+      if (target.endsWith(".md")) pending.push(target);
+    }
+  }
 });
 
 it("advertises only our pinned protocol version and registered catalogs", () => {

@@ -1,31 +1,29 @@
 ---
 name: inline-ui
-description: "Render visual explanations and small interactive interfaces inline using A2UI: drawings, calculators, charts, sortable tables and option buttons. Prefer for 'illustrate' or 'show me how it works' in an explanatory conversation without a file requirement. Use visualize, data-visualization or html-artifacts for requested files/exports or needs beyond inline components."
+description: "Create native A2UI interfaces in chat: explanations, drawings, calculators, charts, tables and choices. Use for an 'illustrate' follow-up without a file requirement. Requested files/exports, apps and workspace analysis belong in artifact skills."
 ---
 
 # Inline UI
 
-A `ui` fence contains A2UI v1.0 messages that Wingman renders with native components. Read `references/components.md` for exact schemas, bindings, validation and actions, and `references/examples.md` for complete examples.
+Render small interfaces in `ui` fences using Wingman's pinned A2UI contract. Explain the result in prose, then add controls or a drawing when they help the user explore it. Use `ask_questions` for blocking clarification. Use `visualize`, `data-visualization` or `html-artifacts` for requested deliverables or needs beyond the native components.
 
-## Choose the presentation
+## Look up only what you need
 
-State the answer in prose. Add interaction when it lets the user change an assumption, filter data, choose a next step, or explore a structure. A requested illustration can use Wingman `Svg` without controls. Interpret short follow-ups using the conversation's topic and delivery preferences. An in-chat explanation belongs here; a requested file, export, page, dashboard, app, or analysis requiring workspace files belongs in an artifact skill. Voice replies use prose.
+Read [protocol.md](references/protocol.md) before the first surface, unless it is already in context. Then select references by the components/functions you need. Use `read_skill_resource` with `{"skill":"inline-ui","path":"references/data.md"}`, for example. Each read returns the whole file; reuse loaded guidance and avoid loading all references.
 
-Use Basic Catalog `Row`, `Column`, `Card`, `Text`, `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `Tabs`, `List`, `Button`, `Image`, `Icon`, `Video`, `AudioPlayer`, `DateTimeInput`, `Modal`, and `Divider`. Use the Wingman catalog for `Chart`, `Table`, `Metric`, `Svg`, `Collapsible`, other richer components, and arithmetic/collection functions.
+| Need                                                                                              | Reference                                            |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Message envelopes, bindings, repeated children, updates, actions, setValue/openUrl/copyText       | [protocol.md](references/protocol.md)                |
+| Row/Column/Grid, Card/Tabs/Modal/Collapsible, Text/Heading, Svg/Html, icons, media, badges, lists | [layout.md](references/layout.md)                    |
+| Button, text/date/number inputs, checkboxes, single/multiple choices, Form and validators         | [controls.md](references/controls.md)                |
+| Chart/Table, Metric, Progress, Timeline, KeyValue                                                 | [data.md](references/data.md)                        |
+| Calculations, filtering, sorting, aggregations, interpolation, formatting and boolean logic       | [functions.md](references/functions.md)              |
+| Small calculator and surface update examples                                                      | [examples.md](references/examples.md)                |
+| Complete chart/table dashboard                                                                    | [dashboard.json](references/examples/dashboard.json) |
+| Complete form with live preview and calculated budget                                             | [planner.json](references/examples/planner.json)     |
 
-## Author an interface
+The grouped signatures are generated from the installed schemas. The large [Basic catalog](references/basic-catalog.json) and [Wingman catalog](references/wingman-catalog.json) JSON files are for exact schema/debugging lookups only, when a focused reference leaves a question unanswered.
 
-1. Emit strict JSON with `version: "v1.0"`. Create a unique surface using the Basic Catalog ID from the reference.
-2. Set initial input values in `createSurface.dataModel`.
-3. Provide a flat component list with unique IDs and a `root` component. Reference children by ID. Standard component names and props are case-sensitive.
-4. Bind control `value` with `{"@path":"/key"}`. Use relative paths in `List` templates for editable rows.
-5. Calculate with `{"@call":"evaluate","catalogId":"urn:wingman:inline-ui:catalog:1","args":{"expression":"quantity * 12","values":{"quantity":{"@path":"/quantity"}}}}`. Use only the documented restricted helpers. No `state`, `computed`, `bind`, or `{{ }}` syntax.
-6. Put a `catalogId` on every Wingman component/function when the surface defaults to the Basic Catalog. Functions inherit the component catalog: Basic validators inside Wingman controls need the Basic catalogId.
-7. Use named `action.event` payloads for agent interactions, and user-activated `action.functionCall` for local effects. Include current values in context or enable `sendDataModel`.
-8. Continue using `updateComponents` and `updateDataModel` for subsequent changes to that surface. Never issue a second createSurface with the same ID.
+## Before emitting
 
-## Check before emitting
-
-Every prop must exist in the catalog. Every child ID must resolve. Every writable control must bind to a data path; calculated values are read-only. Label controls and explain chart axes, units and sources. Values come from the conversation, tools, the user, or clearly labelled illustrative assumptions. Each control should affect something visible. Keep the interface focused; large datasets and deliverables belong in artifacts.
-
-The host validates messages and catalogs, keeps user edits in the browser, and sends structured actions through the normal chat/tool permission flow. Catalog identifiers never fetch or execute code. Data-model changes stay local until an action carries them to the agent. Persisted fences never execute RPCs during replay.
+Use only documented properties and resolve every child ID. Bind writable controls to data paths and make each control affect something visible. Give chart axes units and sources; values come from the conversation, tools, user input, or labelled illustrative assumptions. For updates, reuse the surface ID and preserve component IDs. Local data edits stay in the browser until an action explicitly sends them to the agent.

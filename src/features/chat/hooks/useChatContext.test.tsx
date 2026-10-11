@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
 import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
+import inlineUiInstructions from "../prompts/inline-ui.txt?raw";
 
 const state = vi.hoisted(() => ({
   client: { listModels: vi.fn(async () => []) },
@@ -87,6 +88,13 @@ describe("chat prompt context", () => {
     expect(firstInstructions).not.toContain("active_file");
     expect(firstRuntime).toContain("/first.md");
     expect(second.runtimeContext()).toContain("/second.md");
+  });
+
+  it("includes only the compact UI discovery prompt in chat and omits it in voice", () => {
+    expect(inlineUiInstructions.length).toBeLessThanOrEqual(1200);
+    expect(context().instructions()).toContain(inlineUiInstructions);
+    expect(context(undefined, "voice").instructions()).not.toContain(inlineUiInstructions);
+    expect(context().instructions()).not.toContain("A2UI-CATALOG:START");
   });
 
   it("selects native chat middleware and realtime tools under the same provider policy", async () => {
