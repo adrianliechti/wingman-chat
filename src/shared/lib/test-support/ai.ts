@@ -1,4 +1,5 @@
-import type { ContentPart, TextOptions, TextPart, ToolCallPart, UIMessage } from "@tanstack/ai";
+import { EventType, type TextMessageContentEvent } from "@ag-ui/core";
+import type { AdapterYieldChunk, ContentPart, TextOptions, TextPart, ToolCallPart, UIMessage } from "@tanstack/ai";
 import type { Client } from "../client";
 import { assistantMessage, text, textParts, userMessage, type TextMetadata } from "@/shared/lib/messages";
 
@@ -13,14 +14,16 @@ export function testClient(
       name: "test",
       model,
       textParts: new Map<string, TextPart[]>(),
-      async *chatStream(options: TextOptions<Record<string, unknown>>) {
+      async *chatStream(options: TextOptions<Record<string, unknown>>): AsyncGenerator<AdapterYieldChunk> {
         const id = crypto.randomUUID();
-        const pending: { type: "TEXT_MESSAGE_CONTENT"; messageId: string; delta: string }[] = [];
+        const runId = options.runId ?? id;
+        const threadId = options.threadId ?? "test";
+        const pending: TextMessageContentEvent[] = [];
         let notify: (() => void) | undefined;
         let settled = false;
         let streamedText = "";
         const result = complete(options, (text) => {
-          pending.push({ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text.slice(streamedText.length) });
+          pending.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: id, delta: text.slice(streamedText.length) });
           streamedText = text;
           notify?.();
         }).finally(() => {
@@ -28,8 +31,8 @@ export function testClient(
           notify?.();
         });
         void result.catch(() => {});
-        yield { type: "RUN_STARTED", runId: id, threadId: "test" };
-        yield { type: "TEXT_MESSAGE_START", role: "assistant", messageId: id };
+        yield { type: EventType.RUN_STARTED, runId, threadId };
+        yield { type: EventType.TEXT_MESSAGE_START, role: "assistant", messageId: id };
         while (!settled || pending.length) {
           while (pending.length) yield pending.shift()!;
           if (!settled)
@@ -42,7 +45,7 @@ export function testClient(
         if (streamedText) {
           this.textParts.set(id, textParts(response));
           if (finalText.startsWith(streamedText) && finalText.length > streamedText.length)
-            yield { type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: finalText.slice(streamedText.length) };
+            yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId: id, delta: finalText.slice(streamedText.length) };
         }
         const emittedParts: TextPart[] = [];
         for (const part of response.parts) {
@@ -50,26 +53,31 @@ export function testClient(
             emittedParts.push(part);
             this.textParts.set(id, [...emittedParts]);
             yield {
-              type: "TEXT_MESSAGE_CONTENT",
+              type: EventType.TEXT_MESSAGE_CONTENT,
               messageId: id,
               delta: part.content,
             };
           }
           if (part.type === "tool-call") {
-            yield { type: "TOOL_CALL_START", toolCallId: part.id, toolCallName: part.name, parentMessageId: id };
-            yield { type: "TOOL_CALL_ARGS", toolCallId: part.id, delta: part.arguments };
+            yield {
+              type: EventType.TOOL_CALL_START,
+              toolCallId: part.id,
+              toolCallName: part.name,
+              parentMessageId: id,
+            };
+            yield { type: EventType.TOOL_CALL_ARGS, toolCallId: part.id, delta: part.arguments };
             if (part.state === "input-streaming") {
-              yield { type: "RUN_ERROR", message: "max_output_tokens", code: "incomplete" };
+              yield { type: EventType.RUN_ERROR, message: "max_output_tokens", code: "incomplete" };
               return;
             }
-            yield { type: "TOOL_CALL_END", toolCallId: part.id };
+            yield { type: EventType.TOOL_CALL_END, toolCallId: part.id };
           }
         }
-        yield { type: "TEXT_MESSAGE_END", messageId: id };
+        yield { type: EventType.TEXT_MESSAGE_END, messageId: id };
         yield {
-          type: "RUN_FINISHED",
-          runId: id,
-          threadId: "test",
+          type: EventType.RUN_FINISHED,
+          runId,
+          threadId,
           finishReason: response.parts.some((part) => part.type === "tool-call") ? "tool_calls" : "stop",
           usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
         };

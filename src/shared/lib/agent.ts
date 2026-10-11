@@ -1,7 +1,10 @@
+import { EventType, type AGUIEvent, type RunFinishedEvent } from "@ag-ui/core";
+import { EventSchema } from "@ag-ui/core/schemas";
 import {
   chat,
   defineAgent,
   normalizeToUIMessage,
+  normalizeStreamChunk,
   modelMessagesToUIMessages,
   uiMessagesToWire,
   maxIterations,
@@ -12,7 +15,6 @@ import {
   type ContentPart,
   type ModelMessage,
   type RunAgentResumeItem,
-  type StreamChunk,
   type TextPart,
   type ToolExecutionContext,
   type UIMessage,
@@ -250,7 +252,7 @@ export async function* streamRun(
   messages: UIMessage[],
   tools: Tool[],
   hooks: StreamRunHooks,
-): AsyncGenerator<StreamChunk> {
+): AsyncGenerator<AGUIEvent> {
   const { controller: abortController, cleanup } = followAbortSignal(hooks.context?.signal, hooks.options?.signal);
   const invocation: AgentRunContext = {
     ...hooks.context,
@@ -270,7 +272,7 @@ export async function* streamRun(
     abortController.signal.throwIfAborted();
     const adapter = client.textAdapter(model, abortController.signal);
     const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
-    let terminal: Extract<StreamChunk, { type: "RUN_FINISHED" }> | undefined;
+    let terminal: RunFinishedEvent | undefined;
     let failure: Error | undefined;
     let aborted = false;
     const captureAdapterMetadata = () => {
@@ -412,12 +414,12 @@ export async function* streamRun(
             if (direct !== undefined) {
               // Keep the same native approval/result boundary, but return
               // retrieval text without starting a child model generation.
-              return (async function* (): AsyncGenerator<StreamChunk> {
+              return (async function* (): AsyncGenerator<AGUIEvent> {
                 const messageId = `${ctx.subagentRunId}-direct`;
-                yield { type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as StreamChunk;
-                yield { type: "TEXT_MESSAGE_CONTENT", messageId, delta: direct } as StreamChunk;
-                yield { type: "TEXT_MESSAGE_END", messageId } as StreamChunk;
-                yield { type: "RUN_FINISHED", runId: ctx.runId, threadId: ctx.threadId, result: direct } as StreamChunk;
+                yield { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" };
+                if (direct) yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta: direct };
+                yield { type: EventType.TEXT_MESSAGE_END, messageId };
+                yield { type: EventType.RUN_FINISHED, runId: ctx.runId, threadId: ctx.threadId, result: direct };
               })();
             }
             const history = sidecar.apply(
@@ -503,29 +505,38 @@ export async function* streamRun(
         ...(hooks.middleware ?? []),
       ],
     });
-    for await (const chunk of stream) {
+    for await (const output of stream) {
       abortController.signal.throwIfAborted();
       captureAdapterMetadata();
-      if (chunk.type === "SUBAGENT_STARTED" && chunk.parentToolCallId)
-        childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
-      if (
-        chunk.type === "RUN_FINISHED" &&
-        (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
-      ) {
-        terminal = chunk;
-        continue;
+      // TanStack restores legacy usage objects on its in-process iterable.
+      // Normalize its extensions and validate the public events against the
+      // SDK so browser-local consumers receive the same AG-UI wire shapes.
+      for (const normalized of normalizeStreamChunk(output)) {
+        const chunk = EventSchema.parse(normalized);
+        if (chunk.type === EventType.SUBAGENT_STARTED && chunk.parentToolCallId)
+          childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
+        if (
+          chunk.type === EventType.RUN_FINISHED &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+        ) {
+          terminal = chunk;
+          continue;
+        }
+        if (
+          chunk.type === EventType.RUN_ERROR &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+        ) {
+          failure = Object.assign(new Error(chunk.message), { code: chunk.code });
+        }
+        yield chunk;
       }
-      if (chunk.type === "RUN_ERROR" && (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)) {
-        failure = Object.assign(new Error(chunk.message), { code: chunk.code });
-      }
-      yield chunk;
     }
     abortController.signal.throwIfAborted();
     if (adapter.needsMessageSnapshot) {
       // AG-UI text deltas cannot rewrite prior content. Publish TanStack's
       // canonical transcript after an authoritative replacement or replay
       // recovery, so the client and persistence see the same messages.
-      yield { type: "MESSAGES_SNAPSHOT", messages: uiMessagesToWire(snapshot()) } as StreamChunk;
+      yield { type: EventType.MESSAGES_SNAPSHOT, messages: uiMessagesToWire(snapshot()) };
     }
     if (failure) {
       await finish("failed", failure);
@@ -539,7 +550,7 @@ export async function* streamRun(
     const aborted = info.code !== "TIMEOUT" && (abortController.signal.aborted || isAbortError(reason));
     await finish(aborted ? "aborted" : "failed", reason);
     if (!aborted) {
-      yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
+      yield { type: EventType.RUN_ERROR, message: info.message, code: info.code };
     }
   } finally {
     cleanup();

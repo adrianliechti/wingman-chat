@@ -35,7 +35,7 @@ import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
-import { UiRenderer } from "@/shared/ui/intelligent/UiRenderer";
+import { UiRenderer } from "@/shared/ui/inlineUi/UiRenderer";
 import { UI_TAG, uiFenceExtension } from "./markdownUi";
 import { loadKatex, type Katex } from "./markdownMath";
 import { EmojiContext } from "@/shell/context/EmojiContext";

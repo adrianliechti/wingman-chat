@@ -1,17 +1,11 @@
+import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useChat } from "@tanstack/ai-react";
 import type { ChatInterruptState, ChatPersistedState, RunAgentInputContext } from "@tanstack/ai-client";
-import {
-  normalizeToUIMessage,
-  isContentPart,
-  type ContentPart,
-  type StreamChunk,
-  type UIMessage,
-  type ModelMessage,
-} from "@tanstack/ai";
+import { normalizeToUIMessage, isContentPart, type ContentPart, type UIMessage, type ModelMessage } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
-import { uiDiagnostics } from "@/shared/lib/intelligentUi/diagnostics";
+import { uiDiagnostics } from "@/shared/lib/inlineUi/diagnostics";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { parseArtifactReference } from "../components/chatMessageUtils";
 import type { ChatContextType } from "../context/ChatContext";
@@ -109,7 +103,7 @@ export function useChatRun({
       nativeMessages: UIMessage[] | ModelMessage[],
       signal?: AbortSignal,
       runContext?: RunAgentInputContext,
-    ): AsyncGenerator<StreamChunk> {
+    ): AsyncGenerator<AGUIEvent> {
       if (!model) throw new Error("No model selected");
       const { id, sidecar } = session;
       const runId = runContext?.runId ?? crypto.randomUUID();
@@ -302,9 +296,9 @@ export function useChatRun({
     },
     onChunk: (chunk) => {
       if (chatIdRef.current !== session.id) return;
-      if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
-      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
-      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
+      if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) setRunPhase("responding");
+      else if (chunk.type === EventType.CUSTOM && chunk.name === "compaction:started") setRunPhase("compacting");
+      else if (chunk.type === EventType.CUSTOM && chunk.name === "compaction:ended") setRunPhase("thinking");
     },
     onInterruptStateChange: (state) => {
       session.interrupts = state;

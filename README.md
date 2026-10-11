@@ -12,9 +12,9 @@ conversations, retrieval over your own files, and a library of reusable skills.
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
 - **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
-- **Intelligent UI** — replies can embed small interactive interfaces (what-if calculators, filtered
+- **Inline UI** — replies can embed small interactive interfaces (what-if calculators, filtered
   tables, charts, option buttons) as a validated JSON component tree with reactive state. See
-  [docs/intelligent-ui.md](docs/intelligent-ui.md).
+  [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.

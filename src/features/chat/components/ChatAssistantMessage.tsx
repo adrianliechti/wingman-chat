@@ -408,7 +408,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                   isStreaming={!!(isLast && isResponding)}
                   onOpenArtifact={handleOpenArtifact}
                   onSendMessage={handleSendMessage}
-                  uiStateKey={chat?.id ? JSON.stringify([chat.id, message.id, partKey]) : undefined}
+                  uiStateKey={chat?.id ? JSON.stringify([chat.id, message.id, partIndex]) : undefined}
                 >
                   {part.content}
                 </Markdown>

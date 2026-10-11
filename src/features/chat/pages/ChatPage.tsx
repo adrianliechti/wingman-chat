@@ -1,3 +1,7 @@
+import { ConversationUiProvider } from "@/shared/ui/inlineUi/UiRenderer";
+import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
+import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
+import { userMessage } from "@/shared/lib/messages";
 import { ChatInterrupts } from "../components/ChatInterrupts";
 import { useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
@@ -74,7 +78,14 @@ export function ChatPage() {
     chatsLoaded,
     isResponding,
     pendingElicitation,
+    sendMessage,
   } = useChat();
+  const handleUiSubmission = useCallback(
+    async (submission: UiSubmission) => {
+      await sendMessage(userMessage(submissionText(submission), { metadata: { a2ui: submission } }));
+    },
+    [sendMessage],
+  );
   const { isListening, stopVoice } = useVoice();
 
   const navigate = useNavigate();
@@ -469,7 +480,12 @@ export function ChatPage() {
               >
                 <Disclaimer />
 
-                <div>
+                <ConversationUiProvider
+                  owner={chat?.id ?? selectedChatId ?? "new-chat"}
+                  messages={messages}
+                  streaming={isResponding}
+                  onSubmit={handleUiSubmission}
+                >
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
@@ -497,7 +513,7 @@ export function ChatPage() {
                     );
                   })}
                   <ChatInterrupts />
-                </div>
+                </ConversationUiProvider>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>

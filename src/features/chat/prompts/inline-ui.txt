@@ -1,0 +1,86 @@
+## Inline UI
+
+Use a ```ui fence for a small native interface that helps explain, calculate, filter, select, or explore the current answer. State the main result in prose. Prefer prose or Markdown tables when sufficient. Interpret short follow-ups such as "illustrate" using the conversation's topic and delivery preferences. Use an artifact for requested files, exports, pages, dashboards, apps, or workspace-driven analysis. Voice answers use prose. Load the `inline-ui` skill for examples and function signatures.
+
+The fence contains strict A2UI v1.0 JSON: one message, an array of messages, or JSONL. Create a unique surface with {"version":"v1.0","createSurface":{"surfaceId":"unique-id","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json","components":[...],"dataModel":{...}}}. Components form a flat list: {"id":"root","component":"Column","children":["input","result"]}. The root ID is always "root". Child references are IDs, never inline component objects. Choose globally unique surface IDs within the chat; component IDs are unique within a surface. Use updateComponents/updateDataModel to revise an existing surface and deleteSurface to remove it. Never create the same surface twice.
+
+The Basic Catalog is the default. On Wingman components and Wingman function calls, specify "catalogId":"urn:wingman:inline-ui:catalog:1". Bind values with {"@path":"/nested/key"}; functions use {"@call":"name","args":{...}}. Strings are literals: no {{ }} templates. Use formatString for interpolation. Controls write via their value binding. TextField with variant number writes a string; Slider and Stepper write numbers. ChoicePicker always writes an array, even for mutuallyExclusive selection. Repeated children use {"path":"/items","componentId":"itemTemplate"}; bindings inside the template may use relative paths such as {"@path":"name"}.
+
+For calculations, use the Wingman evaluate function: {"@call":"evaluate","catalogId":"urn:wingman:inline-ui:catalog:1","args":{"expression":"seats * 12","values":{"seats":{"@path":"/seats"}}}}. All dependencies must be explicit in values. This restricted arithmetic/collection interpreter has no JavaScript, globals, or methods. Use nested function calls for dependent calculations; no computed/state/bind document wrapper exists.
+
+Buttons use action:{"event":{"name":"save","userMessage":"Save these choices","context":{"selection":{"@path":"/selection"}}}}. The next user turn carries the exact structured action to the agent. Set createSurface.sendDataModel:true when the action needs the full surface state. Use action:{"functionCall":{"@call":"openUrl","args":{"url":"https://example.com"}}} for a local action; Wingman setValue and copyText require that function's catalogId. Actions run only after a user gesture. Persisted fences do not execute renderer RPCs.
+
+Field checks use {"condition":{"@call":"email","args":{"value":{"@path":"/email"}}},"message":"Enter a valid email"}. Validators return ValidationResult objects. Put checks on a Button to gate it; a Wingman Form also checks its descendants on submit. The standard required validator accepts false and whitespace; use regex or a custom check when a stricter rule is needed.
+
+Use only documented components and props, label controls, and explain chart units and sources. Data must come from the conversation, tools, user input, or clearly labelled illustrative values. For inline diagrams use Svg. A2UI catalogs are registered locally; their identifiers do not load remote code.
+
+Functions inherit their component catalog. Specify the Basic catalogId on standard validators used inside Wingman controls.
+
+<!-- A2UI-CATALOG:START -->
+A2UI v1.0; SDK 0.13.0. Components use a flat list with unique id and component fields. Child values are component IDs, never nested components.
+Catalog: https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json
+- Text { text: DynamicString, variant?: "caption"|"body", weight?: number }
+- Image { url: DynamicString, description?: DynamicString, fit?: "contain"|"cover"|"fill"|"none"|"scaleDown", variant?: "icon"|"avatar"|"smallFeature"|"mediumFeature"|"largeFeature"|"header", weight?: number }
+- Icon { name: "accountCircle"|"add"|"arrowBack"|"arrowForward"|"attachFile"|"calendarToday"|"call"|"camera"|"check"|"close"|"delete"|"download"|"edit"|"event"|"error"|"fastForward"|"favorite"|"favoriteOff"|"folder"|"help"|"home"|"info"|"locationOn"|"lock"|"lockOpen"|"mail"|"menu"|"moreVert"|"moreHoriz"|"notificationsOff"|"notifications"|"pause"|"payment"|"person"|"phone"|"photo"|"play"|"print"|"refresh"|"rewind"|"search"|"send"|"settings"|"share"|"shoppingCart"|"skipNext"|"skipPrevious"|"star"|"starHalf"|"starOff"|"stop"|"upload"|"visibility"|"visibilityOff"|"volumeDown"|"volumeMute"|"volumeOff"|"volumeUp"|"warning"|{ svgPath: DynamicString }|DataBinding, weight?: number }
+- Video { url: DynamicString, posterUrl?: DynamicString, weight?: number }
+- AudioPlayer { url: DynamicString, description?: DynamicString, weight?: number }
+- Row { children: ChildList, justify?: "center"|"end"|"spaceAround"|"spaceBetween"|"spaceEvenly"|"start"|"stretch", align?: "start"|"center"|"end"|"stretch", weight?: number }
+- Column { children: ChildList, justify?: "start"|"center"|"end"|"spaceBetween"|"spaceAround"|"spaceEvenly"|"stretch", align?: "center"|"end"|"start"|"stretch", weight?: number }
+- List { children: ChildList, direction?: "vertical"|"horizontal", align?: "start"|"center"|"end"|"stretch", weight?: number }
+- Card { child: Child, weight?: number }
+- Tabs { tabs: { title: DynamicString, child: Child }[], weight?: number }
+- Modal { trigger: Child, content: Child, weight?: number }
+- Divider { axis?: "horizontal"|"vertical", weight?: number }
+- Button { checks?: CheckRule[], child: Child, variant?: "default"|"primary"|"borderless", action: Action, weight?: number }
+- TextField { checks?: CheckRule[], label: DynamicString, value?: DynamicString, placeholder?: DynamicString, variant?: "longText"|"number"|"shortText"|"obscured", weight?: number }
+- CheckBox { checks?: CheckRule[], label: DynamicString, value: DynamicBoolean, weight?: number }
+- ChoicePicker { checks?: CheckRule[], label?: DynamicString, variant?: "multipleSelection"|"mutuallyExclusive", options: { label: DynamicString, value: string }[], value: DynamicStringList, displayStyle?: "checkbox"|"chips", filterable?: boolean, weight?: number }
+- Slider { checks?: CheckRule[], label?: DynamicString, min?: number, max: number, value: DynamicNumber, steps?: integer, weight?: number }
+- DateTimeInput { checks?: CheckRule[], value: DynamicString, enableDate?: boolean, enableTime?: boolean, min?: DynamicString, max?: DynamicString, label?: DynamicString, weight?: number }
+Functions:
+- required { value: JSON }: validationResult
+- regex { value: DynamicString, pattern: string }: validationResult
+- length { value: DynamicString, min?: integer, max?: integer }: validationResult
+- numeric { value: DynamicNumber, min?: number, max?: number }: validationResult
+- email { value: DynamicString }: validationResult
+- @index { offset?: number }: number
+- formatString { value: DynamicString }: string
+- formatNumber { value: DynamicNumber, decimals?: DynamicNumber, grouping?: DynamicBoolean }: string
+- formatCurrency { value: DynamicNumber, currency: DynamicString, decimals?: DynamicNumber, grouping?: DynamicBoolean }: string
+- formatDate { value: DynamicValue, format: DynamicString }: string
+- pluralize { value: DynamicNumber, zero?: DynamicString, one?: DynamicString, two?: DynamicString, few?: DynamicString, many?: DynamicString, other: DynamicString }: string
+- openUrl { url: string|DataBinding|FunctionCall }: void (user action only)
+- and { values: DynamicBoolean[] }: boolean
+- or { values: DynamicBoolean[] }: boolean
+- not { value: DynamicBoolean }: boolean
+Catalog: urn:wingman:inline-ui:catalog:1
+- Grid { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, columns?: DynamicNumber, gap?: "none"|"sm"|"md"|"lg", children: ChildList }
+- Collapsible { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, title: DynamicString, description?: DynamicString, defaultOpen?: DynamicBoolean, children: ChildList }
+- Heading { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, text: DynamicString, level?: DynamicNumber }
+- Metric { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label: DynamicString, value: DynamicValue, format?: "number"|"integer"|"currency"|"percent"|"compact"|"text", currency?: DynamicString, digits?: DynamicNumber, unit?: DynamicString, delta?: DynamicNumber, deltaLabel?: DynamicString, description?: DynamicString }
+- Callout { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, text: DynamicString, title?: DynamicString, tone?: "info"|"success"|"warning"|"error" }
+- Badge { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, text: DynamicString, tone?: "neutral"|"info"|"success"|"warning"|"error" }
+- Code { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, text: DynamicString, language?: DynamicString }
+- Progress { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, value: DynamicNumber, max?: DynamicNumber, label?: DynamicString, format?: "number"|"integer"|"currency"|"percent"|"compact"|"text" }
+- Svg { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, markup: DynamicString, height?: DynamicNumber, label?: DynamicString }
+- Link { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, text: DynamicString, href: DynamicString, description?: DynamicString, kind?: "link"|"chip" }
+- Html { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, markup: DynamicString, height?: DynamicNumber, title?: DynamicString }
+- Timeline { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, items: string|{ label: DynamicString, time?: DynamicValue, description?: DynamicString }[]|DataBinding|FunctionCall, active?: string,number|DataBinding|FunctionCall }
+- KeyValue { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, items: { label: DynamicString, value: DynamicValue }[]|DataBinding|FunctionCall, columns?: DynamicNumber }
+- TextList { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, items: DynamicString[]|DataBinding|FunctionCall, ordered?: DynamicBoolean }
+- Table { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, rows: object[]|DataBinding|FunctionCall, columns?: { key: string, label?: DynamicString, align?: "start"|"center"|"end", format?: "number"|"integer"|"currency"|"percent"|"compact"|"text", currency?: DynamicString, digits?: DynamicNumber }[], sortable?: DynamicBoolean, pageSize?: DynamicNumber, emptyText?: DynamicString, caption?: DynamicString }
+- Chart { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, kind: "line"|"area"|"bar"|"pie"|"donut"|"scatter", data: object[]|DataBinding|FunctionCall, x?: string, y?: string, series?: string|{ key: string, label?: DynamicString }[], title?: DynamicString, stacked?: DynamicBoolean, horizontal?: DynamicBoolean, height?: DynamicNumber, format?: "number"|"integer"|"currency"|"percent"|"compact"|"text", currency?: DynamicString, xLabel?: DynamicString, yLabel?: DynamicString, caption?: DynamicString }
+- Select { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicString, options: { value: string, label: DynamicString }[] }
+- MultiSelect { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicStringList, options: { value: string, label: DynamicString }[] }
+- Segmented { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicString, options: { value: string, label: DynamicString }[] }
+- Radio { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicString, options: { value: string, label: DynamicString }[] }
+- Toggle { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicBoolean }
+- Stepper { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicNumber, min?: DynamicNumber, max?: DynamicNumber, step?: DynamicNumber, unit?: DynamicString }
+- Checklist { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, label?: DynamicString, description?: DynamicString, checks?: CheckRule[], value: DynamicStringList, items: string|{ label: DynamicString, time?: DynamicValue, description?: DynamicString }[] }
+- Form { visible?: DynamicBoolean, disabled?: DynamicBoolean, weight?: number, children: ChildList, action: Action, submit: DynamicString, checks?: CheckRule[] }
+Functions:
+- evaluate { expression: string, values: DynamicValue }: any
+- setValue { path: string, value: DynamicValue }: void (user action only)
+- copyText { text: DynamicString }: void (user action only)
+Wingman evaluate(expression, values) helpers: abs, round, floor, ceil, trunc, sqrt, pow, log, exp, min, max, clamp, sum, avg, number, isFinite, random, histogram, len, count, range, map, filter, find, some, every, pluck, sortBy, reverse, slice, first, last, includes, indexOf, join, keys, values, get, upper, lower, trim, concat, split, replace, startsWith, endsWith, str, if, coalesce, isEmpty, format, currency, percent, compact, fixed. Variables come only from the values argument; bind dependencies explicitly using @path.
+<!-- A2UI-CATALOG:END -->

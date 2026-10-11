@@ -1,3 +1,4 @@
+import { EventType } from "@ag-ui/core";
 import { OpenAITextAdapter, type OpenAIChatModel } from "@tanstack/ai-openai";
 import type { AdapterYieldChunk, TextPart } from "@tanstack/ai";
 import { isReasoningReplayError } from "./errors";
@@ -26,13 +27,13 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       let receivedContent = false;
       let retry = false;
       for await (const chunk of super.chatStream(...args)) {
-        if (chunk.type === "RUN_STARTED") {
+        if (chunk.type === EventType.RUN_STARTED) {
           if (!started) yield chunk;
           started = true;
           continue;
         }
         if (
-          chunk.type === "RUN_ERROR" &&
+          chunk.type === EventType.RUN_ERROR &&
           attempt === 0 &&
           !receivedContent &&
           !options.request?.signal?.aborted &&
@@ -139,9 +140,15 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
       }
     }
     for await (const chunk of super.processStreamChunks(observe(), ...rest)) {
-      if (chunk.type.startsWith("TEXT_MESSAGE_") && "messageId" in chunk && chunk.messageId)
+      if (
+        (chunk.type === EventType.TEXT_MESSAGE_START ||
+          chunk.type === EventType.TEXT_MESSAGE_CONTENT ||
+          chunk.type === EventType.TEXT_MESSAGE_END ||
+          chunk.type === EventType.TEXT_MESSAGE_CHUNK) &&
+        chunk.messageId
+      )
         this.textParts.set(chunk.messageId, [...segments.values()]);
-      if (chunk.type === "REASONING_ENCRYPTED_VALUE" && chunk.subtype === "message") {
+      if (chunk.type === EventType.REASONING_ENCRYPTED_VALUE && chunk.subtype === "message") {
         const state = readGatewayReasoning(chunk.encryptedValue);
         yield {
           ...chunk,
@@ -149,34 +156,38 @@ export class GatewayTextAdapter<TModel extends OpenAIChatModel> extends OpenAITe
         };
         continue;
       }
-      if (chunk.type === "TEXT_MESSAGE_CONTENT")
+      if (chunk.type === EventType.TEXT_MESSAGE_CONTENT)
         emittedText = typeof chunk.content === "string" ? chunk.content : emittedText + chunk.delta;
-      if (chunk.type === "TEXT_MESSAGE_END" && completed) {
+      if (chunk.type === EventType.TEXT_MESSAGE_END && completed) {
         const fullText = [...segments.values()].map((part) => part.content).join("");
         if (fullText && fullText !== emittedText) {
           const append = fullText.startsWith(emittedText);
           if (!append) this.needsMessageSnapshot = true;
           yield {
-            type: "TEXT_MESSAGE_CONTENT",
+            type: EventType.TEXT_MESSAGE_CONTENT,
             messageId: chunk.messageId,
             delta: append ? fullText.slice(emittedText.length) : "",
             content: fullText,
-          } as AdapterYieldChunk;
+          };
           emittedText = fullText;
         }
       }
-      if (chunk.type === "RUN_FINISHED" && completed && options.outputSchema && chunk.finishReason === "stop") {
+      if (chunk.type === EventType.RUN_FINISHED && completed && options.outputSchema && chunk.finishReason === "stop") {
         const parts = [...segments.values()];
         const raw = (parts.findLast((part) => textMetadata(part).phase === "final_answer") ?? parts.at(-1))?.content;
         if (raw) {
           try {
-            yield { type: "CUSTOM", name: "structured-output.complete", value: { object: JSON.parse(raw), raw } };
+            yield {
+              type: EventType.CUSTOM,
+              name: "structured-output.complete",
+              value: { object: JSON.parse(raw), raw },
+            };
           } catch {
             yield {
-              type: "RUN_ERROR",
+              type: EventType.RUN_ERROR,
               code: "structured-output-parse-failed",
               message: "Failed to parse final structured output as JSON",
-            } as AdapterYieldChunk;
+            };
             return;
           }
         }

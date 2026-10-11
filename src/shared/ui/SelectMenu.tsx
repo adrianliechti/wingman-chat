@@ -23,6 +23,8 @@ interface SelectMenuProps<T> {
   /** Help text below the control, associated with its accessible description. */
   hint?: string;
   disabled?: boolean;
+  invalid?: boolean;
+  errorId?: string;
   /** Placeholder shown when value is null/undefined and doesn't match any option. */
   placeholder?: string;
   /** Extra classes on the root wrapper. */
@@ -39,6 +41,8 @@ export function SelectMenu<T extends string | null>({
   description,
   hint,
   disabled = false,
+  invalid,
+  errorId,
   placeholder = "Select…",
   className,
 }: SelectMenuProps<T>) {
@@ -51,6 +55,8 @@ export function SelectMenu<T extends string | null>({
       )}
       <Listbox value={value} onChange={onChange}>
         <ListboxButton
+          aria-invalid={invalid || undefined}
+          aria-errormessage={errorId}
           aria-label={label ? undefined : placeholder}
           className="relative w-full rounded-lg border border-neutral-300/50 bg-white/50 py-2.5 pl-3 pr-10 text-left text-sm text-neutral-900 transition-colors backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-400/60 data-open:border-neutral-400/70 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700/50 dark:bg-neutral-800/50 dark:text-neutral-100 dark:focus-visible:ring-neutral-500/60 dark:data-open:border-neutral-500/70"
         >

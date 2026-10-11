@@ -1,11 +1,11 @@
 import type { BlockNode, MarkdownExtension } from "@tanstack/markdown";
-import { UI_FENCE_LANGUAGES } from "@/shared/lib/intelligentUi/schema";
+import { UI_FENCE_LANGUAGES } from "@/shared/lib/inlineUi/protocol";
 
 export const UI_TAG = "md-ui";
 
 /** Assign UI fences an ordinal within their owning Markdown message part. */
 export const uiFenceExtension: MarkdownExtension = {
-  name: "intelligent-ui",
+  name: "inline-ui",
   transformDocument(document) {
     let blockIndex = 0;
     const visit = (nodes: BlockNode[]): BlockNode[] =>
@@ -13,7 +13,7 @@ export const uiFenceExtension: MarkdownExtension = {
         if (node.type === "code" && UI_FENCE_LANGUAGES.has(node.lang?.toLowerCase() ?? "")) {
           return {
             type: "component",
-            name: "intelligent-ui",
+            name: "inline-ui",
             tagName: UI_TAG,
             attributes: {},
             properties: { source: node.value, blockIndex: String(blockIndex++) },

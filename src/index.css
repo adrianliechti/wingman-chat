@@ -63,20 +63,84 @@ html.noto-emoji-ready:not(.emoji-native) .noto-emoji {
 }
 
 .task-list-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  position: relative;
+  padding-inline-start: 1.65em;
+  list-style: none;
 }
 
+.inline-choice-input,
 .task-checkbox {
-  width: 1em;
-  height: 1em;
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
   flex-shrink: 0;
-  opacity: 0.3;
+  border: 1px solid #a3a3a3;
+  border-radius: 0.3125rem;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0.875rem;
+  vertical-align: -0.15em;
+  box-shadow: 0 1px 2px #00000008;
+  cursor: inherit;
 }
 
-.task-checkbox.checked {
-  opacity: 0.7;
+.inline-choice-input:checked,
+.task-checkbox:checked {
+  border-color: #262626;
+  background-color: #262626;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.inline-choice-input[type="radio"] {
+  border-radius: 50%;
+}
+
+.inline-choice-input[type="radio"]:checked {
+  background-image: radial-gradient(circle, white 0 3px, transparent 3.5px);
+}
+
+.inline-choice-input:focus-visible {
+  outline: 2px solid #737373;
+  outline-offset: 3px;
+}
+
+.inline-choice-input[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.task-list-item > .task-checkbox,
+.task-list-item > p > .task-checkbox {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.45em;
+}
+
+.dark .inline-choice-input,
+.dark .task-checkbox {
+  border-color: #737373;
+  background-color: #171717;
+}
+
+.dark .inline-choice-input:checked,
+.dark .task-checkbox:checked {
+  border-color: #e5e5e5;
+  background-color: #e5e5e5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='%23171717' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.dark .inline-choice-input[type="radio"]:checked {
+  background-image: radial-gradient(circle, #171717 0 3px, transparent 3.5px);
+}
+
+@media (forced-colors: active) {
+  .inline-choice-input,
+  .task-checkbox {
+    appearance: auto;
+    background-image: none !important;
+    box-shadow: none;
+  }
 }
 
 @custom-variant dark (&:where(.dark, .dark *));

@@ -29,10 +29,14 @@
     "lint": "vp lint",
     "check": "vp check && npm run check:react-compiler && npm run check:skills",
     "check:react-compiler": "node scripts/check-react-compiler.mjs",
-    "check:skills": "node scripts/validate-skills.mjs",
+    "check:skills": "node scripts/validate-skills.mjs && npm run check:ui-reference",
+    "generate:ui-reference": "node scripts/generate-inline-ui-reference.mjs",
+    "check:ui-reference": "node scripts/generate-inline-ui-reference.mjs --check",
     "preview": "vp preview"
   },
   "dependencies": {
+    "@a2ui/web_core": "0.13.0",
+    "@ag-ui/core": "1.0.0",
     "@duckdb/duckdb-wasm": "1.32.0",
     "@floating-ui/react": "^0.27.20",
     "@fontsource/noto-emoji": "^5.3.2",
@@ -101,7 +105,8 @@
     "tailwind-merge": "^3.7.0",
     "three": "0.186.1",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "zod-a2ui": "npm:zod@3.25.76"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

@@ -1,0 +1,180 @@
+import type { UIMessage } from "@tanstack/ai";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { extractUiFences, parseMessages, type UiBlock } from "@/shared/lib/inlineUi/protocol";
+import { EMPTY_UI_SNAPSHOT, InlineUiRuntime, type UiSubmission } from "@/shared/lib/inlineUi/runtime";
+import { CodeRenderer } from "@/shared/ui/CodeRenderer";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
+import { RendererActionsContext } from "@/shared/ui/renderers/RendererFrame";
+import { InlineUiViewContext, NodeView, useSignalValue } from "./NodeView";
+import type { NodeResolver } from "@a2ui/web_core/v1_0";
+
+const RuntimeContext = createContext<InlineUiRuntime | null>(null);
+const ProviderContext = createContext(false);
+
+export function conversationUiBlocks(messages: UIMessage[], owner: string, streaming: boolean): UiBlock[] {
+  return messages.flatMap((message, index) =>
+    message.role !== "assistant"
+      ? []
+      : message.parts.flatMap((part, partIndex) => {
+          if (part.type !== "text") return [];
+          const partial = streaming && index === messages.length - 1;
+          return extractUiFences(part.content).map((source, blockIndex) => ({
+            key: JSON.stringify([JSON.stringify([owner, message.id, partIndex]), String(blockIndex)]),
+            source,
+            streaming: partial,
+          }));
+        }),
+  );
+}
+
+export function InlineUiProvider({
+  owner,
+  blocks,
+  onSubmit,
+  children,
+}: {
+  owner?: string;
+  blocks: readonly UiBlock[];
+  onSubmit?: (submission: UiSubmission) => void | Promise<void>;
+  children: ReactNode;
+}) {
+  const [runtime, setRuntime] = useState<InlineUiRuntime | null>(null);
+  useEffect(() => {
+    const instance = new InlineUiRuntime(owner);
+    setRuntime(instance);
+    return () => instance.dispose();
+  }, [owner]);
+  useEffect(() => {
+    if (runtime && runtime.owner === owner) {
+      runtime.onSubmit = onSubmit;
+      runtime.sync(blocks);
+    }
+  }, [runtime, owner, blocks, onSubmit]);
+  return (
+    <ProviderContext value={true}>
+      <RuntimeContext value={runtime}>{children}</RuntimeContext>
+    </ProviderContext>
+  );
+}
+
+export function ConversationUiProvider({
+  owner,
+  messages,
+  streaming,
+  onSubmit,
+  children,
+}: {
+  owner: string;
+  messages: UIMessage[];
+  streaming: boolean;
+  onSubmit: (submission: UiSubmission) => void | Promise<void>;
+  children: ReactNode;
+}) {
+  const blocks = useMemo(() => conversationUiBlocks(messages, owner, streaming), [messages, owner, streaming]);
+  return (
+    <InlineUiProvider key={owner} owner={owner} blocks={blocks} onSubmit={onSubmit}>
+      {children}
+    </InlineUiProvider>
+  );
+}
+
+export interface UiRendererProps {
+  source: string;
+  stateKey?: string;
+  isStreaming?: boolean;
+  onSendMessage?: (text: string) => void;
+  renderText?: (markdown: string) => ReactNode;
+}
+
+export function UiRenderer(props: UiRendererProps) {
+  const provided = useContext(ProviderContext);
+  // Standalone Markdown previews get their own isolated surface namespace.
+  const blocks = useMemo(
+    () => [{ key: props.stateKey ?? "standalone", source: props.source, streaming: props.isStreaming }],
+    [props.stateKey, props.source, props.isStreaming],
+  );
+  const onSubmit = useMemo(
+    () =>
+      props.onSendMessage ? (submission: UiSubmission) => props.onSendMessage?.(JSON.stringify(submission)) : undefined,
+    [props.onSendMessage],
+  );
+  if (!provided)
+    return (
+      <InlineUiProvider key={props.stateKey} owner={props.stateKey} blocks={blocks} onSubmit={onSubmit}>
+        <UiBlockView {...props} />
+      </InlineUiProvider>
+    );
+  return <UiBlockView {...props} />;
+}
+
+const emptySubscribe = () => () => {};
+const emptySnapshot = () => EMPTY_UI_SNAPSHOT;
+function UiBlockView({ source, stateKey, isStreaming = false, renderText }: UiRendererProps) {
+  const runtime = useContext(RuntimeContext);
+  const snapshot = useSyncExternalStore(
+    runtime?.subscribe ?? emptySubscribe,
+    runtime?.getSnapshot ?? emptySnapshot,
+    emptySnapshot,
+  );
+  const actions = useContext(RendererActionsContext);
+  const [showCode, setShowCode] = useState(false);
+  const parsed = useMemo(() => parseMessages(source, isStreaming), [source, isStreaming]);
+  const view = useMemo(() => ({ streaming: isStreaming, renderText }), [isStreaming, renderText]);
+  const ids = parsed.messages.flatMap((message) =>
+    "createSurface" in message ? [message.createSurface.surfaceId] : [],
+  );
+  const error = parsed.error ?? snapshot.errors.get(stateKey ?? "standalone") ?? snapshot.errors.get("session");
+  return (
+    <div className="group/ui relative my-4 min-w-0" aria-busy={isStreaming}>
+      {actions && (
+        <div className="mb-2 flex justify-end gap-2 opacity-0 group-hover/ui:opacity-100 focus-within:opacity-100">
+          <PreviewButton showCode={showCode} onToggle={() => setShowCode((value) => !value)} label />
+          <CopyButton text={source} label="Copy" />
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mb-2 text-xs text-amber-700 dark:text-amber-400">
+          Interface could not be rendered: {error}
+        </p>
+      )}
+      {showCode || error ? (
+        <CodeRenderer code={source} language="json" />
+      ) : (
+        <InlineUiViewContext value={view}>
+          {ids.map((id) => {
+            const resolver = snapshot.resolvers.get(id);
+            return resolver ? (
+              <div key={id}>
+                {snapshot.errors.has(id) && (
+                  <p role="alert" className="text-xs text-amber-700">
+                    {snapshot.errors.get(id)}
+                  </p>
+                )}
+                <Surface resolver={resolver} />
+              </div>
+            ) : (
+              <p key={id} className="text-xs text-neutral-500">
+                {runtime ? "Interface removed." : "Building interface…"}
+              </p>
+            );
+          })}
+          {!ids.length && (
+            <p className="text-xs text-neutral-500">
+              {parsed.pending || !parsed.messages.length ? "Building interface…" : "Interface updated."}
+            </p>
+          )}
+        </InlineUiViewContext>
+      )}
+    </div>
+  );
+}
+
+function Surface({ resolver }: { resolver: NodeResolver }) {
+  const root = useSignalValue(resolver.rootNode);
+  return root ? (
+    <NodeView key={root.id} node={root} />
+  ) : (
+    <p className="text-xs text-neutral-500">Building interface…</p>
+  );
+}

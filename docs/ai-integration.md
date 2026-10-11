@@ -6,6 +6,8 @@ frontend.
 
 ## Framework ownership
 
+- `@ag-ui/core` supplies the event discriminators and protocol types for events
+  Wingman produces. The dependency is pinned to the same version TanStack uses.
 - `@tanstack/ai` owns the model/tool loop, streamed messages, tool validation,
   structured output, embeddings, speech, transcription, and OpenTelemetry
   middleware. `@tanstack/ai-openai` supplies the gateway's Responses and media
@@ -119,6 +121,17 @@ Chat progress follows native middleware callbacks and stream chunks. Tool-result
 cleanup uses `onToolPhaseComplete.results` instead of scanning the transcript.
 Run results contain only status, messages, and an optional error. Plain runtime
 context carries cancellation and child workspace identity; it has no counters.
+
+Application event producers and consumers use `EventType` and `AGUIEvent` from
+`@ag-ui/core`. `streamRun` applies TanStack's `normalizeStreamChunk` and the
+SDK's `EventSchema` before publishing native events. This converts TanStack's
+in-process token usage objects to AG-UI's `usage` arrays and retains extension
+data in metadata. Direct subagent replies, transcript snapshots and local
+errors use the SDK types without type assertions. Provider adapters retain
+TanStack's `AdapterYieldChunk` for finish reasons and authoritative text
+replacements. The `structured-output.complete` custom event belongs to
+TanStack's structured-output contract. Inline UI uses A2UI v1.0 surface messages rendered from assistant text;
+AG-UI carries the surrounding agent event stream. See [Inline UI](inline-ui.md).
 
 `Client.complete()` and `Client.summarizeHistory()` have been deleted. `Client`
 retains provider configuration, structured-output tasks, media activities, and

@@ -5,7 +5,7 @@ import { getMemoryManager, type MemoryManager } from "@/features/agent/lib/memor
 import { mountMemoryFiles } from "@/features/agent/lib/memoryFileMount";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
-import intelligentUiInstructions from "@/features/chat/prompts/intelligent-ui.txt?raw";
+import inlineUiInstructions from "@/features/chat/prompts/inline-ui.txt?raw";
 import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -169,7 +169,7 @@ export function useChatContext(
 
         // Inline interfaces render in the chat transcript only; voice has no surface for them.
         if (mode === "chat") {
-          instructionsList.push(intelligentUiInstructions);
+          instructionsList.push(inlineUiInstructions);
         }
 
         if (profileInstructions.trim()) {

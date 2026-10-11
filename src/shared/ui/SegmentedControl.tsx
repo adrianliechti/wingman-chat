@@ -8,6 +8,8 @@ export function SegmentedControl<T extends string>({
   onChange,
   options,
   disabled = false,
+  invalid,
+  errorId,
 }: {
   label?: string;
   description?: ReactNode;
@@ -15,9 +17,18 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void;
   options: { value: T; label: string }[];
   disabled?: boolean;
+  invalid?: boolean;
+  errorId?: string;
 }) {
   return (
-    <RadioGroup className="min-w-0" value={value} onChange={onChange} disabled={disabled}>
+    <RadioGroup
+      className="min-w-0"
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      aria-invalid={invalid || undefined}
+      aria-errormessage={errorId}
+    >
       {label && (
         <Label className="mb-1.5 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</Label>
       )}
