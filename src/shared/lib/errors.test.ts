@@ -38,4 +38,35 @@ describe("native provider error presentation", () => {
       message: "Web search timed out after 90s",
     });
   });
+
+  it.each([
+    [0, "0 seconds"],
+    [1, "1 second"],
+    [1500, "2 seconds"],
+    [65_000, "65 seconds"],
+  ])("uses the advertised %s ms rate-limit delay", (retryAfterMs, wait) => {
+    expect(getErrorInfo({ code: "429", metadata: { tanstack: { retryAfterMs } } })).toEqual({
+      code: "RATE_LIMIT_ERROR",
+      message: `Rate limit exceeded. Try again in ${wait}.`,
+    });
+    expect(getErrorInfo({ status: 429, retryAfterMs }).message).toContain(wait);
+  });
+
+  it.each([undefined, -1, NaN, Infinity, "2000"])("ignores invalid retry delays: %s", (retryAfterMs) => {
+    expect(getErrorInfo({ code: "rate_limit_exceeded", retryAfterMs }).message).toBe(
+      "Rate limit exceeded. Please wait a moment before trying again.",
+    );
+  });
+
+  it("retains the formatted delay after ChatClient strips metadata but preserves the raw provider body", () => {
+    const message = "Rate limit exceeded. Try again in 3 seconds.";
+    expect(
+      getErrorInfo(
+        Object.assign(new Error(message), {
+          code: "RATE_LIMIT_ERROR",
+          rawEvent: { code: "rate_limit_exceeded", message: "Throttled" },
+        }),
+      ),
+    ).toEqual({ code: "RATE_LIMIT_ERROR", message });
+  });
 });

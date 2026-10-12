@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
+import { normalizeMcpUrl } from "@/features/settings/lib/mcpConfig";
 
 const WELL_KNOWN_PATH = "/.well-known/wingman-configuration";
 export const COMPANION_ID = "companion";
 const POLL_INTERVAL_MS = 20_000;
 
 export function companionMcpUrl(url: string): string {
-  return `${url}/mcp`;
+  return companionUrl(url, "/mcp");
+}
+
+export function companionUrl(base: string, path: string): string {
+  const url = new URL(normalizeMcpUrl(base));
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  return url.href;
 }
 
 async function checkAvailability(url: string): Promise<boolean> {
   try {
-    const res = await fetch(`${url}${WELL_KNOWN_PATH}`, {
+    const res = await fetch(companionUrl(url, WELL_KNOWN_PATH), {
       method: "GET",
       signal: AbortSignal.timeout(3000),
     });

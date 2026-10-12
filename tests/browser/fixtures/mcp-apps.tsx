@@ -119,6 +119,7 @@ await client.connect();
 const toolsContext: ToolsContextValue = {
   providers: [client],
   coreProviders: [],
+  isProviderEnabled: () => true,
   getProviderState: () => ProviderState.Connected,
   getProviderPolicy: () => "optional",
   setProviderEnabled: async () => client.connect(),

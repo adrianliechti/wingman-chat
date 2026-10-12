@@ -289,7 +289,7 @@ export function AgentDrawer() {
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageSquare size={12} className="shrink-0 text-neutral-400" />
-                  <span>Configure tools &amp; MCP servers</span>
+                  <span>Configure tools</span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -412,7 +412,7 @@ export function AgentDrawer() {
                                 </span>
                               </div>
                               {(() => {
-                                const toolsCount = agent.tools.length + agent.servers.length;
+                                const toolsCount = agent.tools.length;
                                 return (
                                   (agent.skills.length > 0 ||
                                     toolsCount > 0 ||

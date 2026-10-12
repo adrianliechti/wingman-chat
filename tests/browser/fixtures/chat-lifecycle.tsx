@@ -28,12 +28,15 @@ import { assistantMessage, messageText, userMessage } from "../../../src/shared/
 import type { ElicitationResult } from "../../../src/shared/types/elicitation";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 
+const fixtureOptions = new URLSearchParams(window.location.search);
+
 const loaded = await loadConfig();
 if (!loaded) throw new Error("Missing config");
 const config = loaded;
 let inventory: Model[] = [{ id: "fixture", name: "Fixture", supportedEfforts: ["low", "high"] }];
 config.client.listModels = async () => inventory;
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
+config.client.generateTitle = async () => "Fixture";
 const calls: {
   model: string;
   effort?: Model["effort"];
@@ -46,40 +49,41 @@ const calls: {
   callTool: (name: string, args: object) => void;
   signal?: AbortSignal;
 }[] = [];
-config.client.textAdapter = (model, signal) =>
-  testClient(
-    async (options, handler) =>
-      new Promise((resolve) => {
-        // Deliberately ignore cancellation to exercise late provider events.
-        const settings = options.modelOptions as {
-          reasoning?: { effort?: Model["effort"] };
-          text?: { verbosity?: Model["verbosity"] };
-        };
-        calls.push({
-          model,
-          effort: settings.reasoning?.effort,
-          verbosity: settings.text?.verbosity,
-          input: options.messages,
-          instructions: JSON.stringify(options.systemPrompts),
-          tools: options.tools?.map((tool) => tool.name) ?? [],
-          signal,
-          stream: (text) => handler(text),
-          finish: (text) => resolve(assistantMessage(text)),
-          callTool: (name, args) =>
-            resolve(
-              assistantMessage([
-                {
-                  type: "tool-call",
-                  id: crypto.randomUUID(),
-                  name,
-                  arguments: JSON.stringify(args),
-                  state: "input-complete",
-                },
-              ]),
-            ),
-        });
-      }),
-  ).textAdapter(model, signal);
+if (!fixtureOptions.has("gateway"))
+  config.client.textAdapter = (model, signal) =>
+    testClient(
+      async (options, handler) =>
+        new Promise((resolve) => {
+          // Deliberately ignore cancellation to exercise late provider events.
+          const settings = options.modelOptions as {
+            reasoning?: { effort?: Model["effort"] };
+            text?: { verbosity?: Model["verbosity"] };
+          };
+          calls.push({
+            model,
+            effort: settings.reasoning?.effort,
+            verbosity: settings.text?.verbosity,
+            input: options.messages,
+            instructions: JSON.stringify(options.systemPrompts),
+            tools: options.tools?.map((tool) => tool.name) ?? [],
+            signal,
+            stream: (text) => handler(text),
+            finish: (text) => resolve(assistantMessage(text)),
+            callTool: (name, args) =>
+              resolve(
+                assistantMessage([
+                  {
+                    type: "tool-call",
+                    id: crypto.randomUUID(),
+                    name,
+                    arguments: JSON.stringify(args),
+                    state: "input-complete",
+                  },
+                ]),
+              ),
+          });
+        }),
+    ).textAdapter(model, signal);
 const reads: string[] = [];
 let heldRead: string | undefined;
 let releaseRead: (() => void) | undefined;
@@ -249,6 +253,7 @@ function ToolsOwner({ children }: { children: ReactNode }) {
         {
           providers: enabled ? [skills] : [],
           coreProviders: [],
+          isProviderEnabled: () => true,
           getProviderState: () => "connected",
         } as unknown as ToolsContextValue
       }

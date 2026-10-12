@@ -119,7 +119,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
   }
   if (
     path === "profile.json" ||
-    /^(chats\/(?:[^/]+\/chat|[^/]+)|agents\/[^/]+\/(agent|servers|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata|plugins\/[^/]+\/plugin)\.json$/.test(
+    /^(chats\/(?:[^/]+\/chat|[^/]+)|agents\/[^/]+\/(agent|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata|plugins\/[^/]+\/plugin)\.json$/.test(
       path,
     )
   ) {
@@ -138,7 +138,6 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
             agent[key] != null &&
             (!Array.isArray(agent[key]) || agent[key].some((item: unknown) => typeof item !== "string")),
         ) ||
-        (agent.servers != null && !Array.isArray(agent.servers)) ||
         (agent.memory != null && typeof agent.memory !== "boolean")
       )
         throw new Error(`Invalid agent definition: ${path}`);
@@ -165,7 +164,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
       )
         throw new Error(`Invalid chat in backup: ${path}`);
     }
-    if (/\/(servers|files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
+    if (/\/(files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
       throw new Error(`Invalid list in backup: ${path}`);
     if (/\/(files\/index|segments)\.json$/.test(path) && (value as unknown[]).some((item) => typeof item !== "string"))
       throw new Error(`Invalid list entries in backup: ${path}`);
@@ -203,6 +202,10 @@ export async function restoreFiles(
     onProgress?.(input.size ? validated / input.size : 1);
     validatePath(path);
     if (isSkipped(path)) continue;
+    if (/^agents\/[^/]+\/servers\.json$/.test(path)) {
+      skipped.push({ path, reason: "Custom agent MCP servers are no longer supported." });
+      continue;
+    }
     const root = path.split("/")[0];
     // A full OPFS backup may also contain older collections and additional
     // user files. Preserve them without inventing sidebar records for them.
@@ -237,6 +240,10 @@ export async function restoreFiles(
       if (normalized.size > MEMORY_NOTE_MAX_BYTES)
         throw new Error(`Memory note including metadata exceeds 8 KiB: ${path}`);
       files.set(path, normalized);
+    } else if (/^agents\/[^/]+\/agent\.json$/.test(path)) {
+      const legacy = JSON.parse(await blob.text()) as Record<string, unknown>;
+      delete legacy.servers;
+      files.set(path, new Blob([JSON.stringify(legacy)], { type: "application/json" }));
     } else {
       files.set(path, blob);
     }
@@ -282,6 +289,8 @@ export async function restoreFiles(
     // A restored legacy definition must not be shadowed by a newer local one.
     // Include removals in the transaction so failed imports restore all formats.
     for (const path of files.keys()) {
+      const agent = path.match(/^(agents\/[^/]+)\/(AGENTS?\.md|agent\.json)$/);
+      if (agent) changes.set(`${agent[1]}/servers.json`, undefined);
       const legacy = path.match(/^(agents\/[^/]+)\/(AGENT\.md|agent\.json)$/);
       if (!legacy || files.has(`${legacy[1]}/AGENTS.md`)) continue;
       changes.set(`${legacy[1]}/AGENTS.md`, undefined);

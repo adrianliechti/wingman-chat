@@ -50,7 +50,7 @@ export interface AgentRunResult {
 }
 
 /** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
-export type ChatOptions = NonNullable<Parameters<Client["chatModelOptions"]>[1]> & ClientRequestOptions;
+export type ChatOptions = NonNullable<Parameters<Client["chatOptions"]>[1]> & ClientRequestOptions;
 
 /** A tool invocation as the runtime reports it. */
 interface ToolCall {
@@ -494,7 +494,7 @@ export async function* streamRun(
       resume: hooks.resume,
       subagentRunId: hooks.subagentRunId,
       debug: aiDebug,
-      modelOptions: client.chatModelOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
+      ...client.chatOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
       agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
       middleware: [
         telemetry,
@@ -512,7 +512,13 @@ export async function* streamRun(
       // Normalize its extensions and validate the public events against the
       // SDK so browser-local consumers receive the same AG-UI wire shapes.
       for (const normalized of normalizeStreamChunk(output)) {
-        const chunk = EventSchema.parse(normalized);
+        let chunk = EventSchema.parse(normalized);
+        if (chunk.type === EventType.RUN_ERROR) {
+          // ChatClient's Error drops event metadata, including retryAfterMs.
+          // Format the advertised delay before crossing that boundary.
+          const info = getErrorInfo(chunk);
+          if (info.code === "RATE_LIMIT_ERROR") chunk = { ...chunk, ...info };
+        }
         if (chunk.type === EventType.SUBAGENT_STARTED && chunk.parentToolCallId)
           childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
         if (
@@ -526,7 +532,11 @@ export async function* streamRun(
           chunk.type === EventType.RUN_ERROR &&
           (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
         ) {
-          failure = Object.assign(new Error(chunk.message), { code: chunk.code });
+          failure = Object.assign(new Error(chunk.message), {
+            code: chunk.code,
+            rawEvent: chunk.rawEvent,
+            metadata: chunk.metadata,
+          });
         }
         yield chunk;
       }

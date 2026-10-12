@@ -421,13 +421,13 @@ export function useChatRun({
   );
 
   const retryMessage = useCallback(async () => {
-    if (chatIdRef.current !== session.id || isLoading) return;
+    if (chatIdRef.current !== session.id || isLoading || ai.isHydrating) return;
     if (session.interrupts?.resuming || session.interrupts?.interrupts.length) return;
     const retry = retryHistory(session.native);
     if (!retry) return;
     setMessages(retry.history);
     await append(retry.resend);
-  }, [chatIdRef, session, isLoading, setMessages, append]);
+  }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
   const stopStreaming = useCallback(() => {
     stop();
@@ -464,6 +464,7 @@ export function useChatRun({
 
   return {
     streamingMessage,
+    isHydrating: ai.isHydrating,
     isResponding,
     status,
     queuedSends: ai.queue,

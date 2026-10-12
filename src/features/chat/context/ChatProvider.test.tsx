@@ -244,7 +244,6 @@ describe("saved model replacements", () => {
       skills: [],
       plugins: [],
       tools: [],
-      servers: [],
     };
     const context = await harness();
     expect(context.model).toEqual(fixture.model);
@@ -264,7 +263,6 @@ describe("saved model replacements", () => {
       skills: [],
       plugins: [],
       tools: [],
-      servers: [],
     };
     const context = await harness();
     expect(context.model?.effort).toBeUndefined();

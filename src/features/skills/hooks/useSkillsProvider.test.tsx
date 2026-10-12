@@ -30,7 +30,6 @@ const agent = (skills: string[] = []): Agent => ({
   skills,
   plugins: [],
   tools: [],
-  servers: [],
 });
 function provider(current: Agent | null = null, personal = false, plugins: InstalledPlugin[] = []) {
   let result: ToolProvider | null = null;

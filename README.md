@@ -314,11 +314,46 @@ The old `support`/`cost` mapping in `links.yaml` and those fields in `public/con
 supported. In JSON, `links` takes precedence, including an empty array. Changes require a server
 restart and browser refresh in production, or a browser refresh during frontend development.
 
+**MCP servers**
+
+Configure MCP servers in `tools.yaml` (or `tools` in `public/config.json`) or install them through
+catalog plugins. Manually added agent MCP servers are no longer supported; existing custom
+definitions are removed when agents load and are discarded from imports. The companion
+configured through `BRIDGE_URL` remains available (the browser JSON field is still `bridge.url`).
+
+```yaml
+# tools.yaml
+- id: managed-server # Gateway: /api/v1/mcp/managed-server, filtered by backend availability
+- id: reports
+  name: Reports
+  url: https://reports.example.com/mcp
+  headers:
+    X-Tenant: example
+```
+
+An explicit `url` connects directly and supports HTTP(S). IDs must be unique and cannot
+collide with built-in providers or the `plugin:` namespace. Invalid definitions are skipped.
+Static configuration and plugin `mcp.json` both support string-valued `headers`. These headers
+are delivered to the browser, so use gateway-side configuration for server-only secrets.
+
+Each plugin owns its bundled servers: disabling the plugin disconnects them all. Opening a
+saved MCP app does not change selection; a disabled plugin requires **Enable and reopen**.
+Connection and authentication failures keep the plugin selected and show a status indicator.
+
+OAuth credentials are shared by normalized endpoint URL, including path and query. For
+example, `https://example.com/mcp` and `https://EXAMPLE.com:443/mcp#section` share a login;
+`https://example.com/other`, `/mcp/`, and `/mcp?tenant=acme` each have separate logins.
+Server IDs and plugin installation do not affect the login. Use distinct endpoint URLs for
+different accounts or tenants; headers are not part of the OAuth storage key. Existing
+credentials bound to an endpoint migrate automatically. Older credentials with only a
+server ID cannot be safely associated with a URL and require signing in once. Uninstalling
+a plugin preserves endpoint logins; clearing browser site data removes them.
+
 **Plugin hub**
 
 - `PLUGINS_URL` — base URL of a [plugin-hub](https://agent-plugins.org) instance. When set, a "Hub" tab
-  appears in the Skill Catalog for browsing and installing its plugins' skills into your local
-  skill library. Only skills are installed; any `mcp_servers` a plugin declares are shown for
+  appears in the Skill Catalog for browsing and installing plugins. Bundled skills and URL-based
+  MCP servers become available when the plugin is enabled; command-based servers are shown for
   information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
   skill-folder archives (`SKILL.md` at the archive root).
 

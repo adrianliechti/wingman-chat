@@ -16,8 +16,8 @@ func Load() *Config {
 		Disclaimer: os.Getenv("DISCLAIMER"),
 	}
 
-	if bridgeURL := os.Getenv("BRIDGE_URL"); bridgeURL != "" {
-		cfg.Bridge = &Bridge{URL: bridgeURL}
+	if companionURL := os.Getenv("BRIDGE_URL"); companionURL != "" {
+		cfg.Companion = &Companion{URL: companionURL}
 	}
 
 	if pluginsURL := os.Getenv("PLUGINS_URL"); pluginsURL != "" {

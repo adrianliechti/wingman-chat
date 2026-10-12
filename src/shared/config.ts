@@ -1,5 +1,11 @@
 import { Client } from "./lib/client";
-import type { MCP, Model, ReasoningEffort } from "./types/chat";
+import type { Model, ReasoningEffort } from "./types/chat";
+import {
+  configuredMcpServers,
+  normalizeMcpUrl,
+  type ConfiguredMcpServer,
+  type McpServerDefinition,
+} from "@/features/settings/lib/mcpConfig";
 import type { SearchCategory } from "@/features/research/types/search";
 
 interface BackgroundConfig {
@@ -17,14 +23,6 @@ interface LinkConfig {
   description?: string;
   url?: string;
   /** Common icon name, such as support, docs, learning, or cost. Defaults to link. */
-  icon?: string;
-}
-
-interface ToolConfig {
-  id: string;
-  url?: string;
-  name: string;
-  description: string;
   icon?: string;
 }
 
@@ -211,7 +209,7 @@ export interface DriveConfig {
   icon?: string;
 }
 
-interface BridgeConfig {
+interface CompanionConfig {
   url?: string;
 }
 
@@ -224,14 +222,14 @@ interface ConfigSchema {
   disclaimer: string;
   /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
   navigation?: boolean;
-  bridge?: BridgeConfig;
+  bridge?: CompanionConfig;
   plugins?: PluginsConfig;
   links?: LinkConfig[];
   /** Legacy links, used only when links is absent. */
   support?: LinkConfig;
   cost?: LinkConfig;
 
-  tools: ToolConfig[];
+  tools: ConfiguredMcpServer[];
   models: ModelConfig[];
 
   drives?: DriveConfig[];
@@ -278,13 +276,13 @@ interface Config {
   disclaimer: string;
   /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
   navigation: boolean;
-  bridge: BridgeConfig | null;
+  companion: CompanionConfig | null;
   plugins: PluginsConfig | null;
   links: LinkConfig[];
 
   client: Client;
 
-  mcps: MCP[];
+  mcps: McpServerDefinition[];
   models: Model[];
 
   drives: DriveConfig[];
@@ -332,11 +330,20 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       { ...cfg.cost, title: cfg.cost?.title?.trim() || "Cost Dashboard", icon: cfg.cost?.icon ?? "cost" },
     ];
 
+    let companion: CompanionConfig | null = null;
+    if (cfg.bridge?.url) {
+      try {
+        companion = { url: normalizeMcpUrl(cfg.bridge.url) };
+      } catch {
+        console.warn("Ignoring invalid companion URL");
+      }
+    }
+
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
       navigation: cfg.navigation !== false,
-      bridge: cfg.bridge ?? null,
+      companion,
       plugins: cfg.plugins ?? null,
       links: links
         .filter((link) => link.url?.trim())
@@ -344,14 +351,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       client: new Client(undefined, cfg.models),
 
-      // Relative MCPs (no explicit url) are proxied through `/api/v1/mcp/{id}`
-      // and gated by backend RBAC. They are resolved to their proxy url here;
-      // availability filtering against `/v1/mcp` happens at runtime in ToolsProvider.
-      mcps:
-        cfg.tools?.map((mcp) => ({
-          ...mcp,
-          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
-        })) ?? [],
+      mcps: configuredMcpServers(cfg.tools ?? [], window.location.origin),
 
       models: cfg.models ?? [],
 

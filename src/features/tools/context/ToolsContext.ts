@@ -8,6 +8,8 @@ export interface ToolsContextValue {
   providers: ToolProvider[];
   /** Always-on providers that are never user-toggleable and bypass model tool filters (e.g. Skill Builder). */
   coreProviders: ToolProvider[];
+  /** Selected independently of connection or authentication status. */
+  isProviderEnabled: (id: string) => boolean;
   getProviderState: (id: string) => ProviderState;
   /** Whether the active agent locks this tool on ("required") or leaves it user-toggleable ("optional"). */
   getProviderPolicy: (id: string) => "required" | "optional";

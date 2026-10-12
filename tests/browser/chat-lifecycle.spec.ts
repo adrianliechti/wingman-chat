@@ -1,10 +1,35 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function open(page: Page) {
+async function open(page: Page, query = "") {
   await page.route("**/config.json", (route) => route.fulfill({ json: { models: [] } }));
-  await page.goto("/tests/browser/fixtures/chat-lifecycle.html");
+  await page.goto(`/tests/browser/fixtures/chat-lifecycle.html${query}`);
   await page.waitForFunction(() => window.chatE2E?.state().ready);
 }
+
+test("a gateway rate limit retains its advertised delay through native chat and OPFS reload", async ({ page }) => {
+  let requests = 0;
+  await page.route("**/api/v1/responses", (route) => {
+    requests++;
+    return route.fulfill({
+      status: 429,
+      headers: { "retry-after-ms": "1250" },
+      json: { error: { code: "rate_limit_exceeded", message: "Throttled" } },
+    });
+  });
+  await open(page, "?gateway");
+  await page.evaluate(() => window.chatE2E.send("Try this request"));
+  const error = { code: "RATE_LIMIT_ERROR", message: "Rate limit exceeded. Try again in 2 seconds." };
+  await expect.poll(() => page.evaluate(() => window.chatE2E.state().messages.at(-1)?.metadata?.error)).toEqual(error);
+  // The existing provider SDK already retries HTTP rate limits twice.
+  expect(requests).toBe(3);
+  const id = await page.evaluate(() => window.chatE2E.state().chatId!);
+  await page.evaluate(() => window.chatE2E.flush());
+  await page.reload();
+  await page.waitForFunction(() => window.chatE2E?.state().ready);
+  await page.evaluate((id) => window.chatE2E.select(id), id);
+  await expect.poll(() => page.evaluate(() => window.chatE2E.state().messages.at(-1)?.metadata?.error)).toEqual(error);
+  expect(requests).toBe(3);
+});
 
 test("a native question survives reload and resumes from the saved tool call", async ({ page }) => {
   await open(page);
@@ -112,7 +137,6 @@ for (const existingChat of [false, true]) {
         skills: [],
         plugins: [],
         tools: [],
-        servers: [],
       }),
     );
     await expect
@@ -165,7 +189,6 @@ test("an unavailable agent model does not apply its settings to a different cach
       skills: [],
       plugins: [],
       tools: [],
-      servers: [],
     }),
   );
   await expect

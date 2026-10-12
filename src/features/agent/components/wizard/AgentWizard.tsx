@@ -2,7 +2,6 @@ import { Dialog, Transition } from "@headlessui/react";
 import { Bot, ClipboardCheck, Folder, LayoutGrid, Puzzle, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import type { BridgeServer } from "@/features/agent/types/agent";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
 import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
@@ -32,7 +31,6 @@ interface WizardState {
   selectedSkills: string[];
   selectedPlugins: string[];
   selectedTools: string[];
-  servers: Omit<BridgeServer, "id">[];
 
   pendingFiles: File[];
 
@@ -49,8 +47,6 @@ export type WizardAction =
   | { type: "TOGGLE_SKILL"; name: string }
   | { type: "TOGGLE_PLUGIN"; id: string }
   | { type: "TOGGLE_TOOL"; id: string }
-  | { type: "ADD_SERVER"; server: Omit<BridgeServer, "id"> }
-  | { type: "REMOVE_SERVER"; index: number }
   | { type: "ADD_FILES"; files: File[] }
   | { type: "REMOVE_FILE"; index: number }
   | { type: "SET_MODEL"; id: string }
@@ -68,7 +64,6 @@ function initialState(): WizardState {
     selectedSkills: [],
     selectedPlugins: [],
     selectedTools: [],
-    servers: [],
     pendingFiles: [],
     model: "",
     memory: false,
@@ -115,10 +110,6 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
         : [...state.selectedTools, action.id];
       return { ...state, selectedTools: tools };
     }
-    case "ADD_SERVER":
-      return { ...state, servers: [...state.servers, action.server] };
-    case "REMOVE_SERVER":
-      return { ...state, servers: state.servers.filter((_, i) => i !== action.index) };
     case "ADD_FILES":
       return { ...state, pendingFiles: [...state.pendingFiles, ...action.files] };
     case "REMOVE_FILE":
@@ -165,7 +156,7 @@ interface AgentWizardProps {
 }
 
 export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
-  const { createAgent, addServer, addFile } = useAgents();
+  const { createAgent, addFile } = useAgents();
   const { plugins } = usePlugins();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
@@ -214,9 +205,6 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
     try {
       const agent = await createAgent(s.name.trim(), options);
 
-      // Add MCP servers
-      s.servers.forEach((server) => addServer(agent.id, server));
-
       // Bind the entire batch to the created agent before closing the wizard.
       void (async () => {
         for (const file of s.pendingFiles) await addFile(agent.id, file);
@@ -227,7 +215,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
       console.error("Failed to create agent:", error);
     }
     setIsCreating(false);
-  }, [state, createAgent, addServer, addFile, onClose]);
+  }, [state, createAgent, addFile, onClose]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });
@@ -302,9 +290,7 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
-                  {currentStepId === "tools" && (
-                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
-                  )}
+                  {currentStepId === "tools" && <ToolsStep selectedTools={state.selectedTools} dispatch={dispatch} />}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />
                   )}
@@ -315,7 +301,6 @@ export function AgentWizard({ isOpen, onClose }: AgentWizardProps) {
                       selectedSkills={state.selectedSkills}
                       selectedPlugins={state.selectedPlugins}
                       selectedTools={state.selectedTools}
-                      servers={state.servers}
                       pendingFiles={state.pendingFiles}
                       model={state.model}
                       memory={state.memory}

@@ -200,7 +200,7 @@ test("concurrent creates from two tabs preserve every chat in the index", async 
   ).toEqual(ids);
 });
 
-test("agent file and server changes share one selected snapshot and persist deletions", async ({ page }) => {
+test("agent file and tool changes share one selected snapshot and persist deletions", async ({ page }) => {
   await open(page);
   const id = await page.evaluate(async () => {
     const api = window.persistenceE2E;
@@ -215,24 +215,18 @@ test("agent file and server changes share one selected snapshot and persist dele
       segments: [{ text: "chunk", vector: [0.5, 1] }],
     };
     api.upsertFile(agent.id, file);
-    const server = api.addServer(agent.id, {
-      name: "Server",
-      description: "",
-      url: "https://example.test/mcp",
-      enabled: true,
-    });
-    api.toggleServer(agent.id, server.id);
+    api.updateAgent(agent.id, { tools: ["internet"] });
     await api.flush();
     return agent.id;
   });
   await expect
     .poll(() => page.evaluate(() => window.persistenceE2E.state().currentAgent))
-    .toMatchObject({ id, files: [{ id: "file", text: "" }], servers: [{ enabled: false }] });
+    .toMatchObject({ id, files: [{ id: "file", text: "" }], tools: ["internet"] });
   await page.reload();
   await page.waitForFunction(() => window.persistenceE2E?.state().currentAgent);
   expect(await page.evaluate(() => window.persistenceE2E.state().currentAgent)).toMatchObject({
     name: 'Research: "quoted"\nname',
-    tools: ["mcp:tool,one"],
+    tools: ["internet"],
     files: [{ id: "file", text: "" }],
   });
   await page.evaluate(async (id) => {
@@ -377,7 +371,17 @@ test("a failed agent save rolls back real OPFS files and a subsequent flush retr
     api.holdWrite(`agents/${id}/AGENTS.md`, true);
     api.updateAgent(id, {
       name: "After",
-      servers: [{ id: "new", name: "New", description: "", url: "https://example.test", enabled: true }],
+      tools: ["internet"],
+      files: [
+        {
+          id: "new",
+          name: "source.txt",
+          text: "Source",
+          status: "completed",
+          progress: 100,
+          uploadedAt: new Date(),
+        },
+      ],
     });
     try {
       await api.flush();
@@ -387,11 +391,14 @@ test("a failed agent save rolls back real OPFS files and a subsequent flush retr
     }
   }, id);
   expect(error).toBe("failed");
-  expect(await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/servers.json`), id)).toBeUndefined();
+  expect(
+    await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/files/new/metadata.json`), id),
+  ).toBeUndefined();
   await page.evaluate(() => window.persistenceE2E.flush());
   await page.reload();
   await page.waitForFunction(() => window.persistenceE2E?.state().currentAgent?.name === "After");
   expect(await page.evaluate(() => window.persistenceE2E.state().currentAgent)).toMatchObject({
-    servers: [{ id: "new" }],
+    tools: ["internet"],
+    files: [{ id: "new", text: "Source" }],
   });
 });

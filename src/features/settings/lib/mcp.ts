@@ -10,7 +10,6 @@ import {
   ProtocolError,
   ProtocolErrorCode,
   StreamableHTTPClientTransport as ClientTransport,
-  UnauthorizedError,
 } from "@modelcontextprotocol/client";
 import type {
   CallToolRequest,
@@ -32,6 +31,7 @@ import { mediaDataUrl, mediaFromDataUrl, toolResultContent } from "@/shared/lib/
 import { type Tool, type ToolContext, type ToolIcon, type ToolProvider } from "@/shared/types/chat";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider, McpAuthRequiredError } from "./mcpAuth";
+import { McpAuthorizationPending, mcpAuthFetch } from "./mcpAuthFetch";
 import { mcpToolName } from "./mcpToolNames";
 
 import {
@@ -74,6 +74,7 @@ export class MCPClient implements ToolProvider {
   private client: NativeMCPClient | null = null;
   private pendingTransport?: Transport;
   private connectionVersion = 0;
+  private connectionAbort?: AbortController;
   private connecting?: Promise<void>;
   private readonly authProvider: BrowserOAuthClientProvider;
   private readonly activeToolCalls = new Set<ActiveToolCall>();
@@ -103,26 +104,43 @@ export class MCPClient implements ToolProvider {
     this.headers = headers;
     this.configIcon = configIcon;
     this.icon = configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
-    this.authProvider = new BrowserOAuthClientProvider(id);
+    this.authProvider = new BrowserOAuthClientProvider(id, url);
+  }
+
+  armInteractiveAuth(): void {
+    this.authProvider.armInteractiveAuth();
   }
 
   connect(): Promise<void> {
     if (this.connecting) return this.connecting;
     if (this.client) return Promise.resolve();
     const version = ++this.connectionVersion;
-    const promise = this.connectInternal(true, version).finally(() => {
+    const promise = this.connectInternal(version).finally(() => {
       if (this.connecting === promise) this.connecting = undefined;
     });
     this.connecting = promise;
     return promise;
   }
 
-  private async connectInternal(allowAuth: boolean, version: number): Promise<void> {
+  private async connectInternal(version: number, allowAuth = true): Promise<void> {
     const assertCurrent = () => {
       if (this.connectionVersion !== version) throw new DOMException("MCP connection cancelled", "AbortError");
     };
+    const controller = new AbortController();
+    this.connectionAbort = controller;
     const transport = new ClientTransport(new URL(this.url), {
-      authProvider: this.authProvider,
+      authProvider: { token: async () => this.authProvider.tokens()?.access_token },
+      fetch: mcpAuthFetch(this.authProvider, this.url, {
+        mode: () => (this.client ? "inline" : allowAuth ? "defer" : "disabled"),
+        signal: controller.signal,
+        headers: this.headers,
+        authenticating: () => {
+          if (this.connectionVersion === version) this.onAuthenticating?.();
+        },
+        complete: () => {
+          if (this.connectionVersion === version) this.onAuthComplete?.();
+        },
+      }),
       requestInit: this.headers ? { headers: this.headers } : undefined,
     });
     this.pendingTransport = transport;
@@ -185,24 +203,20 @@ export class MCPClient implements ToolProvider {
       if (this.pendingTransport === transport) this.pendingTransport = undefined;
       assertCurrent();
       const cause = error instanceof Error && error.cause ? error.cause : error;
-      if (!(cause instanceof UnauthorizedError)) throw error;
-      if (!allowAuth)
-        throw new McpAuthRequiredError(
-          this.id,
-          "expired",
-          `Authorization for "${this.name}" expired again after a fresh token exchange`,
-        );
-      this.onAuthenticating?.();
-      try {
-        const code = await this.authProvider.waitForAuthCode();
-        assertCurrent();
-        await transport.finishAuth(code);
-        assertCurrent();
-      } finally {
-        if (this.connectionVersion === version) this.onAuthComplete?.();
+      if (cause instanceof McpAuthorizationPending) {
+        try {
+          await cause.authorization;
+          assertCurrent();
+        } finally {
+          controller.abort();
+        }
+        await this.connectInternal(version, false);
+        return;
       }
-      await this.connectInternal(false, version);
-      return;
+      controller.abort();
+      if (this.connectionVersion === version) this.authProvider.cancelAuthorization();
+      if (cause instanceof McpAuthRequiredError) throw cause;
+      throw error;
     }
     this.client = client;
     this.pendingTransport = undefined;
@@ -243,6 +257,7 @@ export class MCPClient implements ToolProvider {
 
   async disconnect(): Promise<void> {
     ++this.connectionVersion;
+    this.connectionAbort?.abort();
     this.authProvider.cancelAuthorization();
     this.connecting = undefined;
     const client = this.client;

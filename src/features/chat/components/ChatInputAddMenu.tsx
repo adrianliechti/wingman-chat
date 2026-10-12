@@ -188,13 +188,14 @@ interface MenuRowProps {
   /** Emit a tree close after selecting. Toggles (which keep the menu open) pass false. */
   closeOnClick?: boolean;
   disabled?: boolean;
+  checked?: boolean;
   onSelect?: () => void | Promise<void>;
   className?: string;
   children: ReactNode;
 }
 
 /** A focusable leaf row in the Add menu, wired for keyboard list navigation. */
-function MenuRow({ label, closeOnClick = true, disabled, onSelect, className, children }: MenuRowProps) {
+function MenuRow({ label, closeOnClick = true, disabled, checked, onSelect, className, children }: MenuRowProps) {
   const menu = useContext(MenuContext);
   const { ref: setItemElement, index } = useListItem({ label: disabled ? null : label });
   const isActive = index === menu.activeIndex;
@@ -203,7 +204,8 @@ function MenuRow({ label, closeOnClick = true, disabled, onSelect, className, ch
     <button
       ref={setItemElement}
       type="button"
-      role="menuitem"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
       tabIndex={isActive ? 0 : -1}
       disabled={disabled}
       className={cn(ROW_CLASS, className)}
@@ -317,6 +319,7 @@ interface ChatInputAddMenuProps {
   isTranscribing: boolean;
   isResponding: boolean;
   visibleProviders: ToolProvider[];
+  isProviderEnabled: (id: string) => boolean;
   getProviderState: (id: string) => ProviderState;
   getProviderPolicy: (id: string) => "required" | "optional";
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
@@ -335,6 +338,7 @@ export function ChatInputAddMenu({
   isTranscribing,
   isResponding,
   visibleProviders,
+  isProviderEnabled,
   getProviderState,
   getProviderPolicy,
   setProviderEnabled,
@@ -517,7 +521,7 @@ export function ChatInputAddMenu({
                           {plugins.map((plugin) => {
                             const providerId = pluginProviderId(plugin.id);
                             const state = getProviderState(providerId);
-                            const enabled = state === ProviderState.Connected;
+                            const enabled = isProviderEnabled(providerId);
                             const required = getProviderPolicy(providerId) === "required";
                             return (
                               <Tooltip
@@ -533,6 +537,7 @@ export function ChatInputAddMenu({
                               >
                                 <MenuRow
                                   label={plugin.title || plugin.id}
+                                  checked={enabled}
                                   closeOnClick={false}
                                   disabled={required}
                                   onSelect={async () => {
@@ -551,6 +556,7 @@ export function ChatInputAddMenu({
                                   <span className="font-medium text-sm flex-1 text-left truncate">
                                     {plugin.title || plugin.id}
                                   </span>
+                                  {enabled && <PluginConnectionStatus state={state} />}
                                   <span className="shrink-0 w-4 flex justify-center">
                                     {required ? (
                                       <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
@@ -910,12 +916,13 @@ export function ChatInputAddMenu({
                         {plugins.map((plugin) => {
                           const providerId = pluginProviderId(plugin.id);
                           const state = getProviderState(providerId);
-                          const enabled = state === ProviderState.Connected;
+                          const enabled = isProviderEnabled(providerId);
                           const required = getProviderPolicy(providerId) === "required";
                           return (
                             <button
                               key={plugin.id}
                               type="button"
+                              aria-pressed={enabled}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (required) return;
@@ -938,6 +945,7 @@ export function ChatInputAddMenu({
                               <span className="font-medium text-sm flex-1 text-left truncate">
                                 {plugin.title || plugin.id}
                               </span>
+                              {enabled && <PluginConnectionStatus state={state} />}
                               {required ? (
                                 <Lock size={16} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
                               ) : (
@@ -994,4 +1002,18 @@ export function ChatInputAddMenu({
       </Dialog>
     </>
   );
+}
+
+function PluginConnectionStatus({ state }: { state: ProviderState }) {
+  if (state === ProviderState.Initializing || state === ProviderState.Authenticating)
+    return <LoaderCircle size={14} className="shrink-0 animate-spin" aria-label="Connecting" />;
+  if (state === ProviderState.Unauthorized || state === ProviderState.Failed)
+    return (
+      <TriangleAlert
+        size={14}
+        className="shrink-0 text-amber-500"
+        aria-label={state === ProviderState.Unauthorized ? "Sign in required" : "Connection failed"}
+      />
+    );
+  return null;
 }

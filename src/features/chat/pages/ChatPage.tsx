@@ -434,7 +434,7 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {(chatLoading && showChatLoading) || chatError ? (
+          {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
             <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (

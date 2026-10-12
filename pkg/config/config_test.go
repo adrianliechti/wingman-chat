@@ -162,3 +162,46 @@ cost:
 		})
 	}
 }
+
+func TestMCPConfigReachesBrowser(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Setenv("BRIDGE_URL", "http://localhost:4242/")
+	if err := os.WriteFile("tools.yaml", []byte(`
+- id: managed
+- id: direct
+  url: https://mcp.example.test/api
+  headers:
+    X-Tenant: example
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Tools  []Tool     `json:"tools"`
+		Bridge *Companion `json:"bridge"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if len(browser.Tools) != 2 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" {
+		t.Fatalf("tools.yaml lost MCP fields: %s", data)
+	}
+	if browser.Bridge == nil || browser.Bridge.URL != "http://localhost:4242/" {
+		t.Fatalf("BRIDGE_URL changed its browser configuration contract: %s", data)
+	}
+}

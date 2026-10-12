@@ -184,7 +184,8 @@ export class Client {
     return body.data.map((mcp: { id: string }) => mcp.id);
   }
 
-  chatModelOptions(
+  /** Keep SDK-specific option placement here so all chat callers migrate together. */
+  chatOptions(
     model: string,
     options?: {
       effort?: ReasoningEffort;
@@ -197,14 +198,21 @@ export class Client {
       model,
       options?.maxOutputTokens ?? this.modelOverrides.get(model)?.outputTokenBudget,
     );
-    return {
+    const modelOptions = {
       store: false,
       include: ["reasoning.encrypted_content" as const],
       ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
-      ...(options?.effort || options?.summary
-        ? { reasoning: { effort: options.effort, summary: options.summary } }
-        : {}),
       ...(options?.verbosity ? { text: { verbosity: options.verbosity } } : {}),
+    };
+    // Published TanStack still expects reasoning inside modelOptions. The next
+    // release moves it to chat({ reasoning }); gateway aliases need mapping too.
+    return {
+      modelOptions: {
+        ...modelOptions,
+        ...(options?.effort || options?.summary
+          ? { reasoning: { effort: options.effort, summary: options.summary } }
+          : {}),
+      },
     };
   }
 
@@ -641,7 +649,7 @@ export class Client {
       messages: [{ role: "user", content: input }],
       outputSchema: schema,
       stream: false,
-      modelOptions: this.chatModelOptions(model, { ...options, maxOutputTokens }),
+      ...this.chatOptions(model, { ...options, maxOutputTokens }),
       middleware: [aiTelemetry(name, options.parentContext)],
     }).catch((error: unknown) => {
       if (error && typeof error === "object" && "code" in error && error.code === "structured-output-missing-result")

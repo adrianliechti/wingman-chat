@@ -71,18 +71,6 @@ export type Model = {
   };
 };
 
-export type MCP = {
-  id: string;
-
-  name: string;
-  description: string;
-
-  url: string;
-
-  icon?: string;
-  headers?: Record<string, string>;
-};
-
 export const ProviderState = {
   Disconnected: "disconnected",
   Initializing: "initializing",

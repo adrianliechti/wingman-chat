@@ -1,21 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { Coffee } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
-import { MCPClient } from "@/features/settings/lib/mcp";
+import type { McpServerDefinition } from "@/features/settings/lib/mcpConfig";
 import type { McpAppOptions } from "@/features/settings/lib/mcpAppSession";
-import { armInteractiveAuth } from "@/features/settings/lib/mcpAuth";
-import { connectMcpWithRetry } from "@/features/settings/lib/mcpRetry";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { usePluginProviders } from "@/features/plugins/hooks/usePluginProviders";
-import { usePlugins } from "@/features/plugins/hooks/usePlugins";
-import { PLUGIN_PROVIDER_PREFIX, pluginMcpClientId, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
+import { PLUGIN_PROVIDER_PREFIX, pluginProviderId } from "@/features/plugins/lib/pluginProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
+import { useMcpClients } from "@/features/tools/hooks/useMcpClients";
 import { getConfig } from "@/shared/config";
 import { queryClient } from "@/shared/lib/queryClient";
 import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
@@ -96,495 +94,257 @@ function saveCompanionEnabled(enabled: boolean): void {
   }
 }
 
-// Mutating these external MCP client objects is the purpose of the wiring effect.
-function wireMcpClient(
-  client: MCPClient,
-  updateState: (id: string, state?: ProviderState) => void,
-  onToolsChanged: () => void,
-) {
-  client.onDisconnected = () => {
-    const state = client.isAuthBlocked() ? ProviderState.Unauthorized : ProviderState.Failed;
-    updateState(client.id, state);
-  };
-  client.onAuthenticating = () => {
-    updateState(client.id, ProviderState.Authenticating);
-  };
-  client.onAuthComplete = () => {
-    // Transition back to Initializing while the reconnection is in flight
-    updateState(client.id, ProviderState.Initializing);
-  };
-  client.onToolsChanged = onToolsChanged;
-}
-
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
-
-  // User-selected tools. Sticky: selections are restored from storage and
-  // persist across chats/reloads (see persist effect below). Applied only
-  // outside agent mode — an active agent's own config governs its tools.
-  const [userTools, setUserTools] = useState<Set<string>>(() => loadSavedTools());
+  const { currentAgent } = useAgents();
+  const [userTools, setUserTools] = useState(loadSavedTools);
+  const [sessionTools, setSessionTools] = useState<Set<string>>(new Set());
   const [modelEnabledTools, setModelEnabledTools] = useState<Set<string>>(new Set());
   const [modelDisabledTools, setModelDisabledTools] = useState<Set<string>>(new Set());
-
-  // Optional tools the user turns on for the current agent chat. Reset whenever
-  // the active agent changes (see effect below) — selecting an agent starts from
-  // its required tools, not the global selection — and never persisted.
-  const [sessionTools, setSessionTools] = useState<Set<string>>(new Set());
-
-  // Optional personal skills supplement the built-in capability catalog.
-  const [skillSources, setSkillSourcesState] = useState<SkillSources>(() => loadSavedSkillSources());
+  const [skillSources, setSkillSourcesState] = useState(loadSavedSkillSources);
   const setSkillSources = useCallback((sources: SkillSources) => {
     setSkillSourcesState(sources);
     try {
-      const enabled = SKILL_SOURCE_IDS.filter((id) => sources[id]);
-      localStorage.setItem(SKILL_SOURCES_STORAGE_KEY, JSON.stringify(enabled));
+      localStorage.setItem(SKILL_SOURCES_STORAGE_KEY, JSON.stringify(SKILL_SOURCE_IDS.filter((id) => sources[id])));
     } catch {
-      // Silently handle localStorage errors (private mode, quota, etc.)
+      /* Storage may be unavailable. */
     }
   }, []);
-
-  // MCP connection lifecycle (only MCP clients need Initializing/Failed states)
-  const [mcpStates, setMcpStates] = useState<Map<string, ProviderState>>(new Map());
-  const mcpStatesRef = useRef(mcpStates);
-  const updateMcpState = useCallback((id: string, state?: ProviderState) => {
-    const next = new Map(mcpStatesRef.current);
-    if (state === undefined) next.delete(id);
-    else next.set(id, state);
-    mcpStatesRef.current = next;
-    setMcpStates(next);
-  }, []);
-
-  // Incremented whenever any MCP client reloads its tool list (e.g. tools/list_changed)
-  const [toolsVersion, setToolsVersion] = useState(0);
-
-  // Config MCP clients (created once)
-  const [configMcpClients] = useState<MCPClient[]>(() =>
-    (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
-  );
-
-  // Relative MCPs are proxied through `/api/v1/mcp/{id}` and gated by backend
-  // RBAC; only these are filtered against the availability list. MCPs with an
-  // explicit url point elsewhere and are always shown.
-  const relativeMcpIds = useMemo(() => {
-    const base = new URL("/api/v1/mcp/", window.location.origin).toString();
-    return new Set((config.mcps || []).filter((mcp) => mcp.url.startsWith(base)).map((mcp) => mcp.id));
-  }, [config.mcps]);
-
-  // MCP ids the backend reports as available (RBAC-filtered), mirroring how
-  // useModels filters config models against /v1/models. null = not yet loaded
-  // or the endpoint is unavailable → fall back to showing all configured MCPs.
-  const { data: availableMcpList, error: mcpListError } = useQuery(
-    { queryKey: ["mcps"], queryFn: () => config.client.listMCPs() },
-    queryClient,
-  );
-  const availableMcpIds = useMemo(() => (availableMcpList ? new Set(availableMcpList) : null), [availableMcpList]);
-  useEffect(() => {
-    if (mcpListError) console.error("error loading mcps", mcpListError);
-  }, [mcpListError]);
-
-  // Config MCP clients visible to the user: relative ones are hidden unless the
-  // backend lists them as available.
-  const visibleConfigMcpClients = useMemo(
-    () =>
-      configMcpClients.filter(
-        (client) => !relativeMcpIds.has(client.id) || !availableMcpIds || availableMcpIds.has(client.id),
-      ),
-    [configMcpClients, relativeMcpIds, availableMcpIds],
-  );
-
-  // Local Wingman auto-discovery
-  const bridgeHost = config.bridge?.url;
-  const { available: companionAvailable } = useCompanion(bridgeHost);
-  const [companionEnabled, setCompanionEnabled] = useState(() => loadCompanionEnabled());
-  const toggleCompanion = useCallback(
-    () =>
-      setCompanionEnabled((v) => {
-        const next = !v;
-        saveCompanionEnabled(next);
-        return next;
-      }),
-    [],
-  );
-  const [companionClient] = useState<MCPClient | null>(() =>
-    bridgeHost
-      ? new MCPClient(
-          COMPANION_ID,
-          companionMcpUrl(bridgeHost),
-          "Companion",
-          "Locally running companion application",
-          undefined,
-          Coffee,
-        )
-      : null,
-  );
-
-  // Agent
-  const { currentAgent } = useAgents();
-
-  // Reset the session optionals whenever the active agent changes (select / switch
-  // / deselect) — an agent chat starts from the agent's required tools only.
   useEffect(() => {
     setSessionTools(new Set());
   }, [currentAgent?.id]);
-
-  // The user's editable tool selection: in agent mode the session optionals (the
-  // agent's required tools are added separately as the floor); otherwise the sticky
-  // global userTools.
+  useEffect(() => {
+    saveTools(userTools);
+  }, [userTools]);
   const activeSelection = currentAgent ? sessionTools : userTools;
 
-  const {
-    providers: agentProviders,
-    enabledTools: agentTools,
-    mcpClients: agentMcpClients,
-  } = useAgentProviders(currentAgent);
+  const { data: availableMcpList, error: mcpListError } = useQuery(
+    {
+      queryKey: ["mcps"],
+      queryFn: () => config.client.listMCPs(),
+      enabled: config.mcps.some((server) => server.source === "gateway"),
+    },
+    queryClient,
+  );
+  useEffect(() => {
+    if (mcpListError) console.error("error loading mcps", mcpListError);
+  }, [mcpListError]);
+  const visibleConfigServers = useMemo(
+    () =>
+      config.mcps.filter(
+        (server) => server.source !== "gateway" || !availableMcpList || availableMcpList.includes(server.id),
+      ),
+    [config.mcps, availableMcpList],
+  );
 
-  // Built-in providers
+  const companionHost = config.companion?.url;
+  const { available: companionAvailable } = useCompanion(companionHost);
+  const [companionEnabled, setCompanionEnabled] = useState(loadCompanionEnabled);
+  const toggleCompanion = useCallback(
+    () =>
+      setCompanionEnabled((previous) => {
+        saveCompanionEnabled(!previous);
+        return !previous;
+      }),
+    [],
+  );
+
+  const { providers: agentProviders, enabledTools: agentTools } = useAgentProviders(currentAgent);
+  const {
+    plugins: installedPlugins,
+    isLoaded: pluginsLoaded,
+    requiredIds: pluginRequiredIds,
+    servers: pluginServers,
+  } = usePluginProviders(currentAgent);
   const internetProvider = useInternetProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
-  const {
-    plugins: installedPlugins,
-    requiredIds: pluginRequiredIds,
-    mcpClients: pluginMcpClients,
-    mcpClientsByProvider: pluginMcpClientsByProvider,
-  } = usePluginProviders(currentAgent);
-
-  // A plugin's skills surface through load_skill once it's enabled: required by the
-  // agent, or turned on in the active selection.
   const activePlugins = useMemo(
     () =>
-      installedPlugins.filter((p) => {
-        const id = pluginProviderId(p.id);
+      installedPlugins.filter((plugin) => {
+        const id = pluginProviderId(plugin.id);
         return pluginRequiredIds.has(id) || activeSelection.has(id);
       }),
     [installedPlugins, pluginRequiredIds, activeSelection],
   );
-
   const skillsProvider = useSkillsProvider(currentAgent, skillSources, activePlugins);
 
-  // Drop selections for plugins that are no longer installed, so an uninstalled
-  // plugin's provider and MCP server ids don't linger in persisted storage.
-  const { isLoaded: pluginsLoaded } = usePlugins();
+  // Only plugin parents are selectable. Remove old independently selected child
+  // servers as well as selections for plugins that have been uninstalled.
   useEffect(() => {
     if (!pluginsLoaded) return;
-    const liveIds = new Set<string>();
-    for (const plugin of installedPlugins) {
-      liveIds.add(pluginProviderId(plugin.id));
-      for (const server of plugin.mcpServers ?? []) {
-        liveIds.add(pluginMcpClientId(plugin.id, server.name));
-      }
-    }
-    const prune = (prev: Set<string>) => {
-      const stale = [...prev].filter((id) => id.startsWith(PLUGIN_PROVIDER_PREFIX) && !liveIds.has(id));
-      if (stale.length === 0) return prev;
-      const next = new Set(prev);
-      for (const id of stale) next.delete(id);
-      return next;
+    const liveIds = new Set(installedPlugins.map((plugin) => pluginProviderId(plugin.id)));
+    const prune = (previous: Set<string>) => {
+      const next = new Set([...previous].filter((id) => !id.startsWith(PLUGIN_PROVIDER_PREFIX) || liveIds.has(id)));
+      return next.size === previous.size ? previous : next;
     };
     setUserTools(prune);
     setSessionTools(prune);
   }, [pluginsLoaded, installedPlugins]);
 
-  // All MCP clients & lookup set (include local wingman only when the app is detected)
-  const allMcpClients = useMemo(
+  const servers = useMemo<McpServerDefinition[]>(
     () => [
-      ...visibleConfigMcpClients,
-      ...(companionAvailable && companionClient ? [companionClient] : []),
-      ...agentMcpClients,
-      ...pluginMcpClients,
+      ...visibleConfigServers,
+      ...pluginServers,
+      ...(companionAvailable && companionHost
+        ? [
+            {
+              id: COMPANION_ID,
+              source: "companion" as const,
+              url: companionMcpUrl(companionHost),
+              name: "Companion",
+              description: "Locally running companion application",
+              icon: Coffee,
+            },
+          ]
+        : []),
     ],
-    [visibleConfigMcpClients, companionAvailable, companionClient, agentMcpClients, pluginMcpClients],
+    [visibleConfigServers, pluginServers, companionAvailable, companionHost],
   );
-  const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
+  const serverOwners = useMemo(
+    () => new Map(servers.map((server) => [server.id, server.ownerId ?? server.id])),
+    [servers],
+  );
+  const ownerOf = useCallback((id: string) => serverOwners.get(id) ?? id, [serverOwners]);
+  const agentRequired = useMemo(
+    () =>
+      new Set([
+        ...agentTools.map(ownerOf),
+        ...agentProviders.map((provider) => ownerOf(provider.id)),
+        ...pluginRequiredIds,
+      ]),
+    [agentTools, agentProviders, pluginRequiredIds, ownerOf],
+  );
 
-  // Persist tool selections (built-in + MCP) so they stick across chats/reloads.
-  useEffect(() => {
-    saveTools(userTools);
-  }, [userTools]);
-
-  // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges, plugins)
-  const agentRequired = useMemo(() => {
-    const ids = new Set(agentTools);
-    for (const p of agentProviders) ids.add(p.id);
-    for (const id of pluginRequiredIds) ids.add(id);
-    return ids;
-  }, [agentTools, agentProviders, pluginRequiredIds]);
-
-  // What the user + agent + companion want connected (ignores model overrides intentionally).
-  // Used by the reconciliation effect to control MCP lifecycle — model-level tool filtering
-  // (enabled/disabled lists) is applied later in chatTools(), not here. Disconnecting an
-  // MCP server because the current model has it in tools.disabled would clear this.client
-  // and break any in-flight tool call.
-  const mcpConnectionDesired = useMemo(() => {
-    // Baseline is the user's editable selection: outside agent mode the sticky
-    // userTools; in agent mode the session additions only (optionals reset to off
-    // on agent select — the global selection does not carry in). The agent's own
-    // tools are then unioned via agentRequired as the enforced floor.
-    const merged = new Set<string>(activeSelection);
-    // The Skills tool's connection tracks the assembled provider: it's non-null
-    // exactly when built-ins, a personal source, or an agent's curated set has
-    // skills to expose — so no source/agent branching is needed here.
-    if (skillsProvider) merged.add(SKILLS_PROVIDER_ID);
-    for (const id of agentRequired) merged.add(id);
-    for (const id of modelEnabledTools) merged.add(id);
-    // Companion gating differs by mode. Without an agent the persisted global
-    // flag decides. Under an agent the global flag has no effect: the companion
-    // is only desired when the agent requires it (agentRequired, via agent.tools)
-    // or the user turned it on for this session (activeSelection) — both already
-    // merged above. This keeps it consistent with every other optional tool.
-    if (!currentAgent && companionAvailable && companionEnabled) merged.add(COMPANION_ID);
-    // Connect plugin MCP servers whenever their plugin provider is desired.
-    for (const [providerId, clientIds] of pluginMcpClientsByProvider) {
-      if (merged.has(providerId)) {
-        for (const clientId of clientIds) merged.add(clientId);
-      }
+  // Selection is independent of connection status. Plugin children always inherit
+  // their parent's selection; a stale child ID must never enable a plugin.
+  const selected = useMemo(() => {
+    const ids = new Set([...activeSelection].filter((id) => ownerOf(id) === id));
+    for (const id of agentRequired) ids.add(id);
+    for (const id of modelEnabledTools) ids.add(ownerOf(id));
+    if (skillsProvider) ids.add(SKILLS_PROVIDER_ID);
+    if (!currentAgent) {
+      ids.delete(COMPANION_ID);
+      if (companionAvailable && companionEnabled) ids.add(COMPANION_ID);
     }
-    return merged;
+    return ids;
   }, [
     activeSelection,
-    skillsProvider,
     agentRequired,
     modelEnabledTools,
+    skillsProvider,
     currentAgent,
     companionAvailable,
     companionEnabled,
-    pluginMcpClientsByProvider,
+    ownerOf,
   ]);
+  const isProviderEnabled = useCallback((id: string) => selected.has(ownerOf(id)), [selected, ownerOf]);
+  const desiredMcpIds = useMemo(
+    () => new Set(servers.filter((server) => selected.has(server.ownerId ?? server.id)).map((server) => server.id)),
+    [servers, selected],
+  );
+  const { clients, getClient, getState, setConnected } = useMcpClients(servers, desiredMcpIds);
 
-  // Full desired set including model overrides — used by getProviderState for non-MCP
-  // built-in providers (internet, canvas, …) which have no lifecycle to manage.
-  const desiredTools = useMemo(() => {
-    const merged = new Set(mcpConnectionDesired);
-    for (const id of modelDisabledTools) merged.delete(id);
-    return merged;
-  }, [mcpConnectionDesired, modelDisabledTools]);
-
-  // All available providers. `toolsVersion` is a deliberate cache-bust dep: it
-  // bumps when an MCP client mutates its tool list in place, forcing this memo
-  // to rebuild even though the client references are unchanged.
-  const providers = useMemo<ToolProvider[]>(() => {
-    const list: ToolProvider[] = [];
-    if (internetProvider) list.push(internetProvider);
-    if (artifactsProvider) list.push(artifactsProvider);
-    // The single Skills tool (one load_skill surface): an agent's curated subset
-    // under an agent, the selected global sources otherwise, plus built-in
-    // capability skills and enabled plugins' bundled skills.
-    if (skillsProvider) list.push(skillsProvider);
-    list.push(...visibleConfigMcpClients);
-    if (companionAvailable && companionClient) list.push(companionClient);
-    list.push(...agentProviders);
-    list.push(...pluginMcpClients);
-    return list;
-  }, [
-    internetProvider,
-    artifactsProvider,
-    skillsProvider,
-    visibleConfigMcpClients,
-    companionAvailable,
-    companionClient,
-    agentProviders,
-    pluginMcpClients,
-    toolsVersion,
-  ]);
-
-  // Always-on core providers: available in every chat, never user-toggleable, and
-  // exempt from model tool allow/deny lists. Kept out of `providers` so no toggle
-  // surface has to special-case them.
+  const providers = useMemo<ToolProvider[]>(
+    () => [
+      ...(internetProvider ? [internetProvider] : []),
+      ...(artifactsProvider ? [artifactsProvider] : []),
+      ...(skillsProvider ? [skillsProvider] : []),
+      ...agentProviders,
+      ...clients,
+    ],
+    [internetProvider, artifactsProvider, skillsProvider, agentProviders, clients],
+  );
   const coreProviders = useMemo<ToolProvider[]>(() => [skillBuilderProvider], [skillBuilderProvider]);
 
-  // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
-      // Outside agent mode the global flag gates the companion; when off it reads
-      // as disconnected regardless of the live MCP state. Under an agent the flag
-      // is ignored and the companion follows its normal MCP lifecycle state (which
-      // reflects the agent's requirement / session selection).
-      if (id === COMPANION_ID && !currentAgent && !companionEnabled) return ProviderState.Disconnected;
-      if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
-      return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
+      if (!isProviderEnabled(id)) return ProviderState.Disconnected;
+      if (serverOwners.has(id)) return getState(id);
+      if (id.startsWith(PLUGIN_PROVIDER_PREFIX)) {
+        const states = servers.filter((server) => server.ownerId === id).map((server) => getState(server.id));
+        for (const state of [
+          ProviderState.Unauthorized,
+          ProviderState.Authenticating,
+          ProviderState.Initializing,
+          ProviderState.Failed,
+          ProviderState.Disconnected,
+        ]) {
+          if (states.includes(state)) return state;
+        }
+      }
+      return modelDisabledTools.has(id) ? ProviderState.Disconnected : ProviderState.Connected;
     },
-    [mcpIds, mcpStates, desiredTools, currentAgent, companionEnabled],
+    [isProviderEnabled, serverOwners, servers, getState, modelDisabledTools],
   );
 
-  const attemptsRef = useRef(new Map<MCPClient, { controller: AbortController; promise: Promise<void> }>());
-  const managedClientsRef = useRef(new Set<MCPClient>());
-  const releaseMcp = useCallback((client: MCPClient) => {
-    attemptsRef.current.get(client)?.controller.abort();
-    attemptsRef.current.delete(client);
-    client.onDisconnected = null;
-    client.onAuthenticating = null;
-    client.onAuthComplete = null;
-    client.onToolsChanged = null;
-    void client.disconnect().catch(console.error);
-  }, []);
-
-  const connectMcp = useCallback(
-    async (id: string, enabled: boolean) => {
-      const client = allMcpClients.find((value) => value.id === id);
-      if (!client) return;
-      const pending = attemptsRef.current.get(client);
-      if (!enabled) {
-        pending?.controller.abort();
-        attemptsRef.current.delete(client);
-        updateMcpState(id, ProviderState.Disconnected);
-        await client.disconnect();
-        return;
-      }
-      if (pending) return pending.promise;
-      if (client.isConnected()) return;
-      if (mcpStatesRef.current.get(id) === ProviderState.Unauthorized || client.isAuthBlocked()) {
-        updateMcpState(id, ProviderState.Unauthorized);
-        return;
-      }
-      const controller = new AbortController();
-      updateMcpState(id, ProviderState.Initializing);
-      const promise = connectMcpWithRetry(client, controller.signal, (state) => updateMcpState(id, state)).finally(
-        () => {
-          if (attemptsRef.current.get(client)?.controller === controller) attemptsRef.current.delete(client);
-        },
-      );
-      attemptsRef.current.set(client, { controller, promise });
-      return promise;
-    },
-    [allMcpClients, updateMcpState],
-  );
-
-  // Wire up onDisconnected callbacks so ping failures update state
-  // Also wire up auth lifecycle callbacks so the UI reflects Authenticating state
-  useEffect(() => {
-    const next = new Set(allMcpClients);
-    for (const client of managedClientsRef.current) {
-      if (!next.has(client)) {
-        releaseMcp(client);
-        updateMcpState(client.id);
-      }
-    }
-    managedClientsRef.current = next;
-    const onToolsChanged = () => setToolsVersion((v) => v + 1);
-    for (const client of allMcpClients) wireMcpClient(client, updateMcpState, onToolsChanged);
-  }, [allMcpClients, releaseMcp, updateMcpState]);
-
-  // Reconcile MCP connections with desired state (idempotent — safe to re-run)
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      for (const id of mcpIds) {
-        // Skip failed/unauthorized providers; they must be retried explicitly by the user.
-        const state = mcpStatesRef.current.get(id);
-        if (mcpConnectionDesired.has(id) && (state === ProviderState.Failed || state === ProviderState.Unauthorized))
-          continue;
-        if (!mcpConnectionDesired.has(id) && (!state || state === ProviderState.Disconnected)) continue;
-        connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
-      }
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [mcpConnectionDesired, mcpIds, connectMcp]);
-
-  // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
-      // Re-enabling after a failed auth reopens the popup; update the ref synchronously
-      // since connectMcp below reads it before the setMcpStates re-render lands.
-      if (enabled && mcpIds.has(id) && mcpStatesRef.current.get(id) === ProviderState.Unauthorized) {
-        armInteractiveAuth(id);
-        updateMcpState(id, ProviderState.Disconnected);
-      }
-
-      // Companion toggle. Outside agent mode it has a dedicated persisted global
-      // flag that gates desiredTools; toggling userTools alone is not enough
-      // because desiredTools re-adds the id when companionEnabled is still true.
-      // Under an agent the global flag is ignored and the companion behaves like
-      // any other optional tool, so fall through to the standard selection path.
-      if (id === COMPANION_ID && !currentAgent) {
+      const ownerId = ownerOf(id);
+      if (currentAgent && !enabled && agentRequired.has(ownerId)) return;
+      if (ownerId === COMPANION_ID && !currentAgent) {
         setCompanionEnabled(enabled);
         saveCompanionEnabled(enabled);
-        await connectMcp(id, enabled);
-        return;
+      } else {
+        const setSelection = currentAgent ? setSessionTools : setUserTools;
+        setSelection((previous) => {
+          const next = new Set(previous);
+          if (enabled) next.add(ownerId);
+          else next.delete(ownerId);
+          return next;
+        });
       }
-
-      // Agent mode: the agent's required tools are locked on — a disable is a
-      // no-op so we neither drop it nor disconnect its server.
-      if (currentAgent && !enabled && agentRequired.has(id)) return;
-
-      // Edit the active selection: session-local optionals in agent mode (reset on
-      // agent change), or the sticky global set otherwise. This feeds desiredTools
-      // which triggers the reconciliation effect as a safety net, but for MCP tools
-      // we also connect immediately so the tool is ready before the next message.
-      const setSelection = currentAgent ? setSessionTools : setUserTools;
-      setSelection((prev) => {
-        const next = new Set(prev);
-        if (enabled) next.add(id);
-        else next.delete(id);
-        return next;
-      });
-      if (mcpIds.has(id)) await connectMcp(id, enabled);
+      await Promise.all(
+        servers
+          .filter((server) => (server.ownerId ?? server.id) === ownerId)
+          .map((server) => setConnected(server.id, enabled, enabled)),
+      );
     },
-    [mcpIds, connectMcp, currentAgent, agentRequired, updateMcpState],
+    [ownerOf, currentAgent, agentRequired, servers, setConnected],
   );
-
-  // Tool policy for the active agent: "required" = locked on (the agent's tools +
-  // its always-on providers); "optional" = the user toggles it freely. Everything
-  // is "optional" with no agent.
   const getProviderPolicy = useCallback(
-    (id: string): "required" | "optional" => (currentAgent && agentRequired.has(id) ? "required" : "optional"),
-    [currentAgent, agentRequired],
+    (id: string): "required" | "optional" => (currentAgent && agentRequired.has(ownerOf(id)) ? "required" : "optional"),
+    [currentAgent, agentRequired, ownerOf],
   );
 
-  // Restore an MCP app UI from persisted chat data
   const restoreToolUI = useCallback(
     async (app: UIResourcePart, args: Record<string, unknown>, result: ToolResultPart, options: McpAppOptions) => {
-      const providerId = app.serverId;
-      if (!providerId) throw new Error("Cannot restore tool UI: missing MCP server ID");
-      const client = allMcpClients.find((c) => c.id === providerId);
-      if (!client) {
-        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not found`);
-      }
-
-      // Restoring persisted app state needs a live MCP connection even when the
-      // provider was just enabled in the current interaction.
-      await connectMcp(providerId, true);
-      if (!client.isConnected()) {
-        if (mcpStatesRef.current.get(providerId) === ProviderState.Unauthorized) {
-          throw new Error(`Sign in required for ${client.name}`);
-        }
-        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not connected`);
-      }
-
+      const id = app.serverId;
+      if (!id) throw new Error("Cannot restore tool UI: missing MCP server ID");
+      const client = getClient(id);
+      if (!client) throw new Error("This app’s MCP server is no longer available");
+      if (!isProviderEnabled(id)) throw new Error(`Enable ${client.name} to open this app`);
       options.signal?.throwIfAborted();
+      await setConnected(id, true);
+      options.signal?.throwIfAborted();
+      if (!client.isConnected()) {
+        if (client.isAuthBlocked()) throw new Error(`Sign in required for ${client.name}`);
+        throw new Error(`Could not connect to ${client.name}`);
+      }
       return client.restoreToolUI(app, args, result, options);
     },
-    [allMcpClients, connectMcp],
+    [getClient, isProviderEnabled, setConnected],
   );
-
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
     setModelEnabledTools(new Set(enabled));
     setModelDisabledTools(new Set(disabled));
   }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    const clients = managedClientsRef;
-    return () => {
-      for (const client of clients.current) releaseMcp(client);
-      clients.current.clear();
-      mcpStatesRef.current = new Map();
-    };
-  }, [releaseMcp]);
 
   return (
     <ToolsContext
       value={{
         providers,
         coreProviders,
+        isProviderEnabled,
         getProviderState,
         getProviderPolicy,
         setProviderEnabled,
         setModelOverrides,
         skillSources,
         setSkillSources,
-        companionAvailable: companionAvailable,
-        companionEnabled: companionEnabled,
-        toggleCompanion: toggleCompanion,
+        companionAvailable,
+        companionEnabled,
+        toggleCompanion,
         restoreToolUI,
       }}
     >

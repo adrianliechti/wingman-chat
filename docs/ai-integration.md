@@ -454,8 +454,8 @@ Direct voice tools retain live confirmations. A delegated text run that pauses
 for native input or approval asks the user to continue in chat; the one-shot
 voice adapter cannot present and resume that child interrupt.
 
-The remaining optional integrations are the devtools panel (now that ChatClient
-owns state), native memory storage, and code mode. Modern MCP input-required
+The remaining optional integrations include native memory storage and code mode.
+Modern MCP input-required
 resume still needs a separate integration: the public raw `callTool` API does
 not accept input responses, while native tool execution normalizes away the full
 initial result required by saved widgets. Existing legacy MCP form/URL requests
@@ -518,6 +518,29 @@ summary style taking precedence. This opts into visible Claude thinking rather
 than signed blocks with empty text, including deployments behind opaque aliases.
 Structured helper calls keep summaries opt-in.
 
+`Client.chatOptions()` owns SDK option placement for chat, subagents and
+structured helpers. With the published AI 0.68 API, reasoning still belongs in
+`modelOptions`. The next [reasoning migration](https://github.com/TanStack/ai/blob/5bd27f2fc94ebfb6d11bfb28d46d5d858310805e/docs/migration/reasoning-option.md)
+also requires mapping `none` to `off`, replacing summary styles with a boolean,
+and supplying reasoning metadata for gateway aliases through `modelReasoning`.
+Moving the property alone would silently lose alias reasoning. Cross-provider
+history support does not replace the gateway's deployment-bound ciphertext guard.
+
+The provider SDK already retries HTTP rate limits twice. Once exhausted,
+`streamRun` formats `metadata.tanstack.retryAfterMs` before ChatClient converts
+the event to an Error and drops that metadata. The displayed wait rounds up to
+whole seconds and survives transcript persistence. Missing or invalid delays
+retain the generic message. A future core `chat({ retry })` policy must account
+for those existing SDK retries. Automatic prompt-cache keys and core retries
+remain deferred until their APIs are published and gateway behavior is verified.
+
+Conversation loading includes native `isHydrating`, disabling composer sends
+and retries until hydration completes. The saved hydration snapshot remains:
+it prevents the native persistence echo from overwriting enriched messages or
+pending interrupts, which the loading flag alone cannot do. The controlled test
+adapter likewise remains because `fakeText()` does not cover its unfinished
+streams and application-specific message metadata.
+
 Reasoning signatures retain the producing deployment alias, visible signed text,
 and its separate summary through native model/UI conversions. Saved pre-migration
 reasoning remains readable. Ciphertext is replayed only for the same deployment;
@@ -544,6 +567,21 @@ application needs. The compatibility adapter also preserves interruption offsets
 configuration readiness, and per-session cleanup. Rebinding native clients updates
 executable tools without reconnecting the physical socket.
 
+`mcpConfig.ts` normalizes static gateway/direct server declarations, plugin servers, and
+companion endpoints. `usePluginProviders` supplies declarations and parent ownership;
+`useMcpClients` owns all live clients, connection attempts, callbacks, retries, and disposal.
+Endpoint or header changes replace the client even when its ID is unchanged. Removed clients
+abort pending retries and authorization; callbacks from superseded clients cannot publish state.
+
+`ToolsProvider` owns selection and agent requirements separately from connection status.
+Plugin MCP servers inherit selection and policy from the plugin parent. Historical child
+selections are pruned. OAuth storage is keyed by the normalized full endpoint URL (path and
+query included), independently of server IDs and plugin installation. Endpoint-bound legacy
+credentials migrate without reauthentication. `mcpAuthFetch.ts` serializes SDK OAuth grants
+per endpoint across clients/tabs, while ordinary MCP requests remain concurrent. PKCE state
+belongs to the individual popup. The internal companion name retains the public
+`BRIDGE_URL` environment variable and `bridge.url` JSON contract.
+
 `mcpTransport.ts` forwards the SDK transport while exposing server metadata,
 legacy elicitation, and change notifications to the workspace. Resource reads use
 local cancellation because the native MCP resource API has no signal argument.
@@ -559,7 +597,9 @@ bytes without another resource read or tool call. A failed resource read leaves
 the normal tool result available. Migrated URI-only parts read their HTML when
 opened; records without an original MCP result reconstruct it from native content.
 Voice execution also forwards UI resource events into its stored tool round.
-The iframe stays mounted when switching between inline and fullscreen display.
+The iframe stays mounted when switching between inline and fullscreen display. Restoring a
+saved widget never changes provider selection. Disabled providers show an explicit enable
+button; disabling a plugin tears down its widgets, and retrying authentication is a user action.
 
 Connecting the MCP client alone does not wire interactive widgets. TanStack's
 `useMcpAppBridge` sends calls to an explicit HTTP endpoint; its

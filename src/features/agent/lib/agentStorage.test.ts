@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "../types/agent";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import { loadAgent, storeAgent, parseAgentMd, serializeAgentMd } from "./agentStorage";
+import { loadAgent, loadAgents, storeAgent, parseAgentMd, serializeAgentMd } from "./agentStorage";
 
 const memory = new MemoryOpfs();
 const agent = (): Agent => ({
@@ -10,7 +10,6 @@ const agent = (): Agent => ({
   skills: [],
   plugins: [],
   tools: [],
-  servers: [],
 });
 beforeEach(() => {
   memory.reset();
@@ -18,6 +17,33 @@ beforeEach(() => {
 });
 
 describe("agent storage", () => {
+  it.each(["AGENTS.md", "AGENT.md", "agent.json"])(
+    "removes retired custom MCP definitions from saved %s agents while preserving other data",
+    async (definition) => {
+      const value = { ...agent(), tools: ["managed"], plugins: ["catalog-plugin"] };
+      const legacy = { ...value, servers: [{ id: "custom", url: "https://custom.example.com", enabled: true }] };
+      memory.put("agents/index.json", JSON.stringify([{ id: value.id, title: value.name }]));
+      memory.put(
+        `agents/agent/${definition}`,
+        definition === "agent.json" ? JSON.stringify(legacy) : serializeAgentMd(value),
+      );
+      memory.put("agents/agent/servers.json", JSON.stringify(legacy.servers));
+      memory.put("agents/agent/MEMORY.md", "Remember this");
+      const loaded = await loadAgents();
+      expect(loaded).toHaveLength(1);
+      expect(loaded[0]).toMatchObject(value);
+      expect(loaded[0]).not.toHaveProperty("servers");
+      expect(memory.files.has("agents/agent/servers.json")).toBe(false);
+      if (definition === "agent.json") {
+        expect(JSON.parse(await memory.files.get("agents/agent/agent.json")!.text())).toEqual(value);
+      }
+      expect(await memory.files.get("agents/agent/MEMORY.md")!.text()).toBe("Remember this");
+      const writes = memory.closed.length;
+      await loadAgents();
+      expect(memory.closed).toHaveLength(writes);
+    },
+  );
+
   it("drops the retired Studio tool when parsing, loading legacy JSON and saving agents", async () => {
     expect(parseAgentMd('---\nname: Shared\ntools: ["studio", "internet"]\n---')!.tools).toEqual(["internet"]);
     const legacy = { ...agent(), tools: ["studio", "internet"] };

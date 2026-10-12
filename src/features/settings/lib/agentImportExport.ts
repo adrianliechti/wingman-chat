@@ -50,11 +50,11 @@ export async function exportSingleAgentAsZip(
           const agent = await loadAgent(id);
           if (!agent) throw new Error("Agent not found");
           md = serializeAgentMd(agent);
-          zip.file("servers.json", JSON.stringify(agent.servers));
         }
         // Export saved agents in the current format without rewriting local data.
         zip.remove("AGENT.md");
         zip.remove("agent.json");
+        zip.remove("servers.json");
         zip.file("AGENTS.md", md);
         const parsed = parseAgentMd(md);
         if (parsed) {

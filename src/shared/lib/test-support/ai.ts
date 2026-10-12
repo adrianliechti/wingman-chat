@@ -8,7 +8,7 @@ export function testClient(
   complete: (options: TextOptions<Record<string, unknown>>, onStream: (text: string) => void) => Promise<UIMessage>,
 ): Client {
   return {
-    chatModelOptions: () => ({}),
+    chatOptions: () => ({ modelOptions: {} }),
     textAdapter: (model: string) => ({
       kind: "text",
       name: "test",

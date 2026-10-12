@@ -23,7 +23,6 @@ if (!(await readText("agents/memory-e2e/AGENTS.md")))
     skills: [],
     plugins: [],
     tools: [],
-    servers: [],
   });
 localStorage.setItem("app_agent", "memory-e2e");
 const manager = new MemoryManager("memory-e2e");

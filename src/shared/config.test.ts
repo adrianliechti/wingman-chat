@@ -54,3 +54,30 @@ it.each([{ links: [] }, { links: [{ title: "Docs", url: "https://example.com/doc
 it("shows no links when none are configured", async () => {
   expect((await loadWith({})).links).toEqual([]);
 });
+
+it("normalizes configured endpoints and headers and retains companion wire compatibility", async () => {
+  const config = await loadWith({
+    bridge: { url: "http://LOCALHOST:4242/" },
+    tools: [
+      { id: "gateway", name: "Gateway" },
+      { id: "direct", url: "https://MCP.test:443/api#ignored", headers: { "X-Tenant": " demo " } },
+      { id: "direct", url: "https://duplicate.test" },
+      { id: "bad", url: "file:///etc/passwd" },
+      { id: "bad-header", url: "https://valid.test", headers: { Test: 42 } },
+      { id: "companion", url: "https://collision.test" },
+      { id: "../escape" },
+    ],
+  });
+  expect(config.mcps).toEqual([
+    { id: "gateway", source: "gateway", name: "Gateway", description: "", url: "http://localhost/api/v1/mcp/gateway" },
+    {
+      id: "direct",
+      source: "configured",
+      name: "direct",
+      description: "",
+      url: "https://mcp.test/api",
+      headers: { "x-tenant": "demo" },
+    },
+  ]);
+  expect(config.companion).toEqual({ url: "http://localhost:4242/" });
+});

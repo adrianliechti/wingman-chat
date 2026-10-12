@@ -2,7 +2,8 @@ import { feedbackMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "./client";
-import { run, runMessages } from "./agent";
+import { RunSidecar, run, runMessages, streamRun } from "./agent";
+import { getErrorInfo } from "./errors";
 import { loadConfig } from "../config";
 import type { Tool } from "../types/chat";
 import { output, response, textItem, callItem, sse, finished, user, assistant } from "./test-support/ai";
@@ -76,6 +77,39 @@ describe("chat reasoning display", () => {
     });
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("reasoning");
   });
+});
+
+it.each([
+  [{ "retry-after": "2" }, "2 seconds"],
+  [{ "retry-after-ms": "1250" }, "2 seconds"],
+])("preserves gateway rate-limit headers through the native chat event stream: %s", async (headers, wait) => {
+  fetchMock.mockImplementation(async () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded", message: "Throttled" } },
+      {
+        status: 429,
+        headers,
+      },
+    ),
+  );
+  const complete = vi.fn();
+  const events = [];
+  for await (const event of streamRun(new Client(), "gateway-alias", "", prompt, [], {
+    sidecar: new RunSidecar(),
+    onComplete: complete,
+  }))
+    events.push(event);
+  const failure = events.find((event) => event.type === "RUN_ERROR");
+  expect(failure).toMatchObject({ code: "RATE_LIMIT_ERROR", message: `Rate limit exceeded. Try again in ${wait}.` });
+  expect(getErrorInfo(failure).message).toContain(wait);
+  expect(complete).toHaveBeenCalledWith(
+    expect.objectContaining({
+      status: "failed",
+      error: { code: "RATE_LIMIT_ERROR", message: `Rate limit exceeded. Try again in ${wait}.` },
+    }),
+  );
+  // The provider SDK retries HTTP failures twice before yielding RUN_ERROR.
+  expect(fetchMock).toHaveBeenCalledTimes(3);
 });
 
 describe("chat output allowances", () => {

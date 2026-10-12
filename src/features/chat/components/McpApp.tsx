@@ -45,9 +45,12 @@ export function McpApp({ app, call, result, isLastFullscreenApp, onPrompt }: Mcp
   const [bridgeReady, setBridgeReady] = useState(false);
   const { showAppDrawer, toggleAppDrawer, closeApp, showDrawer, activeApp, setActiveApp, drawerTarget } = useApp();
   const activeAppKey = activeApp?.key ?? null;
-  const { providers, setProviderEnabled, restoreToolUI } = useToolsContext();
+  const { providers, isProviderEnabled, setProviderEnabled, restoreToolUI } = useToolsContext();
 
   const providerId = app.serverId!;
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  const enabled = isProviderEnabled(providerId);
+  const [retry, setRetry] = useState(0);
   const resourceUri = app.resource.uri;
   const appKey = `${providerId}-${resourceUri}-${call.id}`;
   const appDisplayMode = app.meta?.appDisplayMode;
@@ -104,10 +107,13 @@ export function McpApp({ app, call, result, isLastFullscreenApp, onPrompt }: Mcp
   const renderApp = useEffectEvent(async (signal: AbortSignal) => {
     setIsLoading(true);
     setError(null);
+    setFrame(null);
+    setBridgeReady(false);
     try {
-      const args = JSON.parse(call.arguments || "{}");
-      await setProviderEnabled(providerId, true);
+      // Let effect cleanup cancel a discarded mount before starting a resource read.
+      await Promise.resolve();
       signal.throwIfAborted();
+      const args = JSON.parse(call.arguments || "{}");
       const data = await restoreToolUI(app, args, result, {
         signal,
       });
@@ -160,7 +166,7 @@ export function McpApp({ app, call, result, isLastFullscreenApp, onPrompt }: Mcp
       controller.abort();
       sessionRef.current = null;
     };
-  }, []);
+  }, [provider, enabled, retry, providerId, resourceUri, call.id]);
 
   useEffect(() => {
     if (!frame || !frameRef.current) return;
@@ -276,9 +282,24 @@ export function McpApp({ app, call, result, isLastFullscreenApp, onPrompt }: Mcp
       )}
 
       {error && (
-        <p role="alert" className="p-3 text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
+        <div role="alert" className="p-3 text-sm text-red-600 dark:text-red-400">
+          <p>{error}</p>
+          {provider && (
+            <button
+              type="button"
+              className="mt-2 underline"
+              onClick={() => {
+                void setProviderEnabled(providerId, true)
+                  .then(() => setRetry((value) => value + 1))
+                  .catch((reason) => {
+                    setError(reason instanceof Error ? reason.message : "Could not reconnect");
+                  });
+              }}
+            >
+              {enabled ? "Retry" : "Enable and reopen"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Stable wrapper — the iframe never changes DOM parent, so the bridge survives.

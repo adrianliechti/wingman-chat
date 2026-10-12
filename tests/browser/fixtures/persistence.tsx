@@ -99,8 +99,6 @@ function Fixture() {
     deleteAgent: agents.deleteAgent,
     upsertFile: agents.upsertFile,
     removeFile: agents.removeFile,
-    addServer: agents.addServer,
-    toggleServer: agents.toggleServer,
     addSkill: skills.addSkill,
     updateSkill: skills.updateSkill,
     removeSkill: skills.removeSkill,
@@ -156,8 +154,6 @@ declare global {
       deleteAgent: ReturnType<typeof useAgents>["deleteAgent"];
       upsertFile: ReturnType<typeof useAgents>["upsertFile"];
       removeFile: ReturnType<typeof useAgents>["removeFile"];
-      addServer: ReturnType<typeof useAgents>["addServer"];
-      toggleServer: ReturnType<typeof useAgents>["toggleServer"];
       addSkill: ReturnType<typeof useSkills>["addSkill"];
       updateSkill: ReturnType<typeof useSkills>["updateSkill"];
       removeSkill: ReturnType<typeof useSkills>["removeSkill"];

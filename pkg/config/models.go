@@ -1,11 +1,11 @@
 package config
 
 type Config struct {
-	Title      string   `json:"title,omitempty" yaml:"title,omitempty"`
-	Disclaimer string   `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
-	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
-	Plugins    *Plugins `json:"plugins,omitempty" yaml:"plugins,omitempty"`
-	Links      []Link   `json:"links,omitempty" yaml:"links,omitempty"`
+	Title      string     `json:"title,omitempty" yaml:"title,omitempty"`
+	Disclaimer string     `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+	Companion  *Companion `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+	Plugins    *Plugins   `json:"plugins,omitempty" yaml:"plugins,omitempty"`
+	Links      []Link     `json:"links,omitempty" yaml:"links,omitempty"`
 	// Legacy account links, used when Links is absent.
 	Support *Link `json:"support,omitempty" yaml:"support,omitempty"`
 	Cost    *Link `json:"cost,omitempty" yaml:"cost,omitempty"`
@@ -47,11 +47,12 @@ type Link struct {
 }
 
 type Tool struct {
-	ID          string `json:"id,omitempty" yaml:"id,omitempty"`
-	URL         string `json:"url,omitempty" yaml:"url,omitempty"`
-	Name        string `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	Icon        string `json:"icon,omitempty" yaml:"icon,omitempty"`
+	ID          string            `json:"id,omitempty" yaml:"id,omitempty"`
+	URL         string            `json:"url,omitempty" yaml:"url,omitempty"`
+	Name        string            `json:"name,omitempty" yaml:"name,omitempty"`
+	Description string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty" yaml:"icon,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
 type ModelTools struct {
@@ -221,7 +222,7 @@ type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
-type Bridge struct {
+type Companion struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 

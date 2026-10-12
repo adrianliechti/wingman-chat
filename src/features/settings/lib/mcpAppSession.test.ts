@@ -1,10 +1,11 @@
 import { AppBridge } from "@mcp-ui/client";
-import { Client, UnauthorizedError } from "@modelcontextprotocol/client";
+import { Client } from "@modelcontextprotocol/client";
 import type { MCPClient as NativeMCPClient } from "@tanstack/ai-mcp";
 import type { ContentPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import { mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
+import { McpAuthorizationPending } from "./mcpAuthFetch";
 import { createAppBridge, getHtmlContent, buildHostCapabilities, type McpAppData } from "./mcpAppSession";
 
 const tool = { name: "app", inputSchema: { type: "object" as const } };
@@ -208,27 +209,22 @@ describe("MCP browser authentication lifecycle", () => {
     expect(connect).toHaveBeenCalledOnce();
   });
 
-  it("does not publish stale authentication state after the connection is disabled", async () => {
-    vi.spyOn(Client.prototype, "connect").mockRejectedValueOnce(new UnauthorizedError());
-    let release!: (code: string) => void;
+  it("does not resume a cancelled connection when a deferred login completes", async () => {
+    let release!: () => void;
+    const authorization = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const connect = vi
+      .spyOn(Client.prototype, "connect")
+      .mockRejectedValueOnce(new McpAuthorizationPending(authorization));
     const provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test");
-    const auth = (provider as unknown as { authProvider: { waitForAuthCode(): Promise<string> } }).authProvider;
-    vi.spyOn(auth, "waitForAuthCode").mockReturnValue(
-      new Promise((resolve) => {
-        release = resolve;
-      }),
-    );
-    const authenticating = vi.fn();
-    const completed = vi.fn();
-    provider.onAuthenticating = authenticating;
-    provider.onAuthComplete = completed;
     const connecting = provider.connect();
     const rejection = expect(connecting).rejects.toMatchObject({ name: "AbortError" });
-    await vi.waitFor(() => expect(authenticating).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce());
     await provider.disconnect();
-    release("late-code");
+    release();
     await rejection;
-    expect(completed).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
     expect(provider.isConnected()).toBe(false);
   });
 });
