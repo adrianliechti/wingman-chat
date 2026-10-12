@@ -66,6 +66,14 @@
   [role="button"][aria-disabled="true"] {
     cursor: not-allowed;
   }
+
+  /* Drop the browser's default (blue) focus outline. Safari also paints it on
+     elements focused from script: Headless UI focuses menu panels on open and
+     hands focus back to the trigger on close. Components that want a focus
+     indicator set their own outline or ring utilities, which override this. */
+  :focus-visible {
+    outline: none;
+  }
 }
 
 ::view-transition-group(.navigation-highlight) {
