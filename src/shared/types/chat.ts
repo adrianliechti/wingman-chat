@@ -147,7 +147,9 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
 export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
 export type ToolDisplayState = {
+  outcome?: "denied" | "cancelled";
   running?: boolean;
+  progress?: { progress: number; total?: number; message?: string };
   error?: boolean;
   /** Stable identity while arguments stream and the tool runs. */
   toolCallId?: string;
@@ -206,7 +208,10 @@ export interface ToolContext {
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   /** The content parts of the user turn that triggered this run (text and attachments). */
   content?(): ContentPart[];
-  elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
+  elicit?(
+    elicitation: Elicitation,
+    options?: { signal?: AbortSignal; onCancel?: () => void },
+  ): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
   setMeta?(meta: Record<string, unknown>): void;
   setError?(error: MessageError): void;

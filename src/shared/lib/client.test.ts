@@ -321,66 +321,11 @@ describe("raw request lifetime", () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([" First ", { text: "Second\nline" }, " "])));
     expect(await new Client().segmentText("Source")).toEqual([" First ", "Second\nline"]);
   });
-  it.each([null, {}, { flagged: "false" }, { flagged: false, categories: [null] }])(
-    "rejects malformed guard responses instead of treating them as approval: %j",
-    async (body) => {
-      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body)));
-      await expect(new Client().guard("model", "Text")).rejects.toThrow("guard service returned an invalid response");
-    },
-  );
-
-  it("rejects malformed search and research responses instead of reporting empty findings", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Unavailable" })));
-    await expect(new Client().search("model", "Query")).rejects.toThrow("search service returned an invalid response");
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ content: 42 })));
-    await expect(new Client().research("model", "Query")).rejects.toThrow(
-      "research service returned an invalid response",
-    );
-  });
-
-  it("sends search categories, inclusive calendar dates, country bias and domain filters to the gateway", async () => {
-    const results = [
-      {
-        source: "https://example.com/paper",
-        title: "Paper",
-        content: "Evidence",
-        metadata: { published: "2026-10-10T12:00:00Z" },
-      },
-    ];
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(results)));
-    expect(
-      await new Client().search("web", "papers", {
-        limit: 5,
-        category: "publication",
-        location: "CH",
-        since: "2026-10-01",
-        until: "2026-10-10",
-        domains: ["example.com", "example.org"],
-        exclude: ["spam.example"],
-      }),
-    ).toEqual(results);
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/v1/search");
-    const data = options.body as FormData;
-    expect(Object.fromEntries(data.entries())).toMatchObject({
-      model: "web",
-      query: "papers",
-      limit: "5",
-      category: "publication",
-      location: "CH",
-      since: "2026-10-01",
-      until: "2026-10-10",
-    });
-    expect(data.getAll("domain")).toEqual(["example.com", "example.org", "!spam.example"]);
-  });
-
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
     expect(await new Client().translate("azure", "de", "Greetings")).toBe("Grüsse");
     expect((fetchMock.mock.calls.at(-1)![1].body as FormData).get("model")).toBe("azure");
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ flagged: true, categories: [] })));
-    expect(await new Client().guard("model", "Text")).toEqual({ flagged: true, categories: [] });
     fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { headers: { "content-type": "image/png" } }));
     const rendered = await new Client().generateImage("model", "Image");
     expect(rendered.type).toBe("image/png");
@@ -405,7 +350,7 @@ describe("raw request lifetime", () => {
   it.each([200, 503])("keeps the timeout active while reading a stalled %s response body", async (status) => {
     vi.useFakeTimers();
     stalledBody(status);
-    const request = new Client().scrape("model", "https://example.com");
+    const request = new Client().extractText(new Blob(["Document"]));
     const settled = vi.fn();
     void request.then(settled, settled);
     await vi.advanceTimersByTimeAsync(90_000);
@@ -418,7 +363,7 @@ describe("raw request lifetime", () => {
   it("retains caller cancellation until the body is consumed", async () => {
     stalledBody();
     const controller = new AbortController();
-    const request = new Client().scrape("model", "https://example.com", { signal: controller.signal });
+    const request = new Client().extractText(new Blob(["Document"]), { signal: controller.signal });
     const settled = vi.fn();
     void request.then(settled, settled);
     await Promise.resolve();
@@ -433,7 +378,7 @@ describe("raw request lifetime", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      new Client().scrape("model", "https://example.com", { signal: controller.signal }),
+      new Client().extractText(new Blob(["Document"]), { signal: controller.signal }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(fetchMock).not.toHaveBeenCalled();
   });

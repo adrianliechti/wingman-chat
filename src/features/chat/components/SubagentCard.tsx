@@ -1,7 +1,7 @@
-import { ChevronRight, Loader2 } from "lucide-react";
+import { Bot, ChevronRight, Loader2 } from "lucide-react";
 import type { SubagentPart } from "@tanstack/ai";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { messageMetadata } from "@/shared/lib/messages";
+import { messageMetadata, toolCallProgress } from "@/shared/lib/messages";
 import { Markdown } from "@/shared/ui/Markdown";
 import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
@@ -14,18 +14,24 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
   const running = status === "running";
   const header = resolveToolHeader(findTool(providers, name), name, undefined, { running });
   const delegated = subagentToolCallIds(messages);
+  const Icon = header.Icon ?? Bot;
   return (
-    <details open={running || status === "suspended"} className="group/subagent my-1 min-w-0">
-      <summary className="grid cursor-pointer list-none grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 [&::-webkit-details-marker]:hidden">
-        <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open/subagent:rotate-90" />
+    <details open={running || status === "suspended"} className="group/subagent min-w-0">
+      <summary className="grid cursor-pointer py-1 list-none grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 [&::-webkit-details-marker]:hidden">
+        {/* Same slots as ActivityRow: spinner or chevron, then the icon, then the label. */}
+        {running ? (
+          <Loader2 aria-hidden="true" className="size-3 animate-spin text-neutral-400 dark:text-neutral-500" />
+        ) : (
+          <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open/subagent:rotate-90" />
+        )}
         <span className="flex min-w-0 items-center gap-2">
-          {running && <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />}
+          <Icon aria-hidden="true" className="size-3 shrink-0 text-neutral-400 dark:text-neutral-500" />
           <span className="truncate font-medium">{header.label}</span>
           {status === "suspended" && <span>Waiting for input</span>}
           {status === "error" && <span>Failed</span>}
         </span>
       </summary>
-      <div className="mt-2 ml-4.5 space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
+      <div className="ml-4.5 space-y-1 pb-1 text-sm text-neutral-600 dark:text-neutral-400">
         {messages.map((message, messageIndex) => {
           const failed = messageMetadata(message).error;
           return (
@@ -56,6 +62,7 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
                 const tool = resolveToolHeader(findTool(providers, call.name), call.name, call.arguments, {
                   running,
                   toolCallId: call.id,
+                  progress: toolCallProgress(call),
                 });
                 return (
                   <ActivityRow
@@ -64,7 +71,6 @@ export function SubagentCard({ name, status, messages, error }: SubagentPart["su
                     label={tool.label}
                     detail={tool.preview}
                     mono={tool.mono}
-                    className="pb-1"
                   />
                 );
               })}

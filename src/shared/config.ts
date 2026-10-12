@@ -6,7 +6,6 @@ import {
   type ConfiguredMcpServer,
   type McpServerDefinition,
 } from "@/features/settings/lib/mcpConfig";
-import type { SearchCategory } from "@/features/research/types/search";
 
 interface BackgroundConfig {
   url: string;
@@ -68,23 +67,6 @@ interface VisionConfig {
 interface RendererConfig {
   model?: string;
   disclaimer?: string;
-  elicitation?: boolean;
-}
-
-interface InternetConfig {
-  /** Local deep-research model when no researcher is selected; defaults to the chat model. */
-  model?: string;
-  scraper?: string;
-  searcher?: string;
-  /** Searcher verticals offered to the research agent and the parent as a focus, e.g. news or publication. */
-  categories?: SearchCategory[];
-  /** Default ISO 3166-1 alpha-2 country code that biases searches; the research agent can override it per query. */
-  location?: string;
-  /** Optional model that condenses long fetched pages to query-relevant facts during deep research. */
-  summarizer?: string;
-  /** Gateway researcher for deep mode; takes precedence over the local model and retrieval tools. */
-  researcher?: string;
-  guard?: string;
   elicitation?: boolean;
 }
 
@@ -244,7 +226,6 @@ interface ConfigSchema {
 
   text?: TextConfig;
 
-  internet?: InternetConfig;
 
   renderer?: RendererConfig;
   extractor?: ExtractorConfig;
@@ -296,7 +277,6 @@ interface Config {
   text: TextConfig | null;
   extractor: ExtractorConfig | null;
 
-  internet: InternetConfig | null;
 
   renderer: RendererConfig | null;
 
@@ -379,7 +359,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           }
         : null,
 
-      internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
       memory: cfg.memory ?? null,
       repository: cfg.repository ?? null,

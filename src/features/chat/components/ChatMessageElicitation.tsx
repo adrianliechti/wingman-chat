@@ -1,9 +1,17 @@
-import { Check, CheckCircle2, ExternalLink, Loader2, ShieldQuestion, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import { ElicitationForm } from "./ElicitationForm";
+import { ApprovalRequest } from "./ApprovalRequest";
+import {
+  primaryRequestButtonClass,
+  quietRequestButtonClass,
+  requestButtonClass,
+  RequestCard,
+  requestValueClass,
+} from "./RequestCard";
 import { getToolDisplayName } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/cn";
 import { Markdown } from "@/shared/ui/Markdown";
-
-import type { Elicitation, ElicitationResult, FormElicitation, UrlElicitation } from "@/shared/types/elicitation";
+import type { Elicitation, ElicitationResult, UrlElicitation } from "@/shared/types/elicitation";
 
 type ChatMessageElicitationProps = {
   toolName: string;
@@ -31,8 +39,50 @@ export function ChatMessageElicitation({
       />
     );
   }
-
-  return <FormElicitationView toolName={toolName} elicitation={elicitation} onResolve={onResolve} />;
+  if (elicitation.requestedSchema && Object.keys(elicitation.requestedSchema.properties).length > 0) {
+    return <ElicitationForm toolName={toolName} elicitation={elicitation} onResolve={onResolve} />;
+  }
+  if (elicitation.approval) {
+    return (
+      <ApprovalRequest
+        approval={elicitation.approval}
+        onApprove={() => onResolve({ action: "accept", content: {} })}
+        onDecline={() => onResolve({ action: "decline" })}
+        onCancel={() => onResolve({ action: "cancel" })}
+      />
+    );
+  }
+  return (
+    <RequestCard
+      title="Allow this request?"
+      source={elicitation.source ?? getToolDisplayName(toolName)}
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={() => onResolve({ action: "accept", content: {} })}
+            className={primaryRequestButtonClass}
+          >
+            Allow
+          </button>
+          <button type="button" onClick={() => onResolve({ action: "decline" })} className={requestButtonClass}>
+            Decline
+          </button>
+          <button
+            type="button"
+            onClick={() => onResolve({ action: "cancel" })}
+            className={quietRequestButtonClass}
+          >
+            Cancel
+          </button>
+        </>
+      }
+    >
+      <div className="break-words [overflow-wrap:anywhere]">
+        <Markdown compact>{elicitation.message}</Markdown>
+      </div>
+    </RequestCard>
+  );
 }
 
 function UrlElicitationView({
@@ -48,130 +98,64 @@ function UrlElicitationView({
   completed?: boolean;
   onResolve: (result: ElicitationResult) => void;
 }) {
-  const handleOpen = () => {
-    window.open(elicitation.url, "_blank", "noopener,noreferrer");
-    onResolve({ action: "accept" });
-  };
-
-  const renderActions = () => {
-    if (completed) {
-      return (
-        <div className="flex items-center gap-1.5">
-          <CheckCircle2 className="w-3 h-3 text-green-500 dark:text-green-400" />
-          <span className="text-xs text-green-600 dark:text-green-400">Completed</span>
-        </div>
-      );
-    }
-
-    if (waiting) {
-      return (
-        <div className="flex items-center gap-2">
-          <Loader2 className="w-3 h-3 animate-spin text-neutral-400 dark:text-neutral-500" />
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">Waiting for completion…</span>
-          <button
-            type="button"
-            onClick={() => onResolve({ action: "cancel" })}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handleOpen}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-        >
-          <ExternalLink className="w-3 h-3" />
-          Open URL
-        </button>
-        <button
-          type="button"
-          onClick={() => onResolve({ action: "decline" })}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-        >
-          <X className="w-3 h-3" />
-          Decline
-        </button>
-        <button
-          type="button"
-          onClick={() => onResolve({ action: "cancel" })}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  };
-
   return (
-    <div className="rounded-lg overflow-hidden max-w-full">
-      <div className="flex items-start gap-2 min-w-0">
-        <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0 space-y-2">
-          <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-            {getToolDisplayName(toolName)}
-          </div>
-          <div className="text-xs text-neutral-500 dark:text-neutral-400">
-            <Markdown compact>{elicitation.message}</Markdown>
-          </div>
-          <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-200 break-all">
-            {elicitation.url}
-          </div>
-          {renderActions()}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FormElicitationView({
-  toolName,
-  elicitation,
-  onResolve,
-}: {
-  toolName: string;
-  elicitation: FormElicitation;
-  onResolve: (result: ElicitationResult) => void;
-}) {
-  const requestedSchema = elicitation.requestedSchema;
-  const isMinimalConfirmation = !requestedSchema || Object.keys(requestedSchema.properties).length === 0;
-  if (isMinimalConfirmation) {
-    return (
-      <div className="rounded-lg overflow-hidden max-w-full">
-        <div className="flex items-start gap-2 min-w-0">
-          <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              <Markdown compact>{elicitation.message}</Markdown>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onResolve({ action: "accept", content: {} })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-              >
-                <Check className="w-3 h-3" />
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => onResolve({ action: "decline" })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-              >
-                <X className="w-3 h-3" />
+    <RequestCard
+      title={completed ? "Request completed" : waiting ? "Finish in your browser" : "Continue in your browser"}
+      source={elicitation.source ?? getToolDisplayName(toolName)}
+      icon={completed ? CheckCircle2 : undefined}
+      completed={completed}
+      actions={
+        completed ? (
+          <p role="status" className="text-xs text-neutral-500 dark:text-neutral-400">
+            You’re all set. Continuing…
+          </p>
+        ) : (
+          <>
+            <a
+              href={elicitation.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(waiting ? requestButtonClass : primaryRequestButtonClass, "inline-flex items-center gap-1")}
+              onClick={() => {
+                if (!waiting) onResolve({ action: "accept" });
+              }}
+            >
+              {waiting ? "Open again" : "Open page"}
+              <ExternalLink aria-hidden="true" className="size-3" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            {!waiting && (
+              <button type="button" onClick={() => onResolve({ action: "decline" })} className={requestButtonClass}>
                 Decline
               </button>
-            </div>
-          </div>
+            )}
+            <button
+              type="button"
+              onClick={() => onResolve({ action: "cancel" })}
+              className={quietRequestButtonClass}
+            >
+              Cancel
+            </button>
+          </>
+        )
+      }
+    >
+      {elicitation.message && (
+        <div className="break-words [overflow-wrap:anywhere]">
+          <Markdown compact>{elicitation.message}</Markdown>
         </div>
-      </div>
-    );
-  }
-
-  return <ElicitationForm toolName={toolName} elicitation={elicitation} onResolve={onResolve} />;
+      )}
+      <p className={cn(requestValueClass, "break-all")}>{elicitation.url}</p>
+      {!completed && (
+        <p role="status" className="flex items-start gap-2 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+          {waiting && (
+            <Loader2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
+          )}
+          {waiting
+            ? "Complete the steps in the other tab. This updates automatically when you’re done."
+            : "Opens in a new tab. Come back here when you’re done."}
+        </p>
+      )}
+    </RequestCard>
+  );
 }

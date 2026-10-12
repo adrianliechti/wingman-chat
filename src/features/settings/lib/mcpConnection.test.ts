@@ -65,9 +65,111 @@ afterEach(async () => {
   await provider.disconnect();
   await Promise.all(servers.splice(0).map((value) => value.close()));
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
+  it("preserves task-required calls and reads their completed payload", async () => {
+    capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };
+    list.mockResolvedValue({ tools: [{ ...tool("run"), execution: { taskSupport: "required" } }] });
+    await provider.connect();
+    const task = {
+      taskId: "research-task",
+      status: "working",
+      pollInterval: 0,
+      ttl: 60_000,
+      createdAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+    };
+    server.setRequestHandler("tools/call", async (request) => {
+      expect(request.params.task).toEqual({});
+      return { ...result, task };
+    });
+    const methods: string[] = [];
+    server.fallbackRequestHandler = async (request) => {
+      methods.push(request.method);
+      if (request.method === "tasks/get") return { ...task, status: "completed" };
+      if (request.method === "tasks/result") return result;
+      throw new Error(`Unexpected method: ${request.method}`);
+    };
+    expect(await provider.tools[0].execute({}, { context: undefined, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "done" },
+    ]);
+    expect(methods).toEqual(["tasks/get", "tasks/result"]);
+  });
+
+  it("requests unique progress tokens and routes concurrent updates only to their calls", async () => {
+    await provider.connect();
+    const pending = [deferred<CallToolResult>(), deferred<CallToolResult>()];
+    const tokens: (string | number)[] = [];
+    server.setRequestHandler("tools/call", async (request) => {
+      const index = Number(request.params.arguments?.index);
+      tokens[index] = request.params._meta!.progressToken!;
+      await server.notification({
+        method: "notifications/progress",
+        params: { progressToken: tokens[index], progress: 1, message: `Searching ${index}` },
+      });
+      return pending[index].promise;
+    });
+    const updates = [vi.fn(), vi.fn()];
+    const executions = updates.map((setMeta, index) =>
+      provider.tools[0].execute({ index }, { context: { setMeta }, emitCustomEvent() {} }),
+    );
+    await expect.poll(() => updates.map((value) => value.mock.calls.length)).toEqual([1, 1]);
+    expect(tokens[0]).not.toBe(tokens[1]);
+    expect(updates[0]).toHaveBeenLastCalledWith({ mcpProgress: { progress: 1, message: "Searching 0" } });
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: tokens[1], progress: 2, total: 4, message: "Reading sources" },
+    });
+    await expect.poll(() => updates[1].mock.calls.length).toBe(2);
+    expect(updates[1]).toHaveBeenLastCalledWith({ mcpProgress: { progress: 2, total: 4, message: "Reading sources" } });
+    expect(updates[0]).toHaveBeenCalledOnce();
+    pending[0].resolve(result);
+    await executions[0];
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: tokens[0], progress: 3, message: "Too late" },
+    });
+    expect(updates[0]).toHaveBeenCalledOnce();
+    pending[1].resolve(result);
+    await executions[1];
+  });
+
+  it("allows research beyond the SDK's default minute and cancels without accepting later progress", async () => {
+    await provider.connect();
+    vi.useFakeTimers();
+    const pending = deferred<CallToolResult>();
+    let token!: string | number;
+    server.setRequestHandler("tools/call", async (request) => {
+      token = request.params._meta!.progressToken!;
+      return pending.promise;
+    });
+    const controller = new AbortController();
+    const setMeta = vi.fn();
+    const execution = provider.tools[0].execute(
+      {},
+      { context: { signal: controller.signal, setMeta }, emitCustomEvent() {} },
+    );
+    const settled = vi.fn();
+    void Promise.resolve(execution).then(settled, settled);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(settled).not.toHaveBeenCalled();
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress: 1, message: "Still researching" },
+    });
+    expect(setMeta).toHaveBeenCalledOnce();
+    controller.abort();
+    await expect(execution).rejects.toThrow();
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress: 2, message: "Too late" },
+    });
+    expect(setMeta).toHaveBeenCalledOnce();
+    pending.resolve(result);
+  });
+
   it("discovers every page, filters app-only tools and emits native UI resources with their HTML", async () => {
     list.mockImplementation(async (cursor) =>
       cursor === undefined

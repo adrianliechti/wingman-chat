@@ -353,12 +353,21 @@ export function mapMessages(messages: UIMessage[], update: (message: UIMessage) 
   return mapped.some((message, index) => message !== messages[index]) ? mapped : messages;
 }
 
+/** Progress belongs to the call while its result is still pending. */
+export function toolCallProgress(part: ToolCallPart) {
+  const meta = (
+    part.metadata as { meta?: { mcpProgress?: { progress: number; total?: number; message?: string } } } | undefined
+  )?.meta;
+  return meta?.mcpProgress;
+}
+
 /** Replace one tool's metadata without mutating earlier history snapshots. */
 export function updateToolResultMeta(messages: UIMessage[], toolCallId: string, meta: Record<string, unknown>) {
   return mapMessages(messages, (message) => {
     const parts = message.parts.map((part) =>
-      part.type === "tool-result" && part.toolCallId === toolCallId
-        ? { ...part, metadata: { ...part.metadata, meta: { ...meta } } }
+      (part.type === "tool-result" && part.toolCallId === toolCallId) ||
+      (part.type === "tool-call" && part.id === toolCallId)
+        ? { ...part, metadata: { ...(part.metadata as Record<string, unknown>), meta: { ...meta } } }
         : part,
     );
     return parts.some((part, index) => part !== message.parts[index]) ? { ...message, parts } : message;

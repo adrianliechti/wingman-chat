@@ -22,7 +22,6 @@ vi.mock("@/features/plugins/hooks/usePlugins", () => ({
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: fixture.agent }) }));
 vi.mock("@/features/agent/hooks/useAgentProviders", () => ({ useAgentProviders: () => fixture.agents }));
 vi.mock("@/features/artifacts/hooks/useArtifactsProvider", () => ({ useArtifactsProvider: () => null }));
-vi.mock("@/features/research/hooks/useInternetProvider", () => ({ useInternetProvider: () => null }));
 vi.mock("@/features/skills/hooks/useSkillBuilderProvider", () => ({ useSkillBuilderProvider: () => null }));
 vi.mock("@/features/skills/hooks/useSkillsProvider", () => ({ useSkillsProvider: () => null }));
 vi.mock("@/shared/config", () => ({ getConfig: () => fixture.config }));

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import type { McpServerDefinition } from "@/features/settings/lib/mcpConfig";
 import type { McpAppOptions } from "@/features/settings/lib/mcpAppSession";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -156,7 +155,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     requiredIds: pluginRequiredIds,
     servers: pluginServers,
   } = usePluginProviders(currentAgent);
-  const internetProvider = useInternetProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
   const activePlugins = useMemo(
@@ -247,13 +245,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   const providers = useMemo<ToolProvider[]>(
     () => [
-      ...(internetProvider ? [internetProvider] : []),
       ...(artifactsProvider ? [artifactsProvider] : []),
       ...(skillsProvider ? [skillsProvider] : []),
       ...agentProviders,
       ...clients,
     ],
-    [internetProvider, artifactsProvider, skillsProvider, agentProviders, clients],
+    [artifactsProvider, skillsProvider, agentProviders, clients],
   );
   const coreProviders = useMemo<ToolProvider[]>(() => [skillBuilderProvider], [skillBuilderProvider]);
 

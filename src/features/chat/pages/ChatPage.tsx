@@ -78,6 +78,7 @@ export function ChatPage() {
     chatsLoaded,
     isResponding,
     pendingElicitation,
+    interruptState,
     sendMessage,
   } = useChat();
   const handleUiSubmission = useCallback(
@@ -377,6 +378,8 @@ export function ChatPage() {
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
     messages,
     isResponding,
+    requestKey:
+      pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
   });
 
   // Set up navigation actions
@@ -493,7 +496,7 @@ export function ChatPage() {
                       const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} />
+                          <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
                         </div>
                       );
                     }
@@ -508,6 +511,7 @@ export function ChatPage() {
                           message={message}
                           isLast={index === messages.length - 1}
                           isResponding={isResponding}
+                          foldedReasoning={unit.foldedReasoning}
                         />
                       </div>
                     );

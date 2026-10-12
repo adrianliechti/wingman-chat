@@ -138,7 +138,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         return {
           model: currentModel,
           chatId,
-          elicit: async (elicitation: Elicitation) => {
+          elicit: async (elicitation: Elicitation, options) => {
             requireOwner();
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
             // Pause the mic during the elicitation, but let buffered playback finish naturally.
@@ -146,7 +146,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             return await Promise.resolve()
               .then(() => {
                 requireOwner();
-                return requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
+                return requestElicitationRef.current(
+                  toolCall.id,
+                  toolCall.name,
+                  elicitation,
+                  options?.signal,
+                  options?.onCancel,
+                );
               })
               .finally(resume);
           },

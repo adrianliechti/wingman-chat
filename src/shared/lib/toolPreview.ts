@@ -76,6 +76,7 @@ export function getToolCallPreview(args: Record<string, unknown> | null): string
     "value",
     "message",
     "prompt",
+    "instructions",
     "instruction",
     "text",
   ];

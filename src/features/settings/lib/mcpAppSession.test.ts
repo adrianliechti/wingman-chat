@@ -1,6 +1,6 @@
 import { AppBridge } from "@mcp-ui/client";
 import { Client } from "@modelcontextprotocol/client";
-import type { MCPClient as NativeMCPClient } from "@tanstack/ai-mcp";
+import type { NativeMCPClient } from "./mcpNativeClient";
 import type { ContentPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import { mediaFromDataUrl, text } from "@/shared/lib/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -149,6 +149,20 @@ it("restores initial inputs and structured results without executing the tool ag
   await provider.disconnect();
   expect(first).not.toHaveBeenCalled();
   expect(second).toHaveBeenCalledWith("disconnect");
+});
+
+it("prevents MCP apps from bypassing required chat approval", async () => {
+  const callTool = vi.fn();
+  const client = { capabilities: {}, callTool } as unknown as NativeMCPClient;
+  const provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test", undefined, undefined, true);
+  (provider as unknown as { client: NativeMCPClient }).client = client;
+  provider.toolDefinitions.set("app", tool);
+  const restored = await provider.restoreToolUI(savedApp(resource.content), {}, savedResult(), {});
+  const handler = restored.handlers.oncalltool!;
+  await expect(handler({ name: "app", arguments: {} }, {} as Parameters<typeof handler>[1])).rejects.toThrow(
+    "requires tool approval in chat",
+  );
+  expect(callTool).not.toHaveBeenCalled();
 });
 
 it("rejects unrelated resources and does not publish a late resource after cancellation", async () => {

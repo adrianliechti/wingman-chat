@@ -7,6 +7,8 @@ export interface ConfiguredMcpServer {
   description?: string;
   icon?: string;
   headers?: Record<string, string>;
+  /** Ask before sending tool arguments to this server. */
+  needsApproval?: boolean;
 }
 
 /** All sources resolve to this shape before any client is constructed. */
@@ -20,9 +22,11 @@ export interface McpServerDefinition {
   description: string;
   icon?: ToolIcon;
   headers?: Record<string, string>;
+  /** Ask before sending tool arguments to this server. */
+  needsApproval?: boolean;
 }
 
-const RESERVED_IDS = new Set(["internet", "artifacts", "skills", "skill-builder", "repository", "memory", "companion"]);
+const RESERVED_IDS = new Set(["artifacts", "skills", "skill-builder", "repository", "memory", "companion"]);
 
 export function normalizeMcpUrl(value: string): string {
   const url = new URL(value.trim());
@@ -59,6 +63,8 @@ export function normalizeMcpServer(server: McpServerDefinition): McpServerDefini
       (RESERVED_IDS.has(server.id) || server.id.startsWith("plugin:"))
     )
       throw new Error("MCP server ID conflicts with a built-in provider");
+    if (server.needsApproval !== undefined && typeof server.needsApproval !== "boolean")
+      throw new Error("MCP needsApproval must be a boolean");
     return {
       ...server,
       url: normalizeMcpUrl(server.url),
@@ -81,7 +87,10 @@ export function configuredMcpServers(servers: ConfiguredMcpServer[], origin: str
     const normalized = normalizeMcpServer({
       ...server,
       source: server.url == null ? "gateway" : "configured",
-      url: server.url ?? new URL(`/api/v1/mcp/${encodeURIComponent(server.id)}`, origin).href,
+      url:
+        typeof server.url === "string" && server.url.startsWith("/")
+          ? new URL(server.url, origin).href
+          : (server.url ?? new URL(`/api/v1/mcp/${encodeURIComponent(server.id)}`, origin).href),
       name: server.name ?? server.id,
       description: server.description ?? "",
     });
@@ -105,6 +114,7 @@ export function sameMcpServer(a: McpServerDefinition, b: McpServerDefinition): b
     a.name === b.name &&
     a.description === b.description &&
     a.icon === b.icon &&
+    a.needsApproval === b.needsApproval &&
     JSON.stringify(a.headers) === JSON.stringify(b.headers)
   );
 }

@@ -71,7 +71,13 @@ export interface ChatContextType {
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
-  requestElicitation: (toolCallId: string, toolName: string, elicitation: Elicitation) => Promise<ElicitationResult>;
+  requestElicitation: (
+    toolCallId: string,
+    toolName: string,
+    elicitation: Elicitation,
+    signal?: AbortSignal,
+    onCancel?: () => void,
+  ) => Promise<ElicitationResult>;
 
   // Post-turn advisory overlay — covers both category consent and risk warnings.
   pendingConsent: PendingConsent | null;

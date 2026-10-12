@@ -41,7 +41,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({
 
   const toolDef = useMemo(() => findTool(providers, call.name), [providers, call.name]);
   const error = result?.state === "error" ? { code: "TOOL_ERROR", message: result.error ?? "" } : undefined;
-  const isToolError = !!error;
+  const isToolError = !!error && !result?.outcome;
   // When a result carries an MCP UI app, the app is the primary renderer; per the
   // MCP Apps spec the `content` blocks are for model context / text-only fallback,
   // so we don't also render the (redundant) media inline.
@@ -57,14 +57,18 @@ export const ChatToolMessage = memo(function ChatToolMessage({
     providers.some((p) => p.id === appProviderId);
   const inputBlocks = useMemo(() => resolveToolInput(toolDef, call.arguments), [toolDef, call.arguments]);
   const toolOutput = useMemo(() => (result ? toolResultContent(result) : undefined), [result]);
-  const header = resolveToolHeader(toolDef, call.name, call.arguments, { error: isToolError, result: toolOutput });
+  const header = resolveToolHeader(toolDef, call.name, call.arguments, {
+    error: isToolError,
+    result: toolOutput,
+    outcome: result?.outcome,
+  });
   const outputBlock = useMemo(
     () => (error || !toolOutput ? null : resolveToolOutput(toolDef, toolOutput, call.arguments)),
     [toolDef, error, toolOutput, call.arguments],
   );
 
   return (
-    <div className={nested ? "max-w-full pb-1" : "max-w-full pb-2"}>
+    <div className="max-w-full">
       <div className="max-w-full">
         <ActivityRow
           label={header.label}
@@ -77,20 +81,34 @@ export const ChatToolMessage = memo(function ChatToolMessage({
         />
 
         {toolResultExpanded && (
-          <div className="mt-1">
+          <div className="pt-1.5 pb-2">
             {/* Input — the tool's blocks, or a best-effort arguments block */}
-            {inputBlocks.map((block) => (
-              <CodeRenderer
-                key={block.name ?? block.language}
-                code={block.code}
-                language={block.language}
-                name={block.name}
-                subtle
-              />
-            ))}
+            {inputBlocks.map((block) =>
+              block.language === "markdown" || block.language === "text" ? (
+                <div
+                  key={block.name ?? block.language}
+                  className="ml-4.5 mb-2 text-sm text-neutral-600 dark:text-neutral-400"
+                >
+                  {block.name && (
+                    <p className="mb-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{block.name}</p>
+                  )}
+                  {block.language === "text" ? (
+                    <p className="whitespace-pre-wrap break-words">{block.code}</p>
+                  ) : (
+                    <Markdown compact>{block.code}</Markdown>
+                  )}
+                </div>
+              ) : (
+                <div key={block.name ?? block.language} className="ml-4.5">
+                  <CodeRenderer code={block.code} language={block.language} name={block.name} subtle />
+                </div>
+              ),
+            )}
             {/* Output — the error, or the tool's / best-effort result block */}
             {error ? (
-              <CodeRenderer code={error.message} language="text" name="Error" subtle />
+              <div className="ml-4.5">
+                <CodeRenderer code={error.message} language="text" name="Error" subtle />
+              </div>
             ) : (
               outputBlock &&
               (outputBlock.language === "markdown" ? (
@@ -98,7 +116,14 @@ export const ChatToolMessage = memo(function ChatToolMessage({
                   <Markdown compact>{outputBlock.code}</Markdown>
                 </div>
               ) : (
-                <CodeRenderer code={outputBlock.code} language={outputBlock.language} name={outputBlock.name} subtle />
+                <div className="ml-4.5">
+                  <CodeRenderer
+                    code={outputBlock.code}
+                    language={outputBlock.language}
+                    name={outputBlock.name}
+                    subtle
+                  />
+                </div>
               ))
             )}
           </div>

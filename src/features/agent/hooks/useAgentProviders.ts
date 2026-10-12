@@ -16,7 +16,7 @@ import { reconcileMemorySources } from "../lib/memorySources";
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
   providers: ToolProvider[];
-  /** Built-in tool IDs this agent has enabled (e.g. "internet", "canvas") */
+  /** Tool provider IDs this agent has enabled (e.g. "web", "artifacts") */
   enabledTools: string[];
 }
 

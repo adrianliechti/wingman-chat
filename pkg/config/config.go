@@ -48,7 +48,6 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
 	loadYAMLPtr("text.yaml", &cfg.Text)
 	loadYAMLPtr("extractor.yaml", &cfg.Extractor)
-	loadYAMLPtr("internet.yaml", &cfg.Internet)
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
 	loadYAMLPtr("artifacts.yaml", &cfg.Artifacts)
@@ -93,8 +92,6 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("VISION_ENABLED", &cfg.Vision, nil)
-
-	applyInternetOverrides(cfg)
 
 	withFeature("RENDERER_ENABLED", &cfg.Renderer, func(r *Renderer) {
 		envOverride("RENDERER_MODEL", &r.Model)
@@ -163,42 +160,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
-}
-
-func applyInternetOverrides(cfg *Config) {
-	switch os.Getenv("INTERNET_ENABLED") {
-	case "true":
-		cfg.Internet = ensurePtr(cfg.Internet)
-	case "false":
-		cfg.Internet = nil
-	}
-	if i := cfg.Internet; i != nil {
-		// YAML enables the feature too. An explicitly empty selector clears its
-		// YAML value (e.g. clear researcher to use the local research model).
-		for key, target := range map[string]*string{
-			"INTERNET_MODEL": &i.Model, "INTERNET_GUARD": &i.Guard,
-			"INTERNET_SCRAPER": &i.Scraper, "INTERNET_SEARCHER": &i.Searcher,
-			"INTERNET_RESEARCHER": &i.Researcher, "INTERNET_LOCATION": &i.Location, "INTERNET_SUMMARIZER": &i.Summarizer,
-		} {
-			if value, exists := os.LookupEnv(key); exists {
-				*target = strings.TrimSpace(value)
-			}
-		}
-		if value, exists := os.LookupEnv("INTERNET_ELICITATION"); exists {
-			if enabled, err := strconv.ParseBool(value); err == nil {
-				i.Elicitation = enabled
-			}
-		}
-		// Comma-separated category names; an explicitly empty value clears the YAML list.
-		if value, exists := os.LookupEnv("INTERNET_CATEGORIES"); exists {
-			i.Categories = nil
-			for _, name := range strings.Split(value, ",") {
-				if name = strings.TrimSpace(name); name != "" {
-					i.Categories = append(i.Categories, SearchCategory{Name: name})
-				}
-			}
-		}
-	}
 }
 
 // PlatformToken returns the API token from environment variables.

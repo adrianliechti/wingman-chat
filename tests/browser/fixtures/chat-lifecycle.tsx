@@ -19,6 +19,10 @@ import { hasStoredAttachments } from "../../../src/features/chat/lib/chatAttachm
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
+import { useToolsContext } from "../../../src/features/tools/hooks/useToolsContext";
+import { useMcpClients } from "../../../src/features/tools/hooks/useMcpClients";
+import type { McpServerDefinition } from "../../../src/features/settings/lib/mcpConfig";
+import { ChatMessageElicitation } from "../../../src/features/chat/components/ChatMessageElicitation";
 import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
@@ -138,9 +142,14 @@ const text = (value: string): UIMessage => userMessage(value);
 
 function Fixture() {
   const chat = useChat();
+  const tools = useToolsContext();
   window.chatE2E = {
     state: () => ({
-      ready: chat.chatsLoaded && !!chat.model,
+      ready:
+        chat.chatsLoaded &&
+        !!chat.model &&
+        (!mcpServers.length ||
+          tools.providers.some((provider) => provider.id === "internet" && provider.tools.length > 0)),
       chatId: chat.chatId,
       loadedId: chat.chat?.id,
       model: chat.model,
@@ -210,6 +219,15 @@ function Fixture() {
       <ActionsProbe />
       <ComposerProbe />
       <ChatInterrupts />
+      {chat.pendingElicitation && (
+        <ChatMessageElicitation
+          toolName={chat.pendingElicitation.toolName}
+          elicitation={chat.pendingElicitation.elicitation}
+          waiting={chat.pendingElicitation.waiting}
+          completed={chat.pendingElicitation.completed}
+          onResolve={chat.resolveElicitation}
+        />
+      )}
       <div data-testid="messages">{chat.messages.map((message) => messageText(message)).join("|")}</div>
       <div style={{ paddingTop: 1500 }}>
         {chat.chat?.messages
@@ -244,17 +262,31 @@ const skills = createSkillsProvider(
   { id: "fixture-skills", name: "Skills", description: "Fixture" },
 )!;
 
+const mcpServers: McpServerDefinition[] = new URLSearchParams(location.search).has("mcp")
+  ? [
+      {
+        id: "internet",
+        source: "configured",
+        name: "Web Search",
+        description: "Access up-to-date information",
+        url: new URL("/fixture-mcp", location.origin).href,
+        needsApproval: true,
+      },
+    ]
+  : [];
+const desiredMcp = new Set(mcpServers.map((server) => server.id));
 function ToolsOwner({ children }: { children: ReactNode }) {
+  const { clients, getState } = useMcpClients(mcpServers, desiredMcp);
   const [enabled, setEnabled] = useState(false);
   window.setChatSkills = setEnabled;
   return (
     <ToolsContext
       value={
         {
-          providers: enabled ? [skills] : [],
+          providers: [...(enabled ? [skills] : []), ...clients],
           coreProviders: [],
           isProviderEnabled: () => true,
-          getProviderState: () => "connected",
+          getProviderState: (id: string) => (id === "internet" ? getState(id) : "connected"),
         } as unknown as ToolsContextValue
       }
     >

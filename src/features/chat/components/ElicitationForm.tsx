@@ -1,10 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { HelpCircle, Send } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import { Markdown } from "@/shared/ui/Markdown";
 import { ChoiceControl } from "@/shared/ui/forms/ChoiceControl";
-import { buttonClass, fieldLabelClass, inputClass, primaryButtonClass } from "@/shared/ui/forms/controlStyles";
+import {
+  RequestHeader,
+  requestCardClass,
+  requestBodyClass,
+  requestActionsClass,
+  primaryRequestButtonClass,
+  quietRequestButtonClass,
+  requestButtonClass,
+} from "./RequestCard";
+import { fieldLabelClass, inputClass } from "@/shared/ui/forms/controlStyles";
 import type {
   ElicitationPrimitiveSchema,
   ElicitationResult,
@@ -61,7 +69,7 @@ export function ElicitationForm({
       ref={form}
       noValidate
       aria-labelledby={`${id}-title`}
-      className="my-2 min-w-0 max-w-xl rounded-xl border border-neutral-200 bg-white p-4 text-sm shadow-xs sm:p-5 dark:border-neutral-800 dark:bg-neutral-900/50"
+      className={requestCardClass}
       onSubmit={(event) => {
         event.preventDefault();
         const result = validateElicitationForm(schema, values);
@@ -70,57 +78,57 @@ export function ElicitationForm({
         if (!result.errors) onResolve({ action: "accept", content: result.content });
       }}
     >
-      <div className="mb-5 flex items-start gap-2.5">
-        <HelpCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
-        <div className="min-w-0 space-y-1">
-          <h3 id={`${id}-title`} className="font-medium text-neutral-900 dark:text-neutral-100">
-            {questions
+      <div className={requestBodyClass}>
+        <RequestHeader
+          id={`${id}-title`}
+          source={questions ? undefined : (elicitation.source ?? getToolDisplayName(toolName))}
+          title={
+            questions
               ? fields.length === 1
                 ? "A quick question"
                 : "A few quick questions"
-              : getToolDisplayName(toolName)}
-          </h3>
-          {elicitation.message && (
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              <Markdown compact>{elicitation.message}</Markdown>
-            </div>
-          )}
+              : "A few details to continue"
+          }
+        />
+        {elicitation.message && (
+          <div className="text-xs text-neutral-500 dark:text-neutral-400">
+            <Markdown compact>{elicitation.message}</Markdown>
+          </div>
+        )}
+        <div className="space-y-5">
+          {fields.map(([name, field], index) => (
+            <ElicitationField
+              key={name}
+              id={`${id}-${index}`}
+              label={field.title || startCase(name)}
+              schema={field}
+              presentation={elicitation.presentation?.fields[name]}
+              question={questions}
+              required={schema.required?.includes(name) ?? false}
+              value={values[name]}
+              error={Object.hasOwn(errors, name) ? errors[name] : undefined}
+              onChange={(value) => {
+                setValues((current) => ({ ...current, [name]: value }));
+                setErrors((current) => {
+                  if (!Object.hasOwn(current, name)) return current;
+                  const next = { ...current };
+                  delete next[name];
+                  return next;
+                });
+              }}
+            />
+          ))}
         </div>
       </div>
-      <div className="space-y-5">
-        {fields.map(([name, field], index) => (
-          <ElicitationField
-            key={name}
-            id={`${id}-${index}`}
-            label={field.title || startCase(name)}
-            schema={field}
-            presentation={elicitation.presentation?.fields[name]}
-            question={questions}
-            required={schema.required?.includes(name) ?? false}
-            value={values[name]}
-            error={Object.hasOwn(errors, name) ? errors[name] : undefined}
-            onChange={(value) => {
-              setValues((current) => ({ ...current, [name]: value }));
-              setErrors((current) => {
-                if (!Object.hasOwn(current, name)) return current;
-                const next = { ...current };
-                delete next[name];
-                return next;
-              });
-            }}
-          />
-        ))}
-      </div>
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-neutral-200/70 pt-4 dark:border-neutral-800">
-        <button type="submit" className={cn(buttonClass, primaryButtonClass, "inline-flex items-center gap-2")}>
-          <Send aria-hidden="true" className="size-3.5" />
+      <div className={requestActionsClass}>
+        <button type="submit" className={primaryRequestButtonClass}>
           {questions ? "Continue" : "Submit"}
         </button>
-        <button type="button" className={quietButton} onClick={() => onResolve({ action: "decline" })}>
+        <button type="button" className={requestButtonClass} onClick={() => onResolve({ action: "decline" })}>
           {questions ? "Skip" : "Decline"}
         </button>
         {!questions && (
-          <button type="button" className={quietButton} onClick={() => onResolve({ action: "cancel" })}>
+          <button type="button" className={quietRequestButtonClass} onClick={() => onResolve({ action: "cancel" })}>
             Cancel
           </button>
         )}

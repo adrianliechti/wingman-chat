@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { Globe } from "lucide-react";
+import { internetToolPresentation } from "@/features/tools/lib/internetPresentation";
 import {
   getToolUiResourceUri,
   isToolVisibilityAppOnly,
@@ -21,10 +23,12 @@ import type {
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/client";
-import { createMCPClient, type MCPClient as NativeMCPClient } from "@tanstack/ai-mcp";
+import { createBrowserMcpClient, type NativeMCPClient } from "./mcpNativeClient";
 import { browserMcpTransport } from "./mcpTransport";
 import { trace } from "@opentelemetry/api";
-import { withAbort } from "@/shared/lib/abortSignals";
+import { withAbort, followAbortSignal } from "@/shared/lib/abortSignals";
+import { getToolDisplayName } from "@/shared/lib/utils";
+import { primaryInputKeys } from "@/shared/lib/toolInput";
 import { textToDataUrl } from "@/shared/lib/fileContent";
 import type { ContentPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import { mediaDataUrl, mediaFromDataUrl, toolResultContent } from "@/shared/lib/messages";
@@ -61,7 +65,7 @@ function pickIcon(icons?: McpIcon[]): string | undefined {
   return (icons?.find((icon) => icon.theme === "light") ?? icons?.find((icon) => !icon.theme) ?? icons?.[0])?.src;
 }
 
-/** Browser authentication and Wingman's tool/storage boundary around TanStack MCP. */
+/** Browser authentication and Wingman's MCP tool/storage boundary. */
 export class MCPClient implements ToolProvider {
   icon?: ToolIcon;
   instructions?: string;
@@ -87,6 +91,7 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description: string;
   readonly headers?: Record<string, string>;
+  readonly needsApproval: boolean;
   private readonly configIcon?: ToolIcon;
 
   constructor(
@@ -96,14 +101,16 @@ export class MCPClient implements ToolProvider {
     description: string,
     headers?: Record<string, string>,
     configIcon?: ToolIcon,
+    needsApproval = false,
   ) {
     this.id = id;
     this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
-    this.configIcon = configIcon;
-    this.icon = configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
+    this.configIcon = id === "internet" ? Globe : configIcon;
+    this.needsApproval = needsApproval;
+    this.icon = this.configIcon ?? new URL("icon", url.endsWith("/") ? url : `${url}/`).href;
     this.authProvider = new BrowserOAuthClientProvider(id, url);
   }
 
@@ -147,7 +154,7 @@ export class MCPClient implements ToolProvider {
     const definitions = new Map<string, MCPTool>();
     let client: NativeMCPClient;
     try {
-      client = await createMCPClient({
+      client = await createBrowserMcpClient({
         name: HOST_INFO.name,
         version: HOST_INFO.version,
         transport: browserMcpTransport(transport, {
@@ -169,7 +176,9 @@ export class MCPClient implements ToolProvider {
             } else if (method === "notifications/resources/list_changed") this.notifyApps("resources");
             else if (method === "notifications/prompts/list_changed") this.notifyApps("prompts");
             else if (method === "notifications/elicitation/complete" && typeof params?.elicitationId === "string") {
-              this.elicitations.get(params.elicitationId)?.context?.onElicitationComplete?.(params.elicitationId);
+              const call = this.elicitations.get(params.elicitationId);
+              this.elicitations.delete(params.elicitationId);
+              if (!call?.context?.signal?.aborted) call?.context?.onElicitationComplete?.(params.elicitationId);
             }
           },
           closed: () => {
@@ -182,16 +191,10 @@ export class MCPClient implements ToolProvider {
         clientOptions: {
           capabilities: {
             elicitation: { form: {}, url: {} },
-            // TanStack declares sampling by default; Wingman cannot answer it.
+            // Wingman cannot answer server sampling requests.
             sampling: undefined,
             extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
           },
-        },
-        // Retain the server's full app metadata; TanStack's public tool metadata
-        // intentionally contains only the fields needed for model execution.
-        toolFilter: (tool) => {
-          definitions.set(tool.name, tool);
-          return true;
         },
       });
       if (this.connectionVersion !== version) {
@@ -236,23 +239,33 @@ export class MCPClient implements ToolProvider {
       throw new Error("Elicitation requires a single active tool context");
     }
     if (params.mode === "url") {
+      const url = new URL(params.url);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+        throw new Error("MCP elicitation URLs must use HTTP(S) without embedded credentials");
       this.elicitations.set(params.elicitationId, call);
       try {
         const result = await context.elicit({
           mode: "url",
           message: params.message,
+          source: this.name,
           url: params.url,
           elicitationId: params.elicitationId,
         });
+        context.signal?.throwIfAborted();
+        if (result.action !== "accept") this.elicitations.delete(params.elicitationId);
         return { action: result.action };
-      } finally {
+      } catch (error) {
         this.elicitations.delete(params.elicitationId);
+        throw error;
       }
     }
-    return context.elicit({
+    const result = await context.elicit({
       message: params.message,
+      source: this.name,
       requestedSchema: normalizeRequestedSchema(params.requestedSchema),
     });
+    context.signal?.throwIfAborted();
+    return result;
   }
 
   async disconnect(): Promise<void> {
@@ -291,8 +304,9 @@ export class MCPClient implements ToolProvider {
       .then(async () => {
         while (discovery.dirty && this.client === client) {
           discovery.dirty = false;
-          definitions.clear();
           const nativeTools = client.capabilities.tools ? await client.tools() : [];
+          definitions.clear();
+          for (const tool of nativeTools) definitions.set(tool.name, tool);
           if (this.client !== client) return;
           if (discovery.dirty) continue;
           this.toolDefinitions = new Map(
@@ -301,10 +315,9 @@ export class MCPClient implements ToolProvider {
               [mcpToolName(this.id, tool.name), tool],
             ]),
           );
-          this.tools = nativeTools.flatMap((native) => {
-            const tool = definitions.get(native.metadata.mcp.serverToolName);
-            return tool && !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [];
-          });
+          this.tools = nativeTools.flatMap((tool) =>
+            !isToolVisibilityAppOnly(tool) ? [this.toTool(tool, client)] : [],
+          );
           this.onToolsChanged?.();
         }
       })
@@ -320,14 +333,23 @@ export class MCPClient implements ToolProvider {
     } catch (error) {
       console.warn(`Skipping invalid MCP UI resource URI for ${tool.name}:`, error);
     }
+    const presentation = this.id === "internet" ? internetToolPresentation(tool.name) : {};
+    const title =
+      presentation.title ??
+      tool.title ??
+      (tool.annotations as { title?: string } | undefined)?.title ??
+      getToolDisplayName(tool.name);
     return {
       name: mcpToolName(this.id, tool.name),
-      title: tool.title ?? (tool.annotations as { title?: string } | undefined)?.title,
+      needsApproval: this.needsApproval,
       icon: pickIcon(tool.icons as McpIcon[] | undefined) ?? (typeof this.icon === "string" ? this.icon : undefined),
       description: tool.description || "",
-      inputSchema: z.fromJSONSchema(tool.inputSchema as Record<string, unknown>),
+      inputSchema: z.fromJSONSchema(flattenToolSchema(tool.inputSchema as Record<string, unknown>)),
+      ...presentation,
+      title,
       execute: async (args, execution) => {
         const context = execution?.context;
+        if (this.needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
         annotateMcpSpan(this.url, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
@@ -374,20 +396,76 @@ export class MCPClient implements ToolProvider {
     };
   }
 
+  private async approve(
+    tool: MCPTool,
+    title: string,
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ): Promise<void> {
+    context?.signal?.throwIfAborted();
+    if (!context?.elicit) throw new Error(`${this.name} requires approval before sending tool input`);
+    const result = await context.elicit({
+      approval: {
+        tool: title,
+        source: this.name !== title ? this.name : undefined,
+        input: args,
+        primary: primaryInputKeys(args, tool.inputSchema),
+      },
+      message: `Send this input to ${this.name} (${tool.name})?\n\n${JSON.stringify(args, null, 2)}`,
+    });
+    context.signal?.throwIfAborted();
+    if (result.action !== "accept") throw new Error("MCP tool request was declined");
+  }
+
   private async callTool(
     client: NativeMCPClient,
     params: CallToolRequest["params"],
     context?: ToolContext,
   ): Promise<CallToolResult> {
     if (this.client !== client) throw new Error("MCP connection changed; reload tools before calling");
-    const call = { context };
+    const { controller, cleanup } = followAbortSignal(context?.signal, this.connectionAbort?.signal);
+    const call: ActiveToolCall = {
+      context: {
+        ...context,
+        signal: controller.signal,
+        elicit: context?.elicit
+          ? (request) =>
+              context.elicit!(request, {
+                signal: controller.signal,
+                onCancel: () => controller.abort(new DOMException("MCP elicitation cancelled", "AbortError")),
+              })
+          : undefined,
+      },
+    };
     this.activeToolCalls.add(call);
     try {
-      const result = await client.callTool(params.name, params.arguments, { signal: context?.signal });
-      context?.signal?.throwIfAborted();
+      let progress = -Infinity;
+      const result = await client.callTool(params.name, params.arguments, {
+        signal: controller.signal,
+        timeout: 15 * 60_000,
+        onprogress: (update) => {
+          if (controller.signal.aborted || this.client !== client || !this.activeToolCalls.has(call)) return;
+          if (!Number.isFinite(update.progress) || update.progress <= progress) return;
+          progress = update.progress;
+          context?.setMeta?.({
+            mcpProgress: {
+              progress,
+              ...(typeof update.total === "number" && Number.isFinite(update.total) && update.total > 0
+                ? { total: update.total }
+                : {}),
+              ...(typeof update.message === "string" ? { message: update.message } : {}),
+            },
+          });
+        },
+      });
+      controller.signal.throwIfAborted();
       if (this.client !== client) throw new Error("MCP connection changed during tool call");
       return result as CallToolResult;
+    } catch (error) {
+      controller.signal.throwIfAborted();
+      throw error;
     } finally {
+      cleanup();
       this.activeToolCalls.delete(call);
       for (const [id, owner] of this.elicitations) {
         if (owner === call) this.elicitations.delete(id);
@@ -458,6 +536,8 @@ export class MCPClient implements ToolProvider {
           const definition = this.toolDefinitions.get(params.name);
           if (!definition || definition.name !== params.name || isToolVisibilityModelOnly(definition))
             throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Tool is not available to this app");
+          if (this.needsApproval)
+            throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "This server requires tool approval in chat");
           return toAppToolResult(await this.callTool(client, params, { signal: extra.signal }));
         },
         onlistresources: async () => ({ resources: await client.resources() }),
@@ -608,6 +688,31 @@ function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
   } catch {
     // Malformed URL — skip the standard server.* attributes.
   }
+}
+
+/**
+ * Some model providers (Anthropic) reject `anyOf`, `oneOf` or `allOf` at the top
+ * of a tool schema, e.g. "send query or queries". Offer every property on one
+ * object instead; the server still enforces the alternatives it declared.
+ */
+export function flattenToolSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const { anyOf, oneOf, allOf, ...root } = schema;
+  if (anyOf === undefined && oneOf === undefined && allOf === undefined) return schema;
+  const branches = (value: unknown) =>
+    (Array.isArray(value) ? value : []).filter(
+      (branch): branch is Record<string, unknown> => !!branch && typeof branch === "object" && !Array.isArray(branch),
+    );
+  const properties: Record<string, unknown> = {};
+  const required = new Set(Array.isArray(root.required) ? root.required : []);
+  for (const branch of [...branches(allOf), ...branches(anyOf), ...branches(oneOf)]) {
+    const flat = flattenToolSchema(branch);
+    Object.assign(properties, flat.properties);
+    // Only `allOf` requirements hold for every call.
+    if (branches(allOf).includes(branch) && Array.isArray(flat.required))
+      for (const name of flat.required) required.add(name);
+  }
+  Object.assign(properties, root.properties);
+  return { ...root, type: "object", properties, ...(required.size ? { required: [...required] } : {}) };
 }
 
 function normalizeRequestedSchema(

@@ -1,4 +1,5 @@
 import { expect, test as base, type Page } from "@playwright/test";
+import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
@@ -225,61 +226,146 @@ test("activity labels vary across responses and stay stable while composing", as
   expect(labels.size).toBeGreaterThan(1);
 });
 
-test("research approvals and child tools use chat disclosures and remain operable on a narrow screen", async ({
-  page,
-}, info) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await open(page, "?seed&research");
-  const input = page.getByRole("textbox", { name: "Chat message input" });
-  await input.fill("Research this topic");
-  await input.press("Enter");
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
-  await page.evaluate(() =>
-    window.reactUiE2E.callTool("web_research", { prompt: "Find evidence about the topic", mode: "deep" }),
-  );
-  const requests = page.getByLabel("Agent requests");
-  await expect(requests.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  await expect(requests).toContainText("Approval required to run Deep research");
-  await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
-  expect(
-    await requests.evaluate(
-      (element) =>
-        element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
-    ),
-  ).toBe(true);
-  await requests.getByText("View details", { exact: true }).click();
-  await expect(requests.locator("details")).toContainText("Find evidence about the topic");
-  await expect(requests.locator("pre")).toHaveCount(0);
-  await requests.getByText("View details", { exact: true }).click();
-  await page.screenshot({ path: info.outputPath("approval.png") });
-  await requests.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
-  const child = page.locator('details[class~="group/subagent"]');
-  await expect(child).toBeVisible();
-  await page.evaluate(() => window.reactUiE2E.callTool("web_search", { queries: ["A useful research query"] }));
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
-  const result = child.getByRole("button", { name: "Searched the web", exact: false });
-  await expect(result).toBeVisible();
-  await result.click();
-  await expect(child).toContainText("Research evidence");
-  await result.click();
-  await page.screenshot({ path: info.outputPath("research.png") });
-  await page.setViewportSize({ width: 390, height: 750 });
-  await expect(result).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.evaluate(() => window.reactUiE2E.finish("Findings with sources"));
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
-  await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
-  await expect(requests).toHaveCount(0);
-  await expect(child).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
-  await child.locator("summary").click();
-  await expect(page.getByText("Findings with sources", { exact: true })).toBeVisible();
-  await page.evaluate(() => window.reactUiE2E.flush());
-  expect(errors).toEqual([]);
-});
+for (const feature of [
+  { name: "web_research", label: "Deep research" },
+  { name: "web_search", label: "Web Search" },
+  { name: "web_fetch", label: "Web Fetch" },
+]) {
+  test(`MCP ${feature.name} approval shows input before sending and remains usable on a narrow screen`, async ({
+    page,
+  }, info) => {
+    const errors: string[] = [];
+    let remoteCalls = 0;
+    const instructions =
+      "Compare recent public reports on electric vehicle charging infrastructure in Switzerland, focusing on coverage, reliability, and expansion plans. Prefer primary sources and include direct source URLs.\n\nDistinguish confirmed findings from estimates, identify the publication date for each source, and explain where reports disagree. Keep the answer concise and state any gaps in the available evidence.";
+    const args =
+      feature.name === "web_research"
+        ? { instructions }
+        : feature.name === "web_search"
+          ? {
+              queries: ["Adrian Liechti public professional profiles", "Adrian Liechti projects"],
+              allowed_domains: ["github.com"],
+              max_results: 8,
+            }
+          : {
+              url: "https://example.test/reports/charging-infrastructure?country=Switzerland",
+              query: "Coverage and reliability",
+              max_chars: 4096,
+            };
+    const details = feature.name === "web_research" ? [instructions] : (args.queries ?? [args.url!]);
+    const originalViewport = page.viewportSize()!;
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/fixture-research-mcp", async (route) => {
+      if (route.request().method() !== "POST") return route.fulfill({ status: 405 });
+      const request = route.request().postDataJSON();
+      if (request.id === undefined) return route.fulfill({ status: 202 });
+      if (request.method === "server/discover")
+        return route.fulfill({
+          json: { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not found" } },
+        });
+      let result = {};
+      if (request.method === "initialize")
+        result = {
+          protocolVersion: "2025-03-26",
+          capabilities: { tools: {} },
+          serverInfo: { name: "Web", version: "1" },
+        };
+      if (request.method === "tools/list")
+        result = {
+          tools: [
+            {
+              name: feature.name,
+              title: feature.label,
+              description: "Find sources",
+              inputSchema: {
+                type: "object",
+                properties: {},
+              },
+            },
+          ],
+        };
+      if (request.method === "tools/call") {
+        remoteCalls++;
+        expect(request.params._meta.progressToken).toBeDefined();
+        expect(request.params.arguments).toEqual(args);
+        result = { content: [{ type: "text", text: "Research evidence" }] };
+      }
+      await route.fulfill({ json: { jsonrpc: "2.0", id: request.id, result } });
+    });
+    await open(page, "?seed&research");
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Research this topic");
+    await input.press("Enter");
+    await expect
+      .poll(() => page.evaluate(() => window.reactUiE2E.state().tools))
+      .toContain(mcpToolName("internet", feature.name));
+    await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
+      name: mcpToolName("internet", feature.name),
+      args,
+    });
+    const requests = page.getByLabel("Agent requests");
+    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+    await expect(requests.getByRole("heading", { name: `Allow ${feature.label}?`, exact: true })).toBeVisible();
+    await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
+    expect(
+      await requests.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
+      ),
+    ).toBe(true);
+    for (const item of details) await expect(requests.getByText(item, { exact: true })).toHaveCount(1);
+    // Only the request itself is shown; options stay in the tool row.
+    for (const option of ["max_chars", "Max chars", "max_results", "Allowed domains", "Coverage and reliability"])
+      await expect(requests).not.toContainText(option);
+    await expect(requests.locator("pre, details")).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath("approval.png") });
+    await page.setViewportSize({ width: 390, height: 750 });
+    const label = page.getByText(feature.label, { exact: true }).first();
+    await expect(label).toBeVisible();
+    expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+    for (const name of ["Allow", "Decline", "Cancel"]) {
+      const button = requests.getByRole("button", { name, exact: true });
+      expect(
+        await button.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+        }),
+      ).toBe(true);
+    }
+    await page.screenshot({ path: info.outputPath("approval-narrow.png") });
+    await page.setViewportSize(originalViewport);
+    expect(remoteCalls).toBe(0);
+    await requests.getByRole("button", { name: "Allow", exact: true }).click();
+    await expect(page.getByText("Searching sources", { exact: true })).toBeVisible();
+    expect(remoteCalls).toBe(1);
+    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await page.evaluate(() => window.reactUiE2E.researchProgress(2, "Reading sources", 4));
+    await expect(page.getByText("Reading sources · 50%", { exact: true })).toBeVisible();
+    await page.screenshot({ path: info.outputPath("progress.png") });
+    await page.evaluate(() => window.reactUiE2E.finishResearch());
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(page.getByText("Reading sources · 50%", { exact: true })).toHaveCount(0);
+    const result = page.getByRole("button", { name: feature.label, exact: false });
+    await expect(result).toBeVisible();
+    await result.click();
+    await expect(page.getByText("Research evidence", { exact: true })).toBeVisible();
+    await result.click();
+    await page.screenshot({ path: info.outputPath("research.png") });
+    await page.setViewportSize({ width: 390, height: 750 });
+    await expect(result).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
+    await expect(requests).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
+    await page.evaluate(() => window.reactUiE2E.flush());
+    expect(errors).toEqual([]);
+  });
+}
 
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
   test(`large text chunks render progressively and Stop retains the full text (${reducedMotion})`, async ({ page }) => {

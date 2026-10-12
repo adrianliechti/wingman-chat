@@ -4,6 +4,18 @@ import { createFileTools, type WritableFileSource } from "@/shared/lib/file-tool
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
 import { findTool, resolveToolHeader, resolveToolInput, resolveToolOutput } from "./toolDisplay";
 
+it("shows MCP progress text and optional percentages only while running", () => {
+  const progress = { progress: 2, total: 4, message: "Reading sources" };
+  expect(resolveToolHeader(undefined, "research", "{}", { running: true, progress }).preview).toBe(
+    "Reading sources · 50%",
+  );
+  expect(
+    resolveToolHeader(undefined, "research", "{}", { running: true, progress: { progress: 1, message: "Searching" } })
+      .preview,
+  ).toBe("Searching");
+  expect(resolveToolHeader(undefined, "research", "{}", { progress }).preview).toBeNull();
+});
+
 const source: WritableFileSource = {
   list: async () => [],
   read: async () => undefined,

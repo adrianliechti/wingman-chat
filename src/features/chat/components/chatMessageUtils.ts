@@ -178,11 +178,15 @@ function hasMedia(message: UIMessage): boolean {
  * subagent). It renders as tool rows, and a run of them folds into a group.
  */
 export function isToolOnlyMessage(message: UIMessage): boolean {
+  return isActivityMessage(message) && !hasReasoning(message);
+}
+
+/** Tool rounds, possibly with reasoning, but no reply: work a finished turn can fold away. */
+export function isActivityMessage(message: UIMessage): boolean {
   if (message.role !== "assistant" || message.parts.length === 0 || messageMetadata(message).error) return false;
   return (
     message.parts.some((part) => part.type === "tool-call") &&
     !hasText(message) &&
-    !hasReasoning(message) &&
     !hasMedia(message) &&
     !message.parts.some(
       (part) => part.type === "subagent" || part.type === "structured-output" || part.type === "ui-resource",
@@ -202,11 +206,35 @@ function hostsToolCall(message: UIMessage, toolCallId?: string | null): boolean 
   return message.parts.some((p) => p.type === "tool-call" && p.id === toolCallId);
 }
 
-export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
+export type RenderUnit =
+  | { kind: "message"; index: number; foldedReasoning?: boolean }
+  | { kind: "toolGroup"; indices: number[]; reply?: number };
+
+function thoughts(message: UIMessage): string[] {
+  return message.parts.flatMap((part) => (part.type === "thinking" && part.content ? [part.content] : []));
+}
+
+/** Reasoning that opens a reply, once its text has started and the thinking is finished. */
+export function leadingReasoning(message: UIMessage | undefined): string[] {
+  if (message?.role !== "assistant" || messageMetadata(message).error) return [];
+  const first = message.parts.findIndex((part) => part.type !== "thinking");
+  const next = message.parts[first];
+  if (first === -1 || next.type !== "text" || !next.content) return [];
+  return thoughts({ ...message, parts: message.parts.slice(0, first) });
+}
+
+/** Every thought a tool group folds: its own rounds' reasoning, then the reply's opening reasoning. */
+export function groupThoughts(messages: readonly UIMessage[], indices: number[], reply?: number): string[] {
+  return [
+    ...indices.flatMap((index) => thoughts(messages[index])),
+    ...(reply === undefined ? [] : leadingReasoning(messages[reply])),
+  ];
+}
 
 /**
- * Partition messages into standalone messages and folded tool groups (runs of
- * groupable tool-only messages with 2+ results). `pendingElicitationToolCallId`
+ * Partition messages into standalone messages and folded tool groups: runs of
+ * finished activity messages (tool rounds and their reasoning) that, with the
+ * reply's opening reasoning, hold at least two steps. `pendingElicitationToolCallId`
  * keeps a message hosting an awaiting elicitation prompt standalone.
  */
 export function groupRenderUnits(
@@ -219,12 +247,14 @@ export function groupRenderUnits(
   const rounds = (message: UIMessage) => toolRounds(message, delegated);
   // Every call is delegated: the child conversation already represents it.
   const represented = (message: UIMessage) => isToolOnlyMessage(message) && rounds(message).length === 0;
+  let foldedReply: number | undefined;
   const addMessage = (index: number) => {
-    if (!represented(messages[index])) units.push({ kind: "message", index });
+    if (!represented(messages[index]))
+      units.push(index === foldedReply ? { kind: "message", index, foldedReasoning: true } : { kind: "message", index });
   };
   const limit = isResponding ? messages.length - 1 : messages.length;
   const groupable = (message: UIMessage) =>
-    isToolOnlyMessage(message) &&
+    isActivityMessage(message) &&
     !hostsToolCall(message, pendingElicitationToolCallId) &&
     rounds(message).every((round) => round.result && !isRichToolResult(round.result));
 
@@ -242,8 +272,12 @@ export function groupRenderUnits(
         }
         j++;
       }
-      if (results >= 2) {
-        units.push({ kind: "toolGroup", indices });
+      // The reply (even while it streams) gives up its opening reasoning to the group.
+      const replyThoughts = leadingReasoning(messages[j]).length;
+      const steps = results + replyThoughts + indices.reduce((sum, index) => sum + thoughts(messages[index]).length, 0);
+      if (results >= 1 && steps >= 2) {
+        if (replyThoughts) foldedReply = j;
+        units.push(replyThoughts ? { kind: "toolGroup", indices, reply: j } : { kind: "toolGroup", indices });
       } else {
         for (let k = i; k < j; k++) addMessage(k);
       }
@@ -362,6 +396,13 @@ export function summarizeToolGroup(messages: readonly UIMessage[], indices: numb
   if (generic && segments.length > 0) segments.push(`used ${plural(generic, "other tool")}`);
   if (segments.length === 0) return `Used ${plural(generic || total, "tool")}`;
   return segments.join(", ");
+}
+
+/** "Used 2 tools and 2 thoughts": the tool summary plus every thought the group folds. */
+export function summarizeActivity(messages: readonly UIMessage[], indices: number[], reply?: number): string {
+  const summary = summarizeToolGroup(messages, indices);
+  const count = groupThoughts(messages, indices, reply).length;
+  return count ? `${summary} and ${plural(count, "thought")}` : summary;
 }
 
 export { getToolCallPreview } from "@/shared/lib/toolPreview";

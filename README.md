@@ -331,7 +331,9 @@ configured through `BRIDGE_URL` remains available (the browser JSON field is sti
     X-Tenant: example
 ```
 
-An explicit `url` connects directly and supports HTTP(S). IDs must be unique and cannot
+An explicit `url` supports HTTP(S) and origin-relative paths, such as
+`/api/v1/mcp/research` to use the gateway proxy. IDs identify the selectable provider
+and can differ from the server endpoint. IDs must be unique and cannot
 collide with built-in providers or the `plugin:` namespace. Invalid definitions are skipped.
 Static configuration and plugin `mcp.json` both support string-valued `headers`. These headers
 are delivered to the browser, so use gateway-side configuration for server-only secrets.
@@ -360,7 +362,6 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_MODEL`, `INTERNET_GUARD`, `INTERNET_ELICITATION`, `INTERNET_CATEGORIES`, `INTERNET_LOCATION`, `INTERNET_SUMMARIZER`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
@@ -370,46 +371,39 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
-`extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+`extractor.yaml`, `renderer.yaml`, `repository.yaml`.
 
-Internet exposes one `web_research` tool. `mode: fast` uses `searcher` directly;
-`mode: deep` uses the configured gateway `researcher`. Without a `researcher`, deep
-mode runs a local agent using `model` (or the parent chat model), with the configured
-`searcher` and/or `scraper`. Only `web_research` is exposed to the parent; local
-`web_search` and `web_fetch` calls stay inside the researcher. The parent is instructed
-to submit one complete brief per user prompt and choose deep upfront when follow-up
-work is needed. `elicitation` requires approval of that input; internal searches and
-page reads need no further approval. This is model guidance, not a runtime call cap:
-another `web_research` invocation would require its own approval. A researcher-only
-setup supports deep mode. `guard` selects the gateway content checker. An omitted guard
-uses the gateway default, which passes when no guards are configured.
+Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
+and `INTERNET_*` settings with an entry in `tools.yaml`:
 
-`categories` lists the searcher verticals the local research agent may pick per query and
-the parent may set as the focus of its one brief (Exa: `company`, `people`, `news`,
-`publication`, `personal site`, `financial report`; Tavily: `news`, `finance`). Each entry
-is a `name` with an optional `description`; `INTERNET_CATEGORIES` takes comma-separated
-names. `location` sets a default two-letter country bias (`INTERNET_LOCATION`). Inside the
-approved brief the research agent can also bound results by `recency` or publication dates
-(`since`/`until`), bias by `location`, and include or exclude domains; the gateway `/v1/search`
-endpoint accepts the same `category`, `location`, `since`, `until` and `domain` fields.
+```yaml
+- id: internet
+  name: Web Search
+  description: Access up-to-date information
+  url: /api/v1/mcp/research
+  needsApproval: true
+# Optionally expose the gateway's separate search/fetch server:
+# - id: web
+#   name: Web
+#   needsApproval: true
+```
 
-A local deep-research run has a budget of 20 tool calls and 80,000 fetched characters,
-mirroring the gateway agent. Near the end the tools append a closing hint; once exhausted they
-return an instruction to answer from the evidence gathered, so a run ends with an answer rather
-than a cutoff. URLs listed by an earlier search in the same run are repeated by heading only.
-`summarizer` (`INTERNET_SUMMARIZER`) optionally names a model that condenses fetched pages of
-4,000 characters or more to the facts relevant to the fetch query before they enter the context.
-`until` includes the whole specified UTC calendar day. Exa maps the legacy
-`research paper` category to `publication`; `company` and `people` reject date
-filters and domain exclusions. Tavily supports country bias only for general
-searches and omits undated sources when date filters are set. The DuckDuckGo HTML
-adapter and current custom gRPC protocol reject date filters explicitly.
+`needsApproval: true` pauses each tool call in chat before any arguments are sent
+and shows the input for approval. Declining sends no tool request. Server-requested
+MCP elicitation remains supported independently. Calls originating in an MCP app
+are blocked for servers requiring approval; use chat to approve those calls.
 
-Enable internet via `internet.yaml` or `INTERNET_ENABLED=true`. Environment overrides
-also apply when YAML enables it; `INTERNET_ENABLED=false` disables it. An explicitly
-empty selector clears the YAML value, e.g. `INTERNET_RESEARCHER=` selects the local
-agent. Local frontend development uses the same fields in `public/config.json`.
-See [research benchmarks](docs/research-benchmarks.md) for timings and reproduction.
+The `internet` provider retains the primary Web Search feature: globe icon, readable
+research instructions and results, and an approval request that shows exactly what
+will be sent. Existing saved `internet` selections continue to work.
+
+Every MCP tool call requests progress. Running rows show server messages and a
+percentage when a total is supplied; servers without notifications retain the
+normal activity indicator. Tool calls allow up to 15 minutes and can be stopped.
+Search options, research orchestration, summarization, and content guards now
+belong to the gateway, whose tool schemas and instructions are discovered over MCP.
+See [MCP progress](https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/progress)
+and [TanStack tool approval](https://tanstack.com/ai/latest/docs/tools/tool-approval).
 
 Model entries can list retired IDs in `replaces` to redirect saved agents and
 chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

@@ -59,7 +59,7 @@ it("normalizes configured endpoints and headers and retains companion wire compa
   const config = await loadWith({
     bridge: { url: "http://LOCALHOST:4242/" },
     tools: [
-      { id: "gateway", name: "Gateway" },
+      { id: "gateway", name: "Gateway", needsApproval: true },
       { id: "direct", url: "https://MCP.test:443/api#ignored", headers: { "X-Tenant": " demo " } },
       { id: "direct", url: "https://duplicate.test" },
       { id: "bad", url: "file:///etc/passwd" },
@@ -69,7 +69,14 @@ it("normalizes configured endpoints and headers and retains companion wire compa
     ],
   });
   expect(config.mcps).toEqual([
-    { id: "gateway", source: "gateway", name: "Gateway", description: "", url: "http://localhost/api/v1/mcp/gateway" },
+    {
+      id: "gateway",
+      source: "gateway",
+      name: "Gateway",
+      description: "",
+      url: "http://localhost/api/v1/mcp/gateway",
+      needsApproval: true,
+    },
     {
       id: "direct",
       source: "configured",
@@ -80,4 +87,28 @@ it("normalizes configured endpoints and headers and retains companion wire compa
     },
   ]);
   expect(config.companion).toEqual({ url: "http://localhost:4242/" });
+});
+
+it("keeps the Internet provider ID while resolving its gateway research endpoint", async () => {
+  const config = await loadWith({
+    tools: [
+      {
+        id: "internet",
+        name: "Web Search",
+        description: "Access up-to-date information",
+        url: "/api/v1/mcp/research",
+        needsApproval: true,
+      },
+    ],
+  });
+  expect(config.mcps).toEqual([
+    {
+      id: "internet",
+      name: "Web Search",
+      description: "Access up-to-date information",
+      url: "http://localhost/api/v1/mcp/research",
+      source: "configured",
+      needsApproval: true,
+    },
+  ]);
 });

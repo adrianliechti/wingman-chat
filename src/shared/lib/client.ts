@@ -13,7 +13,6 @@ import {
   type ClassificationMatch,
   classificationRequest,
 } from "@/features/chat/lib/classificationQuestions";
-import type { SearchOptions, SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type { UIMessage } from "@tanstack/ai";
 import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/types/chat";
@@ -29,7 +28,7 @@ import {
   gatewayText,
   gatewayTranscription,
 } from "./aiProvider";
-import { decodeBase64, simplifyMarkdown } from "./utils";
+import { decodeBase64 } from "./utils";
 import { GatewayEvaluateAdapter } from "./gatewayEvaluate";
 
 function expandToSentences(text: string, start: number, end: number): string {
@@ -93,11 +92,6 @@ export interface ImageRenderOptions {
 export interface ClientRequestOptions {
   signal?: AbortSignal;
   parentContext?: AgentContext;
-}
-
-export interface GuardResult {
-  flagged: boolean;
-  categories: Array<{ name: string; score: number }>;
 }
 
 export interface ParseOptions extends ClientRequestOptions {
@@ -328,15 +322,6 @@ export class Client {
     return this.post("/api/v1/extract", { file: blob, format: "text" }, (resp) => resp.text(), requestOptions);
   }
 
-  async scrape(model: string, url: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    return this.post(
-      "/api/v1/extract",
-      { ...(model && { model }), url, format: "text" },
-      (resp) => resp.text(),
-      requestOptions,
-    );
-  }
-
   async segmentText(text: string, requestOptions: ClientRequestOptions = {}): Promise<string[]> {
     const result = await this.post("/api/v1/segment", { text }, (resp) => resp.json(), requestOptions);
     if (!Array.isArray(result)) throw new Error("The segmentation service returned an invalid result");
@@ -516,72 +501,6 @@ export class Client {
     });
     if (typeof result.text !== "string") throw new Error("The transcription service returned an invalid response");
     return result.text;
-  }
-
-  async search(
-    model: string,
-    query: string,
-    options?: SearchOptions,
-    requestOptions: ClientRequestOptions = {},
-  ): Promise<SearchResult[]> {
-    const data = new FormData();
-    if (model) data.append("model", model);
-    data.append("query", query);
-    data.append("limit", String(options?.limit ?? 10));
-    for (const domain of options?.domains ?? []) data.append("domain", domain);
-    for (const domain of options?.exclude ?? []) data.append("domain", `!${domain}`);
-    if (options?.category) data.append("category", options.category);
-    if (options?.location) data.append("location", options.location);
-    if (options?.since) data.append("since", options.since);
-    if (options?.until) data.append("until", options.until);
-
-    const results = await this.postRaw(
-      "/api/v1/search",
-      data,
-      (resp) => resp.json(),
-      undefined,
-      90_000,
-      requestOptions,
-    );
-    if (!Array.isArray(results)) throw new Error("The search service returned an invalid response");
-
-    return results.map((result: SearchResult) => {
-      let content = simplifyMarkdown(result.content || "");
-      if (content.length > 10000) content = `${content.slice(0, 10000)}... [truncated]`;
-      return { source: result.source, title: result.title, content, metadata: result.metadata };
-    });
-  }
-
-  async guard(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<GuardResult> {
-    const result = await this.postRaw(
-      "/api/v1/guard",
-      JSON.stringify({ ...(model && { model }), text }),
-      (resp) => resp.json(),
-      {
-        "Content-Type": "application/json",
-      },
-      90_000,
-      requestOptions,
-    );
-    const parsed = z
-      .object({
-        flagged: z.boolean(),
-        categories: z.array(z.object({ name: z.string(), score: z.number() })).nullish(),
-      })
-      .safeParse(result);
-    if (!parsed.success) throw new Error("The guard service returned an invalid response");
-    return { flagged: parsed.data.flagged, categories: parsed.data.categories ?? [] };
-  }
-
-  async research(model: string, instructions: string, requestOptions: ClientRequestOptions = {}): Promise<string> {
-    const result = await this.post(
-      "/api/v1/research",
-      { ...(model && { model }), instructions },
-      (resp) => resp.json(),
-      requestOptions,
-    );
-    if (typeof result?.content !== "string") throw new Error("The research service returned an invalid response");
-    return result.content;
   }
 
   async generateImage(

@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { FormElicitation } from "@/shared/types/elicitation";
+import type { FormElicitation, UrlElicitation } from "@/shared/types/elicitation";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
 
 vi.mock("@/shared/ui/Markdown", () => ({ Markdown: ({ children }: { children: string }) => <div>{children}</div> }));
@@ -109,4 +109,115 @@ it.each(["Decline", "Cancel"])("preserves the remote %s action without submittin
   );
   await click([...container.querySelectorAll("button")].find((button) => button.textContent === label)!);
   expect(onResolve).toHaveBeenCalledExactlyOnceWith({ action: label.toLowerCase() });
+});
+
+it("shows only the request itself for direct approval and resolves after an explicit action", async () => {
+  const onResolve = vi.fn();
+  const instructions = "Find **primary sources**\nhttps://example.test/?a=1&b=2";
+  await act(async () =>
+    root.render(
+      <ChatMessageElicitation
+        toolName="web_research"
+        elicitation={{
+          message: "Fallback for nonvisual clients",
+          approval: {
+            tool: "Web research",
+            source: "Web Search",
+            input: { instructions, max_sources: 8 },
+            primary: ["instructions"],
+          },
+        }}
+        onResolve={onResolve}
+      />,
+    ),
+  );
+  expect(container.querySelector("h3")?.textContent).toBe("Allow Web research?");
+  expect(container.querySelector("p:not(h3 p)")?.textContent).toBe(instructions);
+  expect(container.textContent).toContain("Web Search");
+  expect(container.textContent).not.toContain("Max sources");
+  expect(container.textContent).not.toContain("Fallback for nonvisual clients");
+  expect(container.querySelector("details, pre")).toBeNull();
+  expect(onResolve).not.toHaveBeenCalled();
+  await click([...container.querySelectorAll("button")].find((button) => button.textContent === "Allow")!);
+  expect(onResolve).toHaveBeenCalledExactlyOnceWith({ action: "accept", content: {} });
+});
+
+it("lists every argument when none reads as the request", async () => {
+  await act(async () =>
+    root.render(
+      <ChatMessageElicitation
+        toolName="remote"
+        elicitation={{ message: "", approval: { tool: "Resize", input: { width: 640, keep_ratio: true } } }}
+        onResolve={vi.fn()}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("Width640");
+  expect(container.textContent).toContain("Keep ratioYes");
+});
+
+it.each(["Allow", "Decline", "Cancel"])("resolves a schema-free confirmation with %s", async (label) => {
+  const onResolve = vi.fn();
+  await act(async () =>
+    root.render(
+      <ChatMessageElicitation
+        toolName="remote"
+        elicitation={{ message: "Publish this report?", source: "Reports" }}
+        onResolve={onResolve}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("Reports");
+  await click([...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === label)!);
+  expect(onResolve).toHaveBeenCalledExactlyOnceWith(
+    label === "Allow" ? { action: "accept", content: {} } : { action: label.toLowerCase() },
+  );
+});
+
+it("opens URL requests in a new tab and reopens while waiting without sending another answer", async () => {
+  const onResolve = vi.fn();
+  const elicitation: UrlElicitation = {
+    mode: "url",
+    message: "Connect your account",
+    source: "Reports",
+    url: "https://example.test/connect",
+    elicitationId: "connect",
+  };
+  const render = async (waiting = false, completed = false) =>
+    act(async () =>
+      root.render(
+        <ChatMessageElicitation
+          toolName="remote"
+          elicitation={elicitation}
+          waiting={waiting}
+          completed={completed}
+          onResolve={onResolve}
+        />,
+      ),
+    );
+  const open = async () =>
+    act(async () => {
+      // Suppress navigation in the DOM harness; the real browser tests follow the link.
+      const link = container.querySelector("a")!;
+      link.addEventListener("click", (event) => event.preventDefault(), { once: true });
+      link.click();
+    });
+  await render();
+  expect(container.querySelector("a")?.getAttribute("href")).toBe(elicitation.url);
+  expect(container.querySelector("a")?.target).toBe("_blank");
+  expect(container.querySelector("a")?.rel).toBe("noopener noreferrer");
+  await open();
+  expect(onResolve).toHaveBeenCalledExactlyOnceWith({ action: "accept" });
+  await render(true);
+  expect(container.querySelector("a")?.textContent).toContain("Open again");
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("updates automatically");
+  expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Cancel"]);
+  await open();
+  expect(onResolve).toHaveBeenCalledOnce();
+  await click(container.querySelector("button")!);
+  expect(onResolve).toHaveBeenLastCalledWith({ action: "cancel" });
+  await render(false, true);
+  expect(container.querySelector("h3")?.textContent).toBe("Request completed");
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("Continuing");
+  expect(container.querySelector("a, button")).toBeNull();
 });

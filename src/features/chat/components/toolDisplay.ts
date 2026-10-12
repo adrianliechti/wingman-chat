@@ -65,13 +65,21 @@ export function resolveToolHeader(
   }
   const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
   const label = tool?.title ?? getToolDisplayName(name);
+  const progress = state.running ? state.progress : undefined;
+  const percentage =
+    progress?.total && progress.total > 0
+      ? `${Math.min(100, Math.max(0, Math.floor((progress.progress / progress.total) * 100)))}%`
+      : undefined;
+  const progressPreview = progress ? [progress.message, percentage].filter(Boolean).join(" · ") : undefined;
   return {
     Icon: h?.icon,
     label: h?.label ?? (state.error ? `${label} failed` : label),
     mono: h?.mono ?? false,
-    preview: h?.suppressPreview
-      ? null
-      : toolPreviewText(h?.preview !== undefined ? h.preview : getToolCallPreview(args)),
+    preview: progressPreview
+      ? toolPreviewText(progressPreview)
+      : h?.suppressPreview
+        ? null
+        : toolPreviewText(h?.preview !== undefined ? h.preview : getToolCallPreview(args)),
   };
 }
 

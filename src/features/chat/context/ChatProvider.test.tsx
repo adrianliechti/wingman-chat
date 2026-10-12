@@ -68,6 +68,9 @@ vi.mock("@/features/artifacts/lib/fs", () => ({
   },
   resolveArtifactFileSystem: (_fs: unknown, chatId: string) => ({ chatId }),
 }));
+vi.mock("@/features/tools/hooks/useToolsContext", () => ({
+  useToolsContext: () => ({ providers: [], getProviderState: () => "connected", isProviderEnabled: () => true }),
+}));
 vi.mock("@/features/chat/hooks/useChatContext", () => {
   const context = {
     tools: () => fixture.tools,

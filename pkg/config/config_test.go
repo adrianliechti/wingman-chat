@@ -7,50 +7,6 @@ import (
 	"testing"
 )
 
-func TestInternetOverrides(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		initial *Internet
-		env     map[string]string
-		want    *Internet
-	}{
-		{"researcher only", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_RESEARCHER": "web"}, &Internet{Researcher: "web"}},
-		{"override YAML without enable flag", &Internet{Researcher: "old"}, map[string]string{"INTERNET_RESEARCHER": "web"}, &Internet{Researcher: "web"}},
-		{"explicit disable", &Internet{Searcher: "web"}, map[string]string{"INTERNET_ENABLED": "false"}, nil},
-		{"selector alone does not enable", nil, map[string]string{"INTERNET_RESEARCHER": "web"}, nil},
-		{"clear gateway to use local model", &Internet{Researcher: "web", Model: "gpt-6-luna", Elicitation: true}, map[string]string{"INTERNET_RESEARCHER": "", "INTERNET_ELICITATION": "false"}, &Internet{Model: "gpt-6-luna"}},
-		{"all selectors", nil, map[string]string{"INTERNET_ENABLED": "true", "INTERNET_MODEL": " gpt-6-luna ", "INTERNET_GUARD": "guard", "INTERNET_SEARCHER": "search", "INTERNET_SCRAPER": "scrape", "INTERNET_RESEARCHER": "research", "INTERNET_ELICITATION": "true", "INTERNET_LOCATION": "CH", "INTERNET_CATEGORIES": "news, research paper"}, &Internet{Model: "gpt-6-luna", Guard: "guard", Searcher: "search", Scraper: "scrape", Researcher: "research", Elicitation: true, Location: "CH", Categories: []SearchCategory{{Name: "news"}, {Name: "research paper"}}}},
-		{"clear categories", &Internet{Categories: []SearchCategory{{Name: "news", Description: "News"}}}, map[string]string{"INTERNET_CATEGORIES": ""}, &Internet{}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, key := range []string{"INTERNET_ENABLED", "INTERNET_MODEL", "INTERNET_GUARD", "INTERNET_SEARCHER", "INTERNET_SCRAPER", "INTERNET_RESEARCHER", "INTERNET_ELICITATION", "INTERNET_LOCATION", "INTERNET_SUMMARIZER", "INTERNET_CATEGORIES"} {
-				// Preserve the caller environment while making absence testable.
-				t.Setenv(key, "")
-				os.Unsetenv(key)
-			}
-			for key, value := range tc.env {
-				t.Setenv(key, value)
-			}
-			cfg := Config{Internet: tc.initial}
-			applyInternetOverrides(&cfg)
-			if !reflect.DeepEqual(cfg.Internet, tc.want) {
-				t.Fatalf("got=%+v want=%+v", cfg.Internet, tc.want)
-			}
-			data, err := json.Marshal(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var decoded Config
-			if err := json.Unmarshal(data, &decoded); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(decoded.Internet, tc.want) {
-				t.Fatalf("browser config lost internet fields: %s", data)
-			}
-		})
-	}
-}
-
 func TestModelReplacementsReachBrowserConfig(t *testing.T) {
 	previous, err := os.Getwd()
 	if err != nil {
@@ -180,6 +136,7 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	if err := os.WriteFile("tools.yaml", []byte(`
 - id: managed
 - id: direct
+  needsApproval: true
   url: https://mcp.example.test/api
   headers:
     X-Tenant: example
@@ -198,7 +155,7 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 	if err := json.Unmarshal(data, &browser); err != nil {
 		t.Fatal(err)
 	}
-	if len(browser.Tools) != 2 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" {
+	if len(browser.Tools) != 2 || browser.Tools[0].URL != "" || browser.Tools[1].Headers["X-Tenant"] != "example" || !browser.Tools[1].NeedsApproval {
 		t.Fatalf("tools.yaml lost MCP fields: %s", data)
 	}
 	if browser.Bridge == nil || browser.Bridge.URL != "http://localhost:4242/" {

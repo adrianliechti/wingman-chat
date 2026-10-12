@@ -170,6 +170,10 @@ export class RunSidecar {
       const phased = this.phasedText.get(message.id);
       if (phased) message = withTextPhases(message, phased);
       const parts = message.parts.map((part) => {
+        if (part.type === "tool-call") {
+          const meta = this.results.get(part.id)?.metadata.meta;
+          if (meta) return { ...part, metadata: { ...(part.metadata as Record<string, unknown>), meta } };
+        }
         if (part.type === "tool-result") {
           const data = this.results.get(part.toolCallId);
           return data

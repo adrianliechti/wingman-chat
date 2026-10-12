@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "@tanstack/ai";
 import { assistantMessage, userMessage, type ToolResultMetadata } from "@/shared/lib/messages";
-import { collectTurnArtifactPaths, groupRenderUnits, summarizeToolGroup } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, groupRenderUnits, summarizeActivity, summarizeToolGroup } from "./chatMessageUtils";
 
 /** A committed tool round in its own assistant turn. */
 function result(id: string, name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): UIMessage {
@@ -72,6 +72,30 @@ describe("summarizeToolGroup", () => {
     expect(groupRenderUnits([userMessage("Go"), result("a", "read", {}), assistantMessage("Done")], false)).toEqual(
       [0, 1, 2].map((index) => ({ kind: "message", index })),
     );
+  });
+
+  it("folds the turn's reasoning, including the reply's opening thought, into the group", () => {
+    const thought = result("b", "web_research", {});
+    thought.parts.unshift({ type: "thinking", content: "Look deeper" });
+    const reply = assistantMessage([
+      { type: "thinking", content: "Summarize" },
+      { type: "text", content: "Done" },
+    ]);
+    const messages = [userMessage("Go"), result("a", "web_fetch", {}), thought, reply];
+    expect(groupRenderUnits(messages, false)).toEqual([
+      { kind: "message", index: 0 },
+      { kind: "toolGroup", indices: [1, 2], reply: 3 },
+      { kind: "message", index: 3, foldedReasoning: true },
+    ]);
+    expect(summarizeActivity(messages, [1, 2], 3)).toBe("Used 2 tools and 2 thoughts");
+    // One tool and one thought are already two steps worth folding.
+    expect(groupRenderUnits([userMessage("Go"), result("a", "web_fetch", {}), reply], false)).toEqual([
+      { kind: "message", index: 0 },
+      { kind: "toolGroup", indices: [1], reply: 2 },
+      { kind: "message", index: 2, foldedReasoning: true },
+    ]);
+    // The running round stays visible until it finishes.
+    expect(groupRenderUnits(messages.slice(0, 3), true)).toEqual([0, 1, 2].map((index) => ({ kind: "message", index })));
   });
 
   it("deduplicates file targets and preserves semantic ordering", () => {

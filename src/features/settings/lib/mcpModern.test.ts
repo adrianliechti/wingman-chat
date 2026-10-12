@@ -131,7 +131,7 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     expect(elicit.mock.calls.map(([params]) => params.message)).toEqual(["Round 0", "Round 1"]);
   });
 
-  it("passes a declined elicitation to the server", async () => {
+  it.each(["decline", "cancel"])("passes a %s elicitation to the server", async (action) => {
     call.mockImplementation(
       askOnce((ctx) => {
         const answer = inputResponse(ctx.mcpReq.inputResponses, "name");
@@ -140,10 +140,32 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     );
     await provider.connect();
 
-    const elicit = vi.fn().mockResolvedValue({ action: "decline" });
+    const elicit = vi.fn().mockResolvedValue({ action });
     expect(await tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).toEqual([
-      { type: "text", content: "decline" },
+      { type: "text", content: action },
     ]);
+  });
+
+  it.each(["stop", "disconnect"])("does not send a late input answer after %s", async (action) => {
+    call.mockImplementation(askOnce(() => text("must not retry")));
+    await provider.connect();
+    let answer!: (value: { action: "accept" }) => void;
+    const elicit = vi.fn(
+      () =>
+        new Promise<{ action: "accept" }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const execution = tool("ask").execute({}, { context: { elicit, signal: controller.signal }, emitCustomEvent() {} });
+    const rejected = expect(execution).rejects.toThrow();
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    if (action === "stop") controller.abort();
+    else await provider.disconnect();
+    await rejected;
+    answer({ action: "accept" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(retries()).toHaveLength(1);
   });
 
   it("fails the tool call without retrying when no one can answer the elicitation", async () => {

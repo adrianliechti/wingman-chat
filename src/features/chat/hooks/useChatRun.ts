@@ -25,6 +25,9 @@ import type { ChatStore } from "../lib/chatStore";
 import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
 import { createAttachmentLoader } from "../lib/chatAttachments";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { mcpToolPrefix } from "@/features/settings/lib/mcpToolNames";
+import { ProviderState } from "@/shared/types/chat";
 import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
 import { recallMemory } from "@/features/agent/lib/memoryRecall";
 import { reconcileMemorySources } from "@/features/agent/lib/memorySources";
@@ -36,6 +39,7 @@ interface Session {
   native: UIMessage[];
   hydrated: ChatPersistedState | null;
   interrupts: ChatInterruptState | null;
+  toolWaiters: Set<() => void>;
 }
 
 interface Options {
@@ -78,7 +82,14 @@ export function useChatRun({
   const config = getConfig();
   const client = config.client;
   const session = useMemo<Session>(
-    () => ({ id: threadId, sidecar: new RunSidecar(), native: [], hydrated: null, interrupts: null }),
+    () => ({
+      id: threadId,
+      sidecar: new RunSidecar(),
+      native: [],
+      hydrated: null,
+      interrupts: null,
+      toolWaiters: new Set(),
+    }),
     [threadId],
   );
   const storageOwnerRef = useRef<Session | null>(session);
@@ -86,9 +97,32 @@ export function useChatRun({
     storageOwnerRef.current = session;
     return () => {
       storageOwnerRef.current = null;
+      for (const resolve of session.toolWaiters) resolve();
+      session.toolWaiters.clear();
     };
   }, [session]);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
+  const { providers, getProviderState, isProviderEnabled } = useToolsContext();
+  const toolNames = new Set(tools.map((tool) => tool.name));
+  const isAwaitingTools = (names: string[]) =>
+    names.some(
+      (name) =>
+        !toolNames.has(name) &&
+        providers.some((provider) => {
+          const state = getProviderState(provider.id);
+          return (
+            name.startsWith(mcpToolPrefix(provider.id)) &&
+            (isProviderEnabled?.(provider.id) ?? true) &&
+            (state === ProviderState.Disconnected ||
+              state === ProviderState.Initializing ||
+              state === ProviderState.Authenticating)
+          );
+        }),
+    );
+  const awaitingTools = useRef(isAwaitingTools);
+  useLayoutEffect(() => {
+    awaitingTools.current = isAwaitingTools;
+  });
   // Realtime and legacy MCP URL requests have a live transport callback.
   // Chat forms and tool approvals use ChatClient's durable interrupts below.
   const { pendingElicitation, requestElicitation, resolveElicitation, completeElicitation, clearElicitation } =
@@ -200,7 +234,14 @@ export function useChatRun({
           createToolContext: (call, execution) => ({
             chatId: id,
             content: () => (toolMessage?.parts ?? []).filter(isContentPart),
-            elicit: (elicitation) => requestElicitation(call.id, call.name, elicitation, execution.abortSignal),
+            elicit: (elicitation, options) =>
+              requestElicitation(
+                call.id,
+                call.name,
+                elicitation,
+                options?.signal ?? execution.abortSignal,
+                options?.onCancel,
+              ),
             onElicitationComplete: (elicitationId) => {
               if (active()) completeElicitation(elicitationId);
             },
@@ -259,6 +300,23 @@ export function useChatRun({
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
         if (!saved) return null;
+        // TanStack binds persisted approvals once at hydration. Its current
+        // updateTools does not rebind an approval hydrated before MCP discovery.
+        const pendingIds = new Set(saved.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
+        const names: string[] = [];
+        const collect = (messages: UIMessage[]) => {
+          for (const message of messages)
+            for (const part of message.parts) {
+              if (part.type === "tool-call" && pendingIds.has(part.id)) names.push(part.name);
+              if (part.type === "subagent") collect(part.subagent.messages);
+            }
+        };
+        collect(saved.messages);
+        await Promise.resolve();
+        while (storageOwnerRef.current === session && awaitingTools.current(names))
+          await new Promise<void>((resolve) => {
+            session.toolWaiters.add(resolve);
+          });
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
         return session.hydrated;
@@ -311,6 +369,11 @@ export function useChatRun({
       ai.setMessages(withRunError(session.native, getErrorInfo(error)));
     },
   });
+  // Runs after useChat's tool-registration effect, before releasing hydration.
+  useEffect(() => {
+    for (const resolve of session.toolWaiters) resolve();
+    session.toolWaiters.clear();
+  }, [session, tools, providers, getProviderState]);
   useEffect(() => {
     setStreamingMessage(null);
     clearElicitation();

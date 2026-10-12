@@ -19,8 +19,10 @@ export function useChatElicitation() {
   );
   const clearElicitation = useCallback(() => {
     hideCompleted.cancel();
-    pending.current?.resolve({ action: "cancel" });
+    const current = pending.current;
     publish(null);
+    current?.resolve({ action: "cancel" });
+    if (current?.waiting) current.onCancel?.();
   }, [hideCompleted, publish]);
 
   const requestElicitation = useCallback(
@@ -29,12 +31,13 @@ export function useChatElicitation() {
       toolName: string,
       elicitation: Elicitation,
       signal?: AbortSignal,
+      onCancel?: () => void,
     ): Promise<ElicitationResult> => {
       clearElicitation();
       if (signal?.aborted) return Promise.resolve({ action: "cancel" });
       return new Promise((resolve) => {
         const finish = (result: ElicitationResult) => {
-          signal?.removeEventListener("abort", onAbort);
+          if (elicitation.mode !== "url" || result.action !== "accept") signal?.removeEventListener("abort", onAbort);
           resolve(result);
         };
         const onAbort = () => {
@@ -42,7 +45,14 @@ export function useChatElicitation() {
           else finish({ action: "cancel" });
         };
         signal?.addEventListener("abort", onAbort, { once: true });
-        publish({ toolCallId, toolName, elicitation, resolve: finish });
+        publish({
+          toolCallId,
+          toolName,
+          elicitation,
+          resolve: finish,
+          onCancel,
+          cleanup: () => signal?.removeEventListener("abort", onAbort),
+        });
       });
     },
     [clearElicitation, publish],
@@ -58,6 +68,7 @@ export function useChatElicitation() {
       }
       if (current.elicitation.mode === "url" && result.action === "accept") {
         publish({ ...current, waiting: true });
+        current.resolve(result);
         return;
       }
       current.resolve(result);
@@ -70,7 +81,7 @@ export function useChatElicitation() {
     (id: string) => {
       const current = pending.current;
       if (!current?.waiting || current.elicitation.mode !== "url" || current.elicitation.elicitationId !== id) return;
-      current.resolve({ action: "accept" });
+      current.cleanup?.();
       const completed = { ...current, waiting: false, completed: true };
       publish(completed);
       hideCompleted.maybeExecute(completed);

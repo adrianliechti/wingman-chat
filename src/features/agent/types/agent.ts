@@ -14,7 +14,7 @@ export interface Agent {
   skills: string[]; // names referencing global skill library
   plugins: string[]; // ids referencing installed plugins
 
-  tools: string[]; // optional tool IDs, e.g. "internet", "companion"
+  tools: string[]; // optional provider IDs, e.g. "web", "companion"
 
   memory?: boolean; // enable the persistent /.memory/ file mount
 }
