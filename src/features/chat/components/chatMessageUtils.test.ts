@@ -95,7 +95,9 @@ describe("summarizeToolGroup", () => {
       { kind: "message", index: 2, foldedReasoning: true },
     ]);
     // The running round stays visible until it finishes.
-    expect(groupRenderUnits(messages.slice(0, 3), true)).toEqual([0, 1, 2].map((index) => ({ kind: "message", index })));
+    expect(groupRenderUnits(messages.slice(0, 3), true)).toEqual(
+      [0, 1, 2].map((index) => ({ kind: "message", index })),
+    );
   });
 
   it("deduplicates file targets and preserves semantic ordering", () => {
@@ -147,6 +149,63 @@ describe("summarizeToolGroup", () => {
       assistantMessage("Done"),
     ];
     expect(collectTurnArtifactPaths(messages, 3)).toEqual(["/created.txt"]);
+  });
+
+  it("hides ui.json source chips when the turn displays an inline interface, keeping other generated files", () => {
+    const generated = result(
+      "ui",
+      "execute_script",
+      {},
+      {
+        artifactDelta: {
+          mutations: [
+            { operation: "create", path: "/ui.json" },
+            { operation: "create", path: "/tmp/ui.json" },
+            { operation: "create", path: "/data.json" },
+            { operation: "create", path: "/report.pdf" },
+          ],
+        },
+      },
+    );
+    const reply = assistantMessage(
+      'An explorer:\n\n```ui\n{"version":"v1.0","createSurface":{"surfaceId":"explorer","components":[{"id":"root","component":"Text","text":"Ready"}]}}\n```',
+    );
+    const messages = [userMessage("Create an explorer"), generated, reply];
+    const original = structuredClone(messages);
+    expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/data.json", "/report.pdf"]);
+    expect(messages).toEqual(original);
+  });
+
+  it("keeps ui.json visible when it is delivered as a file without an inline interface", () => {
+    const generated = result(
+      "ui",
+      "create",
+      { path: "/ui.json" },
+      {
+        artifactDelta: { mutations: [{ operation: "create", path: "/ui.json" }] },
+      },
+    );
+    const messages = [userMessage("Create a JSON file"), generated, assistantMessage("Here is your file")];
+    expect(collectTurnArtifactPaths(messages, 2)).toEqual(["/ui.json"]);
+  });
+
+  it("does not use an earlier turn's inline interface to hide a later ui.json deliverable", () => {
+    const generated = result(
+      "ui",
+      "create",
+      { path: "/ui.json" },
+      {
+        artifactDelta: { mutations: [{ operation: "create", path: "/ui.json" }] },
+      },
+    );
+    const messages = [
+      userMessage("Create an explorer"),
+      assistantMessage("```ui\n{}\n```"),
+      userMessage("Create a JSON file"),
+      generated,
+      assistantMessage("Here is your file"),
+    ];
+    expect(collectTurnArtifactPaths(messages, 4)).toEqual(["/ui.json"]);
   });
 
   it("shows subagent outputs and retires moved or deleted files without appended references", () => {

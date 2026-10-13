@@ -8,7 +8,17 @@ A `ui` or `a2ui` fence accepts strict JSON: one message, an array of messages, o
   "createSurface": {
     "surfaceId": "estimate",
     "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
-    "components": [{ "id": "root", "component": "Text", "text": "Ready" }],
+    "components": [
+      { "id": "root", "component": "Column", "children": ["title", "text"] },
+      {
+        "id": "title",
+        "component": "Heading",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "text": "Estimate",
+        "level": 2
+      },
+      { "id": "text", "component": "Text", "text": "Ready" }
+    ],
     "dataModel": {}
   }
 }

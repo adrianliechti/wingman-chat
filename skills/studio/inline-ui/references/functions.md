@@ -16,6 +16,8 @@ Bind every external input explicitly in `values`; calculated values are read-onl
 
 Expressions support arithmetic, comparisons, boolean operators, `??`, ternaries, array literals and safe property/index reads. Use `number(value)` for numeric TextField strings. No globals, JavaScript functions, methods or assignments are available. Nest A2UI function calls to compose dependent calculations. Oversized or recursive expressions report an error under the shared work/depth limits.
 
+Nested A2UI function calls, including an action's `functionCall` wrapper, are limited to depth 5. Compose helpers inside one `evaluate` expression instead of building long chains of nested `@call` objects. `concat` joins strings, not arrays; use `map`/`filter` to construct arrays.
+
 Useful expression patterns:
 
 - `round(total * 1.08, 2)`, `clamp(value, 0, 100)`.

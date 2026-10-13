@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "react";
+import { readFileSync } from "node:fs";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiRenderer, InlineUiProvider } from "./UiRenderer";
@@ -182,6 +183,20 @@ it("keeps controls disabled while streaming and updates a calculation locally", 
   await render(source);
   await act(async () => input(container.querySelector("input")!, "4"));
   expect(container.querySelector(".text-2xl")?.textContent).toBe("48");
+});
+
+it("shows and hides Basic Text using the documented Wingman visibility wrapper", async () => {
+  const reference = readFileSync("skills/studio/inline-ui/references/layout.md", "utf8");
+  const example = JSON.parse(reference.match(/```ui\n([\s\S]*?)\n```/)![1]);
+  await render(example);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('[data-a2ui-id="drawtext"]')?.textContent).toBe("Drawing details");
+  const toggle = container.querySelector<HTMLButtonElement>('[data-a2ui-component="Toggle"] button')!;
+  await act(async () => toggle.click());
+  expect(container.querySelector('[data-a2ui-id="drawtext"]')).toBeNull();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => toggle.click());
+  expect(container.querySelector('[data-a2ui-id="drawtext"]')?.textContent).toBe("Drawing details");
 });
 
 it("keeps standard numeric text inputs as strings and ChoicePicker values as arrays", async () => {

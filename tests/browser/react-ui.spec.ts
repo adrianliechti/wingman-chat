@@ -33,6 +33,148 @@ async function open(page: Page, query = "") {
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
 
+test("invalid inline UI repairs automatically and stays repaired after reload", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Show a pairing result");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const surface = {
+    version: "v1.0",
+    createSurface: {
+      surfaceId: "pairing",
+      catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      components: [
+        { id: "root", component: "Column", children: ["pair_result"] },
+        {
+          id: "pair_result",
+          component: "Callout",
+          catalogId: "urn:wingman:inline-ui:catalog:1",
+          text: "Pairing succeeded",
+          tone: { "@path": "/tone" } as unknown,
+        },
+      ],
+      dataModel: { tone: "success" },
+    },
+  };
+  const ui = () => "```ui\n" + JSON.stringify(surface) + "\n```";
+  await page.evaluate((reply) => window.reactUiE2E.finish(reply), ui());
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain("tone: Expected");
+  expect(await page.evaluate(() => window.reactUiE2E.state().tools)).toEqual([]);
+  surface.createSurface.components[1].tone = "success";
+  await page.evaluate((reply) => window.reactUiE2E.finish(reply), ui());
+  await expect(page.getByText("Pairing succeeded", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(page.getByText("Pairing succeeded", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("activity content has no extra gap beneath its title", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Build an HTML explorer");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "html-artifacts" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", {
+      skill: "html-artifacts",
+      path: "references/sdk.md",
+    }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  await page.evaluate(() => window.reactUiE2E.think("Check the interface before finishing."));
+  const group = page.locator('[data-role="tool-group"]');
+  await group.getByRole("button").first().click();
+  const rows = group.getByRole("button", { name: /^Read skill/ });
+  await expect(rows).toHaveCount(2);
+  const first = await rows.nth(0).boundingBox();
+  const second = await rows.nth(1).boundingBox();
+  const rowGap = second!.y - first!.y - first!.height;
+
+  const thinking = page.getByRole("button", { name: /^Thinking/ });
+  const preview = page.getByRole("region", { name: "Thinking preview" });
+  await expect(preview).toHaveText("Check the interface before finishing.");
+  const thinkingBounds = await thinking.boundingBox();
+  const contentTop = await preview
+    .locator("p")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(contentTop - thinkingBounds!.y - thinkingBounds!.height).toBeLessThanOrEqual(rowGap + 1);
+
+  await rows.first().click();
+  await expect(page.getByRole("heading", { name: "HTML artifact runtime", exact: true })).toBeVisible();
+  const toolGap = await rows.first().evaluate((row) => {
+    const content = row.nextElementSibling!.firstElementChild!;
+    return content.getBoundingClientRect().top - row.getBoundingClientRect().bottom;
+  });
+  expect(toolGap).toBeLessThanOrEqual(rowGap + 1);
+  await page.evaluate(() => window.reactUiE2E.finish("Done"));
+});
+
+test("thinking previews the latest update and expands into the chat without an inner scrollbar", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Plan an explorer");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const reasoning =
+    "**Planning the explorer**\n\n" +
+    Array.from({ length: 100 }, (_, index) => `Reasoning paragraph ${index}: consider the next step.`).join("\n\n");
+  await page.evaluate((text) => window.reactUiE2E.think(text), reasoning);
+  const preview = page.getByRole("region", { name: "Thinking preview" });
+  const output = page.getByRole("region", { name: "Thinking output" });
+  const thinking = page.getByRole("button", { name: /Thinking….*Planning the explorer/ });
+  await expect(thinking).toHaveAttribute("aria-expanded", "false");
+  await expect(preview).toHaveText("Reasoning paragraph 99: consider the next step.");
+  await expect(output).toHaveCount(0);
+
+  const longUpdate = "Now checking the next step. ".repeat(100);
+  const latest = reasoning + "\n\n" + longUpdate;
+  await page.evaluate((text) => window.reactUiE2E.think(text), latest);
+  await expect(preview).toContainText(longUpdate.trim());
+  await expect(preview).not.toContainText("Reasoning paragraph 99");
+  await expect(preview).toHaveCSS("-webkit-line-clamp", "3");
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(68);
+  await expect(preview).toHaveCSS("overflow-y", "hidden");
+
+  await thinking.click();
+  await expect(thinking).toHaveAttribute("aria-expanded", "true");
+  await expect(preview).toHaveCount(0);
+  await expect(output).toContainText("Reasoning paragraph 0");
+  await expect(output).toContainText(longUpdate.trim());
+  await expect(output).toHaveCSS("overflow-y", "visible");
+  expect((await output.boundingBox())!.height).toBeGreaterThan(128);
+  expect(await output.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+
+  const finalReasoning = latest + "\n\nFinal checks are done.";
+  await page.evaluate((text) => window.reactUiE2E.think(text), finalReasoning);
+  await expect(output).toContainText("Final checks are done.");
+  await expect(thinking).toHaveAttribute("aria-expanded", "true");
+  await thinking.click();
+  await expect(preview).toHaveText("Final checks are done.");
+  await expect(output).toHaveCount(0);
+  await thinking.click();
+  await expect(output).toBeVisible();
+
+  await page.evaluate(() => window.reactUiE2E.finish("Done"));
+  await expect(page.getByText("Done", { exact: true })).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  await expect(output).toHaveCount(0);
+  const thought = page.getByRole("button", { name: /^Thought/ });
+  await expect(thought).toHaveAttribute("aria-expanded", "false");
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await thought.click();
+  await expect(output).toContainText("Reasoning paragraph 0");
+  await expect(output).toContainText("Final checks are done.");
+  await expect(output).toHaveCSS("overflow-y", "visible");
+});
+
 for (const legacySelection of [false, true]) {
   test(`built-in skills load on demand without a Studio menu (${legacySelection ? "legacy selection" : "fresh settings"})`, async ({
     page,

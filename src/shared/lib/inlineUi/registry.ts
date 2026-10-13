@@ -132,6 +132,8 @@ export function componentReference(group: ReferenceGroup): string {
         })}.\n`,
       );
     }
+    if (key === "basic" && names.length)
+      sections.push("`visible` and `disabled` are Wingman-only properties; Basic components reject them.\n");
     for (const name of names) {
       if (!schema.components[name]) throw new Error(`Unknown ${key} component ${name}`);
       sections.push(`- ${name} ${syntax(schema.components[name], ["id", "component", ...shared])}`);

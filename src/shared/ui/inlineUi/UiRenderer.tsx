@@ -1,4 +1,5 @@
 import type { UIMessage } from "@tanstack/ai";
+import { Drill, Loader2 } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { extractUiFences, parseMessages, type UiBlock } from "@/shared/lib/inlineUi/protocol";
 import { EMPTY_UI_SNAPSHOT, InlineUiRuntime, type UiSubmission } from "@/shared/lib/inlineUi/runtime";
@@ -157,17 +158,20 @@ function UiBlockView({ source, stateKey, isStreaming = false, renderText }: UiRe
                   )}
                   <Surface resolver={resolver} />
                 </div>
-              ) : (
+              ) : runtime ? (
                 <p key={id} className="text-xs text-neutral-500">
-                  {runtime ? "Interface removed." : "Building interface…"}
+                  Interface removed.
                 </p>
+              ) : (
+                <BuildingInterface key={id} />
               );
             })}
-            {!ids.length && (
-              <p className="text-xs text-neutral-500">
-                {parsed.pending || !parsed.messages.length ? "Building interface…" : "Interface updated."}
-              </p>
-            )}
+            {!ids.length &&
+              (parsed.pending || !parsed.messages.length ? (
+                <BuildingInterface />
+              ) : (
+                <p className="text-xs text-neutral-500">Interface updated.</p>
+              ))}
           </InlineUiViewContext>
         )
       )}
@@ -177,9 +181,20 @@ function UiBlockView({ source, stateKey, isStreaming = false, renderText }: UiRe
 
 function Surface({ resolver }: { resolver: NodeResolver }) {
   const root = useSignalValue(resolver.rootNode);
-  return root ? (
-    <NodeView key={root.id} node={root} />
-  ) : (
-    <p className="text-xs text-neutral-500">Building interface…</p>
+  return root ? <NodeView key={root.id} node={root} /> : <BuildingInterface />;
+}
+
+function BuildingInterface() {
+  return (
+    <div
+      role="status"
+      className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 py-1 text-left text-xs text-neutral-500 dark:text-neutral-400"
+    >
+      <Loader2 aria-hidden="true" className="size-3 animate-spin text-neutral-400 dark:text-neutral-500" />
+      <span className="flex min-w-0 items-center gap-2">
+        <Drill aria-hidden="true" className="size-3 shrink-0 text-neutral-400 dark:text-neutral-500" />
+        <span className="font-medium">Building interface…</span>
+      </span>
+    </div>
   );
 }

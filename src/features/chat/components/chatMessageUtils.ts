@@ -13,6 +13,7 @@ import {
 } from "@/shared/lib/messages";
 import { isMemoryPath } from "@/features/agent/lib/memoryDocument";
 import { memoryOperationPaths } from "@/features/agent/lib/memoryFileDisplay";
+import { extractUiFences } from "@/shared/lib/inlineUi/protocol";
 
 // User attachments are uploaded into the artifacts workspace and referenced in
 // the sent message by this prose line so the model knows to read them. The UI
@@ -89,7 +90,8 @@ function turnStart(messages: readonly UIMessage[], assistantIndex: number): numb
  */
 export function collectTurnArtifactPaths(messages: readonly UIMessage[], assistantIndex: number): string[] {
   const seen = new Set<string>();
-  for (let i = turnStart(messages, assistantIndex); i <= assistantIndex; i++) {
+  const start = turnStart(messages, assistantIndex);
+  for (let i = start; i <= assistantIndex; i++) {
     const message = messages[i];
     if (!message) continue;
     for (const part of message.parts) {
@@ -105,7 +107,18 @@ export function collectTurnArtifactPaths(messages: readonly UIMessage[], assista
       }
     }
   }
-  return [...seen].filter((path) => !isMemoryPath(path));
+  const paths = [...seen].filter((path) => !isMemoryPath(path));
+  const isUiSource = (path: string) => path.split("/").at(-1)?.toLowerCase() === "ui.json";
+  if (!paths.some(isUiSource)) return paths;
+  const hasInlineUi = messages
+    .slice(start, assistantIndex + 1)
+    .some(
+      (message) =>
+        message.role === "assistant" &&
+        message.parts.some((part) => part.type === "text" && extractUiFences(part.content).length > 0),
+    );
+  // The intermediate source stays in the workspace; the rendered interface is the chat deliverable.
+  return hasInlineUi ? paths.filter((path) => !isUiSource(path)) : paths;
 }
 
 // Skill-builder tools that create or modify skills.
@@ -250,7 +263,9 @@ export function groupRenderUnits(
   let foldedReply: number | undefined;
   const addMessage = (index: number) => {
     if (!represented(messages[index]))
-      units.push(index === foldedReply ? { kind: "message", index, foldedReasoning: true } : { kind: "message", index });
+      units.push(
+        index === foldedReply ? { kind: "message", index, foldedReasoning: true } : { kind: "message", index },
+      );
   };
   const limit = isResponding ? messages.length - 1 : messages.length;
   const groupable = (message: UIMessage) =>

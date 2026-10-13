@@ -22,8 +22,12 @@ Read [protocol.md](references/protocol.md) before the first surface, unless it i
 | Complete chart/table dashboard                                                                    | [dashboard.json](references/examples/dashboard.json) |
 | Complete form with live preview and calculated budget                                             | [planner.json](references/examples/planner.json)     |
 
-The grouped signatures are generated from the installed schemas. The large [Basic catalog](references/basic-catalog.json) and [Wingman catalog](references/wingman-catalog.json) JSON files are for exact schema/debugging lookups only, when a focused reference leaves a question unanswered.
+Signatures come from the installed schemas. Use the full [Basic catalog](references/basic-catalog.json) or [Wingman catalog](references/wingman-catalog.json) only for schema/debugging questions the focused references cannot answer.
 
 ## Before emitting
+
+Wingman components, including every Heading, need `catalogId:"urn:wingman:inline-ui:catalog:1"`. Catalogs inherit from the surface, not parents/siblings.
+
+Check component-specific props in [layout.md](references/layout.md) and [controls.md](references/controls.md); Basic components reject Wingman props.
 
 Use only documented properties and resolve every child ID. Bind writable controls to data paths and make each control affect something visible. Give chart axes units and sources; values come from the conversation, tools, user input, or labelled illustrative assumptions. For updates, reuse the surface ID and preserve component IDs. Local data edits stay in the browser until an action explicitly sends them to the agent.

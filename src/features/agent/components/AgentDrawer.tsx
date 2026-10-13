@@ -170,9 +170,9 @@ export function AgentDrawer() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950 pt-2 md:pt-0">
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950">
       {/* Panel header: back (details only) + inline agent selector + close */}
-      <div className="shrink-0 h-12 md:h-10 flex items-center px-4 gap-2">
+      <div className="shrink-0 flex items-center px-3.5 pt-3.5 pb-2 gap-2">
         {view === "list" ? (
           <>
             <span className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">

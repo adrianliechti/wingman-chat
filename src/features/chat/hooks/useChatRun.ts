@@ -13,7 +13,8 @@ import type { useChatContext } from "./useChatContext";
 import { prepareChatMessages } from "../lib/chatHistory";
 import { chatCompaction, preserveSkillContext } from "../lib/chatCompaction";
 import { getConfig } from "@/shared/config";
-import { RunSidecar, approvalTools, streamRun } from "@/shared/lib/agent";
+import { RunSidecar, approvalTools } from "@/shared/lib/agent";
+import { streamChatWithUiRepair } from "../lib/inlineUiRepair";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { artifactRefPart, isUserPrompt, messageText, textMetadata, updateToolResultMeta } from "@/shared/lib/messages";
 import { compactThreshold } from "@/shared/lib/models";
@@ -182,7 +183,7 @@ export function useChatRun({
         const compaction = config.chat?.compaction;
         let threshold = compaction ? (model.compactThreshold ?? compactThreshold(model.id)) : 0;
         if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        yield* streamRun(client, model.id, chatInstructions(), conversation, tools, {
+        yield* streamChatWithUiRepair(client, model.id, chatInstructions(), conversation, tools, {
           runId,
           threadId: id,
           parentRunId: runContext?.parentRunId,

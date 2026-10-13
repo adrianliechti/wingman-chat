@@ -552,7 +552,7 @@ function VirtualChatList({
                 key={row.key}
                 data-index={row.index}
                 ref={virtualizer.measureElement}
-                className={cn(item.type === "header" && item.groupIndex > 0 && "pt-3")}
+                className={cn(item.type === "header" && "pt-3")}
               >
                 {renderItem(item)}
               </div>

@@ -9,6 +9,7 @@ import {
 } from "@a2ui/web_core/v1_0";
 import { A2UI_SDK_VERSION, A2UI_VERSION, catalogs, WINGMAN_CATALOG_ID } from "./catalog.ts";
 import { parseMessages, type UiBlock, type UiMessage } from "./protocol.ts";
+import { attributeRepairHints } from "./attributeRepairs.ts";
 
 export interface UiSubmission {
   message: RendererToAgentMessage;
@@ -200,7 +201,10 @@ export class InlineUiRuntime {
             if (operation) this.errors.delete(operation.surfaceId);
             this.processor.processMessages(entry.message);
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = [
+              error instanceof Error ? error.message : String(error),
+              ...attributeRepairHints(error),
+            ].join("\n");
             this.errors.set(entry.block, message);
             this.messageErrors.set(entry.block, message);
           }

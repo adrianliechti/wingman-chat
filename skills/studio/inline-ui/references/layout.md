@@ -4,6 +4,53 @@ Use [protocol.md](protocol.md) for the envelope, catalog selection, dynamic valu
 
 Use Row/Column for simple groups, Grid for columns, Card for a single grouped child, and Tabs/Collapsible for optional detail. Basic Text supports limited noninteractive Markdown; use Heading for a heading and Link for a clickable link. Svg supports sanitized drawings; Html embeds a sandboxed preview. For large applications or requested files, use artifacts.
 
+## Component-specific properties
+
+- Heading is Wingman-only. Every Heading needs `catalogId:"urn:wingman:inline-ui:catalog:1"`, even if another Heading already declares it. Components without catalogId inherit the surface default, not the catalog of their parent or siblings.
+- Row/Column have no `gap` or `columns`; use Grid for those properties.
+- Text accepts `variant:"body"` or `"caption"`; headings use Heading.level, and colored notices use Callout.tone or Badge.tone.
+- Callout.tone and Badge.tone are literal enums, not bindings or function calls. For a changing status, use separate Callouts/Badges with conditional `visible` values; choose a literal tone for each.
+- Image has no `height`; use its declared `variant` and `fit`. `height` belongs to Svg, Html and Chart.
+- `defaultOpen` belongs to Collapsible; Basic Tabs and Modal reject it. Basic tab titles belong inside `tabs[]`, not at the component's top level.
+- CSS props such as `padding`, `margin`, `style`, `className` and `fontSize` are unsupported in both catalogs.
+
+## Conditional visibility
+
+Basic components, including Text, Row and Column, do **not** accept `visible` or `disabled`. To show/hide Basic content, put it inside a Wingman Grid with `visible` bound to a boolean or calculation. Keep the Basic child in the Basic catalog; adding a Wingman catalogId to Text does not make it a Wingman component.
+
+This complete example shows/hides drawing text locally:
+
+```ui
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "drawing_details",
+    "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+    "components": [
+      { "id": "root", "component": "Column", "children": ["show", "drawing"] },
+      {
+        "id": "show",
+        "component": "Toggle",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Show drawing details",
+        "value": { "@path": "/showDrawing" }
+      },
+      {
+        "id": "drawing",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 1,
+        "gap": "none",
+        "visible": { "@path": "/showDrawing" },
+        "children": ["drawtext"]
+      },
+      { "id": "drawtext", "component": "Text", "text": "Drawing details" }
+    ],
+    "dataModel": { "showDrawing": true }
+  }
+}
+```
+
 <!-- A2UI-CATALOG:START -->
 
 A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
@@ -13,6 +60,8 @@ A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
 `catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"`
 
 Every component also accepts { weight?: number }.
+
+`visible` and `disabled` are Wingman-only properties; Basic components reject them.
 
 - Row { children: ChildList, justify?: "center"|"end"|"spaceAround"|"spaceBetween"|"spaceEvenly"|"start"|"stretch", align?: "start"|"center"|"end"|"stretch" }
 - Column { children: ChildList, justify?: "start"|"center"|"end"|"spaceBetween"|"spaceAround"|"spaceEvenly"|"stretch", align?: "center"|"end"|"start"|"stretch" }

@@ -1,3 +1,4 @@
+import { ToolCase } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import type { UIMessage } from "@tanstack/ai";
 import { leadingReasoning, subagentToolCallIds, summarizeActivity, toolRounds } from "./chatMessageUtils";
@@ -17,16 +18,18 @@ type ChatToolGroupProps = {
 /** The reasoning and every tool round of one message, exactly as they read before folding. */
 function ToolRows({ message, index, messages }: { message: UIMessage; index: number; messages: UIMessage[] }) {
   const delegated = subagentToolCallIds(messages);
+  const rounds = new Map(toolRounds(message, delegated).map((round) => [round.call.id, round]));
   return (
     <>
-      {message.parts.map((part, partIndex) =>
-        part.type === "thinking" && part.content ? <ReasoningDisplay key={partIndex} reasoning={part.content} /> : null,
-      )}
-      {toolRounds(message, delegated).map(({ call, result }) => (
-        // Key by the stable tool-call id, not the array index — stop/restart
-        // shifts indices, and index keys would reconcile the wrong rows.
-        <ChatToolMessage key={call.id} message={message} call={call} result={result} index={index} />
-      ))}
+      {message.parts.map((part, partIndex) => {
+        if (part.type === "thinking")
+          return <ReasoningDisplay key={`thinking:${part.stepId ?? partIndex}`} reasoning={part.content} />;
+        if (part.type !== "tool-call") return null;
+        const round = rounds.get(part.id);
+        return round ? (
+          <ChatToolMessage key={part.id} message={message} call={round.call} result={round.result} index={index} />
+        ) : null;
+      })}
     </>
   );
 }
@@ -49,13 +52,13 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices, re
     <div className="max-w-full">
       <ActivityRow
         label={summary}
+        icon={ToolCase}
         expanded={expanded}
         onToggle={() => setExpanded((value) => !value)}
       />
 
-      {/* Unfolded rows keep the group's vertical line rather than nesting a level deeper. */}
       {expanded && (
-        <div>
+        <div className="pl-4.5">
           {indices.map((idx) => {
             const message = messages[idx];
             return hasStoredAttachments(message) ? (

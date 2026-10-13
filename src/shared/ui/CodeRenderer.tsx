@@ -115,6 +115,7 @@ const CodeRenderer = memo(({ code, language, name, isStreaming = false, subtle =
       label={subtle ? (name ?? "") : language}
       name={subtle ? undefined : name}
       actions={<CopyButton text={code} label="Copy" />}
+      compact={subtle}
     >
       {content}
     </RendererFrame>

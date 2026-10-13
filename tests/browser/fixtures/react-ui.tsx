@@ -14,6 +14,7 @@ const parameters = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById("root")!);
 const state = { effects: 0, calls: 0, tools: [] as string[], instructions: "", input: [] as ModelMessage[] };
 let stream = (_text: string) => {};
+let think = (_text: string) => {};
 let finish = (_text: string) => {};
 let callTool = (_name: string, _args: object) => {};
 let researchProgress = (_progress: number, _message: string, _total?: number) => {};
@@ -21,6 +22,7 @@ let finishResearch = () => {};
 window.reactUiE2E = {
   state: () => ({ ...state }),
   stream: (text) => stream(text),
+  think: (text) => think(text),
   finish: (text) => finish(text),
   callTool: (name, args) => callTool(name, args),
   flush: flushPersistence,
@@ -126,13 +128,14 @@ if (parameters.has("panels")) {
   config.client.listModels = async () => [model];
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
-    async (options, handler) =>
+    async (options, handler, onThinking) =>
       new Promise<UIMessage>((resolve) => {
         state.calls++;
         state.tools = options.tools?.map((tool) => tool.name) ?? [];
         state.instructions = JSON.stringify(options.systemPrompts);
         state.input = options.messages;
         stream = (text) => handler?.(text);
+        think = onThinking;
         finish = (text) => resolve(assistantMessage(text));
         callTool = (name, args) =>
           resolve(
@@ -180,6 +183,7 @@ declare global {
     reactUiE2E: {
       state(): { effects: number; calls: number; tools: string[]; instructions: string; input: ModelMessage[] };
       stream(text: string): void;
+      think(text: string): void;
       finish(text: string): void;
       callTool(name: string, args: object): void;
       flush(): Promise<void>;

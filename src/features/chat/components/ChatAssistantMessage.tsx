@@ -241,8 +241,13 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   const mediaParts = message.parts.filter(isMediaPart);
   const hasMedia = mediaParts.length > 0;
 
-  // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
-  const isReasoningActive = !!isLast && !!isResponding && !hasTextContent && !hasToolCalls;
+  // Thinking can resume after tools in the same message; only the latest output is active.
+  const activeThinking =
+    isLast && isResponding
+      ? message.parts.findLast(
+          (part) => part.type === "thinking" || part.type === "tool-call" || (part.type === "text" && part.content),
+        )
+      : undefined;
   // Every tool has returned and nothing newer has streamed: the model is working on its next step.
   const lastPart = message.parts.findLast(
     (part) => part.type !== "tool-result" && !(part.type === "text" && !part.content),
@@ -295,59 +300,33 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     // An unanswered call is only shown while it is still running.
     if (!isLast || !isResponding) return null;
     const tool = findTool(providers, part.name);
-    const header = resolveToolHeader(tool, part.name, part.arguments, { running: true, toolCallId: part.id, progress: toolCallProgress(part) });
+    const header = resolveToolHeader(tool, part.name, part.arguments, {
+      running: true,
+      toolCallId: part.id,
+      progress: toolCallProgress(part),
+    });
     return <RunningToolRow key={key} header={header} icon={tool?.icon} className={className} />;
   };
 
   // Handle loading states (no text content yet)
   if (!hasTextContent && !message.parts.some((part) => part.type === "subagent")) {
-    const reasoningParts = message.parts.filter((part) => part.type === "thinking");
-    const hasReasoning = reasoningParts.some((part) => part.content);
+    const hasReasoning = message.parts.some(
+      (part) => part.type === "thinking" && (part.content || part === activeThinking),
+    );
+    if (!hasReasoning && !hasToolCalls && !(isLast && isResponding)) return null;
 
-    // isReasoningActive is already false for non-last messages, so a single
-    // helper covers the old / loading / streaming branches below.
-    const renderReasoning = () =>
-      reasoningParts.map((part, i) =>
-        part.type === "thinking" ? (
-          <ReasoningDisplay
-            key={getMessagePartKey(part, i, "reasoning")}
-            reasoning={part.content}
-            isStreaming={isReasoningActive}
-          />
-        ) : null,
-      );
-
-    // Check if there's a pending elicitation for any of the tool calls
-    const hasPendingElicitation =
-      hasToolCalls &&
-      toolCallParts.some((toolCall) => pendingElicitation && pendingElicitation.toolCallId === toolCall.id);
-
-    // Keep a still-awaited elicitation prompt mounted even if a later result made this message not-last.
-    if (!isLast && !hasPendingElicitation) {
-      if (!hasReasoning && !hasToolCalls) return null;
-      return (
-        <div>
-          {hasReasoning && renderReasoning()}
-          {toolCallParts.map((part, i) => renderToolCall(part, getMessagePartKey(part, i, "tool-call")))}
-        </div>
-      );
-    }
-
-    // Show loading indicators for the last message when actively responding,
-    // has a pending elicitation, or has reasoning content to display.
-    if (!isResponding && !hasPendingElicitation && !hasReasoning && !hasToolCalls) {
-      return null;
-    }
-
-    // Last message that's still working: reasoning, running tool rows, or the
-    // thinking placeholder. No wrapper spacing: activity rows carry their own
-    // padding, so every state sits where the committed row will.
+    // Keep thoughts, tools and pending elicitation in arrival order. Activity
+    // rows carry their own spacing; only the last message gets a placeholder.
     return (
       <div>
-        {hasReasoning && renderReasoning()}
-        {hasToolCalls &&
-          toolCallParts.map((part, i) => renderToolCall(part, getMessagePartKey(part, i, "loading-tool-call")))}
-        {((!hasToolCalls && !hasReasoning) || isAwaitingModel) && (
+        {message.parts.map((part, partIndex) => {
+          const key = getMessagePartKey(part, partIndex, "activity");
+          if (part.type === "thinking")
+            return <ReasoningDisplay key={key} reasoning={part.content} isStreaming={part === activeThinking} />;
+          if (part.type === "tool-call" && !delegated.has(part.id)) return renderToolCall(part, key);
+          return null;
+        })}
+        {isLast && ((!hasToolCalls && !hasReasoning) || isAwaitingModel) && (
           <ThinkingIndicator status={status} runKey={metadata.runId ?? message.id ?? String(index)} />
         )}
       </div>
@@ -372,7 +351,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           if (part.type === "subagent") return <SubagentCard key={partKey} {...part.subagent} />;
           if (part.type === "thinking") {
             if (partIndex < foldedParts) return null;
-            return <ReasoningDisplay key={partKey} reasoning={part.content} isStreaming={isReasoningActive} />;
+            return <ReasoningDisplay key={partKey} reasoning={part.content} isStreaming={part === activeThinking} />;
           }
           if (part.type === "text") {
             if (!part.content) return null;
@@ -400,7 +379,9 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           }
           return null;
         })}
-        {isAwaitingModel && <ThinkingIndicator status={status} runKey={metadata.runId ?? message.id ?? String(index)} />}
+        {isAwaitingModel && (
+          <ThinkingIndicator status={status} runKey={metadata.runId ?? message.id ?? String(index)} />
+        )}
 
         {hasMedia && (
           <div className="pt-2">

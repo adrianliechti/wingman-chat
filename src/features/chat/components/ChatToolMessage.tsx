@@ -81,13 +81,13 @@ export const ChatToolMessage = memo(function ChatToolMessage({
         />
 
         {toolResultExpanded && (
-          <div className="pt-1.5 pb-2">
+          <div className="space-y-1 pb-1">
             {/* Input — the tool's blocks, or a best-effort arguments block */}
             {inputBlocks.map((block) =>
               block.language === "markdown" || block.language === "text" ? (
                 <div
                   key={block.name ?? block.language}
-                  className="ml-4.5 mb-2 text-sm text-neutral-600 dark:text-neutral-400"
+                  className="ml-4.5 text-sm text-neutral-600 dark:text-neutral-400"
                 >
                   {block.name && (
                     <p className="mb-1 text-xs font-medium text-neutral-400 dark:text-neutral-500">{block.name}</p>

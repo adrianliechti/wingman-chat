@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 const BASIC = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json";
 const WINGMAN = "urn:wingman:inline-ui:catalog:1";
@@ -33,6 +34,76 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/tests/browser/fixtures/markdown.html");
   await page.waitForFunction(() => window.markdownE2E);
 });
+
+test("Inline UI repairs invalid Text visibility with the documented Wingman visibility wrapper", async ({ page }) => {
+  await page.evaluate(
+    (source) => window.markdownE2E.render(source),
+    ui(
+      [
+        { id: "root", component: "Column", children: ["drawtext"] },
+        { id: "drawtext", component: "Text", text: "Drawing details", visible: true },
+      ],
+      {},
+    ),
+  );
+  await expect(page.getByRole("alert")).toHaveText("This interface could not be displayed.");
+  await page.getByText("Technical details", { exact: true }).click();
+  await expect(page.getByText(/Unrecognized key\(s\) in object: 'visible'/)).toBeVisible();
+
+  const reference = readFileSync("skills/studio/inline-ui/references/layout.md", "utf8");
+  const source = reference.match(/```ui\n[\s\S]*?\n```/)![0];
+  await page.evaluate((source) => window.markdownE2E.render(source), source);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const drawing = page.locator('[data-a2ui-id="drawtext"]');
+  const toggle = page.getByRole("switch", { name: "Show drawing details" });
+  await expect(drawing).toBeVisible();
+  await toggle.click();
+  await expect(drawing).toHaveCount(0);
+  await toggle.click();
+  await expect(drawing).toBeVisible();
+});
+
+for (const width of [390, 1920]) {
+  for (const size of ["", 'width="100%"', 'width="1000" height="800"']) {
+    test(`Inline UI SVG fits its height without clipping the bottom (${width}px, ${size || "viewBox"})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      const source = ui(
+        [
+          { id: "root", component: "Column", children: ["drawing", "caption"] },
+          custom("drawing", "Svg", {
+            height: 180,
+            label: "Complete house drawing",
+            markup: `<svg viewBox="0 0 1000 800" ${size}><rect width="1000" height="800" fill="#ecf7fc"/><rect x="20" y="740" width="960" height="40" fill="#334155"/><text x="500" y="775" text-anchor="middle" fill="white">Foundation</text></svg>`,
+          }),
+          { id: "caption", component: "Text", text: "After the complete drawing" },
+        ],
+        {},
+      );
+      await page.evaluate((source) => window.markdownE2E.render(source), source);
+      const drawing = page.getByRole("img", { name: "Complete house drawing" });
+      await expect(drawing.locator("svg")).toBeVisible();
+      const bounds = await drawing.evaluate((element) => {
+        const container = element.getBoundingClientRect();
+        const svg = element.querySelector("svg")!.getBoundingClientRect();
+        const foundation = element.querySelector("text")!.getBoundingClientRect();
+        return {
+          height: container.height,
+          svgBottom: svg.bottom - container.top,
+          foundationBottom: foundation.bottom - container.top,
+          width: container.width,
+          svgWidth: svg.width,
+        };
+      });
+      expect(bounds.height).toBeLessThanOrEqual(181);
+      expect(bounds.svgBottom).toBeLessThanOrEqual(bounds.height + 1);
+      expect(bounds.foundationBottom).toBeLessThanOrEqual(bounds.height + 1);
+      expect(bounds.svgWidth).toBeLessThanOrEqual(bounds.width + 1);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    });
+  }
+}
 
 test("Inline UI validates forms and preserves disclosure inputs", async ({ page }) => {
   const errors: string[] = [];

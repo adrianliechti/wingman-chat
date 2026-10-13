@@ -12,6 +12,12 @@ Use [protocol.md](protocol.md) for bindings and Action payloads. Every editable 
 
 For one choice, use Radio for visible alternatives, Segmented for a short mode switch, or Select for a compact menu. For several choices use ChoicePicker or MultiSelect. Use `ask_questions` when the agent must wait for clarification before proceeding; use a Form for an exploratory interface that submits its current values.
 
+## Component-specific properties
+
+Basic controls have no authorable `disabled` prop; select an appropriate Wingman control where available or omit the property. A Grid's `disabled` does not disable its Basic descendants. Streaming/read-only disabling is renderer behavior.
+
+Basic Slider uses `steps` (an integer number of intervals); its increment is `(max - min) / steps`. Wingman Stepper uses `step` (a numeric increment). Basic controls reject `description`; put helper text in a separate Text, or use a Wingman control's `description`. Basic Button's label is a Text referenced by `child`; Button has no `label` or `submit` prop. `submit` belongs to Wingman Form.
+
 ## Checks
 
 `CheckRule` is `{condition, message}`. Conditions return `{valid, message?, code?, severity?}`. For example:
@@ -38,6 +44,8 @@ A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
 `catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"`
 
 Every component also accepts { weight?: number }.
+
+`visible` and `disabled` are Wingman-only properties; Basic components reject them.
 
 - Button { checks?: CheckRule[], child: Child, variant?: "default"|"primary"|"borderless", action: Action }
 - TextField { checks?: CheckRule[], label: DynamicString, value?: DynamicString, placeholder?: DynamicString, variant?: "longText"|"number"|"shortText"|"obscured" }

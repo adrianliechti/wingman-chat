@@ -1,11 +1,15 @@
-import { EventType, type TextMessageContentEvent } from "@ag-ui/core";
+import { EventType } from "@ag-ui/core";
 import type { AdapterYieldChunk, ContentPart, TextOptions, TextPart, ToolCallPart, UIMessage } from "@tanstack/ai";
 import type { Client } from "../client";
 import { assistantMessage, text, textParts, userMessage, type TextMetadata } from "@/shared/lib/messages";
 
 /** Test provider: the real TanStack engine still owns validation and tool execution. */
 export function testClient(
-  complete: (options: TextOptions<Record<string, unknown>>, onStream: (text: string) => void) => Promise<UIMessage>,
+  complete: (
+    options: TextOptions<Record<string, unknown>>,
+    onStream: (text: string) => void,
+    onThinking: (text: string) => void,
+  ) => Promise<UIMessage>,
 ): Client {
   return {
     chatOptions: () => ({ modelOptions: {} }),
@@ -18,15 +22,32 @@ export function testClient(
         const id = crypto.randomUUID();
         const runId = options.runId ?? id;
         const threadId = options.threadId ?? "test";
-        const pending: TextMessageContentEvent[] = [];
+        const pending: AdapterYieldChunk[] = [];
         let notify: (() => void) | undefined;
         let settled = false;
         let streamedText = "";
-        const result = complete(options, (text) => {
-          pending.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: id, delta: text.slice(streamedText.length) });
-          streamedText = text;
-          notify?.();
-        }).finally(() => {
+        let streamedThinking = "";
+        const result = complete(
+          options,
+          (text) => {
+            pending.push({
+              type: EventType.TEXT_MESSAGE_CONTENT,
+              messageId: id,
+              delta: text.slice(streamedText.length),
+            });
+            streamedText = text;
+            notify?.();
+          },
+          (text) => {
+            pending.push({
+              type: EventType.REASONING_MESSAGE_CONTENT,
+              messageId: id,
+              delta: text.slice(streamedThinking.length),
+            });
+            streamedThinking = text;
+            notify?.();
+          },
+        ).finally(() => {
           settled = true;
           notify?.();
         });

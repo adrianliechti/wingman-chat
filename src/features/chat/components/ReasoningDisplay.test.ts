@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { reasoningHint } from "./ReasoningDisplay";
+import { reasoningHint, reasoningPreview } from "./ReasoningDisplay";
 
 it("uses a lone opening heading as the hint and keeps it out of the body", () => {
   expect(reasoningHint("**Retrieving current news details**\n\nI need to summarize the news.")).toEqual({
@@ -19,4 +19,16 @@ it("shows a heading as soon as it streams in, but not bold text inside a paragra
     body: "**Planning** the next step\n\nMore.",
   });
   expect(reasoningHint("Plain thinking.")).toEqual({ body: "Plain thinking." });
+});
+
+it("previews only the latest paragraph, including its streaming continuation", () => {
+  expect(reasoningPreview("First step.\n\nLatest step.\nStill working.")).toBe("Latest step.\nStill working.");
+  expect(reasoningPreview("First step.\n \nLatest step.\n\n")).toBe("Latest step.");
+});
+
+it("keeps section headings in the title instead of duplicating them in the preview", () => {
+  expect(reasoningPreview("Earlier step.\n\n## Checking sources")).toBe("");
+  expect(reasoningPreview("**Checking sources**")).toBe("");
+  expect(reasoningPreview("")).toBe("");
+  expect(reasoningPreview("**Checking sources** carefully.")).toBe("**Checking sources** carefully.");
 });

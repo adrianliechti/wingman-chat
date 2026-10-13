@@ -4,6 +4,8 @@ All components here belong to the Wingman catalog. Use [protocol.md](protocol.md
 
 ## Data shape
 
+Properties remain component-specific within Wingman: Grid/KeyValue `columns` is a number, while Table `columns` is an array of definitions. Chart `kind` is a chart type; Link `kind` is `link` or `chip`. `format`, `currency` and `digits` belong only to components or column definitions that declare them; Basic Text uses formatting functions in its `text` value.
+
 Chart `data` and Table `rows` are arrays of objects, or bindings/functions resolving to them. Use consistent keys and numeric values for measures:
 
 ```json

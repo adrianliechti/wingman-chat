@@ -19,6 +19,7 @@ Load the [inline-ui skill](../skills/studio/inline-ui/SKILL.md), which routes to
 - `action.functionCall` invokes registered user-activated local functions. Persisted fences **reject renderer RPC requests**, so reloading history never opens URLs, copies text or sends actions. This is a persisted-surface profile, not full directional RPC support.
 - Basic controls retain standard types: TextField writes strings, CheckBox booleans, ChoicePicker string arrays and Slider numbers. Writable values use bindings; literals and calculated values are read-only. Standard `required` accepts false and whitespace.
 - Basic Text supports the catalog's limited Markdown. Wingman's Html and Svg have their existing sandbox/sanitization boundaries. Form validates descendants and provides accessible feedback.
+- `visible` and `disabled` are Wingman-only properties. Conditional Basic content uses a Wingman Grid wrapper with `visible`; Basic Text, Row and Column reject those properties. The layout reference includes a tested toggle/text example, and visibility validation errors give the model a targeted repair hint.
 - Expressions share a work budget across nested collection helpers and bound evaluation depth. Oversized or recursive calculations report an expression error instead of blocking the interface.
 
 ## Architecture and persistence
@@ -29,11 +30,15 @@ Both catalogs have explicit renderer maps checked against their schemas, includi
 
 Buttons and forms show progress while an action is pending. Submission failures are tracked explicitly because the SDK event emitter swallows listener rejections; late failures from deleted or replaced surfaces are discarded. Rendering and action errors show concise feedback with technical details collapsed. Actions are never retried automatically.
 
+Chat validates newly generated UI at the end of the reply. `src/features/chat/lib/inlineUiRepair.ts` requests up to two model-only repairs when validation fails, replacing the failed reply through a native message snapshot. Completed tools remain in history, tools are disabled during repair, and diagnostic prompts stay out of saved chat. Cancellation and interrupted runs never trigger repair. Existing historical errors still receive next-turn diagnostics; they do not cause unrelated replies to regenerate. After both repair attempts fail, the normal UI error remains visible.
+
 User edits are stored in localStorage under `wingman:a2ui:1:` and bounded to 100 owners / 1 MB per record. A contract fingerprint includes protocol, SDK and Wingman catalog versions. Saved values apply only to the matching transcript prefix, before later agent updates. Edited transcripts rebuild; different conversations have separate state. Storage failure leaves interaction usable.
 
 The former private IntelligentUI payload was prelaunch and is replaced, without a migration layer. Historical fence names remain recognized, but their contents must be A2UI. After launch, incompatible catalog changes require a new catalog ID plus explicit migration fixtures. Do not silently reinterpret persisted documents or restore data across a changed contract.
 
 ## Compatibility checks
+
+Unknown top-level component properties get schema-derived repair hints from `attributeRepairs.ts`, including the registered component owners, catalog IDs and focused references. Visibility, disabled controls, Slider steps and Button labels have specific guidance. The runtime retains strict validation and forwards these hints through the existing next-turn diagnostics; it does not silently reinterpret generated payloads. Authoring references document the common catalog and component mix-ups from the [attribute audit](inline-ui-catalog-audit.md).
 
 `npm run generate:ui-reference` generates the grouped skill references and catalog JSON from the registered schemas. The always-loaded chat prompt contains only presentation routing and essential constraints, with no component catalog. `npm run check:ui-reference` detects drift and enforces character budgets during check/build: 1,200 for the chat prompt, 3,600 for the skill entrypoint, and 7,200 per focused reference (roughly 300, 900 and 1,800 tokens at four characters per token; actual tokenization varies).
 

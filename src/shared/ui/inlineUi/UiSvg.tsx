@@ -83,14 +83,22 @@ export const UiSvg = memo(function UiSvg({ markup, height, label }: UiSvgProps) 
     const source = stripOuterWrapper(markup);
     const nodes = innerNodes(sanitizeHtmlToReact(source, { config: SVG_CONFIG, namespace: "svg" }));
     if (!nodes.length) return null;
-    return createElement("svg", { xmlns: "http://www.w3.org/2000/svg", ...rootAttributes(source) }, ...nodes);
-  }, [markup]);
+    return createElement(
+      "svg",
+      {
+        xmlns: "http://www.w3.org/2000/svg",
+        ...rootAttributes(source),
+        // Constrain the viewport so the viewBox scales to fit instead of clipping the wrapper.
+        style: height && Number.isFinite(height) && height > 0 ? { maxHeight: height } : undefined,
+      },
+      ...nodes,
+    );
+  }, [markup, height]);
   return (
     <div
       role="img"
       aria-label={label}
       className="w-full overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-900/60 [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-full [&_svg_*]:transition-[transform,opacity,fill,stroke,stroke-width] [&_svg_*]:duration-300 [&_svg_*]:ease-out [&_svg_*]:[transform-box:fill-box]"
-      style={height ? { maxHeight: height } : undefined}
     >
       {drawing ?? <p className="p-3 text-xs text-neutral-500">No drawing to show.</p>}
     </div>

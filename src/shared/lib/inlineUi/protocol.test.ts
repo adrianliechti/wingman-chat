@@ -41,3 +41,21 @@ it("preserves traversal order for block quotes and lists", () => {
 it.each([`${a}${b}`, `[${a},,${b.slice(0, -4)}`, `[,${a}`])("rejects malformed stream framing", (source) => {
   expect(parseMessages(source, true).error).toBeDefined();
 });
+
+it.each([false, true])("reports mismatched brackets as invalid JSON, including while streaming (%s)", (streaming) => {
+  const source =
+    '{"version":"v1.0","createSurface":{"components":[{"id":"b_draw","action":{"functionCall":{}, {"id":"t_draw"}]}}';
+  expect(parseMessages(source, streaming)).toMatchObject({
+    messages: [],
+    pending: false,
+    error: expect.stringContaining("Invalid JSON message: expected '}' but found ']'"),
+  });
+  expect(parseMessages('{"values": [1, 2}', streaming).error).toContain("expected ']' but found '}'");
+});
+
+it("ignores bracket characters inside strings when checking stream completeness", () => {
+  const message = structuredClone(fixtures.Text);
+  message.createSurface.components[0].text = 'Literal brackets: ] } [ { and an escaped quote: "';
+  const source = JSON.stringify(message);
+  expect(parseMessages(`${source}\n${b.slice(0, -5)}`, true)).toMatchObject({ messages: [message], pending: true });
+});

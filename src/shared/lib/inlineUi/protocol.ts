@@ -43,8 +43,8 @@ export function parseMessages(source: string, streaming = false): ParsedMessages
   } catch {
     // JSONL and a streaming JSON array share the same complete-object scanner.
     raw = [];
+    const brackets: string[] = [];
     let start = -1,
-      depth = 0,
       quoted = false,
       escaped = false,
       end = 0;
@@ -66,10 +66,17 @@ export function parseMessages(source: string, streaming = false): ParsedMessages
         else if (char === "\\") escaped = true;
         else if (char === '"') quoted = false;
       } else if (char === '"') quoted = true;
-      else if (char === "{" || char === "[") depth++;
+      else if (char === "{" || char === "[") brackets.push(char);
       else if (char === "}" || char === "]") {
-        depth--;
-        if (depth === 0) {
+        const expected = brackets.at(-1) === "{" ? "}" : "]";
+        if (char !== expected)
+          return {
+            messages: [],
+            pending: false,
+            error: `Invalid JSON message: expected '${expected}' but found '${char}' at position ${i}`,
+          };
+        brackets.pop();
+        if (brackets.length === 0) {
           try {
             raw.push(JSON.parse(text.slice(start, i + 1)));
           } catch {

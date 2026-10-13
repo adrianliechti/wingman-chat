@@ -7,6 +7,7 @@ import { assistantMessage, userMessage } from "../messages";
 import { submissionText, uiDiagnostics } from "./diagnostics";
 import type { UiSubmission } from "./runtime";
 import fixtures from "./fixtures/components.json";
+import { WINGMAN_CATALOG_ID } from "./catalog";
 const run = (messages: UIMessage[]) => {
   const middleware = uiDiagnostics(messages);
   const invoke = () =>
@@ -54,6 +55,39 @@ it("reports invalid UI and stays silent for valid history", () => {
   ).toBeUndefined();
 });
 
+it("gives a precise visibility repair for invalid Basic Text without rewriting the transcript", () => {
+  const invalid = structuredClone(fixtures.Text);
+  const text = invalid.createSurface.components[0];
+  Object.assign(text, { id: "drawtext", visible: true });
+  const messages = [assistantMessage("```ui\n" + JSON.stringify(invalid) + "\n```"), userMessage("Fix it")];
+  const original = structuredClone(messages);
+  const { first, second } = run(messages);
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining("Visibility repair: Basic components such as Text, Row and Column"),
+  });
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining(WINGMAN_CATALOG_ID),
+  });
+  expect(second).toBeUndefined();
+  expect(messages).toEqual(original);
+});
+
+it("forwards a missing Heading catalog repair once without rewriting the transcript", () => {
+  const invalid = structuredClone(fixtures.Heading);
+  delete invalid.createSurface.components[0].catalogId;
+  const messages = [assistantMessage("```ui\n" + JSON.stringify(invalid) + "\n```"), userMessage("Fix it")];
+  const original = structuredClone(messages);
+  const { first, second } = run(messages);
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining(`Catalog repair: Heading requires catalogId "${WINGMAN_CATALOG_ID}"`),
+  });
+  expect(second).toBeUndefined();
+  expect(messages).toEqual(original);
+});
+
 it("retains action values throughout a real tool continuation", async () => {
   const submission: UiSubmission = {
     message: {
@@ -95,4 +129,22 @@ it("retains action values throughout a real tool continuation", async () => {
     expect(request).toContain("Vaduz");
     expect(request.match(/a2uiRendererCapabilities/g)).toHaveLength(1);
   }
+});
+
+it("forwards schema-derived attribute repairs only once without changing the transcript", () => {
+  const invalid = structuredClone(fixtures.Row);
+  Object.assign(invalid.createSurface.components[0], { gap: "md" });
+  const messages = [assistantMessage("```ui\n" + JSON.stringify(invalid) + "\n```"), userMessage("Fix it")];
+  const original = structuredClone(messages);
+  const { first, second } = run(messages);
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining("Attribute repair: Row.gap is unsupported"),
+  });
+  expect(first?.providerMessages[0].content).toContainEqual({
+    type: "text",
+    content: expect.stringContaining(WINGMAN_CATALOG_ID),
+  });
+  expect(second).toBeUndefined();
+  expect(messages).toEqual(original);
 });
