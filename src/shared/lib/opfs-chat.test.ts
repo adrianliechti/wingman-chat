@@ -49,16 +49,25 @@ describe("chat blobs", () => {
       if (dataUrl) media.source = { type: "url", value: "data:image/jpeg;base64,YWJj" };
       const value = chat([
         assistantMessage([
-          { type: "tool-call", id: "call", name: "render", arguments: "{}", state: "complete" },
+          {
+            type: "tool-call",
+            id: "call",
+            name: "render",
+            arguments: "{}",
+            state: "complete",
+            output: [text("Look"), media],
+          },
           { type: "tool-result", toolCallId: "call", content: [text("Look"), media], state: "complete" },
         ]),
       ]);
       const stored = await extractChatBlobs(value);
+      expect(JSON.stringify(stored)).not.toContain("YWJj");
       expect(collectChatBlobIds(stored)).toHaveLength(1);
       expect(hasStoredMedia(stored.messages[0].parts)).toBe(true);
       await deleteUnreferencedChatBlobs(stored);
       expect(await listChatBlobs("chat")).toHaveLength(1);
       const loaded = await rehydrateChatBlobs(JSON.parse(JSON.stringify(stored)));
+      expect(loaded.messages[0].parts[0]).toMatchObject({ output: [text("Look"), image()] });
       expect(loaded.messages[0].parts[1]).toMatchObject({ content: [text("Look"), image()] });
     },
   );
@@ -71,9 +80,9 @@ describe("chat blobs", () => {
         {
           type: "tool-result",
           toolCallId: "call",
-          content: "[Image - displayed to user]",
+          content: [image("ZGVm")],
           state: "complete",
-          metadata: { result: [image("ZGVm")], meta: { file: "/a.png" } },
+          metadata: { meta: { file: "/a.png" } },
         },
         {
           type: "subagent",
@@ -91,7 +100,8 @@ describe("chat blobs", () => {
     expect(stored.version).toBe(2);
     expect(json).not.toContain("base64");
     expect(json).not.toMatch(/"value":"(YWJj|ZGVm|bm90ZXM=)"/);
-    expect(json).toContain('"contentType":"image/jpeg"');
+    expect(json).toContain('"mimeType":"image/jpeg"');
+    expect(json).not.toContain("contentType");
     expect(json).toContain('"filename":"photo.jpg"');
     expect(stored.created).toBe("2026-01-01T00:00:00.000Z");
     const ids = collectChatBlobIds(stored);

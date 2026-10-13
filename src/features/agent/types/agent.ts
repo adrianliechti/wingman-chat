@@ -1,19 +1,5 @@
 export type { RepositoryFile } from "@/features/repository/types/repository";
 
-export interface BridgeServer {
-  id: string;
-
-  name: string;
-  description: string;
-
-  url: string;
-
-  icon?: string;
-  headers?: Record<string, string>;
-
-  enabled: boolean;
-}
-
 export interface Agent {
   id: string;
 
@@ -28,8 +14,7 @@ export interface Agent {
   skills: string[]; // names referencing global skill library
   plugins: string[]; // ids referencing installed plugins
 
-  tools: string[]; // optional tool IDs, e.g. "internet", "companion"
-  servers: BridgeServer[]; // per-agent MCP server definitions
+  tools: string[]; // optional provider IDs, e.g. "web", "companion"
 
   memory?: boolean; // enable the persistent /.memory/ file mount
 }

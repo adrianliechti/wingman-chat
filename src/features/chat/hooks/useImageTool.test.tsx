@@ -6,6 +6,7 @@ import type { Model } from "@/shared/types/chat";
 import { testClient } from "@/shared/lib/test-support/ai";
 import { chatSession, boundInterrupt } from "@/shared/lib/test-support/chatSession";
 import { assistantMessage, mediaFromDataUrl } from "@/shared/lib/messages";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 const config = vi.hoisted(() => ({
   client: { generateImage: vi.fn(async (..._args: unknown[]) => new Blob(["image"], { type: "image/png" })) },
@@ -38,8 +39,38 @@ function buildTool() {
 }
 
 function parameters() {
-  return convertSchemaToJsonSchema(buildTool().inputSchema)!.properties as Record<string, { enum?: string[] }>;
+  return convertSchemaToJsonSchema(buildTool().inputSchema)!.properties as Record<
+    string,
+    { enum?: string[]; description?: string }
+  >;
 }
+
+it("advertises the exact configured image-quality default used when quality is omitted", async () => {
+  for (const qualities of [
+    ["low", "medium", "high"],
+    ["high", "medium"],
+  ] as const) {
+    config.models = [{ id: "gpt-image-2", name: "Image", supportedQualities: [...qualities] }];
+    expect(parameters().quality.description).toContain(`defaults to ${qualities[0]}`);
+    await buildTool().execute({ prompt: "An image with default quality" });
+    expect(config.client.generateImage.mock.calls.at(-1)?.[3]).toMatchObject({ quality: qualities[0] });
+  }
+});
+
+it("previews the image prompt and distinguishes generation from edits", () => {
+  const tool = buildTool();
+  const header = (args: object, running = false) =>
+    resolveToolHeader(tool, tool.name, JSON.stringify(args), { running });
+  expect(header({ prompt: "A woodland scene" }, true)).toMatchObject({
+    label: "Generating image…",
+    preview: "A woodland scene",
+  });
+  expect(header({ prompt: "Make it blue", images: ["/original.png"] }, true)).toMatchObject({
+    label: "Editing image…",
+    preview: "Make it blue",
+  });
+  expect(header({ prompt: "Make it blue", images: ["/original.png"] }).label).toBe("Edited image");
+});
 
 it("advertises the gateway image controls with config overrides, including disabled controls", () => {
   config.models = [];

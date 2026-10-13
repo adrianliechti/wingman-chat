@@ -61,6 +61,28 @@ describe("agent restore", () => {
     expect(memory.files.size).toBe(0);
   });
 
+  it("discards custom MCP definitions from legacy imports and the replaced agent", async () => {
+    memory.put("agents/one/servers.json", '[{"id":"old"}]');
+    await importAgentsFromZip(
+      await zip({
+        "agents/one/agent.json": JSON.stringify({
+          name: "Imported",
+          servers: [{ id: "custom", url: "https://custom.example.com", enabled: true }],
+          tools: ["managed"],
+          plugins: ["catalog-plugin"],
+        }),
+        "agents/one/servers.json": "{obsolete and invalid",
+      }),
+    );
+    expect(await opfs.readJson("agents/one/agent.json")).toEqual({
+      name: "Imported",
+      tools: ["managed"],
+      plugins: ["catalog-plugin"],
+    });
+    expect(await opfs.readBlob("agents/one/servers.json")).toBeUndefined();
+    expect(await loadAgent("one")).not.toHaveProperty("servers");
+  });
+
   it("reports an agent folder that carries no definition instead of dropping it", async () => {
     const result = await importAgentsFromZip(
       await zip({
@@ -86,13 +108,12 @@ describe("agent restore", () => {
     const result = await importAgentsFromZip(
       await zip({
         "agents/broken/AGENTS.md": agentMd,
-        "agents/broken/servers.json": "{broken",
+        "agents/broken/files/index.json": "{broken",
         "agents/good/AGENTS.md": agentMd,
-        "agents/good/servers.json": "[]",
       }),
     );
     expect(result.skipped).toEqual([
-      { path: "agents/broken/servers.json", reason: expect.stringContaining("Invalid JSON") },
+      { path: "agents/broken/files/index.json", reason: expect.stringContaining("Invalid JSON") },
     ]);
     expect(await loadAgent("broken")).toMatchObject({ name: "Existing" });
     expect(await loadAgent("good")).toMatchObject({ name: "Test" });
@@ -138,7 +159,6 @@ describe("agent restore", () => {
     { name: "Test", instructions: {} },
     { name: "Test", tools: "internet" },
     { name: "Test", skills: [1] },
-    { name: "Test", servers: {} },
   ])("rejects malformed legacy agent metadata before replacing saved definitions: %j", async (definition) => {
     memory.put("agents/one/AGENTS.md", "---\nname: Existing\n---\nKeep");
     const saved = new Map(memory.files);
@@ -184,6 +204,7 @@ describe("agent restore", () => {
       const archive = await JSZip.loadAsync(await blob.arrayBuffer());
       expect(archive.file("AGENT.md")).toBeNull();
       expect(archive.file("agent.json")).toBeNull();
+      expect(archive.file("servers.json")).toBeNull();
       expect(archive.file("AGENTS.md")).not.toBeNull();
       expect(parseAgentMd(await archive.file("AGENTS.md")!.async("string"))).toMatchObject(settings);
       memory.reset();
@@ -246,7 +267,7 @@ describe("historical archive layouts", () => {
     expect(await opfs.readText("chats/one/artifacts/nested/report.html")).toBe("<h1>Report</h1>");
   });
 
-  it("keeps servers, files and bundled skills of a flat single-agent export with the agent", async () => {
+  it("discards retired servers while keeping files and bundled skills of a flat single-agent export", async () => {
     await opfs.importFolderFromZip(
       "/",
       await zip({
@@ -259,7 +280,7 @@ describe("historical archive layouts", () => {
     );
     const [entry] = await opfs.readIndex("agents");
     expect(await opfs.readText(`agents/${entry.id}/files/file/content.txt`)).toBe("Source");
-    expect(await opfs.readJson(`agents/${entry.id}/servers.json`)).toEqual([]);
+    expect(await opfs.readJson(`agents/${entry.id}/servers.json`)).toBeUndefined();
     expect(await opfs.readText("skills/example/SKILL.md")).toBe(skill);
   });
 

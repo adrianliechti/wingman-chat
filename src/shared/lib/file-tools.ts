@@ -21,6 +21,8 @@ import {
 import { isDataUrl } from "./fileContent";
 import { artifactLanguage } from "./fileTypes";
 import { normalizeArtifactPath } from "./sandbox";
+import { toolArgumentPath } from "./toolArguments";
+import { toolPreviewList, toolPreviewPath, toolPreviewText } from "./toolPreview";
 import { formatLineOutput, getLineRange, matchGlob, splitLines, textFormat, truncateLine } from "./text-utils";
 
 // ---------------------------------------------------------------------------
@@ -153,14 +155,15 @@ function createReadTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
   return {
     name: toolName(opts, "read"),
     display: {
-      header: (_args, state) => ({
+      header: (args, state) => ({
         icon: FileText,
         label: state.error ? "Read failed" : state.running ? "Reading file…" : "Read file",
+        preview: toolPreviewPath(toolArgumentPath(args)),
       }),
     },
     description: `Read a file from the ${opts.spaceName} file space with 1-based line numbers. The header reports the text's UTF-8 BOM and line endings; the displayed text omits the BOM and normalizes newlines. Output is capped at ${opts.maxReadLines} lines or ${opts.maxReadChars} characters. Use offset and limit to page through large files.`,
     inputSchema: z.strictObject({
-      file_path: z.string().describe("The absolute virtual path to the file to read."),
+      path: z.string().describe("The absolute virtual path to the file to read."),
       offset: z.number().int().min(1).describe("1-based line number to start reading from. Defaults to 1.").optional(),
       limit: z
         .number()
@@ -170,8 +173,8 @@ function createReadTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
         .optional(),
     }),
     execute: async (args: Record<string, unknown>) => {
-      const path = typeof args.file_path === "string" ? args.file_path : "";
-      if (!path) return error("file_path is required");
+      const path = toolArgumentPath(args);
+      if (!path) return error("path is required");
 
       const file = await source.read(path);
       if (!file) return error(`File not found: ${path}`);
@@ -251,15 +254,16 @@ function createWriteTool(source: WritableFileSource, opts: ResolvedFileToolsOpti
   return {
     name: toolName(opts, "create"),
     display: {
-      header: (_args, state) => ({
+      header: (args, state) => ({
         icon: FilePlus2,
         label: state.error ? "Create failed" : state.running ? "Creating file…" : "Created file",
+        preview: toolPreviewPath(toolArgumentPath(args)),
       }),
       // Show just the file content (the path is the header preview), highlighted by extension.
       input: (args) => {
         const content = typeof args?.content === "string" ? args.content : undefined;
         if (!content) return [];
-        const path = typeof args?.file_path === "string" ? args.file_path : undefined;
+        const path = toolArgumentPath(args);
         return [{ code: content, language: path ? artifactLanguage(path) : "text" }];
       },
     },
@@ -270,16 +274,16 @@ function createWriteTool(source: WritableFileSource, opts: ResolvedFileToolsOpti
       "Recognized structured formats are saved, then validation findings are reported; a successful save can still need corrections.",
     ].join("\n"),
     inputSchema: z.strictObject({
-      file_path: z
+      path: z
         .string()
         .describe(`The absolute virtual path in the ${opts.spaceName} file space (for example, /data/output.csv).`),
       content: z.string().describe("The content of the file to create."),
     }),
     execute: async (args: Record<string, unknown>, execution) => {
       const context = execution?.context;
-      const path = typeof args.file_path === "string" ? args.file_path : "";
+      const path = toolArgumentPath(args);
       if (!path) {
-        return error('file_path is required and must be a string like "/script.py"');
+        return error('path is required and must be a string like "/script.py"');
       }
       // Empty strings remain valid; non-string values are never guessed or stringified.
       const content = typeof args.content === "string" ? args.content : undefined;
@@ -467,25 +471,25 @@ function parseEdits(args: Record<string, unknown>): { edits: FileEditOp[] } | { 
   const rawEdits = args.edits;
   if (!Array.isArray(rawEdits)) {
     return {
-      error: "edits is required: a non-empty array of { file_path, old_string, new_string } objects.",
+      error: "edits is required: a non-empty array of { path, old_string, new_string } objects.",
     };
   }
 
   if (rawEdits.length === 0) {
-    return { error: "edits must contain at least one { file_path, old_string, new_string } object." };
+    return { error: "edits must contain at least one { path, old_string, new_string } object." };
   }
 
   const edits: FileEditOp[] = [];
   for (let i = 0; i < rawEdits.length; i++) {
     const item = rawEdits[i];
     if (!item || typeof item !== "object") {
-      return { error: `edits[${i}] must be a { file_path, old_string, new_string } object.` };
+      return { error: `edits[${i}] must be a { path, old_string, new_string } object.` };
     }
     const o = item as Record<string, unknown>;
-    const rawPath = typeof o.file_path === "string" ? o.file_path : undefined;
+    const rawPath = toolArgumentPath(o);
     const path = normalizeArtifactPath(rawPath);
     if (!path || path === "/") {
-      return { error: `edits[${i}].file_path is required and must be a valid file path.` };
+      return { error: `edits[${i}].path is required and must be a valid file path.` };
     }
 
     const find = o.old_string;
@@ -626,21 +630,21 @@ function batchValidationDetails(staged: readonly StagedFileEdit[]):
   };
 }
 
-function editPreview(args: Record<string, unknown> | null): string | undefined {
-  if (!args) return undefined;
+function editPaths(args: Record<string, unknown> | null): string[] {
+  if (!args) return [];
   const edits = Array.isArray(args.edits) ? args.edits : [];
   const paths = [
     ...new Set(
       edits.flatMap((entry) => {
         if (!entry || typeof entry !== "object") return [];
-        const path = (entry as Record<string, unknown>).file_path;
-        return typeof path === "string" && path ? [path.replace(/^\/+/, "")] : [];
+        const path = normalizeArtifactPath(toolArgumentPath(entry as Record<string, unknown>));
+        return path ? [path] : [];
       }),
     ),
   ];
-  if (paths.length === 1) return paths[0];
-  if (paths.length > 1) return `${paths.length} files`;
-  return typeof args.file_path === "string" ? args.file_path.replace(/^\/+/, "") : undefined;
+  if (paths.length) return paths.map(toolPreviewPath).filter((path): path is string => path !== null);
+  const path = toolPreviewPath(toolArgumentPath(args));
+  return path ? [path] : [];
 }
 
 function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptions): Tool {
@@ -648,8 +652,8 @@ function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
     name: toolName(opts, "edit"),
     display: {
       header: (args, state) => {
-        const preview = editPreview(args);
-        const multiple = preview?.endsWith(" files") ?? false;
+        const paths = editPaths(args);
+        const multiple = paths.length > 1;
         return {
           icon: FilePen,
           label: state.error
@@ -661,7 +665,7 @@ function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
               : multiple
                 ? "Edited files"
                 : "Edited file",
-          preview,
+          preview: toolPreviewList(paths, "files"),
         };
       },
     },
@@ -678,9 +682,7 @@ function createEditTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
       edits: z
         .array(
           z.strictObject({
-            file_path: z
-              .string()
-              .describe(`Absolute virtual path in the ${opts.spaceName} file space, such as /report.md.`),
+            path: z.string().describe(`Absolute virtual path in the ${opts.spaceName} file space, such as /report.md.`),
             old_string: z
               .string()
               .describe("Exact text to replace; empty only when creating a file or replacing an empty file."),
@@ -788,16 +790,20 @@ function createDeleteTool(source: WritableFileSource, opts: ResolvedFileToolsOpt
   return {
     name: toolName(opts, "delete"),
     display: {
-      header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
+      header: (args, state) => ({
+        icon: Trash2,
+        label: state.error ? "Delete failed" : state.running ? "Deleting file…" : "Deleted file",
+        preview: toolPreviewPath(toolArgumentPath(args)),
+      }),
     },
     description: `Delete a file or folder from the ${opts.spaceName} file space. Deleting a folder deletes every file below it.`,
     inputSchema: z.strictObject({
-      file_path: z.string().describe(`The absolute virtual file or folder path in the ${opts.spaceName} file space.`),
+      path: z.string().describe(`The absolute virtual file or folder path in the ${opts.spaceName} file space.`),
     }),
     execute: async (args: Record<string, unknown>, execution) => {
       const context = execution?.context;
-      const path = typeof args.file_path === "string" ? args.file_path : "";
-      if (!path) return error("file_path is required");
+      const path = toolArgumentPath(args);
+      if (!path) return error("path is required");
 
       const removeResult = await source.remove(path);
       const mutations = resolvedMutations(removeResult, { operation: "delete", path });
@@ -813,12 +819,12 @@ function createMoveTool(source: WritableFileSource, opts: ResolvedFileToolsOptio
     name: toolName(opts, "move"),
     display: {
       header: (args, state) => {
-        const from = (typeof args?.from === "string" ? args.from : "").replace(/^\/+/, "");
-        const to = (typeof args?.to === "string" ? args.to : "").replace(/^\/+/, "");
+        const from = toolPreviewPath(args?.from);
+        const to = toolPreviewPath(args?.to);
         return {
           icon: FolderInput,
-          label: state.error ? "Move failed" : "Moved file",
-          preview: from && to ? `${from} → ${to}` : undefined,
+          label: state.error ? "Move failed" : state.running ? "Moving file…" : "Moved file",
+          preview: from && to ? `${from} → ${to}` : (from ?? to),
         };
       },
     },
@@ -985,6 +991,14 @@ function scanText(content: string, regex: RegExp, multiline: boolean): GrepScan 
   return { occurrences, lineNumbers: [...matchedLines].sort((a, b) => a - b) };
 }
 
+function fileSearchPreview(args: Record<string, unknown> | null): string | null {
+  const pattern = toolPreviewText(args?.pattern);
+  const scope = toolPreviewPath(args?.path);
+  const glob = toolPreviewText(args?.glob);
+  const details = [scope && scope !== "/" ? scope : null, glob].filter(Boolean).join(", ");
+  return pattern && details ? `${pattern} in ${details}` : (pattern ?? (details || null));
+}
+
 function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptions): Tool {
   return {
     name: toolName(opts, "grep"),
@@ -992,22 +1006,28 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       header: (args, state) => ({
         icon: Search,
         label: state.error ? "Search failed" : state.running ? "Searching files…" : "Searched files",
-        preview: typeof args?.pattern === "string" ? args.pattern : undefined,
+        preview: fileSearchPreview(args),
       }),
     },
     description: [
       `Search file contents in the ${opts.spaceName} file space with JavaScript regular expressions and ripgrep-style options.`,
-      "Use path to scope the search, glob or type to filter files, and output_mode to choose paths (default), matching content, or counts.",
+      "Use path to scope the search and glob or type to filter files. output_mode is files_with_matches (default) for paths, content for matching lines, or count for occurrences per file.",
       "Content mode supports -A/-B/-C context. Line numbers are on by default; omit -n unless disabling them. Flag parameter names include the leading hyphen. Set multiline only when a pattern must span lines.",
       `Search omits a leading BOM and normalizes newlines. Use ${toolName(opts, "read")}'s header or write results to inspect text format, not grep.`,
     ].join("\n"),
     inputSchema: z.strictObject({
-      pattern: z.string().describe("Regex pattern to search for."),
+      pattern: z
+        .string()
+        .describe(
+          'JavaScript regex source, without / delimiters or flags. For literal dots use \\. in the regex; set "-i" separately for case-insensitive matching.',
+        ),
       path: z.string().describe('File or directory to search. Defaults to "/".').optional(),
       glob: z.string().describe('Glob filter for files, such as "*.js" or "**/*.{ts,tsx}".').optional(),
       type: z
-        .string()
-        .describe(`File type filter (${Object.keys(FILE_GREP_TYPES).join(", ")}).`)
+        .enum(Object.keys(FILE_GREP_TYPES) as [string, ...string[]])
+        .describe(
+          'Supported language/type alias. For other extensions use glob, for example "*.pdf", "*.csv" or "*.txt".',
+        )
         .optional(),
       output_mode: z
         .enum(["content", "files_with_matches", "count"])
@@ -1031,12 +1051,16 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
         .int()
         .min(0)
         .default(0)
-        .describe("Skip the first N result entries for pagination. Defaults to 0.")
+        .describe(
+          "Skip N matching files in paths/count mode or N matching lines in content mode; context lines do not count. Use the next skip value returned by the tool. Defaults to 0.",
+        )
         .optional(),
       multiline: z
         .boolean()
         .default(false)
-        .describe("Allow matches to span lines and make dot match newlines. Defaults to false.")
+        .describe(
+          "Search the whole file and let dot match newlines; ^/$ then refer to file boundaries. Defaults to false, searching each line separately.",
+        )
         .optional(),
     }),
     execute: async (args: Record<string, unknown>) => {
@@ -1083,6 +1107,11 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       }
 
       const entries = await source.list();
+      if (searchPath !== "/" && !entries.some((entry) => pathInScope(entry.path, searchPath))) {
+        return error(
+          `Search path not found: ${searchPath}. Use ${toolName(opts, "glob")} with pattern "**/*" to find available paths.`,
+        );
+      }
       const searchEntries = entries
         .filter((entry) => pathInScope(entry.path, searchPath))
         .filter((entry) => !glob || pathMatchesGlob(entry.path, searchPath, glob))
@@ -1090,27 +1119,42 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
         .sort((a, b) => a.path.localeCompare(b.path));
 
       const scans: Array<{ path: string; lines: string[]; scan: GrepScan }> = [];
+      let searchedFiles = 0;
       for (const entry of searchEntries) {
         const file = await source.read(entry.path);
-        if (!file?.content) continue;
+        if (!file) continue;
         if (isDataUrl(file.content)) continue;
+        searchedFiles++;
         const content = file.content.startsWith("\uFEFF") ? file.content.slice(1) : file.content;
         const scan = scanText(content, regex, multiline);
         if (scan.occurrences > 0) scans.push({ path: entry.path, lines: splitLines(content), scan });
       }
 
-      if (scans.length === 0) return text("No matches found");
+      if (searchedFiles === 0) {
+        return text(
+          `No searchable text files in ${searchPath}${glob ? ` matching glob ${JSON.stringify(glob)}` : ""}${type ? ` of type ${type}` : ""}. No file contents were searched; check the scope and filters.`,
+        );
+      }
+      if (scans.length === 0)
+        return text(`No matches found in ${searchedFiles} text file${searchedFiles === 1 ? "" : "s"}.`);
 
       const limit = headLimit === 0 ? Number.POSITIVE_INFINITY : headLimit;
       if (outputMode !== "content") {
         const allRows = scans.map(({ path, scan }) => (outputMode === "count" ? `${path}:${scan.occurrences}` : path));
         const rows = allRows.slice(skip, skip + limit);
-        const suffix = skip + rows.length < allRows.length ? "\n(Results truncated; use skip to continue.)" : "";
+        if (!rows.length)
+          return text(`No more results: skip=${skip} is at or beyond ${allRows.length} matching files.`);
+        const suffix =
+          skip + rows.length < allRows.length
+            ? `\n(Results truncated; use skip=${skip + rows.length} to continue.)`
+            : "";
         return text(`${rows.join("\n")}${suffix}`);
       }
 
       const matches = scans.flatMap(({ path, scan }) => scan.lineNumbers.map((lineNumber) => ({ path, lineNumber })));
       const selected = matches.slice(skip, skip + limit);
+      if (!selected.length)
+        return text(`No more results: skip=${skip} is at or beyond ${matches.length} matching lines.`);
       const selectedByPath = new Map<string, Set<number>>();
       for (const match of selected) {
         const lines = selectedByPath.get(match.path) ?? new Set<number>();
@@ -1144,7 +1188,8 @@ function createGrepTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
       }
 
       const notices: string[] = [];
-      if (skip + selected.length < matches.length) notices.push("Results truncated; use skip to continue");
+      if (skip + selected.length < matches.length)
+        notices.push(`Results truncated; use skip=${skip + selected.length} to continue`);
       if (anyLineTruncated) notices.push(`Some lines truncated to ${opts.maxGrepLineChars} chars; use read`);
       const suffix = notices.length ? `\n\n[${notices.join(". ")}]` : "";
       return text(outputLines.join("\n") + suffix);
@@ -1158,8 +1203,8 @@ function createGlobTool(source: ReadonlyFileSource, opts: ResolvedFileToolsOptio
     display: {
       header: (args, state) => ({
         icon: FileSearch,
-        label: state.error ? "Glob failed" : "Found files",
-        preview: typeof args?.pattern === "string" ? args.pattern : undefined,
+        label: state.error ? "Glob failed" : state.running ? "Finding files…" : "Found files",
+        preview: fileSearchPreview(args),
       }),
     },
     description: `Find files in the ${opts.spaceName} file space matching a glob pattern, newest first. Use "**/*" to list every file. Use path to scope the search to one directory.`,

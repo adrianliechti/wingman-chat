@@ -29,10 +29,21 @@ device selection, and OAuth state in localStorage are outside the OPFS backup.
   lives in `files/index.json`; cleanup of removed folders follows the commit.
 - A chat record (`chats/<id>/chat.json`, version 2) holds the runtime's native
   `UIMessage[]` transcript, its optional resume pointer and middleware metadata.
-  Blob extraction walks message parts, native tool-result content, rich tool outputs in metadata
-  and subagent conversations. Records saved before version 2 migrate when read:
+  Blob extraction walks message parts, native tool-call output and tool-result
+  content and subagent conversations. Saved message `textSegments` become text
+  parts with phase metadata when loaded. Legacy tool output/error metadata
+  moves into native content/state/error. MCP app bindings become `UIResourcePart`
+  fields, with resource policy, the display hint and the original MCP response
+  in its `meta`. New parts retain their HTML; migrated URI-only parts fetch it
+  when opened. Supported modes are read from the live app handshake.
+  The storage boundary converts readable media from damaged legacy tool output
+  into native content, retaining the original record for recovery. Duplicate media
+  MIME types move to native `source.mimeType`, and generated-file lists become
+  artifact deltas. Runtime blob traversal reads only native fields.
+  Records saved before version 2 migrate when read:
   deterministic and idempotent, with unreadable parts dropped with a warning.
-  Reading keeps the original JSON in `chat.legacy.json` so the migration can
+  Reading keeps the original JSON in `chat.legacy.json` for both unversioned
+  records and older version-2 fields, so the conversion can
   be redone; the migrated record is written on the next save. Older backups remain
   restorable and restore validation accepts both shapes.
 - Chat attachments are addressed by content hash, retain their MIME type, and

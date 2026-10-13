@@ -116,6 +116,7 @@ const delayedTool: Tool = {
 const tools = {
   providers: new URLSearchParams(location.search).has("late-tool") ? [{ id: "test", tools: [delayedTool] }] : [],
   coreProviders: [],
+  isProviderEnabled: () => true,
   getProviderState: () => ProviderState.Connected,
 } as unknown as ToolsContextValue;
 const profile = { generateInstructions: () => "Test instructions" } as NonNullable<
@@ -253,7 +254,6 @@ function Owner() {
       return { action: "cancel" };
     },
     setVoiceToolCall: noop,
-    updateToolMeta: noop,
   } as unknown as ChatContextType;
   return show ? (
     <ChatContextProviders value={context}>

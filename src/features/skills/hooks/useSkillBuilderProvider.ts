@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FilePlus2, FileText, PenTool, SquarePen } from "lucide-react";
+import { FilePlus2, FileText, PenTool, SquarePen, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { SkillResource } from "@/features/skills/lib/skillParser";
@@ -9,7 +9,8 @@ import {
   validateSkillResourcePath,
 } from "@/features/skills/lib/skillParser";
 import skillBuilderPrompt from "@/features/skills/prompts/skill-builder.txt?raw";
-import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { artifactLanguage, inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { toolPreviewResource, toolPreviewText } from "@/shared/lib/toolPreview";
 import { isDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
@@ -59,21 +60,43 @@ export function useSkillBuilderProvider(): ToolProvider {
     const tools: Tool[] = [
       {
         name: "list_skills",
+        display: {
+          header: (args, state) => ({
+            icon: FileText,
+            label: state.error
+              ? "Skill read failed"
+              : args?.name
+                ? state.running
+                  ? "Reading skill…"
+                  : "Read skill"
+                : state.running
+                  ? "Listing skills…"
+                  : "Listed skills",
+            preview: toolPreviewResource(args?.name, args?.path !== undefined ? args.path : args?.resource),
+          }),
+        },
         description:
-          "List personal library skills (name and description), or pass name to read one skill's full current content and resource paths before editing; add resource to read one bundled file in full. This reads the library regardless of which skills are active; it does not activate the skill.",
+          "List personal library skills (name and description), or pass name to read one skill's full current content and resource paths before editing; add path to read one bundled file in full. This reads the library regardless of which skills are active; it does not activate the skill.",
         inputSchema: z.strictObject({
           name: z.string().describe("Exact personal skill name to read; omit to list metadata.").optional(),
-          resource: z
+          path: z
             .string()
             .describe("With name: path of one bundled resource whose full content should be returned.")
             .optional(),
         }),
         execute: async (args: Record<string, unknown>) => {
+          const resourcePath = args.path !== undefined ? args.path : args.resource;
+          if (resourcePath !== undefined && (typeof args.name !== "string" || !args.name.trim())) {
+            return jsonResult({
+              error:
+                "A resource path requires the personal skill name. Use list_skills({name, path}) to read a resource, or omit path to list skills.",
+            });
+          }
           if (args.name !== undefined) {
             const name = typeof args.name === "string" ? args.name.trim() : "";
             const skill = name ? getSkill(name) : undefined;
-            if (skill && args.resource !== undefined) {
-              const path = typeof args.resource === "string" ? args.resource.trim() : "";
+            if (skill && resourcePath !== undefined) {
+              const path = typeof resourcePath === "string" ? resourcePath.trim() : "";
               const resource = skill.resources?.find((r) => r.path === path);
               if (!resource)
                 return jsonResult({
@@ -115,9 +138,10 @@ export function useSkillBuilderProvider(): ToolProvider {
       {
         name: "create_skill",
         display: {
-          header: (_args, state) => ({
+          header: (args, state) => ({
             icon: FilePlus2,
             label: state.error ? "Create failed" : state.running ? "Creating skill…" : "Created skill",
+            preview: toolPreviewText(args?.name),
           }),
           // Show just the SKILL.md content (the name/description are metadata).
           input: (args) => {
@@ -207,9 +231,10 @@ export function useSkillBuilderProvider(): ToolProvider {
       {
         name: "update_skill",
         display: {
-          header: (_args, state) => ({
+          header: (args, state) => ({
             icon: SquarePen,
             label: state.error ? "Update failed" : state.running ? "Updating skill…" : "Updated skill",
+            preview: toolPreviewText(args?.name),
           }),
           input: (args) => {
             const content = typeof args?.content === "string" ? args.content : "";
@@ -267,15 +292,14 @@ export function useSkillBuilderProvider(): ToolProvider {
         display: {
           header: (args, state) => ({
             icon: FileText,
-            label: state.error
-              ? "Resource failed"
-              : state.running
-                ? `Writing ${typeof args?.path === "string" ? args.path : "resource"}…`
-                : `Wrote ${typeof args?.path === "string" ? args.path : "resource"}`,
+            label: state.error ? "Resource failed" : state.running ? "Writing skill resource…" : "Wrote skill resource",
+            preview: toolPreviewResource(args?.name, args?.path),
           }),
           input: (args) => {
             const content = typeof args?.content === "string" ? args.content : "";
-            return content ? [{ code: content, language: "markdown" }] : [];
+            return content
+              ? [{ code: content, language: typeof args?.path === "string" ? artifactLanguage(args.path) : "text" }]
+              : [];
           },
         },
         description:
@@ -318,8 +342,9 @@ export function useSkillBuilderProvider(): ToolProvider {
             label: state.error
               ? "Delete failed"
               : state.running
-                ? `Removing ${typeof args?.path === "string" ? args.path : "resource"}…`
-                : `Removed ${typeof args?.path === "string" ? args.path : "resource"}`,
+                ? "Removing skill resource…"
+                : "Removed skill resource",
+            preview: toolPreviewResource(args?.name, args?.path),
           }),
         },
         description:
@@ -350,6 +375,13 @@ export function useSkillBuilderProvider(): ToolProvider {
       },
       {
         name: "delete_skill",
+        display: {
+          header: (args, state) => ({
+            icon: Trash2,
+            label: state.error ? "Delete failed" : state.running ? "Deleting skill…" : "Deleted skill",
+            preview: toolPreviewText(args?.name),
+          }),
+        },
         description:
           "Permanently delete a skill from the library. This cannot be undone — confirm with the user before deleting a skill you didn't just create. If the active agent has the skill enabled, it is also removed from that agent.",
         inputSchema: z.strictObject({

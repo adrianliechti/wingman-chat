@@ -24,12 +24,18 @@ const fs = {
 } as unknown as FileSystem;
 
 function Fixture() {
-  const [state, setState] = useState({ content: "Ready", streaming: false, files: false, compact: false });
+  const [state, setState] = useState({
+    content: "Ready",
+    streaming: false,
+    files: false,
+    compact: false,
+    uiStateKey: "fixture",
+  });
   const { setEmojiMode } = useEmoji();
   useLayoutEffect(() => {
     window.markdownE2E = {
-      render: (content, streaming = false, files = false, compact = false) =>
-        setState({ content, streaming, files, compact }),
+      render: (content, streaming = false, files = false, compact = false, uiStateKey = "fixture") =>
+        setState({ content, streaming, files, compact, uiStateKey }),
       mode: setEmojiMode,
       releaseImage,
     };
@@ -41,6 +47,7 @@ function Fixture() {
         compact={state.compact}
         fs={state.files ? fs : undefined}
         basePath="/docs/readme.md"
+        uiStateKey={state.uiStateKey}
       >
         {state.content}
       </Markdown>
@@ -62,7 +69,7 @@ createRoot(document.getElementById("root")!).render(
 declare global {
   interface Window {
     markdownE2E: {
-      render(content: string, streaming?: boolean, files?: boolean, compact?: boolean): void;
+      render(content: string, streaming?: boolean, files?: boolean, compact?: boolean, uiStateKey?: string): void;
       mode(mode: EmojiMode): void;
       releaseImage(): void;
     };

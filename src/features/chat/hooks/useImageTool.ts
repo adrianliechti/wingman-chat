@@ -15,6 +15,7 @@ import { artifactDelta } from "@/shared/types/artifact";
 import type { ContentPart } from "@tanstack/ai";
 import { mediaDataUrl, mediaFromDataUrl } from "@/shared/lib/messages";
 import type { Tool, ToolContext } from "@/shared/types/chat";
+import { toolPreviewText } from "@/shared/lib/toolPreview";
 
 function errorResult(error: string, context?: ToolContext): ContentPart[] {
   context?.setError?.({ code: "IMAGE_GENERATION_ERROR", message: error });
@@ -57,6 +58,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
   // differently — config overrides still carry the renderer's capabilities.
   const entry = catalog.find((m) => m.id === model) ?? models.find((m) => m.id === model);
   const caps = withRendererFallback(entry ?? { id: model, name: model });
+  const defaultQuality = caps.supportedQualities?.[0];
 
   // Advertise only the controls this renderer honors — the same capability
   // mapping the Canvas pickers use — so the model isn't offered aspect ratios,
@@ -86,9 +88,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
     properties.quality = z
       .enum(caps.supportedQualities)
       .optional()
-      .describe(
-        "Rendering quality; defaults to the first listed tier. Higher tiers usually take longer and cost more.",
-      );
+      .describe(`Rendering quality; defaults to ${defaultQuality}. Higher tiers usually take longer and cost more.`);
   }
   if (caps.supportedResolutions?.length) {
     properties.resolution = z
@@ -111,10 +111,22 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
     name: "create_image",
     needsApproval: elicitation,
     display: {
-      header: (_args, state) => ({
-        icon: Image,
-        label: state.error ? "Image failed" : state.running ? "Generating image…" : "Created image",
-      }),
+      header: (args, state) => {
+        const edit = Array.isArray(args?.images) && args.images.some((path) => typeof path === "string" && path.trim());
+        return {
+          icon: Image,
+          label: state.error
+            ? "Image failed"
+            : state.running
+              ? edit
+                ? "Editing image…"
+                : "Generating image…"
+              : edit
+                ? "Edited image"
+                : "Created image",
+          preview: toolPreviewText(args?.prompt),
+        };
+      },
     },
     description:
       "Generate or edit raster images such as photos, illustrations, and visual assets. Use for image creation and visual edits; use vision to inspect images and file/code tools for interactive HTML, SVG, or charts. Supply a self-contained prompt and artifact paths for reference images. Current-message image attachments are included automatically. Returns the image inline and saves it to the chat workspace when available.",
@@ -155,8 +167,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         if (typeof args.aspect_ratio === "string") options.aspectRatio = args.aspect_ratio;
         // Default to a supported tier, including deployments that exclude low.
         if (caps.supportedQualities?.length) {
-          options.quality =
-            caps.supportedQualities.find((quality) => quality === args.quality) ?? caps.supportedQualities[0];
+          options.quality = caps.supportedQualities.find((quality) => quality === args.quality) ?? defaultQuality;
         }
         if (
           args.resolution === "512" ||
@@ -196,7 +207,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
             );
             context?.signal?.throwIfAborted();
             if (saved.mutations.length) {
-              context?.setMeta?.({ artifactFiles: saved.paths, artifactDelta: artifactDelta(saved.mutations) });
+              context?.setMeta?.({ artifactDelta: artifactDelta(saved.mutations) });
             }
             name = saved.paths[0];
           } catch (error) {
@@ -206,8 +217,7 @@ function createImageTool({ client, catalog, models, rendererModel, elicitation, 
         }
 
         // Return the image inline. The harness strips it to a text placeholder
-        // before the model (serializeToolResultForApi) and persists it as a blob
-        // reference, not base64 — so it bloats neither context nor storage. The
+        // at the model boundary and persists its bytes in a chat blob. The
         // placeholder keeps `name`, so the model learns the artifact path and can
         // reference it to edit the image later.
         return [mediaFromDataUrl(dataUrl, name, "image")];

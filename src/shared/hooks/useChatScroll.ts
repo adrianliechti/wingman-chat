@@ -4,6 +4,8 @@ interface UseChatScrollOptions {
   resetKey?: string | null;
   messages?: Array<{ id?: string; role: string; metadata?: Record<string, unknown> }>;
   isResponding?: boolean;
+  /** A new actionable request should be visible while following the current turn. */
+  requestKey?: unknown;
 }
 
 const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"]);
@@ -11,7 +13,7 @@ const TOP_CLEARANCE = 72; // matches pt-18
 const BOTTOM_TOLERANCE = 2;
 
 /** Keep a new prompt readable; Latest opts into following the rendered reply. */
-export function useChatScroll({ resetKey, messages = [], isResponding = false }: UseChatScrollOptions) {
+export function useChatScroll({ resetKey, messages = [], isResponding = false, requestKey }: UseChatScrollOptions) {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const modeRef = useRef<"prompt" | "latest" | "free">("latest");
@@ -19,6 +21,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
   const spacerHeightRef = useRef(0);
   const lastPromptRef = useRef<unknown>(undefined);
   const lastResetKeyRef = useRef(resetKey);
+  const lastRequestKeyRef = useRef(requestKey);
   const geometryRef = useRef({ top: 0, height: 0, viewport: 0 });
 
   const setSpacerHeight = useCallback((height: number) => {
@@ -84,8 +87,12 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
       modeRef.current = "prompt";
     }
     lastPromptRef.current = identity;
+    if (requestKey && requestKey !== lastRequestKeyRef.current && modeRef.current !== "free") {
+      modeRef.current = "latest";
+    }
+    lastRequestKeyRef.current = requestKey;
     syncScroll();
-  }, [messages, resetKey, isResponding, syncScroll, setSpacerHeight]);
+  }, [messages, resetKey, isResponding, requestKey, syncScroll, setSpacerHeight]);
 
   useEffect(() => {
     if (!scrollElement) return;

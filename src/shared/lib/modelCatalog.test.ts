@@ -1,102 +1,98 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { getModelCatalog, MODEL_CATALOG_MAX_AGE_MS } from "./modelCatalog";
 import type { Model } from "@/shared/types/chat";
+import {
+  fetchModelCatalog,
+  getModelCatalogSnapshot,
+  MODEL_CATALOG_MAX_AGE_MS,
+  modelCatalogQuery,
+} from "./modelCatalog";
+import { queryClient } from "./queryClient";
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  queryClient.clear();
+});
 
 function fixture(models: Model[] = []) {
   const listModels = vi.fn<() => Promise<Model[]>>();
   const config = { client: { listModels }, models };
-  return { config, listModels, catalog: getModelCatalog(config) };
+  return { config, listModels };
 }
 
 it("coalesces consumers and resolves config types and capabilities in the shared snapshot", async () => {
-  const { config, catalog, listModels } = fixture([{ id: "alias", name: "Studio", type: "renderer" }]);
+  const { config, listModels } = fixture([{ id: "alias", name: "Studio", type: "renderer" }]);
   let resolve!: (models: Model[]) => void;
   listModels.mockReturnValueOnce(
     new Promise((done) => {
       resolve = done;
     }),
   );
-  const first = catalog.refresh();
-  expect(catalog.refresh(true)).toBe(first);
-  expect(getModelCatalog(config)).toBe(catalog);
-  expect(catalog.getSnapshot()).toBeNull();
+  const first = fetchModelCatalog(config);
+  const second = fetchModelCatalog(config, true);
+  expect(modelCatalogQuery(config).queryKey).toEqual(modelCatalogQuery(config).queryKey);
+  expect(getModelCatalogSnapshot(config)).toBeNull();
   await Promise.resolve();
   expect(listModels).toHaveBeenCalledExactlyOnceWith();
   resolve([{ id: "alias", name: "API name", type: "completer" }]);
   expect(await first).toMatchObject([
     { id: "alias", name: "Studio", type: "renderer", supportedQualities: ["low", "medium", "high"] },
   ]);
-  expect(await catalog.refresh()).toBe(catalog.getSnapshot());
+  expect(await second).toBe(await first);
+  expect(await fetchModelCatalog(config)).toBe(getModelCatalogSnapshot(config));
   expect(listModels).toHaveBeenCalledTimes(1);
 });
 
 it("expires its cache, accepts removals and caches a successful empty inventory", async () => {
   vi.useFakeTimers();
-  const { catalog, listModels } = fixture();
+  const { config, listModels } = fixture();
   listModels.mockResolvedValueOnce([{ id: "old", name: "Old" }]).mockResolvedValueOnce([]);
-  const first = await catalog.refresh();
+  const first = await fetchModelCatalog(config);
   vi.advanceTimersByTime(MODEL_CATALOG_MAX_AGE_MS - 1);
-  expect(await catalog.refresh()).toBe(first);
+  expect(await fetchModelCatalog(config)).toBe(first);
   vi.advanceTimersByTime(1);
-  expect(await catalog.refresh()).toEqual([]);
-  expect(await catalog.refresh()).toEqual([]);
+  expect(await fetchModelCatalog(config)).toEqual([]);
+  expect(await fetchModelCatalog(config)).toEqual([]);
   expect(listModels).toHaveBeenCalledTimes(2);
 });
 
 it("keeps the last successful list on failure and allows an immediate retry", async () => {
-  const { catalog, listModels } = fixture();
+  const { config, listModels } = fixture();
   listModels.mockResolvedValueOnce([{ id: "old", name: "Old" }]);
-  const good = await catalog.refresh();
+  const good = await fetchModelCatalog(config);
   listModels.mockRejectedValueOnce(new Error("Offline"));
-  await expect(catalog.refresh(true)).rejects.toThrow("Offline");
-  expect(catalog.getSnapshot()).toBe(good);
+  await expect(fetchModelCatalog(config, true)).rejects.toThrow("Offline");
+  expect(getModelCatalogSnapshot(config)).toBe(good);
   listModels.mockResolvedValueOnce([{ id: "new", name: "New" }]);
-  expect(await catalog.refresh(true)).toMatchObject([{ id: "new" }]);
+  expect(await fetchModelCatalog(config, true)).toMatchObject([{ id: "new" }]);
 });
 
 it("recovers from an initial error without caching a false empty success", async () => {
-  const { catalog, listModels } = fixture();
+  const { config, listModels } = fixture();
   listModels.mockImplementationOnce(() => {
     throw new Error("Unavailable");
   });
-  await expect(catalog.refresh()).rejects.toThrow("Unavailable");
-  expect(catalog.getSnapshot()).toBeNull();
+  await expect(fetchModelCatalog(config)).rejects.toThrow("Unavailable");
+  expect(getModelCatalogSnapshot(config)).toBeNull();
   listModels.mockResolvedValueOnce([]);
-  expect(await catalog.refresh()).toEqual([]);
+  expect(await fetchModelCatalog(config)).toEqual([]);
 });
 
 it("isolates replacement backend clients and config from an older pending request", async () => {
-  const { config, catalog, listModels } = fixture();
+  const { config, listModels } = fixture();
   let resolve!: (models: Model[]) => void;
   listModels.mockReturnValueOnce(
     new Promise((done) => {
       resolve = done;
     }),
   );
-  const old = catalog.refresh();
+  const old = fetchModelCatalog(config);
   const replacement = fixture();
   replacement.listModels.mockResolvedValueOnce([{ id: "current", name: "Current" }]);
-  const current = await replacement.catalog.refresh();
+  const current = await fetchModelCatalog(replacement.config);
   resolve([{ id: "obsolete", name: "Obsolete" }]);
   await old;
-  expect(replacement.catalog.getSnapshot()).toBe(current);
+  expect(getModelCatalogSnapshot(replacement.config)).toBe(current);
   const newConfig = { ...config, models: [{ id: "opaque", name: "Image", type: "renderer" as const }] };
-  expect(getModelCatalog(newConfig)).not.toBe(catalog);
-});
-
-it("notifies subscribers only on success and stops notifying after unsubscribe", async () => {
-  const { catalog, listModels } = fixture();
-  const listener = vi.fn();
-  const unsubscribe = catalog.subscribe(listener);
-  listModels.mockResolvedValue([]);
-  await catalog.refresh();
-  expect(listener).toHaveBeenCalledTimes(1);
-  listModels.mockRejectedValueOnce(new Error("Offline"));
-  await expect(catalog.refresh(true)).rejects.toThrow("Offline");
-  expect(listener).toHaveBeenCalledTimes(1);
-  unsubscribe();
-  await catalog.refresh(true);
-  expect(listener).toHaveBeenCalledTimes(1);
+  expect(modelCatalogQuery(newConfig).queryKey).not.toEqual(modelCatalogQuery(config).queryKey);
+  expect(getModelCatalogSnapshot(newConfig)).toBeNull();
 });

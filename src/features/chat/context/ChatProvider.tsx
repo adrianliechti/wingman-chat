@@ -78,7 +78,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
   }, [chatId, loadChat]);
   const chatError = !chat && loadError?.id === chatId ? loadError.error : null;
-  const chatLoading = !!chatId && !chat && !chatError;
   const createChatOnce = useMemo(() => createChatCreationGate(), []);
   const currentChatModel = chat?.model;
   const agentModel = useMemo(() => {
@@ -288,7 +287,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chatRuntimeContext,
     chatMemory,
   });
-  const { streamingMessage, ...runContext } = run;
+  const { streamingMessage, isHydrating, ...runContext } = run;
+  const chatLoading = !!chatId && (!chat || isHydrating) && !chatError;
   // Lets the artifacts viewer send "edit this passage" requests through the active chat.
   const { sendMessage: sendRunMessage } = run;
   useEffect(() => {

@@ -189,18 +189,18 @@ for (const effort of ["none", "minimal", "max"] as const) {
   });
 }
 
-test("refreshes a stale catalogue on focus and removes timers and listeners on unmount", async ({ page }) => {
+test("refreshes a stale catalogue when visible and stops refreshing unmounted consumers", async ({ page }) => {
   await page.clock.install();
   const { api } = await open(page);
   await page.clock.setFixedTime(new Date(Date.now() + 61_000));
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   await expect.poll(() => api.requests).toBe(2);
   await page.getByRole("button", { name: "Toggle consumer" }).click();
   await page.clock.fastForward(120_000);
   await page.evaluate(() => {
     window.dispatchEvent(new Event("focus"));
     window.dispatchEvent(new Event("online"));
-    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("visibilitychange"));
   });
   expect(api.requests).toBe(2);
 });

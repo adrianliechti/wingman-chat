@@ -1,11 +1,11 @@
 package config
 
 type Config struct {
-	Title      string   `json:"title,omitempty" yaml:"title,omitempty"`
-	Disclaimer string   `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
-	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
-	Plugins    *Plugins `json:"plugins,omitempty" yaml:"plugins,omitempty"`
-	Links      []Link   `json:"links,omitempty" yaml:"links,omitempty"`
+	Title      string     `json:"title,omitempty" yaml:"title,omitempty"`
+	Disclaimer string     `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+	Companion  *Companion `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+	Plugins    *Plugins   `json:"plugins,omitempty" yaml:"plugins,omitempty"`
+	Links      []Link     `json:"links,omitempty" yaml:"links,omitempty"`
 	// Legacy account links, used when Links is absent.
 	Support *Link `json:"support,omitempty" yaml:"support,omitempty"`
 	Cost    *Link `json:"cost,omitempty" yaml:"cost,omitempty"`
@@ -23,7 +23,6 @@ type Config struct {
 	Text      *Text      `json:"text,omitempty" yaml:"text,omitempty"`
 	Extractor *Extractor `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
-	Internet   *Internet   `json:"internet,omitempty" yaml:"internet,omitempty"`
 	Renderer   *Renderer   `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 	Translator *Translator `json:"translator,omitempty" yaml:"translator,omitempty"`
 
@@ -47,11 +46,13 @@ type Link struct {
 }
 
 type Tool struct {
-	ID          string `json:"id,omitempty" yaml:"id,omitempty"`
-	URL         string `json:"url,omitempty" yaml:"url,omitempty"`
-	Name        string `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	Icon        string `json:"icon,omitempty" yaml:"icon,omitempty"`
+	ID            string            `json:"id,omitempty" yaml:"id,omitempty"`
+	URL           string            `json:"url,omitempty" yaml:"url,omitempty"`
+	Name          string            `json:"name,omitempty" yaml:"name,omitempty"`
+	Description   string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Icon          string            `json:"icon,omitempty" yaml:"icon,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	NeedsApproval bool              `json:"needsApproval,omitempty" yaml:"needsApproval,omitempty"`
 }
 
 type ModelTools struct {
@@ -101,27 +102,6 @@ type Text struct {
 type Extractor struct {
 	Model string   `json:"model,omitempty" yaml:"model,omitempty"`
 	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
-}
-
-type Internet struct {
-	Model       string `json:"model,omitempty" yaml:"model,omitempty"`
-	Guard       string `json:"guard,omitempty" yaml:"guard,omitempty"`
-	Searcher    string `json:"searcher,omitempty" yaml:"searcher,omitempty"`
-	Scraper     string `json:"scraper,omitempty" yaml:"scraper,omitempty"`
-	Researcher  string `json:"researcher,omitempty" yaml:"researcher,omitempty"`
-	Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
-	// Categories lists the searcher verticals (e.g. news, publication) offered
-	// to the research agent; the gateway searcher must accept them.
-	Categories []SearchCategory `json:"categories,omitempty" yaml:"categories,omitempty"`
-	// Location is the default ISO 3166-1 alpha-2 country code that biases searches.
-	Location string `json:"location,omitempty" yaml:"location,omitempty"`
-	// Summarizer optionally condenses long fetched pages during deep research.
-	Summarizer string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
-}
-
-type SearchCategory struct {
-	Name        string `json:"name" yaml:"name"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 type Renderer struct {
@@ -221,7 +201,7 @@ type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
-type Bridge struct {
+type Companion struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 

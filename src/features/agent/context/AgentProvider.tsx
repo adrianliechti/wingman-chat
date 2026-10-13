@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import type { Agent } from "@/features/agent/types/agent";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import type { RepositoryFile } from "@/features/repository/types/repository";
-import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
 import { usePersistentCollection } from "@/shared/hooks/usePersistentCollection";
 import { getConfig } from "@/shared/config";
 import { convertFileToText } from "@/shared/lib/convert";
@@ -24,7 +23,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       return null;
     }
   });
-  // Selection stores identity only; files, tools and servers always come from
+  // Selection stores identity only; files and tools always come from
   // the same authoritative agent snapshot that is being persisted.
   const currentAgent = agents.find((agent) => agent.id === currentId) ?? null;
   const [showAgentDrawer, setShowAgentDrawer] = useState(false);
@@ -50,7 +49,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         model: initialData?.model ?? getSavedModelId() ?? undefined,
         skills: initialData?.skills ?? [],
         plugins: initialData?.plugins ?? [],
-        servers: initialData?.servers ?? [],
         tools: initialData?.tools ?? [],
       };
       setCurrentId(agent.id);
@@ -140,50 +138,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [getIngestion, update],
   );
 
-  const addServer = useCallback(
-    (id: string, data: Omit<BridgeServer, "id">): BridgeServer => {
-      const server = { ...data, id: crypto.randomUUID() };
-      update(id, (agent) => ({ ...agent, servers: [...agent.servers, server] }));
-      return server;
-    },
-    [update],
-  );
-
-  const updateServer = useCallback(
-    (id: string, serverId: string, changes: Partial<Omit<BridgeServer, "id">>) => {
-      update(id, (agent) => ({
-        ...agent,
-        servers: agent.servers.map((server) =>
-          server.id === serverId ? { ...server, ...changes, id: serverId } : server,
-        ),
-      }));
-    },
-    [update],
-  );
-
-  const removeServer = useCallback(
-    (id: string, serverId: string) => {
-      clearMcpOAuthStorage(serverId);
-      update(id, (agent) => ({
-        ...agent,
-        servers: agent.servers.filter((server) => server.id !== serverId),
-      }));
-    },
-    [update],
-  );
-
-  const toggleServer = useCallback(
-    (id: string, serverId: string) => {
-      update(id, (agent) => ({
-        ...agent,
-        servers: agent.servers.map((server) =>
-          server.id === serverId ? { ...server, enabled: !server.enabled } : server,
-        ),
-      }));
-    },
-    [update],
-  );
-
   const toggleAgentDrawer = useCallback(() => {
     if (!showAgentDrawer) setAgentDrawerView("list");
     setShowAgentDrawer(!showAgentDrawer);
@@ -208,10 +162,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         getAgent,
         addFile,
         reindexFile,
-        addServer,
-        updateServer,
-        removeServer,
-        toggleServer,
       }}
     >
       {children}

@@ -10,7 +10,7 @@ import {
   mediaFromDataUrl,
   messageText,
   text,
-  textSegments,
+  textParts,
   toolResults,
   userMessage,
 } from "@/shared/lib/messages";
@@ -49,6 +49,46 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("replays native widgets without sending their HTML, metadata or structured app data to the gateway", async () => {
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+  const history = [
+    ...prompt,
+    assistantMessage([
+      toolCall("app-call", "app"),
+      {
+        type: "ui-resource",
+        toolCallId: "app-call",
+        serverId: "server",
+        toolName: "app",
+        resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Private widget HTML</p>" },
+        meta: {
+          ui: { private: "resource secret" },
+          mcpResult: {
+            content: [],
+            structuredContent: { private: "structured secret" },
+            _meta: { private: "tool secret" },
+          },
+        },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "app-call",
+        state: "complete",
+        content: "Visible result",
+      },
+    ]),
+    ...prompt,
+  ];
+  const result = await run(new Client(), "model", "", history, []);
+  expect(result.status).toBe("completed");
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(JSON.stringify(body)).toContain("Visible result");
+  expect(JSON.stringify(body)).not.toContain("Private widget HTML");
+  expect(JSON.stringify(body)).not.toContain("resource secret");
+  expect(JSON.stringify(body)).not.toContain("structured secret");
+  expect(JSON.stringify(body)).not.toContain("tool secret");
 });
 
 it("parses final-answer JSON when a response also contains commentary", async () => {
@@ -446,6 +486,70 @@ it("does not accept valid commentary JSON when the final schema answer is invali
   expect(fetchMock).toHaveBeenCalledOnce();
 });
 
+it("persists streamed phases on text parts and replays them after hydration", async () => {
+  const commentary = { ...textItem("Working"), id: "commentary", phase: "commentary" };
+  const final = { ...textItem("Done"), id: "final", phase: "final_answer" };
+  let connection!: ReadableStreamDefaultController<Uint8Array>;
+  fetchMock.mockResolvedValueOnce(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(stream) {
+          connection = stream;
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    ),
+  );
+  const original = chatSession(new Client(), []);
+  const sending = original.ai.sendMessage("Go");
+  try {
+    const partial = await sse([
+      { type: "response.created", response: response([], { status: "in_progress" }) },
+      { type: "response.output_item.added", output_index: 0, item: { ...commentary, content: [] } },
+      {
+        type: "response.output_text.delta",
+        item_id: commentary.id,
+        output_index: 0,
+        content_index: 0,
+        delta: "Working",
+      },
+    ]).text();
+    connection.enqueue(new TextEncoder().encode(partial));
+    await expect
+      .poll(() => original.store.value?.messages.at(-1)?.parts)
+      .toEqual([text("Working", { phase: "commentary" })]);
+    expect(JSON.stringify(original.store.value?.messages)).not.toContain("textSegments");
+    const rest = await sse([
+      { type: "response.output_item.done", output_index: 0, item: commentary },
+      { type: "response.output_item.added", output_index: 1, item: { ...final, content: [] } },
+      { type: "response.output_text.delta", item_id: final.id, output_index: 1, content_index: 0, delta: "Done" },
+      { type: "response.completed", response: response([commentary, final]) },
+    ]).text();
+    connection.enqueue(new TextEncoder().encode(rest));
+    connection.close();
+    await sending;
+    expect(original.store.value?.messages.at(-1)?.parts).toEqual([
+      text("Working", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
+    ]);
+  } finally {
+    original.ai.dispose();
+  }
+  fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
+  const restored = chatSession(new Client(), [], original.store);
+  try {
+    await restored.ai.sendMessage("Continue");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
+        expect.objectContaining({ role: "assistant", content: "Done", phase: "final_answer" }),
+      ]),
+    );
+  } finally {
+    restored.ai.dispose();
+  }
+});
+
 it("replaces earlier text in the live native client and its persisted history", async () => {
   fetchMock.mockResolvedValueOnce(
     sse([
@@ -461,7 +565,8 @@ it("replaces earlier text in the live native client and its persisted history", 
     expect(session.ai.getMessages().at(-1)?.parts).toMatchObject([{ type: "text", content: "Final answer" }]);
     const restored = session.store.value!.messages;
     expect(messageText(restored.at(-1)!)).toBe("Final answer");
-    expect(textSegments(restored.at(-1)!)).toEqual([{ content: "Final answer", phase: "final_answer" }]);
+    expect(textParts(restored.at(-1)!)).toEqual([text("Final answer", { phase: "final_answer" })]);
+    expect(restored.at(-1)!.metadata).not.toHaveProperty("textSegments");
     fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
     await session.ai.sendMessage("Continue");
     const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
@@ -497,7 +602,7 @@ it("retains rich results and executes a tool once when completed text rewrites a
     { type: "text", content: "Go" },
     { type: "text", content: "Checked" },
     { type: "tool-call", id: "call_test" },
-    { type: "tool-result", toolCallId: "call_test", metadata: { meta: { file: "/notes.md" }, result: [image] } },
+    { type: "tool-result", toolCallId: "call_test", content: [image], metadata: { meta: { file: "/notes.md" } } },
     { type: "text", content: "Done" },
   ]);
 });

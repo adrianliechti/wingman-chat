@@ -1,7 +1,10 @@
+import { EventType, type AGUIEvent, type RunFinishedEvent } from "@ag-ui/core";
+import { EventSchema } from "@ag-ui/core/schemas";
 import {
   chat,
   defineAgent,
   normalizeToUIMessage,
+  normalizeStreamChunk,
   modelMessagesToUIMessages,
   uiMessagesToWire,
   maxIterations,
@@ -9,23 +12,26 @@ import {
   toolDefinition,
   type AgentLoopStrategy,
   type ChatMiddleware,
+  type ContentPart,
   type ModelMessage,
   type RunAgentResumeItem,
-  type StreamChunk,
+  type TextPart,
   type ToolExecutionContext,
   type UIMessage,
 } from "@tanstack/ai";
-import type { AgentRunContext, MessageUsage, Tool, ToolContext } from "../types/chat";
+import type { AgentRunContext, MessageError, MessageUsage, Tool, ToolContext } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client, ClientRequestOptions } from "./client";
 import { followAbortSignal } from "./abortSignals";
 import {
-  describeToolOutput,
+  describeToolMessages,
   mapMessages,
   messageMetadata,
+  textMetadata,
+  textParts,
   userMessage,
+  withTextPhases,
   type MessageMetadata,
-  type TextSegment,
   type ToolResultMetadata,
 } from "./messages";
 import { artifactDelta, artifactDeltaFromMeta, type ArtifactMutation } from "../types/artifact";
@@ -44,7 +50,7 @@ export interface AgentRunResult {
 }
 
 /** Provider configuration shared by chat, subagents, and isolated interpreter calls. */
-export type ChatOptions = NonNullable<Parameters<Client["chatModelOptions"]>[1]> & ClientRequestOptions;
+export type ChatOptions = NonNullable<Parameters<Client["chatOptions"]>[1]> & ClientRequestOptions;
 
 /** A tool invocation as the runtime reports it. */
 interface ToolCall {
@@ -95,23 +101,27 @@ export interface RunHooks {
 }
 
 /**
- * What the runtime holds only as text, kept beside the run and attached to the
- * transcript it persists: each tool's rich output and display data, and the
- * run and usage of every model turn.
+ * Application data attached to the native transcript: tool display data and
+ * rich error content, plus the run and usage of every model turn.
  */
 export class RunSidecar {
-  private readonly results = new Map<string, ToolResultMetadata>();
+  private readonly results = new Map<string, { metadata: ToolResultMetadata; content?: ContentPart[] }>();
   private readonly turns = new Map<string, Pick<MessageMetadata, "runId" | "usage">>();
   private readonly rejectedReasoning = new Set<string>();
   /** The gateway's output phases per assistant message; a snapshot rebuilt from the provider view loses them. */
-  private readonly textSegments = new Map<string, TextSegment[]>();
+  private readonly phasedText = new Map<string, TextPart[]>();
 
-  result(toolCallId: string, data: ToolResultMetadata) {
-    this.results.set(toolCallId, { ...this.results.get(toolCallId), ...data });
+  result(toolCallId: string, metadata: ToolResultMetadata, content?: ContentPart[]) {
+    const previous = this.results.get(toolCallId);
+    this.results.set(toolCallId, {
+      ...previous,
+      metadata: { ...previous?.metadata, ...metadata },
+      ...(content !== undefined ? { content } : {}),
+    });
   }
 
   toolMeta(toolCallId: string) {
-    return this.results.get(toolCallId)?.meta;
+    return this.results.get(toolCallId)?.metadata.meta;
   }
 
   turn(id: string, runId: string, usage?: MessageUsage) {
@@ -126,20 +136,53 @@ export class RunSidecar {
     for (const payload of payloads) this.rejectedReasoning.add(payload);
   }
 
-  captureTextSegments(segments: ReadonlyMap<string, TextSegment[]>) {
-    for (const [id, parts] of segments) this.textSegments.set(id, parts);
+  captureTextParts(messages: ReadonlyMap<string, TextPart[]>) {
+    for (const [id, parts] of messages) this.phasedText.set(id, parts);
+  }
+
+  captureHistory(messages: UIMessage[]) {
+    mapMessages(messages, (message) => {
+      const parts = textParts(message);
+      if (parts.some((part) => textMetadata(part).phase)) this.phasedText.set(message.id, parts);
+      else this.phasedText.delete(message.id);
+      return message;
+    });
+  }
+
+  /** Native all-text conversion drops part metadata; restore it only for matching provider context. */
+  applyModelPhases(messages: ModelMessage[]): ModelMessage[] {
+    return messages.map((message) => {
+      const parts = message.id ? this.phasedText.get(message.id) : undefined;
+      return message.role === "assistant" &&
+        parts?.some((part) => textMetadata(part).phase) &&
+        typeof message.content === "string" &&
+        message.content === parts.map((part) => part.content).join("")
+        ? { ...message, content: parts }
+        : message;
+    });
   }
 
   apply(messages: UIMessage[]): UIMessage[] {
-    if (!this.results.size && !this.turns.size && !this.rejectedReasoning.size && !this.textSegments.size)
+    if (!this.results.size && !this.turns.size && !this.rejectedReasoning.size && !this.phasedText.size)
       return messages;
     return mapMessages(messages, (message) => {
       const turn = this.turns.get(message.id);
-      const segments = this.textSegments.get(message.id);
+      const phased = this.phasedText.get(message.id);
+      if (phased) message = withTextPhases(message, phased);
       const parts = message.parts.map((part) => {
+        if (part.type === "tool-call") {
+          const meta = this.results.get(part.id)?.metadata.meta;
+          if (meta) return { ...part, metadata: { ...(part.metadata as Record<string, unknown>), meta } };
+        }
         if (part.type === "tool-result") {
           const data = this.results.get(part.toolCallId);
-          return data ? { ...part, metadata: { ...part.metadata, ...data } } : part;
+          return data
+            ? {
+                ...part,
+                ...(data.content !== undefined ? { content: data.content } : {}),
+                metadata: { ...part.metadata, ...data.metadata },
+              }
+            : part;
         }
         // A provider rejected this ciphertext once; it must not come back after a reload.
         if (part.type === "thinking" && part.signature && this.rejectedReasoning.size) {
@@ -150,13 +193,11 @@ export class RunSidecar {
         }
         return part;
       });
-      if (!turn && !segments && parts.every((part, index) => part === message.parts[index])) return message;
+      if (!turn && parts.every((part, index) => part === message.parts[index])) return message;
       return {
         ...message,
         parts,
-        ...(turn || segments
-          ? { metadata: { ...message.metadata, ...turn, ...(segments ? { textSegments: segments } : {}) } }
-          : {}),
+        ...(turn ? { metadata: { ...message.metadata, ...turn } } : {}),
       };
     });
   }
@@ -215,7 +256,7 @@ export async function* streamRun(
   messages: UIMessage[],
   tools: Tool[],
   hooks: StreamRunHooks,
-): AsyncGenerator<StreamChunk> {
+): AsyncGenerator<AGUIEvent> {
   const { controller: abortController, cleanup } = followAbortSignal(hooks.context?.signal, hooks.options?.signal);
   const invocation: AgentRunContext = {
     ...hooks.context,
@@ -223,6 +264,7 @@ export async function* streamRun(
   };
   const runId = hooks.runId ?? crypto.randomUUID();
   const { sidecar } = hooks;
+  sidecar.captureHistory(messages);
   const childCalls = new Map<string, string>();
   const childMutations = new Map<string, ArtifactMutation[]>();
   let snapshot = () => messages;
@@ -234,12 +276,12 @@ export async function* streamRun(
     abortController.signal.throwIfAborted();
     const adapter = client.textAdapter(model, abortController.signal);
     const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
-    let terminal: Extract<StreamChunk, { type: "RUN_FINISHED" }> | undefined;
+    let terminal: RunFinishedEvent | undefined;
     let failure: Error | undefined;
     let aborted = false;
     const captureAdapterMetadata = () => {
       sidecar.rejectReasoning(adapter.rejectedReasoning ?? []);
-      if (adapter.textSegments) sidecar.captureTextSegments(adapter.textSegments);
+      if (adapter.textParts) sidecar.captureTextParts(adapter.textParts);
     };
     const remember = (ctx: Parameters<NonNullable<ChatMiddleware["onStart"]>>[0]) => {
       captureAdapterMetadata();
@@ -262,12 +304,14 @@ export async function* streamRun(
                 : native,
             ),
           };
-        if (ctx.phase !== "beforeModel" || !hooks.prepareMessages) return;
+        if (ctx.phase !== "beforeModel") return;
+        const providerMessages = describeToolMessages(
+          sidecar.applyModelPhases(config.providerMessages ?? config.messages),
+        );
         return {
-          providerMessages: await hooks.prepareMessages(
-            config.providerMessages ?? config.messages,
-            abortController.signal,
-          ),
+          providerMessages: hooks.prepareMessages
+            ? await hooks.prepareMessages(providerMessages, abortController.signal)
+            : providerMessages,
         };
       },
       onIteration: (ctx) => {
@@ -300,8 +344,7 @@ export async function* streamRun(
             name: tool.name,
           };
           let meta: Record<string, unknown> = {};
-          let content: Record<string, unknown> | undefined;
-          let error: ToolResultMetadata["error"];
+          let error: MessageError | undefined;
           const signal = execution.abortSignal ?? abortController.signal;
           // Keep TanStack's per-run context identity: file observations belong
           // to this actor across tool calls, with native middleware cancellation.
@@ -326,23 +369,18 @@ export async function* streamRun(
               signal,
               agentContext: telemetry.toolContext(call.id),
               setMeta,
-              setContent: (next) => {
-                content = next;
-              },
               setError: (next) => {
                 error = next;
               },
             },
           });
           signal.throwIfAborted();
-          sidecar.result(call.id, {
-            result: output,
-            meta,
-            ...(content ? { content } : {}),
-            ...(error ? { error } : {}),
-          });
+          // TanStack emits its error response when execution throws; restore
+          // the tool's rich details as native content in the displayed transcript.
+          sidecar.result(call.id, { meta }, error ? output : undefined);
           if (error) throw Object.assign(new Error(error.message), { code: error.code });
-          return describeToolOutput(output);
+          // TanStack treats an empty array as JSON data rather than content.
+          return output.length ? output : "";
         }),
       );
     const agents = tools.flatMap((tool) => {
@@ -380,12 +418,12 @@ export async function* streamRun(
             if (direct !== undefined) {
               // Keep the same native approval/result boundary, but return
               // retrieval text without starting a child model generation.
-              return (async function* (): AsyncGenerator<StreamChunk> {
+              return (async function* (): AsyncGenerator<AGUIEvent> {
                 const messageId = `${ctx.subagentRunId}-direct`;
-                yield { type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as StreamChunk;
-                yield { type: "TEXT_MESSAGE_CONTENT", messageId, delta: direct } as StreamChunk;
-                yield { type: "TEXT_MESSAGE_END", messageId } as StreamChunk;
-                yield { type: "RUN_FINISHED", runId: ctx.runId, threadId: ctx.threadId, result: direct } as StreamChunk;
+                yield { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" };
+                if (direct) yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta: direct };
+                yield { type: EventType.TEXT_MESSAGE_END, messageId };
+                yield { type: EventType.RUN_FINISHED, runId: ctx.runId, threadId: ctx.threadId, result: direct };
               })();
             }
             const history = sidecar.apply(
@@ -460,7 +498,7 @@ export async function* streamRun(
       resume: hooks.resume,
       subagentRunId: hooks.subagentRunId,
       debug: aiDebug,
-      modelOptions: client.chatModelOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
+      ...client.chatOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
       agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
       middleware: [
         telemetry,
@@ -471,28 +509,48 @@ export async function* streamRun(
         ...(hooks.middleware ?? []),
       ],
     });
-    for await (const chunk of stream) {
+    for await (const output of stream) {
       abortController.signal.throwIfAborted();
-      if (chunk.type === "SUBAGENT_STARTED" && chunk.parentToolCallId)
-        childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
-      if (
-        chunk.type === "RUN_FINISHED" &&
-        (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
-      ) {
-        terminal = chunk;
-        continue;
+      captureAdapterMetadata();
+      // TanStack restores legacy usage objects on its in-process iterable.
+      // Normalize its extensions and validate the public events against the
+      // SDK so browser-local consumers receive the same AG-UI wire shapes.
+      for (const normalized of normalizeStreamChunk(output)) {
+        let chunk = EventSchema.parse(normalized);
+        if (chunk.type === EventType.RUN_ERROR) {
+          // ChatClient's Error drops event metadata, including retryAfterMs.
+          // Format the advertised delay before crossing that boundary.
+          const info = getErrorInfo(chunk);
+          if (info.code === "RATE_LIMIT_ERROR") chunk = { ...chunk, ...info };
+        }
+        if (chunk.type === EventType.SUBAGENT_STARTED && chunk.parentToolCallId)
+          childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
+        if (
+          chunk.type === EventType.RUN_FINISHED &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+        ) {
+          terminal = chunk;
+          continue;
+        }
+        if (
+          chunk.type === EventType.RUN_ERROR &&
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+        ) {
+          failure = Object.assign(new Error(chunk.message), {
+            code: chunk.code,
+            rawEvent: chunk.rawEvent,
+            metadata: chunk.metadata,
+          });
+        }
+        yield chunk;
       }
-      if (chunk.type === "RUN_ERROR" && (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)) {
-        failure = Object.assign(new Error(chunk.message), { code: chunk.code });
-      }
-      yield chunk;
     }
     abortController.signal.throwIfAborted();
     if (adapter.needsMessageSnapshot) {
       // AG-UI text deltas cannot rewrite prior content. Publish TanStack's
       // canonical transcript after an authoritative replacement or replay
       // recovery, so the client and persistence see the same messages.
-      yield { type: "MESSAGES_SNAPSHOT", messages: uiMessagesToWire(snapshot()) } as StreamChunk;
+      yield { type: EventType.MESSAGES_SNAPSHOT, messages: uiMessagesToWire(snapshot()) };
     }
     if (failure) {
       await finish("failed", failure);
@@ -506,7 +564,7 @@ export async function* streamRun(
     const aborted = info.code !== "TIMEOUT" && (abortController.signal.aborted || isAbortError(reason));
     await finish(aborted ? "aborted" : "failed", reason);
     if (!aborted) {
-      yield { type: "RUN_ERROR", message: info.message, code: info.code } as StreamChunk;
+      yield { type: EventType.RUN_ERROR, message: info.message, code: info.code };
     }
   } finally {
     cleanup();

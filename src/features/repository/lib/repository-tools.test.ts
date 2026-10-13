@@ -4,6 +4,7 @@ import { createReadonlyFileTools, type ReadonlyFileSource } from "@/shared/lib/f
 import type { Tool } from "@/shared/types/chat";
 import type { RepositoryFile } from "../types/repository";
 import { createRepositoryFileSource, createRepositoryTools, type FileChunk } from "./repository-tools";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 function repositoryFile(overrides: Partial<RepositoryFile> & Pick<RepositoryFile, "id" | "name">): RepositoryFile {
   return {
@@ -29,6 +30,16 @@ async function resultText(tool: Tool, args: Record<string, unknown>): Promise<st
 }
 
 describe("repository tools", () => {
+  it("previews repository file paths and semantic queries", () => {
+    const tools = createRepositoryTools([], async () => []);
+    const read = byName(tools, "repository_read");
+    expect(resolveToolHeader(read, read.name, '{"path":"/policy.pdf"}', {}).preview).toBe("policy.pdf");
+    const search = byName(tools, "repository_search");
+    expect(resolveToolHeader(search, search.name, '{"query":"return policy"}', { running: true })).toMatchObject({
+      label: "Searching repository…",
+      preview: "return policy",
+    });
+  });
   it("forwards run cancellation to semantic search and discards late query results", async () => {
     const controller = new AbortController();
     const query = vi.fn().mockImplementation(async (_query: string, _limit?: number, signal?: AbortSignal) => {
@@ -100,7 +111,7 @@ describe("repository tools", () => {
     expect(listing).toContain("/Report~bbbbbbbb.pdf");
 
     const read = await resultText(byName(tools, "repository_read"), {
-      file_path: "/Report~bbbbbbbb.pdf",
+      path: "/Report~bbbbbbbb.pdf",
     });
     expect(read).toContain("1: newer report");
     expect(read).not.toContain("older report");
@@ -123,7 +134,7 @@ describe("repository tools", () => {
     const tools = createRepositoryTools(files, async () => []);
 
     const read = await resultText(byName(tools, "repository_read"), {
-      file_path: "/notes.txt",
+      path: "/notes.txt",
       offset: 2,
       limit: 1,
     });
@@ -170,7 +181,7 @@ describe("repository tools", () => {
     const output = await resultText(search, { query: "ending", limit: 3 });
 
     expect(query).toHaveBeenCalledWith("ending", 3, undefined);
-    expect(output).toBe("[91%] /notes.txt:2-3: needle last");
+    expect(output).toBe("[rank 1; similarity 0.910] /notes.txt:2-3: needle last");
     expect(JSON.parse(await resultText(search, { query: "ending", limit: 0 })).error).toContain("limit must be");
   });
 });

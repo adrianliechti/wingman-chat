@@ -12,6 +12,8 @@ type ProviderError = {
   type?: string;
   error?: unknown;
   rawEvent?: unknown;
+  retryAfterMs?: unknown;
+  metadata?: { tanstack?: { retryAfterMs?: unknown } };
 };
 function detail(error: unknown): ProviderError {
   if (!error || typeof error !== "object") return {};
@@ -54,6 +56,7 @@ export function isReasoningReplayError(error: unknown): boolean {
 export function getErrorInfo(error: unknown): ErrorInfo {
   if (isAbortError(error)) return { code: "CANCELLED", message: "Request was cancelled." };
   const value = detail(error);
+  const original = error as ProviderError | null | undefined;
   const message = value.message ?? "";
   if (isContextOverflowError(error))
     return {
@@ -72,8 +75,20 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     };
   if (/content_filter|content_policy_violation/.test(`${value.code} ${value.type} ${message}`))
     return { code: "CONTENT_FILTERED", message: "The response was blocked by the content filter." };
-  if (value.status === 429 || value.code === "rate_limit_exceeded")
-    return { code: "RATE_LIMIT_ERROR", message: "Rate limit exceeded. Please wait a moment before trying again." };
+  if (value.status === 429 || ["429", "rate_limit_exceeded", "RATE_LIMIT_ERROR"].includes(value.code ?? "")) {
+    const delay = value.metadata?.tanstack?.retryAfterMs ?? value.retryAfterMs;
+    const seconds =
+      typeof delay === "number" && Number.isFinite(delay) && delay >= 0 ? Math.ceil(delay / 1000) : undefined;
+    return {
+      code: "RATE_LIMIT_ERROR",
+      message:
+        seconds !== undefined
+          ? `Rate limit exceeded. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`
+          : original?.code === "RATE_LIMIT_ERROR" && original.message
+            ? original.message
+            : "Rate limit exceeded. Please wait a moment before trying again.",
+    };
+  }
   if ((value.status ?? 0) >= 500 || ["server_error", "overloaded_error"].includes(value.code ?? ""))
     return { code: "SERVER_ERROR", message: "Server error. Please try again in a moment." };
   if (value.status === 401 || value.code === "invalid_api_key")

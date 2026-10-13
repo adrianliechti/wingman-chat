@@ -1,0 +1,304 @@
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "studio_metrics",
+    "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+    "sendDataModel": true,
+    "components": [
+      {
+        "id": "root",
+        "component": "Column",
+        "children": ["top", "summary", "period", "chart", "details", "health", "callout"]
+      },
+      {
+        "id": "top",
+        "component": "Row",
+        "justify": "spaceBetween",
+        "align": "center",
+        "children": ["heading", "badge"]
+      },
+      {
+        "id": "heading",
+        "component": "Heading",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "text": "A clear view of growth",
+        "level": 1
+      },
+      {
+        "id": "badge",
+        "component": "Badge",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "text": "On track",
+        "tone": "success"
+      },
+      {
+        "id": "summary",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 3,
+        "children": ["revenue", "users", "retention"]
+      },
+      {
+        "id": "revenue",
+        "component": "Metric",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Monthly revenue",
+        "value": 128400,
+        "format": "currency",
+        "currency": "USD",
+        "digits": 0,
+        "delta": 20137,
+        "deltaLabel": "vs. last month"
+      },
+      {
+        "id": "users",
+        "component": "Metric",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Active teams",
+        "value": 2840,
+        "format": "integer",
+        "delta": 313,
+        "deltaLabel": "vs. last month"
+      },
+      {
+        "id": "retention",
+        "component": "Metric",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Net retention",
+        "value": 118,
+        "unit": "%",
+        "description": "Expansion is outpacing churn"
+      },
+      {
+        "id": "period",
+        "component": "Segmented",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Reporting period",
+        "value": {
+          "@path": "/period"
+        },
+        "options": [
+          {
+            "value": "quarter",
+            "label": "This quarter"
+          },
+          {
+            "value": "year",
+            "label": "Year to date"
+          }
+        ]
+      },
+      {
+        "id": "chart",
+        "component": "Chart",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "kind": "area",
+        "data": {
+          "@call": "evaluate",
+          "args": {
+            "expression": "period == 'quarter' ? quarter : year",
+            "values": {
+              "period": {
+                "@path": "/period"
+              },
+              "quarter": {
+                "@path": "/quarter"
+              },
+              "year": {
+                "@path": "/year"
+              }
+            }
+          },
+          "catalogId": "urn:wingman:inline-ui:catalog:1"
+        },
+        "x": "month",
+        "series": [
+          {
+            "key": "revenue",
+            "label": "Revenue"
+          },
+          {
+            "key": "target",
+            "label": "Target"
+          }
+        ],
+        "height": 240,
+        "format": "currency",
+        "currency": "USD",
+        "caption": "Illustrative monthly recurring revenue \u00b7 USD"
+      },
+      {
+        "id": "details",
+        "component": "Tabs",
+        "tabs": [
+          {
+            "title": "Revenue by segment",
+            "child": "table"
+          },
+          {
+            "title": "Launch activity",
+            "child": "timeline"
+          }
+        ]
+      },
+      {
+        "id": "table",
+        "component": "Table",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "rows": {
+          "@path": "/segments"
+        },
+        "columns": [
+          {
+            "key": "segment",
+            "label": "Segment"
+          },
+          {
+            "key": "teams",
+            "label": "Teams",
+            "format": "integer"
+          },
+          {
+            "key": "mrr",
+            "label": "MRR",
+            "format": "currency",
+            "currency": "USD",
+            "digits": 0
+          }
+        ],
+        "sortable": true,
+        "pageSize": 5
+      },
+      {
+        "id": "timeline",
+        "component": "Timeline",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "active": 1,
+        "items": [
+          {
+            "label": "Private beta",
+            "time": "Aug 12",
+            "description": "Design partners onboarded"
+          },
+          {
+            "label": "Team rollout",
+            "time": "Oct 11",
+            "description": "Shared workflows and reporting"
+          },
+          {
+            "label": "Public release",
+            "time": "Nov 04",
+            "description": "Self-serve onboarding"
+          }
+        ]
+      },
+      {
+        "id": "health",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 2,
+        "children": ["progress", "keyvalue"]
+      },
+      {
+        "id": "progress",
+        "component": "Progress",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Quarterly target",
+        "value": 86,
+        "max": 100
+      },
+      {
+        "id": "keyvalue",
+        "component": "KeyValue",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "items": [
+          {
+            "label": "Owner",
+            "value": "Growth team"
+          },
+          {
+            "label": "Updated",
+            "value": "Today, 09:41"
+          }
+        ]
+      },
+      {
+        "id": "callout",
+        "component": "Callout",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "tone": "info",
+        "title": "A useful next move",
+        "text": "Team plans account for 58% of recurring revenue. Explore expansion with your most active teams."
+      }
+    ],
+    "dataModel": {
+      "period": "year",
+      "quarter": [
+        {
+          "month": "Aug",
+          "revenue": 102000,
+          "target": 106000
+        },
+        {
+          "month": "Sep",
+          "revenue": 113500,
+          "target": 114000
+        },
+        {
+          "month": "Oct",
+          "revenue": 128400,
+          "target": 122000
+        }
+      ],
+      "year": [
+        {
+          "month": "May",
+          "revenue": 68000,
+          "target": 72000
+        },
+        {
+          "month": "Jun",
+          "revenue": 82000,
+          "target": 81000
+        },
+        {
+          "month": "Jul",
+          "revenue": 94000,
+          "target": 96000
+        },
+        {
+          "month": "Aug",
+          "revenue": 102000,
+          "target": 106000
+        },
+        {
+          "month": "Sep",
+          "revenue": 113500,
+          "target": 114000
+        },
+        {
+          "month": "Oct",
+          "revenue": 128400,
+          "target": 122000
+        }
+      ],
+      "segments": [
+        {
+          "segment": "Starter",
+          "teams": 1720,
+          "mrr": 25800
+        },
+        {
+          "segment": "Team",
+          "teams": 980,
+          "mrr": 74480
+        },
+        {
+          "segment": "Enterprise",
+          "teams": 140,
+          "mrr": 28120
+        }
+      ]
+    }
+  }
+}

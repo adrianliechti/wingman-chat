@@ -6,8 +6,7 @@ import { buildHostContext, createAppBridge, type McpAppData } from "@/features/s
 import { isAbortError } from "@/shared/lib/errors";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useOverlayRect } from "@/shared/lib/useOverlayRect";
-import type { ToolCallPart, ToolResultPart } from "@tanstack/ai";
-import { toolResultContent, toolResultMetadata } from "@/shared/lib/messages";
+import type { ToolCallPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import { findTool } from "./toolDisplay";
 import { cn } from "@/shared/lib/cn";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "@/shared/ui/actionButton";
@@ -15,23 +14,16 @@ import { getToolDisplayName } from "@/shared/lib/utils";
 import { useApp } from "@/shell/hooks/useApp";
 
 interface McpAppProps {
+  app: UIResourcePart;
   call: ToolCallPart;
   result: ToolResultPart;
   isLastFullscreenApp: boolean;
+  onPrompt?: (text: string) => Promise<void>;
 }
 
 type AppDisplayMode = "inline" | "fullscreen";
 
 const INLINE_MAX_HEIGHT = 600;
-
-function getAppDisplayModes(meta: Record<string, unknown> | undefined): AppDisplayMode[] {
-  const modes = meta?.appDisplayModes as AppDisplayMode[] | undefined;
-  if (modes && modes.length > 0) return modes;
-  const defaultMode = meta?.defaultDisplayMode as string | undefined;
-  if (defaultMode === "fullscreen") return ["fullscreen"];
-  if (defaultMode === "inline") return ["inline"];
-  return ["inline", "fullscreen"];
-}
 
 /**
  * Renders an MCP UI app. The iframe is created ONCE and never reparented, so its
@@ -42,8 +34,7 @@ function getAppDisplayModes(meta: Record<string, unknown> | undefined): AppDispl
  * Switching modes just repositions the iframe and pushes a host-context update
  * (setDisplayMode) — no teardown, no reload.
  */
-export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
-  const data = toolResultMetadata(result);
+export function McpApp({ app, call, result, isLastFullscreenApp, onPrompt }: McpAppProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<AppBridge | null>(null);
   const [frame, setFrame] = useState<{ data: McpAppData; bridge: AppBridge } | null>(null);
@@ -54,18 +45,19 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
   const [bridgeReady, setBridgeReady] = useState(false);
   const { showAppDrawer, toggleAppDrawer, closeApp, showDrawer, activeApp, setActiveApp, drawerTarget } = useApp();
   const activeAppKey = activeApp?.key ?? null;
-  const { providers, setProviderEnabled, restoreToolUI } = useToolsContext();
+  const { providers, isProviderEnabled, setProviderEnabled, restoreToolUI } = useToolsContext();
 
-  const providerId = data.meta?.toolProvider as string;
-  const resourceUri = data.meta?.toolResource as string;
+  const providerId = app.serverId!;
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  const enabled = isProviderEnabled(providerId);
+  const [retry, setRetry] = useState(0);
+  const resourceUri = app.resource.uri;
   const appKey = `${providerId}-${resourceUri}-${call.id}`;
-  const content = data.content;
-
-  const appDisplayModes = getAppDisplayModes(data.meta);
-  const [bridgeDisplayModes, setBridgeDisplayModes] = useState<AppDisplayMode[] | null>(null);
-  const effectiveDisplayModes = bridgeDisplayModes ?? appDisplayModes;
-  const isInlineOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "inline";
-  const isFullscreenOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "fullscreen";
+  const appDisplayMode = app.meta?.appDisplayMode;
+  // Supported modes belong to the live app handshake, not persisted tool data.
+  const [appDisplayModes, setAppDisplayModes] = useState<AppDisplayMode[]>(["inline", "fullscreen"]);
+  const isInlineOnly = appDisplayModes.length === 1 && appDisplayModes[0] === "inline";
+  const isFullscreenOnly = appDisplayModes.length === 1 && appDisplayModes[0] === "fullscreen";
 
   // The drawer owns fullscreen selection. Deriving it here avoids competing
   // app effects repeatedly claiming the same panel from one another.
@@ -101,31 +93,38 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
     if (!isFullscreen) setInlineHeight(Math.min(height, INLINE_MAX_HEIGHT));
   });
 
-  const displayMode = isFullscreen || isFullscreenOnly ? "fullscreen" : "inline";
+  const displayMode =
+    isFullscreen || isFullscreenOnly || (!bridgeReady && appDisplayMode === "fullscreen") ? "fullscreen" : "inline";
   const updateHostContext = useEffectEvent(() => {
     if (bridgeReady && sessionRef.current && frameRef.current && frame) {
       sessionRef.current.setHostContext(buildHostContext(frame.data.tool, frameRef.current, displayMode));
     }
   });
   const getDisplayMode = useEffectEvent(() => displayMode);
+  const sendPrompt = useEffectEvent(async (text: string) => {
+    await onPrompt?.(text);
+  });
   const renderApp = useEffectEvent(async (signal: AbortSignal) => {
     setIsLoading(true);
     setError(null);
+    setFrame(null);
+    setBridgeReady(false);
     try {
-      const args = JSON.parse(call.arguments || "{}");
-      await setProviderEnabled(providerId, true);
+      // Let effect cleanup cancel a discarded mount before starting a resource read.
+      await Promise.resolve();
       signal.throwIfAborted();
-      const app = await restoreToolUI(providerId, call.name, resourceUri, args, toolResultContent(result), content, {
+      const args = JSON.parse(call.arguments || "{}");
+      const data = await restoreToolUI(app, args, result, {
         signal,
-        initialResult: data.meta?.mcpResult as import("@modelcontextprotocol/client").CallToolResult | undefined,
       });
       signal.throwIfAborted();
-      const bridge = createAppBridge(app, {
+      const bridge = createAppBridge(data, {
         getDisplayMode,
         onDisplayModeRequested: requestDisplayMode,
-        hostContext: frameRef.current ? buildHostContext(app.tool, frameRef.current, displayMode) : undefined,
+        hostContext: frameRef.current ? buildHostContext(data.tool, frameRef.current, displayMode) : undefined,
+        ...(onPrompt ? { onPrompt: sendPrompt } : {}),
       });
-      const unsubscribe = app.subscribe((kind) => {
+      const unsubscribe = data.subscribe((kind) => {
         if (kind === "disconnect") {
           sessionRef.current = null;
           setError("MCP server disconnected. Reopen this app to reconnect.");
@@ -152,7 +151,7 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
         { once: true },
       );
       sessionRef.current = bridge;
-      setFrame({ data: app, bridge });
+      setFrame({ data, bridge });
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setError(error instanceof Error ? error.message : "Could not open this app");
@@ -167,7 +166,7 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
       controller.abort();
       sessionRef.current = null;
     };
-  }, []);
+  }, [provider, enabled, retry, providerId, resourceUri, call.id]);
 
   useEffect(() => {
     if (!frame || !frameRef.current) return;
@@ -183,11 +182,26 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
   }, [frame]);
 
   useEffect(() => {
-    if (bridgeReady && isFullscreenOnly && isLastFullscreenApp) {
+    if (
+      bridgeReady &&
+      appDisplayModes.includes("fullscreen") &&
+      (isFullscreenOnly || appDisplayMode === "fullscreen") &&
+      isLastFullscreenApp
+    ) {
       setActiveApp({ key: appKey, title: appTitle });
       showDrawer();
     }
-  }, [bridgeReady, isFullscreenOnly, isLastFullscreenApp, appKey, appTitle, setActiveApp, showDrawer]);
+  }, [
+    bridgeReady,
+    appDisplayModes,
+    appDisplayMode,
+    isFullscreenOnly,
+    isLastFullscreenApp,
+    appKey,
+    appTitle,
+    setActiveApp,
+    showDrawer,
+  ]);
 
   // Push the host-context (display mode + container dimensions) to the live bridge.
   // For fullscreen we wait until the iframe is positioned over the drawer so the
@@ -268,9 +282,24 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
       )}
 
       {error && (
-        <p role="alert" className="p-3 text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
+        <div role="alert" className="p-3 text-sm text-red-600 dark:text-red-400">
+          <p>{error}</p>
+          {provider && (
+            <button
+              type="button"
+              className="mt-2 underline"
+              onClick={() => {
+                void setProviderEnabled(providerId, true)
+                  .then(() => setRetry((value) => value + 1))
+                  .catch((reason) => {
+                    setError(reason instanceof Error ? reason.message : "Could not reconnect");
+                  });
+              }}
+            >
+              {enabled ? "Retry" : "Enable and reopen"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Stable wrapper — the iframe never changes DOM parent, so the bridge survives.
@@ -292,7 +321,7 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
             <AppFrame
               appBridge={frame.bridge}
               html={frame.data.html}
-              sandbox={{ url: sandboxUrl, permissions: "allow-scripts", csp: frame.data.resource.meta?.csp }}
+              sandbox={{ url: sandboxUrl, permissions: "allow-scripts", csp: frame.data.resourceMeta?.csp }}
               toolInput={frame.data.input}
               toolResult={frame.data.result}
               onInitialized={({ appCapabilities }) => {
@@ -300,8 +329,9 @@ export function McpApp({ call, result, isLastFullscreenApp }: McpAppProps) {
                   (mode): mode is AppDisplayMode => mode === "inline" || mode === "fullscreen",
                 );
                 if (modes?.length) {
-                  setBridgeDisplayModes(modes);
-                  if (!modes.includes(displayMode)) requestDisplayMode(modes[0]);
+                  setAppDisplayModes(modes);
+                  if (!modes.includes(displayMode) && (modes[0] !== "fullscreen" || isLastFullscreenApp))
+                    requestDisplayMode(modes[0]);
                 }
                 setIsLoading(false);
                 setBridgeReady(true);

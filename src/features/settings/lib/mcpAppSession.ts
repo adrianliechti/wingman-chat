@@ -8,7 +8,6 @@ import type {
 
 export const MCP_HOST_INFO = { name: "Wingman Chat", version: "1.0.0" };
 type DisplayMode = McpUiDisplayMode;
-export type UiResourceEntry = { uri: string; content: MCPResourceContents; meta?: McpUiResourceMeta };
 export type AppNotification = "tools" | "resources" | "prompts" | "disconnect";
 type McpServerCapabilities = { tools?: { listChanged?: boolean }; resources?: { listChanged?: boolean } };
 type AppHandlers = Partial<
@@ -16,7 +15,6 @@ type AppHandlers = Partial<
 >;
 export interface McpAppOptions {
   signal?: AbortSignal;
-  initialResult?: CallToolResult;
 }
 
 /** The renderer's SDK accepts object structured content; MCP 2 also allows primitives. */
@@ -34,7 +32,7 @@ export interface McpAppData {
   html: string;
   input: Record<string, unknown>;
   result: ReturnType<typeof toAppToolResult>;
-  resource: UiResourceEntry;
+  resourceMeta?: McpUiResourceMeta;
   capabilities: McpUiHostCapabilities;
   handlers: AppHandlers;
   subscribe: (listener: (kind: AppNotification) => void) => () => void;
@@ -47,17 +45,35 @@ export function createAppBridge(
     getDisplayMode: () => DisplayMode;
     onDisplayModeRequested: (mode: DisplayMode) => void;
     hostContext?: McpUiHostContext;
+    onPrompt?: (text: string) => Promise<void>;
   },
 ): AppBridge {
-  const bridge = new AppBridge(null, MCP_HOST_INFO, data.capabilities, { hostContext: options.hostContext });
+  const bridge = new AppBridge(
+    null,
+    MCP_HOST_INFO,
+    {
+      ...data.capabilities,
+      ...(options.onPrompt ? { message: {} } : {}),
+    },
+    { hostContext: options.hostContext },
+  );
   Object.assign(bridge, data.handlers);
+  const onPrompt = options.onPrompt;
+  if (onPrompt) {
+    bridge.onmessage = async ({ content }) => {
+      const prompt = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+      if (!prompt) return { isError: true };
+      await onPrompt(prompt);
+      return {};
+    };
+  }
   // AppFrame currently forwards CSP but omits resource permissions and sandbox.
   const sendResource = bridge.sendSandboxResourceReady.bind(bridge);
   bridge.sendSandboxResourceReady = (params) =>
-    sendResource({ ...params, sandbox: "allow-scripts", permissions: data.resource.meta?.permissions });
+    sendResource({ ...params, sandbox: "allow-scripts", permissions: data.resourceMeta?.permissions });
   bridge.onrequestdisplaymode = async ({ mode }) => {
     const available = bridge.getAppCapabilities()?.availableDisplayModes ?? ["inline", "fullscreen"];
-    if (!options.onDisplayModeRequested || !["inline", "fullscreen"].includes(mode) || !available.includes(mode))
+    if (!["inline", "fullscreen"].includes(mode) || !available.includes(mode))
       return { mode: options.getDisplayMode() };
     options.onDisplayModeRequested(mode);
     return { mode };
@@ -83,7 +99,7 @@ export function getHtmlContent(resource: MCPResourceContents): string {
     return new TextDecoder().decode(Uint8Array.from(atob(resource.blob), (char) => char.charCodeAt(0)));
   }
 
-  return "<!doctype html><html><body>No content available.</body></html>";
+  throw new Error(`Missing MCP app HTML: ${resource.uri}`);
 }
 
 export function buildHostCapabilities(

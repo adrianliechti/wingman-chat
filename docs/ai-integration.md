@@ -6,6 +6,8 @@ frontend.
 
 ## Framework ownership
 
+- `@ag-ui/core` supplies the event discriminators and protocol types for events
+  Wingman produces. The dependency is pinned to the same version TanStack uses.
 - `@tanstack/ai` owns the model/tool loop, streamed messages, tool validation,
   structured output, embeddings, speech, transcription, and OpenTelemetry
   middleware. `@tanstack/ai-openai` supplies the gateway's Responses and media
@@ -20,6 +22,18 @@ frontend.
   and connection cleanup. The SDK HTTP transport supplies browser OAuth.
 - `@tanstack/ai-skills` owns skill catalogs, loading, resource tools, and per-run
   activation through its portable skills API.
+- `@tanstack/markdown` owns Markdown parsing and rendering for chat replies,
+  artifact previews, clipboard HTML and Word export. Chat behaviour the docs
+  profile lacks (bare URL autolinks, single-newline line breaks, `$$` and
+  `\( \)` math, `:shortcode:` emoji, Noto emoji spans) lives in
+  `src/shared/lib/markdownExtensions.ts` as synchronous extensions; the
+  streaming profile keeps unfinished constructs stable while a reply arrives.
+  KaTeX and Shiki stay lazy and outside the parser.
+- `@tanstack/react-query` owns remote inventories: the model catalog, MCP
+  availability and the skill template index. One shared `QueryClient`
+  (`src/shared/lib/queryClient.ts`) serves hooks and helper calls alike, so
+  `resolveModel` and the pickers read the same cached list, refreshed on focus,
+  reconnect and age.
 - MCP apps use `AppFrame` and `AppBridge` from `@mcp-ui/client`, the renderer used
   by TanStack's `MCPAppResource`. It owns iframe initialization and delivery of
   initial tool input and results.
@@ -30,6 +44,62 @@ The integration follows [TanStack AI](https://tanstack.com/ai/latest),
 [MCP Apps](https://tanstack.com/ai/latest/docs/mcp/apps). Examples that put
 orchestration in a server route are adapted to the application's browser-only
 execution requirement. The installed package sources define the precise APIs.
+
+## Markdown compatibility
+
+TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
+is a subset of CommonMark/GFM, so this migration does not claim complete parity
+with the former remark pipeline. Shared extensions add indented code, basic
+setext headings (text lines followed by `===` or `---`), entities in prose,
+destinations and titles, explicit/bare URL and email links, and emoji shortcodes.
+Chat additionally enables soft line breaks, math and Noto emoji. Clipboard and
+Word export use the same syntax extensions, but keep math as source and soft
+newlines as prose. KaTeX remains lazy and ordinary math disallows trusted commands.
+
+`markdownSource.ts` shares the literal-region guards used by math-alias
+normalization and streaming-link cleanup. Code fences (including quoted/list
+fences), indented code, multiline code spans, complete links, reference
+definitions and HTML tags are protected from these source edits. The React
+components retain table actions, code previews, artifact resolution and state
+across streaming updates. Word export preserves workspace links and renders
+footnote references and bodies as numbered text.
+
+Multiline setext headings are accepted only when TanStack classifies the text
+before the underline as one paragraph. Tables, HTML blocks and math must not
+become headings when a trailing `---` arrives. Display math uses a block node,
+so React never nests its block container inside a paragraph. Titles are decoded
+once with their escapes intact; image alt text is left as TanStack parsed it,
+because its AST no longer distinguishes escaped entities from ordinary ones.
+
+The compatibility layer deliberately avoids rewriting quote markers or trailing
+spaces: doing so requires duplicating the parser's block/container rules, and
+the attempted rewrites changed blank paragraphs, headings and nested quotes
+during streaming. Remaining gaps have executable expected-failure tests in
+`markdownParity.test.ts`:
+
+| Syntax                          | Remaining difference                                                                                                                                                                 | Workaround                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Lazy blockquote continuation    | Unmarked continuation lines become outside paragraphs, including in nested quotes.                                                                                                   | Prefix every quoted line with the full `>` depth.                             |
+| Entities in image alt text      | `&amp;` stays literal. Escaped entities and entities inside code spans are preserved.                                                                                                | Use the actual character in alt text.                                         |
+| Two-space hard break in exports | TanStack trims trailing spaces, so the break becomes a soft newline. A backslash immediately before those spaces can also be consumed as a break. Chat already breaks soft newlines. | Use a backslash immediately before the newline; escape any literal backslash. |
+
+Other boundaries: display math should have a blank line before its opening
+delimiter; incomplete math stays literal. Raw HTML uses the explicit allowlist
+in `markdownHtml.ts`; arbitrary tags/attributes are not preserved. This differs
+from both the old chat HTML handling and the old clipboard HTML passthrough.
+The DOCX converter's pre-existing limitations remain: nested list content and
+non-paragraph blockquote children are not fully exported. These tests are a
+targeted application parity suite, not a full CommonMark conformance claim.
+
+`markdownStreaming.test.ts` feeds every character prefix (including split UTF-16
+pairs) and every word prefix through the same `prepareMarkdownSource` entry point
+as the UI, then parsing and rendering. It checks fence contents against the
+unmodified parser, safe output, table stability and quote boundaries during the
+stream. Browser tests feed both chunk sizes through the React component,
+including deferred rendering, then verify math, links, emoji, tables and tasks,
+and that existing code-preview state survives the stream. Incomplete constructs
+can change presentation as their closing syntax arrives; code source must stay
+intact, and completed input must match the non-streaming render.
 
 ## Shared execution and removed code
 
@@ -52,6 +122,17 @@ cleanup uses `onToolPhaseComplete.results` instead of scanning the transcript.
 Run results contain only status, messages, and an optional error. Plain runtime
 context carries cancellation and child workspace identity; it has no counters.
 
+Application event producers and consumers use `EventType` and `AGUIEvent` from
+`@ag-ui/core`. `streamRun` applies TanStack's `normalizeStreamChunk` and the
+SDK's `EventSchema` before publishing native events. This converts TanStack's
+in-process token usage objects to AG-UI's `usage` arrays and retains extension
+data in metadata. Direct subagent replies, transcript snapshots and local
+errors use the SDK types without type assertions. Provider adapters retain
+TanStack's `AdapterYieldChunk` for finish reasons and authoritative text
+replacements. The `structured-output.complete` custom event belongs to
+TanStack's structured-output contract. Inline UI uses A2UI v1.0 surface messages rendered from assistant text;
+AG-UI carries the surrounding agent event stream. See [Inline UI](inline-ui.md).
+
 `Client.complete()` and `Client.summarizeHistory()` have been deleted. `Client`
 retains provider configuration, structured-output tasks, media activities, and
 gateway endpoint contracts. Unused per-turn/message callbacks were removed;
@@ -73,14 +154,56 @@ chat store and OPFS persistence queue, skips the echo the runtime writes back
 during hydration, and applies every later mutation (a failed run, retry, voice or
 external messages, editing an earlier turn) to the native transcript. App data
 rides in the `metadata` records TanStack reserves for it (`src/shared/lib/messages.ts`):
-on a message `runId`, `usage`, `error`, `kind` (`summary` or `runtime_feedback`)
-and the gateway's `textSegments`; on a text part `phase`, `artifactRef`,
-`artifactSelection` or `source`; on a tool-result part `result` (the rich output),
-`meta`, `content` (MCP app data) and `error`; on a media part `filename` and
-`contentType`. A `RunSidecar` per thread collects each tool's rich output and
-display data and each turn's run and usage while a run streams, and attaches
-them when the transcript is persisted; execution and history replay send the
-same text descriptions of binary outputs to the provider. Inline user
+on a message `runId`, `usage`, `error` and `kind` (`summary` or `runtime_feedback`);
+on a text part `phase`, `artifactRef`, `artifactSelection` or `source`; on a
+tool-result part `meta`; on a media part `filename`. MIME types use native
+`source.mimeType`, including persisted blob references. Rich tool output uses native result `content`, and failures
+use native `state` and `error`. Older saved tool `metadata.result` and
+`metadata.error` migrate to native fields when loaded. The old structured
+`metadata.content` copy migrates into the UI part's `meta.mcpResult` for apps, or is dropped
+when unused. MCP app bindings use native `UIResourcePart.serverId`,
+`resource.uri`, `toolName` and `toolCallId`. Its `meta.ui` retains resource CSP
+and permissions; `meta.appDisplayMode` is an initial hint, and `meta.mcpResult`
+preserves the original MCP response for app replay: structured content, app-only
+`_meta`, and original content blocks that native conversion resolves or simplifies.
+Legacy app fields move off tool-result metadata onto the UI resource part on
+load, including nested conversations. Older duplicate MIME types move onto the native
+source; generated-file lists become artifact deltas. This conversion remains at the
+storage boundary so old chats stay readable. The renderer reads current fields only.
+Supported modes come from the app handshake.
+
+The application-owned metadata fields are:
+
+| Owner                       | Field                     | Purpose                                                                               |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------- |
+| Message `metadata`          | `runId`                   | Correlates a turn with its run and trace.                                             |
+| Message `metadata`          | `usage`                   | Model, input/cached/output/reasoning token counts and reasoning replay scope.         |
+| Message `metadata`          | `error`                   | The run failure (`code`, `message`), displayed with retry.                            |
+| Message `metadata`          | `kind`                    | Marks a compaction summary or hidden internal feedback.                               |
+| Text `metadata`             | `phase`                   | Distinguishes commentary from the final answer.                                       |
+| Text `metadata`             | `artifactRef`             | Identifies a workspace file reference, revision and display name.                     |
+| Text `metadata`             | `artifactSelection`       | Stores a highlighted passage, path and optional line range.                           |
+| Text `metadata`             | `source`                  | Identifies verification or guardrail feedback.                                        |
+| Media `metadata`            | `filename`                | Names previews and downloads.                                                         |
+| Tool result `metadata.meta` | `artifactDelta`           | Records file mutations for verification and generated-file tracking.                  |
+| UI resource `meta`          | `ui`                      | Preserves server resource metadata; CSP and permissions are applied.                  |
+| UI resource `meta`          | `appDisplayMode`          | Initial display preference; the handshake defines supported modes.                    |
+| UI resource `meta`          | `mcpResult`               | Original content, structured content, private metadata and error flag for the widget. |
+| Chat `metadata`             | `@tanstack/ai-compaction` | Middleware checkpoints, scoped by thread and child.                                   |
+
+TanStack and adapters also retain their own protocol metadata, such as provider
+tool-call identifiers and `metadata.tanstack` wire state. These are library-owned.
+
+Message-level `error` records a failed run
+for retry; usage events are attached to messages so token counts survive reload.
+A `RunSidecar` per thread collects tool display data, rich failure details,
+text phases and each turn's run and usage while streaming. It restores these
+on native parts when the transcript is persisted. Commentary and final-answer
+phases live on text parts, without duplicating text in message metadata; saved
+`textSegments` migrate on loading. Because TanStack joins all-text content when
+building model history, the request boundary restores phased text parts before
+gateway serialization. Execution and history replay send the same text
+descriptions of binary tool outputs to the provider. Inline user
 files retain their filename, MIME type, and bytes as gateway `input_file` items,
 including Office documents and text files beyond the native adapter's PDF-only
 document contract. Upload preservation and text extraction remain independent
@@ -200,6 +323,16 @@ renders native generic form interrupts and opt-in
 native batching, cancellation, staging, and resume. Questions in a parallel tool
 batch wait for all answers. No blanket approval policy is added. The existing
 schema-driven form renders the controls; native interrupts own their lifecycle.
+The tool asks 1–3 questions and shares its controls with Inline UI. Choices may
+include a short `description` and a `recommended` badge; recommendations never
+preselect an answer. Choice questions permit a written answer by default
+(`allow_other: false` enforces a fixed set). Booleans require an explicit Yes/No
+choice, and unanswered optional fields are omitted. Local presentation hints
+preserve question order without changing remote MCP schemas. Accepted answers
+are validated again after resume and retain the typed `{ answered, answers }`
+result contract. Completed tool messages show readable answer summaries using
+the original question and option labels, including after reload. Skip retains
+the existing `{ answered: false, action: "decline" }` contract.
 Configured image and research confirmations use `needsApproval`, including
 approvals on research's synthetic subagent tool. Server and client share the same
 input schema so a saved approval remains bound after reload. Approval happens
@@ -243,8 +376,10 @@ provider context before each model call, including after tool output. Its
 `clearToolResults()` strategy runs first, followed by `summarizeOldest()` when
 needed. Summaries use native `chat()` and telemetry. The configured model and
 threshold remain respected; disabling compaction disables these strategies.
-The full saved transcript stays intact. Custom context estimation, summary
-replacement, the summarizer client method, and overflow retry branches are gone.
+The full saved transcript stays intact. The native token estimator receives the
+same text descriptions of tool media as the provider, so binary bytes do not
+trigger compaction. Custom summary replacement, the summarizer client method,
+and overflow retry branches are gone.
 Old saved summary markers remain readable.
 The native metadata capability stores checkpoints in the chat record's
 `metadata` field, namespaced by middleware and scoped by thread and child. TanStack
@@ -259,6 +394,8 @@ The summary request replaces media parts with their names, so neither local
 bare model id whose modality support is unknown, and a rejected summary would
 abort the run. Stored messages and checkpoint source prefixes keep their
 original references.
+Checkpoint provider views retain text descriptions of tool media rather than
+duplicating its bytes in middleware metadata.
 
 [Application middleware](https://tanstack.com/ai/latest/docs/advanced/middleware)
 handles provider-only request preparation, progress display, and rich tool
@@ -304,8 +441,9 @@ content-guard middleware. It receives the model-written brief and its own resume
 work, keeping unrelated parent history out of research requests. Search and fetch
 progress use native child parts during execution and ordinary child messages in
 storage and the UI, replacing the separate research runner
-and manually maintained parent status. Realtime uses the shared text-result
-adapter and its live confirmation callback.
+and manually maintained parent status. Realtime delivers native assistant messages with tool-call/result parts and UI resources
+to storage. Tool metadata and failures live on the result; only the tool's text output
+reaches the voice model. Its confirmation callback remains live during the session.
 The chat renders one disclosure per child conversation. A child's parent tool
 call/result stays in the saved history and model context but does not add a
 duplicate UI row. Research uses readable queries and Markdown sources in the
@@ -316,8 +454,8 @@ Direct voice tools retain live confirmations. A delegated text run that pauses
 for native input or approval asks the user to continue in chat; the one-shot
 voice adapter cannot present and resume that child interrupt.
 
-The remaining optional integrations are the devtools panel (now that ChatClient
-owns state), native memory storage, and code mode. Modern MCP input-required
+The remaining optional integrations include native memory storage and code mode.
+Modern MCP input-required
 resume still needs a separate integration: the public raw `callTool` API does
 not accept input responses, while native tool execution normalizes away the full
 initial result required by saved widgets. Existing legacy MCP form/URL requests
@@ -380,6 +518,29 @@ summary style taking precedence. This opts into visible Claude thinking rather
 than signed blocks with empty text, including deployments behind opaque aliases.
 Structured helper calls keep summaries opt-in.
 
+`Client.chatOptions()` owns SDK option placement for chat, subagents and
+structured helpers. With the published AI 0.68 API, reasoning still belongs in
+`modelOptions`. The next [reasoning migration](https://github.com/TanStack/ai/blob/5bd27f2fc94ebfb6d11bfb28d46d5d858310805e/docs/migration/reasoning-option.md)
+also requires mapping `none` to `off`, replacing summary styles with a boolean,
+and supplying reasoning metadata for gateway aliases through `modelReasoning`.
+Moving the property alone would silently lose alias reasoning. Cross-provider
+history support does not replace the gateway's deployment-bound ciphertext guard.
+
+The provider SDK already retries HTTP rate limits twice. Once exhausted,
+`streamRun` formats `metadata.tanstack.retryAfterMs` before ChatClient converts
+the event to an Error and drops that metadata. The displayed wait rounds up to
+whole seconds and survives transcript persistence. Missing or invalid delays
+retain the generic message. A future core `chat({ retry })` policy must account
+for those existing SDK retries. Automatic prompt-cache keys and core retries
+remain deferred until their APIs are published and gateway behavior is verified.
+
+Conversation loading includes native `isHydrating`, disabling composer sends
+and retries until hydration completes. The saved hydration snapshot remains:
+it prevents the native persistence echo from overwriting enriched messages or
+pending interrupts, which the loading flag alone cannot do. The controlled test
+adapter likewise remains because `fakeText()` does not cover its unfinished
+streams and application-specific message metadata.
+
 Reasoning signatures retain the producing deployment alias, visible signed text,
 and its separate summary through native model/UI conversions. Saved pre-migration
 reasoning remains readable. Ciphertext is replayed only for the same deployment;
@@ -406,6 +567,21 @@ application needs. The compatibility adapter also preserves interruption offsets
 configuration readiness, and per-session cleanup. Rebinding native clients updates
 executable tools without reconnecting the physical socket.
 
+`mcpConfig.ts` normalizes static gateway/direct server declarations, plugin servers, and
+companion endpoints. `usePluginProviders` supplies declarations and parent ownership;
+`useMcpClients` owns all live clients, connection attempts, callbacks, retries, and disposal.
+Endpoint or header changes replace the client even when its ID is unchanged. Removed clients
+abort pending retries and authorization; callbacks from superseded clients cannot publish state.
+
+`ToolsProvider` owns selection and agent requirements separately from connection status.
+Plugin MCP servers inherit selection and policy from the plugin parent. Historical child
+selections are pruned. OAuth storage is keyed by the normalized full endpoint URL (path and
+query included), independently of server IDs and plugin installation. Endpoint-bound legacy
+credentials migrate without reauthentication. `mcpAuthFetch.ts` serializes SDK OAuth grants
+per endpoint across clients/tabs, while ordinary MCP requests remain concurrent. PKCE state
+belongs to the individual popup. The internal companion name retains the public
+`BRIDGE_URL` environment variable and `bridge.url` JSON contract.
+
 `mcpTransport.ts` forwards the SDK transport while exposing server metadata,
 legacy elicitation, and change notifications to the workspace. Resource reads use
 local cancellation because the native MCP resource API has no signal argument.
@@ -415,9 +591,27 @@ Calls and discovery use the native client's APIs.
 `MCPAppResource` wrapper does not accept the initial tool result or the display
 mode callbacks needed by saved widgets. The host boundary supplies existing
 capabilities, tool visibility policy, display mode, theme, CSP, and permissions.
-Raw MCP results, including `_meta`, are persisted for widgets; older records use
-the existing display-content fallback. The iframe stays mounted when switching
-between inline and fullscreen display.
+Tools emit TanStack's native `ui-resource` event after eagerly reading the linked
+HTML. The part persists the HTML and original MCP result; reopening uses those
+bytes without another resource read or tool call. A failed resource read leaves
+the normal tool result available. Migrated URI-only parts read their HTML when
+opened; records without an original MCP result reconstruct it from native content.
+Voice execution also forwards UI resource events into its stored tool round.
+The iframe stays mounted when switching between inline and fullscreen display. Restoring a
+saved widget never changes provider selection. Disabled providers show an explicit enable
+button; disabling a plugin tears down its widgets, and retrying authentication is a user action.
+
+Connecting the MCP client alone does not wire interactive widgets. TanStack's
+`useMcpAppBridge` sends calls to an explicit HTTP endpoint; its
+`createMcpAppCallHandler` reconnects from a serializable transport descriptor on
+each call. Wingman's browser OAuth transport is a live custom transport, whose
+native `getInfo()` cannot supply that descriptor. The host instead forwards
+`tools/call` through the current authenticated connection, checks app visibility,
+and preserves the full MCP response. Widget `ui/message` actions call chat's
+`sendMessage`; links use the host's URL policy. These paths are covered by browser
+tests with real SDK bridges and sandboxed iframes against a fixture MCP transport.
+The initial `ui/notifications/tool-input` and `ui/notifications/tool-result`
+delivery follows the MCP Apps protocol; it replays the original call's data.
 
 Gateway-only extraction, rendering, search, translation, segmentation, and guard
 endpoints keep their existing request helpers; TanStack has no equivalent for

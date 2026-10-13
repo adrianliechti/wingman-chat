@@ -1,16 +1,11 @@
+import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useChat } from "@tanstack/ai-react";
 import type { ChatInterruptState, ChatPersistedState, RunAgentInputContext } from "@tanstack/ai-client";
-import {
-  normalizeToUIMessage,
-  isContentPart,
-  type ContentPart,
-  type StreamChunk,
-  type UIMessage,
-  type ModelMessage,
-} from "@tanstack/ai";
+import { normalizeToUIMessage, isContentPart, type ContentPart, type UIMessage, type ModelMessage } from "@tanstack/ai";
 import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { artifactVerification } from "@/features/artifacts/lib/artifactVerification";
+import { uiDiagnostics } from "@/shared/lib/inlineUi/diagnostics";
 import { type FileSystemManager, resolveArtifactFileSystem } from "@/features/artifacts/lib/fs";
 import { parseArtifactReference } from "../components/chatMessageUtils";
 import type { ChatContextType } from "../context/ChatContext";
@@ -18,7 +13,8 @@ import type { useChatContext } from "./useChatContext";
 import { prepareChatMessages } from "../lib/chatHistory";
 import { chatCompaction, preserveSkillContext } from "../lib/chatCompaction";
 import { getConfig } from "@/shared/config";
-import { RunSidecar, approvalTools, streamRun } from "@/shared/lib/agent";
+import { RunSidecar, approvalTools } from "@/shared/lib/agent";
+import { streamChatWithUiRepair } from "../lib/inlineUiRepair";
 import { getErrorInfo, isAbortError } from "@/shared/lib/errors";
 import { artifactRefPart, isUserPrompt, messageText, textMetadata, updateToolResultMeta } from "@/shared/lib/messages";
 import { compactThreshold } from "@/shared/lib/models";
@@ -30,6 +26,9 @@ import type { ChatStore } from "../lib/chatStore";
 import { useChatClassification } from "./useChatClassification";
 import { useChatElicitation } from "./useChatElicitation";
 import { createAttachmentLoader } from "../lib/chatAttachments";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { mcpToolPrefix } from "@/features/settings/lib/mcpToolNames";
+import { ProviderState } from "@/shared/types/chat";
 import { beginMemoryRun, enqueueMemoryLearning } from "@/features/agent/lib/memoryLearning";
 import { recallMemory } from "@/features/agent/lib/memoryRecall";
 import { reconcileMemorySources } from "@/features/agent/lib/memorySources";
@@ -41,6 +40,7 @@ interface Session {
   native: UIMessage[];
   hydrated: ChatPersistedState | null;
   interrupts: ChatInterruptState | null;
+  toolWaiters: Set<() => void>;
 }
 
 interface Options {
@@ -83,7 +83,14 @@ export function useChatRun({
   const config = getConfig();
   const client = config.client;
   const session = useMemo<Session>(
-    () => ({ id: threadId, sidecar: new RunSidecar(), native: [], hydrated: null, interrupts: null }),
+    () => ({
+      id: threadId,
+      sidecar: new RunSidecar(),
+      native: [],
+      hydrated: null,
+      interrupts: null,
+      toolWaiters: new Set(),
+    }),
     [threadId],
   );
   const storageOwnerRef = useRef<Session | null>(session);
@@ -91,20 +98,39 @@ export function useChatRun({
     storageOwnerRef.current = session;
     return () => {
       storageOwnerRef.current = null;
+      for (const resolve of session.toolWaiters) resolve();
+      session.toolWaiters.clear();
     };
   }, [session]);
   const tools = useMemo(() => approvalTools(chatTools()), [chatTools]);
+  const { providers, getProviderState, isProviderEnabled } = useToolsContext();
+  const toolNames = new Set(tools.map((tool) => tool.name));
+  const isAwaitingTools = (names: string[]) =>
+    names.some(
+      (name) =>
+        !toolNames.has(name) &&
+        providers.some((provider) => {
+          const state = getProviderState(provider.id);
+          return (
+            name.startsWith(mcpToolPrefix(provider.id)) &&
+            (isProviderEnabled?.(provider.id) ?? true) &&
+            (state === ProviderState.Disconnected ||
+              state === ProviderState.Initializing ||
+              state === ProviderState.Authenticating)
+          );
+        }),
+    );
+  const awaitingTools = useRef(isAwaitingTools);
+  useLayoutEffect(() => {
+    awaitingTools.current = isAwaitingTools;
+  });
   // Realtime and legacy MCP URL requests have a live transport callback.
   // Chat forms and tool approvals use ChatClient's durable interrupts below.
   const { pendingElicitation, requestElicitation, resolveElicitation, completeElicitation, clearElicitation } =
     useChatElicitation();
   const { classify, pendingConsent, resolveConsent } = useChatClassification({ models, chatId, chatIdRef, updateChat });
   const [runPhase, setRunPhase] = useState<ChatContextType["status"]>("idle");
-  const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: UIMessage } | null>(null);
-  const updateToolMeta = useCallback((id: string, meta: Record<string, unknown>) => {
-    setToolMeta((prev) => ({ ...prev, [id]: { ...prev[id], ...meta } }));
-  }, []);
 
   const connect = useCallback(
     async function* (
@@ -112,7 +138,7 @@ export function useChatRun({
       nativeMessages: UIMessage[] | ModelMessage[],
       signal?: AbortSignal,
       runContext?: RunAgentInputContext,
-    ): AsyncGenerator<StreamChunk> {
+    ): AsyncGenerator<AGUIEvent> {
       if (!model) throw new Error("No model selected");
       const { id, sidecar } = session;
       const runId = runContext?.runId ?? crypto.randomUUID();
@@ -157,7 +183,7 @@ export function useChatRun({
         const compaction = config.chat?.compaction;
         let threshold = compaction ? (model.compactThreshold ?? compactThreshold(model.id)) : 0;
         if (compaction?.threshold !== undefined && threshold > 0) threshold = Math.min(threshold, compaction.threshold);
-        yield* streamRun(client, model.id, chatInstructions(), conversation, tools, {
+        yield* streamChatWithUiRepair(client, model.id, chatInstructions(), conversation, tools, {
           runId,
           threadId: id,
           parentRunId: runContext?.parentRunId,
@@ -167,6 +193,7 @@ export function useChatRun({
           middleware: [
             ...chatMiddleware(),
             ...(runFs ? [artifactVerification(runFs, sidecar, conversation)] : []),
+            uiDiagnostics(conversation),
             {
               onIteration: () => {
                 if (active()) setRunPhase("thinking");
@@ -179,11 +206,6 @@ export function useChatRun({
                 setRunPhase("thinking");
                 if (!results.length) return;
                 clearElicitation();
-                setToolMeta((prev) => {
-                  const next = { ...prev };
-                  for (const { toolCallId } of results) delete next[toolCallId];
-                  return next;
-                });
               },
             },
           ],
@@ -213,14 +235,20 @@ export function useChatRun({
           createToolContext: (call, execution) => ({
             chatId: id,
             content: () => (toolMessage?.parts ?? []).filter(isContentPart),
-            elicit: (elicitation) => requestElicitation(call.id, call.name, elicitation, execution.abortSignal),
+            elicit: (elicitation, options) =>
+              requestElicitation(
+                call.id,
+                call.name,
+                elicitation,
+                options?.signal ?? execution.abortSignal,
+                options?.onCancel,
+              ),
             onElicitationComplete: (elicitationId) => {
               if (active()) completeElicitation(elicitationId);
             },
           }),
           onToolMeta: (callId, meta) => {
             if (signal?.aborted) return;
-            if (active()) updateToolMeta(callId, meta);
             updateChat(id, (prev) => ({ messages: updateToolResultMeta(prev.messages, callId, meta) }));
           },
           onComplete: async (result) => {
@@ -254,7 +282,6 @@ export function useChatRun({
       requestElicitation,
       completeElicitation,
       clearElicitation,
-      updateToolMeta,
       updateChat,
     ],
   );
@@ -274,6 +301,23 @@ export function useChatRun({
       getItem: async () => {
         const saved = getChat(session.id) ?? (chatId === session.id ? await loadChat(session.id) : undefined);
         if (!saved) return null;
+        // TanStack binds persisted approvals once at hydration. Its current
+        // updateTools does not rebind an approval hydrated before MCP discovery.
+        const pendingIds = new Set(saved.resume?.pendingInterrupts?.map((interrupt) => interrupt.toolCallId));
+        const names: string[] = [];
+        const collect = (messages: UIMessage[]) => {
+          for (const message of messages)
+            for (const part of message.parts) {
+              if (part.type === "tool-call" && pendingIds.has(part.id)) names.push(part.name);
+              if (part.type === "subagent") collect(part.subagent.messages);
+            }
+        };
+        collect(saved.messages);
+        await Promise.resolve();
+        while (storageOwnerRef.current === session && awaitingTools.current(names))
+          await new Promise<void>((resolve) => {
+            session.toolWaiters.add(resolve);
+          });
         session.hydrated = { messages: saved.messages, resume: saved.resume };
         session.native = saved.messages;
         return session.hydrated;
@@ -282,8 +326,8 @@ export function useChatRun({
         // useChat stops disposed clients; their cleanup must not erase a saved
         // approval or overwrite the conversation opened by their replacement.
         if (storageOwnerRef.current !== session) return;
-        // The runtime owns the live transcript; the chat store receives it as is,
-        // with the rich tool outputs the runtime only holds as text.
+        // The runtime owns the live transcript; the chat store receives native
+        // parts with application metadata and text phases attached below.
         session.native = state.messages;
         // A draft has no durable record until the first send or attachment.
         if (!getChat(session.id)) return;
@@ -311,9 +355,9 @@ export function useChatRun({
     },
     onChunk: (chunk) => {
       if (chatIdRef.current !== session.id) return;
-      if (chunk.type === "TEXT_MESSAGE_CONTENT") setRunPhase("responding");
-      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:started") setRunPhase("compacting");
-      else if (chunk.type === "CUSTOM" && chunk.name === "compaction:ended") setRunPhase("thinking");
+      if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) setRunPhase("responding");
+      else if (chunk.type === EventType.CUSTOM && chunk.name === "compaction:started") setRunPhase("compacting");
+      else if (chunk.type === EventType.CUSTOM && chunk.name === "compaction:ended") setRunPhase("thinking");
     },
     onInterruptStateChange: (state) => {
       session.interrupts = state;
@@ -326,9 +370,13 @@ export function useChatRun({
       ai.setMessages(withRunError(session.native, getErrorInfo(error)));
     },
   });
+  // Runs after useChat's tool-registration effect, before releasing hydration.
+  useEffect(() => {
+    for (const resolve of session.toolWaiters) resolve();
+    session.toolWaiters.clear();
+  }, [session, tools, providers, getProviderState]);
   useEffect(() => {
     setStreamingMessage(null);
-    setToolMeta({});
     clearElicitation();
   }, [threadId, clearElicitation]);
 
@@ -437,19 +485,18 @@ export function useChatRun({
   );
 
   const retryMessage = useCallback(async () => {
-    if (chatIdRef.current !== session.id || isLoading) return;
+    if (chatIdRef.current !== session.id || isLoading || ai.isHydrating) return;
     if (session.interrupts?.resuming || session.interrupts?.interrupts.length) return;
     const retry = retryHistory(session.native);
     if (!retry) return;
     setMessages(retry.history);
     await append(retry.resend);
-  }, [chatIdRef, session, isLoading, setMessages, append]);
+  }, [chatIdRef, session, isLoading, ai.isHydrating, setMessages, append]);
 
   const stopStreaming = useCallback(() => {
     stop();
     clearElicitation();
     setStreamingMessage(null);
-    setToolMeta({});
     setRunPhase("idle");
   }, [stop, clearElicitation]);
   const setVoiceToolCall = useCallback(
@@ -481,13 +528,13 @@ export function useChatRun({
 
   return {
     streamingMessage,
+    isHydrating: ai.isHydrating,
     isResponding,
     status,
     queuedSends: ai.queue,
     interruptState,
     pendingElicitation,
     pendingConsent,
-    toolMeta,
     addMessage,
     sendMessage,
     retryMessage,
@@ -496,7 +543,6 @@ export function useChatRun({
     stopStreaming,
     resolveElicitation,
     requestElicitation,
-    updateToolMeta,
     resolveConsent,
   };
 }

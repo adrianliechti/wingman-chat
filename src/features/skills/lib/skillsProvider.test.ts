@@ -1,4 +1,7 @@
 import { convertSchemaToJsonSchema } from "@tanstack/ai";
+import { readFileSync, readdirSync } from "node:fs";
+import { REFERENCE_GROUPS } from "@/shared/lib/inlineUi/registry";
+import inlineUiInstructions from "@/features/chat/prompts/inline-ui.txt?raw";
 import { toolCallMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ALREADY_LOADED } from "@tanstack/ai-skills";
@@ -6,8 +9,9 @@ import { mountSkillFiles, setSkillResourceResolver } from "@/features/tools/lib/
 import { run } from "@/shared/lib/agent";
 import { Client } from "@/shared/lib/client";
 import { testClient, response, callItem, textItem, finished } from "@/shared/lib/test-support/ai";
-import { assistantMessage, userMessage } from "@/shared/lib/messages";
+import { assistantMessage, outputText, toolResultContent, userMessage } from "@/shared/lib/messages";
 import { createSkillsProvider } from "./skillsProvider";
+import { resolveToolHeader } from "@/features/chat/components/toolDisplay";
 
 afterEach(() => {
   setSkillResourceResolver("test-skills", null);
@@ -30,6 +34,71 @@ const call = (id: string, name: string, args: object) =>
   toolCallMessage([{ id, name, arguments: JSON.stringify(args) }]);
 
 describe("native skills", () => {
+  it("loads only the requested inline UI references through the real skill tools", async () => {
+    const base = "skills/studio/inline-ui/";
+    const resources = readdirSync(base + "references", { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => `${entry.parentPath}/${entry.name}`.slice(base.length));
+    const loadContent = vi.fn(() => readFileSync(base + "SKILL.md", "utf8"));
+    const loadResource = vi.fn((path: string) => readFileSync(base + path, "utf8"));
+    const provider = createSkillsProvider(
+      [
+        {
+          name: "inline-ui",
+          description: "Native interfaces in chat",
+          resources,
+          loadContent,
+          loadResource,
+        },
+      ],
+      meta,
+    )!;
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(call("load", "load_skill", { name: "inline-ui" }))
+      .mockResolvedValueOnce(
+        call("protocol", "read_skill_resource", { skill: "inline-ui", path: REFERENCE_GROUPS.protocol.path }),
+      )
+      .mockResolvedValueOnce(
+        call("data", "read_skill_resource", { skill: "inline-ui", path: REFERENCE_GROUPS.data.path }),
+      )
+      .mockResolvedValueOnce(done);
+    const result = await run(testClient(complete), "model", inlineUiInstructions, prompt, provider.chat!.tools, {
+      middleware: provider.chat!.middleware,
+    });
+    expect(result.status).toBe("completed");
+    expect(loadContent).toHaveBeenCalledOnce();
+    expect(loadResource.mock.calls).toEqual([["references/protocol.md"], ["references/data.md"]]);
+    // Inspect only provider-bound fields; the capabilities object is mutable
+    // runtime state and will contain later tool results after the run finishes.
+    const requestContext = ({ messages, systemPrompts }: { messages: unknown; systemPrompts: unknown }) =>
+      JSON.stringify({ messages, systemPrompts });
+    const firstRequest = requestContext(complete.mock.calls[0][0]);
+    expect(firstRequest).not.toContain("A2UI-CATALOG:START");
+    expect(firstRequest).not.toContain("## Look up only what you need");
+    const results = result.messages
+      .flatMap((message) => message.parts)
+      .flatMap((part) => (part.type === "tool-result" ? [JSON.parse(outputText(toolResultContent(part)))] : []));
+    expect(results[0].resources.sort()).toEqual(resources.sort());
+    expect(results[0].content).toContain("references/data.md");
+    expect(results[0].content).not.toContain("A2UI-CATALOG:START");
+    expect(results[1].content).toBe(readFileSync(base + "references/protocol.md", "utf8"));
+    expect(results[2].content).toBe(readFileSync(base + "references/data.md", "utf8"));
+    expect(requestContext(complete.mock.calls.at(-1)![0])).not.toContain("ChoicePicker {");
+  });
+
+  it("previews skill names and resource paths while reading", () => {
+    const provider = createSkillsProvider([skill], meta)!;
+    const load = provider.tools.find((tool) => tool.name === "load_skill")!;
+    const resource = provider.tools.find((tool) => tool.name === "read_skill_resource")!;
+    expect(resolveToolHeader(load, load.name, '{"name":"reports"}', { running: true })).toMatchObject({
+      label: "Reading skill…",
+      preview: "reports",
+    });
+    expect(
+      resolveToolHeader(resource, resource.name, '{"skill":"reports","path":"scripts/check.py"}', { running: true }),
+    ).toMatchObject({ label: "Reading skill resource…", preview: "reports/scripts/check.py" });
+  });
   it("uses one winning entry for duplicate names across the voice catalog, loader, and mounts", async () => {
     const loadContent = vi.fn(
       () => "---\nname: reports\ndescription: Personal reports\n---\nUse the personal template.",
@@ -180,9 +249,7 @@ describe("native skills", () => {
     expect(JSON.stringify(firstRequest.systemPrompts)).toContain("before proceeding");
     const results = result.messages
       .flatMap((message) => message.parts)
-      .flatMap((part) =>
-        part.type === "tool-result" && typeof part.content === "string" ? [JSON.parse(part.content)] : [],
-      );
+      .flatMap((part) => (part.type === "tool-result" ? [JSON.parse(outputText(toolResultContent(part)))] : []));
     expect(results).toEqual([
       {
         skill: "reports",

@@ -2,9 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { downloadHubPlugin } from "@/features/plugins/lib/hub";
 import { deletePlugin, loadAllPlugins, savePlugin } from "@/features/plugins/lib/opfs-plugins";
-import { pluginMcpClientId } from "@/features/plugins/lib/pluginProvider";
 import type { HubPlugin, InstalledPlugin } from "@/features/plugins/lib/types";
-import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
 import { PluginsContext } from "./PluginsContext";
 
 interface PluginsProviderProps {
@@ -43,19 +41,11 @@ export function PluginsProvider({ children }: PluginsProviderProps) {
     return saved;
   }, []);
 
-  const uninstallPlugin = useCallback(
-    async (id: string): Promise<void> => {
-      const plugin = plugins.find((p) => p.id === id);
-      await deletePlugin(id);
-      // Bundled skills go with the plugin folder, but each MCP server also
-      // leaves OAuth credentials behind under its own client id.
-      for (const server of plugin?.mcpServers ?? []) {
-        clearMcpOAuthStorage(pluginMcpClientId(id, server.name));
-      }
-      setPlugins((prev) => prev.filter((p) => p.id !== id));
-    },
-    [plugins],
-  );
+  const uninstallPlugin = useCallback(async (id: string): Promise<void> => {
+    await deletePlugin(id);
+    // Endpoint logins can also be used by static config or another plugin.
+    setPlugins((prev) => prev.filter((p) => p.id !== id));
+  }, []);
 
   const getPlugin = useCallback((id: string) => plugins.find((p) => p.id === id), [plugins]);
 

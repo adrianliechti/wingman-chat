@@ -71,18 +71,6 @@ export type Model = {
   };
 };
 
-export type MCP = {
-  id: string;
-
-  name: string;
-  description: string;
-
-  url: string;
-
-  icon?: string;
-  headers?: Record<string, string>;
-};
-
 export const ProviderState = {
   Disconnected: "disconnected",
   Initializing: "initializing",
@@ -159,10 +147,14 @@ export type Tool = Omit<WorkspaceTool, "inputSchema"> & {
 export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
 export type ToolDisplayState = {
+  outcome?: "denied" | "cancelled";
   running?: boolean;
+  progress?: { progress: number; total?: number; message?: string };
   error?: boolean;
   /** Stable identity while arguments stream and the tool runs. */
   toolCallId?: string;
+  /** Completed output, when available, for a concise result preview. */
+  result?: ContentPart[];
 };
 
 /** A code/text block rendered in a tool call's expanded view. */
@@ -187,15 +179,15 @@ export type ToolDisplay = {
     icon?: ToolDisplayIcon;
     label?: string;
     mono?: boolean;
-    /** Short text shown beside the label; overrides the generic argument preview. */
-    preview?: string;
+    /** Short text beside the label; null hides it, undefined uses the generic argument preview. */
+    preview?: string | null;
     /** Hide the preview entirely (the label already carries the detail). */
     suppressPreview?: boolean;
   };
   /** Expanded input blocks; return `[]` to hide input, omit to fall back to generic arguments. */
   input?: (args: Record<string, unknown> | null) => ToolDisplayBlock[];
   /** Expanded success output; return `null` to fall back to generic result rendering. */
-  output?: (result: ContentPart[]) => ToolDisplayBlock | null;
+  output?: (result: ContentPart[], args?: Record<string, unknown> | null) => ToolDisplayBlock | null;
 };
 
 /** Application context passed through native chat middleware and tool execution. */
@@ -216,11 +208,13 @@ export interface ToolContext {
   inputResponse?: { status: "resolved"; payload: unknown } | { status: "cancelled" };
   /** The content parts of the user turn that triggered this run (text and attachments). */
   content?(): ContentPart[];
-  elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
+  elicit?(
+    elicitation: Elicitation,
+    options?: { signal?: AbortSignal; onCancel?: () => void },
+  ): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;
   setMeta?(meta: Record<string, unknown>): void;
   setError?(error: MessageError): void;
-  setContent?(content: Record<string, unknown>): void;
   /** Trace context for nested agents spawned from this tool. */
   agentContext?: AgentContext;
 }

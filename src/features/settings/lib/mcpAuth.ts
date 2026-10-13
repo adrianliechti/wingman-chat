@@ -5,8 +5,41 @@ import type {
   OAuthDiscoveryState,
   OAuthTokens,
 } from "@modelcontextprotocol/client";
+import { UnauthorizedError } from "@modelcontextprotocol/client";
+import { normalizeMcpUrl } from "./mcpConfig";
 
 const STORAGE_PREFIX = "mcp_oauth";
+
+function authKey(endpoint: string): string {
+  return `v3:${encodeURIComponent(normalizeMcpUrl(endpoint))}`;
+}
+
+/** Only migrate credentials whose old key proves which endpoint they belong to. */
+function migrateCredentials(endpoint: string, key: string): void {
+  const endpointKey = encodeURIComponent(normalizeMcpUrl(endpoint));
+  // The first endpoint login wins; never mix a client registration with another login's tokens.
+  const fields = ["tokens", "client_info", "discovery", "auth_state"];
+  try {
+    const oldKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!)
+      .filter((item) => item.startsWith(`${STORAGE_PREFIX}:v2:`) && item.split(":")[3] === endpointKey)
+      .sort();
+    // All IDs/tabs choose the same saved login, preferring tokens over an incomplete attempt.
+    const oldPrefix =
+      oldKeys.find((item) => item.endsWith(":tokens") && readJson<OAuthTokens>(item)?.access_token) ?? oldKeys[0];
+    if (!oldPrefix) return;
+    if (!fields.some((field) => readJson(storageKey(key, field)) !== undefined)) {
+      const prefix = oldPrefix.slice(0, oldPrefix.lastIndexOf(":"));
+      const snapshot = fields.map((field) => [field, localStorage.getItem(`${prefix}:${field}`)] as const);
+      for (const [field, value] of snapshot) {
+        if (value !== null) localStorage.setItem(storageKey(key, field), value);
+      }
+    }
+    // Do not let an invalidated login get resurrected from an older per-ID copy.
+    oldKeys.forEach((item) => localStorage.removeItem(item));
+  } catch {
+    // Keep old credentials if storage cannot be written.
+  }
+}
 
 function storageKey(serverKey: string, suffix: string): string {
   return `${STORAGE_PREFIX}:${serverKey}:${suffix}`;
@@ -26,7 +59,7 @@ function writeJson(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
-    console.warn(`[MCP OAuth] Failed to write to localStorage (${key}):`, e);
+    console.warn("[MCP OAuth] Failed to write credentials to localStorage:", e);
   }
 }
 
@@ -41,7 +74,7 @@ function removeKey(key: string): void {
 export type McpAuthFailureReason = "denied" | "cancelled" | "blocked" | "expired" | "failed";
 
 /** Thrown instead of retrying when a server's OAuth flow cannot proceed without user action. */
-export class McpAuthRequiredError extends Error {
+export class McpAuthRequiredError extends UnauthorizedError {
   readonly serverId: string;
   readonly reason: McpAuthFailureReason;
 
@@ -68,12 +101,12 @@ function clearAuthBlocked(serverKey: string): void {
   removeKey(storageKey(serverKey, "auth_state"));
 }
 
-// Per-tab-session guards: one automatic auth attempt per server per page load.
+// Per-tab-session guards: one automatic auth attempt per endpoint per page load.
 const sessionAutoAuthAttempted = new Set<string>();
 const interactiveAuthArmed = new Set<string>();
 
 /** Allow exactly one more popup for this server, triggered by an explicit user gesture. */
-export function armInteractiveAuth(serverKey: string): void {
+function armInteractiveAuth(serverKey: string): void {
   clearAuthBlocked(serverKey);
   sessionAutoAuthAttempted.delete(serverKey);
   interactiveAuthArmed.add(serverKey);
@@ -82,21 +115,29 @@ export function armInteractiveAuth(serverKey: string): void {
 /**
  * Browser-compatible OAuthClientProvider for MCP servers.
  *
- * Uses localStorage for persisting tokens, client registration, and PKCE state.
+ * Shares persisted credentials by endpoint; PKCE belongs to this popup only.
  * Opens a popup window for the OAuth authorization redirect and receives the
  * authorization code back via postMessage from the /oauth/callback page.
  */
 export class BrowserOAuthClientProvider implements OAuthClientProvider {
   private readonly serverKey: string;
+  readonly serverId: string;
   private pendingAuthResolve: ((code: string) => void) | null = null;
   private pendingAuthReject: ((err: Error) => void) | null = null;
   private messageListener: ((event: MessageEvent) => void) | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private authCodePromise: Promise<string> | null = null;
   private popup: Window | null = null;
+  private verifier?: string;
 
-  constructor(serverKey: string) {
-    this.serverKey = serverKey;
+  constructor(serverId: string, endpoint: string) {
+    this.serverId = serverId;
+    this.serverKey = authKey(endpoint);
+    migrateCredentials(endpoint, this.serverKey);
+  }
+
+  armInteractiveAuth(): void {
+    armInteractiveAuth(this.serverKey);
   }
 
   get redirectUrl(): string {
@@ -136,11 +177,11 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
   }
 
   saveCodeVerifier(verifier: string): void {
-    writeJson(storageKey(this.serverKey, "code_verifier"), verifier);
+    this.verifier = verifier;
   }
 
   codeVerifier(): string {
-    const v = readJson<string>(storageKey(this.serverKey, "code_verifier"));
+    const v = this.verifier;
     if (!v) throw new Error("[MCP OAuth] No code verifier saved");
     return v;
   }
@@ -166,7 +207,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     const armed = interactiveAuthArmed.delete(key);
 
     if (!armed && (isAuthBlocked(key) || sessionAutoAuthAttempted.has(key))) {
-      this.authCodePromise = Promise.reject(new McpAuthRequiredError(key, "failed"));
+      this.authCodePromise = Promise.reject(new McpAuthRequiredError(this.serverId, "failed"));
       void this.authCodePromise.catch(() => {});
       return Promise.resolve();
     }
@@ -184,7 +225,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
         markAuthBlocked(key, "blocked");
         this.authCodePromise = Promise.reject(
           new McpAuthRequiredError(
-            key,
+            this.serverId,
             "blocked",
             "Popup was blocked. Please allow popups for this site and try again.",
           ),
@@ -210,7 +251,9 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
 
         if (event.data.error) {
           markAuthBlocked(key, "denied");
-          this.pendingAuthReject?.(new McpAuthRequiredError(key, "denied", `OAuth error: ${event.data.error}`));
+          this.pendingAuthReject?.(
+            new McpAuthRequiredError(this.serverId, "denied", `OAuth error: ${event.data.error}`),
+          );
         } else if (event.data.code) {
           this.pendingAuthResolve?.(event.data.code as string);
         }
@@ -226,7 +269,11 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
           if (this.pendingAuthReject) {
             markAuthBlocked(key, "cancelled");
             this.pendingAuthReject(
-              new McpAuthRequiredError(key, "cancelled", "OAuth popup was closed before authorization completed"),
+              new McpAuthRequiredError(
+                this.serverId,
+                "cancelled",
+                "OAuth popup was closed before authorization completed",
+              ),
             );
           }
           this._cleanup();
@@ -250,9 +297,11 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     if (this.pendingAuthReject) sessionAutoAuthAttempted.delete(this.serverKey);
     this._cleanup();
     this.authCodePromise = null;
+    this.verifier = undefined;
   }
 
   invalidateCredentials(scope: CredentialScope): void {
+    if (scope === "all" || scope === "verifier") this.verifier = undefined;
     removeCredentials(this.serverKey, scope);
   }
 
@@ -273,7 +322,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
       this.pollTimer = null;
     }
     // Reject any promise still awaited by a superseded waitForAuthCode() caller.
-    this.pendingAuthReject?.(new McpAuthRequiredError(this.serverKey, "cancelled", "OAuth flow was superseded"));
+    this.pendingAuthReject?.(new McpAuthRequiredError(this.serverId, "cancelled", "OAuth flow was superseded"));
     this.pendingAuthResolve = null;
     this.pendingAuthReject = null;
   }
@@ -286,13 +335,4 @@ function removeCredentials(serverKey: string, scope: CredentialScope): void {
   if (scope === "all" || scope === "client") removeKey(storageKey(serverKey, "client_info"));
   if (scope === "all" || scope === "verifier") removeKey(storageKey(serverKey, "code_verifier"));
   if (scope === "all" || scope === "discovery") removeKey(storageKey(serverKey, "discovery"));
-}
-
-/**
- * Removes all OAuth localStorage entries for a given server key.
- * Call this when a server is deleted so stale credentials don't accumulate.
- */
-export function clearMcpOAuthStorage(serverKey: string): void {
-  removeCredentials(serverKey, "all");
-  removeKey(storageKey(serverKey, "auth_state"));
 }

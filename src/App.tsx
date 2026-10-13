@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { AgentProvider } from "./features/agent/context/AgentProvider";
 import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
@@ -20,9 +21,15 @@ import { LayoutProvider } from "./shell/context/LayoutProvider";
 import { NavigationProvider } from "./shell/context/NavigationProvider";
 import { SidebarProvider } from "./shell/context/SidebarProvider";
 import { ThemeProvider } from "./shell/context/ThemeProvider";
+import { queryClient } from "./shared/lib/queryClient";
+
+function QueryProvider({ children }: { children: React.ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Compose providers to avoid deep nesting
 const providers = [
+  { key: "QueryProvider", Provider: QueryProvider },
   { key: "ThemeProvider", Provider: ThemeProvider },
   { key: "LayoutProvider", Provider: LayoutProvider },
   { key: "EmojiProvider", Provider: EmojiProvider },

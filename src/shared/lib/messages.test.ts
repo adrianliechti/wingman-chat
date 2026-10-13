@@ -17,13 +17,14 @@ import {
   outputText,
   promptText,
   text,
-  textSegments,
+  textParts,
   toolResultFor,
   toolResultContent,
   toolResultMetadata,
   toolRoundMessage,
   updateToolResultMeta,
   userMessage,
+  withTextPhases,
 } from "./messages";
 
 describe("recursive message transforms", () => {
@@ -76,15 +77,15 @@ describe("constructors", () => {
     expect(isUserPrompt(assistantMessage("Hi"))).toBe(false);
   });
 
-  it("builds a completed tool round the model reads as text and the UI as rich output", () => {
+  it("builds a completed tool round with native rich content", () => {
     const image = mediaFromDataUrl("data:image/png;base64,AQ==", "chart.png");
     const round = toolRoundMessage({ id: "call", name: "render", arguments: "{}" }, [text("Drawn"), image]);
     expect(round.parts[0]).toMatchObject({ type: "tool-call", id: "call", name: "render", state: "complete" });
     expect(toolResultFor(round, "call")).toMatchObject({
       state: "complete",
-      content: "Drawn\n[Image: chart.png - displayed to user]",
+      content: [text("Drawn"), image],
     });
-    expect(toolResultMetadata(toolResultFor(round, "call")!).result).toEqual([text("Drawn"), image]);
+    expect(toolResultFor(round, "call")!.metadata).toBeUndefined();
   });
 });
 
@@ -99,7 +100,6 @@ describe("readers", () => {
     expect(toolResultContent(result)).toEqual([text("Skill instructions")]);
     const media = [mediaFromDataUrl("data:image/png;base64,AQ==")];
     expect(toolResultContent({ ...result, content: media })).toBe(media);
-    expect(toolResultContent({ ...result, metadata: { result: media } })).toBe(media);
   });
 
   it("separates typed prose from references and keeps the provider text intact", () => {
@@ -108,24 +108,33 @@ describe("readers", () => {
     expect(messageText(message)).toBe("Edit this\nWorkspace file: /a.md");
   });
 
-  it("prefers the gateway's phases over text parts and picks the final answer", () => {
+  it("reads phases from text parts and picks the final answer", () => {
     const plain = assistantMessage([text("Working", { phase: "commentary" }), text("Done", { phase: "final_answer" })]);
-    expect(textSegments(plain)).toEqual([
-      { content: "Working", phase: "commentary" },
-      { content: "Done", phase: "final_answer" },
+    expect(textParts(plain)).toEqual([
+      text("Working", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
     ]);
     expect(finalText(plain)).toBe("Done");
-    const segmented = assistantMessage("WorkingDone", {
-      metadata: {
-        textSegments: [
-          { content: "Working", phase: "commentary" },
-          { content: "Done", phase: "final_answer" },
-        ],
-      },
-    });
-    expect(finalText(segmented)).toBe("Done");
     expect(finalText(assistantMessage("Only answer"))).toBe("Only answer");
     expect(finalText(assistantMessage([text("A", { phase: "commentary" })]))).toBe("");
+  });
+
+  it("restores phase boundaries without moving tools, losing metadata or replacing edited text", () => {
+    const call: ToolCallPart = { type: "tool-call", id: "read", name: "read", arguments: "{}", state: "complete" };
+    const message = assistantMessage([text("Working", { source: "verification" }), call, text("MoreDone")]);
+    const phased = [text("WorkingMore", { phase: "commentary" }), text("Done", { phase: "final_answer" })];
+    const restored = withTextPhases(message, phased);
+    expect(restored.parts).toEqual([
+      text("Working", { source: "verification", phase: "commentary" }),
+      call,
+      text("More", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
+    ]);
+    expect(restored.parts[1]).toBe(call);
+    expect(message.parts).toHaveLength(3);
+    expect(withTextPhases(restored, phased)).toBe(restored);
+    const edited = assistantMessage("Edited");
+    expect(withTextPhases(edited, phased)).toBe(edited);
   });
 
   it("describes media for the model and extracts text for display hooks", () => {
@@ -155,7 +164,7 @@ describe("media", () => {
     expect(part).toEqual({
       type: "image",
       source: { type: "data", value: "YWJj", mimeType: "image/jpeg" },
-      metadata: { filename: "photo.jpg", contentType: "image/jpeg" },
+      metadata: { filename: "photo.jpg" },
     });
     expect(mediaDataUrl(part)).toBe("data:image/jpeg;base64,YWJj");
     expect(mediaFromDataUrl("data:text/plain;base64,aGk=").type).toBe("document");
@@ -194,7 +203,7 @@ describe("transforms", () => {
     const before = JSON.stringify(parent);
     const sidecar = new RunSidecar();
     sidecar.result("outer", { meta: { file: "/a" } });
-    sidecar.result("inner", { result: [text("Evidence")] });
+    sidecar.result("inner", {}, [text("Evidence")]);
     sidecar.turn("parent", "run", { outputTokens: 1 });
     sidecar.turn("child", "run:child");
     const next = sidecar.apply([parent]);
@@ -203,9 +212,8 @@ describe("transforms", () => {
     expect(messageMetadata(next[0])).toEqual({ runId: "run", usage: { outputTokens: 1 } });
     const nested = next[0].parts[2];
     if (nested.type !== "subagent") throw new Error("Expected the subagent card");
-    expect(toolResultMetadata(toolResultFor(nested.subagent.messages[0], "inner")!)).toEqual({
-      result: [text("Evidence")],
-    });
+    expect(toolResultFor(nested.subagent.messages[0], "inner")!.content).toEqual([text("Evidence")]);
+    expect(toolResultMetadata(toolResultFor(nested.subagent.messages[0], "inner")!)).toEqual({});
     expect(messageMetadata(nested.subagent.messages[0])).toEqual({ runId: "run:child" });
     const untouched = [parent];
     expect(new RunSidecar().apply(untouched)).toBe(untouched);
@@ -214,13 +222,13 @@ describe("transforms", () => {
   it("replaces one tool's metadata and keeps the rest of the record", () => {
     const message = assistantMessage([
       call("a"),
-      { ...result("a"), metadata: { result: [text("x")], meta: { old: 1 } } },
+      { ...result("a"), content: [text("x")], metadata: { meta: { old: 1 } } },
     ]);
     const [updated] = updateToolResultMeta([message], "a", { progress: "done" });
     expect(toolResultMetadata(toolResultFor(updated, "a")!)).toEqual({
-      result: [text("x")],
       meta: { progress: "done" },
     });
+    expect(toolResultContent(toolResultFor(updated, "a")!)).toEqual([text("x")]);
     expect(updateToolResultMeta([message], "missing", {})[0].parts).toEqual(message.parts);
   });
 });

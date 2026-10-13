@@ -70,15 +70,50 @@ export type ElicitationSchema = {
   required?: string[];
 };
 
+/** The exact tool input a person approves before it is sent. */
+export type ToolApproval = {
+  /** Display name of the tool, e.g. "Web Fetch". */
+  tool: string;
+  /** Service that receives the input, when it isn't the tool itself. */
+  source?: string;
+  input: Record<string, unknown>;
+  /** Arguments that carry the request itself; the rest are folded away. */
+  primary?: string[];
+};
+
 export type FormElicitation = {
   mode?: "form";
   message: string;
+  /** App-owned display name of the service requesting input. */
+  source?: string;
   requestedSchema?: ElicitationSchema;
+  /** App-owned pre-call approval; never supplied by a remote MCP schema. */
+  approval?: ToolApproval;
+  /** Local presentation hints for ask_questions; never alter a remote MCP schema. */
+  presentation?: {
+    kind: "questions";
+    /** JSON object keys may be reordered while an interrupt is serialized. */
+    fieldOrder?: string[];
+    fields: Record<string, QuestionPresentation>;
+  };
+};
+
+export type QuestionChoice = {
+  value: string;
+  label: string;
+  description?: string;
+  recommended?: boolean;
+};
+
+export type QuestionPresentation = {
+  options?: QuestionChoice[];
+  allowOther?: boolean;
 };
 
 export type UrlElicitation = {
   mode: "url";
   message: string;
+  source?: string;
   url: string;
   elicitationId: string;
 };
@@ -95,6 +130,8 @@ export type PendingElicitation = {
   toolName: string;
   elicitation: Elicitation;
   resolve: (result: ElicitationResult) => void;
+  onCancel?: () => void;
+  cleanup?: () => void;
   /** True after a URL elicitation was accepted, waiting for notifications/elicitation/complete */
   waiting?: boolean;
   /** True briefly after notifications/elicitation/complete is received, before the UI is dismissed */

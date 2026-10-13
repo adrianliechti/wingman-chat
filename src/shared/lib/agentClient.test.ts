@@ -5,6 +5,7 @@ import { chatSession, boundInterrupt } from "./test-support/chatSession";
 import { ASK_QUESTIONS_TOOL } from "@/features/chat/lib/questionsTool";
 import type { Tool } from "../types/chat";
 import { migrateLegacyChat, type LegacyStoredChat } from "./chatMigration";
+import { mediaFromDataUrl, toolResultFor } from "./messages";
 
 const question = { questions: [{ id: "choice", label: "Which one?", type: "text", required: true }] };
 const response = { action: "accept", content: { choice: "A" } };
@@ -89,7 +90,8 @@ it("does not replay an abandoned tool on a new send or let its late result repla
 });
 
 it("persists paused questions and resumes without repeating completed sibling tools", async () => {
-  const write = vi.fn<Tool["execute"]>().mockResolvedValue(output("Written once"));
+  const richOutput = [...output("Written once"), mediaFromDataUrl("data:image/png;base64,AQ==", "report.png")];
+  const write = vi.fn<Tool["execute"]>().mockResolvedValue(richOutput);
   const tools = [
     ASK_QUESTIONS_TOOL,
     { name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute: write },
@@ -103,6 +105,9 @@ it("persists paused questions and resumes without repeating completed sibling to
   expect(original.finished.at(-1)?.status).toBe("interrupted");
   expect(original.ai.getInterruptState().interrupts).toHaveLength(1);
   await expect.poll(() => original.store.value?.resume?.pendingInterrupts?.length).toBe(1);
+  expect(original.store.value!.messages.flatMap((message) => message.parts)).toContainEqual(
+    expect.objectContaining({ type: "tool-result", toolCallId: "write-1", content: richOutput }),
+  );
   original.ai.dispose();
   const restored = session(complete, tools, original.store);
   await expect.poll(() => restored.ai.getInterruptState().interrupts.length).toBe(1);
@@ -111,6 +116,12 @@ it("persists paused questions and resumes without repeating completed sibling to
   expect(write).toHaveBeenCalledOnce();
   expect(complete).toHaveBeenCalledTimes(2);
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("Written once");
+  expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain("[Image: report.png - displayed to user]");
+  expect(JSON.stringify(complete.mock.calls[1][0].messages)).not.toContain("AQ==");
+  const result = restored.ai.getMessages().flatMap((message) => toolResultFor(message, "write-1") ?? []);
+  expect(result).toHaveLength(1);
+  expect(result[0].content).toEqual(richOutput);
+  expect(result[0].metadata).not.toHaveProperty("result");
   expect(JSON.stringify(complete.mock.calls[1][0].messages)).toContain('\\"choice\\":\\"A\\"');
   expect(restored.ai.getInterruptState().interrupts).toHaveLength(0);
   restored.ai.dispose();
@@ -158,10 +169,11 @@ it.each([true, false])("restores native tool approval and executes only when app
 });
 
 it.each([true, false])("resumes a child with its completed work intact (inheritHistory=%s)", async (inheritHistory) => {
+  const richOutput = [...output("Child wrote once"), mediaFromDataUrl("data:image/png;base64,AQ==", "child.png")];
   const write = vi.fn<Tool["execute"]>().mockImplementation(async (_args, execution) => {
     const ctx = execution?.context;
     ctx?.setMeta?.({ artifactDelta: { mutations: [{ operation: "create", path: "/child.txt" }] } });
-    return output("Child wrote once");
+    return richOutput;
   });
   const childTools = [
     ASK_QUESTIONS_TOOL,
@@ -205,6 +217,8 @@ it.each([true, false])("resumes a child with its completed work intact (inheritH
   expect(JSON.stringify(complete.mock.calls[2][0].messages).includes("Please delegate this task")).toBe(inheritHistory);
   expect(complete).toHaveBeenCalledTimes(4);
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Child wrote once");
+  expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("[Image: child.png - displayed to user]");
+  expect(JSON.stringify(complete.mock.calls[2][0].messages)).not.toContain("AQ==");
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Build a report");
   const children = restored.ai
     .getMessages()
@@ -213,6 +227,10 @@ it.each([true, false])("resumes a child with its completed work intact (inheritH
   expect(children).toHaveLength(1);
   expect(children[0].subagent.status).toBe("finished");
   expect(JSON.stringify(children[0].subagent.messages)).toContain("Child finished");
+  const result = children[0].subagent.messages.flatMap((message) => toolResultFor(message, "child-write") ?? []);
+  expect(result).toHaveLength(1);
+  expect(result[0].content).toEqual(richOutput);
+  expect(result[0].metadata).not.toHaveProperty("result");
   expect(restored.sidecar.toolMeta("delegate")).toMatchObject({
     artifactDelta: { mutations: [{ operation: "create", path: "/child.txt" }] },
   });

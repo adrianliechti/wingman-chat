@@ -39,7 +39,7 @@ const saved = (id: string, ...mutations: ArtifactMutation[]): UIMessage => ({
       toolCallId: id,
       content: "Saved",
       state: "complete",
-      metadata: { result: [{ type: "text", content: "Saved" }], meta: { artifactDelta: { mutations } } },
+      metadata: { meta: { artifactDelta: { mutations } } },
     },
   ],
 });

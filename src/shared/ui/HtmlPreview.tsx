@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { type CSSProperties, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createPreviewSession, type PreviewSdkOptions, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 import type { File, FileSystem } from "@/shared/types/file";
@@ -102,7 +103,6 @@ export function HtmlPreview({
     [onIframe],
   );
   const sessionRef = useRef<PreviewSession | null>(null);
-  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tracks the last (path, content) actually pushed to the session, so we
   // can skip redundant updateFile + reload cycles that cause iframe flicker.
   const lastPushedRef = useRef<{ path: string; content: string } | null>(null);
@@ -133,18 +133,14 @@ export function HtmlPreview({
   );
   const shouldReloadFile = useEffectEvent((changedPath: string) => shouldReload?.(changedPath) !== false);
   const reloadPage = useEffectEvent(() => {
-    reloadTimerRef.current = null;
     const iframe = iframeRef.current;
     const currentSession = sessionRef.current;
     if (iframe && currentSession) iframe.src = currentSession.previewUrl(path);
   });
 
-  const scheduleReload = useEffectEvent(() => {
-    if (reloadTimerRef.current) {
-      clearTimeout(reloadTimerRef.current);
-    }
-    reloadTimerRef.current = setTimeout(reloadPage, reloadDebounceMs);
-  });
+  // Content streams in bursts; one reload per pause keeps the iframe from flickering.
+  const reloadDebouncer = useDebouncer(reloadPage, { wait: reloadDebounceMs });
+  const scheduleReload = useEffectEvent(() => reloadDebouncer.maybeExecute());
 
   // Create session on mount; tear down on unmount.
   // The session is re-created if `fs` identity changes so subscriptions attach
@@ -200,10 +196,7 @@ export function HtmlPreview({
       controller.abort();
       if (sessionRef.current) notifySession(null);
       sessionRef.current = null;
-      if (reloadTimerRef.current) {
-        clearTimeout(reloadTimerRef.current);
-        reloadTimerRef.current = null;
-      }
+      reloadDebouncer.cancel();
       localSession?.destroy().catch(() => undefined);
       setSession(null);
     };
