@@ -18,6 +18,10 @@ describe("native provider error presentation", () => {
     [new TypeError("Failed to fetch"), "NETWORK_ERROR"],
     [new DOMException("The operation was aborted due to timeout", "TimeoutError"), "TIMEOUT"],
     [Object.assign(new Error("Request timed out"), { name: "APIConnectionTimeoutError" }), "TIMEOUT"],
+    // TanStack's RUN_ERROR serialization drops the SDK exception's name.
+    [{ message: "Request timed out.", code: undefined }, "TIMEOUT"],
+    [{ message: "MCP error -32001: Request timed out", code: "-32001" }, "TIMEOUT"],
+    [{ message: "Maximum total timeout exceeded", code: "REQUEST_TIMEOUT" }, "TIMEOUT"],
     [new DOMException("Stopped", "AbortError"), "CANCELLED"],
   ])("presents %s as %s", (error, code) => expect(getErrorInfo(error).code).toBe(code));
   it("distinguishes input overflow from output truncation and preserves typed domain errors", () => {
@@ -37,6 +41,13 @@ describe("native provider error presentation", () => {
       code: "TIMEOUT",
       message: "Web search timed out after 90s",
     });
+  });
+
+  it.each([
+    { status: 400, message: "Invalid timeout parameter" },
+    { status: 400, message: "timeout must be a positive integer" },
+  ])("does not classify a rejected timeout setting as an expired request: %s", (error) => {
+    expect(getErrorInfo(error).code).toBe("CLIENT_ERROR");
   });
 
   it.each([

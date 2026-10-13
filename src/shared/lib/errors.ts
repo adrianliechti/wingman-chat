@@ -97,12 +97,18 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     return { code: "AUTH_ERROR", message: "Access denied. You may not have permission to use this model." };
   if (value.status === 404 || value.code === "model_not_found")
     return { code: "NOT_FOUND_ERROR", message: "The requested model or resource was not found." };
-  if (value.code === "TIMEOUT" || value.name === "TimeoutError" || value.name === "APIConnectionTimeoutError")
+  if (
+    value.code === "TIMEOUT" ||
+    value.code === "REQUEST_TIMEOUT" ||
+    value.name === "TimeoutError" ||
+    value.name === "APIConnectionTimeoutError" ||
+    /\btimed out\b/i.test(message)
+  )
     return {
       code: "TIMEOUT",
       message: /timed out/i.test(message) ? message : "Request timed out. Please try again.",
     };
-  if (/network|connection|failed to fetch|fetch failed|load failed|timeout|timed out/i.test(message))
+  if (/network|connection|failed to fetch|fetch failed|load failed/i.test(message))
     return { code: "NETWORK_ERROR", message: "Network connection failed. Please check your connection and try again." };
   if (value.code && /^[A-Z_]+$/.test(value.code)) return { code: value.code, message };
   if (value.status || value.code)

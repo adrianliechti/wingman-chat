@@ -91,6 +91,7 @@ const MODEL_PROFILES: ModelProfile[] = [
   [/\b(?:sonnet-4(?:\.[05])?|haiku-4\.5)(?=$|[-/:])/, undefined, undefined, 64_000],
   [/\bopus-4\.1(?=$|[-/:])/, undefined, undefined, 32_000],
 
+  [/\bgemini-?4-argon\b/, ["low", "medium", "high"], "medium", 65_536],
   [/\bgemini-?3\.[78]-flash\b/, ["low", "medium", "high"], "medium", 65_536],
   [/\bgemini-?3\.1-pro\b/, ["low", "medium", "high"], "high", 65_536],
   [/\bgemini-?3-pro\b/, ["low", "high"], "high", 65_536],

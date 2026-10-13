@@ -125,6 +125,11 @@ own supported efforts instead of inheriting a vendor profile.
 - [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking): Gemini
   3.7/3.8 Flash have low/medium/high, while 3.6 also has minimal. Gemini 3 Pro has
   low/high; 3.1 Pro also has medium. Image and live models are not chat profiles.
+- [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
+  (reviewed October 13, 2026): low, medium (default), high. Input, thinking, and
+  output share a 1,048,576-token window; synchronous output stops at 65,536
+  tokens, and longer output needs background execution, which the gateway does
+  not use. Sampling parameters are ignored and only implicit caching applies.
 - [Qwen Responses API](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-responses):
   Qwen 3.8 has none/low/medium/xhigh; high and max alias xhigh. Other Qwen versions
   do not inherit these choices.
@@ -210,6 +215,7 @@ October 8, 2026):
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5)                                                                     | 128,000  | 64,000              |
 | [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)                                                | 128,000  | 64,000              |
 | [Claude Sonnet 4.6 on Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html) | 64,000   | 64,000              |
+| [Gemini 4 Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)                                                    | 65,536   | 64,000              |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)                                                | 65,536   | 64,000              |
 | [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1)                                                                 | 32,768   | 32,768              |
 | [GPT-4o](https://developers.openai.com/api/docs/models/gpt-4o)                                                                   | 16,384   | 16,384              |

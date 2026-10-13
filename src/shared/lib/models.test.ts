@@ -152,6 +152,7 @@ describe("model output budgets", () => {
     ["claude-haiku-5-5", 64_000],
     ["eu.anthropic.claude-haiku-5-5", 64_000],
     ["google/gemini-3.1-pro-preview", 64_000],
+    ["gemini-4-argon", 64_000],
     ["gemini-3.8-flash", 64_000],
     ["gemini-2.5-flash-lite", 64_000],
     ["gpt-4.1-mini", 32_768],
@@ -252,6 +253,8 @@ describe("reasoning effort levels", () => {
   );
 
   it("distinguishes Gemini revisions and never invents effort settings for non-chat or future models", () => {
+    expect(supportedEfforts("gemini-4-argon")).toEqual(["low", "medium", "high"]);
+    expect(defaultEffort("gemini-4-argon")).toBe("medium");
     expect(supportedEfforts("gemini-3.8-flash")).toEqual(["low", "medium", "high"]);
     expect(supportedEfforts("gemini-3.7-flash")).toEqual(["low", "medium", "high"]);
     expect(supportedEfforts("gemini-3.6-flash")).toEqual(["minimal", "low", "medium", "high"]);

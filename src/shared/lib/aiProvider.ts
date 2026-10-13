@@ -17,7 +17,9 @@ function createGatewayChat<TModel extends OpenAIChatModel>(
   // The gateway deliberately preserves tool schemas with strict: false across
   // providers, so OpenAI's strict-mode fallback diagnostic is expected here.
   // The SDK timeout ends at response headers; streaming has no time limit.
-  return new GatewayTextAdapter({ apiKey, timeout: 60_000, strictFallbackWarning: false, ...config }, model);
+  // Headers arrive with the first output. Allow slow reasoning and gateway
+  // router failover, which defaults to two minutes per provider attempt.
+  return new GatewayTextAdapter({ apiKey, timeout: 5 * 60_000, strictFallbackWarning: false, ...config }, model);
 }
 
 // Model ids are discovered from the Wingman gateway, including deployment aliases.

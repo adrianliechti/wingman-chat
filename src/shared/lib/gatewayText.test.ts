@@ -30,6 +30,7 @@ import {
 import { chatSession } from "@/shared/lib/test-support/chatSession";
 import type { Tool } from "@/shared/types/chat";
 import { retryHistory } from "@/features/chat/lib/chatRuntime";
+import { chatCompaction } from "@/features/chat/lib/chatCompaction";
 
 const prompt: UIMessage[] = [user("Go")];
 const thinking = (state: GatewayReasoning): ThinkingPart => ({
@@ -366,6 +367,26 @@ function mockOpenStream() {
   return { emit, close: () => body.close() };
 }
 
+function mockPendingResponse() {
+  let respond!: (response: Response) => void;
+  let signal: AbortSignal | undefined;
+  fetchMock.mockImplementation(
+    (_url, init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        respond = resolve;
+        const requestSignal = init.signal;
+        signal = requestSignal ?? undefined;
+        requestSignal?.addEventListener("abort", () => reject(requestSignal.reason), { once: true });
+      }),
+  );
+  return {
+    respond: (response: Response) => respond(response),
+    get signal() {
+      return signal;
+    },
+  };
+}
+
 it.each(["response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.output_text.delta"])(
   "streams %s past an hour with gaps longer than ten minutes",
   async (type) => {
@@ -423,19 +444,147 @@ it.each(["complete", "stop"])("allows a silent response to %s after an hour", as
 
 it("keeps the native timeout and retries while waiting for response headers", async () => {
   vi.useFakeTimers();
-  fetchMock.mockImplementation(
-    (_url, init: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
-      }),
-  );
+  mockPendingResponse();
   const request = run(new Client(), "model", "", prompt, []);
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-  await vi.advanceTimersByTimeAsync(3 * 60 * 1000 + 5_000);
-  expect((await request).status).toBe("failed");
+  await vi.advanceTimersByTimeAsync(3 * 5 * 60 * 1000 + 5_000);
+  expect(await request).toMatchObject({ status: "failed", error: { code: "TIMEOUT" } });
   expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it.each(["headers", "retry"])("stops while waiting for %s without issuing another request", async (phase) => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  const pending = mockPendingResponse();
+  const request = run(new Client(), "model", "", prompt, [], { options: { signal: controller.signal } });
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(phase === "headers" ? 4 * 60_000 : 5 * 60_000);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(await request).toMatchObject({ status: "aborted", error: { code: "CANCELLED" } });
+  expect(pending.signal?.aborted).toBe(true);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["complete", "stop"])(
+  "lets a tool %s after an hour without a response timer cancelling the run",
+  async (end) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    fetchMock.mockResolvedValueOnce(finished(response([callItem()])));
+    // Each model iteration gets a fresh header deadline, even after a long tool.
+    const pending = mockPendingResponse();
+    let toolSignal: AbortSignal | undefined;
+    let finishTool!: () => void;
+    const execute = vi.fn<Tool["execute"]>(async (_input, execution) => {
+      toolSignal = execution?.abortSignal;
+      await new Promise<void>((resolve, reject) => {
+        finishTool = resolve;
+        toolSignal?.addEventListener("abort", () => reject(toolSignal?.reason), { once: true });
+      });
+      return output("Written");
+    });
+    let settled = false;
+    const request = run(
+      new Client(),
+      "model",
+      "",
+      prompt,
+      [{ name: "write", description: "Test tool", inputSchema: z.looseObject({}), execute }],
+      { options: { signal: controller.signal } },
+    ).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    // Advance deadlines without running an hour of TanStack's 10 ms event polling.
+    vi.advanceTimersByTime(60 * 60_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(toolSignal?.aborted).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    if (end === "complete") {
+      finishTool();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await vi.advanceTimersByTimeAsync(4 * 60_000);
+      expect(settled).toBe(false);
+      pending.respond(finished(response([textItem("Done")])));
+    } else controller.abort();
+    const result = await request;
+    expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+    const results = result.messages.flatMap(toolResults);
+    if (end === "complete") {
+      expect(results).toHaveLength(1);
+      expect(result.messages.at(-1)?.parts).toEqual([text("Done")]);
+      expect(controller.signal.aborted).toBe(false);
+    } else {
+      expect(toolSignal?.aborted).toBe(true);
+      expect(results).toHaveLength(0);
+      expect(result.error).toMatchObject({ code: "CANCELLED" });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(end === "complete" ? 2 : 1);
+    expect(execute).toHaveBeenCalledOnce();
+    // Let the last native tool-event polling tick settle after cancellation.
+    await vi.advanceTimersByTimeAsync(10);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it("waits past the gateway's first-token window for response headers", async () => {
+  vi.useFakeTimers();
+  const pending = mockPendingResponse();
+  const request = run(new Client(), "model", "", prompt, []);
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+  expect(pending.signal?.aborted).toBe(false);
+  pending.respond(finished(response([textItem("Done")])));
+  expect((await request).status).toBe("completed");
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it.each(["complete", "stop"])(
+  "lets a compaction summary %s after an hour without cancelling its parent",
+  async (end) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const stream = mockOpenStream();
+    const client = new Client();
+    let settled = false;
+    const request = run(
+      client,
+      "model",
+      "",
+      [user("Previous request"), assistantMessage([text("Large evidence ".repeat(1000))]), user("Current request")],
+      [],
+      {
+        options: { signal: controller.signal },
+        sharedMiddleware: (signal) => [chatCompaction(client, 1000, "model", signal)],
+      },
+    ).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(settled).toBe(false);
+    expect(controller.signal.aborted).toBe(false);
+    if (end === "complete") {
+      fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
+      stream.emit({ type: "response.completed", response: response([textItem("Earlier evidence was verified.")]) });
+      stream.close();
+    } else controller.abort();
+    const result = await request;
+    expect(result.status).toBe(end === "complete" ? "completed" : "aborted");
+    expect(fetchMock).toHaveBeenCalledTimes(end === "complete" ? 2 : 1);
+    if (end === "complete") {
+      expect(result.messages.at(-1)?.parts).toEqual([text("Done")]);
+      expect(controller.signal.aborted).toBe(false);
+    } else expect(result.error).toMatchObject({ code: "CANCELLED" });
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
 it("retains selected artifact line locations in the model request", async () => {
   fetchMock.mockResolvedValueOnce(finished(response([textItem("Done")])));
