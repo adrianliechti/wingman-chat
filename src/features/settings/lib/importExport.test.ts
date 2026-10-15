@@ -74,13 +74,15 @@ describe("agent restore", () => {
         "agents/one/servers.json": "{obsolete and invalid",
       }),
     );
-    expect(await opfs.readJson("agents/one/agent.json")).toEqual({
+    expect(await opfs.readBlob("agents/one/agent.json")).toBeUndefined();
+    expect(await opfs.readBlob("agents/one/servers.json")).toBeUndefined();
+    expect(await loadAgent("one")).toEqual({
+      id: "one",
       name: "Imported",
+      skills: [],
       tools: ["managed"],
       plugins: ["catalog-plugin"],
     });
-    expect(await opfs.readBlob("agents/one/servers.json")).toBeUndefined();
-    expect(await loadAgent("one")).not.toHaveProperty("servers");
   });
 
   it("reports an agent folder that carries no definition instead of dropping it", async () => {
