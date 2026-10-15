@@ -4,6 +4,7 @@ import { getErrorInfo, isAbortError, isContextOverflowError } from "./errors";
 describe("native provider error presentation", () => {
   it.each([
     [Object.assign(new Error("Too much context"), { code: "context_length_exceeded" }), "CONTEXT_EXHAUSTED"],
+    [{ message: "Request rejected", code: "context_overflow" }, "CONTEXT_EXHAUSTED"],
     [
       Object.assign(new Error("Bad request"), {
         rawEvent: { code: "context_length_exceeded", message: "Input too long" },

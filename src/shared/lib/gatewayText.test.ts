@@ -29,10 +29,15 @@ import {
 } from "@/shared/lib/test-support/ai";
 import { chatSession } from "@/shared/lib/test-support/chatSession";
 import type { Tool } from "@/shared/types/chat";
-import { retryHistory } from "@/features/chat/lib/chatRuntime";
+import { retryHistory, withRunError } from "@/features/chat/lib/chatRuntime";
 import { chatCompaction } from "@/features/chat/lib/chatCompaction";
+import { streamChatWithUiRepair } from "@/features/chat/lib/inlineUiRepair";
 
 const prompt: UIMessage[] = [user("Go")];
+const chatStreams = [
+  { name: "native run", stream: streamRun },
+  { name: "UI repair", stream: streamChatWithUiRepair },
+];
 const thinking = (state: GatewayReasoning): ThinkingPart => ({
   type: "thinking",
   content: state.summary ?? state.text ?? "",
@@ -183,6 +188,24 @@ it("replays Haiku 5.5 signature-only reasoning through a tool round trip", async
   );
 });
 
+it("fails a response the output limit cut mid tool call without running the tool", async () => {
+  const cut = response([callItem('{"content":"Long', "write")], {
+    status: "incomplete",
+    incomplete_details: { reason: "max_output_tokens" },
+  });
+  fetchMock.mockImplementation(async () => finished(cut));
+  const tool: Tool = {
+    name: "write",
+    description: "Write a file",
+    inputSchema: z.looseObject({ content: z.string() }),
+    execute: vi.fn(async () => output("Written")),
+  };
+  const result = await run(new Client(), "model", "", prompt, [tool]);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(tool.execute).not.toHaveBeenCalled();
+  expect(result.error?.code).toBe("OUTPUT_TRUNCATED");
+});
+
 it("extracts Haiku 5.5 structured output after a signature-only reasoning block", async () => {
   fetchMock.mockResolvedValueOnce(
     finished(
@@ -279,6 +302,116 @@ it.each([false, true])("excludes unfinished reasoning on retry with pending tool
   // The unfinished attempt is regenerated rather than continued, so its reasoning leaves the transcript.
   expect(JSON.stringify(result.messages)).not.toContain("Preparing the artifact");
 });
+
+it.each(chatStreams)(
+  "retries every committed tool round after a later model call fails ($name)",
+  async ({ stream }) => {
+    fetchMock
+      .mockResolvedValueOnce(finished(response([callItem("{}", "lookup", "first")], { id: "resp_first" })))
+      .mockResolvedValueOnce(finished(response([callItem("{}", "lookup", "second")], { id: "resp_second" })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "Bad request", code: "bad_request" } }), { status: 400 }),
+      )
+      .mockResolvedValueOnce(finished(response([textItem("Recovered")])));
+    const execute = vi
+      .fn<Tool["execute"]>()
+      .mockResolvedValueOnce(output("First committed result"))
+      .mockResolvedValueOnce(output("Second committed result"));
+    const session = chatSession(
+      new Client(),
+      [{ name: "lookup", description: "Look up a value", inputSchema: z.object({}), execute }],
+      {},
+      {},
+      stream,
+    );
+    try {
+      await session.ai.sendMessage("Look up two values");
+      expect(session.finished.at(-1)?.status).toBe("failed");
+      const messages = withRunError(session.ai.getMessages(), { code: "API_ERROR", message: "Bad request" });
+      const retry = retryHistory(messages)!;
+      session.ai.setMessagesManually(retry.history);
+      await session.ai.append(retry.resend);
+      expect(session.finished.at(-1)?.status).toBe("completed");
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const input = JSON.parse(fetchMock.mock.calls[3][1].body).input;
+      expect(input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "function_call", call_id: "first" }),
+          { type: "function_call_output", call_id: "first", output: "First committed result" },
+          expect.objectContaining({ type: "function_call", call_id: "second" }),
+          { type: "function_call_output", call_id: "second", output: "Second committed result" },
+        ]),
+      );
+    } finally {
+      session.ai.dispose();
+    }
+  },
+);
+
+it.each(chatStreams)(
+  "keeps each model call's response items on live and hydrated replay ($name)",
+  async ({ stream }) => {
+    fetchMock
+      .mockResolvedValueOnce(
+        finished(
+          response(
+            [
+              { ...textItem("Checking"), id: "msg_commentary", phase: "commentary" },
+              callItem("{}", "lookup", "lookup_1"),
+            ],
+            { id: "resp_lookup" },
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finished(response([{ ...textItem("Answer"), id: "msg_final", phase: "final_answer" }], { id: "resp_final" })),
+      )
+      .mockResolvedValueOnce(finished(response([{ ...textItem("Continued"), id: "msg_next" }])))
+      .mockResolvedValueOnce(finished(response([{ ...textItem("Reopened"), id: "msg_reopened" }])));
+    const execute = vi.fn<Tool["execute"]>(async () => output("Evidence"));
+    const tools = [{ name: "lookup", description: "Look up a value", inputSchema: z.object({}), execute }];
+    const original = chatSession(new Client(), tools, {}, {}, stream);
+    try {
+      await original.ai.sendMessage("Look up a value");
+      const assistants = original.store.value!.messages.filter((message) => message.role === "assistant");
+      expect(assistants.map((message) => message.metadata?.tanstack)).toMatchObject([
+        { responseId: "resp_lookup", responseItems: [{ id: "msg_commentary", phase: "commentary" }] },
+        { responseId: "resp_final", responseItems: [{ id: "msg_final", phase: "final_answer" }] },
+      ]);
+      await original.ai.sendMessage("Continue");
+    } finally {
+      original.ai.dispose();
+    }
+    const restored = chatSession(new Client(), tools, original.store, {}, stream);
+    try {
+      await restored.ai.sendMessage("Continue after reopening");
+      expect(execute).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      for (const index of [2, 3]) {
+        const input = JSON.parse(fetchMock.mock.calls[index][1].body).input;
+        const ids = input.flatMap((item: { id?: string }) => (item.id ? [item.id] : []));
+        expect(ids).toEqual([...new Set(ids)]);
+        expect(input).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: "msg_commentary",
+              phase: "commentary",
+              content: [expect.objectContaining({ type: "output_text", text: "Checking" })],
+            }),
+            expect.objectContaining({
+              id: "msg_final",
+              phase: "final_answer",
+              content: [expect.objectContaining({ type: "output_text", text: "Answer" })],
+            }),
+          ]),
+        );
+      }
+    } finally {
+      restored.ai.dispose();
+    }
+  },
+);
 
 it("retains reasoning model identity at the live chat persistence boundary", async () => {
   fetchMock.mockResolvedValueOnce(
@@ -719,7 +852,14 @@ it("replaces earlier text in the live native client and its persisted history", 
     fetchMock.mockResolvedValueOnce(finished(response([textItem("Next")])));
     await session.ai.sendMessage("Continue");
     const input = JSON.parse(fetchMock.mock.calls[1][1].body).input;
-    expect(input).toContainEqual(expect.objectContaining({ content: "Final answer", phase: "final_answer" }));
+    // A same-model replay keeps the Responses item, including its id and phase.
+    expect(input).toContainEqual(
+      expect.objectContaining({
+        role: "assistant",
+        phase: "final_answer",
+        content: [expect.objectContaining({ type: "output_text", text: "Final answer" })],
+      }),
+    );
     expect(JSON.stringify(input)).not.toContain("Draft");
   } finally {
     session.ai.dispose();

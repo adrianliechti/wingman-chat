@@ -226,7 +226,6 @@ interface ConfigSchema {
 
   text?: TextConfig;
 
-
   renderer?: RendererConfig;
   extractor?: ExtractorConfig;
 
@@ -276,7 +275,6 @@ interface Config {
 
   text: TextConfig | null;
   extractor: ExtractorConfig | null;
-
 
   renderer: RendererConfig | null;
 

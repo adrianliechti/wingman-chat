@@ -63,5 +63,15 @@ export function retryHistory(messages: UIMessage[]): { history: UIMessage[]; res
     history.pop();
   }
   if (!history.some((message) => message.role === "user")) return undefined;
+  // Older saved runs may mark every model call failed, including completed
+  // tool rounds. Restore the entire retained assistant prefix of this turn
+  // so TanStack's replay filtering cannot drop committed work on retry.
+  for (let index = history.length - 1; index >= 0 && history[index].role === "assistant"; index--) {
+    const message = history[index];
+    const tanstack = message.metadata?.tanstack as Record<string, unknown> | undefined;
+    if (tanstack?.stopReason === undefined) continue;
+    const { stopReason: _stopReason, ...retained } = tanstack;
+    history[index] = { ...message, metadata: { ...message.metadata, tanstack: retained } };
+  }
   return { history: history.slice(0, -1), resend: history[history.length - 1] };
 }

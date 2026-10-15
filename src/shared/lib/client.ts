@@ -198,8 +198,9 @@ export class Client {
       ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
       ...(options?.verbosity ? { text: { verbosity: options.verbosity } } : {}),
     };
-    // Published TanStack still expects reasoning inside modelOptions. The next
-    // release moves it to chat({ reasoning }); gateway aliases need mapping too.
+    // chat({ reasoning }) is dropped for gateway aliases, which have no OpenAI
+    // reasoning metadata, and it only sends summary "auto". modelOptions is
+    // still spread into the request, so the gateway's own clamping applies.
     return {
       modelOptions: {
         ...modelOptions,

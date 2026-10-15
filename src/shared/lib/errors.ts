@@ -1,3 +1,5 @@
+import { CONTEXT_OVERFLOW_CODE } from "@tanstack/ai";
+
 /** Presentation of native TanStack/provider errors; retry policy belongs to the adapter. */
 export interface ErrorInfo {
   code: string;
@@ -29,7 +31,11 @@ export function isAbortError(error: unknown): boolean {
 }
 export function isContextOverflowError(error: unknown): boolean {
   const value = detail(error);
-  if (["context_length_exceeded", "string_above_max_length", "CONTEXT_EXHAUSTED"].includes(value.code ?? ""))
+  if (
+    [CONTEXT_OVERFLOW_CODE, "context_length_exceeded", "string_above_max_length", "CONTEXT_EXHAUSTED"].includes(
+      value.code ?? "",
+    )
+  )
     return true;
   if (value.status && ![400, 413].includes(value.status)) return false;
   return /context (length|window)|maximum context|too many tokens|(?:prompt|input|request) (?:is )?too long/i.test(

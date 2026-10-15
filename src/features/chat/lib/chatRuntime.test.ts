@@ -87,4 +87,30 @@ describe("retryHistory", () => {
   it("needs a user turn to resend", () => {
     expect(retryHistory([assistant("partial", [text("Half")]), assistant("failed", [], { error })])).toBe(undefined);
   });
+
+  it.each(["error", "aborted"])(
+    "restores every committed batch in a saved %s turn without changing earlier turns",
+    (stopReason) => {
+      const earlier = assistant("earlier", [call("old"), result("old")], { tanstack: { stopReason } });
+      const metadata = { runId: "run", tanstack: { stopReason, responseId: "resp_work" } };
+      const messages = [
+        user("old-user"),
+        earlier,
+        user("u"),
+        assistant("first", [call("one"), result("one")], metadata),
+        assistant("second", [call("two"), result("two"), thinking, text("Half")], metadata),
+        assistant("failed", [], { error }),
+      ];
+      const before = structuredClone(messages);
+      const retry = retryHistory(messages)!;
+      const retained = [...retry.history, retry.resend];
+      expect(retained.slice(3).map((message) => message.metadata)).toEqual([
+        { runId: "run", tanstack: { responseId: "resp_work" } },
+        { runId: "run", tanstack: { responseId: "resp_work" } },
+      ]);
+      expect(retained.at(-1)?.parts).toEqual([call("two"), result("two")]);
+      expect(retained[1]).toBe(earlier);
+      expect(messages).toEqual(before);
+    },
+  );
 });

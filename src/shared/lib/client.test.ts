@@ -377,9 +377,9 @@ describe("raw request lifetime", () => {
   it("does not fetch an already cancelled raw request", async () => {
     const controller = new AbortController();
     controller.abort();
-    await expect(
-      new Client().extractText(new Blob(["Document"]), { signal: controller.signal }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    await expect(new Client().extractText(new Blob(["Document"]), { signal: controller.signal })).rejects.toMatchObject(
+      { name: "AbortError" },
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

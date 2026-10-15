@@ -2,6 +2,7 @@ import { EventType, type AGUIEvent, type RunFinishedEvent } from "@ag-ui/core";
 import { EventSchema } from "@ag-ui/core/schemas";
 import {
   chat,
+  combineStrategies,
   defineAgent,
   normalizeToUIMessage,
   normalizeStreamChunk,
@@ -10,6 +11,7 @@ import {
   maxIterations,
   StreamProcessor,
   toolDefinition,
+  untilFinishReason,
   type AgentLoopStrategy,
   type ChatMiddleware,
   type ContentPart,
@@ -36,7 +38,7 @@ import {
 } from "./messages";
 import { artifactDelta, artifactDeltaFromMeta, type ArtifactMutation } from "../types/artifact";
 import { captureRequestContext, injectRequestContext } from "./requestContext";
-import { aiDebug } from "./aiStream";
+import { aiDebug, isIntermediateToolTurn } from "./aiStream";
 import { getErrorInfo, isAbortError } from "./errors";
 import { aiTelemetry } from "./otel";
 import { packGatewayReasoning, readGatewayReasoning } from "./reasoning";
@@ -499,7 +501,14 @@ export async function* streamRun(
       subagentRunId: hooks.subagentRunId,
       debug: aiDebug,
       ...client.chatOptions(model, { ...hooks.options, summary: hooks.options?.summary ?? "auto" }),
-      agentLoopStrategy: hooks.agentLoopStrategy ?? maxIterations(100),
+      // A cut answer ends the run. Otherwise TanStack asks again after a
+      // truncated tool call until the iteration budget runs out. The gateway's
+      // Responses adapter reports truncation as RUN_ERROR, so this guards
+      // adapters that finish with "length".
+      agentLoopStrategy: combineStrategies([
+        hooks.agentLoopStrategy ?? maxIterations(100),
+        untilFinishReason(["length"]),
+      ]),
       middleware: [
         telemetry,
         // Checkpoints must see the canonical transcript. Request-only context
@@ -527,7 +536,8 @@ export async function* streamRun(
           childCalls.set(chunk.subagentRunId, chunk.parentToolCallId);
         if (
           chunk.type === EventType.RUN_FINISHED &&
-          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId)
+          (!("subagentRunId" in chunk) || chunk.subagentRunId === hooks.subagentRunId) &&
+          !isIntermediateToolTurn(chunk)
         ) {
           terminal = chunk;
           continue;

@@ -126,6 +126,7 @@ if (parameters.has("panels")) {
     };
   }
   config.client.listModels = async () => [model];
+  config.client.generateTitle = async () => "Fixture";
   config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
   const provider = testClient(
     async (options, handler, onThinking) =>

@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings":{"enableIframePageLoading":true}}
+// The Html fixture mounts an about:blank iframe; Happy DOM 21 requires this opt-in.
 import { act } from "react";
 import { readFileSync } from "node:fs";
 import { createRoot, type Root } from "react-dom/client";

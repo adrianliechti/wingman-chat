@@ -2,6 +2,7 @@ import { EventType, type AGUIEvent } from "@ag-ui/core";
 import { uiMessagesToWire, type UIMessage } from "@tanstack/ai";
 import { streamRun, type AgentRunResult, type StreamRunHooks } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
+import { isIntermediateToolTurn } from "@/shared/lib/aiStream";
 import { textParts } from "@/shared/lib/messages";
 import { injectRequestContext } from "@/shared/lib/requestContext";
 import { extractUiFences, parseMessages, type UiBlock } from "@/shared/lib/inlineUi/protocol";
@@ -84,7 +85,7 @@ export async function* streamChatWithUiRepair(
       },
     })) {
       const root = !("subagentRunId" in chunk) || !chunk.subagentRunId;
-      if (chunk.type === EventType.RUN_FINISHED && root) terminal = chunk;
+      if (chunk.type === EventType.RUN_FINISHED && root && !isIntermediateToolTurn(chunk)) terminal = chunk;
       else if (!(attempt && chunk.type === EventType.RUN_STARTED && root)) yield chunk;
     }
     if (!result) throw new Error("Chat run did not finish");

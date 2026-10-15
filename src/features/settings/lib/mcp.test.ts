@@ -150,7 +150,10 @@ it("flattens top-level schema alternatives that model providers reject", () => {
   expect(flattenToolSchema(search)).toEqual({ type: "object", properties: search.properties });
   expect(
     flattenToolSchema({
-      allOf: [{ properties: { url: { type: "string" } }, required: ["url"] }, { properties: { depth: { type: "number" } } }],
+      allOf: [
+        { properties: { url: { type: "string" } }, required: ["url"] },
+        { properties: { depth: { type: "number" } } },
+      ],
     }),
   ).toEqual({ type: "object", properties: { url: { type: "string" }, depth: { type: "number" } }, required: ["url"] });
   const boundary = new MCPClient("web", "https://mcp.example.test", "Web", "Search") as unknown as {

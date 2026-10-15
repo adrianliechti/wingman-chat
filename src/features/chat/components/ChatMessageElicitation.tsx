@@ -68,11 +68,7 @@ export function ChatMessageElicitation({
           <button type="button" onClick={() => onResolve({ action: "decline" })} className={requestButtonClass}>
             Decline
           </button>
-          <button
-            type="button"
-            onClick={() => onResolve({ action: "cancel" })}
-            className={quietRequestButtonClass}
-          >
+          <button type="button" onClick={() => onResolve({ action: "cancel" })} className={quietRequestButtonClass}>
             Cancel
           </button>
         </>
@@ -129,11 +125,7 @@ function UrlElicitationView({
                 Decline
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => onResolve({ action: "cancel" })}
-              className={quietRequestButtonClass}
-            >
+            <button type="button" onClick={() => onResolve({ action: "cancel" })} className={quietRequestButtonClass}>
               Cancel
             </button>
           </>

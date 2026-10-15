@@ -471,12 +471,15 @@ for (const feature of [
     await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
     for (const name of ["Allow", "Decline", "Cancel"]) {
       const button = requests.getByRole("button", { name, exact: true });
-      expect(
-        await button.evaluate((element) => {
-          const rect = element.getBoundingClientRect();
-          return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
-        }),
-      ).toBe(true);
+      // Resizing animates the sidebar and chat layout; wait for the button to be unobstructed.
+      await expect
+        .poll(() =>
+          button.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+          }),
+        )
+        .toBe(true);
     }
     await page.screenshot({ path: info.outputPath("approval-narrow.png") });
     await page.setViewportSize(originalViewport);

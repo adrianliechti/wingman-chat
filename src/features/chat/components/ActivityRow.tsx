@@ -73,7 +73,10 @@ export function ActivityRow({
     </>
   );
   // Every row has the same height and padding, so stacked activity keeps one rhythm.
-  const layout = cn("grid w-full min-w-0 grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 py-1 text-left", className);
+  const layout = cn(
+    "grid w-full min-w-0 grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 py-1 text-left",
+    className,
+  );
   return onToggle ? (
     <button
       type="button"
