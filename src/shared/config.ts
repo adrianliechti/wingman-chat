@@ -197,6 +197,10 @@ interface PluginsConfig {
   url?: string;
 }
 
+interface TelemetryConfig {
+  name?: string;
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
@@ -234,7 +238,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
-  telemetry?: object;
+  telemetry?: TelemetryConfig;
 }
 
 const DEFAULT_TTS_VOICES: Record<string, string> = {
@@ -248,6 +252,8 @@ const DEFAULT_TTS_VOICES: Record<string, string> = {
 const DEFAULT_VISION_FILES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
+
+const DEFAULT_TELEMETRY_NAME = "wingman-chat";
 
 interface Config {
   title: string;
@@ -284,7 +290,7 @@ interface Config {
 
   chat: ChatConfig | null;
 
-  telemetry: boolean;
+  telemetry: Required<TelemetryConfig> | null;
 
   backgrounds: BackgroundPackConfig;
 }
@@ -383,7 +389,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       chat: cfg.chat ?? null,
 
-      telemetry: cfg.telemetry != null,
+      telemetry: cfg.telemetry != null ? { name: cfg.telemetry.name?.trim() || DEFAULT_TELEMETRY_NAME } : null,
 
       backgrounds: cfg.backgrounds ?? {},
     };

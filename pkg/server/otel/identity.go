@@ -17,7 +17,7 @@ const maxMetricBodyBytes = 8 << 20
 var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 // Identity headers must be overwritten by the trusted authentication proxy.
-func withMetricIdentity(next http.Handler) http.Handler {
+func withMetricIdentity(next http.Handler, service string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
@@ -59,7 +59,7 @@ func withMetricIdentity(next http.Handler) http.Handler {
 		if email == "" && emailPattern.MatchString(user) {
 			email = user
 		}
-		body, err = enrichMetricIdentity(body, user, email)
+		body, err = enrichMetricIdentity(body, service, user, email)
 		if err != nil {
 			http.Error(w, "invalid OTLP metrics payload", http.StatusBadRequest)
 			return
@@ -86,7 +86,7 @@ var snakeCaseFields = map[string]bool{
 }
 
 // UseNumber preserves nanosecond timestamps and integer counts during the JSON round trip.
-func enrichMetricIdentity(body []byte, user, email string) ([]byte, error) {
+func enrichMetricIdentity(body []byte, service, user, email string) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 
@@ -106,6 +106,8 @@ func enrichMetricIdentity(body []byte, user, email string) ([]byte, error) {
 	if err := applyIdentity(export, user, email); err != nil {
 		return nil, err
 	}
+
+	applyServiceName(export, service)
 
 	return json.Marshal(export)
 }
@@ -149,6 +151,44 @@ func applyIdentity(value any, user, email string) error {
 	}
 
 	return nil
+}
+
+func applyServiceName(export metricObject, service string) {
+	if service == "" {
+		return
+	}
+
+	resources, _ := export["resourceMetrics"].([]any)
+
+	for _, item := range resources {
+		rm, ok := item.(metricObject)
+
+		if !ok {
+			continue
+		}
+
+		resource, _ := rm["resource"].(metricObject)
+
+		if resource == nil {
+			resource = metricObject{}
+			rm["resource"] = resource
+		}
+
+		attrs, _ := resource["attributes"].([]any)
+		filtered := make([]any, 0, len(attrs)+1)
+
+		for _, attr := range attrs {
+			if obj, ok := attr.(metricObject); ok {
+				if key, _ := obj["key"].(string); key == "service.name" {
+					continue
+				}
+			}
+
+			filtered = append(filtered, attr)
+		}
+
+		resource["attributes"] = append(filtered, metricObject{"key": "service.name", "value": metricObject{"stringValue": service}})
+	}
 }
 
 func withoutIdentity(value any) any {

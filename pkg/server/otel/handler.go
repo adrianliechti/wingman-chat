@@ -14,7 +14,15 @@ type Handler struct {
 	metrics http.Handler
 }
 
-func New() *Handler {
+const defaultServiceName = "wingman-chat"
+
+func New(serviceName string) *Handler {
+	serviceName = strings.TrimSpace(serviceName)
+
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+
 	base := strings.TrimRight(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "/")
 
 	insights := strings.TrimRight(os.Getenv("INSIGHTS_ENDPOINT"), "/")
@@ -40,7 +48,7 @@ func New() *Handler {
 	return &Handler{
 		logs:    newHandler(logsURL),
 		traces:  withInsights(newHandler(tracesURL), insightsEndpoint(insights, "/v1/traces")),
-		metrics: withMetricIdentity(withInsights(newHandler(metricsURL), insightsEndpoint(insights, "/v1/metrics"))),
+		metrics: withMetricIdentity(withInsights(newHandler(metricsURL), insightsEndpoint(insights, "/v1/metrics")), serviceName),
 	}
 }
 

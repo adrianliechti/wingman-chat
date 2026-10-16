@@ -77,7 +77,7 @@ func TestMetricsProxyAttachesAuthenticatedIdentity(t *testing.T) {
 			defer upstream.Close()
 			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", upstream.URL+"/v1/metrics?tenant=chat")
 			mux := http.NewServeMux()
-			New().Attach(mux)
+			New("").Attach(mux)
 			payload := []byte(metricPayload())
 			if tt.gzip {
 				payload = gzipBody(t, payload)
@@ -238,7 +238,7 @@ func TestMetricsRejectInvalidPayloadsBeforeForwarding(t *testing.T) {
 			res := httptest.NewRecorder()
 			withMetricIdentity(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				t.Error("invalid payload was forwarded")
-			})).ServeHTTP(res, req)
+			}), "").ServeHTTP(res, req)
 			if res.Code != tt.status {
 				t.Errorf("status = %d, want %d: %s", res.Code, tt.status, res.Body.String())
 			}
@@ -253,7 +253,7 @@ func TestMetricsProxyAcceptsEmptyExports(t *testing.T) {
 		res := httptest.NewRecorder()
 		withMetricIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusAccepted)
-		})).ServeHTTP(res, req)
+		}), "").ServeHTTP(res, req)
 		if res.Code != http.StatusAccepted {
 			t.Errorf("empty/unattributed export rejected: %d %s", res.Code, res.Body.String())
 		}
@@ -261,7 +261,7 @@ func TestMetricsProxyAcceptsEmptyExports(t *testing.T) {
 }
 
 func TestMetricIdentityWithoutExistingAttributes(t *testing.T) {
-	body, err := enrichMetricIdentity([]byte(`{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"sum":{"dataPoints":[{"asInt":"5"},{"asInt":"10"}]}}]}]}]}`), "user-123", "employee@example.org")
+	body, err := enrichMetricIdentity([]byte(`{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"sum":{"dataPoints":[{"asInt":"5"},{"asInt":"10"}]}}]}]}]}`), "", "user-123", "employee@example.org")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,5 +271,36 @@ func TestMetricIdentityWithoutExistingAttributes(t *testing.T) {
 	metric := scope["metrics"].([]any)[0].(metricObject)
 	for _, point := range metric["sum"].(metricObject)["dataPoints"].([]any) {
 		checkIdentity(t, point.(metricObject), "user-123", "employee@example.org")
+	}
+}
+
+func TestMetricServiceNameIsServerAuthoritative(t *testing.T) {
+	for _, tt := range []struct{ name, resource, service, want string }{
+		{name: "overrides client value", resource: `{"attributes":[{"key":"service.name","value":{"stringValue":"spoofed"}},{"key":"keep","value":{"stringValue":"me"}}]}`, service: "acme", want: "acme"},
+		{name: "adds missing attribute", resource: `{}`, service: "acme", want: "acme"},
+		{name: "adds missing resource", service: "acme", want: "acme"},
+		{name: "empty keeps client value", resource: `{"attributes":[{"key":"service.name","value":{"stringValue":"client"}}]}`, want: "client"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resource := ""
+			if tt.resource != "" {
+				resource = `"resource":` + tt.resource + `,`
+			}
+			body, err := enrichMetricIdentity([]byte(`{"resourceMetrics":[{`+resource+`"scopeMetrics":[]}]}`), tt.service, "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			rm := decodeMetrics(t, body)["resourceMetrics"].([]any)[0].(metricObject)
+			attrs, _ := rm["resource"].(metricObject)["attributes"].([]any)
+			var names []string
+			for _, attr := range attrs {
+				if a := attr.(metricObject); a["key"] == "service.name" {
+					names = append(names, a["value"].(metricObject)["stringValue"].(string))
+				}
+			}
+			if len(names) != 1 || names[0] != tt.want {
+				t.Fatalf("service.name = %v, want [%s]", names, tt.want)
+			}
+		})
 	}
 }

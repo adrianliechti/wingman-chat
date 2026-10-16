@@ -69,7 +69,7 @@ const bootstrap = async () => {
     if (config?.telemetry) {
       // Loaded on demand so the OpenTelemetry SDK stays out of the initial bundle.
       const { initTelemetry } = await import("./features/repository/lib/telemetry");
-      initTelemetry();
+      initTelemetry(config.telemetry.name);
     }
 
     if (config?.title) {

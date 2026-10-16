@@ -46,7 +46,7 @@ it("exports classification and model usage as new observations on each metrics i
       }),
     ),
   );
-  providers = initTelemetry();
+  providers = initTelemetry("wingman-chat");
   const client = new Client();
   const rules = {
     categories: [{ id: "legal", name: "Legal", description: "Private criterion" }],
@@ -83,4 +83,17 @@ it("exports classification and model usage as new observations on each metrics i
       "wingman.classification.matched": true,
     });
   }
+});
+
+it("reports the given service name", async () => {
+  const names: unknown[] = [];
+  vi.spyOn(OTLPMetricExporter.prototype, "export").mockImplementation((resourceMetrics, callback) => {
+    names.push(resourceMetrics.resource.attributes["service.name"]);
+    callback({ code: 0 });
+  });
+
+  providers = initTelemetry("acme-assistant");
+  metrics.getMeter("test").createCounter("test.counter").add(1);
+  await providers.meterProvider.forceFlush();
+  expect(names).toEqual(["acme-assistant"]);
 });

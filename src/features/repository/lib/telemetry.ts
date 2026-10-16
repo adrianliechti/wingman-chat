@@ -12,14 +12,14 @@ import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from "@ope
 
 const IGNORE_URLS = [/\/otel\//];
 
-const resource = defaultResource().merge(
-  resourceFromAttributes({
-    "service.name": "wingman-chat",
-    "user_agent.original": navigator.userAgent,
-  }),
-);
+export function initTelemetry(serviceName: string) {
+  const resource = defaultResource().merge(
+    resourceFromAttributes({
+      "service.name": serviceName,
+      "user_agent.original": navigator.userAgent,
+    }),
+  );
 
-export function initTelemetry() {
   const traceExporter = new OTLPTraceExporter({ url: "/telemetry/v1/traces" });
   const tracerProvider = new WebTracerProvider({
     resource,

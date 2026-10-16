@@ -203,3 +203,26 @@ risks:
 		t.Fatalf("chat.yaml lost category or risk IDs: %s", data)
 	}
 }
+
+func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
+	for _, test := range []struct {
+		name, enabled, service string
+		want                   *Telemetry
+	}{
+		{name: "default", enabled: "true", want: &Telemetry{}},
+		{name: "override", enabled: "true", service: "acme-assistant", want: &Telemetry{Name: "acme-assistant"}},
+		{name: "name alone does not enable", service: "acme-assistant"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("TELEMETRY_ENABLED", test.enabled)
+			t.Setenv("TELEMETRY_NAME", test.service)
+
+			var cfg Config
+			applyEnvOverrides(&cfg)
+
+			if !reflect.DeepEqual(cfg.Telemetry, test.want) {
+				t.Fatalf("telemetry = %+v, want %+v", cfg.Telemetry, test.want)
+			}
+		})
+	}
+}

@@ -160,6 +160,10 @@ func applyEnvOverrides(cfg *Config) {
 	}
 
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
+
+	if cfg.Telemetry != nil {
+		envOverride("TELEMETRY_NAME", &cfg.Telemetry.Name)
+	}
 }
 
 // PlatformToken returns the API token from environment variables.

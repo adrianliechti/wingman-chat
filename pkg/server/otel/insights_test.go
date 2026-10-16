@@ -61,7 +61,7 @@ func TestInsightsReceivesTracesAndEnrichedMetrics(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
 	t.Setenv("INSIGHTS_ENDPOINT", insights.URL)
 	mux := http.NewServeMux()
-	New().Attach(mux)
+	New("").Attach(mux)
 
 	traces := []byte(`{"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"chat"}]}]}]}`)
 	if res := post(t, mux, "/telemetry/v1/traces", traces, nil); res.Code != http.StatusOK {
@@ -116,7 +116,7 @@ func TestInsightsReceivesExportsWithoutCollector(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("INSIGHTS_ENDPOINT", insights.URL+"/ingest")
 	mux := http.NewServeMux()
-	New().Attach(mux)
+	New("").Attach(mux)
 
 	traces := []byte(`{"resourceSpans":[]}`)
 	if res := post(t, mux, "/telemetry/v1/traces", traces, nil); res.Code != http.StatusOK {
@@ -133,7 +133,7 @@ func TestOversizedExportsReachCollectorOnly(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", collector.URL+"/v1/traces")
 	t.Setenv("INSIGHTS_ENDPOINT", insights.URL)
 	mux := http.NewServeMux()
-	New().Attach(mux)
+	New("").Attach(mux)
 
 	body := []byte(`{"resourceSpans":[` + strings.Repeat(" ", maxInsightsBodyBytes) + `]}`)
 	if res := post(t, mux, "/telemetry/v1/traces", body, nil); res.Code != http.StatusOK {

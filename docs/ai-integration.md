@@ -678,8 +678,11 @@ Its attributes are:
 | `wingman.classification.threshold` | Effective configured threshold                                                                                  |
 | `wingman.classification.matched`   | Whether confidence is at least the threshold                                                                    |
 
-The resource's `service.name` remains `wingman-chat`. Message/run IDs, message
-text, attachment names, descriptions, and consent text are not metric labels.
+The resource's `service.name` defaults to `wingman-chat` and can be changed with
+`telemetry.name` in `config.json` or the `TELEMETRY_NAME` environment variable.
+The Go proxy overwrites it on every metrics export, like the user identity.
+Message/run IDs, message text, attachment names, descriptions, and consent text
+are not metric labels.
 Category scores below threshold are recorded too; risk scores below threshold
 are omitted. Risk observations count threshold matches, so they do not provide
 a denominator for risk rates. These are counts of reported classification results,
