@@ -37,7 +37,6 @@ it("shows a saved agent's replacement without auto-saving the unrelated app defa
     skills: [],
     plugins: [],
     tools: [],
-    servers: [],
   };
   await act(async () => {
     root!.render(<ModelSection agent={agent} />);

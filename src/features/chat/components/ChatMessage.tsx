@@ -14,6 +14,8 @@ type ChatMessageProps = {
   message: UIMessage;
   isLast?: boolean;
   isResponding?: boolean;
+  /** The reply's opening reasoning is shown in the tool group before it. */
+  foldedReasoning?: boolean;
 };
 
 export const ChatMessage = memo(function ChatMessage(props: ChatMessageProps) {
@@ -39,7 +41,7 @@ function ToolRows({ message, index }: { message: UIMessage; index: number }) {
   );
 }
 
-function ChatMessageBody({ message, index, isResponding, isLast }: ChatMessageProps) {
+function ChatMessageBody({ message, index, isResponding, isLast, foldedReasoning }: ChatMessageProps) {
   const { kind } = messageMetadata(message);
   if (kind === "runtime_feedback" || message.role === "system") return null;
 
@@ -62,5 +64,13 @@ function ChatMessageBody({ message, index, isResponding, isLast }: ChatMessagePr
   const settled = isToolOnlyMessage(message) && !(isLast && isResponding);
   if (settled) return <ToolRows message={message} index={index} />;
 
-  return <ChatAssistantMessage message={message} index={index} isLast={isLast} isResponding={isResponding} />;
+  return (
+    <ChatAssistantMessage
+      message={message}
+      index={index}
+      isLast={isLast}
+      isResponding={isResponding}
+      foldedReasoning={foldedReasoning}
+    />
+  );
 }

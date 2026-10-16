@@ -1,0 +1,313 @@
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "offsite_planner",
+    "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+    "sendDataModel": true,
+    "components": [
+      {
+        "id": "root",
+        "component": "Column",
+        "children": ["top", "form", "divider", "preview"]
+      },
+      {
+        "id": "top",
+        "component": "Row",
+        "justify": "spaceBetween",
+        "align": "center",
+        "children": ["heading", "icon"]
+      },
+      {
+        "id": "heading",
+        "component": "Heading",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "text": "Design the next team day",
+        "level": 1
+      },
+      {
+        "id": "icon",
+        "component": "Icon",
+        "name": "calendarToday"
+      },
+      {
+        "id": "form",
+        "component": "Form",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "children": ["fields", "guests", "activities", "extras"],
+        "submit": "Share this plan",
+        "action": {
+          "event": {
+            "name": "share_offsite",
+            "userMessage": "Share the team day plan",
+            "context": {
+              "selection": {
+                "@path": "/"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "fields",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 2,
+        "children": ["title", "date"]
+      },
+      {
+        "id": "title",
+        "component": "TextField",
+        "label": "Event name",
+        "value": {
+          "@path": "/title"
+        },
+        "checks": [
+          {
+            "condition": {
+              "@call": "required",
+              "args": {
+                "value": {
+                  "@path": "/title"
+                }
+              }
+            },
+            "message": "Name your event"
+          }
+        ]
+      },
+      {
+        "id": "date",
+        "component": "DateTimeInput",
+        "label": "Date",
+        "value": {
+          "@path": "/date"
+        },
+        "enableDate": true,
+        "enableTime": false
+      },
+      {
+        "id": "guests",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 2,
+        "children": ["seats", "venue"]
+      },
+      {
+        "id": "seats",
+        "component": "Stepper",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "People",
+        "value": {
+          "@path": "/people"
+        },
+        "min": 4,
+        "max": 50,
+        "unit": "guests"
+      },
+      {
+        "id": "venue",
+        "component": "Select",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Setting",
+        "value": {
+          "@path": "/venue"
+        },
+        "options": [
+          {
+            "value": "Lakeside studio",
+            "label": "Lakeside studio"
+          },
+          {
+            "value": "Mountain lodge",
+            "label": "Mountain lodge"
+          },
+          {
+            "value": "City rooftop",
+            "label": "City rooftop"
+          }
+        ]
+      },
+      {
+        "id": "activities",
+        "component": "ChoicePicker",
+        "label": "Make room for",
+        "variant": "multipleSelection",
+        "displayStyle": "chips",
+        "value": {
+          "@path": "/activities"
+        },
+        "options": [
+          {
+            "value": "Workshop",
+            "label": "Workshop"
+          },
+          {
+            "value": "Good food",
+            "label": "Good food"
+          },
+          {
+            "value": "Outside time",
+            "label": "Outside time"
+          }
+        ]
+      },
+      {
+        "id": "extras",
+        "component": "Row",
+        "justify": "spaceBetween",
+        "children": ["catering", "reminders"]
+      },
+      {
+        "id": "catering",
+        "component": "Toggle",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Include catering",
+        "value": {
+          "@path": "/catering"
+        }
+      },
+      {
+        "id": "reminders",
+        "component": "CheckBox",
+        "label": "Send reminders",
+        "value": {
+          "@path": "/reminders"
+        }
+      },
+      {
+        "id": "divider",
+        "component": "Divider"
+      },
+      {
+        "id": "preview",
+        "component": "Card",
+        "child": "preview_content"
+      },
+      {
+        "id": "preview_content",
+        "component": "Column",
+        "children": ["preview_label", "preview_title", "preview_place", "budget", "agenda"]
+      },
+      {
+        "id": "preview_label",
+        "component": "Badge",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "text": "Live preview",
+        "tone": "info"
+      },
+      {
+        "id": "preview_title",
+        "component": "Text",
+        "text": {
+          "@call": "formatString",
+          "args": {
+            "value": "## ${/title}"
+          }
+        }
+      },
+      {
+        "id": "preview_place",
+        "component": "Text",
+        "text": {
+          "@call": "formatString",
+          "args": {
+            "value": "${/venue} \u00b7 ${/people} people"
+          }
+        },
+        "variant": "caption"
+      },
+      {
+        "id": "budget",
+        "component": "Grid",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "columns": 2,
+        "children": ["cost", "perperson"]
+      },
+      {
+        "id": "cost",
+        "component": "Metric",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Estimated budget",
+        "value": {
+          "@call": "evaluate",
+          "args": {
+            "expression": "people * (catering ? 145 : 95)",
+            "values": {
+              "people": {
+                "@path": "/people"
+              },
+              "catering": {
+                "@path": "/catering"
+              }
+            }
+          },
+          "catalogId": "urn:wingman:inline-ui:catalog:1"
+        },
+        "format": "currency",
+        "currency": "CHF",
+        "digits": 0
+      },
+      {
+        "id": "perperson",
+        "component": "Metric",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "label": "Per person",
+        "value": {
+          "@call": "evaluate",
+          "args": {
+            "expression": "catering ? 145 : 95",
+            "values": {
+              "catering": {
+                "@path": "/catering"
+              }
+            }
+          },
+          "catalogId": "urn:wingman:inline-ui:catalog:1"
+        },
+        "format": "currency",
+        "currency": "CHF",
+        "digits": 0
+      },
+      {
+        "id": "agenda",
+        "component": "Collapsible",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "title": "The shape of the day",
+        "defaultOpen": true,
+        "children": ["timeline"]
+      },
+      {
+        "id": "timeline",
+        "component": "Timeline",
+        "catalogId": "urn:wingman:inline-ui:catalog:1",
+        "active": 1,
+        "items": [
+          {
+            "label": "Arrive & connect",
+            "time": "09:30",
+            "description": "Coffee, a lakeside walk, no slides."
+          },
+          {
+            "label": "Build something together",
+            "time": "10:30",
+            "description": "Small teams, one shared challenge."
+          },
+          {
+            "label": "Lunch & open space",
+            "time": "12:30",
+            "description": "A good meal and room for new ideas."
+          }
+        ]
+      }
+    ],
+    "dataModel": {
+      "title": "Room for good ideas",
+      "date": "2026-11-04",
+      "people": 18,
+      "venue": "Lakeside studio",
+      "activities": ["Workshop", "Good food"],
+      "catering": true,
+      "reminders": true
+    }
+  }
+}

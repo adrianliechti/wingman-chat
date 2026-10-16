@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AgentProvider } from "../../../src/features/agent/context/AgentProvider";
 import { useAgents } from "../../../src/features/agent/hooks/useAgents";
 import { useChats } from "../../../src/features/chat/hooks/useChats";
+import { createAttachmentLoader } from "../../../src/features/chat/lib/chatAttachments";
 import { SkillsProvider } from "../../../src/features/skills/context/SkillsProvider";
 import { useSkills } from "../../../src/features/skills/hooks/useSkills";
 import { useImages } from "../../../src/features/canvas/hooks/useImages";
@@ -87,6 +88,10 @@ function Fixture() {
     }),
     createChat: chats.createChat,
     loadChat: chats.loadChat,
+    hydrateChat: async (id: string) => {
+      const chat = await chats.loadChat(id);
+      return { ...chat, messages: await createAttachmentLoader(id)(chat.messages) };
+    },
     updateChat: chats.updateChat,
     deleteChat: chats.deleteChat,
     createAgent: agents.createAgent,
@@ -94,8 +99,6 @@ function Fixture() {
     deleteAgent: agents.deleteAgent,
     upsertFile: agents.upsertFile,
     removeFile: agents.removeFile,
-    addServer: agents.addServer,
-    toggleServer: agents.toggleServer,
     addSkill: skills.addSkill,
     updateSkill: skills.updateSkill,
     removeSkill: skills.removeSkill,
@@ -143,6 +146,7 @@ declare global {
       };
       createChat: ReturnType<typeof useChats>["createChat"];
       loadChat: ReturnType<typeof useChats>["loadChat"];
+      hydrateChat: ReturnType<typeof useChats>["loadChat"];
       updateChat: ReturnType<typeof useChats>["updateChat"];
       deleteChat: ReturnType<typeof useChats>["deleteChat"];
       createAgent: ReturnType<typeof useAgents>["createAgent"];
@@ -150,8 +154,6 @@ declare global {
       deleteAgent: ReturnType<typeof useAgents>["deleteAgent"];
       upsertFile: ReturnType<typeof useAgents>["upsertFile"];
       removeFile: ReturnType<typeof useAgents>["removeFile"];
-      addServer: ReturnType<typeof useAgents>["addServer"];
-      toggleServer: ReturnType<typeof useAgents>["toggleServer"];
       addSkill: ReturnType<typeof useSkills>["addSkill"];
       updateSkill: ReturnType<typeof useSkills>["updateSkill"];
       removeSkill: ReturnType<typeof useSkills>["removeSkill"];

@@ -75,7 +75,7 @@ test("real OPFS serializes tabs, refreshes indexes, and rejects stale file-tool 
       tab.evaluate(async (i) => {
         for (let n = 0; n < 3; n++)
           await window.memoryE2E.call("create", {
-            file_path: `/.memory/topic-${i}-${n}.md`,
+            path: `/.memory/topic-${i}-${n}.md`,
             content: `Topic ${i} ${n}`,
           });
       }, i),
@@ -86,10 +86,10 @@ test("real OPFS serializes tabs, refreshes indexes, and rejects stale file-tool 
   expect(index).toContain("topic-0-0.md");
   expect(index).toContain("topic-1-2.md");
   await expect.poll(() => other.evaluate(() => window.memoryE2E.updates())).toBeGreaterThan(3);
-  await page.evaluate(() => window.memoryE2E.call("read", { file_path: "/.memory/topic-0-0.md" }));
+  await page.evaluate(() => window.memoryE2E.call("read", { path: "/.memory/topic-0-0.md" }));
   await other.evaluate(() => window.memoryE2E.externalWrite("topic-0-0.md", "Newer from another tab"));
   const result = await page.evaluate(() =>
-    window.memoryE2E.call("create", { file_path: "/.memory/topic-0-0.md", content: "Stale overwrite" }),
+    window.memoryE2E.call("create", { path: "/.memory/topic-0-0.md", content: "Stale overwrite" }),
   );
   expect(JSON.stringify(result)).toContain("changed since");
   await page.reload();

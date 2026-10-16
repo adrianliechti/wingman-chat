@@ -2,7 +2,8 @@ import { feedbackMessage } from "@/shared/lib/test-support/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "./client";
-import { run, runMessages } from "./agent";
+import { RunSidecar, run, runMessages, streamRun } from "./agent";
+import { getErrorInfo } from "./errors";
 import { loadConfig } from "../config";
 import type { Tool } from "../types/chat";
 import { output, response, textItem, callItem, sse, finished, user, assistant } from "./test-support/ai";
@@ -10,7 +11,8 @@ import {
   mediaFromDataUrl,
   messageMetadata,
   messageText,
-  textSegments,
+  text,
+  textParts,
   toolResults,
   toolRoundMessage,
 } from "./messages";
@@ -75,6 +77,39 @@ describe("chat reasoning display", () => {
     });
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("reasoning");
   });
+});
+
+it.each([
+  [{ "retry-after": "2" }, "2 seconds"],
+  [{ "retry-after-ms": "1250" }, "2 seconds"],
+])("preserves gateway rate-limit headers through the native chat event stream: %s", async (headers, wait) => {
+  fetchMock.mockImplementation(async () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded", message: "Throttled" } },
+      {
+        status: 429,
+        headers,
+      },
+    ),
+  );
+  const complete = vi.fn();
+  const events = [];
+  for await (const event of streamRun(new Client(), "gateway-alias", "", prompt, [], {
+    sidecar: new RunSidecar(),
+    onComplete: complete,
+  }))
+    events.push(event);
+  const failure = events.find((event) => event.type === "RUN_ERROR");
+  expect(failure).toMatchObject({ code: "RATE_LIMIT_ERROR", message: `Rate limit exceeded. Try again in ${wait}.` });
+  expect(getErrorInfo(failure).message).toContain(wait);
+  expect(complete).toHaveBeenCalledWith(
+    expect.objectContaining({
+      status: "failed",
+      error: { code: "RATE_LIMIT_ERROR", message: `Rate limit exceeded. Try again in ${wait}.` },
+    }),
+  );
+  // The provider SDK retries HTTP failures twice before yielding RUN_ERROR.
+  expect(fetchMock).toHaveBeenCalledTimes(3);
 });
 
 describe("chat output allowances", () => {
@@ -286,30 +321,11 @@ describe("raw request lifetime", () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([" First ", { text: "Second\nline" }, " "])));
     expect(await new Client().segmentText("Source")).toEqual([" First ", "Second\nline"]);
   });
-  it.each([null, {}, { flagged: "false" }, { flagged: false, categories: [null] }])(
-    "rejects malformed guard responses instead of treating them as approval: %j",
-    async (body) => {
-      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body)));
-      await expect(new Client().guard("model", "Text")).rejects.toThrow("guard service returned an invalid response");
-    },
-  );
-
-  it("rejects malformed search and research responses instead of reporting empty findings", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Unavailable" })));
-    await expect(new Client().search("model", "Query")).rejects.toThrow("search service returned an invalid response");
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ content: 42 })));
-    await expect(new Client().research("model", "Query")).rejects.toThrow(
-      "research service returned an invalid response",
-    );
-  });
-
   it("reads text, JSON, and binary results and releases each deadline", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("Grüße", { headers: { "content-type": "text/plain" } }));
     expect(await new Client().translate("azure", "de", "Greetings")).toBe("Grüsse");
     expect((fetchMock.mock.calls.at(-1)![1].body as FormData).get("model")).toBe("azure");
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ flagged: true, categories: [] })));
-    expect(await new Client().guard("model", "Text")).toEqual({ flagged: true, categories: [] });
     fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { headers: { "content-type": "image/png" } }));
     const rendered = await new Client().generateImage("model", "Image");
     expect(rendered.type).toBe("image/png");
@@ -334,7 +350,7 @@ describe("raw request lifetime", () => {
   it.each([200, 503])("keeps the timeout active while reading a stalled %s response body", async (status) => {
     vi.useFakeTimers();
     stalledBody(status);
-    const request = new Client().scrape("model", "https://example.com");
+    const request = new Client().extractText(new Blob(["Document"]));
     const settled = vi.fn();
     void request.then(settled, settled);
     await vi.advanceTimersByTimeAsync(90_000);
@@ -347,7 +363,7 @@ describe("raw request lifetime", () => {
   it("retains caller cancellation until the body is consumed", async () => {
     stalledBody();
     const controller = new AbortController();
-    const request = new Client().scrape("model", "https://example.com", { signal: controller.signal });
+    const request = new Client().extractText(new Blob(["Document"]), { signal: controller.signal });
     const settled = vi.fn();
     void request.then(settled, settled);
     await Promise.resolve();
@@ -361,9 +377,9 @@ describe("raw request lifetime", () => {
   it("does not fetch an already cancelled raw request", async () => {
     const controller = new AbortController();
     controller.abort();
-    await expect(
-      new Client().scrape("model", "https://example.com", { signal: controller.signal }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    await expect(new Client().extractText(new Blob(["Document"]), { signal: controller.signal })).rejects.toMatchObject(
+      { name: "AbortError" },
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -667,7 +683,8 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
         expect(messages.flatMap(toolResults)).toEqual([
           expect.objectContaining({
             toolCallId: "call_test",
-            metadata: { result: media, meta: { files: ["/notes.docx", "/notes.pdf"] } },
+            content: media,
+            metadata: { meta: { files: ["/notes.docx", "/notes.pdf"] } },
           }),
         ]);
       }
@@ -763,11 +780,13 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     const client = new Client();
     const answer = (await runMessages(client, "model", "", prompt, [])).at(-1)!;
     expect(messageText(answer)).toBe("WorkingDone");
-    expect(textSegments(answer)).toEqual([
-      { content: "Working", phase: "commentary" },
-      { content: "Done", phase: "final_answer" },
+    expect(textParts(answer)).toEqual([
+      text("Working", { phase: "commentary" }),
+      text("Done", { phase: "final_answer" }),
     ]);
-    await runMessages(client, "model", "", [...prompt, answer], []);
+    expect(answer.metadata).not.toHaveProperty("textSegments");
+    const restored: UIMessage = JSON.parse(JSON.stringify(answer));
+    await runMessages(client, "model", "", [...prompt, restored], []);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "assistant", content: "Working", phase: "commentary" }),
@@ -791,10 +810,12 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     ]);
     expect(result.status).toBe("completed");
     expect(execute).toHaveBeenCalledExactlyOnceWith({ text: "Save" }, expect.anything());
-    // The Responses adapter keeps one assistant message per run across tool rounds.
+    // Since @tanstack/ai 0.68 the tool round keeps its own message id, so the
+    // reply after the tool results is a separate assistant message.
     expect(result.messages.map((message) => message.parts.map((part) => part.type))).toEqual([
       ["text"],
-      ["tool-call", "tool-result", "text"],
+      ["tool-call", "tool-result"],
+      ["text"],
     ]);
     expect(messageText(result.messages.at(-1)!)).toBe("Done");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).input).toEqual(
@@ -832,7 +853,10 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     expect(first.error).toBeUndefined();
     expect(first.status).toBe("completed");
     expect(messageText(first.messages.at(-1)!)).toBe("Recovered");
-    expect(first.messages.at(-1)?.parts.map((part) => part.type)).toEqual(["tool-call", "tool-result", "text"]);
+    expect(first.messages.slice(-2).map((message) => message.parts.map((part) => part.type))).toEqual([
+      ["tool-call", "tool-result"],
+      ["text"],
+    ]);
 
     const restored: UIMessage[] = JSON.parse(JSON.stringify(first.messages));
     const next = await run(client, "model", "", [...restored, user("Go")], tools, hooks);
@@ -842,8 +866,9 @@ describe("TanStack OpenAI adapter over the browser gateway", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(new Set(next.messages.map((message) => message.id)).size).toBe(next.messages.length);
     expect(next.messages.flatMap(toolResults)).toMatchObject([
-      { toolCallId: "call_test", state: "error", error: error.message, metadata: { error } },
+      { toolCallId: "call_test", state: "error", error: error.message, content: output(error.message) },
     ]);
+    expect(next.messages.flatMap(toolResults)[0].metadata).not.toHaveProperty("error");
     for (const request of fetchMock.mock.calls.slice(1)) {
       const input = JSON.parse(request[1].body).input;
       expect(input.filter((item: { type: string }) => item.type === "function_call_output")).toEqual([

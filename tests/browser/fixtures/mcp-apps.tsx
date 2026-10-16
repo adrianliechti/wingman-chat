@@ -3,13 +3,14 @@ import { createRoot } from "react-dom/client";
 import { McpApp } from "../../../src/features/chat/components/McpApp";
 import { MCPClient } from "../../../src/features/settings/lib/mcp";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
-import type { ToolCallPart, ToolResultPart } from "@tanstack/ai";
+import type { ToolCallPart, ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import { ProviderState } from "../../../src/shared/types/chat";
 import { AppProvider } from "../../../src/shell/context/AppProvider";
 import { useApp } from "../../../src/shell/hooks/useApp";
 
-const fullscreenOnly = new URLSearchParams(location.search).has("fullscreen");
-const modes = fullscreenOnly ? ["fullscreen"] : ["inline", "fullscreen"];
+const params = new URLSearchParams(location.search);
+const modes = params.has("fullscreen") ? ["fullscreen"] : params.has("inline") ? ["inline"] : ["inline", "fullscreen"];
+const preferredMode = params.get("preferred");
 // A tiny wire-protocol guest, deliberately independent of the host SDK. It runs
 // inside the production nested sandbox with no same-origin access to the host.
 const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
@@ -33,11 +34,11 @@ window.guest.request('init', 'ui/initialize', { protocolVersion: '2026-01-26', a
 const tool = (name: string, visibility = ["model", "app"]) => ({
   name,
   inputSchema: { type: "object" },
-  _meta: { ui: { resourceUri: "ui://fixture", visibility, availableDisplayModes: modes } },
+  _meta: { ui: { resourceUri: "ui://fixture", visibility } },
 });
-const stats = { reads: 0, calls: [] as string[], lists: 0 };
+const stats = { reads: 0, calls: [] as string[], lists: 0, prompts: [] as string[] };
 let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
-let tools = [tool("app"), tool("guest_only", ["app"]), tool("model_only", ["model"])];
+let tools = [tool("app"), tool("guest_only", ["app"]), tool("model_only", ["model"]), tool("fail", ["app"])];
 let holdResource: (() => void) | undefined;
 let hold = false;
 const fetch = window.fetch.bind(window);
@@ -77,7 +78,12 @@ window.fetch = async (input, init) => {
       break;
     case "tools/call":
       stats.calls.push(request.params.name);
-      result = { content: [{ type: "text", text: request.params.name }] };
+      result = {
+        content: [{ type: "text", text: request.params.name }],
+        structuredContent: { tool: request.params.name, args: request.params.arguments },
+        _meta: { widgetState: "private", origin: "fixture" },
+        ...(request.params.name === "fail" ? { isError: true } : {}),
+      };
       break;
     case "resources/read": {
       stats.reads++;
@@ -113,6 +119,7 @@ await client.connect();
 const toolsContext: ToolsContextValue = {
   providers: [client],
   coreProviders: [],
+  isProviderEnabled: () => true,
   getProviderState: () => ProviderState.Connected,
   getProviderPolicy: () => "optional",
   setProviderEnabled: async () => client.connect(),
@@ -122,8 +129,7 @@ const toolsContext: ToolsContextValue = {
   companionAvailable: false,
   companionEnabled: false,
   toggleCompanion: () => {},
-  restoreToolUI: (_provider, name, uri, args, result, content, options) =>
-    client.restoreToolUI(name, uri, args, result, content, options),
+  restoreToolUI: (app, args, result, options) => client.restoreToolUI(app, args, result, options),
 };
 function Fixture() {
   const app = useApp();
@@ -175,15 +181,37 @@ function Fixture() {
           toolCallId: id,
           content: id,
           state: "complete",
-          metadata: {
-            result: [{ type: "text", content: id }],
-            content: { id },
-            meta: { toolProvider: "fixture", toolResource: "ui://fixture", appDisplayModes: modes },
+        };
+        const resource: UIResourcePart = {
+          type: "ui-resource",
+          resource: {
+            uri: "ui://fixture",
+            mimeType: "text/html;profile=mcp-app",
+            ...(id === "late"
+              ? {}
+              : id === "second"
+                ? { blob: btoa(String.fromCharCode(...new TextEncoder().encode(html))) }
+                : { text: html }),
+          },
+          serverId: "fixture",
+          toolCallId: id,
+          toolName: "app",
+          meta: {
+            mcpResult: { content: [{ type: "text", text: id }], structuredContent: { id } },
+            ...(preferredMode ? { appDisplayMode: preferredMode } : {}),
           },
         };
         return (
           <section key={id} data-testid={id} style={{ width: 450 }}>
-            <McpApp call={call} result={result} isLastFullscreenApp={index === ids.length - 1} />
+            <McpApp
+              app={resource}
+              call={call}
+              result={result}
+              isLastFullscreenApp={index === ids.length - 1}
+              onPrompt={async (text) => {
+                stats.prompts.push(text);
+              }}
+            />
           </section>
         );
       })}
@@ -197,6 +225,7 @@ declare global {
         reads: number;
         calls: string[];
         lists: number;
+        prompts: string[];
         active: string | null;
         showing: boolean;
         tools: string[];

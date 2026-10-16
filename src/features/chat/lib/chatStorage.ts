@@ -51,12 +51,12 @@ export function removeChat(id: string): Promise<void> {
 export const legacyChatPath = (id: string) => `chats/${id}/chat.legacy.json`;
 
 /**
- * Chats saved before the native transcript migrate on read; the next save
- * writes the current record over the old file. The old record is copied once
- * before that can happen, because the migration drops what it cannot read.
+ * Older transcripts and fields migrate on read; the next save writes the
+ * current record over the old file. Keep the original once before that can
+ * happen, because conversion drops what it cannot read.
  * Failing to keep the copy is logged, not fatal: the chat still opens.
  */
-async function keepLegacyRecord(id: string, raw: LegacyStoredChat): Promise<void> {
+async function keepLegacyRecord(id: string, raw: LegacyStoredChat | opfs.StoredChat): Promise<void> {
   try {
     if (await opfs.fileExists(legacyChatPath(id))) return;
     await opfs.writeJson(legacyChatPath(id), raw);
@@ -70,8 +70,13 @@ export async function loadChat(id: string, hydrateBlobs = true): Promise<Chat | 
     (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}/chat.json`)) ??
     (await opfs.readJson<opfs.StoredChat | LegacyStoredChat>(`chats/${id}.json`));
   if (!raw || typeof raw !== "object") return undefined;
-  if (isLegacyStoredChat(raw)) await keepLegacyRecord(id, raw);
-  const stored = normalizeStoredChat({ ...raw, id });
+  const version: unknown = raw.version;
+  if (version !== undefined && version !== opfs.STORED_CHAT_VERSION)
+    throw new Error(`Unsupported chat record version: ${JSON.stringify(version)}`);
+  const record = { ...raw, id };
+  const stored = normalizeStoredChat(record);
+  if (isLegacyStoredChat(raw) || stored !== record) await keepLegacyRecord(id, raw);
+  if (!opfs.isStoredChat(stored)) throw new Error(`Invalid chat record: ${id}`);
   return hydrateBlobs ? opfs.rehydrateChatBlobs(stored) : opfs.restoreChatManifest(stored);
 }
 

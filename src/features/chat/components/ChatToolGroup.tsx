@@ -1,34 +1,42 @@
 import { ToolCase } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import type { UIMessage } from "@tanstack/ai";
-import { subagentToolCallIds, summarizeToolGroup, toolRounds } from "./chatMessageUtils";
+import { leadingReasoning, subagentToolCallIds, summarizeActivity, toolRounds } from "./chatMessageUtils";
 import { ActivityRow } from "./ActivityRow";
 import { ChatToolMessage } from "./ChatToolMessage";
+import { ReasoningDisplay } from "./ReasoningDisplay";
 import { ChatMessageAttachments } from "./ChatMessageAttachments";
 import { hasStoredAttachments } from "../lib/chatAttachments";
 
 type ChatToolGroupProps = {
   messages: UIMessage[];
   indices: number[];
+  /** The reply whose opening reasoning this group folds. */
+  reply?: number;
 };
 
-/** Every tool round of one message as nested rows. */
+/** The reasoning and every tool round of one message, exactly as they read before folding. */
 function ToolRows({ message, index, messages }: { message: UIMessage; index: number; messages: UIMessage[] }) {
   const delegated = subagentToolCallIds(messages);
+  const rounds = new Map(toolRounds(message, delegated).map((round) => [round.call.id, round]));
   return (
     <>
-      {toolRounds(message, delegated).map(({ call, result }) => (
-        // Key by the stable tool-call id, not the array index — stop/restart
-        // shifts indices, and index keys would reconcile the wrong rows.
-        <ChatToolMessage key={call.id} message={message} call={call} result={result} index={index} nested />
-      ))}
+      {message.parts.map((part, partIndex) => {
+        if (part.type === "thinking")
+          return <ReasoningDisplay key={`thinking:${part.stepId ?? partIndex}`} reasoning={part.content} />;
+        if (part.type !== "tool-call") return null;
+        const round = rounds.get(part.id);
+        return round ? (
+          <ChatToolMessage key={part.id} message={message} call={round.call} result={round.result} index={index} />
+        ) : null;
+      })}
     </>
   );
 }
 
 /**
- * Folds a run of consecutive tool rounds into a single collapsible "Used N
- * tools" row. Expanding reveals the individual ChatToolMessage rows, each still
+ * Folds a run of finished tool rounds, with any reasoning between them, into a
+ * single collapsible "Used N tools" row. Expanding reveals the individual ChatToolMessage rows, each still
  * independently expandable.
  *
  * Stays collapsed by default — and never auto-expands/collapses — so the layout
@@ -36,12 +44,12 @@ function ToolRows({ message, index, messages }: { message: UIMessage; index: num
  * and made the viewport jump). Live progress is shown by the running tool row
  * and the activity dots instead.
  */
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices, reply }: ChatToolGroupProps) {
   const [expanded, setExpanded] = useState(false);
-  const summary = useMemo(() => summarizeToolGroup(messages, indices), [messages, indices]);
+  const summary = useMemo(() => summarizeActivity(messages, indices, reply), [messages, indices, reply]);
 
   return (
-    <div className="pb-2 max-w-full">
+    <div className="max-w-full">
       <ActivityRow
         label={summary}
         icon={ToolCase}
@@ -50,7 +58,7 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
       />
 
       {expanded && (
-        <div className="mt-1 ml-4.5">
+        <div className="pl-4.5">
           {indices.map((idx) => {
             const message = messages[idx];
             return hasStoredAttachments(message) ? (
@@ -61,6 +69,9 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
               <ToolRows key={message.id} message={message} index={idx} messages={messages} />
             );
           })}
+          {leadingReasoning(messages[reply ?? -1]).map((reasoning, index) => (
+            <ReasoningDisplay key={`reply-${index}`} reasoning={reasoning} />
+          ))}
         </div>
       )}
     </div>

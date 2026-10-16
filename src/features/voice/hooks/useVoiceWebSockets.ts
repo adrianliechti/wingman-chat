@@ -4,12 +4,13 @@ import {
   convertSchemaToJsonSchema,
   parseWithStandardSchema,
   toolDefinition,
-  type ContentPart,
+  type ToolResultPart,
   type UIMessage,
+  type UIResourcePart,
 } from "@tanstack/ai";
 import { gatewayRealtime } from "@/features/voice/lib/gatewayRealtime";
-import { describeToolOutput, text } from "@/shared/lib/messages";
-import type { Tool, ToolContext } from "@/shared/types/chat";
+import { assistantMessage, describeToolOutput, text, toolResultContent } from "@/shared/lib/messages";
+import type { MessageError, Tool, ToolContext } from "@/shared/types/chat";
 
 export type ToolContextFactory = (toolCall: { id: string; name: string }) => ToolContext;
 
@@ -34,7 +35,7 @@ type Session = {
   instructions?: string;
   factory?: ToolContextFactory;
   binding: Promise<void>;
-  outputs: Map<string, ContentPart[]>;
+  outputs: Map<string, { result: ToolResultPart; uiResources: UIResourcePart[] }>;
 };
 
 /** React/storage boundary for the native TanStack realtime client. */
@@ -43,7 +44,7 @@ export function useVoiceWebSockets(
   onAssistant: (text: string) => void,
   onToolCall?: (toolName: string, callId: string) => void,
   onToolCallDone?: (callId: string) => void,
-  onToolResult?: (toolName: string, callId: string, result: ContentPart[], args: string) => void,
+  onToolResult?: (message: UIMessage) => void,
   onClosed?: (reason?: { fatal: boolean; message: string }) => void,
   getRuntimeContext?: () => string,
   onError?: (error: Error) => void,
@@ -89,18 +90,67 @@ export function useVoiceWebSockets(
         signal.throwIfAborted();
         const identity = session.gateway.toolIdentity(input);
         if (!identity) throw new Error("Voice tool arguments must be an object");
-        // RealtimeClient currently forwards parsed inputs without Standard Schema
-        // validation; enforce the same schema used by the chat engine.
-        const args = parseWithStandardSchema<Record<string, unknown>>(tool.inputSchema, input);
-        const result = await tool.execute(args, {
-          toolCallId: identity.id,
-          abortSignal: signal,
-          context: { ...factory?.(identity), runId: identity.runId, signal },
-          emitCustomEvent() {},
-        });
-        signal.throwIfAborted();
-        outputs.set(identity.id, result);
-        return describeToolOutput(result);
+        const uiResources: UIResourcePart[] = [];
+        let meta: Record<string, unknown> = {};
+        let error: MessageError | undefined;
+        try {
+          // RealtimeClient currently skips Standard Schema validation.
+          const args = parseWithStandardSchema<Record<string, unknown>>(tool.inputSchema, input);
+          const content = await tool.execute(args, {
+            toolCallId: identity.id,
+            abortSignal: signal,
+            context: {
+              ...factory?.(identity),
+              runId: identity.runId,
+              signal,
+              setMeta: (next) => {
+                if (!signal.aborted) meta = { ...meta, ...next };
+              },
+              setError: (next) => {
+                if (!signal.aborted) error = next;
+              },
+            },
+            emitCustomEvent(name, value) {
+              if (!signal.aborted && name === "ui-resource" && value && typeof value === "object") {
+                uiResources.push({
+                  ...(value as Omit<UIResourcePart, "type">),
+                  type: "ui-resource",
+                  toolCallId: identity.id,
+                });
+              }
+            },
+          });
+          signal.throwIfAborted();
+          outputs.set(identity.id, {
+            result: {
+              type: "tool-result",
+              toolCallId: identity.id,
+              content,
+              state: error ? "error" : "complete",
+              ...(error ? { error: error.message } : {}),
+              ...(Object.keys(meta).length ? { metadata: { meta } } : {}),
+            },
+            uiResources,
+          });
+          if (error) throw new Error(error.message);
+          return describeToolOutput(content);
+        } catch (error) {
+          if (!signal.aborted && !outputs.has(identity.id)) {
+            const message = error instanceof Error ? error.message : String(error);
+            outputs.set(identity.id, {
+              result: {
+                type: "tool-result",
+                toolCallId: identity.id,
+                content: [text(message)],
+                state: "error",
+                error: message,
+                ...(Object.keys(meta).length ? { metadata: { meta } } : {}),
+              },
+              uiResources,
+            });
+          }
+          throw error;
+        }
       });
     });
     const client = new RealtimeClient({
@@ -157,7 +207,7 @@ export function useVoiceWebSockets(
     ) => {
       if (sessionRef.current) return;
       const controller = new AbortController();
-      const outputs = new Map<string, ContentPart[]>();
+      const outputs: Session["outputs"] = new Map();
       // Instructions and tools reach the session through RealtimeClient's own
       // configuration; the gateway only supplies transport and audio settings.
       const gateway = gatewayRealtime({
@@ -171,7 +221,21 @@ export function useVoiceWebSockets(
         runtimeContext: () => callbacks.current.getRuntimeContext?.(),
         onToolCall: ({ name, id }) => callbacks.current.onToolCall?.(name, id),
         onToolOutput: ({ name, id, arguments: args }, output) => {
-          callbacks.current.onToolResult?.(name, id, outputs.get(id) ?? [text(output)], args);
+          if (controller.signal.aborted) return;
+          const saved = outputs.get(id);
+          const result: ToolResultPart = saved?.result ?? {
+            type: "tool-result",
+            toolCallId: id,
+            content: [text(output)],
+            state: "complete",
+          };
+          callbacks.current.onToolResult?.(
+            assistantMessage([
+              { type: "tool-call", id, name, arguments: args, state: "complete", output: toolResultContent(result) },
+              result,
+              ...(saved?.uiResources ?? []),
+            ]),
+          );
           outputs.delete(id);
           callbacks.current.onToolCallDone?.(id);
         },

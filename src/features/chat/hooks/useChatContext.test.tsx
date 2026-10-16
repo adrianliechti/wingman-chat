@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model, ToolProvider } from "@/shared/types/chat";
 import { createSkillsProvider } from "@/features/skills/lib/skillsProvider";
 import { useChatContext, type ChatContext } from "./useChatContext";
+import inlineUiInstructions from "../prompts/inline-ui.txt?raw";
 
 const state = vi.hoisted(() => ({
   client: { listModels: vi.fn(async () => []) },
@@ -89,6 +90,13 @@ describe("chat prompt context", () => {
     expect(second.runtimeContext()).toContain("/second.md");
   });
 
+  it("includes only the compact UI discovery prompt in chat and omits it in voice", () => {
+    expect(inlineUiInstructions.length).toBeLessThanOrEqual(1200);
+    expect(context().instructions()).toContain(inlineUiInstructions);
+    expect(context(undefined, "voice").instructions()).not.toContain(inlineUiInstructions);
+    expect(context().instructions()).not.toContain("A2UI-CATALOG:START");
+  });
+
   it("selects native chat middleware and realtime tools under the same provider policy", async () => {
     state.providers = [
       createSkillsProvider(
@@ -167,14 +175,18 @@ describe("chat prompt context", () => {
         { context: { elicit }, emitCustomEvent() {} },
       );
       expect(elicit).toHaveBeenCalledExactlyOnceWith({
-        message: "A few quick questions:",
+        message: "",
+        presentation: {
+          kind: "questions",
+          fieldOrder: ["format"],
+          fields: { format: { allowOther: true, options: [{ value: "html", label: "Interactive HTML" }] } },
+        },
         requestedSchema: {
           type: "object",
           properties: {
             format: {
               type: "string",
               title: "Which format?",
-              oneOf: [{ const: "html", title: "Interactive HTML" }],
             },
           },
         },
@@ -193,5 +205,21 @@ describe("chat prompt context", () => {
     const available = context({ id: "test", name: "Test", tools }).tools();
     expect(available.map((tool) => tool.name)).toEqual(["create_image", "ask_questions", "agent"]);
     expect(new Set(available.map((tool) => tool.name)).size).toBe(available.length);
+  });
+
+  it.each(["chat", "voice"] as const)("does not shadow a provider's ask_questions tool in %s", (mode) => {
+    const providerTool = {
+      name: "ask_questions",
+      description: "External survey",
+      inputSchema: z.strictObject({ survey: z.string() }),
+      execute: async () => [],
+    };
+    state.providers = [{ id: "survey", name: "Survey", tools: [providerTool] }];
+    const available = context(undefined, mode).tools();
+    expect(available.filter((tool) => tool.name === "ask_questions")).toEqual([providerTool]);
+    const disabled = context({ id: "test", name: "Test", tools: { enabled: [], disabled: ["survey"] } }, mode);
+    const fallback = disabled.tools().filter((tool) => tool.name === "ask_questions");
+    expect(fallback).toHaveLength(1);
+    expect(fallback[0]).not.toBe(providerTool);
   });
 });

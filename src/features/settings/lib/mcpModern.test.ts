@@ -9,9 +9,13 @@ import {
 import type { CallToolResult, Tool } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MCPClient } from "./mcp";
+import { getErrorInfo } from "@/shared/lib/errors";
 
 type Wire = { method?: string; id?: string | number; params?: Record<string, unknown> };
-type Call = (name: string, ctx: ServerContext) => CallToolResult | ReturnType<typeof inputRequired>;
+type Call = (
+  name: string,
+  ctx: ServerContext,
+) => CallToolResult | ReturnType<typeof inputRequired> | Promise<CallToolResult>;
 
 const schema = { type: "object", properties: { name: { type: "string" } } } as const;
 const text = (value: string): CallToolResult => ({ content: [{ type: "text", text: value }] });
@@ -52,6 +56,7 @@ beforeEach(() => {
   provider = new MCPClient("test", "https://example.test/mcp", "Test", "Test");
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await provider.disconnect();
   await handler.close();
   vi.unstubAllGlobals();
@@ -71,6 +76,38 @@ const askOnce = (answer: (ctx: ServerContext) => CallToolResult) => (name: strin
 };
 
 describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
+  it("allows a silent tool past one minute and reports its separate 15-minute deadline as a timeout", async () => {
+    await provider.connect();
+    vi.useFakeTimers();
+    let release!: (result: CallToolResult) => void;
+    call.mockImplementation(
+      () =>
+        new Promise<CallToolResult>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    let settled = false;
+    const request = Promise.resolve(
+      tool("run").execute({}, { context: { signal: controller.signal }, emitCustomEvent() {} }),
+    )
+      .then(() => undefined, getErrorInfo)
+      .finally(() => {
+        settled = true;
+      });
+    try {
+      await vi.waitFor(() => expect(call).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(14 * 60_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(await request).toMatchObject({ code: "TIMEOUT" });
+      expect(controller.signal.aborted).toBe(false);
+      expect(call).toHaveBeenCalledOnce();
+    } finally {
+      release(text("late result"));
+    }
+  });
+
   it("negotiates the modern revision and keeps the server identity from server/discover", async () => {
     await provider.connect();
     expect(methods()).not.toContain("initialize");
@@ -131,7 +168,7 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     expect(elicit.mock.calls.map(([params]) => params.message)).toEqual(["Round 0", "Round 1"]);
   });
 
-  it("passes a declined elicitation to the server", async () => {
+  it.each(["decline", "cancel"])("passes a %s elicitation to the server", async (action) => {
     call.mockImplementation(
       askOnce((ctx) => {
         const answer = inputResponse(ctx.mcpReq.inputResponses, "name");
@@ -140,10 +177,32 @@ describe("MCP over the 2026-07-28 protocol with the real SDK", () => {
     );
     await provider.connect();
 
-    const elicit = vi.fn().mockResolvedValue({ action: "decline" });
+    const elicit = vi.fn().mockResolvedValue({ action });
     expect(await tool("ask").execute({}, { context: { elicit }, emitCustomEvent() {} })).toEqual([
-      { type: "text", content: "decline" },
+      { type: "text", content: action },
     ]);
+  });
+
+  it.each(["stop", "disconnect"])("does not send a late input answer after %s", async (action) => {
+    call.mockImplementation(askOnce(() => text("must not retry")));
+    await provider.connect();
+    let answer!: (value: { action: "accept" }) => void;
+    const elicit = vi.fn(
+      () =>
+        new Promise<{ action: "accept" }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const execution = tool("ask").execute({}, { context: { elicit, signal: controller.signal }, emitCustomEvent() {} });
+    const rejected = expect(execution).rejects.toThrow();
+    await vi.waitFor(() => expect(elicit).toHaveBeenCalledOnce());
+    if (action === "stop") controller.abort();
+    else await provider.disconnect();
+    await rejected;
+    answer({ action: "accept" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(retries()).toHaveLength(1);
   });
 
   it("fails the tool call without retrying when no one can answer the elicitation", async () => {

@@ -1,9 +1,11 @@
+import { convertSchemaToJsonSchema, type SchemaInput } from "@tanstack/ai";
 import type { ChatInterrupt, ToolApprovalInterrupt } from "@tanstack/ai-client";
-import { Check, ChevronRight, ShieldQuestion, X } from "lucide-react";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useChatRunState } from "../hooks/useChat";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
+import { ApprovalRequest } from "./ApprovalRequest";
 import type { FormElicitation } from "@/shared/types/elicitation";
+import { primaryInputKeys } from "@/shared/lib/toolInput";
 import { findTool, resolveToolHeader } from "./toolDisplay";
 
 /** The framework owns batching, validation, cancellation and resume. */
@@ -48,59 +50,35 @@ export function ChatInterrupts() {
 function InterruptRequest({ interrupt }: { interrupt: ChatInterrupt | ToolApprovalInterrupt }) {
   const { providers } = useToolsContext();
   if (interrupt.kind === "tool-approval") {
-    const args = JSON.stringify(interrupt.originalArgs, null, 2);
     const tool = findTool(providers, interrupt.toolName);
-    const header = resolveToolHeader(tool, interrupt.toolName, args, {});
-    const input = interrupt.originalArgs;
+    const header = resolveToolHeader(tool, interrupt.toolName, JSON.stringify(interrupt.originalArgs), {});
+    const original =
+      interrupt.originalArgs && typeof interrupt.originalArgs === "object" && !Array.isArray(interrupt.originalArgs)
+        ? (interrupt.originalArgs as Record<string, unknown>)
+        : { input: interrupt.originalArgs };
+    // A subagent receives its brief rather than the raw prompt, so that is what is approved.
     const brief =
-      tool?.subagent && input && typeof input === "object" && "prompt" in input && typeof input.prompt === "string"
-        ? input.prompt
-        : undefined;
+      tool?.subagent?.brief && typeof original.prompt === "string" ? tool.subagent.brief(original) : undefined;
+    const input = brief ? { ...original, prompt: brief } : original;
+    const provider = providers.find((provider) => tool && provider.tools.includes(tool));
     return (
-      <div className="flex min-w-0 items-start gap-2">
-        <ShieldQuestion aria-hidden="true" className="mt-0.5 size-3 shrink-0 text-neutral-400 dark:text-neutral-500" />
-        <div className="min-w-0 flex-1 space-y-2">
-          <p className="font-medium">
-            {interrupt.message?.replace(`run ${interrupt.toolName}`, `run ${header.label}`) ?? `Allow ${header.label}?`}
-          </p>
-          {header.preview && <p className="line-clamp-2 break-words">{header.preview}</p>}
-          {args && args !== "{}" && (
-            <details className="group/args">
-              <summary className="flex cursor-pointer list-none items-center gap-1 text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 [&::-webkit-details-marker]:hidden">
-                <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open/args:rotate-90" />
-                View details
-              </summary>
-              {brief ? (
-                <p className="mt-1 whitespace-pre-wrap break-words">{brief}</p>
-              ) : (
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs">{args}</pre>
-              )}
-            </details>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded bg-neutral-200 px-2 py-1 text-xs font-medium text-neutral-800 transition-colors hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              onClick={() => interrupt.resolveInterrupt(true)}
-            >
-              <Check aria-hidden="true" className="size-3" /> Approve
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:text-neutral-800 dark:hover:text-neutral-200"
-              onClick={() => interrupt.resolveInterrupt(false)}
-            >
-              <X aria-hidden="true" className="size-3" /> Decline
-            </button>
-          </div>
-        </div>
-      </div>
+      <ApprovalRequest
+        approval={{
+          tool: header.label,
+          source: provider && provider.name !== header.label ? provider.name : undefined,
+          input,
+          primary: primaryInputKeys(input, tool && jsonSchema(tool.inputSchema)),
+        }}
+        onApprove={() => interrupt.resolveInterrupt(true)}
+        onDecline={() => interrupt.resolveInterrupt(false)}
+        onCancel={() => interrupt.cancel()}
+      />
     );
   }
   const payload = interrupt.metadata?.["tanstack:interruptPayload"] as
     | { kind?: string; request?: FormElicitation }
     | undefined;
-  if (interrupt.kind === "generic" && payload?.kind === "form" && payload.request?.requestedSchema) {
+  if (interrupt.kind === "generic" && payload?.kind === "form" && payload.request) {
     return (
       <ChatMessageElicitation
         toolName={typeof interrupt.metadata?.toolName === "string" ? interrupt.metadata.toolName : "Question"}
@@ -123,4 +101,12 @@ function InterruptRequest({ interrupt }: { interrupt: ChatInterrupt | ToolApprov
       )}
     </>
   );
+}
+
+function jsonSchema(schema: SchemaInput): unknown {
+  try {
+    return convertSchemaToJsonSchema(schema);
+  } catch {
+    return undefined;
+  }
 }

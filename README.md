@@ -10,8 +10,11 @@ conversations, retrieval over your own files, and a library of reusable skills.
 ### Chat
 
 - **Multi-model chat** with configurable models, system instructions, and per-model defaults.
-- **Rich Markdown rendering** — GitHub-flavored Markdown, syntax highlighting (Shiki), math (KaTeX),
+- **Rich Markdown rendering** — TanStack Markdown with GitHub-style tables, task lists and footnotes, syntax highlighting (Shiki), math (KaTeX),
   Mermaid diagrams, emoji, and tables.
+- **Inline UI** — replies can embed small interactive interfaces (what-if calculators, filtered
+  tables, charts, option buttons) as a validated JSON component tree with reactive state. See
+  [docs/inline-ui.md](docs/inline-ui.md).
 - **Conversation management** with optional retention, automatic summarization, and history
   optimization.
 - **Attachments & vision** — drop in images and documents; PDF/Office files are extracted to text.
@@ -311,18 +314,54 @@ The old `support`/`cost` mapping in `links.yaml` and those fields in `public/con
 supported. In JSON, `links` takes precedence, including an empty array. Changes require a server
 restart and browser refresh in production, or a browser refresh during frontend development.
 
+**MCP servers**
+
+Configure MCP servers in `tools.yaml` (or `tools` in `public/config.json`) or install them through
+catalog plugins. Manually added agent MCP servers are no longer supported; existing custom
+definitions are removed when agents load and are discarded from imports. The companion
+configured through `BRIDGE_URL` remains available (the browser JSON field is still `bridge.url`).
+
+```yaml
+# tools.yaml
+- id: managed-server # Gateway: /api/v1/mcp/managed-server, filtered by backend availability
+- id: reports
+  name: Reports
+  url: https://reports.example.com/mcp
+  headers:
+    X-Tenant: example
+```
+
+An explicit `url` supports HTTP(S) and origin-relative paths, such as
+`/api/v1/mcp/research` to use the gateway proxy. IDs identify the selectable provider
+and can differ from the server endpoint. IDs must be unique and cannot
+collide with built-in providers or the `plugin:` namespace. Invalid definitions are skipped.
+Static configuration and plugin `mcp.json` both support string-valued `headers`. These headers
+are delivered to the browser, so use gateway-side configuration for server-only secrets.
+
+Each plugin owns its bundled servers: disabling the plugin disconnects them all. Opening a
+saved MCP app does not change selection; a disabled plugin requires **Enable and reopen**.
+Connection and authentication failures keep the plugin selected and show a status indicator.
+
+OAuth credentials are shared by normalized endpoint URL, including path and query. For
+example, `https://example.com/mcp` and `https://EXAMPLE.com:443/mcp#section` share a login;
+`https://example.com/other`, `/mcp/`, and `/mcp?tenant=acme` each have separate logins.
+Server IDs and plugin installation do not affect the login. Use distinct endpoint URLs for
+different accounts or tenants; headers are not part of the OAuth storage key. Existing
+credentials bound to an endpoint migrate automatically. Older credentials with only a
+server ID cannot be safely associated with a URL and require signing in once. Uninstalling
+a plugin preserves endpoint logins; clearing browser site data removes them.
+
 **Plugin hub**
 
 - `PLUGINS_URL` — base URL of a [plugin-hub](https://agent-plugins.org) instance. When set, a "Hub" tab
-  appears in the Skill Catalog for browsing and installing its plugins' skills into your local
-  skill library. Only skills are installed; any `mcp_servers` a plugin declares are shown for
+  appears in the Skill Catalog for browsing and installing plugins. Bundled skills and URL-based
+  MCP servers become available when the plugin is enabled; command-based servers are shown for
   information only. Supports both Agent Plugin archives (`skills/{name}/SKILL.md`) and standalone
   skill-folder archives (`SKILL.md` at the archive root).
 
 **Feature flags** (set to `true` to enable; most accept companion `*_MODEL` overrides)
 
 - `VISION_ENABLED`, `VOICE_ENABLED`, `TTS_ENABLED`, `STT_ENABLED`
-- `INTERNET_ENABLED` (`INTERNET_SEARCHER`, `INTERNET_SCRAPER`, `INTERNET_RESEARCHER`, `INTERNET_MODEL`, `INTERNET_GUARD`, `INTERNET_ELICITATION`)
 - `RENDERER_ENABLED`, `ARTIFACTS_ENABLED`, `REPOSITORY_ENABLED`, `MEMORY_ENABLED`
 - `EXTRACTOR_ENABLED`, `TRANSLATOR_ENABLED`, `TELEMETRY_ENABLED`
 - `CHAT_RETENTION_DAYS`, `CHAT_INSTRUCTIONS`, `CHAT_SUMMARIZER`, `CHAT_OPTIMIZER`
@@ -332,25 +371,39 @@ restart and browser refresh in production, or a browser refresh during frontend 
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
-`extractor.yaml`, `internet.yaml`, `renderer.yaml`, `repository.yaml`.
+`extractor.yaml`, `renderer.yaml`, `repository.yaml`.
 
-Internet exposes one `web_research` tool. `mode: fast` uses `searcher` directly;
-`mode: deep` uses the configured gateway `researcher`. Without a `researcher`, deep
-mode runs a local agent using `model` (or the parent chat model), with the configured
-`searcher` and/or `scraper`. Only `web_research` is exposed to the parent; local
-`web_search` and `web_fetch` calls stay inside the researcher. The parent is instructed
-to submit one complete brief per user prompt and choose deep upfront when follow-up
-work is needed. `elicitation` requires approval of that input; internal searches and
-page reads need no further approval. This is model guidance, not a runtime call cap:
-another `web_research` invocation would require its own approval. A researcher-only
-setup supports deep mode. `guard` selects the gateway content checker. An omitted guard
-uses the gateway default, which passes when no guards are configured.
+Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
+and `INTERNET_*` settings with an entry in `tools.yaml`:
 
-Enable internet via `internet.yaml` or `INTERNET_ENABLED=true`. Environment overrides
-also apply when YAML enables it; `INTERNET_ENABLED=false` disables it. An explicitly
-empty selector clears the YAML value, e.g. `INTERNET_RESEARCHER=` selects the local
-agent. Local frontend development uses the same fields in `public/config.json`.
-See [research benchmarks](docs/research-benchmarks.md) for timings and reproduction.
+```yaml
+- id: internet
+  name: Web Search
+  description: Access up-to-date information
+  url: /api/v1/mcp/research
+  needsApproval: true
+# Optionally expose the gateway's separate search/fetch server:
+# - id: web
+#   name: Web
+#   needsApproval: true
+```
+
+`needsApproval: true` pauses each tool call in chat before any arguments are sent
+and shows the input for approval. Declining sends no tool request. Server-requested
+MCP elicitation remains supported independently. Calls originating in an MCP app
+are blocked for servers requiring approval; use chat to approve those calls.
+
+The `internet` provider retains the primary Web Search feature: globe icon, readable
+research instructions and results, and an approval request that shows exactly what
+will be sent. Existing saved `internet` selections continue to work.
+
+Every MCP tool call requests progress. Running rows show server messages and a
+percentage when a total is supplied; servers without notifications retain the
+normal activity indicator. Tool calls allow up to 15 minutes and can be stopped.
+Search options, research orchestration, summarization, and content guards now
+belong to the gateway, whose tool schemas and instructions are discovered over MCP.
+See [MCP progress](https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/progress)
+and [TanStack tool approval](https://tanstack.com/ai/latest/docs/tools/tool-approval).
 
 Model entries can list retired IDs in `replaces` to redirect saved agents and
 chats to a current model. See [model replacements](docs/model-catalog.md#model-replacements).

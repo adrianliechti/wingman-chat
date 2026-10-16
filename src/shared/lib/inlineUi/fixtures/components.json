@@ -1,0 +1,1582 @@
+{
+  "Text": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Text",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Text",
+          "text": "Hello"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Image": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Image",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Image",
+          "url": "https://example.com/image.png",
+          "description": "Example"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Icon": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Icon",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Icon",
+          "name": "info"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Video": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Video",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Video",
+          "url": "https://example.com/video.mp4"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "AudioPlayer": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-AudioPlayer",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "AudioPlayer",
+          "url": "https://example.com/audio.mp3",
+          "description": "Audio"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Row": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Row",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Row",
+          "children": ["child"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Column": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Column",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Column",
+          "children": ["child"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "List": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-List",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "List",
+          "children": ["child"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Card": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Card",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Card",
+          "child": "child"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Tabs": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Tabs",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Tabs",
+          "tabs": [
+            {
+              "title": "One",
+              "child": "child"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Divider": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Divider",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Divider"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Modal": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Modal",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Modal",
+          "trigger": "child",
+          "content": "details"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Button": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Button",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Button",
+          "child": "child",
+          "action": {
+            "event": {
+              "name": "choose",
+              "userMessage": "Choose this",
+              "context": {
+                "value": {
+                  "@path": "/name"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "CheckBox": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-CheckBox",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "CheckBox",
+          "label": "Agree",
+          "value": {
+            "@path": "/agree"
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "TextField": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-TextField",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "TextField",
+          "label": "Name",
+          "value": {
+            "@path": "/name"
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "DateTimeInput": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-DateTimeInput",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "DateTimeInput",
+          "label": "Date",
+          "value": {
+            "@path": "/date"
+          },
+          "enableDate": true,
+          "enableTime": false
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "ChoicePicker": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-ChoicePicker",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "ChoicePicker",
+          "options": [
+            {
+              "value": "a",
+              "label": "A"
+            },
+            {
+              "value": "b",
+              "label": "B"
+            }
+          ],
+          "value": {
+            "@path": "/choices"
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Slider": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Slider",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Slider",
+          "label": "Quantity",
+          "min": 0,
+          "max": 10,
+          "value": {
+            "@path": "/quantity"
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Grid": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Grid",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Grid",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "columns": 2,
+          "children": ["child"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Collapsible": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Collapsible",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Collapsible",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "title": "Details",
+          "children": ["child"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Heading": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Heading",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Heading",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "text": "Heading"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Metric": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Metric",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Metric",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Total",
+          "value": 42,
+          "format": "number"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Callout": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Callout",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Callout",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "text": "Note"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Badge": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Badge",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Badge",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "text": "Ready"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Code": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Code",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Code",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "text": "const n = 1;",
+          "language": "js"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Progress": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Progress",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Progress",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Progress",
+          "value": 50
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Svg": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Svg",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Svg",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "markup": "<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg>",
+          "label": "Circle"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Link": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Link",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Link",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "text": "Link",
+          "href": "https://example.com"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Html": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Html",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Html",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "markup": "<p>Preview</p>"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Timeline": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Timeline",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Timeline",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "items": [
+            {
+              "label": "First",
+              "time": "Today"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "KeyValue": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-KeyValue",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "KeyValue",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "items": [
+            {
+              "label": "Status",
+              "value": "Ready"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "TextList": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-TextList",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "TextList",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "items": ["One", "Two"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Table": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Table",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Table",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "columns": [
+            {
+              "key": "x",
+              "label": "X"
+            },
+            {
+              "key": "y",
+              "label": "Y"
+            }
+          ],
+          "rows": [
+            {
+              "x": "A",
+              "y": 2
+            },
+            {
+              "x": "B",
+              "y": 4
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Chart": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Chart",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Chart",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "kind": "bar",
+          "data": [
+            {
+              "x": "A",
+              "y": 2
+            },
+            {
+              "x": "B",
+              "y": 4
+            }
+          ],
+          "x": "x",
+          "y": "y"
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Select": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Select",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Select",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Plan",
+          "value": {
+            "@path": "/choice"
+          },
+          "options": [
+            {
+              "value": "a",
+              "label": "A"
+            },
+            {
+              "value": "b",
+              "label": "B"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "MultiSelect": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-MultiSelect",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "MultiSelect",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Plans",
+          "value": {
+            "@path": "/choices"
+          },
+          "options": [
+            {
+              "value": "a",
+              "label": "A"
+            },
+            {
+              "value": "b",
+              "label": "B"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Segmented": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Segmented",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Segmented",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "View",
+          "value": {
+            "@path": "/choice"
+          },
+          "options": [
+            {
+              "value": "a",
+              "label": "A"
+            },
+            {
+              "value": "b",
+              "label": "B"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Radio": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Radio",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Radio",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Choice",
+          "value": {
+            "@path": "/choice"
+          },
+          "options": [
+            {
+              "value": "a",
+              "label": "A"
+            },
+            {
+              "value": "b",
+              "label": "B"
+            }
+          ]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Toggle": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Toggle",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Toggle",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Enabled",
+          "value": {
+            "@path": "/agree"
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Stepper": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Stepper",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Stepper",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Quantity",
+          "value": {
+            "@path": "/quantity"
+          },
+          "min": 0,
+          "max": 10
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Checklist": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Checklist",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Checklist",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "label": "Steps",
+          "value": {
+            "@path": "/choices"
+          },
+          "items": ["a", "b"]
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  },
+  "Form": {
+    "version": "v1.0",
+    "createSurface": {
+      "surfaceId": "fixture-Form",
+      "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      "sendDataModel": true,
+      "dataModel": {
+        "name": "Ada",
+        "agree": false,
+        "date": "2026-10-11",
+        "choices": ["a"],
+        "choice": "a",
+        "quantity": 3
+      },
+      "components": [
+        {
+          "id": "root",
+          "component": "Form",
+          "catalogId": "urn:wingman:inline-ui:catalog:1",
+          "children": ["child"],
+          "submit": "Save",
+          "action": {
+            "event": {
+              "name": "save",
+              "context": {
+                "name": {
+                  "@path": "/name"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "child",
+          "component": "Text",
+          "text": "Child content"
+        },
+        {
+          "id": "details",
+          "component": "Text",
+          "text": "Modal content"
+        }
+      ]
+    }
+  }
+}

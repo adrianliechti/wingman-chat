@@ -20,6 +20,7 @@ export interface HubMcpServer {
   type: string;
   url?: string;
   command?: string;
+  headers?: Record<string, string>;
 }
 
 /**

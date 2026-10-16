@@ -39,6 +39,51 @@ beforeEach(() => {
 });
 
 describe("chat persistence", () => {
+  it("round-trips native widgets without moving app data back onto tool results", async () => {
+    const value = chat();
+    value.messages = [
+      assistantMessage([
+        { type: "tool-call", id: "app", name: "app", arguments: "{}", state: "complete" },
+        { type: "tool-result", toolCallId: "app", content: [text("Visible")], state: "complete" },
+        {
+          type: "ui-resource",
+          serverId: "server",
+          toolCallId: "app",
+          toolName: "app",
+          resource: { uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Saved HTML</p>" },
+          meta: {
+            mcpResult: {
+              content: [{ type: "text", text: "Visible" }],
+              structuredContent: { count: 2 },
+              _meta: { private: true },
+            },
+            ui: { permissions: { microphone: {} }, csp: { connectDomains: ["https://example.test"] } },
+          },
+        },
+      ]),
+    ];
+    await storeChat(value);
+    expect(await loadChat(value.id)).toMatchObject(value);
+    expect((await opfs.readJson<opfs.StoredChat>("chats/chat/chat.json"))?.messages[0].parts[1]).not.toHaveProperty(
+      "metadata",
+    );
+    expect(await opfs.fileExists("chats/chat/chat.legacy.json")).toBe(false);
+  });
+
+  it("rejects unsupported versions without changing records or deleting retention candidates", async () => {
+    const stored = { ...(await opfs.extractChatBlobs(chat())), version: 99 };
+    memory.put("chats/chat/chat.json", JSON.stringify(stored));
+    memory.put("chats/index.json", JSON.stringify([{ id: "chat", updated: "2020-01-01" }]));
+    config.chat.retentionDays = 30;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(loadChat("chat")).rejects.toThrow("Unsupported chat record version: 99");
+      expect(await loadChatIndex()).toHaveLength(1);
+      expect(await opfs.readJson("chats/chat/chat.json")).toEqual(stored);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
   it("reads only the index at startup and resolves attachment copies when requested", async () => {
     const value = chat();
     value.messages = [userMessage([image()])];
@@ -73,13 +118,13 @@ describe("chat persistence", () => {
       assistantMessage(
         [
           text("Working", { phase: "commentary" }),
-          { type: "tool-call", id: "call", name: "vision", arguments: "{}", state: "complete" },
+          { type: "tool-call", id: "call", name: "vision", arguments: "{}", state: "complete", output: [image()] },
           {
             type: "tool-result",
             toolCallId: "call",
-            content: "[Image - displayed to user]",
+            content: [image()],
             state: "complete",
-            metadata: { result: [image()], meta: { revision: 2 } },
+            metadata: { meta: { revision: 2 } },
           },
         ],
         {
@@ -88,7 +133,6 @@ describe("chat persistence", () => {
           metadata: {
             runId: "run",
             usage: { outputTokens: 3 },
-            textSegments: [{ content: "Working", phase: "commentary" }],
           },
         },
       ),
@@ -143,11 +187,8 @@ describe("chat persistence", () => {
                               {
                                 type: "tool-result",
                                 toolCallId: "call",
-                                content: "[Image - displayed to user]",
+                                content: [image(), mediaFromDataUrl("data:text/plain;base64,bm90ZXM=", "notes.txt")],
                                 state: "complete",
-                                metadata: {
-                                  result: [image(), mediaFromDataUrl("data:text/plain;base64,bm90ZXM=", "notes.txt")],
-                                },
                               },
                             ],
                             { id: "result" },

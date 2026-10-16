@@ -1,3 +1,4 @@
+import { useDebouncer } from "@tanstack/react-pacer";
 import { FileText, FolderOpen, HardDrive, Loader2, Plus, RefreshCw, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -26,43 +27,34 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [showAllFiles, setShowAllFiles] = useState(false);
-  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    return () => {
-      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    };
-  }, []);
+  // dragover fires continuously; the highlight ends shortly after the last event.
+  const endDragOver = useDebouncer(() => setIsDragOver(false), { wait: 100 });
 
   const handleDrop = useCallback(
     async (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
-      if (dragTimeoutRef.current) {
-        clearTimeout(dragTimeoutRef.current);
-        dragTimeoutRef.current = null;
-      }
+      endDragOver.cancel();
 
       const droppedFiles = Array.from(e.dataTransfer?.files ?? []);
       for (const file of droppedFiles) {
         await addFile(file);
       }
     },
-    [addFile],
+    [addFile, endDragOver],
   );
 
-  const handleDragOver = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
-    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    dragTimeoutRef.current = setTimeout(() => {
-      setIsDragOver(false);
-      dragTimeoutRef.current = null;
-    }, 100);
-  }, []);
+  const handleDragOver = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(true);
+      endDragOver.maybeExecute();
+    },
+    [endDragOver],
+  );
 
   useEffect(() => {
     const dropZone = dropZoneRef.current;

@@ -28,6 +28,7 @@ import {
   writeJson,
   writeText,
 } from "@/shared/lib/opfs-core";
+import { withPersistenceLock } from "@/shared/lib/persistence";
 import type { HubMcpServer, InstalledPlugin } from "./types";
 
 const COLLECTION = "plugins";
@@ -123,24 +124,45 @@ async function saveResources(skillDir: string, resources: SkillResource[] = []):
   }
 }
 
+interface DownloadedIcon {
+  file: string;
+  blob: Blob;
+  dataUrl: string;
+}
+
+/** Fetch the icon before locking the collection so network delays do not block storage. */
+async function downloadIcon(iconUrl: string): Promise<DownloadedIcon | undefined> {
+  try {
+    const resp = await fetch(iconUrl);
+    const contentType = resp.headers.get("content-type")?.split(";")[0].trim();
+    const raw = await resp.blob();
+    const blob = contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
+    return {
+      file: `icon.${EXT_BY_MIME[contentType ?? ""] ?? "png"}`,
+      blob,
+      dataUrl: await blobToDataUrl(blob, contentType ?? blob.type),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Persist a plugin as a whole: manifest + every bundled skill and its resources. Returns the icon as a data URL if one was saved. */
 export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Promise<string | undefined> {
+  const icon = iconUrl ? await downloadIcon(iconUrl) : undefined;
+  return withPersistenceLock(`collection:${COLLECTION}`, () => writePlugin(plugin, icon));
+}
+
+async function writePlugin(plugin: InstalledPlugin, icon?: DownloadedIcon): Promise<string | undefined> {
   const pluginDir = `${COLLECTION}/${plugin.id}`;
 
-  let iconFile: string | undefined;
-  let iconDataUrl: string | undefined;
-  if (iconUrl) {
+  // An icon is decoration: a plugin that cannot store one is still installed.
+  let stored = icon;
+  if (icon) {
     try {
-      const resp = await fetch(iconUrl);
-      const contentType = resp.headers.get("content-type")?.split(";")[0].trim();
-      const raw = await resp.blob();
-      const ext = EXT_BY_MIME[contentType ?? ""] ?? "png";
-      iconFile = `icon.${ext}`;
-      const blob = contentType && contentType !== raw.type ? new Blob([raw], { type: contentType }) : raw;
-      await writeBlob(`${pluginDir}/${iconFile}`, blob);
-      iconDataUrl = await blobToDataUrl(blob, contentType ?? blob.type);
+      await writeBlob(`${pluginDir}/${icon.file}`, icon.blob);
     } catch {
-      iconFile = undefined;
+      stored = undefined;
     }
   }
 
@@ -152,7 +174,7 @@ export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Pro
     author: plugin.author,
     keywords: plugin.keywords,
     mcpServers: plugin.mcpServers,
-    icon: iconFile,
+    icon: stored?.file,
     hubUrl: plugin.hubUrl,
     installedAt: plugin.installedAt,
     skillNames: plugin.skills.map((s) => s.name),
@@ -171,7 +193,7 @@ export async function savePlugin(plugin: InstalledPlugin, iconUrl?: string): Pro
     updated: new Date().toISOString(),
   });
 
-  return iconDataUrl;
+  return stored?.dataUrl;
 }
 
 /** Load one installed plugin by id, including its bundled skills and resources. */
@@ -223,6 +245,8 @@ export async function loadAllPlugins(): Promise<InstalledPlugin[]> {
 }
 
 export async function deletePlugin(id: string): Promise<void> {
-  await deleteDirectory(`${COLLECTION}/${id}`);
-  await removeIndexEntry(COLLECTION, id);
+  await withPersistenceLock(`collection:${COLLECTION}`, async () => {
+    await deleteDirectory(`${COLLECTION}/${id}`);
+    await removeIndexEntry(COLLECTION, id);
+  });
 }

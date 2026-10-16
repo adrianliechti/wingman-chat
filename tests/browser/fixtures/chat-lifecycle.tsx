@@ -19,21 +19,28 @@ import { hasStoredAttachments } from "../../../src/features/chat/lib/chatAttachm
 import { storeChat } from "../../../src/features/chat/lib/chatStorage";
 import { ProfileContext, type ProfileContextType } from "../../../src/features/settings/context/ProfileContext";
 import { ToolsContext, type ToolsContextValue } from "../../../src/features/tools/context/ToolsContext";
+import { useToolsContext } from "../../../src/features/tools/hooks/useToolsContext";
+import { useMcpClients } from "../../../src/features/tools/hooks/useMcpClients";
+import type { McpServerDefinition } from "../../../src/features/settings/lib/mcpConfig";
+import { ChatMessageElicitation } from "../../../src/features/chat/components/ChatMessageElicitation";
 import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
-import { getModelCatalog } from "../../../src/shared/lib/modelCatalog";
+import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
 import type { Model } from "../../../src/shared/types/chat";
 import { assistantMessage, messageText, userMessage } from "../../../src/shared/lib/messages";
 import type { ElicitationResult } from "../../../src/shared/types/elicitation";
 import { AppContext, type AppContextType } from "../../../src/shell/context/AppContext";
 
-const config = await loadConfig();
-if (!config) throw new Error("Missing config");
+const fixtureOptions = new URLSearchParams(window.location.search);
+
+const loaded = await loadConfig();
+if (!loaded) throw new Error("Missing config");
+const config = loaded;
 let inventory: Model[] = [{ id: "fixture", name: "Fixture", supportedEfforts: ["low", "high"] }];
 config.client.listModels = async () => inventory;
-const catalog = getModelCatalog(config);
 config.client.classifyChat = async () => ({ title: "Fixture", categories: [], risks: [] });
+config.client.generateTitle = async () => "Fixture";
 const calls: {
   model: string;
   effort?: Model["effort"];
@@ -46,40 +53,41 @@ const calls: {
   callTool: (name: string, args: object) => void;
   signal?: AbortSignal;
 }[] = [];
-config.client.textAdapter = (model, signal) =>
-  testClient(
-    async (options, handler) =>
-      new Promise((resolve) => {
-        // Deliberately ignore cancellation to exercise late provider events.
-        const settings = options.modelOptions as {
-          reasoning?: { effort?: Model["effort"] };
-          text?: { verbosity?: Model["verbosity"] };
-        };
-        calls.push({
-          model,
-          effort: settings.reasoning?.effort,
-          verbosity: settings.text?.verbosity,
-          input: options.messages,
-          instructions: JSON.stringify(options.systemPrompts),
-          tools: options.tools?.map((tool) => tool.name) ?? [],
-          signal,
-          stream: (text) => handler(text),
-          finish: (text) => resolve(assistantMessage(text)),
-          callTool: (name, args) =>
-            resolve(
-              assistantMessage([
-                {
-                  type: "tool-call",
-                  id: crypto.randomUUID(),
-                  name,
-                  arguments: JSON.stringify(args),
-                  state: "input-complete",
-                },
-              ]),
-            ),
-        });
-      }),
-  ).textAdapter(model, signal);
+if (!fixtureOptions.has("gateway"))
+  config.client.textAdapter = (model, signal) =>
+    testClient(
+      async (options, handler) =>
+        new Promise((resolve) => {
+          // Deliberately ignore cancellation to exercise late provider events.
+          const settings = options.modelOptions as {
+            reasoning?: { effort?: Model["effort"] };
+            text?: { verbosity?: Model["verbosity"] };
+          };
+          calls.push({
+            model,
+            effort: settings.reasoning?.effort,
+            verbosity: settings.text?.verbosity,
+            input: options.messages,
+            instructions: JSON.stringify(options.systemPrompts),
+            tools: options.tools?.map((tool) => tool.name) ?? [],
+            signal,
+            stream: (text) => handler(text),
+            finish: (text) => resolve(assistantMessage(text)),
+            callTool: (name, args) =>
+              resolve(
+                assistantMessage([
+                  {
+                    type: "tool-call",
+                    id: crypto.randomUUID(),
+                    name,
+                    arguments: JSON.stringify(args),
+                    state: "input-complete",
+                  },
+                ]),
+              ),
+          });
+        }),
+    ).textAdapter(model, signal);
 const reads: string[] = [];
 let heldRead: string | undefined;
 let releaseRead: (() => void) | undefined;
@@ -134,9 +142,14 @@ const text = (value: string): UIMessage => userMessage(value);
 
 function Fixture() {
   const chat = useChat();
+  const tools = useToolsContext();
   window.chatE2E = {
     state: () => ({
-      ready: chat.chatsLoaded && !!chat.model,
+      ready:
+        chat.chatsLoaded &&
+        !!chat.model &&
+        (!mcpServers.length ||
+          tools.providers.some((provider) => provider.id === "internet" && provider.tools.length > 0)),
       chatId: chat.chatId,
       loadedId: chat.chat?.id,
       model: chat.model,
@@ -163,7 +176,7 @@ function Fixture() {
     setModel: chat.setModel,
     refreshModels: async (models: Model[]) => {
       inventory = models;
-      await catalog.refresh(true);
+      await fetchModelCatalog(config, true);
     },
     load: chat.loadChat,
     create: chat.createChat,
@@ -206,6 +219,15 @@ function Fixture() {
       <ActionsProbe />
       <ComposerProbe />
       <ChatInterrupts />
+      {chat.pendingElicitation && (
+        <ChatMessageElicitation
+          toolName={chat.pendingElicitation.toolName}
+          elicitation={chat.pendingElicitation.elicitation}
+          waiting={chat.pendingElicitation.waiting}
+          completed={chat.pendingElicitation.completed}
+          onResolve={chat.resolveElicitation}
+        />
+      )}
       <div data-testid="messages">{chat.messages.map((message) => messageText(message)).join("|")}</div>
       <div style={{ paddingTop: 1500 }}>
         {chat.chat?.messages
@@ -240,16 +262,31 @@ const skills = createSkillsProvider(
   { id: "fixture-skills", name: "Skills", description: "Fixture" },
 )!;
 
+const mcpServers: McpServerDefinition[] = new URLSearchParams(location.search).has("mcp")
+  ? [
+      {
+        id: "internet",
+        source: "configured",
+        name: "Web Search",
+        description: "Access up-to-date information",
+        url: new URL("/fixture-mcp", location.origin).href,
+        needsApproval: true,
+      },
+    ]
+  : [];
+const desiredMcp = new Set(mcpServers.map((server) => server.id));
 function ToolsOwner({ children }: { children: ReactNode }) {
+  const { clients, getState } = useMcpClients(mcpServers, desiredMcp);
   const [enabled, setEnabled] = useState(false);
   window.setChatSkills = setEnabled;
   return (
     <ToolsContext
       value={
         {
-          providers: enabled ? [skills] : [],
+          providers: [...(enabled ? [skills] : []), ...clients],
           coreProviders: [],
-          getProviderState: () => "connected",
+          isProviderEnabled: () => true,
+          getProviderState: (id: string) => (id === "internet" ? getState(id) : "connected"),
         } as unknown as ToolsContextValue
       }
     >

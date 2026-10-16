@@ -7,6 +7,7 @@
 import type JSZip from "jszip";
 import { type ParsedSkill, parseSkillsFromZip } from "@/features/skills/lib/skillParser";
 import type { HubMcpServer, HubPlugin } from "./types";
+import { normalizeMcpHeaders } from "@/features/settings/lib/mcpConfig";
 
 export type HubErrorKind = "network" | "too-large" | "invalid";
 
@@ -120,13 +121,25 @@ async function parseMcpServers(zip: JSZip): Promise<HubMcpServer[]> {
   const result: HubMcpServer[] = [];
   for (const [name, raw] of Object.entries(servers as Record<string, unknown>)) {
     if (!raw || typeof raw !== "object") continue;
-    const { type, url, command } = raw as { type?: unknown; url?: unknown; command?: unknown };
+    const { type, url, command, headers } = raw as {
+      type?: unknown;
+      url?: unknown;
+      command?: unknown;
+      headers?: unknown;
+    };
     if (typeof type !== "string") continue;
+    let normalizedHeaders: Record<string, string> | undefined;
+    try {
+      normalizedHeaders = normalizeMcpHeaders(headers);
+    } catch {
+      throw new HubError("invalid", `Invalid MCP headers for server "${name}"`);
+    }
     result.push({
       name,
       type,
       url: typeof url === "string" ? url : undefined,
       command: typeof command === "string" ? command : undefined,
+      ...(normalizedHeaders ? { headers: normalizedHeaders } : {}),
     });
   }
   return result;

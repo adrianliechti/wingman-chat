@@ -1,3 +1,4 @@
+import { Debouncer } from "@tanstack/pacer";
 import { z } from "zod";
 import { getConfig } from "@/shared/config";
 import { loadChat } from "@/features/chat/lib/chatStorage";
@@ -288,38 +289,48 @@ export async function processMemoryJob(
   });
 }
 
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
+// Background learning starts half a minute after the last activity for an
+// agent; any new activity pushes it back again.
+const schedulers = new Map<string, Debouncer<() => void>>();
 const active = new Map<string, number>();
 const workers = new Map<string, AbortController>();
 
-export function resumeMemoryLearning(manager: MemoryManager): void {
-  clearTimeout(timers.get(manager.agentId));
+function scheduler(manager: MemoryManager): Debouncer<() => void> {
+  let debouncer = schedulers.get(manager.agentId);
+  if (!debouncer) {
+    debouncer = new Debouncer(() => startMemoryJob(manager), { wait: 30_000 });
+    schedulers.set(manager.agentId, debouncer);
+  }
+  return debouncer;
+}
+
+function startMemoryJob(manager: MemoryManager): void {
   if (active.get(manager.agentId)) return;
-  timers.set(
-    manager.agentId,
-    setTimeout(() => {
-      timers.delete(manager.agentId);
-      if (active.get(manager.agentId)) return;
-      const controller = new AbortController();
-      workers.set(manager.agentId, controller);
-      void processMemoryJob(manager, extract, AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]))
-        .then((worked) => {
-          if (worked) resumeMemoryLearning(manager);
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted) console.warn("Memory learning unavailable:", error);
-        })
-        .finally(() => {
-          if (workers.get(manager.agentId) === controller) workers.delete(manager.agentId);
-        });
-    }, 30_000),
-  );
+  const controller = new AbortController();
+  workers.set(manager.agentId, controller);
+  void processMemoryJob(manager, extract, AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]))
+    .then((worked) => {
+      if (worked) resumeMemoryLearning(manager);
+    })
+    .catch((error) => {
+      if (!controller.signal.aborted) console.warn("Memory learning unavailable:", error);
+    })
+    .finally(() => {
+      if (workers.get(manager.agentId) === controller) workers.delete(manager.agentId);
+    });
+}
+
+export function resumeMemoryLearning(manager: MemoryManager): void {
+  const pending = scheduler(manager);
+  pending.cancel();
+  if (active.get(manager.agentId)) return;
+  pending.maybeExecute();
 }
 
 /** Pause background work while answering; return a release function for finally. */
 export function beginMemoryRun(manager: MemoryManager): () => void {
   active.set(manager.agentId, (active.get(manager.agentId) ?? 0) + 1);
-  clearTimeout(timers.get(manager.agentId));
+  schedulers.get(manager.agentId)?.cancel();
   workers.get(manager.agentId)?.abort();
   return () => {
     active.set(manager.agentId, Math.max(0, (active.get(manager.agentId) ?? 1) - 1));

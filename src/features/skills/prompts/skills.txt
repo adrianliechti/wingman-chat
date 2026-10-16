@@ -1,3 +1,5 @@
 Use explicitly requested skills or those clearly matching the task and output. Choose the smallest useful set; keywords alone are insufficient. Read instructions before applying them and reuse content already in context.
 
 Use full listed plugin-qualified names. Read needed references and reuse bundled scripts/assets. If resources are unavailable, explain the limitation and use an available fallback; do not invent their contents.
+
+load_skill returns instructions and resource paths. read_skill_resource takes the exact skill name and a path relative to that skill, including scripts or references. Its encoding says whether content is text or base64. Interpreter script paths use the absolute /skills/<name>/ mount instead. Personal library editing uses list_skills({name, path}) so you read the entry that will actually be changed.

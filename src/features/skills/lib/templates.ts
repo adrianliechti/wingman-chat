@@ -4,12 +4,15 @@
  * Templates live as files under the server's skills directory (`<name>/SKILL.md`,
  * optionally grouped in category folders) and are enumerated by the server's
  * `GET /skills` inventory endpoint (a Vite dev middleware serves the same in
- * local dev). Each entry's `SKILL.md` is fetched lazily and cached here.
+ * local dev). The inventory, each `SKILL.md` and each resource are cached in
+ * the shared query client, so hooks and helper code read the same entries.
  *
  * The Studio category supplies the default capability catalog. Other categories
  * are optional templates users can copy into their editable OPFS skill library.
  */
 
+import { queryOptions } from "@tanstack/react-query";
+import { queryClient } from "@/shared/lib/queryClient";
 import { type ParsedSkill, parseSkillFile } from "./skillParser";
 
 export interface SkillTemplate {
@@ -27,59 +30,55 @@ export interface SkillTemplate {
 
 const INDEX_URL = "/skills";
 
-let indexPromise: Promise<SkillTemplate[]> | null = null;
-const contentCache = new Map<string, Promise<ParsedSkill | null>>();
-const resourceCache = new Map<string, Promise<string | null>>();
-
 /**
- * Fetch and cache the template manifest. Returns an empty list when no manifest
- * is shipped — a missing file falls through to the SPA's index.html, so we
- * verify the response is actually JSON before trusting it.
+ * The template manifest. An empty list is served when no manifest is shipped:
+ * a missing file falls through to the SPA's index.html, so the response must
+ * actually be JSON before it is trusted. An empty or failed result is not kept
+ * fresh, so a later mount or focus tries again.
  */
-export function loadSkillTemplates(): Promise<SkillTemplate[]> {
-  if (indexPromise) return indexPromise;
-
-  indexPromise = fetch(INDEX_URL)
-    .then(async (resp) => {
+export const skillTemplatesQuery = queryOptions({
+  queryKey: ["skills", "templates"] as const,
+  queryFn: async (): Promise<SkillTemplate[]> => {
+    try {
+      const resp = await fetch(INDEX_URL);
       if (!resp.ok) return [];
       const contentType = resp.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) return [];
-      const data = await resp.json();
+      const data: unknown = await resp.json();
       return Array.isArray(data) ? (data as SkillTemplate[]) : [];
-    })
-    .catch(() => []);
+    } catch {
+      return [];
+    }
+  },
+  staleTime: (query) => (query.state.data?.length ? Infinity : 0),
+  gcTime: Infinity,
+});
 
-  // Don't cache an empty/failed result permanently — let a later call retry.
-  void indexPromise.then((templates) => {
-    if (templates.length === 0) indexPromise = null;
-  });
-
-  return indexPromise;
+export function loadSkillTemplates(): Promise<SkillTemplate[]> {
+  return queryClient.fetchQuery(skillTemplatesQuery);
 }
 
-/**
- * Fetch a template's SKILL.md (by its manifest `path`) and parse it into a
- * skill. Returns null if the file is missing or fails validation. Results are
- * cached per path.
- */
-export function loadSkillTemplate(path: string): Promise<ParsedSkill | null> {
-  const cached = contentCache.get(path);
-  if (cached) return cached;
-
-  const promise = fetch(path)
-    .then(async (resp) => {
-      if (!resp.ok) return null;
-      const result = parseSkillFile(await resp.text());
-      return result.success ? result.skill : null;
-    })
-    .catch(() => null);
-
-  // Drop failed entries so a later attempt can fire a new request.
-  void promise.then((skill) => {
-    if (!skill) contentCache.delete(path);
+/** A template's parsed SKILL.md (by its manifest `path`), or null when missing or invalid; nulls are retried later. */
+export function skillTemplateQuery(path: string) {
+  return queryOptions({
+    queryKey: ["skills", "template", path] as const,
+    queryFn: async (): Promise<ParsedSkill | null> => {
+      try {
+        const resp = await fetch(path);
+        if (!resp.ok) return null;
+        const result = parseSkillFile(await resp.text());
+        return result.success ? result.skill : null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: (query) => (query.state.data ? Infinity : 0),
+    gcTime: Infinity,
   });
-  contentCache.set(path, promise);
-  return promise;
+}
+
+export function loadSkillTemplate(path: string): Promise<ParsedSkill | null> {
+  return queryClient.fetchQuery(skillTemplateQuery(path));
 }
 
 export function skillResourceUrl(skillPath: string, resourcePath: string): string {
@@ -88,22 +87,20 @@ export function skillResourceUrl(skillPath: string, resourcePath: string): strin
   return `${base}/${encoded}`;
 }
 
-/** Fetch a text/code resource listed in the skill inventory. */
+/** A text/code resource listed in the skill inventory, or null when missing; nulls are retried later. */
 export function loadSkillResource(skillPath: string, resourcePath: string): Promise<string | null> {
   const url = skillResourceUrl(skillPath, resourcePath);
-  const cached = resourceCache.get(url);
-  if (cached) return cached;
-
-  const promise = fetch(url)
-    .then(async (resp) => {
-      if (!resp.ok) return null;
-      return resp.text();
-    })
-    .catch(() => null);
-
-  void promise.then((content) => {
-    if (content === null) resourceCache.delete(url);
+  return queryClient.fetchQuery({
+    queryKey: ["skills", "resource", url] as const,
+    queryFn: async (): Promise<string | null> => {
+      try {
+        const resp = await fetch(url);
+        return resp.ok ? await resp.text() : null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: (query) => (query.state.data !== null && query.state.data !== undefined ? Infinity : 0),
+    gcTime: Infinity,
   });
-  resourceCache.set(url, promise);
-  return promise;
 }

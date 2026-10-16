@@ -1,26 +1,14 @@
-import { useEffect, useState } from "react";
-import { loadSkillTemplate, loadSkillTemplates, type SkillTemplate } from "@/features/skills/lib/templates";
+import { useQuery } from "@tanstack/react-query";
+import { loadSkillTemplate, type SkillTemplate, skillTemplatesQuery } from "@/features/skills/lib/templates";
+import { queryClient } from "@/shared/lib/queryClient";
+
+const EMPTY_TEMPLATES: SkillTemplate[] = [];
 
 /**
- * Loads the skill inventory served at `/skills`.
- * `loadTemplate` lazily fetches and parses a single template's SKILL.md.
+ * The skill inventory served at `/skills`, shared with helper code through the
+ * query client. `loadTemplate` lazily fetches and parses a single template's SKILL.md.
  */
 export function useSkillTemplates() {
-  const [templates, setTemplates] = useState<SkillTemplate[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadSkillTemplates()
-      .then((loaded) => {
-        if (!cancelled) setTemplates(loaded);
-      })
-      .catch(() => {
-        if (!cancelled) setTemplates([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { templates, loadTemplate: loadSkillTemplate };
+  const { data } = useQuery(skillTemplatesQuery, queryClient);
+  return { templates: data ?? EMPTY_TEMPLATES, loadTemplate: loadSkillTemplate };
 }

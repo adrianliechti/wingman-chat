@@ -70,6 +70,9 @@ vi.mock("@/features/artifacts/lib/fs", () => ({
   },
   resolveArtifactFileSystem: (_fs: unknown, chatId: string) => ({ chatId }),
 }));
+vi.mock("@/features/tools/hooks/useToolsContext", () => ({
+  useToolsContext: () => ({ providers: [], getProviderState: () => "connected", isProviderEnabled: () => true }),
+}));
 vi.mock("@/features/chat/hooks/useChatContext", () => {
   const context = {
     tools: () => fixture.tools,
@@ -247,7 +250,6 @@ describe("saved model replacements", () => {
       skills: [],
       plugins: [],
       tools: [],
-      servers: [],
     };
     const context = await harness();
     expect(context.model).toEqual(fixture.model);
@@ -267,7 +269,6 @@ describe("saved model replacements", () => {
       skills: [],
       plugins: [],
       tools: [],
-      servers: [],
     };
     const context = await harness();
     expect(context.model?.effort).toBeUndefined();
@@ -683,9 +684,10 @@ describe("chat run integration", () => {
     await act(() => context.sendMessage(user("Work")));
     const [result] = saved().messages.flatMap(toolResults);
     expect(toolResultMetadata(result)).toMatchObject({
-      result: output("Done"),
       meta: { progress: "finished", link: "/result" },
     });
+    expect(result.content).toEqual(output("Done"));
+    expect(toolResultMetadata(result)).not.toHaveProperty("result");
     expect(toolResultMetadata(result).meta).not.toHaveProperty("obsolete");
   });
 

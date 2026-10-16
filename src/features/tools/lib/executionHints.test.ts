@@ -9,6 +9,7 @@ describe("executionHints", () => {
     expect(hints).toHaveLength(1);
     expect(hints[0]).toContain('Module "polars.io" could not be imported');
     expect(hints[0]).toContain("pandas or duckdb");
+    expect(hints[0]).not.toContain("import polars");
   });
 
   it("falls back to generic guidance for unknown packages", () => {
@@ -39,7 +40,7 @@ describe("executionHints", () => {
       language: "python",
       files,
     });
-    expect(hint).toContain('No workspace file matches "/home/user/sales.csv"');
+    expect(hint).toContain('Could not open "/home/user/sales.csv"');
     expect(hint).toContain("/data/sales_2024.csv, /data/sales_2023.csv");
     expect(hint).not.toContain("mounted under");
   });
@@ -65,6 +66,42 @@ describe("executionHints", () => {
     expect(empty).toContain("workspace has no files");
   });
 
+  it("does not claim a known workspace file is absent when the interpreter failed to open it", () => {
+    const [hint] = executionHints("FileNotFoundError: No such file or directory: '/notes.md'", {
+      language: "python",
+      files,
+    });
+    expect(hint).toContain("/home/user/notes.md");
+    expect(hint).not.toContain("No workspace file matches");
+  });
+
+  it.each(["ruby", "perl", "java", "go", "cargo", "gcc", "make"])(
+    "does not advise executing %s source in Python",
+    (command) => {
+      const [hint] = executionHints(`bash: ${command}: command not found`, { language: "bash", files });
+      expect(hint).toContain("Rewrite the required operation");
+      expect(hint).not.toContain("Run that code");
+    },
+  );
+
+  it.each(["pip", "pip3", "npm", "npx"])(
+    "does not offer another runtime as a way to install packages with %s",
+    (command) => {
+      const [hint] = executionHints(`bash: ${command}: command not found`, { language: "bash", files });
+      expect(hint).toContain("Package installation");
+      expect(hint).toContain("cannot be installed");
+    },
+  );
+
+  it.each([
+    ["python", "RecursionError: maximum recursion depth exceeded"],
+    ["javascript", "RangeError: Maximum call stack size exceeded"],
+  ] as const)("diagnoses %s stack exhaustion without suggesting data-memory remedies", (language, error) => {
+    const [hint] = executionHints(error, { language, files });
+    expect(hint).toContain("recursive cycles");
+    expect(hint).not.toContain("DuckDB");
+  });
+
   it("treats a missing host program as a subprocess problem, not a missing file", () => {
     const hints = executionHints("FileNotFoundError: [Errno 44] No such file or directory: 'ffmpeg'", {
       language: "python",
@@ -80,6 +117,22 @@ describe("executionHints", () => {
     const [js] = executionHints("Error: file not found: /sales.csv", { language: "javascript", files });
     expect(js).toContain('"/sales.csv"');
     expect(js).not.toContain("mounted under");
+  });
+
+  it.each([
+    ["FileNotFoundError: No such file or directory: '/data/Q3 sales.csv'", "python", "/data/Q3 sales.csv"],
+    ['FileNotFoundError: No such file or directory: "/data/Q3 sales.csv"', "python", "/data/Q3 sales.csv"],
+    [
+      "cat: /skills/plugin:reports/Q3 sales.csv: No such file or directory",
+      "bash",
+      "/skills/plugin:reports/Q3 sales.csv",
+    ],
+    ["Script file not found: /data/Q3 sales.py", "bash", "/data/Q3 sales.py"],
+  ] as const)("extracts the actual path from %s", (error, language, path) => {
+    const hints = executionHints(error, { language, files });
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain(`Could not open "${path}"`);
+    expect(hints[0]).not.toContain('Could not open "FileNotFoundError"');
   });
 
   it.each(["found", "available in browser environments"])("maps Bash commands not %s to recovery hints", (reason) => {

@@ -39,7 +39,7 @@ const saved = (id: string, ...mutations: ArtifactMutation[]): UIMessage => ({
       toolCallId: id,
       content: "Saved",
       state: "complete",
-      metadata: { result: [{ type: "text", content: "Saved" }], meta: { artifactDelta: { mutations } } },
+      metadata: { meta: { artifactDelta: { mutations } } },
     },
   ],
 });
@@ -91,7 +91,10 @@ it("repairs in one native cycle and replaces findings after a dependency is writ
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).toContain("Workspace verification passed");
   expect(JSON.stringify(complete.mock.calls[2][0].messages)).not.toContain("Missing /game.js");
   expect(JSON.stringify(result.messages)).not.toContain("Workspace verification");
-  expect(chunks.filter((chunk) => chunk.type === "RUN_FINISHED")).toHaveLength(1);
+  // Tool boundaries preserve each model call's metadata; only the final stop ends the run.
+  expect(
+    chunks.filter((chunk) => chunk.type === "RUN_FINISHED").map((chunk) => chunk.metadata?.tanstack?.finishReason),
+  ).toEqual(["tool_calls", "tool_calls", "stop"]);
   expect(checked).toEqual([["/game.html"], ["/game.html", "/game.js"]]);
 });
 

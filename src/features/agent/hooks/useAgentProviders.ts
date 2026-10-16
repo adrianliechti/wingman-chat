@@ -1,10 +1,9 @@
 import { BrainCircuit, Package } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
 import type { Agent } from "@/features/agent/types/agent";
 import { createRepositoryTools } from "@/features/repository/lib/repository-tools";
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
-import { MCPClient } from "@/features/settings/lib/mcp";
 import { getConfig } from "@/shared/config";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useAgentFiles } from "./useAgentFiles";
@@ -17,85 +16,22 @@ import { reconcileMemorySources } from "../lib/memorySources";
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
   providers: ToolProvider[];
-  /** Built-in tool IDs this agent has enabled (e.g. "internet", "canvas") */
+  /** Tool provider IDs this agent has enabled (e.g. "web", "artifacts") */
   enabledTools: string[];
-  /** MCP clients owned by this agent (for lifecycle management) */
-  mcpClients: MCPClient[];
 }
 
 /**
  * Given an Agent, assembles its ToolProviders:
  * - Repository provider (if files exist)
  * - Memory provider (if enabled)
- * - Bridge MCP clients (for agent.servers)
  * Skills are assembled separately by useSkillsProvider (a single provider across
  * agent / no-agent modes). Also returns the agent.tools list so ToolsProvider
  * knows which built-in tools to activate.
  */
 export function useAgentProviders(agent: Agent | null): AgentProviders {
+  const config = getConfig();
   const agentId = agent?.id || "";
   const { files, queryChunks } = useAgentFiles(agentId);
-
-  // Track MCP clients for agent's bridge servers
-  const [mcpClients, setMcpClients] = useState<MCPClient[]>([]);
-  const clientsRef = useRef<MCPClient[]>([]);
-
-  const enabledServers = useMemo(() => {
-    if (!agent) return [];
-    return agent.servers.filter((s) => s.enabled);
-  }, [agent]);
-
-  // Track server configs to detect edits (URL, headers, etc.)
-  const serverConfigRef = useRef<Map<string, string>>(new Map());
-
-  // Create/update MCP clients when enabled servers change
-  useEffect(() => {
-    const newIds = new Set(enabledServers.map((s) => s.id));
-
-    // Build config fingerprints to detect property changes
-    const newConfigs = new Map(enabledServers.map((s) => [s.id, JSON.stringify({ url: s.url, headers: s.headers })]));
-
-    // Identify servers whose config changed (edited URL/headers)
-    const changedIds = new Set(
-      enabledServers.filter((s) => serverConfigRef.current.get(s.id) !== newConfigs.get(s.id)).map((s) => s.id),
-    );
-
-    const needsUpdate =
-      changedIds.size > 0 ||
-      clientsRef.current.length !== enabledServers.length ||
-      clientsRef.current.some((c) => !newIds.has(c.id));
-
-    if (needsUpdate) {
-      // Disconnect removed or changed clients
-      const staleClients = clientsRef.current.filter((c) => !newIds.has(c.id) || changedIds.has(c.id));
-      staleClients.forEach((client) => {
-        client.disconnect().catch(console.error);
-      });
-
-      // Create new clients array, reusing unchanged existing clients
-      const newClients = enabledServers.map((server) => {
-        if (!changedIds.has(server.id)) {
-          const existing = clientsRef.current.find((c) => c.id === server.id);
-          if (existing) return existing;
-        }
-        return new MCPClient(server.id, server.url, server.name, server.description, server.headers, server.icon);
-      });
-
-      clientsRef.current = newClients;
-      serverConfigRef.current = newConfigs;
-      setMcpClients(newClients);
-    }
-  }, [enabledServers]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    const clients = clientsRef;
-    return () => {
-      clients.current.forEach((client) => {
-        client.disconnect().catch(console.error);
-      });
-    };
-  }, []);
 
   // --- Repository provider (files only) ---
   const repositoryProvider = useMemo<ToolProvider | null>(() => {
@@ -112,7 +48,6 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [agent, files, queryChunks]);
 
   // --- Memory provider ---
-  const config = getConfig();
   const memoryEnabled = !!config.memory && !!agent?.memory;
   const [coreMemory, setCoreMemory] = useState({ agentId: "", content: "" });
   useEffect(() => {
@@ -158,8 +93,8 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(
-    () => [repositoryProvider, memoryProvider, ...mcpClients].filter(Boolean) as ToolProvider[],
-    [repositoryProvider, memoryProvider, mcpClients],
+    () => [repositoryProvider, memoryProvider].filter(Boolean) as ToolProvider[],
+    [repositoryProvider, memoryProvider],
   );
 
   const enabledTools = useMemo(() => agent?.tools || [], [agent?.tools]);
@@ -167,6 +102,5 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   return {
     providers,
     enabledTools,
-    mcpClients,
   };
 }

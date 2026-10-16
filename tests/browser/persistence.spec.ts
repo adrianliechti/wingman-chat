@@ -7,6 +7,179 @@ async function open(page: Page) {
   await page.waitForFunction(() => window.persistenceE2E?.state().ready && window.profileE2E?.isLoaded);
 }
 
+test("an older backup opens, converts native fields on save and retains its original and attachments", async ({
+  page,
+}) => {
+  await open(page);
+  const original = {
+    id: "older",
+    created: "2020-01-01",
+    updated: "2020-01-02",
+    model: null,
+    messages: [
+      {
+        id: "user",
+        role: "user",
+        content: [{ type: "image", name: "older.jpg", contentType: "image/jpeg", data: "blob:legacy-image" }],
+      },
+      {
+        id: "assistant",
+        role: "assistant",
+        content: [{ type: "tool_call", id: "script", name: "execute_python_code", arguments: "{}" }],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            id: "script",
+            name: "execute_python_code",
+            arguments: "{}",
+            result: [{ type: "text", text: "Created" }],
+            meta: { artifactFiles: ["/report.txt"] },
+          },
+        ],
+      },
+    ],
+  };
+  const archive = new JSZip();
+  archive.file("chats/older.json", JSON.stringify(original));
+  archive.file("blobs/legacy-image.bin", "abc");
+  const bytes = Array.from(await archive.generateAsync({ type: "uint8array" }));
+  const loaded = await page.evaluate(async (bytes) => {
+    const api = window.persistenceE2E;
+    const restored = await api.restore(bytes);
+    const chat = await api.hydrateChat("older");
+    api.updateChat("older", () => ({ customTitle: "Converted", messages: chat.messages }));
+    await api.flush();
+    return {
+      restored,
+      chat,
+      saved: await api.read("chats/older/chat.json"),
+      original: await api.read("chats/older/chat.legacy.json"),
+    };
+  }, bytes);
+  expect(loaded.restored.skipped).toEqual([]);
+  expect(loaded.original).toEqual(original);
+  expect(loaded.chat.messages.map((message) => message.id)).toEqual(["user", "assistant"]);
+  expect(loaded.chat.messages[0].parts[0]).toMatchObject({
+    type: "image",
+    source: { type: "data", mimeType: "image/jpeg", value: "YWJj" },
+    metadata: { filename: "older.jpg" },
+  });
+  expect(loaded.chat.messages[1].parts[1]).toMatchObject({
+    type: "tool-result",
+    toolCallId: "script",
+    state: "complete",
+    content: [{ type: "text", content: "Created" }],
+    metadata: { meta: { artifactDelta: { mutations: [{ operation: "create", path: "/report.txt" }] } } },
+  });
+  expect(loaded.saved).toMatchObject({ version: 2, customTitle: "Converted" });
+  expect(JSON.stringify(loaded.saved)).not.toMatch(/artifactFiles|contentType/);
+  expect(JSON.stringify(loaded.saved)).toContain("blob:sha256-");
+  await page.reload();
+  await page.waitForFunction(() => window.persistenceE2E?.state().ready);
+  expect((await page.evaluate(() => window.persistenceE2E.hydrateChat("older"))).messages[0].parts[0]).toMatchObject({
+    source: { type: "data", mimeType: "image/jpeg", value: "YWJj" },
+  });
+});
+
+test("migrates historical chat and agent ZIPs in real OPFS without losing files", async ({ page }) => {
+  await open(page);
+  const ids = await page.evaluate(async () => {
+    const api = window.persistenceE2E;
+    const agent = await api.createAgent("Existing");
+    await api.write(`agents/${agent.id}/servers.json`, [{ id: "legacy", url: "https://existing.test", enabled: true }]);
+    api.upsertFile(agent.id, {
+      id: "local",
+      name: "local.txt",
+      text: "Keep local file",
+      status: "completed",
+      progress: 100,
+      uploadedAt: new Date(),
+    });
+    const chat = await api.createChat();
+    api.updateChat(chat.id, () => ({ customTitle: "Existing chat" }));
+    await api.flush();
+    return { agent: agent.id, chat: chat.id };
+  });
+  const agentJson = JSON.stringify({
+    name: "Migrated",
+    instructions: "Instructions",
+    skills: ["historical"],
+    servers: [],
+    unknownSetting: { preserved: true },
+  });
+  const archive = new JSZip();
+  archive.file(`agents/${ids.agent}/agent.json`, agentJson);
+  archive.file(
+    `agents/${ids.agent}/skills/historical/SKILL.md`,
+    "---\nname: historical\ndescription: Historical skill\n---\nBody",
+  );
+  archive.file(`agents/${ids.agent}/skills/historical/scripts/run.py`, "print(1)");
+  archive.file(
+    `agents/${ids.agent}/files/imported/metadata.json`,
+    JSON.stringify({ name: "imported.txt", status: "completed", progress: 100, uploadedAt: "2026-03-01" }),
+  );
+  archive.file(`agents/${ids.agent}/files/imported/content.txt`, "Imported source");
+  archive.file(`agents/${ids.agent}/files/imported/segments.json`, '["Imported chunk"]');
+  archive.file(
+    `agents/${ids.agent}/files/imported/embeddings.bin`,
+    new Uint8Array(new Float32Array([2, 0.5, -1]).buffer),
+  );
+  const chat = {
+    id: ids.chat,
+    title: "Historical chat",
+    created: "2026-03-01",
+    updated: "2026-03-02",
+    model: null,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Historical message" },
+          { type: "image", data: "blob:old-image", contentType: "image/png" },
+        ],
+      },
+    ],
+  };
+  archive.file(`chats/${ids.chat}.json`, JSON.stringify(chat));
+  archive.file(`chats/${ids.chat}/blobs/old-image.bin`, "Image bytes");
+  archive.file(`chats/${ids.chat}/artifacts/report.txt`, "Historical artifact");
+  const bytes = Array.from(await archive.generateAsync({ type: "uint8array" }));
+  const result = await page.evaluate((bytes) => window.persistenceE2E.restore(bytes), bytes);
+  expect(result.skipped).toEqual([]);
+  expect(
+    await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/servers.json`), ids.agent),
+  ).toBeUndefined();
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/agent.legacy.json`), ids.agent)).toEqual(
+    JSON.parse(agentJson),
+  );
+  await page.reload();
+  await page.waitForFunction(
+    (id) =>
+      window.persistenceE2E?.state().ready &&
+      window.persistenceE2E.state().agents.some((agent) => agent.id === id && agent.name === "Migrated"),
+    ids.agent,
+  );
+  const state = await page.evaluate(() => window.persistenceE2E.state());
+  expect(state.agents.find((agent) => agent.id === ids.agent)).toMatchObject({
+    name: "Migrated",
+    skills: ["historical"],
+    files: [
+      { id: "local", text: "Keep local file" },
+      { id: "imported", text: "Imported source", segments: [{ text: "Imported chunk", vector: [0.5, -1] }] },
+    ],
+  });
+  expect(state.skills).toEqual(expect.arrayContaining([expect.objectContaining({ name: "historical" })]));
+  const loaded = await page.evaluate((id) => window.persistenceE2E.loadChat(id), ids.chat);
+  expect(loaded.messages[0].parts[0]).toMatchObject({ type: "text", content: "Historical message" });
+  expect(loaded.messages[0].parts[1]).toMatchObject({ type: "image", source: { value: "blob:old-image" } });
+  expect(await page.evaluate((id) => window.persistenceE2E.read(`chats/${id}/chat.legacy.json`), ids.chat)).toEqual(
+    chat,
+  );
+});
+
 test("streams a ZIP to a file and reports malformed JSON before reloading a partial restore", async ({ page }) => {
   await open(page);
   const { id, bytes } = await page.evaluate(async () => {
@@ -123,7 +296,7 @@ test("concurrent creates from two tabs preserve every chat in the index", async 
   ).toEqual(ids);
 });
 
-test("agent file and server changes share one selected snapshot and persist deletions", async ({ page }) => {
+test("agent file and tool changes share one selected snapshot and persist deletions", async ({ page }) => {
   await open(page);
   const id = await page.evaluate(async () => {
     const api = window.persistenceE2E;
@@ -138,24 +311,18 @@ test("agent file and server changes share one selected snapshot and persist dele
       segments: [{ text: "chunk", vector: [0.5, 1] }],
     };
     api.upsertFile(agent.id, file);
-    const server = api.addServer(agent.id, {
-      name: "Server",
-      description: "",
-      url: "https://example.test/mcp",
-      enabled: true,
-    });
-    api.toggleServer(agent.id, server.id);
+    api.updateAgent(agent.id, { tools: ["internet"] });
     await api.flush();
     return agent.id;
   });
   await expect
     .poll(() => page.evaluate(() => window.persistenceE2E.state().currentAgent))
-    .toMatchObject({ id, files: [{ id: "file", text: "" }], servers: [{ enabled: false }] });
+    .toMatchObject({ id, files: [{ id: "file", text: "" }], tools: ["internet"] });
   await page.reload();
   await page.waitForFunction(() => window.persistenceE2E?.state().currentAgent);
   expect(await page.evaluate(() => window.persistenceE2E.state().currentAgent)).toMatchObject({
     name: 'Research: "quoted"\nname',
-    tools: ["mcp:tool,one"],
+    tools: ["internet"],
     files: [{ id: "file", text: "" }],
   });
   await page.evaluate(async (id) => {
@@ -275,6 +442,7 @@ test("backups flush pending chat, image, agent, skill and profile data and resto
   );
   await page.reload();
   await page.waitForFunction(() => window.persistenceE2E?.state().ready && window.profileE2E?.isLoaded);
+  await expect.poll(() => page.evaluate(() => window.persistenceE2E.state().skills.length)).toBe(1);
   const state = await page.evaluate(() => window.persistenceE2E.state());
   expect(state.chats.map((chat) => chat.id).sort()).toEqual([id, extra].sort());
   expect(state.chats.find((chat) => chat.id === id)).toMatchObject({
@@ -299,7 +467,17 @@ test("a failed agent save rolls back real OPFS files and a subsequent flush retr
     api.holdWrite(`agents/${id}/AGENTS.md`, true);
     api.updateAgent(id, {
       name: "After",
-      servers: [{ id: "new", name: "New", description: "", url: "https://example.test", enabled: true }],
+      tools: ["internet"],
+      files: [
+        {
+          id: "new",
+          name: "source.txt",
+          text: "Source",
+          status: "completed",
+          progress: 100,
+          uploadedAt: new Date(),
+        },
+      ],
     });
     try {
       await api.flush();
@@ -309,11 +487,14 @@ test("a failed agent save rolls back real OPFS files and a subsequent flush retr
     }
   }, id);
   expect(error).toBe("failed");
-  expect(await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/servers.json`), id)).toBeUndefined();
+  expect(
+    await page.evaluate((id) => window.persistenceE2E.read(`agents/${id}/files/new/metadata.json`), id),
+  ).toBeUndefined();
   await page.evaluate(() => window.persistenceE2E.flush());
   await page.reload();
   await page.waitForFunction(() => window.persistenceE2E?.state().currentAgent?.name === "After");
   expect(await page.evaluate(() => window.persistenceE2E.state().currentAgent)).toMatchObject({
-    servers: [{ id: "new" }],
+    tools: ["internet"],
+    files: [{ id: "new", text: "Source" }],
   });
 });

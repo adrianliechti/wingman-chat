@@ -65,16 +65,134 @@ afterEach(async () => {
   await provider.disconnect();
   await Promise.all(servers.splice(0).map((value) => value.close()));
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("MCP discovery and call ownership with the real SDK", () => {
-  it("discovers every page, filters app-only tools and persists UI metadata without fetching HTML", async () => {
+  it("preserves task-required calls and reads their completed payload", async () => {
+    capabilities = { tools: {}, tasks: { requests: { tools: { call: {} } } } };
+    list.mockResolvedValue({ tools: [{ ...tool("run"), execution: { taskSupport: "required" } }] });
+    await provider.connect();
+    const task = {
+      taskId: "research-task",
+      status: "working",
+      pollInterval: 0,
+      ttl: 60_000,
+      createdAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+    };
+    server.setRequestHandler("tools/call", async (request) => {
+      expect(request.params.task).toEqual({});
+      return { ...result, task };
+    });
+    const methods: string[] = [];
+    server.fallbackRequestHandler = async (request) => {
+      methods.push(request.method);
+      if (request.method === "tasks/get") return { ...task, status: "completed" };
+      if (request.method === "tasks/result") return result;
+      throw new Error(`Unexpected method: ${request.method}`);
+    };
+    expect(await provider.tools[0].execute({}, { context: undefined, emitCustomEvent() {} })).toEqual([
+      { type: "text", content: "done" },
+    ]);
+    expect(methods).toEqual(["tasks/get", "tasks/result"]);
+  });
+
+  it("requests unique progress tokens and routes concurrent updates only to their calls", async () => {
+    await provider.connect();
+    const pending = [deferred<CallToolResult>(), deferred<CallToolResult>()];
+    const tokens: (string | number)[] = [];
+    server.setRequestHandler("tools/call", async (request) => {
+      const index = Number(request.params.arguments?.index);
+      tokens[index] = request.params._meta!.progressToken!;
+      await server.notification({
+        method: "notifications/progress",
+        params: { progressToken: tokens[index], progress: 1, message: `Searching ${index}` },
+      });
+      return pending[index].promise;
+    });
+    const updates = [vi.fn(), vi.fn()];
+    const executions = updates.map((setMeta, index) =>
+      provider.tools[0].execute({ index }, { context: { setMeta }, emitCustomEvent() {} }),
+    );
+    await expect.poll(() => updates.map((value) => value.mock.calls.length)).toEqual([1, 1]);
+    expect(tokens[0]).not.toBe(tokens[1]);
+    expect(updates[0]).toHaveBeenLastCalledWith({ mcpProgress: { progress: 1, message: "Searching 0" } });
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: tokens[1], progress: 2, total: 4, message: "Reading sources" },
+    });
+    await expect.poll(() => updates[1].mock.calls.length).toBe(2);
+    expect(updates[1]).toHaveBeenLastCalledWith({ mcpProgress: { progress: 2, total: 4, message: "Reading sources" } });
+    expect(updates[0]).toHaveBeenCalledOnce();
+    pending[0].resolve(result);
+    await executions[0];
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: tokens[0], progress: 3, message: "Too late" },
+    });
+    expect(updates[0]).toHaveBeenCalledOnce();
+    pending[1].resolve(result);
+    await executions[1];
+  });
+
+  it("allows research beyond the SDK's default minute and cancels without accepting later progress", async () => {
+    await provider.connect();
+    vi.useFakeTimers();
+    const pending = deferred<CallToolResult>();
+    let token!: string | number;
+    server.setRequestHandler("tools/call", async (request) => {
+      token = request.params._meta!.progressToken!;
+      return pending.promise;
+    });
+    const controller = new AbortController();
+    const setMeta = vi.fn();
+    const execution = provider.tools[0].execute(
+      {},
+      { context: { signal: controller.signal, setMeta }, emitCustomEvent() {} },
+    );
+    const settled = vi.fn();
+    void Promise.resolve(execution).then(settled, settled);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(settled).not.toHaveBeenCalled();
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress: 1, message: "Still researching" },
+    });
+    expect(setMeta).toHaveBeenCalledOnce();
+    controller.abort();
+    await expect(execution).rejects.toThrow();
+    await server.notification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress: 2, message: "Too late" },
+    });
+    expect(setMeta).toHaveBeenCalledOnce();
+    pending.resolve(result);
+  });
+
+  it("discovers every page, filters app-only tools and emits native UI resources with their HTML", async () => {
     list.mockImplementation(async (cursor) =>
       cursor === undefined
-        ? { tools: [tool("app", { resourceUri: "ui://app" })], nextCursor: "page-2" }
+        ? {
+            tools: [
+              tool("app", {
+                resourceUri: "ui://app",
+                defaultDisplayMode: "fullscreen",
+                availableDisplayModes: ["fullscreen"],
+              }),
+            ],
+            nextCursor: "page-2",
+          }
         : { tools: [tool("hidden", { visibility: ["app"] }), tool("plain")] },
     );
     call.mockResolvedValue({ ...result, structuredContent: { count: 2 } });
+    const resource = {
+      uri: "ui://app",
+      mimeType: "text/html;profile=mcp-app",
+      text: "<p>Widget</p>",
+      _meta: { ui: { csp: { connectDomains: ["https://example.test"] }, permissions: { microphone: {} } } },
+    };
+    read.mockResolvedValue({ contents: [resource] });
     await provider.connect();
     expect(list.mock.calls.slice(0, 2)).toEqual([[undefined], ["page-2"]]);
     expect(provider.tools.map((value) => value.name)).toEqual([
@@ -83,13 +201,32 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     ]);
     expect(provider.tools.some((value) => value.lazy)).toBe(false);
     const setMeta = vi.fn();
-    const setContent = vi.fn();
-    await provider.tools[0].execute({}, { context: { setMeta, setContent }, emitCustomEvent() {} });
-    expect(setMeta).toHaveBeenCalledWith(
-      expect.objectContaining({ toolProvider: "test", toolResource: "ui://app", mcpResult: expect.any(Object) }),
-    );
-    expect(setContent).toHaveBeenCalledWith({ count: 2 });
-    expect(read).not.toHaveBeenCalled();
+    const emitCustomEvent = vi.fn();
+    await provider.tools[0].execute({}, { context: { setMeta }, toolCallId: "call", emitCustomEvent });
+    expect(setMeta).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledOnce();
+    expect(emitCustomEvent).toHaveBeenCalledWith("ui-resource", {
+      resource: { uri: resource.uri, mimeType: resource.mimeType, text: resource.text },
+      toolCallId: "call",
+      serverId: "test",
+      toolName: "app",
+      meta: {
+        ...resource._meta,
+        mcpResult: { ...result, structuredContent: { count: 2 } },
+        appDisplayMode: "fullscreen",
+      },
+    });
+  });
+
+  it("keeps tool output when the UI resource cannot be read", async () => {
+    list.mockResolvedValue({ tools: [tool("app", { resourceUri: "ui://app" })] });
+    read.mockRejectedValue(new Error("Resource expired"));
+    await provider.connect();
+    const emitCustomEvent = vi.fn();
+    expect(await provider.tools[0].execute({}, { context: undefined, emitCustomEvent })).toEqual([
+      { type: "text", content: "done" },
+    ]);
+    expect(emitCustomEvent).not.toHaveBeenCalled();
   });
 
   it("connects a resource-only server without asking it for tools", async () => {
@@ -107,11 +244,19 @@ describe("MCP discovery and call ownership with the real SDK", () => {
     await provider.connect();
     const setError = vi.fn();
     const setMeta = vi.fn();
-    expect(await provider.tools[0].execute({}, { context: { setError, setMeta }, emitCustomEvent() {} })).toEqual([
+    read.mockResolvedValue({
+      contents: [{ uri: "ui://app", mimeType: "text/html;profile=mcp-app", text: "<p>Error</p>" }],
+    });
+    const emitCustomEvent = vi.fn();
+    expect(await provider.tools[0].execute({}, { context: { setError, setMeta }, emitCustomEvent })).toEqual([
       { type: "text", content: "done" },
     ]);
     expect(setError).toHaveBeenCalledWith({ code: "MCP_TOOL_ERROR", message: "done" });
-    expect(setMeta).toHaveBeenCalledWith(expect.objectContaining({ mcpResult: failed }));
+    expect(setMeta).not.toHaveBeenCalled();
+    expect(emitCustomEvent).toHaveBeenCalledWith(
+      "ui-resource",
+      expect.objectContaining({ meta: expect.objectContaining({ mcpResult: failed }) }),
+    );
   });
 
   it("coalesces notifications during initial discovery and never publishes the invalidated scan", async () => {

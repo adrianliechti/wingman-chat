@@ -13,7 +13,9 @@ import { parseSkillFileForImport } from "@/features/skills/lib/skillParser";
 import { withArtifactWorkspaceLock } from "@/features/artifacts/lib/workspaceCoordinator";
 import type { IndexEntry } from "./opfs-core";
 import { writeFileChanges } from "./opfs-transaction";
+import { isStoredChat } from "./opfs-chat";
 import { rebuildFolderIndexUnlocked, STORAGE_COLLECTIONS } from "./opfs-index";
+import { migrateImportedRecords, normalizeBundledSkills, prepareAgentFileImport } from "./opfs-import";
 import { isJunkZipEntry } from "./opfs-zip";
 import { flushPersistence, withPersistenceLock } from "./persistence";
 import { readZipEntryBlob } from "./zipStreams";
@@ -40,6 +42,8 @@ export interface RestoreResult {
 class InvalidBackupJsonError extends Error {}
 
 function recordScope(path: string): string {
+  const flatChat = path.match(/^chats\/([^/]+)\.json$/);
+  if (flatChat && flatChat[1] !== "index") return `chats/${flatChat[1]}/`;
   return path.match(/^(?:agents|chats|images|plugins)\/[^/]+\//)?.[0] ?? path;
 }
 
@@ -70,6 +74,10 @@ export async function readZipFiles(blob: Blob, onProgress?: RestoreProgressHandl
     )
       break;
     const stripped = paths.map((path) => path.slice(prefix.length + 1));
+    // A single agent folder can contain a bundled skills/ collection. Its
+    // definition marks a record, not a backup wrapper: keep the folder's ID.
+    if (["chat.json", "AGENTS.md", "AGENT.md", "agent.json", "SKILL.md"].some((marker) => stripped.includes(marker)))
+      break;
     if (
       !stripped.some(
         (path) => (STORAGE_COLLECTIONS as readonly string[]).includes(path.split("/")[0]) || path === "profile.json",
@@ -106,9 +114,9 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
     validateMemoryState(parseBackupJson(path, await blob.text()));
     return;
   }
-  if (/^skills\/[^/]+\/SKILL\.md$/.test(path)) {
+  if (/^(?:skills|agents\/[^/]+\/skills)\/[^/]+\/SKILL\.md$/.test(path)) {
     const parsed = parseSkillFileForImport(await blob.text());
-    if (!parsed.success || parsed.skill.name !== path.split("/")[1])
+    if (!parsed.success || parsed.skill.name !== path.split("/").at(-2))
       throw new Error(`Invalid skill definition: ${path}`);
     return;
   }
@@ -118,14 +126,32 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
   }
   if (
     path === "profile.json" ||
-    /^(chats\/(?:[^/]+\/chat|[^/]+)|agents\/[^/]+\/(agent|servers|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata|plugins\/[^/]+\/plugin)\.json$/.test(
+    /^(chats\/(?:[^/]+\/chat|[^/]+)|agents\/[^/]+\/(agent|files\/index|files\/[^/]+\/(metadata|segments))|images\/[^/]+\/metadata|plugins\/[^/]+\/plugin)\.json$/.test(
       path,
     )
   ) {
     const value = parseBackupJson(path, await blob.text());
     if (!value || typeof value !== "object") throw new Error(`Invalid metadata in backup: ${path}`);
+    if (/^agents\/[^/]+\/agent\.json$/.test(path)) {
+      const agent = value as Record<string, unknown>;
+      if (
+        Array.isArray(agent) ||
+        typeof agent.name !== "string" ||
+        ["instructions", "model", "effort", "verbosity"].some(
+          (key) => agent[key] != null && typeof agent[key] !== "string",
+        ) ||
+        ["skills", "plugins", "tools"].some(
+          (key) =>
+            agent[key] != null &&
+            (!Array.isArray(agent[key]) || agent[key].some((item: unknown) => typeof item !== "string")),
+        ) ||
+        (agent.memory != null && typeof agent.memory !== "boolean")
+      )
+        throw new Error(`Invalid agent definition: ${path}`);
+    }
     if (/^chats\/(?:[^/]+\/chat|[^/]+)\.json$/.test(path)) {
       // The native transcript keeps `parts`; chats saved before it keep `content` and migrate on load.
+      const version = (value as { version?: unknown }).version;
       const messages = (value as { messages?: unknown }).messages;
       const typedParts = (parts: unknown) =>
         Array.isArray(parts) &&
@@ -134,6 +160,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
             !!part && typeof part === "object" && typeof (part as { type?: unknown }).type === "string",
         );
       if (
+        (version !== undefined && !isStoredChat(value)) ||
         !Array.isArray(messages) ||
         messages.some(
           (message) =>
@@ -144,7 +171,7 @@ async function validateMetadata(path: string, blob: Blob): Promise<void> {
       )
         throw new Error(`Invalid chat in backup: ${path}`);
     }
-    if (/\/(servers|files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
+    if (/\/(files\/index|segments)\.json$/.test(path) && !Array.isArray(value))
       throw new Error(`Invalid list in backup: ${path}`);
     if (/\/(files\/index|segments)\.json$/.test(path) && (value as unknown[]).some((item) => typeof item !== "string"))
       throw new Error(`Invalid list entries in backup: ${path}`);
@@ -162,7 +189,7 @@ export async function restoreFiles(
   input: ReadonlyMap<string, Blob>,
   onProgress?: RestoreProgressHandler,
 ): Promise<RestoreResult> {
-  const files = new Map<string, Blob>();
+  let files = new Map<string, Blob>();
   const indexHints = new Map<string, IndexEntry[]>();
   const skipped: RestoreResult["skipped"] = [];
   const skippedRecords = new Set<string>();
@@ -182,6 +209,10 @@ export async function restoreFiles(
     onProgress?.(input.size ? validated / input.size : 1);
     validatePath(path);
     if (isSkipped(path)) continue;
+    if (/^agents\/[^/]+\/servers\.json$/.test(path)) {
+      skipped.push({ path, reason: "Custom agent MCP servers are no longer supported." });
+      continue;
+    }
     const root = path.split("/")[0];
     // A full OPFS backup may also contain older collections and additional
     // user files. Preserve them without inventing sidebar records for them.
@@ -224,6 +255,8 @@ export async function restoreFiles(
   for (const path of files.keys()) {
     if (skippedRecords.has(recordScope(path))) files.delete(path);
   }
+  // Preserve record ownership until malformed agents and their bundles are skipped.
+  files = await normalizeBundledSkills(files);
   if (!files.size) {
     if (skipped.length) return { restoredFiles: 0, skipped };
     throw new Error("No restorable files were found in the archive");
@@ -245,6 +278,7 @@ export async function restoreFiles(
     )
       throw new Error(`Invalid embeddings in backup: ${path}`);
   }
+  const removals = await migrateImportedRecords(files);
   await flushPersistence();
   const keys = [
     ...new Set([...files.keys()].map((path) => (path === "profile.json" ? "profile" : path.split("/")[0]))),
@@ -258,6 +292,8 @@ export async function restoreFiles(
     .map((key) => `${key}/index.json`);
   const apply = async () => {
     const changes = new Map<string, Blob | undefined>(files);
+    for (const path of removals) changes.set(path, undefined);
+    await prepareAgentFileImport(changes);
     await prepareMemoryImport(changes);
     return writeFileChanges(changes, {
       extraPaths: indexes,

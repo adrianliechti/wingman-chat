@@ -1,3 +1,5 @@
+> Historical results from the retired browser internet provider. The client-side benchmark scripts and `internet.*` configuration described below were removed when web tools moved to gateway MCP servers. These instructions no longer apply.
+
 # Research benchmarks
 
 The parent sees one `web_research` tool with `prompt` and `mode: fast | deep`.

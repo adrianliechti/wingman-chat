@@ -38,9 +38,8 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
     () => ({
       chat: value.chat,
       messages: value.messages,
-      toolMeta: value.toolMeta,
     }),
-    [value.chat, value.messages, value.toolMeta],
+    [value.chat, value.messages],
   );
   const chatRunState = useMemo(
     () => ({
@@ -77,7 +76,6 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       setVoiceToolCall: value.setVoiceToolCall,
       resolveElicitation: value.resolveElicitation,
       requestElicitation: value.requestElicitation,
-      updateToolMeta: value.updateToolMeta,
       resolveConsent: value.resolveConsent,
     }),
     [
@@ -96,7 +94,6 @@ export function ChatContextProviders({ value, children }: { value: ChatContextTy
       value.setVoiceToolCall,
       value.resolveElicitation,
       value.requestElicitation,
-      value.updateToolMeta,
       value.resolveConsent,
     ],
   );

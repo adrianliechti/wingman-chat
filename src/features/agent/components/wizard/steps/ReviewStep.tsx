@@ -1,6 +1,5 @@
-import { ChevronDown, FileText, Mic, Puzzle, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import { ChevronDown, FileText, Mic, Puzzle, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
 import { type Dispatch, useId } from "react";
-import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChatModel } from "@/features/chat/hooks/useChat";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { usePlugins } from "@/features/plugins/hooks/usePlugins";
@@ -16,7 +15,6 @@ interface ReviewStepProps {
   selectedSkills: string[];
   selectedPlugins: string[];
   selectedTools: string[];
-  servers: Omit<BridgeServer, "id">[];
   pendingFiles: File[];
   model: string;
   memory: boolean;
@@ -29,7 +27,6 @@ export function ReviewStep({
   selectedSkills,
   selectedPlugins,
   selectedTools,
-  servers,
   pendingFiles,
   model,
   memory,
@@ -139,7 +136,7 @@ export function ReviewStep({
         )}
 
         {/* Tools */}
-        {(selectedTools.length > 0 || servers.length > 0) && (
+        {selectedTools.length > 0 && (
           <div className="px-3 py-2.5">
             <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
               Tools
@@ -151,14 +148,6 @@ export function ReviewStep({
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <Wrench size={8} /> {t}
-                </span>
-              ))}
-              {servers.map((s) => (
-                <span
-                  key={s.url}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
-                >
-                  <Server size={8} /> {s.name}
                 </span>
               ))}
             </div>

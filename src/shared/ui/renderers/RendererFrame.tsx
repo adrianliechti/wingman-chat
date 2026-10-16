@@ -10,16 +10,18 @@ interface RendererFrameProps {
   name?: string;
   /** Action buttons (preview toggle, copy…); revealed on hover. */
   actions?: ReactNode;
+  /** Inline activity content relies on the surrounding rows for vertical spacing. */
+  compact?: boolean;
   children: ReactNode;
 }
 
 // Shared chrome for code/preview blocks: the language tag + actions sit on a row
 // *above* a borderless, faintly tinted content card. Keep this in sync with
 // CodeRenderer, which renders the same frame.
-export function RendererFrame({ label, name, actions, children }: RendererFrameProps) {
+export function RendererFrame({ label, name, actions, children, compact = false }: RendererFrameProps) {
   const showActions = useContext(RendererActionsContext) && !!actions;
   return (
-    <div className="relative my-4">
+    <div className={`relative ${compact ? "my-0" : "my-4"}`}>
       {(label || name || showActions) && (
         <div className="flex items-center justify-between gap-2 mb-1 text-[10px] text-neutral-400 dark:text-neutral-500">
           <span className="truncate font-medium uppercase tracking-wide">

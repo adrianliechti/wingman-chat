@@ -1,5 +1,5 @@
 ## Code execution
-Use execute_script: Python for data, computation and documents; JavaScript for browser media and rendering; Bash for shell pipelines. Use HTML artifacts for interactive charts or DOM interfaces.
+Use execute_script: Python for data, computation and documents; JavaScript for browser media and rendering; Bash for shell pipelines. For small interactive replies in chat, use inline UI. Use HTML artifacts for requested interface files or needs beyond inline components; interpreter scripts have no DOM.
 
 Pass code with language, or path to an artifact/selected-skill script. Optional args is an array of strings, excluding the script path.
 

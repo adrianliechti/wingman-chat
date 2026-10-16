@@ -1,13 +1,15 @@
 import { createContext } from "react";
 import type { McpAppOptions, McpAppData } from "@/features/settings/lib/mcpAppSession";
 import type { SkillSources } from "@/features/skills/lib/skillsProvider";
-import type { ContentPart } from "@tanstack/ai";
+import type { ToolResultPart, UIResourcePart } from "@tanstack/ai";
 import type { ProviderState, ToolProvider } from "@/shared/types/chat";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
   /** Always-on providers that are never user-toggleable and bypass model tool filters (e.g. Skill Builder). */
   coreProviders: ToolProvider[];
+  /** Selected independently of connection or authentication status. */
+  isProviderEnabled: (id: string) => boolean;
   getProviderState: (id: string) => ProviderState;
   /** Whether the active agent locks this tool on ("required") or leaves it user-toggleable ("optional"). */
   getProviderPolicy: (id: string) => "required" | "optional";
@@ -20,12 +22,9 @@ export interface ToolsContextValue {
   companionEnabled: boolean;
   toggleCompanion: () => void;
   restoreToolUI: (
-    providerId: string,
-    toolName: string,
-    resourceUri: string,
+    app: UIResourcePart,
     args: Record<string, unknown>,
-    result: ContentPart[],
-    content: Record<string, unknown> | undefined,
+    result: ToolResultPart,
     options: McpAppOptions,
   ) => Promise<McpAppData>;
 }

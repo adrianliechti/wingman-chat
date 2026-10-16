@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 
 export interface AgentContextType {
@@ -20,11 +20,6 @@ export interface AgentContextType {
   getAgent: (agentId: string) => Agent | undefined;
   addFile: (agentId: string, file: File) => Promise<void>;
   reindexFile: (agentId: string, fileId: string) => Promise<void>;
-  // Bridge server operations within an agent
-  addServer: (agentId: string, server: Omit<BridgeServer, "id">) => BridgeServer;
-  updateServer: (agentId: string, serverId: string, updates: Partial<Omit<BridgeServer, "id">>) => void;
-  removeServer: (agentId: string, serverId: string) => void;
-  toggleServer: (agentId: string, serverId: string) => void;
 }
 
 export const AgentContext = createContext<AgentContextType | undefined>(undefined);

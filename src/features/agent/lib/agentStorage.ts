@@ -1,4 +1,4 @@
-import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import type { Agent } from "@/features/agent/types/agent";
 import { reconcileRepositoryFilePaths } from "@/features/repository/lib/repository-paths";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import * as opfs from "@/shared/lib/opfs";
@@ -21,7 +21,6 @@ interface StoredFileMeta {
 
 // Agent-specific OPFS operations using folder structure:
 // /agents/{id}/AGENTS.md - YAML frontmatter (metadata) + markdown body (instructions)
-// /agents/{id}/servers.json - BridgeServer[] (complex nested data)
 // /agents/{id}/files/{fileId}/metadata.json - file metadata
 // /agents/{id}/files/{fileId}/content.txt - extracted text
 // /agents/{id}/files/{fileId}/embeddings.bin - embedding vectors as Float32Array
@@ -38,7 +37,8 @@ async function writeAgent(agent: Agent): Promise<void> {
   const agentPath = `${COLLECTION}/${agent.id}`;
   const changes = new Map<string, Blob | undefined>();
   const json = (value: unknown) => new Blob([JSON.stringify(value)], { type: "application/json" });
-  changes.set(`${agentPath}/servers.json`, agent.servers.length ? json(agent.servers) : undefined);
+  changes.set(`${agentPath}/servers.json`, undefined);
+  changes.set(`${agentPath}/agent.json`, undefined);
   for (const file of agent.files ?? []) {
     const path = `${agentPath}/files/${file.id}`;
     changes.set(`${path}/content.txt`, file.text === undefined ? undefined : new Blob([file.text]));
@@ -114,15 +114,6 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
     return undefined;
   }
 
-  // Load servers from servers.json (new format; legacy agents have them inline in agent.json)
-  let servers = ("servers" in meta ? meta.servers : undefined) ?? [];
-  if (servers.length === 0) {
-    const loadedServers = await opfs.readJson<BridgeServer[]>(`${agentPath}/servers.json`);
-    if (loadedServers && Array.isArray(loadedServers)) {
-      servers = loadedServers;
-    }
-  }
-
   // Load files from subfolders
   const files: RepositoryFile[] = [];
   const fileIds =
@@ -148,7 +139,6 @@ export async function loadAgent(id: string): Promise<Agent | undefined> {
     instructions: meta.instructions,
     skills: meta.skills ?? [],
     plugins: meta.plugins ?? [],
-    servers,
     tools: (meta.tools ?? []).filter((id) => id !== "studio"),
     model: meta.model,
     effort: meta.effort,
@@ -231,11 +221,29 @@ export async function loadAgents(): Promise<Agent[]> {
     for (const entry of await opfs.readIndex(COLLECTION)) {
       try {
         const agent = await loadAgent(entry.id);
-        if (agent) agents.push(agent);
+        if (agent) {
+          agents.push(agent);
+          await removeLegacyAgentServers(entry.id).catch((error) =>
+            console.warn(`Could not remove retired MCP settings for agent ${entry.id}:`, error),
+          );
+        }
       } catch (error) {
         console.error(`Could not load agent ${entry.id}:`, error);
       }
     }
     return agents;
   });
+}
+
+/** Called with the agents collection lock held. Preserve all other saved data. */
+async function removeLegacyAgentServers(id: string): Promise<void> {
+  const path = `${COLLECTION}/${id}`;
+  const changes = new Map<string, Blob | undefined>();
+  if (await opfs.readBlob(`${path}/servers.json`)) changes.set(`${path}/servers.json`, undefined);
+  const legacy = await opfs.readJson<Record<string, unknown>>(`${path}/agent.json`);
+  if (legacy && "servers" in legacy) {
+    delete legacy.servers;
+    changes.set(`${path}/agent.json`, new Blob([JSON.stringify(legacy)], { type: "application/json" }));
+  }
+  if (changes.size) await writeFileChanges(changes);
 }

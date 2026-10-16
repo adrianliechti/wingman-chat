@@ -5,6 +5,7 @@ import { confirm } from "@/shared/lib/confirm";
 import { notify } from "@/shared/lib/notify";
 import { getDirectory, readText } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, getZipFolder } from "@/shared/lib/opfs-zip";
+import { addImportedFile } from "@/shared/lib/opfs-import";
 import { readZipFiles, restoreFiles, type RestoreResult } from "@/shared/lib/opfs-restore";
 import { flushForBackup, withPersistenceLock } from "@/shared/lib/persistence";
 import { downloadZip } from "@/shared/lib/zipStreams";
@@ -50,11 +51,11 @@ export async function exportSingleAgentAsZip(
           const agent = await loadAgent(id);
           if (!agent) throw new Error("Agent not found");
           md = serializeAgentMd(agent);
-          zip.file("servers.json", JSON.stringify(agent.servers));
         }
         // Export saved agents in the current format without rewriting local data.
         zip.remove("AGENT.md");
         zip.remove("agent.json");
+        zip.remove("servers.json");
         zip.file("AGENTS.md", md);
         const parsed = parseAgentMd(md);
         if (parsed) {
@@ -66,42 +67,51 @@ export async function exportSingleAgentAsZip(
   });
 }
 
+/** Supported agent definition filenames. */
+const AGENT_DEFINITIONS = ["AGENTS.md", "AGENT.md", "agent.json"] as const;
+
 /** Accept full backups, collection exports, and a single shareable agent. */
 export async function importAgentsFromZip(file: Blob): Promise<RestoreResult> {
   const files = await readZipFiles(file);
   const mapped = new Map<string, Blob>();
+  const skipped: RestoreResult["skipped"] = [];
   const paths = [...files.keys()];
-  const flat = files.has("AGENTS.md");
-  const roots = flat
-    ? [""]
-    : [
-        ...new Set(
-          paths.flatMap((path) => {
-            const match = path.match(/^((?:agents\/)?[^/]+)\/AGENTS\.md$/);
-            return match ? [match[1]] : [];
-          }),
-        ),
-      ];
-  if (!roots.length) throw new Error("Unrecognized archive: expected an AGENTS.md definition");
+  const flat = AGENT_DEFINITIONS.some((definition) => files.has(definition));
+  const roots = new Set([
+    ...(flat ? [""] : []),
+    ...paths.flatMap((path) => path.match(/^((?:agents\/)?[^/]+)\/(AGENTS?\.md|agent\.json)$/)?.[1] ?? []),
+  ]);
+  // Agent folders without any definition would otherwise vanish from a mixed
+  // archive without a word, leaving the user with a successful-looking import.
+  const agentFolders = new Set(paths.flatMap((path) => path.match(/^agents\/[^/]+(?=\/)/)?.[0] ?? []));
+  for (const folder of agentFolders) {
+    if (!roots.has(folder))
+      skipped.push({ path: folder, reason: "No AGENTS.md, AGENT.md or agent.json definition; skipped the agent." });
+  }
+  if (!roots.size) throw new Error("Unrecognized archive: expected an AGENTS.md, AGENT.md or agent.json definition");
   for (const root of roots) {
     const prefix = root ? `${root}/` : "";
-    const id = flat ? crypto.randomUUID() : root.split("/").at(-1)!;
+    const isFlat = root === "";
+    const id = isFlat ? crypto.randomUUID() : root.split("/").at(-1)!;
     for (const [path, blob] of files) {
       if (!path.startsWith(prefix)) continue;
-      const relative = path.slice(prefix.length);
-      if (flat && relative === "memory-state.json") continue;
-      if (relative.startsWith("skills/")) {
-        mapped.set(relative, blob);
+      if (
+        isFlat &&
+        (path.startsWith("agents/") ||
+          path.startsWith("skills/") ||
+          [...roots].some((other) => other && path.startsWith(`${other}/`)))
+      )
         continue;
-      }
-      if (relative === "index.json") continue;
-      mapped.set(`agents/${id}/${relative}`, blob);
+      const relative = path.slice(prefix.length);
+      if ((isFlat && relative === "memory-state.json") || relative === "index.json") continue;
+      await addImportedFile(mapped, `agents/${id}/${relative}`, blob);
     }
   }
   // Full backups store skills beside agents; shareable exports bundle them.
-  for (const [path, blob] of files) if (path.startsWith("skills/")) mapped.set(path, blob);
+  for (const [path, blob] of files) if (path.startsWith("skills/")) await addImportedFile(mapped, path, blob);
   if (files.has("agents/index.json")) mapped.set("agents/index.json", files.get("agents/index.json")!);
-  return restoreFiles(mapped);
+  const result = await restoreFiles(mapped);
+  return { ...result, skipped: [...skipped, ...result.skipped] };
 }
 
 export function triggerAgentImport(): void {

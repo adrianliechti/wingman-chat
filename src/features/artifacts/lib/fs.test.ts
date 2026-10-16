@@ -319,6 +319,10 @@ describe("coordinated artifact tools", () => {
     ]) {
       const result = await executeArtifactCode({ fs, executor, args, extension: "py" });
       expect(result.success).toBe(false);
+      if (Object.keys(args).length === 0) {
+        expect(result.error).toContain("Pass nonempty code with language, or path");
+        expect(result.error).not.toContain("failed to parse");
+      }
     }
     expect(executor).not.toHaveBeenCalled();
     expect(opfs.writeArtifact).not.toHaveBeenCalled();
@@ -419,20 +423,20 @@ describe("coordinated artifact tools", () => {
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const invoke = (name: string, args: Record<string, unknown>) =>
       tools.find((tool) => tool.name === name)!.execute(args, { context: { runId: "one" }, emitCustomEvent() {} });
-    await invoke("artifacts_read", { file_path: "/a.txt" });
+    await invoke("artifacts_read", { path: "/a.txt" });
     await fs.createFile("/a.txt", "alpha externally changed");
     const edit = {
       edits: [
-        { file_path: "/b.txt", old_string: "beta", new_string: "B" },
-        { file_path: "/a.txt", old_string: "alpha", new_string: "A" },
+        { path: "/b.txt", old_string: "beta", new_string: "B" },
+        { path: "/a.txt", old_string: "alpha", new_string: "A" },
       ],
     };
     expect(JSON.stringify(await invoke("artifacts_edit", edit))).toContain("changed since");
     expect(files.get("/b.txt")?.content).toBe("beta");
-    await invoke("artifacts_read", { file_path: "/a.txt" });
+    await invoke("artifacts_read", { path: "/a.txt" });
     await invoke("artifacts_edit", edit);
     expect(files.get("/a.txt")?.content).toBe("A externally changed");
-    await invoke("artifacts_edit", { edits: [{ file_path: "/a.txt", old_string: "A", new_string: "again" }] });
+    await invoke("artifacts_edit", { edits: [{ path: "/a.txt", old_string: "A", new_string: "again" }] });
     expect(files.get("/a.txt")?.content).toBe("again externally changed");
   });
 
@@ -454,13 +458,13 @@ describe("coordinated artifact tools", () => {
     );
     const create = tools.find((tool) => tool.name === "artifacts_create")!;
     await create.execute(
-      { file_path: "/draft.txt", content: "draft" },
+      { path: "/draft.txt", content: "draft" },
       { context: { chatId: "origin" }, emitCustomEvent() {} },
     );
     expect(origin.get("/draft.txt")?.content).toBe("draft");
     selected = new FileSystemManager("other");
     await create.execute(
-      { file_path: "/a.txt", content: "updated" },
+      { path: "/a.txt", content: "updated" },
       { context: { chatId: "origin" }, emitCustomEvent() {} },
     );
     expect(origin.get("/a.txt")?.content).toBe("updated");
@@ -484,10 +488,10 @@ describe("coordinated artifact tools", () => {
     const fs = new FileSystemManager("agents");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const read = tools.find((tool) => tool.name === "artifacts_read")!;
-    await read.execute({ file_path: "/a.txt" }, { context: { runId: "turn-1" }, emitCustomEvent() {} });
+    await read.execute({ path: "/a.txt" }, { context: { runId: "turn-1" }, emitCustomEvent() {} });
     await fs.createFile("/a.txt", "alpha external");
     await read.execute(
-      { file_path: "/a.txt" },
+      { path: "/a.txt" },
       {
         context: {
           runId: "child",
@@ -499,7 +503,7 @@ describe("coordinated artifact tools", () => {
     const result = await tools
       .find((tool) => tool.name === "artifacts_edit")!
       .execute(
-        { edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }] },
+        { edits: [{ path: "/a.txt", old_string: "alpha", new_string: "changed" }] },
         { context: { runId: "turn-2" }, emitCustomEvent() {} },
       );
     expect(JSON.stringify(result)).toContain("changed since");
@@ -512,14 +516,14 @@ describe("coordinated artifact tools", () => {
     const complete = vi
       .fn()
       .mockResolvedValueOnce(calls(["delegate", "agent", { prompt: "Edit the file" }]))
-      .mockResolvedValueOnce(calls(["read", "artifacts_read", { file_path: "/a.txt" }]))
+      .mockResolvedValueOnce(calls(["read", "artifacts_read", { path: "/a.txt" }]))
       .mockImplementationOnce(async () => {
         await fs.createFile("/a.txt", "alpha external");
         return calls([
           "edit",
           "artifacts_edit",
           {
-            edits: [{ file_path: "/a.txt", old_string: "alpha", new_string: "changed" }],
+            edits: [{ path: "/a.txt", old_string: "alpha", new_string: "changed" }],
           },
         ]);
       })
@@ -541,11 +545,11 @@ describe("coordinated artifact tools", () => {
     const fs = new FileSystemManager("many-children");
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const read = tools.find((tool) => tool.name === "artifacts_read")!;
-    await read.execute({ file_path: "/a.txt" }, { context: { runId: "parent" }, emitCustomEvent() {} });
+    await read.execute({ path: "/a.txt" }, { context: { runId: "parent" }, emitCustomEvent() {} });
     await fs.createFile("/a.txt", "external");
     for (let i = 0; i < 65; i++) {
       await read.execute(
-        { file_path: "/a.txt" },
+        { path: "/a.txt" },
         {
           context: {
             runId: `child-${i}`,
@@ -558,7 +562,7 @@ describe("coordinated artifact tools", () => {
     const result = await tools
       .find((tool) => tool.name === "artifacts_create")!
       .execute(
-        { file_path: "/a.txt", content: "overwrite" },
+        { path: "/a.txt", content: "overwrite" },
         { context: { runId: "next-parent-turn" }, emitCustomEvent() {} },
       );
     expect(JSON.stringify(result)).toContain("changed since");
@@ -570,7 +574,7 @@ describe("coordinated artifact tools", () => {
     const tools = new ArtifactReadWriteManager().createTools(() => fs, { namespace: "artifacts" });
     const create = tools.find((tool) => tool.name === "artifacts_create")!;
     await create.execute(
-      { file_path: "/new.txt", content: "first" },
+      { path: "/new.txt", content: "first" },
       {
         context: {
           runId: "chat-turn",
@@ -581,13 +585,13 @@ describe("coordinated artifact tools", () => {
     );
     const edit = tools.find((tool) => tool.name === "artifacts_edit")!;
     await edit.execute(
-      { edits: [{ file_path: "/new.txt", old_string: "first", new_string: "second" }] },
+      { edits: [{ path: "/new.txt", old_string: "first", new_string: "second" }] },
       { context: { runId: "voice-turn" }, emitCustomEvent() {} },
     );
     expect(files.get("/new.txt")?.content).toBe("second");
     await fs.createFile("/new.txt", "second external");
     const result = await edit.execute(
-      { edits: [{ file_path: "/new.txt", old_string: "second", new_string: "third" }] },
+      { edits: [{ path: "/new.txt", old_string: "second", new_string: "third" }] },
       { context: { runId: "next-chat-turn", invocationContext: {} }, emitCustomEvent() {} },
     );
     expect(JSON.stringify(result)).toContain("changed since");

@@ -6,6 +6,7 @@ import { SkillsProvider } from "../context/SkillsProvider";
 import type { Skill } from "../lib/skillParser";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useSkillBuilderProvider } from "./useSkillBuilderProvider";
+import { resolveToolHeader, resolveToolInput } from "@/features/chat/components/toolDisplay";
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), store: vi.fn() }));
 vi.mock("@/shared/lib/opfs", () => ({
@@ -72,6 +73,37 @@ afterEach(async () => {
 });
 
 describe("personal skill reads for editing", () => {
+  it("gives every builder tool a useful preview without repeating resource paths in its label", () => {
+    for (const tool of value.tools) {
+      const resource =
+        tool.name === "write_skill_resource" || tool.name === "delete_skill_resource" || tool.name === "list_skills";
+      const args = { name: personal.name, path: "scripts/run.py", content: "print(1)" };
+      const header = resolveToolHeader(tool, tool.name, JSON.stringify(args), { running: true });
+      expect(header.preview).toBe(resource ? `${personal.name}/scripts/run.py` : personal.name);
+      expect(header.label).not.toContain("scripts/run.py");
+    }
+    const write = value.tools.find((tool) => tool.name === "write_skill_resource")!;
+    expect(resolveToolInput(write, '{"path":"scripts/run.py","content":"print(1)"}')).toEqual([
+      { code: "print(1)", language: "py" },
+    ]);
+  });
+
+  it("retains the legacy resource selector for direct callers", async () => {
+    expect(await call(value, "list_skills", { name: personal.name, resource: "references/team.md" })).toMatchObject({
+      resource: { path: "references/team.md", content: "Reference body" },
+    });
+  });
+
+  it.each(["path", "resource"])(
+    "reports a missing skill name when a %s selector was supplied instead of listing the library",
+    async (selector) => {
+      expect(await call(value, "list_skills", { [selector]: "references/team.md" })).toEqual({
+        error: expect.stringContaining("requires the personal skill name"),
+      });
+      expect(storage.store).not.toHaveBeenCalled();
+    },
+  );
+
   it("lists metadata and reads the full personal entry without requiring activation", async () => {
     expect(await call(value, "list_skills")).toEqual({
       skills: [{ name: personal.name, description: personal.description }],
@@ -157,7 +189,7 @@ describe("personal skill reads for editing", () => {
     expect(
       await call(value, "list_skills", {
         name: "with-files",
-        resource: "scripts/run.py",
+        path: "scripts/run.py",
       }),
     ).toEqual({
       resource: { path: "scripts/run.py", content: "print(1)" },
@@ -212,7 +244,7 @@ describe("personal skill reads for editing", () => {
     expect(
       await call(turn, "list_skills", {
         name: personal.name,
-        resource: "templates/a.md",
+        path: "templates/a.md",
       }),
     ).toEqual({
       resource: { path: "templates/a.md", content: "A2" },

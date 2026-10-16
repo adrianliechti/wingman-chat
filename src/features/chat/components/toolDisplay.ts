@@ -3,10 +3,11 @@ import { getToolDisplayName } from "@/shared/lib/utils";
 import type { ContentPart } from "@tanstack/ai";
 import { outputText } from "@/shared/lib/messages";
 import type { Tool, ToolDisplayBlock, ToolDisplayIcon, ToolDisplayState, ToolProvider } from "@/shared/types/chat";
-import { getToolCallPreview } from "./chatMessageUtils";
+import { getToolCallPreview, toolPreviewList, toolPreviewText } from "@/shared/lib/toolPreview";
 import { memoryFileHeader } from "@/features/agent/lib/memoryFileDisplay";
 import { DISCOVERY_TOOL_NAME } from "@tanstack/ai";
 import { Search } from "lucide-react";
+import { ASK_QUESTIONS_TOOL } from "../lib/questionsTool";
 
 export interface ResolvedToolHeader {
   Icon?: ToolDisplayIcon;
@@ -31,7 +32,8 @@ export function findTool(providers: readonly ToolProvider[], name: string | unde
     const tool = find(provider.tools);
     if (tool) return tool;
   }
-  return undefined;
+  // Chat injects this tool only when no provider supplies the same name.
+  return name === ASK_QUESTIONS_TOOL.name ? ASK_QUESTIONS_TOOL : undefined;
 }
 
 /**
@@ -51,21 +53,33 @@ export function resolveToolHeader(
       Icon: Search,
       label: state.error ? "Tool discovery failed" : "Find tools",
       mono: false,
-      preview: Array.isArray(args?.toolNames)
-        ? args.toolNames
-            .filter((item): item is string => typeof item === "string")
-            .map(getToolDisplayName)
-            .join(", ")
-        : null,
+      preview: toolPreviewText(
+        toolPreviewList(
+          Array.isArray(args?.toolNames)
+            ? args.toolNames.filter((item): item is string => typeof item === "string").map(getToolDisplayName)
+            : null,
+          "tools",
+        ),
+      ),
     };
   }
   const h = memoryFileHeader(name, args, state) ?? tool?.display?.header?.(args, state);
   const label = tool?.title ?? getToolDisplayName(name);
+  const progress = state.running ? state.progress : undefined;
+  const percentage =
+    progress?.total && progress.total > 0
+      ? `${Math.min(100, Math.max(0, Math.floor((progress.progress / progress.total) * 100)))}%`
+      : undefined;
+  const progressPreview = progress ? [progress.message, percentage].filter(Boolean).join(" · ") : undefined;
   return {
     Icon: h?.icon,
     label: h?.label ?? (state.error ? `${label} failed` : label),
     mono: h?.mono ?? false,
-    preview: h?.suppressPreview ? null : (h?.preview ?? getToolCallPreview(args)),
+    preview: progressPreview
+      ? toolPreviewText(progressPreview)
+      : h?.suppressPreview
+        ? null
+        : toolPreviewText(h?.preview !== undefined ? h.preview : getToolCallPreview(args)),
   };
 }
 
@@ -80,9 +94,13 @@ export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undef
  * block of the textual result. Media (images/audio/files) renders separately, so
  * a pure-media result yields null.
  */
-export function resolveToolOutput(tool: Tool | undefined, result: ContentPart[]): ToolDisplayBlock | null {
+export function resolveToolOutput(
+  tool: Tool | undefined,
+  result: ContentPart[],
+  rawArgs?: string,
+): ToolDisplayBlock | null {
   const output = tool?.display?.output;
-  return output ? output(result) : defaultOutputBlock(result);
+  return output ? output(result, tryParseToolArguments(rawArgs ?? "")) : defaultOutputBlock(result);
 }
 
 // ── Best-effort default formatting ──────────────────────────────────────────

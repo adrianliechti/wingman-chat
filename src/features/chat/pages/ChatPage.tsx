@@ -1,3 +1,7 @@
+import { ConversationUiProvider } from "@/shared/ui/inlineUi/UiRenderer";
+import { submissionText } from "@/shared/lib/inlineUi/diagnostics";
+import type { UiSubmission } from "@/shared/lib/inlineUi/runtime";
+import { userMessage } from "@/shared/lib/messages";
 import { ChatInterrupts } from "../components/ChatInterrupts";
 import { useMatch, useNavigate } from "@tanstack/react-router";
 import { AppWindow, ArrowDown, Info, Plus as PlusIcon, Shapes } from "lucide-react";
@@ -74,7 +78,15 @@ export function ChatPage() {
     chatsLoaded,
     isResponding,
     pendingElicitation,
+    interruptState,
+    sendMessage,
   } = useChat();
+  const handleUiSubmission = useCallback(
+    async (submission: UiSubmission) => {
+      await sendMessage(userMessage(submissionText(submission), { metadata: { a2ui: submission } }));
+    },
+    [sendMessage],
+  );
   const { isListening, stopVoice } = useVoice();
 
   const navigate = useNavigate();
@@ -366,6 +378,8 @@ export function ChatPage() {
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
     messages,
     isResponding,
+    requestKey:
+      pendingElicitation?.elicitation ?? interruptState?.interrupts.map((interrupt) => interrupt.id).join(","),
   });
 
   // Set up navigation actions
@@ -423,7 +437,7 @@ export function ChatPage() {
         style={contentRightOffset ? { marginRight: contentRightOffset } : undefined}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {(chatLoading && showChatLoading) || chatError ? (
+          {(chatLoading && (showChatLoading || messages.length === 0)) || chatError ? (
             <div className="m-auto p-6 text-sm text-neutral-500" role={chatError ? "alert" : "status"}>
               {chatError ?? "Loading conversation…"}
               {chatError && selectedChatId && (
@@ -469,7 +483,12 @@ export function ChatPage() {
               >
                 <Disclaimer />
 
-                <div>
+                <ConversationUiProvider
+                  owner={chat?.id ?? selectedChatId ?? "new-chat"}
+                  messages={messages}
+                  streaming={isResponding}
+                  onSubmit={handleUiSubmission}
+                >
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
                       // Key off the first tool-call id — stable as the group grows and across restarts.
@@ -477,7 +496,7 @@ export function ChatPage() {
                       const groupKey = first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
                         <div key={groupKey} className="flow-root" data-role="tool-group">
-                          <ChatToolGroup messages={messages} indices={unit.indices} />
+                          <ChatToolGroup messages={messages} indices={unit.indices} reply={unit.reply} />
                         </div>
                       );
                     }
@@ -492,12 +511,13 @@ export function ChatPage() {
                           message={message}
                           isLast={index === messages.length - 1}
                           isResponding={isResponding}
+                          foldedReasoning={unit.foldedReasoning}
                         />
                       </div>
                     );
                   })}
                   <ChatInterrupts />
-                </div>
+                </ConversationUiProvider>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />
               </div>

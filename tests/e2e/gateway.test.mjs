@@ -572,7 +572,7 @@ void describe("Wingman gateway E2E", { concurrency: false }, () => {
       const result = await run(
         client,
         artifactModel,
-        'Create the requested artifact by calling artifacts_create exactly once with file_path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_script or ask_questions. After the tool result, reply briefly that the artifact is complete.',
+        'Create the requested artifact by calling artifacts_create exactly once with path "/result.json" and content "{\\"status\\":\\"ok\\",\\"value\\":42}". Do not call execute_script or ask_questions. After the tool result, reply briefly that the artifact is complete.',
         [{ role: Role.User, content: [{ type: "text", text: "Create the deterministic JSON artifact." }] }],
         tools,
         {

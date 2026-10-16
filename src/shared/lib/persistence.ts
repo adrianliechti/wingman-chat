@@ -1,3 +1,4 @@
+import { Batcher } from "@tanstack/pacer";
 import { notify } from "./notify";
 
 /** Serialize a storage operation across tabs, with an in-process fallback. */
@@ -27,33 +28,32 @@ export function withPersistenceLock<T>(key: string, operation: () => Promise<T>)
 export class PersistenceQueue {
   private pending = new Map<string, () => Promise<void>>();
   private active: Promise<void> | undefined;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Runs one flush a fixed delay after the first edit; later edits join that flush rather than postponing it. */
+  private readonly batch: Batcher<string>;
   private readonly onError: (error: unknown) => void;
-  private readonly delayMs: number;
   private stopped = false;
 
   constructor(onError: (error: unknown) => void, delayMs = 100) {
     this.onError = onError;
-    this.delayMs = delayMs;
+    this.batch = new Batcher<string>(() => void this.flush().catch(this.onError), { wait: delayMs });
   }
 
   schedule(id: string, operation: () => Promise<void>): void {
     if (this.stopped) throw new Error("Storage was reset. Reload before saving changes.");
     this.pending.set(id, operation);
     // Bound the wait from the first edit, even during continuous streaming.
-    if (this.timer === undefined) {
-      this.timer = setTimeout(() => {
-        this.timer = undefined;
-        void this.flush().catch(this.onError);
-      }, this.delayMs);
-    }
+    if (!this.batch.store.state.isPending) this.batch.addItem(id);
+  }
+
+  private unschedule(): void {
+    this.batch.cancel();
+    this.batch.clear();
   }
 
   stop(): Promise<void> {
     this.stopped = true;
     this.pending.clear();
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = undefined;
+    this.unschedule();
     return this.active?.catch(() => {}) ?? Promise.resolve();
   }
 
@@ -65,8 +65,7 @@ export class PersistenceQueue {
   }
 
   flush(): Promise<void> {
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = undefined;
+    this.unschedule();
     if (this.active) return this.active;
 
     this.active = Promise.resolve()

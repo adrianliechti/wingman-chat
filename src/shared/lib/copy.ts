@@ -14,8 +14,7 @@ export async function copyToClipboard(options: CopyOptions): Promise<void> {
     clipboardData["text/html"] = new Blob([html], { type: "text/html" });
   } else if (markdown) {
     // Markdown: copy as plain text + html. Both converters live in
-    // markdownConvert (markdownToHtml pulls in `marked`), loaded on demand here
-    // rather than shipped in the initial bundle.
+    // markdownConvert, loaded on demand here.
     const { markdownToHtml, markdownToText } = await import("./markdownConvert");
     clipboardData["text/plain"] = new Blob([markdownToText(markdown)], { type: "text/plain" });
     clipboardData["text/html"] = new Blob([markdownToHtml(markdown)], { type: "text/html" });

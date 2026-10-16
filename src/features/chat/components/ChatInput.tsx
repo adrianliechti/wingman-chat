@@ -93,6 +93,7 @@ export function ChatInput() {
   const {
     providers,
     getProviderState,
+    isProviderEnabled,
     getProviderPolicy,
     setProviderEnabled,
     setModelOverrides,
@@ -709,6 +710,7 @@ export function ChatInput() {
                   isResponding={isResponding}
                   visibleProviders={visibleProviders}
                   getProviderState={getProviderState}
+                  isProviderEnabled={isProviderEnabled}
                   getProviderPolicy={getProviderPolicy}
                   setProviderEnabled={setProviderEnabled}
                   skillSources={skillSources}
@@ -977,7 +979,7 @@ export function ChatInput() {
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
-                      disabled={!!interruptState?.interrupts.length}
+                      disabled={chatLoading || !!chatError || !!interruptState?.interrupts.length}
                       aria-label={
                         interruptState?.interrupts.length ? "Answer the pending request to continue" : "Send message"
                       }
@@ -1039,6 +1041,8 @@ export function ChatInput() {
                     <button
                       className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                       type="submit"
+                      disabled={chatLoading || !!chatError}
+                      aria-label="Send message"
                     >
                       <Send size={16} />
                     </button>

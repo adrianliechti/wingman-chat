@@ -58,6 +58,7 @@ export function ActivityRow({
         <span
           className={cn(
             "min-w-0 truncate text-xs",
+            detail ? "max-w-[60%] shrink-0" : "max-w-full",
             mono ? "font-mono" : "font-medium",
             error ? "text-red-600 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400",
           )}
@@ -66,12 +67,16 @@ export function ActivityRow({
         </span>
         {detail && (
           // The detail gives way first so the label stays readable.
-          <span className={cn("min-w-0 shrink-[4] truncate text-xs", muted, mono && "font-mono")}>{detail}</span>
+          <span className={cn("min-w-0 flex-1 truncate text-xs", muted, mono && "font-mono")}>{detail}</span>
         )}
       </span>
     </>
   );
-  const layout = cn("grid w-full min-w-0 grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left", className);
+  // Every row has the same height and padding, so stacked activity keeps one rhythm.
+  const layout = cn(
+    "grid w-full min-w-0 grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 py-1 text-left",
+    className,
+  );
   return onToggle ? (
     <button
       type="button"

@@ -1,3 +1,5 @@
+import { CONTEXT_OVERFLOW_CODE } from "@tanstack/ai";
+
 /** Presentation of native TanStack/provider errors; retry policy belongs to the adapter. */
 export interface ErrorInfo {
   code: string;
@@ -12,6 +14,8 @@ type ProviderError = {
   type?: string;
   error?: unknown;
   rawEvent?: unknown;
+  retryAfterMs?: unknown;
+  metadata?: { tanstack?: { retryAfterMs?: unknown } };
 };
 function detail(error: unknown): ProviderError {
   if (!error || typeof error !== "object") return {};
@@ -27,7 +31,11 @@ export function isAbortError(error: unknown): boolean {
 }
 export function isContextOverflowError(error: unknown): boolean {
   const value = detail(error);
-  if (["context_length_exceeded", "string_above_max_length", "CONTEXT_EXHAUSTED"].includes(value.code ?? ""))
+  if (
+    [CONTEXT_OVERFLOW_CODE, "context_length_exceeded", "string_above_max_length", "CONTEXT_EXHAUSTED"].includes(
+      value.code ?? "",
+    )
+  )
     return true;
   if (value.status && ![400, 413].includes(value.status)) return false;
   return /context (length|window)|maximum context|too many tokens|(?:prompt|input|request) (?:is )?too long/i.test(
@@ -54,6 +62,7 @@ export function isReasoningReplayError(error: unknown): boolean {
 export function getErrorInfo(error: unknown): ErrorInfo {
   if (isAbortError(error)) return { code: "CANCELLED", message: "Request was cancelled." };
   const value = detail(error);
+  const original = error as ProviderError | null | undefined;
   const message = value.message ?? "";
   if (isContextOverflowError(error))
     return {
@@ -72,8 +81,20 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     };
   if (/content_filter|content_policy_violation/.test(`${value.code} ${value.type} ${message}`))
     return { code: "CONTENT_FILTERED", message: "The response was blocked by the content filter." };
-  if (value.status === 429 || value.code === "rate_limit_exceeded")
-    return { code: "RATE_LIMIT_ERROR", message: "Rate limit exceeded. Please wait a moment before trying again." };
+  if (value.status === 429 || ["429", "rate_limit_exceeded", "RATE_LIMIT_ERROR"].includes(value.code ?? "")) {
+    const delay = value.metadata?.tanstack?.retryAfterMs ?? value.retryAfterMs;
+    const seconds =
+      typeof delay === "number" && Number.isFinite(delay) && delay >= 0 ? Math.ceil(delay / 1000) : undefined;
+    return {
+      code: "RATE_LIMIT_ERROR",
+      message:
+        seconds !== undefined
+          ? `Rate limit exceeded. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`
+          : original?.code === "RATE_LIMIT_ERROR" && original.message
+            ? original.message
+            : "Rate limit exceeded. Please wait a moment before trying again.",
+    };
+  }
   if ((value.status ?? 0) >= 500 || ["server_error", "overloaded_error"].includes(value.code ?? ""))
     return { code: "SERVER_ERROR", message: "Server error. Please try again in a moment." };
   if (value.status === 401 || value.code === "invalid_api_key")
@@ -82,12 +103,18 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     return { code: "AUTH_ERROR", message: "Access denied. You may not have permission to use this model." };
   if (value.status === 404 || value.code === "model_not_found")
     return { code: "NOT_FOUND_ERROR", message: "The requested model or resource was not found." };
-  if (value.code === "TIMEOUT" || value.name === "TimeoutError" || value.name === "APIConnectionTimeoutError")
+  if (
+    value.code === "TIMEOUT" ||
+    value.code === "REQUEST_TIMEOUT" ||
+    value.name === "TimeoutError" ||
+    value.name === "APIConnectionTimeoutError" ||
+    /\btimed out\b/i.test(message)
+  )
     return {
       code: "TIMEOUT",
       message: /timed out/i.test(message) ? message : "Request timed out. Please try again.",
     };
-  if (/network|connection|failed to fetch|fetch failed|load failed|timeout|timed out/i.test(message))
+  if (/network|connection|failed to fetch|fetch failed|load failed/i.test(message))
     return { code: "NETWORK_ERROR", message: "Network connection failed. Please check your connection and try again." };
   if (value.code && /^[A-Z_]+$/.test(value.code)) return { code: value.code, message };
   if (value.status || value.code)

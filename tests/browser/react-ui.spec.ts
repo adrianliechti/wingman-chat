@@ -1,4 +1,5 @@
 import { expect, test as base, type Page } from "@playwright/test";
+import { mcpToolName } from "../../src/features/settings/lib/mcpToolNames";
 
 const test = base.extend({
   context: async ({ browserName, context, playwright, baseURL, viewport }, use, info) => {
@@ -31,6 +32,148 @@ async function open(page: Page, query = "") {
   );
   await page.goto(`/tests/browser/fixtures/react-ui.html${query}`, { waitUntil: "domcontentloaded" });
 }
+
+test("invalid inline UI repairs automatically and stays repaired after reload", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Show a pairing result");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const surface = {
+    version: "v1.0",
+    createSurface: {
+      surfaceId: "pairing",
+      catalogId: "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+      components: [
+        { id: "root", component: "Column", children: ["pair_result"] },
+        {
+          id: "pair_result",
+          component: "Callout",
+          catalogId: "urn:wingman:inline-ui:catalog:1",
+          text: "Pairing succeeded",
+          tone: { "@path": "/tone" } as unknown,
+        },
+      ],
+      dataModel: { tone: "success" },
+    },
+  };
+  const ui = () => "```ui\n" + JSON.stringify(surface) + "\n```";
+  await page.evaluate((reply) => window.reactUiE2E.finish(reply), ui());
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  expect(await page.evaluate(() => JSON.stringify(window.reactUiE2E.state().input))).toContain("tone: Expected");
+  expect(await page.evaluate(() => window.reactUiE2E.state().tools)).toEqual([]);
+  surface.createSurface.components[1].tone = "success";
+  await page.evaluate((reply) => window.reactUiE2E.finish(reply), ui());
+  await expect(page.getByText("Pairing succeeded", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await expect(page.getByText("Pairing succeeded", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("activity content has no extra gap beneath its title", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Build an HTML explorer");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  await page.evaluate(() => window.reactUiE2E.callTool("load_skill", { name: "html-artifacts" }));
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+  await page.evaluate(() =>
+    window.reactUiE2E.callTool("read_skill_resource", {
+      skill: "html-artifacts",
+      path: "references/sdk.md",
+    }),
+  );
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
+  await page.evaluate(() => window.reactUiE2E.think("Check the interface before finishing."));
+  const group = page.locator('[data-role="tool-group"]');
+  await group.getByRole("button").first().click();
+  const rows = group.getByRole("button", { name: /^Read skill/ });
+  await expect(rows).toHaveCount(2);
+  const first = await rows.nth(0).boundingBox();
+  const second = await rows.nth(1).boundingBox();
+  const rowGap = second!.y - first!.y - first!.height;
+
+  const thinking = page.getByRole("button", { name: /^Thinking/ });
+  const preview = page.getByRole("region", { name: "Thinking preview" });
+  await expect(preview).toHaveText("Check the interface before finishing.");
+  const thinkingBounds = await thinking.boundingBox();
+  const contentTop = await preview
+    .locator("p")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(contentTop - thinkingBounds!.y - thinkingBounds!.height).toBeLessThanOrEqual(rowGap + 1);
+
+  await rows.first().click();
+  await expect(page.getByRole("heading", { name: "HTML artifact runtime", exact: true })).toBeVisible();
+  const toolGap = await rows.first().evaluate((row) => {
+    const content = row.nextElementSibling!.firstElementChild!;
+    return content.getBoundingClientRect().top - row.getBoundingClientRect().bottom;
+  });
+  expect(toolGap).toBeLessThanOrEqual(rowGap + 1);
+  await page.evaluate(() => window.reactUiE2E.finish("Done"));
+});
+
+test("thinking previews the latest update and expands into the chat without an inner scrollbar", async ({ page }) => {
+  await open(page);
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await input.fill("Plan an explorer");
+  await input.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+  const reasoning =
+    "**Planning the explorer**\n\n" +
+    Array.from({ length: 100 }, (_, index) => `Reasoning paragraph ${index}: consider the next step.`).join("\n\n");
+  await page.evaluate((text) => window.reactUiE2E.think(text), reasoning);
+  const preview = page.getByRole("region", { name: "Thinking preview" });
+  const output = page.getByRole("region", { name: "Thinking output" });
+  const thinking = page.getByRole("button", { name: /Thinking….*Planning the explorer/ });
+  await expect(thinking).toHaveAttribute("aria-expanded", "false");
+  await expect(preview).toHaveText("Reasoning paragraph 99: consider the next step.");
+  await expect(output).toHaveCount(0);
+
+  const longUpdate = "Now checking the next step. ".repeat(100);
+  const latest = reasoning + "\n\n" + longUpdate;
+  await page.evaluate((text) => window.reactUiE2E.think(text), latest);
+  await expect(preview).toContainText(longUpdate.trim());
+  await expect(preview).not.toContainText("Reasoning paragraph 99");
+  await expect(preview).toHaveCSS("-webkit-line-clamp", "3");
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(68);
+  await expect(preview).toHaveCSS("overflow-y", "hidden");
+
+  await thinking.click();
+  await expect(thinking).toHaveAttribute("aria-expanded", "true");
+  await expect(preview).toHaveCount(0);
+  await expect(output).toContainText("Reasoning paragraph 0");
+  await expect(output).toContainText(longUpdate.trim());
+  await expect(output).toHaveCSS("overflow-y", "visible");
+  expect((await output.boundingBox())!.height).toBeGreaterThan(128);
+  expect(await output.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+
+  const finalReasoning = latest + "\n\nFinal checks are done.";
+  await page.evaluate((text) => window.reactUiE2E.think(text), finalReasoning);
+  await expect(output).toContainText("Final checks are done.");
+  await expect(thinking).toHaveAttribute("aria-expanded", "true");
+  await thinking.click();
+  await expect(preview).toHaveText("Final checks are done.");
+  await expect(output).toHaveCount(0);
+  await thinking.click();
+  await expect(output).toBeVisible();
+
+  await page.evaluate(() => window.reactUiE2E.finish("Done"));
+  await expect(page.getByText("Done", { exact: true })).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  await expect(output).toHaveCount(0);
+  const thought = page.getByRole("button", { name: /^Thought/ });
+  await expect(thought).toHaveAttribute("aria-expanded", "false");
+  await page.evaluate(() => window.reactUiE2E.flush());
+  await page.reload();
+  await thought.click();
+  await expect(output).toContainText("Reasoning paragraph 0");
+  await expect(output).toContainText("Final checks are done.");
+  await expect(output).toHaveCSS("overflow-y", "visible");
+});
 
 for (const legacySelection of [false, true]) {
   test(`built-in skills load on demand without a Studio menu (${legacySelection ? "legacy selection" : "fresh settings"})`, async ({
@@ -83,6 +226,27 @@ for (const legacySelection of [false, true]) {
     await page.evaluate(() => window.reactUiE2E.finish("Done"));
   });
 }
+
+test("sidebar resizing keeps its cursor and releases the drag overlay", async ({ page }) => {
+  test.setTimeout(45_000);
+  await open(page, "?seed");
+  const input = page.getByRole("textbox", { name: "Chat message input" });
+  await expect(input).toBeVisible();
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).filter({ visible: true }).click();
+  const handle = page.getByRole("button", { name: "Resize sidebar", exact: true });
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveCSS("cursor", "ew-resize");
+  await handle.hover();
+  const before = await handle.boundingBox();
+  await page.mouse.down();
+  await page.mouse.move(before!.x + 90, before!.y + 30, { steps: 5 });
+  await expect(input).toHaveCSS("cursor", "ew-resize");
+  await expect.poll(async () => (await handle.boundingBox())!.x - before!.x).toBeGreaterThan(50);
+  await page.mouse.up();
+  await expect(input).not.toHaveCSS("cursor", "ew-resize");
+  await input.fill("The resize overlay is gone");
+  await expect(input).toHaveValue("The resize overlay is gone");
+});
 
 test("Canvas loads optional image styles from the shared design reference", async ({ page }) => {
   const loaded: string[] = [];
@@ -204,61 +368,149 @@ test("activity labels vary across responses and stay stable while composing", as
   expect(labels.size).toBeGreaterThan(1);
 });
 
-test("research approvals and child tools use chat disclosures and remain operable on a narrow screen", async ({
-  page,
-}, info) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await open(page, "?seed&research");
-  const input = page.getByRole("textbox", { name: "Chat message input" });
-  await input.fill("Research this topic");
-  await input.press("Enter");
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
-  await page.evaluate(() =>
-    window.reactUiE2E.callTool("web_research", { prompt: "Find evidence about the topic", mode: "deep" }),
-  );
-  const requests = page.getByLabel("Agent requests");
-  await expect(requests.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
-  await expect(requests).toContainText("Approval required to run Deep research");
-  await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
-  expect(
-    await requests.evaluate(
-      (element) =>
-        element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
-    ),
-  ).toBe(true);
-  await requests.getByText("View details", { exact: true }).click();
-  await expect(requests.locator("details")).toContainText("Find evidence about the topic");
-  await expect(requests.locator("pre")).toHaveCount(0);
-  await requests.getByText("View details", { exact: true }).click();
-  await page.screenshot({ path: info.outputPath("approval.png") });
-  await requests.getByRole("button", { name: "Approve", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
-  const child = page.locator('details[class~="group/subagent"]');
-  await expect(child).toBeVisible();
-  await page.evaluate(() => window.reactUiE2E.callTool("web_search", { queries: ["A useful research query"] }));
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(3);
-  const result = child.getByRole("button", { name: "Searched the web", exact: false });
-  await expect(result).toBeVisible();
-  await result.click();
-  await expect(child).toContainText("Research evidence");
-  await result.click();
-  await page.screenshot({ path: info.outputPath("research.png") });
-  await page.setViewportSize({ width: 390, height: 750 });
-  await expect(result).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.evaluate(() => window.reactUiE2E.finish("Findings with sources"));
-  await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(4);
-  await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
-  await expect(requests).toHaveCount(0);
-  await expect(child).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
-  await child.locator("summary").click();
-  await expect(page.getByText("Findings with sources", { exact: true })).toBeVisible();
-  await page.evaluate(() => window.reactUiE2E.flush());
-  expect(errors).toEqual([]);
-});
+for (const feature of [
+  { name: "web_research", label: "Deep research" },
+  { name: "web_search", label: "Web Search" },
+  { name: "web_fetch", label: "Web Fetch" },
+]) {
+  test(`MCP ${feature.name} approval shows input before sending and remains usable on a narrow screen`, async ({
+    page,
+  }, info) => {
+    const errors: string[] = [];
+    let remoteCalls = 0;
+    const instructions =
+      "Compare recent public reports on electric vehicle charging infrastructure in Switzerland, focusing on coverage, reliability, and expansion plans. Prefer primary sources and include direct source URLs.\n\nDistinguish confirmed findings from estimates, identify the publication date for each source, and explain where reports disagree. Keep the answer concise and state any gaps in the available evidence.";
+    const args =
+      feature.name === "web_research"
+        ? { instructions }
+        : feature.name === "web_search"
+          ? {
+              queries: ["Adrian Liechti public professional profiles", "Adrian Liechti projects"],
+              allowed_domains: ["github.com"],
+              max_results: 8,
+            }
+          : {
+              url: "https://example.test/reports/charging-infrastructure?country=Switzerland",
+              query: "Coverage and reliability",
+              max_chars: 4096,
+            };
+    const details = feature.name === "web_research" ? [instructions] : (args.queries ?? [args.url!]);
+    const originalViewport = page.viewportSize()!;
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/fixture-research-mcp", async (route) => {
+      if (route.request().method() !== "POST") return route.fulfill({ status: 405 });
+      const request = route.request().postDataJSON();
+      if (request.id === undefined) return route.fulfill({ status: 202 });
+      if (request.method === "server/discover")
+        return route.fulfill({
+          json: { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not found" } },
+        });
+      let result = {};
+      if (request.method === "initialize")
+        result = {
+          protocolVersion: "2025-03-26",
+          capabilities: { tools: {} },
+          serverInfo: { name: "Web", version: "1" },
+        };
+      if (request.method === "tools/list")
+        result = {
+          tools: [
+            {
+              name: feature.name,
+              title: feature.label,
+              description: "Find sources",
+              inputSchema: {
+                type: "object",
+                properties: {},
+              },
+            },
+          ],
+        };
+      if (request.method === "tools/call") {
+        remoteCalls++;
+        expect(request.params._meta.progressToken).toBeDefined();
+        expect(request.params.arguments).toEqual(args);
+        result = { content: [{ type: "text", text: "Research evidence" }] };
+      }
+      await route.fulfill({ json: { jsonrpc: "2.0", id: request.id, result } });
+    });
+    await open(page, "?seed&research");
+    const input = page.getByRole("textbox", { name: "Chat message input" });
+    await input.fill("Research this topic");
+    await input.press("Enter");
+    await expect
+      .poll(() => page.evaluate(() => window.reactUiE2E.state().tools))
+      .toContain(mcpToolName("internet", feature.name));
+    await page.evaluate(({ name, args }) => window.reactUiE2E.callTool(name, args), {
+      name: mcpToolName("internet", feature.name),
+      args,
+    });
+    const requests = page.getByLabel("Agent requests");
+    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+    await expect(requests.getByRole("heading", { name: `Allow ${feature.label}?`, exact: true })).toBeVisible();
+    await expect(page.locator("footer").getByLabel("Agent requests")).toHaveCount(0);
+    expect(
+      await requests.evaluate(
+        (element) =>
+          element.getBoundingClientRect().top >= element.previousElementSibling!.getBoundingClientRect().bottom,
+      ),
+    ).toBe(true);
+    for (const item of details) await expect(requests.getByText(item, { exact: true })).toHaveCount(1);
+    // Only the request itself is shown; options stay in the tool row.
+    for (const option of ["max_chars", "Max chars", "max_results", "Allowed domains", "Coverage and reliability"])
+      await expect(requests).not.toContainText(option);
+    await expect(requests.locator("pre, details")).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath("approval.png") });
+    await page.setViewportSize({ width: 390, height: 750 });
+    const label = page.getByText(feature.label, { exact: true }).first();
+    await expect(label).toBeVisible();
+    expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(requests.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Latest", exact: true })).toHaveCount(0);
+    for (const name of ["Allow", "Decline", "Cancel"]) {
+      const button = requests.getByRole("button", { name, exact: true });
+      // Resizing animates the sidebar and chat layout; wait for the button to be unobstructed.
+      await expect
+        .poll(() =>
+          button.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+          }),
+        )
+        .toBe(true);
+    }
+    await page.screenshot({ path: info.outputPath("approval-narrow.png") });
+    await page.setViewportSize(originalViewport);
+    expect(remoteCalls).toBe(0);
+    await requests.getByRole("button", { name: "Allow", exact: true }).click();
+    await expect(page.getByText("Searching sources", { exact: true })).toBeVisible();
+    expect(remoteCalls).toBe(1);
+    expect(await page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);
+    await page.evaluate(() => window.reactUiE2E.researchProgress(2, "Reading sources", 4));
+    await expect(page.getByText("Reading sources · 50%", { exact: true })).toBeVisible();
+    await page.screenshot({ path: info.outputPath("progress.png") });
+    await page.evaluate(() => window.reactUiE2E.finishResearch());
+    await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(2);
+    await expect(page.getByText("Reading sources · 50%", { exact: true })).toHaveCount(0);
+    const result = page.getByRole("button", { name: feature.label, exact: false });
+    await expect(result).toBeVisible();
+    await result.click();
+    await expect(page.getByText("Research evidence", { exact: true })).toBeVisible();
+    await result.click();
+    await page.screenshot({ path: info.outputPath("research.png") });
+    await page.setViewportSize({ width: 390, height: 750 });
+    await expect(result).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.reactUiE2E.finish("Here is the answer"));
+    await expect(page.locator('[data-role="assistant"]').last()).toContainText("Here is the answer");
+    await expect(requests).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Used 2 tools", exact: true })).toHaveCount(0);
+    await page.evaluate(() => window.reactUiE2E.flush());
+    expect(errors).toEqual([]);
+  });
+}
 
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
   test(`large text chunks render progressively and Stop retains the full text (${reducedMotion})`, async ({ page }) => {
@@ -308,30 +560,14 @@ test("compiled chat keeps stream DOM stable, measures the composer and updates v
   const input = page.getByRole("textbox", { name: "Chat message input" });
   await expect(input).toBeVisible();
   await expect(page.locator('[data-role="assistant"]')).toContainText("A long answer.");
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const footer = document.querySelector("footer")!;
-        const message = document.querySelector('[data-role="assistant"]')!;
-        const content = message.parentElement!.parentElement!;
-        return Math.abs(
-          parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24,
-        );
-      }),
-    )
-    .toBeLessThan(1);
+  const composerGap = () =>
+    page.locator("main > div.overflow-auto > div").evaluate((content) => {
+      const footer = document.querySelector("footer")!;
+      return Math.abs(parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24);
+    });
+  await expect.poll(composerGap).toBeLessThan(1);
   await input.fill("A taller draft\n".repeat(8));
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const footer = document.querySelector("footer")!;
-        const content = document.querySelector('[data-role="assistant"]')!.parentElement!.parentElement!;
-        return Math.abs(
-          parseFloat(getComputedStyle(content).paddingBottom) - footer.getBoundingClientRect().height - 24,
-        );
-      }),
-    )
-    .toBeLessThan(1);
+  await expect.poll(composerGap).toBeLessThan(1);
   await input.fill("Follow up");
   await input.press("Enter");
   await expect.poll(() => page.evaluate(() => window.reactUiE2E.state().calls)).toBe(1);

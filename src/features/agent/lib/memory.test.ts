@@ -342,25 +342,25 @@ describe("existing file tools at the memory mount", () => {
   it("supports memory with artifacts disabled, enforces explicit reads, and retains run provenance", async () => {
     const tools = mountMemoryFiles([], manager());
     expect(tools).toHaveLength(7);
-    expect(await fileTool(tools, "create", { file_path: "/.memory/pref.md", content: "Prefer German." })).toContain(
+    expect(await fileTool(tools, "create", { path: "/.memory/pref.md", content: "Prefer German." })).toContain(
       "success",
     );
     const note = parseMemoryDocument((await manager().snapshot()).files.get("pref.md")!);
     expect(note.metadata.sources).toEqual([{ resource: "wingman://chats/chat/runs/run" }]);
     const other = mountMemoryFiles([], manager());
-    expect(await fileTool(other, "create", { file_path: "/.memory/pref.md", content: "Overwrite" })).toContain(
+    expect(await fileTool(other, "create", { path: "/.memory/pref.md", content: "Overwrite" })).toContain(
       "Read /.memory/pref.md",
     );
-    expect(await fileTool(other, "create", { file_path: "/.memory/pref.md", content: "Retry without read" })).toContain(
+    expect(await fileTool(other, "create", { path: "/.memory/pref.md", content: "Retry without read" })).toContain(
       "Read /.memory/pref.md",
     );
-    expect(await fileTool(other, "read", { file_path: "/.memory/pref.md" })).toContain("German");
+    expect(await fileTool(other, "read", { path: "/.memory/pref.md" })).toContain("German");
     expect(
       await fileTool(other, "edit", {
-        edits: [{ file_path: "/.memory/pref.md", old_string: "German", new_string: "English" }],
+        edits: [{ path: "/.memory/pref.md", old_string: "German", new_string: "English" }],
       }),
     ).toContain("success");
-    expect(await fileTool(other, "create", { file_path: "/report.md", content: "Report" })).toContain("Only /.memory/");
+    expect(await fileTool(other, "create", { path: "/report.md", content: "Report" })).toContain("Only /.memory/");
   });
 
   it("isolates artifacts, refuses mixed batches and child writes, bounds search, and skips deliverable metadata", async () => {
@@ -371,25 +371,23 @@ describe("existing file tools at the memory mount", () => {
       execute: vi.fn().mockResolvedValue([{ type: "text", content: "ordinary artifact" }]),
     };
     const tools = mountMemoryFiles([base], manager());
-    expect(await fileTool(tools, "read", { file_path: "/report.md" })).toBe("ordinary artifact");
+    expect(await fileTool(tools, "read", { path: "/report.md" })).toBe("ordinary artifact");
     expect(
       await fileTool(tools, "edit", {
         edits: [
-          { file_path: "/.memory/a.md", old_string: "", new_string: "Memory" },
-          { file_path: "/report.md", old_string: "", new_string: "Report" },
+          { path: "/.memory/a.md", old_string: "", new_string: "Memory" },
+          { path: "/report.md", old_string: "", new_string: "Report" },
         ],
       }),
     ).toContain("cannot span");
     const child = { invocationContext: { subagentRunId: "child" } } as unknown as ToolContext;
-    expect(await fileTool(tools, "create", { file_path: "/.memory/a.md", content: "Memory" }, child)).toContain(
-      "read-only",
-    );
+    expect(await fileTool(tools, "create", { path: "/.memory/a.md", content: "Memory" }, child)).toContain("read-only");
     const setMeta = vi.fn();
-    await fileTool(tools, "create", { file_path: "/.memory/a.md", content: "Line useful\n".repeat(450) }, { setMeta });
+    await fileTool(tools, "create", { path: "/.memory/a.md", content: "Line useful\n".repeat(450) }, { setMeta });
     expect(setMeta).not.toHaveBeenCalled();
     const output = await fileTool(tools, "grep", { path: "/.memory", pattern: "Line", head_limit: 0 });
     expect(bytes(output)).toBeLessThanOrEqual(8192);
-    expect(await fileTool(mountMemoryFiles([base]), "read", { file_path: "/.memory/a.md" })).toContain("disabled");
+    expect(await fileTool(mountMemoryFiles([base]), "read", { path: "/.memory/a.md" })).toContain("disabled");
     expect(base.execute).toHaveBeenCalledTimes(1);
   });
 });

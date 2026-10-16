@@ -8,6 +8,7 @@ export function chatSession(
   tools: Tool[],
   store: { value?: ChatPersistedState } = {},
   hooks: Partial<StreamRunHooks> = {},
+  stream: typeof streamRun = streamRun,
 ) {
   const sidecar = new RunSidecar();
   const finished: AgentRunResult[] = [];
@@ -26,7 +27,7 @@ export function chatSession(
     },
     connection: {
       connect: (_messages, _data, signal, context) =>
-        streamRun(client, "model", "", sidecar.apply(ai.getMessages()), tools, {
+        stream(client, "model", "", sidecar.apply(ai.getMessages()), tools, {
           ...hooks,
           sidecar,
           options: { signal },

@@ -34,7 +34,11 @@ export default defineConfig({
       grepInvert: /production file tools preserve|artifact OPFS round-trip/,
       use: { ...devices["Desktop Safari"] },
     },
-    { name: "webkit-react-ui", testMatch: "react-ui.spec.ts", use: { ...devices["Desktop Safari"] } },
+    {
+      name: "webkit-react-ui",
+      testMatch: ["react-ui.spec.ts", "mcp-lifecycle.spec.ts"],
+      use: { ...devices["Desktop Safari"] },
+    },
     { name: "webkit-services", testMatch: "worker-services.spec.ts", use: { ...devices["Desktop Safari"] } },
     { name: "webkit-duckdb", testMatch: "duckdb-lifecycle.spec.ts", use: { ...devices["Desktop Safari"] } },
   ],

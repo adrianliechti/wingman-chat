@@ -1,5 +1,5 @@
 import { getConfig } from "@/shared/config";
-import { getModelCatalog } from "@/shared/lib/modelCatalog";
+import { fetchModelCatalog } from "@/shared/lib/modelCatalog";
 import type { Model, ModelType } from "@/shared/types/chat";
 
 /**
@@ -23,13 +23,11 @@ function isLiveTranscriber(model: Model, type: ModelType): boolean {
 export async function resolveModel(configured: string | undefined, type: ModelType): Promise<string> {
   if (configured) return configured;
   const config = getConfig();
-  const models = await getModelCatalog(config)
-    .refresh()
-    .catch((error) => {
-      // The catalog only picks a default; an unreachable /models must not
-      // block the call itself, which can still use the backend default.
-      console.warn(`Failed to list models for the ${type} default:`, error);
-      return [];
-    });
+  const models = await fetchModelCatalog(config).catch((error) => {
+    // The catalog only picks a default; an unreachable /models must not
+    // block the call itself, which can still use the backend default.
+    console.warn(`Failed to list models for the ${type} default:`, error);
+    return [];
+  });
   return pickModel(models, configured, type);
 }

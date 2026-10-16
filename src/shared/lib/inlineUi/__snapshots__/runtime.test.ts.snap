@@ -1,0 +1,628 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`pinned A2UI catalog contract > processes and resolves AudioPlayer 1`] = `
+{
+  "description": "Audio",
+  "id": "root",
+  "type": "AudioPlayer",
+  "url": "https://example.com/audio.mp3",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Badge 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "text": "Ready",
+  "type": "Badge",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Button 1`] = `
+{
+  "action": "<Action>",
+  "child": {
+    "id": "child",
+    "text": "Child content",
+    "type": "Text",
+  },
+  "id": "root",
+  "type": "Button",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Callout 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "text": "Note",
+  "title": undefined,
+  "type": "Callout",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Card 1`] = `
+{
+  "child": {
+    "id": "child",
+    "text": "Child content",
+    "type": "Text",
+  },
+  "id": "root",
+  "type": "Card",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Chart 1`] = `
+{
+  "caption": undefined,
+  "currency": undefined,
+  "data": [
+    {
+      "x": "A",
+      "y": 2,
+    },
+    {
+      "x": "B",
+      "y": 4,
+    },
+  ],
+  "disabled": undefined,
+  "height": undefined,
+  "horizontal": undefined,
+  "id": "root",
+  "kind": "bar",
+  "stacked": undefined,
+  "title": undefined,
+  "type": "Chart",
+  "visible": undefined,
+  "x": "x",
+  "xLabel": undefined,
+  "y": "y",
+  "yLabel": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves CheckBox 1`] = `
+{
+  "id": "root",
+  "label": "Agree",
+  "type": "CheckBox",
+  "value": false,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Checklist 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "items": [
+    "a",
+    "b",
+  ],
+  "label": "Steps",
+  "type": "Checklist",
+  "value": [
+    "a",
+  ],
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves ChoicePicker 1`] = `
+{
+  "id": "root",
+  "label": undefined,
+  "options": [
+    {
+      "label": "A",
+      "value": "a",
+    },
+    {
+      "label": "B",
+      "value": "b",
+    },
+  ],
+  "type": "ChoicePicker",
+  "value": [
+    "a",
+  ],
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Code 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "language": "js",
+  "text": "const n = 1;",
+  "type": "Code",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Collapsible 1`] = `
+{
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "defaultOpen": undefined,
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "title": "Details",
+  "type": "Collapsible",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Column 1`] = `
+{
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "id": "root",
+  "type": "Column",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves DateTimeInput 1`] = `
+{
+  "enableDate": true,
+  "enableTime": false,
+  "id": "root",
+  "label": "Date",
+  "max": undefined,
+  "min": undefined,
+  "type": "DateTimeInput",
+  "value": "2026-10-11",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Divider 1`] = `
+{
+  "id": "root",
+  "type": "Divider",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Form 1`] = `
+{
+  "action": "<Action>",
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "disabled": undefined,
+  "id": "root",
+  "submit": "Save",
+  "type": "Form",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Grid 1`] = `
+{
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "columns": 2,
+  "disabled": undefined,
+  "id": "root",
+  "type": "Grid",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Heading 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "level": undefined,
+  "text": "Heading",
+  "type": "Heading",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Html 1`] = `
+{
+  "disabled": undefined,
+  "height": undefined,
+  "id": "root",
+  "markup": "<p>Preview</p>",
+  "title": undefined,
+  "type": "Html",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Icon 1`] = `
+{
+  "id": "root",
+  "name": "info",
+  "type": "Icon",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Image 1`] = `
+{
+  "description": "Example",
+  "id": "root",
+  "type": "Image",
+  "url": "https://example.com/image.png",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves KeyValue 1`] = `
+{
+  "columns": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "items": [
+    {
+      "label": "Status",
+      "value": "Ready",
+    },
+  ],
+  "type": "KeyValue",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Link 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "href": "https://example.com",
+  "id": "root",
+  "text": "Link",
+  "type": "Link",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves List 1`] = `
+{
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "id": "root",
+  "type": "List",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Metric 1`] = `
+{
+  "currency": undefined,
+  "delta": undefined,
+  "deltaLabel": undefined,
+  "description": undefined,
+  "digits": undefined,
+  "disabled": undefined,
+  "format": "number",
+  "id": "root",
+  "label": "Total",
+  "type": "Metric",
+  "unit": undefined,
+  "value": 42,
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Modal 1`] = `
+{
+  "content": {
+    "id": "details",
+    "text": "Modal content",
+    "type": "Text",
+  },
+  "id": "root",
+  "trigger": {
+    "id": "child",
+    "text": "Child content",
+    "type": "Text",
+  },
+  "type": "Modal",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves MultiSelect 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "Plans",
+  "options": [
+    {
+      "label": "A",
+      "value": "a",
+    },
+    {
+      "label": "B",
+      "value": "b",
+    },
+  ],
+  "type": "MultiSelect",
+  "value": [
+    "a",
+  ],
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Progress 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "label": "Progress",
+  "max": undefined,
+  "type": "Progress",
+  "value": 50,
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Radio 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "Choice",
+  "options": [
+    {
+      "label": "A",
+      "value": "a",
+    },
+    {
+      "label": "B",
+      "value": "b",
+    },
+  ],
+  "type": "Radio",
+  "value": "a",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Row 1`] = `
+{
+  "children": [
+    {
+      "id": "child",
+      "text": "Child content",
+      "type": "Text",
+    },
+  ],
+  "id": "root",
+  "type": "Row",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Segmented 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "View",
+  "options": [
+    {
+      "label": "A",
+      "value": "a",
+    },
+    {
+      "label": "B",
+      "value": "b",
+    },
+  ],
+  "type": "Segmented",
+  "value": "a",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Select 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "Plan",
+  "options": [
+    {
+      "label": "A",
+      "value": "a",
+    },
+    {
+      "label": "B",
+      "value": "b",
+    },
+  ],
+  "type": "Select",
+  "value": "a",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Slider 1`] = `
+{
+  "id": "root",
+  "label": "Quantity",
+  "max": 10,
+  "min": 0,
+  "type": "Slider",
+  "value": 3,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Stepper 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "Quantity",
+  "max": 10,
+  "min": 0,
+  "step": undefined,
+  "type": "Stepper",
+  "unit": undefined,
+  "value": 3,
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Svg 1`] = `
+{
+  "disabled": undefined,
+  "height": undefined,
+  "id": "root",
+  "label": "Circle",
+  "markup": "<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>",
+  "type": "Svg",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Table 1`] = `
+{
+  "caption": undefined,
+  "columns": [
+    {
+      "currency": undefined,
+      "digits": undefined,
+      "key": "x",
+      "label": "X",
+    },
+    {
+      "currency": undefined,
+      "digits": undefined,
+      "key": "y",
+      "label": "Y",
+    },
+  ],
+  "disabled": undefined,
+  "emptyText": undefined,
+  "id": "root",
+  "pageSize": undefined,
+  "rows": [
+    {
+      "x": "A",
+      "y": 2,
+    },
+    {
+      "x": "B",
+      "y": 4,
+    },
+  ],
+  "sortable": undefined,
+  "type": "Table",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Tabs 1`] = `
+{
+  "id": "root",
+  "tabs": [
+    {
+      "child": {
+        "id": "child",
+        "text": "Child content",
+        "type": "Text",
+      },
+      "title": "One",
+    },
+  ],
+  "type": "Tabs",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Text 1`] = `
+{
+  "id": "root",
+  "text": "Hello",
+  "type": "Text",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves TextField 1`] = `
+{
+  "id": "root",
+  "label": "Name",
+  "placeholder": undefined,
+  "type": "TextField",
+  "value": "Ada",
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves TextList 1`] = `
+{
+  "disabled": undefined,
+  "id": "root",
+  "items": [
+    "One",
+    "Two",
+  ],
+  "ordered": undefined,
+  "type": "TextList",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Timeline 1`] = `
+{
+  "active": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "items": [
+    {
+      "label": "First",
+      "time": "Today",
+    },
+  ],
+  "type": "Timeline",
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Toggle 1`] = `
+{
+  "description": undefined,
+  "disabled": undefined,
+  "id": "root",
+  "label": "Enabled",
+  "type": "Toggle",
+  "value": false,
+  "visible": undefined,
+}
+`;
+
+exports[`pinned A2UI catalog contract > processes and resolves Video 1`] = `
+{
+  "id": "root",
+  "posterUrl": undefined,
+  "type": "Video",
+  "url": "https://example.com/video.mp4",
+}
+`;

@@ -1,11 +1,13 @@
 import { BrainCircuit } from "lucide-react";
 import type { ToolDisplay, ToolDisplayState } from "@/shared/types/chat";
 import { isMemoryPath, memoryPath } from "./memoryDocument";
+import { toolArgumentPath } from "@/shared/lib/toolArguments";
+import { toolPreviewList, toolPreviewText } from "@/shared/lib/toolPreview";
 
 export function memoryOperationPaths(operation: string, args: Record<string, unknown>): unknown[] {
-  if (operation === "edit") return Array.isArray(args.edits) ? args.edits.map((edit) => edit?.file_path) : [];
+  if (operation === "edit") return Array.isArray(args.edits) ? args.edits.map((edit) => toolArgumentPath(edit)) : [];
   if (operation === "move") return [args.from, args.to];
-  return [operation === "glob" || operation === "grep" ? (args.path ?? "/") : args.file_path];
+  return [operation === "glob" || operation === "grep" ? (args.path ?? "/") : toolArgumentPath(args)];
 }
 
 const labels: Record<string, [string, string, string]> = {
@@ -38,11 +40,13 @@ export function memoryFileHeader(
       return "Memory note";
     }
   };
-  const preview =
+  const target =
     operation === "move" && paths.length === 2
       ? `${note(paths[0])} → ${note(paths[1])}`
       : paths.length === 1
         ? note(paths[0])
-        : `${paths.length} notes`;
+        : toolPreviewList(paths.map(note), "notes");
+  const pattern = operation === "grep" || operation === "glob" ? toolPreviewText(args.pattern) : null;
+  const preview = pattern ? `${pattern} in ${target}` : target;
   return { icon: BrainCircuit, label: label[state.error ? 2 : state.running ? 0 : 1], preview };
 }

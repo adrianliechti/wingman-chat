@@ -220,7 +220,7 @@ void describe("Bedrock Sonnet 4.6 production-schema soak", { concurrency: false 
         const result = await run(
           client,
           MODEL,
-          `This is a schema transport probe. Call artifacts_create exactly once and emit no prose. Use file_path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
+          `This is a schema transport probe. Call artifacts_create exactly once and emit no prose. Use path ${JSON.stringify(fixture.path)}.\n${exactBlock("FILE_CONTENT", fixture.content)}`,
           [user("Create the exact fixture now.")],
           [createFile],
           { agentName: "bedrock-create-soak", agentLoopStrategy: maxIterations(1) },
