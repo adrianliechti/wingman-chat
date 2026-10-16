@@ -64,6 +64,16 @@ it.each([false, true])("keeps tool and thinking rows in arrival order with text=
   expect(container.textContent).not.toContain("Think after the tools");
 });
 
+it("gives a reply no top padding when it opens with activity rows", async () => {
+  const trailingText: UIMessage = { ...message, parts: [...message.parts, { type: "text", content: "Done" }] };
+  await act(async () => root.render(<ChatAssistantMessage message={trailingText} index={0} isLast />));
+  expect(container.querySelector("div.flex-1")?.className).toContain("pb-3");
+
+  const leadingText: UIMessage = { ...message, parts: [{ type: "text", content: "Starting" }, ...message.parts] };
+  await act(async () => root.render(<ChatAssistantMessage message={leadingText} index={0} isLast />));
+  expect(container.querySelector("div.flex-1")?.className).toContain("py-3");
+});
+
 it("keeps the working indicator visible after tools return while waiting for the model", async () => {
   message = { ...message, parts: message.parts.slice(0, -1) };
   await act(async () => root.render(<ChatAssistantMessage message={message} index={0} isLast isResponding />));

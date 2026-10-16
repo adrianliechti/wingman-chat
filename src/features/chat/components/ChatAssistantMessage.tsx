@@ -336,14 +336,36 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // The opening reasoning moved into the preceding tool group.
   const foldedParts = foldedReasoning ? message.parts.findIndex((part) => part.type !== "thinking") : 0;
 
+  // Activity rows carry their own spacing and stack flush across messages, so a
+  // reply that opens with one takes no top padding — otherwise its first row
+  // would sit further from the row above it than the rows do from each other.
+  const opensWithText =
+    message.parts.find((part, partIndex) => {
+      if (part.type === "text") return !!part.content;
+      if (part.type === "subagent") return true;
+      if (part.type === "thinking") return partIndex >= foldedParts;
+      if (part.type === "tool-call")
+        return !delegated.has(part.id) && (!!toolResultFor(message, part.id) || !!(isLast && isResponding));
+      return false;
+    })?.type === "text";
+
+  // The turn's bottom gap belongs to prose, media and chips; a message that ends
+  // on activity rows stays flush with whatever row follows it.
+  const hasBlockContent = hasTextContent || hasMedia || turnArtifactPaths.length > 0 || turnSkillNames.length > 0;
+
   // Render assistant message with content
   return (
     <div
-      className="flex justify-start pb-2 text-neutral-900 dark:text-neutral-200"
+      className={cn("flex justify-start text-neutral-900 dark:text-neutral-200", hasBlockContent && "pb-2")}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className={cn("flex-1 [overflow-wrap:anywhere] min-w-0 overflow-hidden", hasTextContent && "py-3")}>
+      <div
+        className={cn(
+          "flex-1 [overflow-wrap:anywhere] min-w-0 overflow-hidden",
+          hasTextContent && (opensWithText ? "py-3" : "pb-3"),
+        )}
+      >
         {/* Render content parts in order */}
         {message.parts.map((part, partIndex) => {
           const partKey = getMessagePartKey(part, partIndex, "content");
