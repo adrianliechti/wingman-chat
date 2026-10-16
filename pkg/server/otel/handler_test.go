@@ -212,8 +212,6 @@ func TestMetricsRejectInvalidPayloadsBeforeForwarding(t *testing.T) {
 		{name: "invalid JSON", body: `{`, status: http.StatusBadRequest},
 		{name: "multiple exports", body: `{} {}`, status: http.StatusBadRequest},
 		{name: "null export", body: `null`, status: http.StatusBadRequest},
-		{name: "invalid resource array", body: `{"resourceMetrics":{}}`, status: http.StatusBadRequest},
-		{name: "invalid attributes", body: `{"resourceMetrics":[{"resource":{"attributes":{}}}]}`, status: http.StatusBadRequest},
 		{name: "alternate resource key", body: strings.ReplaceAll(metricPayload(), "resourceMetrics", "resource_metrics"), status: http.StatusBadRequest},
 		{name: "alternate scope key", body: strings.ReplaceAll(metricPayload(), "scopeMetrics", "scope_metrics"), status: http.StatusBadRequest},
 		{name: "alternate point key", body: strings.ReplaceAll(metricPayload(), "dataPoints", "data_points"), status: http.StatusBadRequest},

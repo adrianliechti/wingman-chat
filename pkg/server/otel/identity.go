@@ -77,138 +77,110 @@ func withMetricIdentity(next http.Handler) http.Handler {
 
 type metricObject = map[string]any
 
+// Protobuf JSON parsers also accept snake_case names, which would bypass the walk below.
+var snakeCaseFields = map[string]bool{
+	"resource_metrics":      true,
+	"scope_metrics":         true,
+	"data_points":           true,
+	"exponential_histogram": true,
+}
+
 // UseNumber preserves nanosecond timestamps and integer counts during the JSON round trip.
 func enrichMetricIdentity(body []byte, user, email string) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
+
 	var export metricObject
 	if err := decoder.Decode(&export); err != nil {
 		return nil, err
 	}
+
 	if export == nil {
 		return nil, errors.New("expected metrics object")
 	}
+
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return nil, errors.New("expected one metrics object")
 	}
-	if err := rejectSnakeCase(export); err != nil {
+
+	if err := applyIdentity(export, user, email); err != nil {
 		return nil, err
 	}
-	err := metricObjects(export, "resourceMetrics", func(resource metricObject) error {
-		if err := clearMetricIdentity(resource, "resource"); err != nil {
-			return err
-		}
-		return metricObjects(resource, "scopeMetrics", func(scope metricObject) error {
-			if err := clearMetricIdentity(scope, "scope"); err != nil {
-				return err
-			}
-			return metricObjects(scope, "metrics", func(metric metricObject) error {
-				for _, kind := range []string{"gauge", "sum", "histogram", "exponentialHistogram", "summary"} {
-					value, exists := metric[kind]
-					if !exists {
-						continue
-					}
-					data, ok := value.(metricObject)
-					if !ok {
-						return errors.New("expected metric data object")
-					}
-					if err := rejectSnakeCase(data); err != nil {
-						return err
-					}
-					if err := metricObjects(data, "dataPoints", func(point metricObject) error {
-						return setMetricIdentity(point, user, email)
-					}); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
+
 	return json.Marshal(export)
 }
 
-// Reject protobuf field aliases so collectors cannot ingest data that skipped identity enrichment.
-func rejectSnakeCase(object metricObject) error {
-	for _, field := range []string{"resource_metrics", "scope_metrics", "data_points", "exponential_histogram"} {
-		if _, exists := object[field]; exists {
-			return errors.New("expected lowerCamelCase OTLP fields")
+// applyIdentity drops client-supplied identity attributes everywhere and stamps
+// the authenticated identity on every data point.
+func applyIdentity(value any, user, email string) error {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if err := applyIdentity(item, user, email); err != nil {
+				return err
+			}
+		}
+
+	case metricObject:
+		for key, child := range v {
+			if snakeCaseFields[key] {
+				return errors.New("expected lowerCamelCase OTLP fields")
+			}
+
+			if key == "attributes" {
+				v[key] = withoutIdentity(child)
+			}
+
+			if err := applyIdentity(child, user, email); err != nil {
+				return err
+			}
+		}
+
+		points, _ := v["dataPoints"].([]any)
+
+		for _, point := range points {
+			if point, ok := point.(metricObject); ok {
+				if identity := identityAttributes(user, email); len(identity) > 0 {
+					attrs, _ := point["attributes"].([]any)
+					point["attributes"] = append(attrs, identity...)
+				}
+			}
 		}
 	}
+
 	return nil
 }
 
-func metricObjects(parent metricObject, key string, visit func(metricObject) error) error {
-	value, exists := parent[key]
-	if !exists {
-		return nil
-	}
-	objects, ok := value.([]any)
+func withoutIdentity(value any) any {
+	attrs, ok := value.([]any)
+
 	if !ok {
-		return errors.New("expected metrics array")
+		return value
 	}
-	for _, value := range objects {
-		object, ok := value.(metricObject)
-		if !ok {
-			return errors.New("expected metrics object")
+
+	filtered := make([]any, 0, len(attrs))
+
+	for _, attr := range attrs {
+		if obj, ok := attr.(metricObject); ok {
+			if key, _ := obj["key"].(string); key == "user.id" || key == "user.email" {
+				continue
+			}
 		}
-		if err := rejectSnakeCase(object); err != nil {
-			return err
-		}
-		if err := visit(object); err != nil {
-			return err
-		}
+
+		filtered = append(filtered, attr)
 	}
-	return nil
+
+	return filtered
 }
 
-func clearMetricIdentity(parent metricObject, key string) error {
-	value, exists := parent[key]
-	if !exists {
-		return nil
-	}
-	object, ok := value.(metricObject)
-	if !ok {
-		return errors.New("expected metadata object")
-	}
-	return setMetricIdentity(object, "", "")
-}
-
-func setMetricIdentity(object metricObject, user, email string) error {
+func identityAttributes(user, email string) []any {
 	var attrs []any
-	if value, exists := object["attributes"]; exists {
-		var ok bool
-		attrs, ok = value.([]any)
-		if !ok {
-			return errors.New("expected attributes array")
-		}
-	}
-	filtered := make([]any, 0, len(attrs)+2)
-	for _, value := range attrs {
-		attr, ok := value.(metricObject)
-		if !ok {
-			return errors.New("expected attribute object")
-		}
-		key, ok := attr["key"].(string)
-		if !ok {
-			return errors.New("expected attribute key")
-		}
-		if key != "user.id" && key != "user.email" {
-			filtered = append(filtered, attr)
-		}
-	}
+
 	for _, attr := range []struct{ key, value string }{{"user.id", user}, {"user.email", email}} {
 		if attr.value != "" {
-			filtered = append(filtered, metricObject{"key": attr.key, "value": metricObject{"stringValue": attr.value}})
+			attrs = append(attrs, metricObject{"key": attr.key, "value": metricObject{"stringValue": attr.value}})
 		}
 	}
-	if len(filtered) == 0 {
-		delete(object, "attributes")
-	} else {
-		object["attributes"] = filtered
-	}
-	return nil
+
+	return attrs
 }
