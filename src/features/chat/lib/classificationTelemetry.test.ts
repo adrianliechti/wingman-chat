@@ -9,10 +9,10 @@ vi.mock("@opentelemetry/api", async (importOriginal) => ({
 beforeEach(() => record.mockReset());
 
 const rules = {
-  categories: [{ name: "Legal Work", description: "Private criterion" }],
+  categories: [{ id: "legal_work", name: "Legal Work", description: "Private criterion" }],
   risks: [
-    { name: "PII", description: "Private criterion", threshold: 0.7 },
-    { name: "HR", description: "Private criterion" },
+    { id: "pii", name: "PII", description: "Private criterion", threshold: 0.7 },
+    { id: "hr", name: "HR", description: "Private criterion" },
   ],
   threshold: 0.6,
 };
@@ -90,4 +90,20 @@ it("keeps reporting failures from breaking consent or risk warnings", () => {
   expect(() =>
     recordClassification({ categories: [], risks: [{ id: "hr", confidence: 0.8 }] }, rules, reporting),
   ).not.toThrow();
+});
+
+it("preserves telemetry identity when display names change", () => {
+  recordClassification(
+    { categories: [{ id: "legal_work", confidence: 0.9 }], risks: [{ id: "hr", confidence: 0.8 }] },
+    {
+      ...rules,
+      categories: rules.categories.map((category) => ({ ...category, name: "Legal support" })),
+      risks: rules.risks.map((risk) => ({ ...risk, name: "Renamed warning" })),
+    },
+    reporting,
+  );
+  expect(record.mock.calls.map(([, attributes]) => attributes["wingman.classification.id"])).toEqual([
+    "legal_work",
+    "hr",
+  ]);
 });

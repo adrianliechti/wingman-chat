@@ -48,7 +48,11 @@ it("exports classification and model usage as new observations on each metrics i
   );
   providers = initTelemetry();
   const client = new Client();
-  const rules = { categories: [{ name: "Legal", description: "Private criterion" }], risks: [], threshold: 0.6 };
+  const rules = {
+    categories: [{ id: "legal", name: "Legal", description: "Private criterion" }],
+    risks: [],
+    threshold: 0.6,
+  };
   const reporting = { conversationId: "chat-1", model: "classifier" };
   for (let interval = 0; interval < 2; interval++) {
     const result = await client.classifyChat(

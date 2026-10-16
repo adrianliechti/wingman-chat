@@ -1,5 +1,5 @@
 import { metrics } from "@opentelemetry/api";
-import { categorySlug, type CategoryConfig, type RiskConfig } from "@/shared/config";
+import type { CategoryConfig, RiskConfig } from "@/shared/config";
 import type { ClassificationMatch } from "./classificationQuestions";
 
 /** Record decisions using the same OTel meter and exporter as model usage. */
@@ -14,14 +14,13 @@ export function recordClassification(
       unit: "1",
       advice: { explicitBucketBoundaries: [0, 0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1] },
     });
-    // Categories and risks share the same slug helper, so one lookup fits both.
     const record = (
       kind: "category" | "risk",
       matches: ClassificationMatch[],
       configs: (CategoryConfig | RiskConfig)[],
     ) => {
       for (const { id, confidence } of matches) {
-        const config = configs.find((config) => categorySlug(config.name) === id);
+        const config = configs.find((config) => config.id === id);
         if (!config) continue;
         const threshold = config.threshold ?? rules.threshold;
         scoreHistogram.record(confidence, {

@@ -116,6 +116,8 @@ interface TranslatorConfig {
 }
 
 export interface CategoryConfig {
+  /** Permanent classifier and telemetry identity; keep unchanged when renaming. */
+  id: string;
   name: string;
   description: string;
   consent?: boolean | string;
@@ -126,6 +128,8 @@ export interface CategoryConfig {
 export type RiskSeverity = "low" | "medium" | "high";
 
 export interface RiskConfig {
+  /** Permanent classifier and telemetry identity; keep unchanged when renaming. */
+  id: string;
   name: string;
   description: string;
   /** Visual emphasis on the warning banner. Defaults to "medium". */
@@ -144,12 +148,6 @@ export interface ClassificationConfig {
   /** Default threshold (0..1) applied when a category or risk does not set its own. */
   threshold?: number;
 }
-
-export function categorySlug(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, "_");
-}
-
-export const riskSlug = categorySlug;
 
 export interface CompactionConfig {
   threshold?: number;
@@ -302,6 +300,16 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     }
 
     const cfg: ConfigSchema = await resp.json();
+
+    for (const kind of ["categories", "risks"] as const) {
+      const ids = new Set<string>();
+      for (const item of cfg.chat?.[kind] ?? []) {
+        if (typeof item.id !== "string" || !item.id.trim() || item.id !== item.id.trim() || ids.has(item.id)) {
+          throw new Error(`chat.${kind} requires non-empty, unique IDs without surrounding whitespace`);
+        }
+        ids.add(item.id);
+      }
+    }
 
     const links = cfg.links ?? [
       { ...cfg.support, title: cfg.support?.title?.trim() || "Support", icon: cfg.support?.icon ?? "learning" },

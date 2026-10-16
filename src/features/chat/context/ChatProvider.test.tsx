@@ -53,8 +53,6 @@ vi.mock("@/shared/config", () => ({
     }),
     chat: fixture.chat,
   }),
-  categorySlug: (name: string) => name,
-  riskSlug: (name: string) => name,
 }));
 vi.mock("@/features/agent/hooks/useAgents", () => ({ useAgents: () => ({ currentAgent: fixture.agent }) }));
 vi.mock("@/features/artifacts/hooks/useArtifacts", () => ({
@@ -280,9 +278,10 @@ describe("chat classification integration", () => {
   beforeEach(() => {
     fixture.chat = {
       classification: { model: "gpt-6-luna", threshold: 0.6, effort: "low" },
-      categories: [{ name: "Writing", description: "Drafting and rewriting" }],
+      categories: [{ id: "Writing", name: "Writing", description: "Drafting and rewriting" }],
       risks: [
         {
+          id: "HR",
           name: "HR",
           description: "Hiring decisions",
           threshold: 0.65,
@@ -363,7 +362,7 @@ describe("chat classification integration", () => {
   });
 
   it("shows the highest-confidence risk and remembers acknowledgment within the chat", async () => {
-    fixture.chat.risks!.push({ name: "Credit", description: "Credit decisions" });
+    fixture.chat.risks!.push({ id: "Credit", name: "Credit", description: "Credit decisions" });
     fixture.classify.mockResolvedValue({
       categories: [],
       risks: [
@@ -377,6 +376,34 @@ describe("chat classification integration", () => {
     await act(async () => context.resolveConsent({ action: "accept" }));
     await act(() => context.sendMessage(user("Review another application")));
     expect(context.pendingConsent?.id).toBe("HR");
+  });
+
+  it("uses permanent IDs for renamed labels and remembers their acknowledgment", async () => {
+    fixture.chat.categories![0].name = "Text support";
+    fixture.chat.categories![0].consent = true;
+    fixture.chat.risks![0].name = "Employment decisions";
+    fixture.classify.mockResolvedValue({
+      categories: [{ id: "Writing", confidence: 0.9 }],
+      risks: [{ id: "HR", confidence: 0.9 }],
+    });
+    const context = await harness();
+    await act(() => context.sendMessage(user("Evaluate this candidate")));
+    expect(fixture.classify).toHaveBeenLastCalledWith(
+      "gpt-6-luna",
+      expect.any(Array),
+      [{ id: "Writing", description: "Drafting and rewriting" }],
+      [{ id: "HR", name: "Employment decisions", description: "Hiring decisions" }],
+      expect.any(Object),
+    );
+    expect(context.pendingConsent).toMatchObject({ id: "HR", name: "Employment decisions" });
+    await act(async () => context.resolveConsent({ action: "accept" }));
+    fixture.chat.risks![0].name = "People assessments";
+    await act(() => context.sendMessage(user("Review another candidate")));
+    expect(context.pendingConsent).toMatchObject({ id: "Writing", name: "Text support" });
+    await act(async () => context.resolveConsent({ action: "accept" }));
+    fixture.chat.categories![0].name = "Writing assistance";
+    await act(() => context.sendMessage(user("Review one more candidate")));
+    expect(context.pendingConsent).toBeNull();
   });
 
   it("ignores a late risk result from an older run", async () => {

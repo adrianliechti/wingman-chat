@@ -112,3 +112,23 @@ it("keeps the Internet provider ID while resolving its gateway research endpoint
     },
   ]);
 });
+
+it.each(["categories", "risks"])("preserves explicit IDs for chat.%s", async (kind) => {
+  const items = [{ id: "stable_id", name: "Renamed label", description: "Criterion" }];
+  const config = await loadWith({ chat: { [kind]: items } });
+  expect(config.chat?.[kind as "categories" | "risks"]).toEqual(items);
+});
+
+it.each(["categories", "risks"])("rejects missing, blank, padded, or duplicate IDs in chat.%s", async (kind) => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    vi.stubGlobal("window", { location: new URL("http://localhost") });
+    for (const ids of [[undefined], [""], [" "], [" padded "], ["same", "same"]]) {
+      const items = ids.map((id) => ({ id, name: "Label", description: "Criterion" }));
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ chat: { [kind]: items } })));
+      expect(await loadConfig()).toBeUndefined();
+    }
+  } finally {
+    error.mockRestore();
+  }
+});

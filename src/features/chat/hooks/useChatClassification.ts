@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { categorySlug, getConfig, riskSlug } from "@/shared/config";
+import { getConfig } from "@/shared/config";
 import { isAbortError } from "@/shared/lib/errors";
 import { minimalEffort } from "@/shared/lib/models";
 import type { UIMessage } from "@tanstack/ai";
@@ -81,8 +81,8 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
           .classifyChat(
             classificationModel,
             conversation,
-            categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
-            riskConfigs.map((r) => ({ id: riskSlug(r.name), name: r.name, description: r.description })),
+            categoryConfigs.map((c) => ({ id: c.id, description: c.description })),
+            riskConfigs.map((r) => ({ id: r.id, name: r.name, description: r.description })),
             { effort: classificationCfg?.effort, signal },
           )
           .then(({ categories: detectedCategories, risks: detectedRisks }) => {
@@ -99,10 +99,8 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
               const acknowledged = acknowledgedRisksRef.current.get(id) ?? new Set<string>();
               const matchedRisk = detectedRisks
                 .flatMap((match) => {
-                  const cfg = riskConfigs.find((r) => riskSlug(r.name) === match.id);
-                  return cfg &&
-                    match.confidence >= (cfg.threshold ?? defaultThreshold) &&
-                    !acknowledged.has(riskSlug(cfg.name))
+                  const cfg = riskConfigs.find((r) => r.id === match.id);
+                  return cfg && match.confidence >= (cfg.threshold ?? defaultThreshold) && !acknowledged.has(cfg.id)
                     ? [{ cfg, confidence: match.confidence }]
                     : [];
                 })
@@ -113,7 +111,7 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
                 const { cfg } = matchedRisk;
                 next = {
                   kind: "risk",
-                  id: riskSlug(cfg.name),
+                  id: cfg.id,
                   name: cfg.name,
                   consent: {
                     message:
@@ -130,7 +128,7 @@ export function useChatClassification({ models, chatId, chatIdRef, updateChat }:
               const consented = consentedCategoriesRef.current.get(id) ?? new Set<string>();
               const toAsk = categoryConfigs.find(
                 (cfg) =>
-                  categorySlug(cfg.name) === category.id &&
+                  cfg.id === category.id &&
                   category.confidence >= (cfg.threshold ?? defaultThreshold) &&
                   cfg.consent &&
                   !consented.has(category.id),

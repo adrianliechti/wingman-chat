@@ -644,6 +644,14 @@ in the questions rather than encoding them into the content. Questions in one
 request cannot depend on each other's answers; risk warnings take precedence
 over category consent in application code.
 
+Categories and risks require an explicit `id`, unique within their respective lists.
+The classifier, warning acknowledgments, and telemetry use this permanent ID;
+`name` is a display label that can be renamed independently. When migrating
+existing configuration, set each ID to its previous name-based slug (trim the
+name, lowercase it, and replace whitespace with underscores) to preserve telemetry
+history. Keep IDs unchanged for wording changes; assign a new ID when the
+meaning changes materially.
+
 ### Classification metrics and wingman-insights
 
 With `telemetry` enabled, classification uses the same `wingman` OTel meter
@@ -666,7 +674,7 @@ Its attributes are:
 | `user.id`                          | Attached by the Go telemetry proxy from `X-Forwarded-User`, when available                                      |
 | `user.email`                       | Attached by the Go telemetry proxy from `X-Forwarded-Email`, falling back to an email-shaped `X-Forwarded-User` |
 | `wingman.classification.kind`      | `category` or `risk`                                                                                            |
-| `wingman.classification.id`        | Category/risk slug                                                                                              |
+| `wingman.classification.id`        | Permanent configured category/risk ID                                                                           |
 | `wingman.classification.threshold` | Effective configured threshold                                                                                  |
 | `wingman.classification.matched`   | Whether confidence is at least the threshold                                                                    |
 
