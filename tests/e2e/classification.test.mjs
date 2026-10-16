@@ -11,7 +11,6 @@ const PEOPLE = "HR or People Support";
 const PORTFOLIO = "Investment Content Support";
 const OPERATIONS = "Operations, Finance, or Administrative Support";
 const message = (text, role = "user") => ({ id: crypto.randomUUID(), role, parts: [{ type: "text", content: text }] });
-const slug = (name) => name.trim().toLowerCase().replace(/\s+/g, "_");
 // Allow comparison with the previous config while preserving the actual request labels.
 const categoryName = (name) => name.replace(/ \(Non-(?:Advisory|Determinative|Judgement)\)$/, "");
 
@@ -265,8 +264,8 @@ const configPath = process.env.WINGMAN_CLASSIFICATION_CONFIG ?? new URL("../../p
 const { chat } = JSON.parse(await readFile(configPath, "utf8"));
 const model = chat.classification.model;
 const threshold = chat.classification.threshold ?? 0.5;
-const categories = chat.categories.map((c) => ({ id: slug(c.name), description: c.description }));
-const risks = chat.risks.map((r) => ({ id: slug(r.name), name: r.name, description: r.description }));
+const categories = chat.categories.map((c) => ({ id: c.id, description: c.description }));
+const risks = chat.risks.map((r) => ({ id: r.id, name: r.name, description: r.description }));
 const repeats = Number(process.env.WINGMAN_CLASSIFICATION_REPEATS ?? "1");
 assert(Number.isInteger(repeats) && repeats > 0, "WINGMAN_CLASSIFICATION_REPEATS must be a positive integer");
 
@@ -313,15 +312,15 @@ void describe("Classification config through the real gateway", { concurrency: 4
             { effort: "none", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
           );
           const choice = result.categories[0];
-          const categoryConfig = chat.categories.find((c) => slug(c.name) === choice.id);
+          const categoryConfig = chat.categories.find((c) => c.id === choice.id);
           const category = categoryName(categoryConfig.name);
           const categoryThreshold = categoryConfig.threshold ?? threshold;
           const fired = result.risks
             .filter((match) => {
-              const cfg = chat.risks.find((r) => slug(r.name) === match.id);
+              const cfg = chat.risks.find((r) => r.id === match.id);
               return match.confidence >= (cfg.threshold ?? threshold);
             })
-            .map((match) => chat.risks.find((r) => slug(r.name) === match.id).name)
+            .map((match) => chat.risks.find((r) => r.id === match.id).name)
             .sort();
           const expectedRisks = [...(sample.risks ?? [])].sort();
           const observation = {

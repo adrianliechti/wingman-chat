@@ -54,72 +54,89 @@
     },
     "categories": [
       {
+        "id": "writing",
         "name": "Writing, Editing, or Translation",
         "description": "General prose creation or transformation: drafting, rewriting, polishing, summarising supplied text, proofreading, simplifying, localising or translating. Use only when no specialist business or social category fits. Investment text belongs to Investment Content Support; employment text to HR; legal or policy text to Risk/Compliance/Legal; external relationship messages to Client/External Communication; personal greetings and social messages to Social/Personal/Informal."
       },
       {
+        "id": "explanation",
         "name": "Information Seeking or Explanation",
         "description": "A direct factual answer, definition, background explanation or general understanding from existing knowledge. Includes explaining what creditworthiness means without assessing anyone. Prefer a specialist business category for domain-specific work, Practical Guidance for instructions, Research for synthesis across sources, and Learning for sustained teaching or practice."
       },
       {
+        "id": "guidance",
         "name": "Practical Guidance or Process Support",
         "description": "General how-to help: steps, checklists, templates, methods or execution guidance for accomplishing a task. The requested output is an actionable process, rather than a fact, comparison or finished text. Prefer HR, investment, legal/compliance, business operations or coding when the process belongs to that specialist area."
       },
       {
+        "id": "analysis",
         "name": "Analysis or Decision Support",
         "description": "General comparisons, pros and cons, trade-offs, scenarios and decision frameworks outside the specialist business domains. Excludes investment or portfolio recommendations and analysis, employment judgements, credit or underwriting assessments, and legal questions: use their corresponding business categories even when a risk fires. Numerical/table-focused analysis belongs to Data Analysis; gathering and synthesising sources belongs to Research."
       },
       {
+        "id": "data_analysis",
         "name": "Data Analysis or Reporting Support",
         "description": "Analysing or transforming tables, spreadsheets, surveys, operational metrics, dashboards, trends, calculations or reporting outputs. Prefer Investment Content Support for portfolio or investment figures, and Operations, Finance, or Administrative Support for finance operations and credit assessments. Writing runnable code or debugging an analysis belongs to Coding."
       },
       {
+        "id": "coding",
         "name": "Coding, Automation, or Technical Help",
         "description": "The main deliverable is code, SQL, a script, automation, system logic, debugging, technical troubleshooting or architecture. Use this when implementing or fixing a technical system is the requested work, even if it serves a business domain. Independent risk checks still apply to what the implementation will do."
       },
       {
+        "id": "research",
         "name": "Research or Knowledge Work",
         "description": "Gathering, checking and synthesising information across multiple sources: desk research, company or industry research, literature review or structured topic exploration. Use this when source discovery and evidence synthesis are central, rather than a quick factual answer. Prefer Investment Content Support when the requested result is investment analysis, market commentary or a portfolio action."
       },
       {
+        "id": "external_comms",
         "name": "Client or External Communication Support",
         "description": "Messages whose recipients are outside the organisation: clients, prospects, partners, regulators or other external parties. Includes meeting arrangements, service updates and relationship communication when the audience is the main purpose. Messages to employees or new colleagues, including welcomes and onboarding for client-facing staff, belong to HR, not this category. Investment substance belongs to Investment Content Support; legal or regulatory substance to Risk/Compliance/Legal."
       },
       {
+        "id": "investment",
         "name": "Investment Content Support",
         "description": "Investment and portfolio work, whether general or client-specific: market or macro commentary, investment education and illustrative portfolio-return examples, rewriting or translating approved investment text, portfolio summaries, investment performance, securities or product analysis, recommendations, allocation and rebalancing. These belong here even when phrased as writing, teaching or decision support, and even when a risk fires. Administrative billing, invoices and fee charging without portfolio analysis belong to Operations/Finance. Writing code belongs to Coding."
       },
       {
+        "id": "legal_compliance",
         "name": "Risk, Compliance, or Legal Support",
         "description": "Policies, controls, legal drafting or interpretation, policy summaries, audit support, regulatory wording, issue spotting and compliance communication. Includes requests for legal or compliance judgements; the category identifies the business domain, while risks are assessed separately. Prefer HR for employment assessments, Investment for portfolio actions, and Operations/Finance for credit underwriting."
       },
       {
+        "id": "hr",
         "name": "HR or People Support",
         "description": "Employment and people-management work: recruiting, job descriptions, CVs, interviews, hiring, employee performance, promotion, compensation, discipline, termination, onboarding and staff communications. Includes welcome messages to new colleagues or employees, even in client-facing teams. Includes assessing or ranking individuals even when the HR decision risk fires. Lending and insurance applicants belong to Operations/Finance, not HR."
       },
       {
+        "id": "operations",
         "name": "Operations, Finance, or Administrative Support",
         "description": "Business administration and finance operations: internal procedures, project coordination, budgets, meeting notes, reconciliations and planning. Includes client billing, invoicing, administrative charges and management-fee calculations; lending, creditworthiness, loan approvals, credit limits and insurance eligibility. Use this category for these business tasks even when a risk fires. Portfolio or investment analysis and performance belong to Investment; general metrics to Data Analysis; employment matters to HR."
       },
       {
+        "id": "learning",
         "name": "Learning, Training, or Coaching",
         "description": "An explicit tutoring, practice or coaching interaction: exercises, quizzes, language drills, role-play, training simulations or sustained skill-building. Merely explaining a concept with an example, or wording material for a training handout, is not this category. Investment concepts and fictional portfolio-return examples belong to Investment Content Support, even when intended for training; HR training content to HR; legal/compliance content to Risk/Compliance/Legal. General brief factual explanations belong to Information Seeking."
       },
       {
+        "id": "ideation",
         "name": "Brainstorming or Creative Ideation",
         "description": "Generating multiple new ideas, names, campaign concepts, workshop or event concepts, innovations or creative alternatives. Use this for ideation before selecting or developing a deliverable. Prefer Writing for producing a finished text, Analysis for evaluating existing options, and a specialist business category for controlled assessments or recommendations."
       },
       {
+        "id": "personal",
         "name": "Social, Personal, or Informal Use",
         "description": "Personal or social conversation and messages: greetings, congratulations, birthday wishes, friendly chat, informal self-expression or emotional support. Drafting a personal greeting belongs here even though it involves writing. Use a task-specific category for substantive explanations, processes, comparisons, learning exercises or transformations of supplied text that go beyond a social exchange."
       },
       {
+        "id": "other",
         "name": "Other or Unclear",
         "description": "The main request is missing, unintelligible, too ambiguous or outside every listed category. A request involving a controlled decision still belongs to its closest business category; the independent risk questions identify the concern. Use this only when no substantive category fits."
       }
     ],
     "risks": [
       {
+        "id": "hr_decision",
         "name": "Human Resources Decision",
         "severity": "high",
         "threshold": 0.65,
@@ -127,6 +144,7 @@
         "message": "HR decisions such as hiring, promotion, or disciplinary outcomes must be made by a qualified human decision-maker. Lumen can help draft materials or structure thinking, but cannot evaluate or rank individuals on your behalf."
       },
       {
+        "id": "investment_advice",
         "name": "Client-specific investment recommendation or portfolio decision",
         "severity": "high",
         "threshold": 0.7,
@@ -134,6 +152,7 @@
         "message": "Investment recommendations and portfolio decisions must follow LGT's approved advisory process. Lumen can support research and preparation, but cannot make or materially influence client-specific investment decisions on your behalf. Please use tools approved by the Investment Solutions team."
       },
       {
+        "id": "financial_calculation",
         "name": "Business-critical financial calculation",
         "severity": "high",
         "threshold": 0.6,
@@ -141,6 +160,7 @@
         "message": "Business-critical financial calculations must be performed in approved systems. Lumen is not suited for producing official figures or sensitive calculations — use approved calculation, valuation, performance, reporting, or risk tools instead."
       },
       {
+        "id": "credit_decision",
         "name": "Credit or Creditworthiness Decision",
         "severity": "high",
         "threshold": 0.6,

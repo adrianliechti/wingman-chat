@@ -1,7 +1,7 @@
 import { metrics } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { AggregationTemporalityPreference, OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
@@ -12,15 +12,14 @@ import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from "@ope
 
 const IGNORE_URLS = [/\/otel\//];
 
-const resource = defaultResource().merge(
-  resourceFromAttributes({
-    "service.name": "wingman-chat",
-    "user_agent.original": navigator.userAgent,
-  }),
-);
+export function initTelemetry(serviceName: string) {
+  const resource = defaultResource().merge(
+    resourceFromAttributes({
+      "service.name": serviceName,
+      "user_agent.original": navigator.userAgent,
+    }),
+  );
 
-export function initTelemetry() {
-  // Traces
   const traceExporter = new OTLPTraceExporter({ url: "/telemetry/v1/traces" });
   const tracerProvider = new WebTracerProvider({
     resource,
@@ -36,8 +35,11 @@ export function initTelemetry() {
     contextManager: new StackContextManager(),
   });
 
-  // Metrics
-  const metricExporter = new OTLPMetricExporter({ url: "/telemetry/v1/metrics" });
+  // Insights sums incoming counts/sums, so each export must contain only new observations.
+  const metricExporter = new OTLPMetricExporter({
+    url: "/telemetry/v1/metrics",
+    temporalityPreference: AggregationTemporalityPreference.DELTA,
+  });
   const meterProvider = new MeterProvider({
     resource,
     readers: [
@@ -48,14 +50,12 @@ export function initTelemetry() {
     ],
   });
 
-  // Logs
   const logExporter = new OTLPLogExporter({ url: "/telemetry/v1/logs" });
   const loggerProvider = new LoggerProvider({
     resource,
     processors: [new BatchLogRecordProcessor({ exporter: logExporter })],
   });
 
-  // Instrumentations
   registerInstrumentations({
     instrumentations: [
       new FetchInstrumentation({
@@ -64,7 +64,6 @@ export function initTelemetry() {
     ],
   });
 
-  // Register providers so the global API can find them
   metrics.setGlobalMeterProvider(meterProvider);
   logs.setGlobalLoggerProvider(loggerProvider);
 

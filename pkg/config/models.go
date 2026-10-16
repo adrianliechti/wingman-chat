@@ -163,6 +163,7 @@ type Classification struct {
 }
 
 type Category struct {
+	ID          string  `json:"id,omitempty" yaml:"id,omitempty"`
 	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
 	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
 	Consent     any     `json:"consent,omitempty" yaml:"consent,omitempty"`
@@ -170,6 +171,7 @@ type Category struct {
 }
 
 type Risk struct {
+	ID          string  `json:"id,omitempty" yaml:"id,omitempty"`
 	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
 	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
 	Severity    string  `json:"severity,omitempty" yaml:"severity,omitempty"`
@@ -195,7 +197,9 @@ type TranslatorProvider struct {
 	Languages   []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
 
-type Telemetry struct{}
+type Telemetry struct {
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+}
 
 type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`

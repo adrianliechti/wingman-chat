@@ -19,7 +19,7 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 	mux := http.NewServeMux()
 
 	if cfg.Telemetry != nil {
-		otel.New().Attach(mux)
+		otel.New(cfg.Telemetry.Name).Attach(mux)
 	}
 
 	api.New(prefix, token, url).Attach(mux)
