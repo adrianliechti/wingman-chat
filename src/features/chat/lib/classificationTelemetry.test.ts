@@ -18,7 +18,7 @@ const rules = {
 };
 const reporting = { conversationId: "chat-1", model: "classifier" };
 
-it("records every evaluated score with the thresholds used by the UI", () => {
+it("records categories and only matched risks with the thresholds used by the UI", () => {
   recordClassification(
     {
       categories: [{ id: "legal_work", confidence: 0.59 }],
@@ -56,24 +56,29 @@ it("records every evaluated score with the thresholds used by the UI", () => {
         "wingman.classification.matched": true,
       },
     ],
-    [
-      0.2,
-      {
-        ...attributes,
-        "wingman.classification.kind": "risk",
-        "wingman.classification.id": "hr",
-        "wingman.classification.threshold": 0.6,
-        "wingman.classification.matched": false,
-      },
-    ],
   ]);
   expect(JSON.stringify(record.mock.calls)).not.toContain("Private");
   expect(JSON.stringify(record.mock.calls)).not.toContain("wingman.message.id");
   expect(JSON.stringify(record.mock.calls)).not.toContain("wingman.run.id");
 });
 
+it("skips risks below both default and per-risk thresholds", () => {
+  recordClassification(
+    {
+      categories: [],
+      risks: [
+        { id: "pii", confidence: 0.69 },
+        { id: "hr", confidence: 0.59 },
+      ],
+    },
+    rules,
+    reporting,
+  );
+  expect(record).not.toHaveBeenCalled();
+});
+
 it("leaves user identity to the backend", () => {
-  recordClassification({ categories: [], risks: [{ id: "hr", confidence: 0 }] }, rules, reporting);
+  recordClassification({ categories: [], risks: [{ id: "hr", confidence: 0.6 }] }, rules, reporting);
   expect(record.mock.calls[0][1]).not.toHaveProperty("user.email");
   expect(record.mock.calls[0][1]).not.toHaveProperty("user.id");
 });

@@ -16,9 +16,7 @@ const maxMetricBodyBytes = 8 << 20
 
 var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
-// withMetricIdentity enriches the browser's OTLP/HTTP JSON metrics. Identity
-// headers must be set/overwritten by the trusted authentication proxy, as in
-// wingman's header auth. Browser-supplied identity is never authoritative.
+// Identity headers must be overwritten by the trusted authentication proxy.
 func withMetricIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -58,7 +56,6 @@ func withMetricIdentity(next http.Handler) http.Handler {
 
 		user := strings.TrimSpace(r.Header.Get("X-Forwarded-User"))
 		email := strings.TrimSpace(r.Header.Get("X-Forwarded-Email"))
-		// Same email-shaped user fallback as wingman's header auth.
 		if email == "" && emailPattern.MatchString(user) {
 			email = user
 		}
@@ -80,8 +77,7 @@ func withMetricIdentity(next http.Handler) http.Handler {
 
 type metricObject = map[string]any
 
-// UseNumber preserves nanosecond timestamps and integer counts during the JSON
-// round trip. Unknown OTLP fields and non-identity attributes are retained.
+// UseNumber preserves nanosecond timestamps and integer counts during the JSON round trip.
 func enrichMetricIdentity(body []byte, user, email string) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
@@ -135,9 +131,7 @@ func enrichMetricIdentity(body []byte, user, email string) ([]byte, error) {
 	return json.Marshal(export)
 }
 
-// Some collectors accept protobuf's snake_case names as well as OTLP JSON's
-// lowerCamelCase names. Reject alternate structural keys so they cannot skip
-// identity enrichment. Browser exporters only use the canonical spelling.
+// Reject protobuf field aliases so collectors cannot ingest data that skipped identity enrichment.
 func rejectSnakeCase(object metricObject) error {
 	for _, field := range []string{"resource_metrics", "scope_metrics", "data_points", "exponential_histogram"} {
 		if _, exists := object[field]; exists {

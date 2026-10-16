@@ -657,7 +657,7 @@ meaning changes materially.
 With `telemetry` enabled, classification uses the same `wingman` OTel meter
 and `/telemetry/v1/metrics` exporter as native model usage. The chat hook records
 `wingman.classification.score`, a Wingman histogram, once for the winning
-category and once per evaluated risk. Cancelled, superseded, failed, and skipped
+category and once per risk whose probability meets its effective threshold. Cancelled, superseded, failed, and skipped
 classifications record no scores. Reporting runs before consent selection, so
 acknowledged risks and categories without consent still appear in analytics.
 Reporting failures never block warnings. Native Evaluate spans and metrics
@@ -680,9 +680,9 @@ Its attributes are:
 
 The resource's `service.name` remains `wingman-chat`. Message/run IDs, message
 text, attachment names, descriptions, and consent text are not metric labels.
-Scores below threshold are recorded too: negative risk results provide the
-denominator for risk rates, and low-confidence categories can appear in a
-below-threshold bucket. These are counts of completed classification evaluations,
+Category scores below threshold are recorded too; risk scores below threshold
+are omitted. Risk observations count threshold matches, so they do not provide
+a denominator for risk rates. These are counts of reported classification results,
 not distinct prompts: editing or retrying a message can produce another score,
 just as it produces another model operation. Identity and delivery are best effort.
 
@@ -720,8 +720,8 @@ dashboard changes required to surface this metric.
 Future dashboard queries should filter
 `metric_name = 'wingman.classification.score'` and reuse the existing
 app/user/session/model filters. Group by classification kind, ID, and matched
-status from `attributes`. Sum category counts for category distribution; for
-risk rates divide matched counts by all evaluations of that same risk. Average
+status from `attributes`. Sum category counts for category distribution and
+risk counts for threshold matches. Average
 score is `SUM(sum) / SUM(count)`. Count only category observations for a
 classification-volume chart when categories are configured; adding category and
 risk counts would count the same evaluation multiple times. The current store

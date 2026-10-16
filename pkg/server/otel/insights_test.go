@@ -91,7 +91,6 @@ func TestInsightsReceivesTracesAndEnrichedMetrics(t *testing.T) {
 	if export.path != "/v1/metrics" {
 		t.Errorf("insights metrics path = %s", export.path)
 	}
-	// Insights must see exactly what the collector sees, identity included.
 	if !bytes.Equal(export.body, forwarded.body) {
 		t.Error("insights metrics differ from forwarded metrics")
 	}
@@ -123,7 +122,6 @@ func TestInsightsReceivesExportsWithoutCollector(t *testing.T) {
 	if res := post(t, mux, "/telemetry/v1/traces", traces, nil); res.Code != http.StatusOK {
 		t.Fatalf("traces status = %d", res.Code)
 	}
-	// An endpoint with a path is used verbatim, as in wingman.
 	if export := awaitExport(t, copied); export.path != "/ingest" || !bytes.Equal(export.body, traces) {
 		t.Errorf("insights traces = %s %s", export.path, export.body)
 	}

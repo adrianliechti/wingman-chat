@@ -36,7 +36,6 @@ func metricPayload() string {
 	resource := fmt.Sprintf(`{"resource":{"attributes":[%s,{"key":"service.name","value":{"stringValue":"wingman-chat"}}]},
 "schemaUrl":"https://example.org/resource-schema","scopeMetrics":[{"scope":{"name":"wingman","attributes":[%s]},
 "metrics":[%s]}]}`, spoofedIdentity, spoofedIdentity, strings.Join(metrics, ","))
-	// Multiple resources exercise a whole browser batch, not just the first metric.
 	return `{"resourceMetrics":[` + resource + `,` + resource + `],"extension":"preserved"}`
 }
 
@@ -112,8 +111,6 @@ func TestMetricsProxyAttachesAuthenticatedIdentity(t *testing.T) {
 						if data, ok := metric[kind].(metricObject); ok {
 							point := data["dataPoints"].([]any)[0].(metricObject)
 							checkIdentity(t, point, tt.wantUser, tt.wantEmail)
-							// Remove only the changed fields to compare every other value,
-							// including timestamps, counts, buckets, and extension fields.
 							stripIdentityAttributes(point)
 							originalPoint := originalMetric[kind].(metricObject)["dataPoints"].([]any)[0].(metricObject)
 							stripIdentityAttributes(originalPoint)

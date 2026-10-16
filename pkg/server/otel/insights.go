@@ -10,20 +10,15 @@ import (
 )
 
 const (
-	// Copied exports are buffered in memory, so they are capped like the
-	// metrics payload. Larger exports still reach the primary collector.
 	maxInsightsBodyBytes = 8 << 20
 	insightsTimeout      = 30 * time.Second
 	maxInsightsInFlight  = 32
 )
 
-// insightsSlots bounds concurrent insights deliveries so a slow or unreachable
-// second backend cannot accumulate goroutines and buffered exports.
+// Bound buffered exports while insights is slow or unreachable.
 var insightsSlots = make(chan struct{}, maxInsightsInFlight)
 
-// insightsEndpoint derives the insights URL of one signal, matching wingman's
-// INSIGHTS_ENDPOINT handling: a bare endpoint receives the default OTLP path,
-// an endpoint that already carries a path is used verbatim.
+// Match wingman's INSIGHTS_ENDPOINT convention: preserve explicit paths.
 func insightsEndpoint(endpoint, defaultPath string) string {
 	if endpoint == "" {
 		return ""
@@ -38,10 +33,7 @@ func insightsEndpoint(endpoint, defaultPath string) string {
 	return parsed.JoinPath(defaultPath).String()
 }
 
-// withInsights copies every export to additional endpoints, like wingman's second
-// INSIGHTS_ENDPOINT exporter. Delivery is best effort and independent of the
-// primary collector: the browser only ever sees the primary response, and
-// insights still receives data while the primary collector is unavailable.
+// Copy independently of the primary collector; only its response reaches the browser.
 func withInsights(next http.Handler, endpoints ...string) http.Handler {
 	targets := make([]string, 0, len(endpoints))
 
@@ -71,9 +63,7 @@ type bodyReader struct {
 	io.Closer
 }
 
-// captureBody buffers the export so it can be sent twice. Oversized or
-// unreadable bodies are passed through to the primary collector unchanged and
-// are not copied to insights.
+// Replay consumed bytes to the primary collector even when capture fails or exceeds the limit.
 func captureBody(r *http.Request) ([]byte, bool) {
 	if r.Body == nil || r.Body == http.NoBody {
 		return nil, false

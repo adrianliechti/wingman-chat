@@ -20,7 +20,6 @@ const resource = defaultResource().merge(
 );
 
 export function initTelemetry() {
-  // Traces
   const traceExporter = new OTLPTraceExporter({ url: "/telemetry/v1/traces" });
   const tracerProvider = new WebTracerProvider({
     resource,
@@ -36,7 +35,6 @@ export function initTelemetry() {
     contextManager: new StackContextManager(),
   });
 
-  // Metrics
   // Insights sums incoming counts/sums, so each export must contain only new observations.
   const metricExporter = new OTLPMetricExporter({
     url: "/telemetry/v1/metrics",
@@ -52,14 +50,12 @@ export function initTelemetry() {
     ],
   });
 
-  // Logs
   const logExporter = new OTLPLogExporter({ url: "/telemetry/v1/logs" });
   const loggerProvider = new LoggerProvider({
     resource,
     processors: [new BatchLogRecordProcessor({ exporter: logExporter })],
   });
 
-  // Instrumentations
   registerInstrumentations({
     instrumentations: [
       new FetchInstrumentation({
@@ -68,7 +64,6 @@ export function initTelemetry() {
     ],
   });
 
-  // Register providers so the global API can find them
   metrics.setGlobalMeterProvider(meterProvider);
   logs.setGlobalLoggerProvider(loggerProvider);
 

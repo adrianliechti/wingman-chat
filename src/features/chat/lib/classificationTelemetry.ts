@@ -2,7 +2,6 @@ import { metrics } from "@opentelemetry/api";
 import type { CategoryConfig, RiskConfig } from "@/shared/config";
 import type { ClassificationMatch } from "./classificationQuestions";
 
-/** Record decisions using the same OTel meter and exporter as model usage. */
 export function recordClassification(
   result: { categories: ClassificationMatch[]; risks: ClassificationMatch[] },
   rules: { categories: CategoryConfig[]; risks: RiskConfig[]; threshold: number },
@@ -23,6 +22,7 @@ export function recordClassification(
         const config = configs.find((config) => config.id === id);
         if (!config) continue;
         const threshold = config.threshold ?? rules.threshold;
+        if (kind === "risk" && !(confidence >= threshold)) continue;
         scoreHistogram.record(confidence, {
           "gen_ai.operation.name": "evaluate",
           "gen_ai.request.model": reporting.model,
