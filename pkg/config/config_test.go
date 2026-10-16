@@ -162,3 +162,44 @@ func TestMCPConfigReachesBrowser(t *testing.T) {
 		t.Fatalf("BRIDGE_URL changed its browser configuration contract: %s", data)
 	}
 }
+
+func TestChatClassificationIDsReachBrowser(t *testing.T) {
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile("chat.yaml", []byte(`
+categories:
+  - id: writing
+    name: Writing
+risks:
+  - id: hr_decision
+    name: HR decision
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(Load())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var browser struct {
+		Chat struct {
+			Categories []struct{ ID string } `json:"categories"`
+			Risks      []struct{ ID string } `json:"risks"`
+		} `json:"chat"`
+	}
+	if err := json.Unmarshal(data, &browser); err != nil {
+		t.Fatal(err)
+	}
+	if len(browser.Chat.Categories) != 1 || browser.Chat.Categories[0].ID != "writing" || len(browser.Chat.Risks) != 1 || browser.Chat.Risks[0].ID != "hr_decision" {
+		t.Fatalf("chat.yaml lost category or risk IDs: %s", data)
+	}
+}
