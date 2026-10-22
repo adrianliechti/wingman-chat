@@ -94,6 +94,7 @@ it.each(["chat", "summarize_history", "classify_chat"])(
       );
     else
       await chat({
+        threadId: "telemetry-chat",
         adapter: client.textAdapter("model"),
         messages: [{ role: "user", content: "Private input" }],
         stream: false,

@@ -38,7 +38,7 @@ exports[`locks the published catalog schemas and generated references to registe
                 },
                 "userMessage": {
                   "$ref": "#/$defs/DynamicString",
-                  "description": "An optional human-readable message describing the action performed by the user, to present in conversation history or user feedback.",
+                  "description": "An optional human-readable message describing the action performed by the user, resolved by the renderer and included in the outbound action message.",
                 },
               },
               "required": [
@@ -69,10 +69,10 @@ exports[`locks the published catalog schemas and generated references to registe
     },
     "CheckRule": {
       "additionalProperties": false,
-      "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+      "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
       "properties": {
         "condition": {
-          "description": "Path or function call evaluating to a structured validation result object.",
+          "description": "Path or function call evaluating to a structured validation result object or a boolean.",
           "oneOf": [
             {
               "$ref": "#/$defs/DataBinding",
@@ -143,7 +143,7 @@ exports[`locks the published catalog schemas and generated references to registe
       "type": "object",
     },
     "DynamicBoolean": {
-      "description": "A boolean value that can be a literal, a path, or a function call returning a boolean.",
+      "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
       "oneOf": [
         {
           "type": "boolean",
@@ -254,7 +254,7 @@ exports[`locks the published catalog schemas and generated references to registe
         {
           "oneOf": [
             {
-              "$ref": "catalog.json#/$defs/anyFunction",
+              "$ref": "#/$defs/anyFunction",
             },
             {
               "$ref": "#/$defs/IndexSystemFunction",
@@ -304,7 +304,6 @@ exports[`locks the published catalog schemas and generated references to registe
       "required": [
         "@call",
       ],
-      "returnType": "number",
       "type": "object",
       "unevaluatedProperties": false,
     },
@@ -387,9 +386,6 @@ exports[`locks the published catalog schemas and generated references to registe
           "$ref": "#/functions/email",
         },
         {
-          "$ref": "#/functions/@index",
-        },
-        {
           "$ref": "#/functions/formatString",
         },
         {
@@ -434,6 +430,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "url": {
           "$ref": "#/$defs/DynamicString",
@@ -450,18 +447,18 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Button": {
       "properties": {
         "action": {
           "$ref": "#/$defs/Action",
+          "description": "Defines an interaction handler that can either trigger an agent-side event or execute a local renderer-side function.",
         },
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -474,6 +471,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "variant": {
           "default": "default",
@@ -492,12 +490,11 @@ exports[`locks the published catalog schemas and generated references to registe
       },
       "required": [
         "id",
-        "child",
         "action",
+        "child",
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Card": {
       "properties": {
@@ -510,6 +507,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
           "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
@@ -522,15 +520,14 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "CheckBox": {
       "properties": {
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -539,6 +536,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
@@ -560,15 +558,15 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "ChoicePicker": {
+      "description": "A component that allows selecting one or more options from a list.",
       "properties": {
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -591,6 +589,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
@@ -643,9 +642,9 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Column": {
+      "description": "A layout component that arranges its children vertically. To create a grid layout, nest Rows within this Column.",
       "properties": {
         "align": {
           "default": "stretch",
@@ -667,6 +666,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "justify": {
           "default": "start",
@@ -693,15 +693,14 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "DateTimeInput": {
       "properties": {
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -720,17 +719,64 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
           "description": "The text label for the input field.",
         },
         "max": {
-          "$ref": "#/$defs/DynamicString",
+          "allOf": [
+            {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+            {
+              "if": {
+                "type": "string",
+              },
+              "then": {
+                "oneOf": [
+                  {
+                    "format": "date",
+                  },
+                  {
+                    "format": "time",
+                  },
+                  {
+                    "format": "date-time",
+                  },
+                ],
+              },
+            },
+          ],
           "description": "The maximum allowed date/time in ISO 8601 format.",
         },
         "min": {
-          "$ref": "#/$defs/DynamicString",
+          "allOf": [
+            {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+            {
+              "if": {
+                "type": "string",
+              },
+              "then": {
+                "oneOf": [
+                  {
+                    "format": "date",
+                  },
+                  {
+                    "format": "time",
+                  },
+                  {
+                    "format": "date-time",
+                  },
+                ],
+              },
+            },
+          ],
           "description": "The minimum allowed date/time in ISO 8601 format.",
         },
         "value": {
@@ -748,7 +794,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Divider": {
       "properties": {
@@ -766,6 +811,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
           "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
@@ -777,7 +823,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Icon": {
       "properties": {
@@ -786,6 +831,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "name": {
           "description": "The name of the icon to display.",
@@ -859,6 +905,7 @@ exports[`locks the published catalog schemas and generated references to registe
               "properties": {
                 "svgPath": {
                   "$ref": "#/$defs/DynamicString",
+                  "description": "Represents a string",
                 },
               },
               "required": [
@@ -882,7 +929,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Image": {
       "properties": {
@@ -907,6 +953,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "url": {
           "$ref": "#/$defs/DynamicString",
@@ -936,7 +983,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "List": {
       "properties": {
@@ -969,6 +1015,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "weight": {
           "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
@@ -981,7 +1028,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Modal": {
       "properties": {
@@ -994,6 +1040,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "trigger": {
           "$ref": "#/$defs/Child",
@@ -1006,14 +1053,14 @@ exports[`locks the published catalog schemas and generated references to registe
       },
       "required": [
         "id",
-        "trigger",
         "content",
+        "trigger",
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Row": {
+      "description": "A layout component that arranges its children horizontally. To create a grid layout, nest Columns within this Row.",
       "properties": {
         "align": {
           "default": "stretch",
@@ -1035,6 +1082,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "justify": {
           "default": "start",
@@ -1061,15 +1109,14 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Slider": {
       "properties": {
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -1078,6 +1125,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
@@ -1094,6 +1142,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "steps": {
           "description": "The number of discrete divisions in the slider range. If specified, the slider will snap to discrete values.",
+          "minimum": 1,
           "type": "integer",
         },
         "value": {
@@ -1112,7 +1161,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Tabs": {
       "properties": {
@@ -1121,6 +1169,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "tabs": {
           "description": "An array of objects, where each object defines a tab with a title and a child component.",
@@ -1156,7 +1205,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Text": {
       "properties": {
@@ -1165,6 +1213,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
@@ -1190,15 +1239,14 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "TextField": {
       "properties": {
         "checks": {
-          "description": "A list of checks to perform. These are function calls that must return a boolean indicating validity.",
+          "description": "A list of validation check rules to perform on the component.",
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "type": "array",
         },
@@ -1207,6 +1255,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
@@ -1242,7 +1291,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Video": {
       "properties": {
@@ -1251,6 +1299,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "posterUrl": {
           "$ref": "#/$defs/DynamicString",
@@ -1271,80 +1320,119 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
   },
   "functions": {
-    "@index": {
-      "properties": {
-        "offset": {
-          "type": "number",
-        },
-      },
-      "type": "object",
-      "unevaluatedProperties": false,
-    },
     "and": {
+      "description": "Performs a logical AND operation on a list of boolean values.",
       "properties": {
-        "values": {
-          "description": "The list of boolean values to evaluate.",
-          "items": {
-            "$ref": "#/$defs/DynamicBoolean",
-            "description": "A boolean value that can be a literal, a path, or a function call returning a boolean.",
+        "@call": {
+          "const": "and",
+        },
+        "args": {
+          "properties": {
+            "values": {
+              "description": "The list of boolean values to evaluate.",
+              "items": {
+                "$ref": "#/$defs/DynamicBoolean",
+                "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
+              },
+              "minItems": 2,
+              "type": "array",
+            },
           },
-          "minItems": 2,
-          "type": "array",
+          "required": [
+            "values",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "values",
+        "@call",
+        "args",
       ],
+      "returnType": "boolean",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "email": {
+      "description": "Checks that the value is a valid email address.",
       "properties": {
-        "value": {
-          "$ref": "#/$defs/DynamicString",
+        "@call": {
+          "const": "email",
+        },
+        "args": {
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
+        "@call",
+        "args",
       ],
+      "returnType": "validationResult",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "formatCurrency": {
+      "description": "Formats a number as a currency string.",
       "properties": {
-        "currency": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "The ISO 4217 currency code (e.g., 'USD', 'EUR').",
+        "@call": {
+          "const": "formatCurrency",
         },
-        "decimals": {
-          "$ref": "#/$defs/DynamicNumber",
-          "description": "Optional. The number of decimal places to show. Defaults to 0 or 2 depending on locale.",
-        },
-        "grouping": {
-          "$ref": "#/$defs/DynamicBoolean",
-          "description": "Optional. If true, uses locale-specific grouping separators (e.g. '1,000'). If false, returns raw digits (e.g. '1000'). Defaults to true.",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicNumber",
-          "description": "The monetary amount.",
+        "args": {
+          "properties": {
+            "currency": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "The ISO 4217 currency code (e.g., 'USD', 'EUR').",
+            },
+            "decimals": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "Optional. The number of decimal places to show. Defaults to 0 or 2 depending on locale.",
+            },
+            "grouping": {
+              "$ref": "#/$defs/DynamicBoolean",
+              "description": "Optional. If true, uses locale-specific grouping separators (e.g. '1,000'). If false, returns raw digits (e.g. '1000'). Defaults to true.",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "The monetary amount.",
+            },
+          },
+          "required": [
+            "currency",
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
-        "currency",
+        "@call",
+        "args",
       ],
+      "returnType": "string",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "formatDate": {
+      "description": "Formats a timestamp into a string using a pattern.",
       "properties": {
-        "format": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "A Unicode TR35 date pattern string.
+        "@call": {
+          "const": "formatDate",
+        },
+        "args": {
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "A Unicode TR35 date pattern string.
 
 Token Reference:
 - Year: 'yy' (26), 'yyyy' (2026)
@@ -1361,212 +1449,393 @@ Examples:
 - 'HH:mm' -> '14:30' (Military)
 - 'h:mm a' -> '2:30 PM'
 - 'EEEE, d MMMM' -> 'Friday, 16 January'",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicValue",
-          "description": "The date to format.",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicValue",
+              "description": "The date to format.",
+            },
+          },
+          "required": [
+            "format",
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
-        "format",
+        "@call",
+        "args",
       ],
+      "returnType": "string",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "formatNumber": {
+      "description": "Formats a number with the specified grouping and decimal precision.",
       "properties": {
-        "decimals": {
-          "$ref": "#/$defs/DynamicNumber",
-          "description": "Optional. The number of decimal places to show. Defaults to 0 or 2 depending on locale.",
+        "@call": {
+          "const": "formatNumber",
         },
-        "grouping": {
-          "$ref": "#/$defs/DynamicBoolean",
-          "description": "Optional. If true, uses locale-specific grouping separators (e.g. '1,000'). If false, returns raw digits (e.g. '1000'). Defaults to true.",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicNumber",
-          "description": "The number to format.",
+        "args": {
+          "properties": {
+            "decimals": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "Optional. The number of decimal places to show. Defaults to 0 or 2 depending on locale.",
+            },
+            "grouping": {
+              "$ref": "#/$defs/DynamicBoolean",
+              "description": "Optional. If true, uses locale-specific grouping separators (e.g. '1,000'). If false, returns raw digits (e.g. '1000'). Defaults to true.",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "The number to format.",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
+        "@call",
+        "args",
       ],
+      "returnType": "string",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "formatString": {
+      "description": "Performs string interpolation of data model values and other functions in the catalog functions list and returns the resulting string. The value string can contain interpolated expressions in the \`\${expression}\` format. Supported expression types include: JSON Pointer paths to the data model (e.g., \`\${/absolute/path}\` or \`\${relative/path}\`), and renderer-side function calls (e.g., \`\${now()}\`). Function arguments must be named (e.g., \`\${formatDate(value:\${/currentDate}, format:'MM-dd')}\`). To include a literal \`\${\` sequence, escape it as \`\\\${\`.",
       "properties": {
-        "value": {
-          "$ref": "#/$defs/DynamicString",
+        "@call": {
+          "const": "formatString",
+        },
+        "args": {
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
+        "@call",
+        "args",
       ],
+      "returnType": "string",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "length": {
+      "description": "Checks string length constraints.",
       "properties": {
-        "max": {
-          "description": "The maximum allowed length.",
-          "type": "integer",
+        "@call": {
+          "const": "length",
         },
-        "min": {
-          "description": "The minimum allowed length.",
-          "type": "integer",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicString",
-        },
-      },
-      "required": [
-        "value",
-      ],
-      "type": "object",
-      "unevaluatedProperties": false,
-    },
-    "not": {
-      "properties": {
-        "value": {
-          "$ref": "#/$defs/DynamicBoolean",
-          "description": "The boolean value to negate.",
-        },
-      },
-      "required": [
-        "value",
-      ],
-      "type": "object",
-      "unevaluatedProperties": false,
-    },
-    "numeric": {
-      "properties": {
-        "max": {
-          "description": "The maximum allowed value.",
-          "type": "number",
-        },
-        "min": {
-          "description": "The minimum allowed value.",
-          "type": "number",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicNumber",
-        },
-      },
-      "required": [
-        "value",
-      ],
-      "type": "object",
-      "unevaluatedProperties": false,
-    },
-    "openUrl": {
-      "properties": {
-        "url": {
-          "description": "The URL to open.",
-          "oneOf": [
+        "args": {
+          "anyOf": [
             {
-              "type": "string",
+              "required": [
+                "min",
+              ],
             },
             {
-              "$ref": "#/$defs/DataBinding",
-            },
-            {
-              "$ref": "#/$defs/FunctionCall",
+              "required": [
+                "max",
+              ],
             },
           ],
+          "properties": {
+            "max": {
+              "description": "The maximum allowed length.",
+              "minimum": 0,
+              "type": "integer",
+            },
+            "min": {
+              "description": "The minimum allowed length.",
+              "minimum": 0,
+              "type": "integer",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "url",
+        "@call",
+        "args",
       ],
+      "returnType": "validationResult",
       "type": "object",
-      "unevaluatedProperties": false,
+    },
+    "not": {
+      "description": "Performs a logical NOT operation on a boolean value.",
+      "properties": {
+        "@call": {
+          "const": "not",
+        },
+        "args": {
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/DynamicBoolean",
+              "description": "The boolean value to negate.",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
+        },
+      },
+      "required": [
+        "@call",
+        "args",
+      ],
+      "returnType": "boolean",
+      "type": "object",
+    },
+    "numeric": {
+      "description": "Checks numeric range constraints.",
+      "properties": {
+        "@call": {
+          "const": "numeric",
+        },
+        "args": {
+          "anyOf": [
+            {
+              "required": [
+                "min",
+              ],
+            },
+            {
+              "required": [
+                "max",
+              ],
+            },
+          ],
+          "properties": {
+            "max": {
+              "description": "The maximum allowed value.",
+              "type": "number",
+            },
+            "min": {
+              "description": "The minimum allowed value.",
+              "type": "number",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
+        },
+      },
+      "required": [
+        "@call",
+        "args",
+      ],
+      "returnType": "validationResult",
+      "type": "object",
+    },
+    "openUrl": {
+      "description": "Opens the specified URL in a browser or handler (requires user activation). This function has no return value.",
+      "properties": {
+        "@call": {
+          "const": "openUrl",
+        },
+        "args": {
+          "properties": {
+            "url": {
+              "description": "The URL to open.",
+              "oneOf": [
+                {
+                  "format": "uri",
+                  "type": "string",
+                },
+                {
+                  "$ref": "#/$defs/DataBinding",
+                },
+                {
+                  "$ref": "#/$defs/FunctionCall",
+                  "description": "Invokes a named function, combining common function properties with the catalog function definition.",
+                },
+              ],
+            },
+          },
+          "required": [
+            "url",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
+        },
+      },
+      "required": [
+        "@call",
+        "args",
+      ],
+      "requiresUserActivation": true,
+      "returnType": "void",
+      "type": "object",
     },
     "or": {
+      "description": "Performs a logical OR operation on a list of boolean values.",
       "properties": {
-        "values": {
-          "description": "The list of boolean values to evaluate.",
-          "items": {
-            "$ref": "#/$defs/DynamicBoolean",
-            "description": "A boolean value that can be a literal, a path, or a function call returning a boolean.",
+        "@call": {
+          "const": "or",
+        },
+        "args": {
+          "properties": {
+            "values": {
+              "description": "The list of boolean values to evaluate.",
+              "items": {
+                "$ref": "#/$defs/DynamicBoolean",
+                "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
+              },
+              "minItems": 2,
+              "type": "array",
+            },
           },
-          "minItems": 2,
-          "type": "array",
+          "required": [
+            "values",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "values",
+        "@call",
+        "args",
       ],
+      "returnType": "boolean",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "pluralize": {
+      "description": "Returns a localized string based on the Common Locale Data Repository (CLDR) plural category of the count (zero, one, two, few, many, other). Requires an 'other' fallback. For English, just use 'one' and 'other'.",
       "properties": {
-        "few": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "String for the 'few' category (e.g., small groups in Slavic languages).",
+        "@call": {
+          "const": "pluralize",
         },
-        "many": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "String for the 'many' category (e.g., large groups in various languages).",
-        },
-        "one": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "String for the 'one' category (e.g., 1 item).",
-        },
-        "other": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "The default/fallback string (used for general plural cases).",
-        },
-        "two": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "String for the 'two' category (used in Arabic, Welsh, etc.).",
-        },
-        "value": {
-          "$ref": "#/$defs/DynamicNumber",
-          "description": "The numeric value used to determine the plural category.",
-        },
-        "zero": {
-          "$ref": "#/$defs/DynamicString",
-          "description": "String for the 'zero' category (e.g., 0 items).",
+        "args": {
+          "properties": {
+            "few": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "String for the 'few' category (e.g., small groups in Slavic languages).",
+            },
+            "many": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "String for the 'many' category (e.g., large groups in various languages).",
+            },
+            "one": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "String for the 'one' category (e.g., 1 item).",
+            },
+            "other": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "The default/fallback string (used for general plural cases).",
+            },
+            "two": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "String for the 'two' category (used in Arabic, Welsh, etc.).",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicNumber",
+              "description": "The numeric value used to determine the plural category.",
+            },
+            "zero": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "String for the 'zero' category (e.g., 0 items).",
+            },
+          },
+          "required": [
+            "value",
+            "other",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
-        "other",
+        "@call",
+        "args",
       ],
+      "returnType": "string",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "regex": {
+      "description": "Checks that the value matches a regular expression string.",
       "properties": {
-        "pattern": {
-          "description": "The regex pattern to match against.",
-          "type": "string",
+        "@call": {
+          "const": "regex",
         },
-        "value": {
-          "$ref": "#/$defs/DynamicString",
+        "args": {
+          "properties": {
+            "pattern": {
+              "description": "The regex pattern to match against.",
+              "type": "string",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+          },
+          "required": [
+            "value",
+            "pattern",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
-        "pattern",
+        "@call",
+        "args",
       ],
+      "returnType": "validationResult",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "required": {
+      "description": "Checks that the value is not null, undefined, or empty.",
       "properties": {
-        "value": {
-          "description": "The value to check.",
+        "@call": {
+          "const": "required",
+        },
+        "args": {
+          "properties": {
+            "value": {
+              "description": "The value to check.",
+            },
+          },
+          "required": [
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "value",
+        "@call",
+        "args",
       ],
+      "returnType": "validationResult",
       "type": "object",
-      "unevaluatedProperties": false,
     },
   },
   "protocolVersion": "v1.0",
@@ -1600,7 +1869,7 @@ exports[`locks the published catalog schemas and generated references to registe
                 },
                 "userMessage": {
                   "$ref": "#/$defs/DynamicString",
-                  "description": "An optional human-readable message describing the action performed by the user, to present in conversation history or user feedback.",
+                  "description": "An optional human-readable message describing the action performed by the user, resolved by the renderer and included in the outbound action message.",
                 },
               },
               "required": [
@@ -1631,10 +1900,10 @@ exports[`locks the published catalog schemas and generated references to registe
     },
     "CheckRule": {
       "additionalProperties": false,
-      "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+      "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
       "properties": {
         "condition": {
-          "description": "Path or function call evaluating to a structured validation result object.",
+          "description": "Path or function call evaluating to a structured validation result object or a boolean.",
           "oneOf": [
             {
               "$ref": "#/$defs/DataBinding",
@@ -1701,7 +1970,7 @@ exports[`locks the published catalog schemas and generated references to registe
       "type": "object",
     },
     "DynamicBoolean": {
-      "description": "A boolean value that can be a literal, a path, or a function call returning a boolean.",
+      "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
       "oneOf": [
         {
           "type": "boolean",
@@ -1812,7 +2081,7 @@ exports[`locks the published catalog schemas and generated references to registe
         {
           "oneOf": [
             {
-              "$ref": "catalog.json#/$defs/anyFunction",
+              "$ref": "#/$defs/anyFunction",
             },
             {
               "$ref": "#/$defs/IndexSystemFunction",
@@ -1862,7 +2131,6 @@ exports[`locks the published catalog schemas and generated references to registe
       "required": [
         "@call",
       ],
-      "returnType": "number",
       "type": "object",
       "unevaluatedProperties": false,
     },
@@ -1970,12 +2238,15 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "tone": {
           "enum": [
@@ -1989,6 +2260,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2000,7 +2272,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Callout": {
       "properties": {
@@ -2009,15 +2280,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "title": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "tone": {
           "enum": [
@@ -2030,6 +2305,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2041,18 +2317,19 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Chart": {
       "properties": {
         "caption": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "component": {
           "const": "Chart",
         },
         "currency": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "data": {
           "oneOf": [
@@ -2060,6 +2337,7 @@ exports[`locks the published catalog schemas and generated references to registe
               "items": {
                 "additionalProperties": {
                   "$ref": "#/$defs/DynamicValue",
+                  "description": "A value that can be a literal, a path, or a function call returning any type.",
                 },
                 "type": "object",
               },
@@ -2071,11 +2349,13 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "format": {
           "enum": [
@@ -2090,12 +2370,15 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "height": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "horizontal": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "kind": {
           "enum": [
@@ -2122,6 +2405,7 @@ exports[`locks the published catalog schemas and generated references to registe
                   },
                   "label": {
                     "$ref": "#/$defs/DynamicString",
+                    "description": "Represents a string",
                   },
                 },
                 "required": [
@@ -2135,12 +2419,15 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "stacked": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "title": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2150,12 +2437,14 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "xLabel": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "y": {
           "type": "string",
         },
         "yLabel": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
       },
       "required": [
@@ -2165,14 +2454,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Checklist": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2182,12 +2470,15 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
           "items": {
@@ -2200,12 +2491,15 @@ exports[`locks the published catalog schemas and generated references to registe
                 "properties": {
                   "description": {
                     "$ref": "#/$defs/DynamicString",
+                    "description": "Represents a string",
                   },
                   "label": {
                     "$ref": "#/$defs/DynamicString",
+                    "description": "Represents a string",
                   },
                   "time": {
                     "$ref": "#/$defs/DynamicValue",
+                    "description": "A value that can be a literal, a path, or a function call returning any type.",
                   },
                 },
                 "required": [
@@ -2219,12 +2513,15 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "value": {
           "$ref": "#/$defs/DynamicStringList",
+          "description": "Represents a value that can be either a literal array of strings, a path to a string array in the data model, or a function call returning a string array.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2237,7 +2534,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Code": {
       "properties": {
@@ -2246,18 +2542,23 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "language": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2269,7 +2570,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Collapsible": {
       "properties": {
@@ -2281,21 +2581,27 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "defaultOpen": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "title": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2308,17 +2614,17 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Form": {
       "properties": {
         "action": {
           "$ref": "#/$defs/Action",
+          "description": "Defines an interaction handler that can either trigger an agent-side event or execute a local renderer-side function.",
         },
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2331,15 +2637,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "submit": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2353,7 +2663,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Grid": {
       "properties": {
@@ -2362,12 +2671,14 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "columns": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "component": {
           "const": "Grid",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "gap": {
           "enum": [
@@ -2380,9 +2691,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2394,7 +2707,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Heading": {
       "properties": {
@@ -2403,18 +2715,23 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "level": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2426,7 +2743,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Html": {
       "properties": {
@@ -2435,21 +2751,27 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "height": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "markup": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "title": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2461,21 +2783,23 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "KeyValue": {
       "properties": {
         "columns": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "component": {
           "const": "KeyValue",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
           "oneOf": [
@@ -2485,9 +2809,11 @@ exports[`locks the published catalog schemas and generated references to registe
                 "properties": {
                   "label": {
                     "$ref": "#/$defs/DynamicString",
+                    "description": "Represents a string",
                   },
                   "value": {
                     "$ref": "#/$defs/DynamicValue",
+                    "description": "A value that can be a literal, a path, or a function call returning any type.",
                   },
                 },
                 "required": [
@@ -2504,11 +2830,13 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2520,7 +2848,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Link": {
       "properties": {
@@ -2529,15 +2856,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "href": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "kind": {
           "enum": [
@@ -2548,9 +2879,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "text": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2563,7 +2896,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Metric": {
       "properties": {
@@ -2572,21 +2904,27 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "currency": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "delta": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "deltaLabel": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "digits": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "format": {
           "enum": [
@@ -2601,18 +2939,23 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "unit": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "value": {
           "$ref": "#/$defs/DynamicValue",
+          "description": "A value that can be a literal, a path, or a function call returning any type.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2625,14 +2968,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "MultiSelect": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2642,15 +2984,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "options": {
           "items": {
@@ -2658,6 +3004,7 @@ exports[`locks the published catalog schemas and generated references to registe
             "properties": {
               "label": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "value": {
                 "type": "string",
@@ -2674,9 +3021,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "value": {
           "$ref": "#/$defs/DynamicStringList",
+          "description": "Represents a value that can be either a literal array of strings, a path to a string array in the data model, or a function call returning a string array.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2689,7 +3038,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Progress": {
       "properties": {
@@ -2698,6 +3046,7 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "format": {
           "enum": [
@@ -2712,18 +3061,23 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "max": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "value": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2735,14 +3089,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Radio": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2752,15 +3105,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "options": {
           "items": {
@@ -2768,6 +3125,7 @@ exports[`locks the published catalog schemas and generated references to registe
             "properties": {
               "label": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "value": {
                 "type": "string",
@@ -2784,9 +3142,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "value": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2799,14 +3159,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Segmented": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2816,15 +3175,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "options": {
           "items": {
@@ -2832,6 +3195,7 @@ exports[`locks the published catalog schemas and generated references to registe
             "properties": {
               "label": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "value": {
                 "type": "string",
@@ -2848,9 +3212,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "value": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2863,14 +3229,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Select": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2880,15 +3245,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "options": {
           "items": {
@@ -2896,6 +3265,7 @@ exports[`locks the published catalog schemas and generated references to registe
             "properties": {
               "label": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "value": {
                 "type": "string",
@@ -2912,9 +3282,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "value": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2927,14 +3299,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Stepper": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -2944,33 +3315,43 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "max": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "min": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "step": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "unit": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "value": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -2982,7 +3363,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Svg": {
       "properties": {
@@ -2991,21 +3371,27 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "height": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "markup": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -3017,12 +3403,12 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Table": {
       "properties": {
         "caption": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "columns": {
           "items": {
@@ -3038,9 +3424,11 @@ exports[`locks the published catalog schemas and generated references to registe
               },
               "currency": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "digits": {
                 "$ref": "#/$defs/DynamicNumber",
+                "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
               },
               "format": {
                 "enum": [
@@ -3058,6 +3446,7 @@ exports[`locks the published catalog schemas and generated references to registe
               },
               "label": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
             },
             "required": [
@@ -3072,15 +3461,19 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "emptyText": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "pageSize": {
           "$ref": "#/$defs/DynamicNumber",
+          "description": "Represents a value that can be either a literal number, a path to a number in the data model, or a function call returning a number.",
         },
         "rows": {
           "oneOf": [
@@ -3088,6 +3481,7 @@ exports[`locks the published catalog schemas and generated references to registe
               "items": {
                 "additionalProperties": {
                   "$ref": "#/$defs/DynamicValue",
+                  "description": "A value that can be a literal, a path, or a function call returning any type.",
                 },
                 "type": "object",
               },
@@ -3099,14 +3493,17 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
         "sortable": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -3118,7 +3515,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "TextList": {
       "properties": {
@@ -3127,15 +3523,18 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
           "oneOf": [
             {
               "items": {
                 "$ref": "#/$defs/DynamicString",
+                "description": "Represents a string",
               },
               "maxItems": 500,
               "type": "array",
@@ -3145,14 +3544,17 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
         "ordered": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -3164,7 +3566,6 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Timeline": {
       "properties": {
@@ -3181,6 +3582,7 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
@@ -3189,9 +3591,11 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "items": {
           "oneOf": [
@@ -3206,12 +3610,15 @@ exports[`locks the published catalog schemas and generated references to registe
                     "properties": {
                       "description": {
                         "$ref": "#/$defs/DynamicString",
+                        "description": "Represents a string",
                       },
                       "label": {
                         "$ref": "#/$defs/DynamicString",
+                        "description": "Represents a string",
                       },
                       "time": {
                         "$ref": "#/$defs/DynamicValue",
+                        "description": "A value that can be a literal, a path, or a function call returning any type.",
                       },
                     },
                     "required": [
@@ -3229,11 +3636,13 @@ exports[`locks the published catalog schemas and generated references to registe
             },
             {
               "$ref": "#/$defs/FunctionCall",
+              "description": "Invokes a named function, combining common function properties with the catalog function definition.",
             },
           ],
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -3245,14 +3654,13 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "Toggle": {
       "properties": {
         "checks": {
           "items": {
             "$ref": "#/$defs/CheckRule",
-            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object.",
+            "description": "A single validation check rule applied to an input component. The condition function or path evaluates to a structured validation result object or a boolean (which is coerced to a validation result object).",
           },
           "maxItems": 20,
           "type": "array",
@@ -3262,21 +3670,27 @@ exports[`locks the published catalog schemas and generated references to registe
         },
         "description": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "disabled": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "id": {
           "$ref": "#/$defs/ComponentId",
+          "description": "The unique identifier for a component, used for both definitions and references within the same surface.",
         },
         "label": {
           "$ref": "#/$defs/DynamicString",
+          "description": "Represents a string",
         },
         "value": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "visible": {
           "$ref": "#/$defs/DynamicBoolean",
+          "description": "A boolean value that can be a literal, a path, or a function call returning a boolean or a validation result object (coerced to its 'valid' boolean).",
         },
         "weight": {
           "type": "number",
@@ -3288,57 +3702,103 @@ exports[`locks the published catalog schemas and generated references to registe
         "component",
       ],
       "type": "object",
-      "unevaluatedProperties": false,
     },
   },
   "functions": {
     "copyText": {
+      "allowedCallers": "rendererOnly",
       "description": "Copy text to the clipboard after a user action.",
       "properties": {
-        "text": {
-          "$ref": "#/$defs/DynamicString",
+        "@call": {
+          "const": "copyText",
+        },
+        "args": {
+          "properties": {
+            "text": {
+              "$ref": "#/$defs/DynamicString",
+              "description": "Represents a string",
+            },
+          },
+          "required": [
+            "text",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "text",
+        "@call",
+        "args",
       ],
+      "requiresUserActivation": true,
+      "returnType": "void",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "evaluate": {
+      "allowedCallers": "rendererOrAgent",
       "description": "Evaluate a restricted Wingman arithmetic/collection expression using explicitly bound variables. No JavaScript, globals, or side effects.",
       "properties": {
-        "expression": {
-          "maxLength": 4000,
-          "type": "string",
+        "@call": {
+          "const": "evaluate",
         },
-        "values": {
-          "$ref": "#/$defs/DynamicValue",
+        "args": {
+          "properties": {
+            "expression": {
+              "maxLength": 4000,
+              "type": "string",
+            },
+            "values": {
+              "$ref": "#/$defs/DynamicValue",
+              "description": "A value that can be a literal, a path, or a function call returning any type.",
+            },
+          },
+          "required": [
+            "expression",
+            "values",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "expression",
-        "values",
+        "@call",
+        "args",
       ],
+      "returnType": "any",
       "type": "object",
-      "unevaluatedProperties": false,
     },
     "setValue": {
+      "allowedCallers": "rendererOnly",
       "description": "Set a JSON Pointer to a value after a user action. Use '/' with an object to reset the data model.",
       "properties": {
-        "path": {
-          "type": "string",
+        "@call": {
+          "const": "setValue",
         },
-        "value": {
-          "$ref": "#/$defs/DynamicValue",
+        "args": {
+          "properties": {
+            "path": {
+              "type": "string",
+            },
+            "value": {
+              "$ref": "#/$defs/DynamicValue",
+              "description": "A value that can be a literal, a path, or a function call returning any type.",
+            },
+          },
+          "required": [
+            "path",
+            "value",
+          ],
+          "type": "object",
+          "unevaluatedProperties": false,
         },
       },
       "required": [
-        "path",
-        "value",
+        "@call",
+        "args",
       ],
+      "requiresUserActivation": true,
+      "returnType": "void",
       "type": "object",
-      "unevaluatedProperties": false,
     },
   },
   "protocolVersion": "v1.0",
@@ -7183,6 +7643,77 @@ exports[`published SDK reference fixtures > processes 30_live-invitation-builder
           },
         ],
         "id": "main_content",
+        "type": "Row",
+      },
+    ],
+    "id": "root",
+    "type": "Column",
+  },
+]
+`;
+
+exports[`published SDK reference fixtures > processes 31_incremental-dashboard.json without adapting upstream messages 1`] = `
+[
+  {
+    "align": "stretch",
+    "children": [
+      {
+        "id": "header",
+        "text": "## System Dashboard",
+        "type": "Text",
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "child": {
+                  "id": "analytics_text",
+                  "text": "Analytics are ready.",
+                  "type": "Text",
+                  "variant": "body",
+                },
+                "id": "analytics_card",
+                "type": "Card",
+              },
+            ],
+            "id": "left_panel",
+            "type": "Column",
+            "weight": 1,
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "id": "log_template",
+                    "text": "System boot complete.",
+                    "type": "Text",
+                    "variant": "caption",
+                  },
+                  {
+                    "id": "log_template",
+                    "text": "All services healthy.",
+                    "type": "Text",
+                    "variant": "caption",
+                  },
+                  {
+                    "id": "log_template",
+                    "text": "Waiting for user input.",
+                    "type": "Text",
+                    "variant": "caption",
+                  },
+                ],
+                "id": "logs_list",
+                "type": "List",
+              },
+            ],
+            "id": "right_panel",
+            "type": "Column",
+            "weight": 1,
+          },
+        ],
+        "id": "content_grid",
         "type": "Row",
       },
     ],

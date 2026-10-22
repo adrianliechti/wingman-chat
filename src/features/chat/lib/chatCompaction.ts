@@ -24,11 +24,12 @@ export function chatCompaction(
   const strategy = composeStrategies(
     clearToolResults(),
     summarizeOldest({
-      summarize: async (messages) => {
-        const { controller: abortController, cleanup } = followAbortSignal(signal);
+      summarize: async (messages, input) => {
+        const { controller: abortController, cleanup } = followAbortSignal(signal, input.signal);
         try {
           const telemetry = aiTelemetry("summarize_history");
           const result = await chat({
+            threadId: `${input.threadId}:compaction`,
             adapter: client.textAdapter(model, signal, telemetry.requestContext),
             // A compacted prefix often ends with an assistant/tool turn.
             // Request a new summary instead of an assistant prefill, which

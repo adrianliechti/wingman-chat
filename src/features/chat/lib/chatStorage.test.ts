@@ -109,9 +109,6 @@ describe("chat persistence", () => {
     const value = chat();
     value.resume = {
       resumeState: { threadId: "chat", runId: "run" },
-      pendingInterrupts: [
-        { id: "approval", reason: "tool_call", toolCallId: "call", metadata: { toolName: "vision" } },
-      ],
     };
     value.metadata = { "@tanstack/ai-compaction": { "chat/child": { compactedMessages: [] } } };
     value.messages = [

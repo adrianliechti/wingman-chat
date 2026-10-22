@@ -17,7 +17,7 @@ for (const [key, catalog] of [
   ["basic", basicCatalog],
   ["wingman", wingmanCatalog],
 ] as const) {
-  const schemas = catalog.catalogSchema.components as Record<string, { properties: Record<string, unknown> }>;
+  const schemas = catalog.validationSchema.components as Record<string, { properties: Record<string, unknown> }>;
   for (const [component, schema] of Object.entries(schemas)) {
     const reference = Object.values(REFERENCE_GROUPS).find((group) =>
       group[key]?.components?.includes(component),

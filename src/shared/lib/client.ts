@@ -465,6 +465,7 @@ export class Client {
     if (!input.trim()) throw new Error("Input text cannot be empty");
     const telemetry = aiTelemetry("audio", requestOptions.parentContext);
     const result = await generateSpeech({
+      threadId: crypto.randomUUID(),
       debug: aiDebug,
       adapter: gatewaySpeech(
         model,
@@ -503,6 +504,7 @@ export class Client {
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
     const telemetry = aiTelemetry("audio", requestOptions.parentContext);
     const result = await generateTranscription({
+      threadId: crypto.randomUUID(),
       debug: aiDebug,
       adapter: gatewayTranscription(
         model,
@@ -577,6 +579,7 @@ export class Client {
     options.signal?.throwIfAborted();
     const telemetry = aiTelemetry(name, options.parentContext);
     const result = await chat({
+      threadId: crypto.randomUUID(),
       adapter: this.textAdapter(model, options.signal, telemetry.requestContext),
       debug: aiDebug,
       systemPrompts: [instructions],

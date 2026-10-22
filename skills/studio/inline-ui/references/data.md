@@ -25,7 +25,7 @@ For a working dashboard with a period switch, load [examples/dashboard.json](exa
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
+A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
 
 ### Wingman catalog
 

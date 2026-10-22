@@ -1,5 +1,5 @@
-import { metrics } from "@opentelemetry/api";
-import { logs } from "@opentelemetry/api-logs";
+import { context, logs, metrics, propagation, trace } from "@opentelemetry/api";
+import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { AggregationTemporalityPreference, OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -8,7 +8,7 @@ import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
 import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
+import { BatchSpanProcessor, StackContextManager, TracerProvider } from "@opentelemetry/sdk-trace";
 
 import { installClassificationMetrics } from "@/shared/lib/classificationMetrics";
 
@@ -25,9 +25,9 @@ export function initTelemetry(serviceName: string) {
   );
 
   const traceExporter = new OTLPTraceExporter({ url: "/telemetry/v1/traces" });
-  const tracerProvider = new WebTracerProvider({
+  const tracerProvider = new TracerProvider({
     resource,
-    spanProcessors: [new BatchSpanProcessor(traceExporter)],
+    spanProcessors: [new BatchSpanProcessor({ exporter: traceExporter })],
   });
   // StackContextManager only tracks context synchronously — every parent
   // relationship is established by passing `AgentContext` explicitly via
@@ -35,9 +35,11 @@ export function initTelemetry(serviceName: string) {
   // maintainers recommend for browser apps until the TC39 AsyncContext
   // proposal lands:
   // https://github.com/open-telemetry/opentelemetry-js/discussions/2060
-  tracerProvider.register({
-    contextManager: new StackContextManager(),
-  });
+  trace.setGlobalTracerProvider(tracerProvider);
+  context.setGlobalContextManager(new StackContextManager().enable());
+  propagation.setGlobalPropagator(
+    new CompositePropagator({ propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()] }),
+  );
 
   // Insights sums incoming counts/sums, so each export must contain only new observations.
   const metricExporter = new OTLPMetricExporter({

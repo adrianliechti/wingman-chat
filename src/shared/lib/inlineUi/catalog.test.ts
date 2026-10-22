@@ -16,7 +16,7 @@ for (const catalog of catalogs) {
         );
         expect(definition.schema.safeParse(props).success).toBe(true);
         expect(definition.schema.safeParse({ ...props, unknownProperty: true }).success).toBe(false);
-        const schema = (catalog.catalogSchema.components as Record<string, { required?: string[] }>)[name];
+        const schema = (catalog.validationSchema.components as Record<string, { required?: string[] }>)[name];
         for (const key of schema.required ?? []) {
           if (["id", "component"].includes(key)) continue;
           const missing = { ...props };

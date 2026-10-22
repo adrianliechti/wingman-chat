@@ -206,6 +206,7 @@ export class RunSidecar {
 }
 
 export interface StreamRunHooks extends RunHooks {
+  threadId: string;
   sidecar: RunSidecar;
   parentRunId?: string;
   resume?: RunAgentResumeItem[];
@@ -596,6 +597,7 @@ export async function run(
   await processor.process(
     streamRun(client, model, instructions, messages, tools, {
       ...hooks,
+      threadId: hooks.threadId ?? crypto.randomUUID(),
       sidecar,
       onComplete: (value) => {
         result = value;

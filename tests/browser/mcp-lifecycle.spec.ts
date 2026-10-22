@@ -134,6 +134,172 @@ async function start(page: Page) {
   return page.evaluate(() => window.chatE2E.state().chatId!);
 }
 
+async function reloadChat(page: Page, id: string) {
+  await page.evaluate(() => window.chatE2E.flush());
+  await page.reload();
+  await page.waitForFunction(() => window.chatE2E?.state().ready);
+  await page.evaluate((id) => window.chatE2E.select(id), id);
+  await page.waitForFunction((id) => window.chatE2E.state().loadedId === id, id);
+}
+
+async function startBatch(page: Page) {
+  await page.evaluate(() => window.chatE2E.send("Compare two sources"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  await page.evaluate(
+    (name) =>
+      window.chatE2E.callTools(0, [
+        { name, args: { instructions: "Public source" } },
+        { name, args: { instructions: "Private source" } },
+      ]),
+    toolName,
+  );
+  await expect(page.getByRole("button", { name: "Allow", exact: true })).toHaveCount(2);
+  return page.evaluate(() => window.chatE2E.state().chatId!);
+}
+
+test("parallel approvals remain atomic through a staged decision, reload, and mixed responses", async ({ page }) => {
+  const server = await setup(page);
+  const id = await startBatch(page);
+  const publicRequest = page.locator("fieldset").filter({ hasText: "Public source" });
+  const privateRequest = page.locator("fieldset").filter({ hasText: "Private source" });
+  await publicRequest.getByRole("button", { name: "Allow", exact: true }).click();
+  await expect(publicRequest.getByRole("button", { name: "Allow", exact: true })).toBeDisabled();
+  expect(server.requests).toHaveLength(0);
+
+  await reloadChat(page, id);
+  // Staged answers are not durable. A reload must ask again before executing any sibling.
+  await expect(publicRequest.getByRole("button", { name: "Allow", exact: true })).toBeEnabled();
+  await expect(privateRequest.getByRole("button", { name: "Allow", exact: true })).toBeEnabled();
+  expect(server.requests).toHaveLength(0);
+  await privateRequest.getByRole("button", { name: "Decline", exact: true }).click();
+  await expect(privateRequest.getByRole("button", { name: "Decline", exact: true })).toBeDisabled();
+  expect(server.requests).toHaveLength(0);
+  await publicRequest.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  expect(server.requests.map((request) => request.input)).toEqual([{ instructions: "Public source" }]);
+  const input = await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[0].input));
+  expect(input).toContain("Research evidence");
+  expect(input).toMatch(/denied|declined|not approved/i);
+  await page.evaluate(() => window.chatE2E.finish(0, "Compared the permitted source"));
+  await expect(page.getByTestId("messages")).toContainText("Compared the permitted source");
+  await reloadChat(page, id);
+  await expect(page.getByTestId("messages")).toContainText("Compared the permitted source");
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+  expect(server.requests).toHaveLength(1);
+  expect(await page.evaluate(() => window.chatE2E.state().calls.length)).toBe(0);
+});
+
+test("a completed tool is never replayed when a later mixed question and approval batch reloads", async ({ page }) => {
+  const server = await setup(page);
+  const id = await start(page);
+  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 2);
+  expect(server.requests).toHaveLength(1);
+  await page.evaluate(
+    (name) =>
+      window.chatE2E.callTools(1, [
+        { name, args: { instructions: "Extra source" } },
+        {
+          name: "ask_questions",
+          args: { questions: [{ id: "scope", label: "Which scope?", type: "text", required: true }] },
+        },
+      ]),
+    toolName,
+  );
+  // The engine collects approvals before executing generic interrupt tools.
+  await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeEnabled();
+  await reloadChat(page, id);
+  await expect(page.getByRole("button", { name: "Allow", exact: true })).toBeEnabled();
+  expect(server.requests).toHaveLength(1);
+  await page.getByRole("button", { name: "Decline", exact: true }).click();
+  await expect(page.getByLabel("Which scope?", { exact: false })).toBeVisible();
+  await reloadChat(page, id);
+  await expect(page.getByLabel("Which scope?", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allow", exact: true })).toHaveCount(0);
+  await page.getByLabel("Which scope?", { exact: false }).fill("Only the original public evidence");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  const input = await page.evaluate(() => JSON.stringify(window.chatE2E.state().calls[0].input));
+  expect(input).toContain("Research evidence");
+  expect(input).toContain("Only the original public evidence");
+  expect(server.requests).toHaveLength(1);
+  await page.evaluate(() => window.chatE2E.finish(0, "Report based on the original evidence"));
+  await expect(page.getByTestId("messages")).toContainText("Report based on the original evidence");
+  await reloadChat(page, id);
+  await expect(page.getByTestId("messages")).toContainText("Report based on the original evidence");
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+  const record = await page.evaluate((id) => window.chatE2E.readRecord(id), id);
+  const completed = record!.messages
+    .flatMap((message) => message.parts)
+    .filter(
+      (part) => part.type === "tool-call" && part.name === toolName && part.arguments.includes("Find public evidence"),
+    );
+  expect(completed).toHaveLength(1);
+  expect(JSON.stringify(completed[0])).toContain("Research evidence");
+  expect(server.requests).toHaveLength(1);
+});
+
+test("Stop cancels a partially approved batch and permits a clean new turn after reload", async ({ page }) => {
+  const server = await setup(page);
+  const id = await startBatch(page);
+  await page
+    .locator("fieldset")
+    .filter({ hasText: "Public source" })
+    .getByRole("button", { name: "Allow", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+  await reloadChat(page, id);
+  await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+  await page.evaluate(() => window.chatE2E.send("Start a different task"));
+  await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+  await page.evaluate(() => window.chatE2E.finish(0, "Clean recovery"));
+  await expect(page.getByTestId("messages")).toContainText("Clean recovery");
+  await reloadChat(page, id);
+  await expect(page.getByTestId("messages")).toContainText("Clean recovery");
+  expect(server.requests).toHaveLength(0);
+});
+
+for (const corruption of ["missing", "incomplete"] as const) {
+  test(`a ${corruption} saved binding abandons the entire approval batch and preserves its recovery record`, async ({
+    page,
+  }) => {
+    const server = await setup(page);
+    const id = await startBatch(page);
+    await page.evaluate(() => window.chatE2E.flush());
+    await page.evaluate(() => window.chatE2E.unmount());
+    await page.evaluate(() => window.chatE2E.flush());
+    const original = await page.evaluate(
+      async ({ id, corruption }) => {
+        const record = (await window.chatE2E.readRecord(id))!;
+        const interrupt = record.resume!.pendingInterrupts![0];
+        interrupt.metadata = {
+          ...interrupt.metadata,
+          "tanstack:interruptBinding": corruption === "missing" ? undefined : { generation: 0 },
+        };
+        await window.chatE2E.writeRecord(id, record);
+        return window.chatE2E.readRecord(id);
+      },
+      { id, corruption },
+    );
+    expect(original!.resume!.pendingInterrupts).toHaveLength(2);
+    await reloadChat(page, id);
+    await expect(page.getByTestId("messages")).toContainText("Compare two sources");
+    await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+    expect(await page.evaluate((id) => window.chatE2E.readRecord(id, true), id)).toEqual(original);
+    expect(await page.evaluate(() => window.chatE2E.state().calls.length)).toBe(0);
+    await page.evaluate(() => window.chatE2E.send("Fresh task after migration"));
+    await page.waitForFunction(() => window.chatE2E.state().calls.length === 1);
+    await page.evaluate(() => window.chatE2E.finish(0, "Recovered without executing old tools"));
+    await expect(page.getByTestId("messages")).toContainText("Recovered without executing old tools");
+    await reloadChat(page, id);
+    await expect(page.getByTestId("messages")).toContainText("Recovered without executing old tools");
+    await expect(page.getByLabel("Agent requests")).toHaveCount(0);
+    expect(await page.evaluate((id) => window.chatE2E.readRecord(id, true), id)).toEqual(original);
+    expect(server.requests).toHaveLength(0);
+  });
+}
+
 for (const action of ["Allow", "Decline", "Cancel"] as const) {
   test(`MCP ${action} after chat switch and reload sends input only on approval`, async ({ page }) => {
     const server = await setup(page);

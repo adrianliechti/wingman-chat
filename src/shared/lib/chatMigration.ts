@@ -14,6 +14,7 @@
 import {
   isContentPart,
   isContentPartArray,
+  readInterruptBinding,
   type MessagePart,
   type SubagentPart,
   type ToolCallPart,
@@ -626,6 +627,13 @@ function normalizePart(part: MessagePart): MessagePart {
 export function normalizeStoredChat(stored: StoredChat | LegacyStoredChat): StoredChat {
   if (isLegacyStoredChat(stored)) return normalizeStoredChat(migrateLegacyChat(stored));
   if (stored.version !== STORED_CHAT_VERSION) return stored;
+  if (stored.resume?.pendingInterrupts?.some((interrupt) => !readInterruptBinding(interrupt))) {
+    // A partial batch cannot resume safely. Keep the transcript and let the
+    // next message start a fresh run; loadChat preserves the original record.
+    warn(stored.id, "cleared a pending run with unsupported interrupt bindings");
+    const { resume: _resume, ...rest } = stored;
+    stored = rest;
+  }
   const messages = mapMessages(stored.messages, (message) => {
     const calls = new Map(
       message.parts.flatMap((part) => (part.type === "tool-call" ? [[part.id, part] as const] : [])),

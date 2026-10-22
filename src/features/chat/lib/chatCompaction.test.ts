@@ -124,11 +124,13 @@ it("reuses native checkpoints across tool turns and stored transcripts, invalida
   const complete = vi.fn<Parameters<typeof testClient>[0]>().mockImplementation(async (options) => {
     if (options.systemPrompts?.includes(instructions)) {
       summaries++;
+      expect(options.threadId).toBe("chat:compaction");
       expect(JSON.stringify(options.messages)).not.toContain("Current workspace");
       expect(options.messages.at(-1)).toMatchObject({ role: "user", content: "Summarize the preceding conversation." });
       return assistant("Earlier evidence was verified.");
     }
     turns++;
+    expect(options.threadId).toBe("chat");
     const request = JSON.stringify(options.messages);
     expect(request).toContain("untrusted-conversation-summary");
     expect(request).toContain("Current workspace");

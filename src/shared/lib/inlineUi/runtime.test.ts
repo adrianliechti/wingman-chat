@@ -54,6 +54,34 @@ it("edits each row through relative bindings and preserves unaffected rows", () 
   expect(ui.getSurface("main")!.dataModel.get("/people")).toEqual([{ name: "Ada" }, { name: "Katherine" }]);
 });
 
+it("resolves the catalog-free index function with a bound offset in list templates", () => {
+  const ui = runtime();
+  ui.sync([
+    block(
+      create(
+        [
+          { id: "root", component: "List", children: { path: "/people", componentId: "person" } },
+          {
+            id: "person",
+            component: "Text",
+            text: {
+              "@call": "formatNumber",
+              args: { value: { "@call": "@index", args: { offset: { "@path": "/offset" } } } },
+            },
+          },
+        ],
+        { offset: 1, people: [{ name: "Ada" }, { name: "Grace" }] },
+      ),
+    ),
+  ]);
+  expect([...ui.errors]).toEqual([]);
+  const root = getValue(ui.resolvers.get("main")!.rootNode)!;
+  const nodes = getValue(root.props).children as ComponentNode[];
+  expect(nodes.map((node) => (getValue(node.props).text as ResolvedBinding<string>).value)).toEqual(["1", "2"]);
+  ui.getSurface("main")!.dataModel.set("/offset", 5);
+  expect(nodes.map((node) => (getValue(node.props).text as ResolvedBinding<string>).value)).toEqual(["5", "6"]);
+});
+
 it("recomputes a Wingman calculation when explicitly bound input changes", () => {
   const ui = runtime();
   ui.sync([
@@ -197,7 +225,7 @@ it("never executes renderer RPCs from a persisted transcript", () => {
       version: "v1.0",
       callRendererFunction: {
         functionCallId: "open",
-        callFunction: { "@call": "openUrl", args: { url: "https://example.com" } },
+        callFunction: { "@call": "openUrl", catalogId: BASIC_CATALOG_ID, args: { url: "https://example.com" } },
       },
     }),
   ]);
@@ -216,7 +244,10 @@ it("validates every protocol envelope using the pinned upstream schema", () => {
     { version: "v1.0", deleteSurface: { surfaceId: "a" } },
     {
       version: "v1.0",
-      callRendererFunction: { functionCallId: "f", callFunction: { "@call": "formatNumber", args: { value: 1 } } },
+      callRendererFunction: {
+        functionCallId: "f",
+        callFunction: { "@call": "formatNumber", catalogId: BASIC_CATALOG_ID, args: { value: 1 } },
+      },
     },
     { version: "v1.0", agentFunctionResponse: { functionCallId: "f", value: 2 } },
   ])

@@ -24,7 +24,7 @@ import type { verifyArtifacts } from "@/features/artifacts/lib/artifact-verifier
 import { MemoryManager } from "@/features/agent/lib/memoryManager";
 import { memoryRevision } from "@/features/agent/lib/memoryDocument";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
-import { loadChat, storeChat } from "../lib/chatStorage";
+import { legacyChatPath, loadChat, storeChat } from "../lib/chatStorage";
 import { readJson } from "@/shared/lib/opfs";
 import { createAgentTool } from "@/features/tools/lib/subagent";
 import type { getConfig } from "@/shared/config";
@@ -545,6 +545,39 @@ describe("chat run integration", () => {
     });
     expect(execute).toHaveBeenCalledOnce();
   });
+
+  it.each([undefined, { generation: 0 }])(
+    "opens old approvals without replaying tools when a binding is unsupported: %j",
+    async (binding) => {
+      const execute = vi.fn<Tool["execute"]>();
+      fixture.tools = [
+        { name: "work", description: "Test tool", inputSchema: z.looseObject({}), needsApproval: true, execute },
+      ];
+      fixture.complete
+        .mockResolvedValueOnce(calls(["call", "work"], ["sibling", "work"]))
+        .mockResolvedValueOnce(assistant("Fresh answer"));
+      const original = await harness();
+      await act(() => original.sendMessage(user("Work")));
+      const record = structuredClone(saved());
+      expect(record.resume?.pendingInterrupts).toHaveLength(2);
+      await act(async () => root?.unmount());
+      record.resume!.pendingInterrupts![0].metadata = { "tanstack:interruptBinding": binding };
+      await storeChat(record);
+      const raw = await readJson(`chats/${record.id}/chat.json`);
+      const loaded = (await loadChat(record.id, false))!;
+      expect(loaded.resume).toBeUndefined();
+      expect(loaded.messages).toEqual(record.messages);
+      expect(await readJson(legacyChatPath(record.id))).toEqual(raw);
+      expect(await readJson(`chats/${record.id}/chat.json`)).toEqual(raw);
+      fixture.chats = [loaded];
+      const restored = await harness();
+      await act(async () => restored.selectChat(record.id));
+      expect(restored.interruptState?.interrupts).toHaveLength(0);
+      await act(() => restored.sendMessage(user("Different request")));
+      expect(lastText()).toBe("Fresh answer");
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
 
   it("resumes a child's approval from the saved chat alone", async () => {
     const execute = vi.fn<Tool["execute"]>().mockResolvedValue(output("Evidence"));

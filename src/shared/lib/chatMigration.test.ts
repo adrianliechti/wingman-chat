@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ToolResultPart } from "@tanstack/ai";
+import { hashSchemaInput, normalizeApprovalSchema, type ToolResultPart } from "@tanstack/ai";
 import { MemoryOpfs } from "@/shared/lib/test-support/memoryOpfs";
 import { legacyChatPath, loadChat, storeChat } from "@/features/chat/lib/chatStorage";
 import { createAttachmentLoader } from "@/features/chat/lib/chatAttachments";
@@ -22,6 +22,20 @@ import * as opfs from "./opfs";
 vi.mock("@/shared/config", () => ({ getConfig: () => ({ chat: {} }) }));
 
 const signature = (value: object) => `@tanstack:${JSON.stringify(value)}`;
+const inputSchema = { type: "object", properties: { path: { type: "string" } }, required: ["path"] };
+const approvalSchema = normalizeApprovalSchema(undefined, inputSchema);
+const approvalBinding = {
+  kind: "tool-approval",
+  interruptId: "approval-1",
+  interruptedRunId: "run-3",
+  generation: 0,
+  toolCallId: "call-2",
+  toolName: "delete",
+  originalArgs: { path: "/chart.png" },
+  inputSchemaHash: hashSchemaInput(inputSchema),
+  approvalSchemaHash: approvalSchema.approvalSchemaHash,
+  responseSchemaHash: approvalSchema.responseSchemaHash,
+};
 const BLOB = "blob:sha256-0123456789abcdef";
 // OPFS caches its root handle, so every test that touches storage shares this store and resets it.
 const memory = new MemoryOpfs();
@@ -188,7 +202,8 @@ function legacyChat(): LegacyStoredChat {
           reason: "tool_call",
           toolCallId: "call-2",
           metadata: { toolName: "delete", input: { path: "/chart.png" } },
-          signature: signature({ "tanstack:interruptBinding": { generation: 0 } }),
+          schema: approvalSchema.responseSchema,
+          signature: signature({ "tanstack:interruptBinding": approvalBinding }),
         },
       ],
     },
@@ -631,10 +646,11 @@ describe("legacy chat migration", () => {
           id: "approval-1",
           reason: "tool_call",
           toolCallId: "call-2",
+          responseSchema: approvalSchema.responseSchema,
           metadata: {
             toolName: "delete",
             input: { path: "/chart.png" },
-            "tanstack:interruptBinding": { generation: 0 },
+            "tanstack:interruptBinding": approvalBinding,
           },
         },
       ],

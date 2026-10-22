@@ -63,7 +63,7 @@ export interface ChatContextType {
     deletedPaths?: string[],
   ) => Promise<void>;
   retryMessage: () => Promise<void>;
-  queuedSends: QueuedMessage[];
+  queuedSends: readonly QueuedMessage[];
   interruptState: ChatInterruptState | null;
   removeQueuedMessage: (id: string) => void;
   setVoiceToolCall: (toolName: string | null, callId?: string) => void;

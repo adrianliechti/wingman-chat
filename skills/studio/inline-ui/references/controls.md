@@ -37,7 +37,7 @@ Basic validators inside Wingman controls require the Basic catalogId above. `req
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
+A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 
@@ -59,8 +59,8 @@ Functions:
 - required { value: JSON }: validationResult
 - email { value: DynamicString }: validationResult
 - regex { value: DynamicString, pattern: string }: validationResult
-- length { value: DynamicString, min?: integer, max?: integer }: validationResult
-- numeric { value: DynamicNumber, min?: number, max?: number }: validationResult
+- length { value: DynamicString, min?: integer, max?: integer } (requires min or max): validationResult
+- numeric { value: DynamicNumber, min?: number, max?: number } (requires min or max): validationResult
 
 ### Wingman catalog
 

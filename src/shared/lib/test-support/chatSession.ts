@@ -31,10 +31,10 @@ export function chatSession(
           ...hooks,
           sidecar,
           options: { signal },
-          threadId: context?.threadId,
-          runId: context?.runId,
-          parentRunId: context?.parentRunId,
-          resume: context?.resume,
+          threadId: context.threadId,
+          runId: context.runId,
+          parentRunId: context.parentRunId,
+          resume: context.resume,
           onComplete: (result) => {
             finished.push(result);
           },

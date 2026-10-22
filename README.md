@@ -260,6 +260,7 @@ supports Babel 8; `npm run check:react-compiler` verifies that compatibility.
 The `vite` and `vitest` overrides keep dependencies on that shared toolchain;
 local and Docker installs use `npm ci` with normal peer-dependency resolution.
 The Chevrotain override updates its pinned `lodash-es` dependency to a patched release.
+The `guarded-fetch` override keeps its pinned Undici dependency on a patched 7.x release.
 
 ### Docker
 

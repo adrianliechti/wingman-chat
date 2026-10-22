@@ -1,6 +1,6 @@
 # Inline UI
 
-Inline UI embeds native interactive surfaces in assistant replies. Its wire contract is **A2UI v1.0 candidate**, pinned to `@a2ui/web_core@0.13.0`. AG-UI remains the agent event transport; A2UI owns UI messages, catalogs, bindings, data models and actions.
+Inline UI embeds native interactive surfaces in assistant replies. Its wire contract is **A2UI v1.0 candidate**, pinned to `@a2ui/web_core@0.14.0`. AG-UI remains the agent event transport; A2UI owns UI messages, catalogs, bindings, data models and actions.
 
 The Basic Catalog supplies 18 standard components. Wingman's versioned catalog supplies 24 extensions, including Chart, Table, Metric, Grid, Svg, Timeline, Form and richer controls. These use A2UI component naming and value bindings. Chart/table payloads are Wingman catalog contracts; A2UI does not standardize their data format.
 
@@ -48,9 +48,9 @@ This follows the useful pattern in [CopilotKit's skill](https://github.com/Copil
 
 Tests cover all 42 registered components with explicit wire fixtures, resolution snapshots and renderer dispatch. Schema tests lock required properties, unknown-property rejection, structured data, function inputs and protocol envelopes. Runtime tests cover relative template bindings, actions, replay, transcript edits, storage isolation and unsafe paths. Browser tests exercise real charts, keyboard controls, validation and reload persistence.
 
-The pinned SDK includes 43 upstream examples. Tests process 42 unchanged and retain its invalid `31_incremental-dashboard.json` (hyphenated component ID) as a rejection fixture. Catalog snapshots and upstream examples must be reviewed whenever the SDK version changes; update the constant, persistence contract and generated references together.
+The pinned SDK includes 43 upstream examples, all processed unchanged. Catalog snapshots and upstream examples must be reviewed whenever the SDK version changes; update the constant, persistence contract and generated references together. SDK 0.14 uses wire function-call schemas in `validationSchema`; generated signatures read their `args` schemas. The reserved `@index` function belongs to the protocol and must omit `catalogId`.
 
-SDK 0.13.0 rejects structured ValidationResult operands in its logical function invoker. A narrow BasicCatalog adapter normalizes only execution-time and/or/not operands. Wire schemas remain upstream-owned. Remove it when the SDK fixes the issue. The runtime also rechecks intermediate binding errors against settled model state.
+SDK 0.14.0 still rejects structured ValidationResult operands in its logical function invoker. A narrow BasicCatalog adapter normalizes only execution-time and/or/not operands. Wire schemas remain upstream-owned. Remove it when the SDK fixes the issue. The runtime also rechecks intermediate binding errors against settled model state.
 
 Run `npm run check`, `npx vp test run`, `npx playwright test tests/browser/markdown.spec.ts tests/browser/inline-ui-gallery.spec.ts`, and `npm run build` when updating this integration.
 

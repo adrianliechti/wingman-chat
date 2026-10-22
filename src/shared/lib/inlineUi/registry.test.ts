@@ -56,7 +56,7 @@ it("only factors out properties whose schemas and optionality are shared", () =>
     [basicCatalog, ["weight"]],
     [wingmanCatalog, ["visible", "disabled", "weight"]],
   ] as const) {
-    const { components } = catalog.catalogSchema as {
+    const { components } = catalog.validationSchema as {
       components: Record<string, { properties: Record<string, unknown>; required?: string[] }>;
     };
     const first = Object.values(components)[0];
@@ -75,6 +75,13 @@ it("keeps unions inside collection types unambiguous in generated signatures", (
     "series?: (string|{ key: string, label?: DynamicString })[]",
   );
   expect(componentReference(REFERENCE_GROUPS.data)).toContain("active?: string|number|DataBinding|FunctionCall");
+});
+
+it("documents validator arguments when the schema requires either bound", () => {
+  const reference = componentReference(REFERENCE_GROUPS.controls);
+  expect(reference).toContain("length { value: DynamicString, min?: integer, max?: integer } (requires min or max)");
+  expect(reference).toContain("numeric { value: DynamicNumber, min?: number, max?: number } (requires min or max)");
+  expect(reference).not.toContain("DynamicString & JSON");
 });
 
 it("keeps every skill reference link readable after splitting the catalog", () => {
@@ -112,12 +119,6 @@ describe("published SDK reference fixtures", () => {
     const runtime = new InlineUiRuntime();
     try {
       runtime.sync([{ key: file, source: JSON.stringify(fixture.messages) }]);
-      if (file === "31_incremental-dashboard.json") {
-        // This published fixture uses "left-panel", disallowed by the pinned
-        // v1.0 identifier schema. Assert the rejection so upgrades are reviewed.
-        expect([...runtime.errors.values()].join()).toContain("must be a valid UAX #31 identifier");
-        return;
-      }
       expect([...runtime.errors]).toEqual([]);
       expect(
         [...runtime.resolvers.values()].map((resolver) => getValue(resolver.rootNode)?.toJSON()),

@@ -29,6 +29,7 @@ async function execute(
   const chunks: AGUIEvent[] = [];
   const processor = new StreamProcessor({ initialMessages: messages });
   const stream = streamChatWithUiRepair(testClient(complete), "model", "", messages, tools, {
+    threadId: "ui-chat",
     runId: "ui-test",
     sidecar: new RunSidecar(),
     options: { signal },

@@ -55,6 +55,7 @@ async function execute(
   const chunks = [];
   for await (const chunk of streamRun(testClient(complete), "model", "", messages, tools, {
     ...hooks,
+    threadId: hooks.threadId ?? "artifact-chat",
     sidecar,
     middleware: [artifactVerification(fs, sidecar, messages)],
     onComplete: (value) => {

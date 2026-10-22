@@ -37,7 +37,7 @@ Useful expression patterns:
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
+A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 
@@ -45,7 +45,6 @@ A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
 
 Functions:
 
-- @index { offset?: number }: number
 - formatString { value: DynamicString }: string
 - formatNumber { value: DynamicNumber, decimals?: DynamicNumber, grouping?: DynamicBoolean }: string
 - formatCurrency { value: DynamicNumber, currency: DynamicString, decimals?: DynamicNumber, grouping?: DynamicBoolean }: string
@@ -62,6 +61,10 @@ Functions:
 Functions:
 
 - evaluate { expression: string, values: DynamicValue }: any
+
+### System functions
+
+- @index { offset?: DynamicNumber }: number (list templates only; omit catalogId)
 
 Expression helpers: abs, round, floor, ceil, trunc, sqrt, pow, log, exp, min, max, clamp, sum, avg, number, isFinite, random, histogram, len, count, range, map, filter, find, some, every, pluck, sortBy, reverse, slice, first, last, includes, indexOf, join, keys, values, get, upper, lower, trim, concat, split, replace, startsWith, endsWith, str, if, coalesce, isEmpty, format, currency, percent, compact, fixed.
 <!-- A2UI-CATALOG:END -->

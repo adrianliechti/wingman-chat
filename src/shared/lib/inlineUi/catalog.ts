@@ -21,7 +21,7 @@ import { z } from "zod-a2ui";
 import { evaluate, type Scope } from "./expression.ts";
 
 export const A2UI_VERSION = "v1.0" as const;
-export const A2UI_SDK_VERSION = "0.13.0";
+export const A2UI_SDK_VERSION = "0.14.0";
 export const BASIC_CATALOG_ID = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json";
 export const WINGMAN_CATALOG_ID = "urn:wingman:inline-ui:catalog:1";
 const string = DynamicStringSchema.describe("REF:#/$defs/DynamicString");
@@ -181,7 +181,7 @@ export const WINGMAN_FUNCTIONS: FunctionImplementation[] = [
 ];
 
 /**
- * SDK 0.13.0 revalidates resolved logical operands against the wire boolean
+ * The SDK revalidates resolved logical operands against the wire boolean
  * schema, rejecting its own ValidationResult objects. Normalize only those
  * execution-time operands; the published wire schemas remain unchanged.
  * Remove this adapter when the upstream invoker accepts ValidationResult.
@@ -189,7 +189,13 @@ export const WINGMAN_FUNCTIONS: FunctionImplementation[] = [
 class BasicCatalog extends Catalog<ComponentApi> {
   declare readonly invoker: FunctionInvoker;
   constructor() {
-    super(BASIC_CATALOG_ID, A2UI_VERSION, BASIC_COMPONENTS, BASIC_FUNCTIONS);
+    // Reserved system functions are resolved by the SDK, outside any catalog.
+    super(
+      BASIC_CATALOG_ID,
+      A2UI_VERSION,
+      BASIC_COMPONENTS,
+      BASIC_FUNCTIONS.filter((fn) => !fn.name.startsWith("@")),
+    );
     const invoke = (this as Catalog<ComponentApi>).invoker;
     const operand = (value: unknown) =>
       value && typeof value === "object" && "valid" in value && typeof value.valid === "boolean" ? value.valid : value;

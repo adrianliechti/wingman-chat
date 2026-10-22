@@ -136,12 +136,12 @@ export function useChatRun({
     async function* (
       session: Session,
       nativeMessages: UIMessage[] | ModelMessage[],
-      signal?: AbortSignal,
-      runContext?: RunAgentInputContext,
+      signal: AbortSignal | undefined,
+      runContext: RunAgentInputContext,
     ): AsyncGenerator<AGUIEvent> {
       if (!model) throw new Error("No model selected");
       const { id, sidecar } = session;
-      const runId = runContext?.runId ?? crypto.randomUUID();
+      const runId = runContext.runId;
       const conversation = sidecar.apply(
         nativeMessages.map((message) => normalizeToUIMessage(message, () => crypto.randomUUID())),
       );
@@ -171,7 +171,7 @@ export function useChatRun({
         const requestContext = captureRequestContext(
           [chatRuntimeContext(), memoryContext].filter(Boolean).join("\n\n"),
         );
-        if (!runContext?.resume?.length)
+        if (!runContext.resume?.length)
           classify({
             id,
             runId,
@@ -186,8 +186,8 @@ export function useChatRun({
         yield* streamChatWithUiRepair(client, model.id, chatInstructions(), conversation, tools, {
           runId,
           threadId: id,
-          parentRunId: runContext?.parentRunId,
-          resume: runContext?.resume,
+          parentRunId: runContext.parentRunId,
+          resume: runContext.resume,
           agentName: "chat",
           sidecar,
           middleware: [
@@ -383,11 +383,10 @@ export function useChatRun({
   const interruptState = useMemo<ChatInterruptState>(
     () => ({
       interrupts: ai.interrupts,
-      pendingInterrupts: ai.pendingInterrupts,
       interruptErrors: ai.interruptErrors,
       resuming: ai.resuming,
     }),
-    [ai.interrupts, ai.pendingInterrupts, ai.interruptErrors, ai.resuming],
+    [ai.interrupts, ai.interruptErrors, ai.resuming],
   );
   const { sendMessage: sendNativeMessage, setMessages, append, stop, isLoading } = ai;
   const isResponding = ai.isLoading || !!streamingMessage;

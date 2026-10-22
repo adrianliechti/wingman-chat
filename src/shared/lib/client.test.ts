@@ -95,6 +95,7 @@ it.each([
   const complete = vi.fn();
   const events = [];
   for await (const event of streamRun(new Client(), "gateway-alias", "", prompt, [], {
+    threadId: "gateway-chat",
     sidecar: new RunSidecar(),
     onComplete: complete,
   }))

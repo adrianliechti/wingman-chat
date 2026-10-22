@@ -464,8 +464,8 @@ it("does not replay model-a ciphertext to model-b after switching a live chat", 
         streamRun(client, model, "", sidecar.apply(messages as UIMessage[]), [], {
           sidecar,
           options: { signal },
-          runId: ctx?.runId,
-          threadId: ctx?.threadId,
+          runId: ctx.runId,
+          threadId: ctx.threadId,
         }),
     },
   });

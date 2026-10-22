@@ -65,7 +65,7 @@ Use a local function for interaction that does not need a model request:
 
 <!-- A2UI-CATALOG:START -->
 
-A2UI v1.0; SDK 0.13.0. Generated signatures; `?` means optional.
+A2UI v1.0; SDK 0.14.0. Generated signatures; `?` means optional.
 
 ### Basic catalog
 

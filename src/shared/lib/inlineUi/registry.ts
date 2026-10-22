@@ -71,17 +71,7 @@ export const REFERENCE_GROUPS: Record<string, ReferenceGroup> = {
   functions: {
     path: "references/functions.md",
     basic: {
-      functions: [
-        "@index",
-        "formatString",
-        "formatNumber",
-        "formatCurrency",
-        "formatDate",
-        "pluralize",
-        "and",
-        "or",
-        "not",
-      ],
+      functions: ["formatString", "formatNumber", "formatCurrency", "formatDate", "pluralize", "and", "or", "not"],
     },
     wingman: { functions: ["evaluate"] },
     expressions: true,
@@ -92,17 +82,28 @@ function syntax(schema: JsonSchema, omit: readonly string[] = []): string {
   if (schema.$ref) return schema.$ref.split("/").at(-1) ?? "value";
   if (schema.enum) return schema.enum.map((v) => JSON.stringify(v)).join("|");
   if (schema.const !== undefined) return JSON.stringify(schema.const);
-  if (schema.anyOf || schema.oneOf) return (schema.anyOf ?? schema.oneOf ?? []).map((item) => syntax(item)).join("|");
-  if (schema.allOf) return schema.allOf.map((item) => syntax(item)).join(" & ");
+  if (schema.allOf)
+    return (
+      schema.allOf
+        .map((item) => syntax(item))
+        .filter((value) => value !== "JSON")
+        .join(" & ") || "JSON"
+    );
   if (schema.type === "array") {
     const item = syntax(schema.items ?? {});
     return `${item.includes("|") ? `(${item})` : item}[]`;
   }
-  if (schema.properties)
+  if (schema.properties) {
+    const alternatives = schema.anyOf ?? schema.oneOf;
+    const requirements = alternatives?.every((item) => item.required && Object.keys(item).length === 1)
+      ? ` (requires ${alternatives.map((item) => item.required!.join(" and ")).join(" or ")})`
+      : "";
     return `{ ${Object.entries(schema.properties)
       .filter(([key]) => !omit.includes(key))
       .map(([key, prop]) => `${key}${schema.required?.includes(key) ? "" : "?"}: ${syntax(prop)}`)
-      .join(", ")} }`;
+      .join(", ")} }${requirements}`;
+  }
+  if (schema.anyOf || schema.oneOf) return (schema.anyOf ?? schema.oneOf ?? []).map((item) => syntax(item)).join("|");
   if (Array.isArray(schema.type)) return schema.type.join("|");
   return schema.type ?? "JSON";
 }
@@ -115,7 +116,7 @@ export function componentReference(group: ReferenceGroup): string {
   ] as const) {
     const selected = group[key];
     if (!selected) continue;
-    const schema = catalog.catalogSchema as {
+    const schema = catalog.validationSchema as {
       components: Record<string, JsonSchema>;
       functions: Record<string, JsonSchema>;
     };
@@ -143,11 +144,17 @@ export function componentReference(group: ReferenceGroup): string {
       const fn = catalog.functions.get(name);
       if (!fn || !schema.functions[name]) throw new Error(`Unknown ${key} function ${name}`);
       sections.push(
-        `- ${name} ${syntax(schema.functions[name])}: ${fn.returnType}${fn.requiresUserActivation ? " (user action only)" : ""}`,
+        `- ${name} ${syntax(schema.functions[name].properties!.args)}: ${fn.returnType}${fn.requiresUserActivation ? " (user action only)" : ""}`,
       );
     }
   }
-  if (group.expressions) sections.push(`\nExpression helpers: ${HELPER_NAMES.join(", ")}.`);
+  if (group.expressions) {
+    const definitions = basicCatalog.validationSchema.$defs as Record<string, JsonSchema>;
+    sections.push(
+      `\n### System functions\n\n- @index ${syntax(definitions.IndexSystemFunction.properties!.args)}: number (list templates only; omit catalogId)`,
+      `\nExpression helpers: ${HELPER_NAMES.join(", ")}.`,
+    );
+  }
   return sections.join("\n");
 }
 
@@ -162,5 +169,5 @@ export function updateComponentReference(source: string, group: ReferenceGroup):
 
 /** Publish catalog identity alongside the SDK-generated contract. */
 export function publishedCatalog(catalog: typeof basicCatalog | typeof wingmanCatalog) {
-  return { ...catalog.catalogSchema, $id: catalog.id, protocolVersion: A2UI_VERSION };
+  return { ...catalog.validationSchema, $id: catalog.id, protocolVersion: A2UI_VERSION };
 }

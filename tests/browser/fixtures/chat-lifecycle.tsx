@@ -26,6 +26,7 @@ import { ChatMessageElicitation } from "../../../src/features/chat/components/Ch
 import { createSkillsProvider } from "../../../src/features/skills/lib/skillsProvider";
 import { loadConfig } from "../../../src/shared/config";
 import { flushPersistence } from "../../../src/shared/lib/persistence";
+import { readJson, writeJson, type StoredChat } from "../../../src/shared/lib/opfs";
 import { fetchModelCatalog } from "../../../src/shared/lib/modelCatalog";
 import type { Model } from "../../../src/shared/types/chat";
 import { assistantMessage, messageText, userMessage } from "../../../src/shared/lib/messages";
@@ -50,7 +51,7 @@ const calls: {
   tools: string[];
   stream: (text: string) => void;
   finish: (text: string) => void;
-  callTool: (name: string, args: object) => void;
+  callTools: (tools: { name: string; args: object }[]) => void;
   signal?: AbortSignal;
 }[] = [];
 if (!fixtureOptions.has("gateway"))
@@ -73,17 +74,17 @@ if (!fixtureOptions.has("gateway"))
             signal,
             stream: (text) => handler(text),
             finish: (text) => resolve(assistantMessage(text)),
-            callTool: (name, args) =>
+            callTools: (tools) =>
               resolve(
-                assistantMessage([
-                  {
-                    type: "tool-call",
+                assistantMessage(
+                  tools.map(({ name, args }) => ({
+                    type: "tool-call" as const,
                     id: crypto.randomUUID(),
                     name,
                     arguments: JSON.stringify(args),
-                    state: "input-complete",
-                  },
-                ]),
+                    state: "input-complete" as const,
+                  })),
+                ),
               ),
           });
         }),
@@ -186,7 +187,8 @@ function Fixture() {
     },
     stream: (index: number, value: string) => calls[index].stream(value),
     finish: (index: number, value: string) => calls[index].finish(value),
-    callTool: (index: number, name: string, args: object) => calls[index].callTool(name, args),
+    callTool: (index: number, name: string, args: object) => calls[index].callTools([{ name, args }]),
+    callTools: (index: number, tools: { name: string; args: object }[]) => calls[index].callTools(tools),
     stop: chat.stopStreaming,
     holdRead: (id: string) => {
       heldRead = `chats/${id}/chat.json`;
@@ -211,6 +213,9 @@ function Fixture() {
         messages: [{ ...text(id), parts }],
       }),
     flush: flushPersistence,
+    readRecord: (id: string, legacy = false) =>
+      readJson<StoredChat>(`chats/${id}/${legacy ? "chat.legacy.json" : "chat.json"}`),
+    writeRecord: (id: string, record: StoredChat) => writeJson(`chats/${id}/chat.json`, record),
     unmount: () => root.unmount(),
   };
   return (
@@ -328,7 +333,7 @@ declare global {
         error: string | null;
         chats: import("../../../src/shared/types/chat").ChatEntry[];
         messages: UIMessage[];
-        queue: import("@tanstack/ai-client").QueuedMessage[];
+        queue: readonly import("@tanstack/ai-client").QueuedMessage[];
         pending?: string;
         renders: typeof renders;
         results: typeof results;
@@ -353,6 +358,7 @@ declare global {
       stream(index: number, value: string): void;
       finish(index: number, value: string): void;
       callTool(index: number, name: string, args: object): void;
+      callTools(index: number, tools: { name: string; args: object }[]): void;
       stop(): void;
 
       holdRead(id: string): void;
@@ -363,6 +369,8 @@ declare global {
       answer(result: ElicitationResult): void;
       seed(id: string, parts: ContentPart[]): Promise<void>;
       flush(): Promise<void>;
+      readRecord(id: string, legacy?: boolean): Promise<StoredChat | undefined>;
+      writeRecord(id: string, record: StoredChat): Promise<void>;
       unmount(): void;
     };
   }

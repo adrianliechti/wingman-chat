@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { metrics, trace } from "@opentelemetry/api";
-import { logs } from "@opentelemetry/api-logs";
+import { context, logs, metrics, propagation, trace } from "@opentelemetry/api";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { AggregationTemporality, DataPointType, type HistogramMetricData } from "@opentelemetry/sdk-metrics";
@@ -19,6 +18,8 @@ afterEach(async () => {
   metrics.disable();
   trace.disable();
   logs.disable();
+  context.disable();
+  propagation.disable();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

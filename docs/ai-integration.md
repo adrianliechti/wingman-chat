@@ -45,6 +45,12 @@ The integration follows [TanStack AI](https://tanstack.com/ai/latest),
 orchestration in a server route are adapted to the application's browser-only
 execution requirement. The installed package sources define the precise APIs.
 
+All `@tanstack/ai*` packages use 1.x and are upgraded together. Chat streams
+require the conversation's stable `threadId`; native subagents receive their
+child thread id. Standalone parsing, speech, transcription, and interpreter
+calls create their own thread ids. Compaction summaries use
+`<conversation-thread-id>:compaction`, separate from the history they summarize.
+
 ## Markdown compatibility
 
 TanStack remains the sole Markdown parser. Its [documented syntax scope](https://github.com/TanStack/markdown#readme)
@@ -347,6 +353,10 @@ question or approval and resume it without replaying completed sibling tools.
 The storage boundary accepts writes only from its mounted client, so native
 cleanup after a thread switch cannot erase a pending approval. Explicit Stop
 still clears it.
+When an older record contains an interrupt without a supported native binding,
+loading clears the whole pending batch and preserves the transcript. The original
+record is kept in `chat.legacy.json`. The user can send a fresh message without
+replaying the abandoned tools; valid bound approvals still resume normally.
 Only paused interrupts retain a resume pointer: this browser-only application
 has no durable executor that could continue a running generation after reload.
 
