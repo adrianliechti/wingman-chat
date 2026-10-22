@@ -20,7 +20,6 @@ export function initTelemetry(serviceName: string) {
   const resource = defaultResource().merge(
     resourceFromAttributes({
       "service.name": serviceName,
-      "wingman.telemetry.source": "chat",
       "user_agent.original": navigator.userAgent,
     }),
   );
