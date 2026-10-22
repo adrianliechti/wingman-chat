@@ -27,8 +27,9 @@ export function chatCompaction(
       summarize: async (messages) => {
         const { controller: abortController, cleanup } = followAbortSignal(signal);
         try {
+          const telemetry = aiTelemetry("summarize_history");
           const result = await chat({
-            adapter: client.textAdapter(model, signal),
+            adapter: client.textAdapter(model, signal, telemetry.requestContext),
             // A compacted prefix often ends with an assistant/tool turn.
             // Request a new summary instead of an assistant prefill, which
             // several gateway providers reject.
@@ -39,7 +40,7 @@ export function chatCompaction(
               { role: "user", content: "Summarize the preceding conversation." },
             ],
             systemPrompts: [instructions],
-            middleware: [aiTelemetry("summarize_history")],
+            middleware: [telemetry],
             stream: false,
             abortController,
           });

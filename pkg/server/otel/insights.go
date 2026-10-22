@@ -33,8 +33,9 @@ func insightsEndpoint(endpoint, defaultPath string) string {
 	return parsed.JoinPath(defaultPath).String()
 }
 
-// Copy independently of the primary collector; only its response reaches the browser.
-func withInsights(next http.Handler, endpoints ...string) http.Handler {
+// withMirror copies an enriched export to secondary collectors. Only the
+// primary handler's response acknowledges delivery to the browser.
+func withMirror(next http.Handler, endpoints ...string) http.Handler {
 	targets := make([]string, 0, len(endpoints))
 
 	for _, endpoint := range endpoints {
@@ -123,4 +124,19 @@ func exportInsights(endpoint, contentType, contentEncoding string, body []byte) 
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
+}
+
+// Identity is already in the enriched payload. Keep browser credentials out of
+// the direct Insights request, just as for the best-effort mirror.
+func withTransportHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded := r.Clone(r.Context())
+		forwarded.Header = make(http.Header)
+		for _, key := range []string{"Content-Type", "Content-Encoding"} {
+			if value := r.Header.Get(key); value != "" {
+				forwarded.Header.Set(key, value)
+			}
+		}
+		next.ServeHTTP(w, forwarded)
+	})
 }

@@ -1,12 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { recordClassification } from "./classificationTelemetry";
 
-const record = vi.hoisted(() => vi.fn());
-vi.mock("@opentelemetry/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@opentelemetry/api")>()),
-  metrics: { getMeter: () => ({ createHistogram: () => ({ record }) }) },
+const { record, flush } = vi.hoisted(() => ({ record: vi.fn(), flush: vi.fn() }));
+vi.mock("@/shared/lib/classificationMetrics", () => ({
+  classificationMeter: () => ({ createHistogram: () => ({ record }) }),
+  flushClassificationMetrics: flush,
 }));
-beforeEach(() => record.mockReset());
+beforeEach(() => {
+  record.mockReset();
+  flush.mockReset();
+});
 
 const rules = {
   categories: [{ id: "legal_work", name: "Legal Work", description: "Private criterion" }],
@@ -31,6 +34,7 @@ it("records categories and only matched risks with the thresholds used by the UI
     reporting,
   );
   const attributes = {
+    "wingman.classification.event_id": expect.any(String),
     "gen_ai.operation.name": "evaluate",
     "gen_ai.request.model": "classifier",
     "gen_ai.conversation.id": "chat-1",
@@ -57,6 +61,10 @@ it("records categories and only matched risks with the thresholds used by the UI
       },
     ],
   ]);
+  expect(flush).toHaveBeenCalledTimes(1);
+  const eventIDs = record.mock.calls.map(([, attrs]) => attrs["wingman.classification.event_id"]);
+  expect(new Set(eventIDs).size).toBe(1);
+  expect(eventIDs[0]).toMatch(/^[0-9a-f-]{36}$/);
   expect(JSON.stringify(record.mock.calls)).not.toContain("Private");
   expect(JSON.stringify(record.mock.calls)).not.toContain("wingman.message.id");
   expect(JSON.stringify(record.mock.calls)).not.toContain("wingman.run.id");
@@ -75,6 +83,7 @@ it("skips risks below both default and per-risk thresholds", () => {
     reporting,
   );
   expect(record).not.toHaveBeenCalled();
+  expect(flush).not.toHaveBeenCalled();
 });
 
 it("leaves user identity to the backend", () => {
@@ -86,6 +95,7 @@ it("leaves user identity to the backend", () => {
 it("skips requests for which classification returned no answers", () => {
   recordClassification({ categories: [], risks: [] }, rules, reporting);
   expect(record).not.toHaveBeenCalled();
+  expect(flush).not.toHaveBeenCalled();
 });
 
 it("keeps reporting failures from breaking consent or risk warnings", () => {
@@ -111,4 +121,14 @@ it("preserves telemetry identity when display names change", () => {
     "legal_work",
     "hr",
   ]);
+});
+
+it("gives separate accepted results distinct event IDs", () => {
+  for (let i = 0; i < 2; i++) {
+    recordClassification({ categories: [{ id: "legal_work", confidence: 0.9 }], risks: [] }, rules, reporting);
+  }
+  expect(record.mock.calls[0][1]["wingman.classification.event_id"]).not.toBe(
+    record.mock.calls[1][1]["wingman.classification.event_id"],
+  );
+  expect(flush).toHaveBeenCalledTimes(2);
 });

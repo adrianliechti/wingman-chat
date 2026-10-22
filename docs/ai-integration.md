@@ -660,8 +660,8 @@ and `/telemetry/v1/metrics` exporter as native model usage. The chat hook record
 category and once per risk whose probability meets its effective threshold. Cancelled, superseded, failed, and skipped
 classifications record no scores. Reporting runs before consent selection, so
 acknowledged risks and categories without consent still appear in analytics.
-Reporting failures never block warnings. Native Evaluate spans and metrics
-continue to own classifier latency, tokens, and cost.
+Reporting failures never block warnings. Gateway provider calls own classifier
+usage and cost; browser Evaluate spans describe the client-side operation.
 
 Each observation's value is category confidence or the risk's yes probability.
 Its attributes are:
@@ -670,7 +670,7 @@ Its attributes are:
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `gen_ai.operation.name`            | `evaluate`                                                                                                      |
 | `gen_ai.request.model`             | Configured classifier model                                                                                     |
-| `gen_ai.conversation.id`           | Local chat ID, stored as the existing session ID                                                                |
+| `gen_ai.conversation.id`           | Opaque saved chat ID, used to count classified prompts per conversation                                         |
 | `user.id`                          | Attached by the Go telemetry proxy from `X-Forwarded-User`, when available                                      |
 | `user.email`                       | Attached by the Go telemetry proxy from `X-Forwarded-Email`, falling back to an email-shaped `X-Forwarded-User` |
 | `wingman.classification.kind`      | `category` or `risk`                                                                                            |
@@ -680,7 +680,8 @@ Its attributes are:
 
 The resource's `service.name` defaults to `wingman-chat` and can be changed with
 `telemetry.name` in `config.json` or the `TELEMETRY_NAME` environment variable.
-The Go proxy overwrites it on every metrics export, like the user identity.
+The Go proxy overwrites it on every metrics and traces export, like the user
+identity.
 Message/run IDs, message text, attachment names, descriptions, and consent text
 are not metric labels.
 Category scores below threshold are recorded too; risk scores below threshold
@@ -690,19 +691,41 @@ not distinct prompts: editing or retrying a message can produce another score,
 just as it produces another model operation. Identity and delivery are best effort.
 
 The frontend does not supply user identity. The Go server enriches every metric
-data point at `/telemetry/v1/metrics`, including native model-usage metrics, with
-the authenticated proxy headers. It replaces payload-supplied `user.id` and
-`user.email` and removes those keys from resource and scope attributes. Missing
+data point at `/telemetry/v1/metrics`, including browser model-observation metrics, and
+every span at `/telemetry/v1/traces`, with the authenticated proxy headers. It
+replaces payload-supplied `user.id` and `user.email` and removes those keys from
+resource and scope attributes, and from span events and links. Missing
 identity headers leave observations unattributed. The authentication proxy must
 overwrite these headers and prevent direct untrusted access to the Go server,
 matching Wingman's header-auth trust boundary. Directory enrichment and group
 membership remain in Insights; no groups are added as metric labels.
 
-The metrics proxy accepts the browser exporters' OTLP/HTTP JSON format with
-lowerCamelCase structural field names, optionally
+Gateway provider spans are authoritative for tokens and cost in Insights. Browser
+model/root spans retain their raw usage attributes for trace inspection, but
+Insights excludes their counters from accounting. Browser model histograms are
+exported as `wingman.chat.client.token.usage` and
+`wingman.chat.client.operation.duration`; gateway metrics retain `gen_ai.*`.
+Categories, risks, tool execution, and MCP metadata continue to be collected.
+
+Provider requests carry an explicitly injected `traceparent` to connect gateway
+spans to the browser operation. Classification scores include the opaque chat ID
+as `gen_ai.conversation.id` so Insights can calculate classified prompts per
+conversation. Chat IDs are not included in model-usage metrics or provider request
+headers. MCP tool spans carry `wingman.mcp.server.id` and `mcp.tool.name`.
+
+The Go telemetry proxy stamps `wingman.telemetry.source=chat` on resource
+attributes and removes client-supplied `service.peer.name`. Insights recognizes
+gateway accounting by its instrumentation scope
+`github.com/adrianliechti/wingman`; a browser resource cannot claim that scope
+to become authoritative. Custom service names do not affect this rule.
+
+The metrics and traces proxies accept the browser exporters' OTLP/HTTP JSON
+format with lowerCamelCase structural field names, optionally
 gzip-compressed, with an 8 MiB limit on both compressed and decompressed input.
 Unsupported media types/encodings and malformed payloads are rejected before
-forwarding. Logs and traces are forwarded unmodified. Local Vite
+forwarding; an export too large to buffer cannot be enriched, so it is rejected
+rather than forwarded unattributed (browser batches stay far below the limit,
+since span content capture is off). Logs are forwarded unmodified. Local Vite
 development proxies directly to the collector, bypassing Go identity enrichment.
 
 The browser metrics exporter uses delta temporality, matching the gateway and
@@ -711,14 +734,11 @@ insights' `SUM(count)` / `SUM(sum)` aggregation. See the
 for histogram and temporality semantics. Collectors must preserve delta
 histograms when forwarding to insights.
 
-The wingman-insights `/v1/metrics` handler must be extended to accept the
-`wingman.classification.*` namespace (it currently keeps only `gen_ai.*` and
-`http.*` metrics) and store this histogram in `genai_metrics`: `count` is the
-number of evaluations, `sum` is their total score, and the classification
-attributes remain in its existing JSON `attributes` column. No new log handler,
-table, migration, or retention path is needed. Keep the metrics endpoint routed
-to insights. See the wingman-insights project for the ingest, query, API, and
-dashboard changes required to surface this metric.
+The wingman-insights `/v1/metrics` handler stores `wingman.*` metrics, including
+classification scores and browser loop measurements. `count` is the number of
+observations, `sum` is their total score/value, and additional dimensions remain
+in the JSON `attributes` column. Raw chat spans and their tool/MCP metadata
+remain queryable even though only gateway provider counters are billed.
 
 Future dashboard queries should filter
 `metric_name = 'wingman.classification.score'` and reuse the existing
@@ -735,23 +755,50 @@ additional correlation with response-model requests.
 
 ### Direct insights delivery
 
-Like the Wingman gateway, the Go telemetry proxy honors `INSIGHTS_ENDPOINT` and
-copies every trace and metric export to it in addition to the primary
-`OTEL_EXPORTER_OTLP_*` collector. A bare endpoint receives the default OTLP path
-(`/v1/traces`, `/v1/metrics`); an endpoint that already carries a path is used
-verbatim, matching the gateway's handling of the same variable. Logs are not
-copied, because insights discards them and the gateway exports no logs there
-either.
+The Go telemetry proxy honors `INSIGHTS_ENDPOINT`. A bare endpoint receives the
+signal's default OTLP path (`/v1/traces`, `/v1/metrics`); an explicit path is used
+verbatim. Logs continue to go only to the primary collector.
 
-Metrics are copied after identity enrichment, so insights and the collector
-receive byte-identical payloads. Only `Content-Type` and `Content-Encoding`
-travel with the copy: identity already lives in the payload, and browser
-credentials must never reach a second backend. Delivery is best effort and
-independent of the primary collector — insights keeps receiving exports while the
-collector is down, failures never affect the browser's response, exports above
-the 8 MiB buffer limit reach only the collector, and copies are dropped rather
-than queued without bound when insights cannot keep up. With `INSIGHTS_ENDPOINT`
-unset, forwarding behaves exactly as before.
+For metrics, Insights is the synchronous primary destination: its admission
+acknowledgement or failure reaches the browser, including HTTP 503 and
+`Retry-After`. The original collector receives a separate bounded best-effort copy.
+For traces, the collector remains primary and Insights receives its existing
+best-effort copy. Both destinations receive the same identity-enriched payload;
+only transport headers travel to Insights, never browser credentials. With
+`INSIGHTS_ENDPOINT` unset, the configured collector remains primary for both.
+
+Use only one route per producer into Insights. A collector receiving a direct
+producer's mirrored exports must not fan them back into Insights; this would
+inflate usage, tool counts, and older-client metrics.
+
+### Immediate classification export
+
+Classifications use a separate OTel meter provider and delta HTTP exporter.
+`recordClassification` starts a non-blocking flush after recording a browser-
+accepted result. A new result during an export schedules a serialized follow-up;
+a hidden-page visibility change also flushes. Other metrics keep their 60-second
+interval. The installed exporter uses fetch keepalive for small requests and
+retries transient failures, retaining the same payload. All observations for one
+result share `wingman.classification.event_id`, an opaque UUID. Category/risk IDs,
+thresholds, conversation metadata, privacy, and cancelled/superseded-run guards
+are preserved.
+
+Insights acknowledges admission to its bounded memory queue, then combines users'
+metrics into one transaction every 5 seconds, or at 1,000 datapoints or 4 MiB of
+queued protobuf payload. At 10,000 pending datapoints or 32 MiB, including writes
+in progress, it rejects admission with retryable 503. Failed database batches are
+retained for retry. A transactional, retention-pruned event ledger deduplicates
+new classification results, while older clients without IDs remain compatible.
+Graceful shutdown stops admission and drains before closing the database.
+Queue health and failure counters are exposed at Insights `GET /metrics`.
+Deploy Insights before this chat change.
+
+This protects already-started small exports during normal tab closure. Browser
+keepalive has size/concurrency limits; offline delivery and process termination
+are not guaranteed. Exhausted exporter retries can still lose data. The server
+queue is deliberately volatile: a crash can lose acknowledged, uncommitted data.
+Dashboard queries normally see admitted classifications within five seconds plus
+transaction time; the dashboard's own refresh interval determines display delay.
 
 ## Verification
 

@@ -45,10 +45,24 @@ func New(serviceName string) *Handler {
 		metricsURL = base + "/v1/metrics"
 	}
 
+	// Insights must acknowledge metric admission itself. A collector response
+	// must not hide a failed or rejected Insights copy. The collector still
+	// receives an independent best-effort mirror; trace delivery is unchanged.
+	metricsTarget, metricsMirror := metricsURL, insightsEndpoint(insights, "/v1/metrics")
+	if metricsMirror != "" {
+		metricsTarget, metricsMirror = metricsMirror, metricsURL
+	}
+	if metricsTarget == metricsMirror {
+		metricsMirror = ""
+	}
+	metricsPrimary := newHandler(metricsTarget)
+	if insights != "" {
+		metricsPrimary = withTransportHeaders(metricsPrimary)
+	}
 	return &Handler{
 		logs:    newHandler(logsURL),
-		traces:  withInsights(newHandler(tracesURL), insightsEndpoint(insights, "/v1/traces")),
-		metrics: withMetricIdentity(withInsights(newHandler(metricsURL), insightsEndpoint(insights, "/v1/metrics")), serviceName),
+		traces:  withTraceIdentity(withMirror(newHandler(tracesURL), insightsEndpoint(insights, "/v1/traces")), serviceName),
+		metrics: withMetricIdentity(withMirror(metricsPrimary, metricsMirror), serviceName),
 	}
 }
 

@@ -12,20 +12,43 @@ import (
 	"strings"
 )
 
-const maxMetricBodyBytes = 8 << 20
+const maxEnrichedBodyBytes = 8 << 20
 
 var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
+// signal names the JSON shape of one OTLP signal: the resource blocks that
+// carry service.name, and the leaf records whose attributes identity is stamped
+// on. Logs are not enriched (insights discards them).
+type signal struct {
+	label     string // used in the rejection messages
+	resources string
+	records   string
+}
+
+var (
+	metricSignal = signal{label: "metrics", resources: "resourceMetrics", records: "dataPoints"}
+	traceSignal  = signal{label: "traces", resources: "resourceSpans", records: "spans"}
+)
+
 // Identity headers must be overwritten by the trusted authentication proxy.
 func withMetricIdentity(next http.Handler, service string) http.Handler {
+	return withIdentity(next, service, metricSignal)
+}
+
+// Attribute browser spans to the authenticated user, just like metric points.
+func withTraceIdentity(next http.Handler, service string) http.Handler {
+	return withIdentity(next, service, traceSignal)
+}
+
+func withIdentity(next http.Handler, service string, sig signal) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
-			http.Error(w, "metrics require OTLP JSON", http.StatusUnsupportedMediaType)
+			http.Error(w, sig.label+" require OTLP JSON", http.StatusUnsupportedMediaType)
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, maxMetricBodyBytes)
+		r.Body = http.MaxBytesReader(w, r.Body, maxEnrichedBodyBytes)
 		defer r.Body.Close()
 		var reader io.Reader = r.Body
 		switch strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))) {
@@ -33,24 +56,24 @@ func withMetricIdentity(next http.Handler, service string) http.Handler {
 		case "gzip":
 			compressed, err := gzip.NewReader(r.Body)
 			if err != nil {
-				http.Error(w, "invalid compressed metrics", http.StatusBadRequest)
+				http.Error(w, "invalid compressed "+sig.label, http.StatusBadRequest)
 				return
 			}
 			defer compressed.Close()
 			reader = compressed
 		default:
-			http.Error(w, "unsupported metrics encoding", http.StatusUnsupportedMediaType)
+			http.Error(w, "unsupported "+sig.label+" encoding", http.StatusUnsupportedMediaType)
 			return
 		}
 
-		body, err := io.ReadAll(io.LimitReader(reader, maxMetricBodyBytes+1))
+		body, err := io.ReadAll(io.LimitReader(reader, maxEnrichedBodyBytes+1))
 		var tooLarge *http.MaxBytesError
-		if len(body) > maxMetricBodyBytes || errors.As(err, &tooLarge) {
-			http.Error(w, "metrics payload too large", http.StatusRequestEntityTooLarge)
+		if len(body) > maxEnrichedBodyBytes || errors.As(err, &tooLarge) {
+			http.Error(w, sig.label+" payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 		if err != nil {
-			http.Error(w, "invalid metrics payload", http.StatusBadRequest)
+			http.Error(w, "invalid "+sig.label+" payload", http.StatusBadRequest)
 			return
 		}
 
@@ -59,9 +82,9 @@ func withMetricIdentity(next http.Handler, service string) http.Handler {
 		if email == "" && emailPattern.MatchString(user) {
 			email = user
 		}
-		body, err = enrichMetricIdentity(body, service, user, email)
+		body, err = enrichIdentity(body, service, user, email, sig)
 		if err != nil {
-			http.Error(w, "invalid OTLP metrics payload", http.StatusBadRequest)
+			http.Error(w, "invalid OTLP "+sig.label+" payload", http.StatusBadRequest)
 			return
 		}
 
@@ -83,10 +106,16 @@ var snakeCaseFields = map[string]bool{
 	"scope_metrics":         true,
 	"data_points":           true,
 	"exponential_histogram": true,
+	"resource_spans":        true,
+	"scope_spans":           true,
+}
+
+func enrichMetricIdentity(body []byte, service, user, email string) ([]byte, error) {
+	return enrichIdentity(body, service, user, email, metricSignal)
 }
 
 // UseNumber preserves nanosecond timestamps and integer counts during the JSON round trip.
-func enrichMetricIdentity(body []byte, service, user, email string) ([]byte, error) {
+func enrichIdentity(body []byte, service, user, email string, sig signal) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 
@@ -96,29 +125,30 @@ func enrichMetricIdentity(body []byte, service, user, email string) ([]byte, err
 	}
 
 	if export == nil {
-		return nil, errors.New("expected metrics object")
+		return nil, errors.New("expected " + sig.label + " object")
 	}
 
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, errors.New("expected one metrics object")
+		return nil, errors.New("expected one " + sig.label + " object")
 	}
 
-	if err := applyIdentity(export, user, email); err != nil {
+	if err := applyIdentity(export, user, email, sig.records); err != nil {
 		return nil, err
 	}
 
-	applyServiceName(export, service)
+	applyServiceName(export, service, sig.resources)
 
 	return json.Marshal(export)
 }
 
-// applyIdentity drops client-supplied identity attributes everywhere and stamps
-// the authenticated identity on every data point.
-func applyIdentity(value any, user, email string) error {
+// applyIdentity drops client-supplied identity attributes everywhere — span
+// events and links included — and stamps the authenticated identity on every
+// data point / span.
+func applyIdentity(value any, user, email, records string) error {
 	switch v := value.(type) {
 	case []any:
 		for _, item := range v {
-			if err := applyIdentity(item, user, email); err != nil {
+			if err := applyIdentity(item, user, email, records); err != nil {
 				return err
 			}
 		}
@@ -133,12 +163,12 @@ func applyIdentity(value any, user, email string) error {
 				v[key] = withoutIdentity(child)
 			}
 
-			if err := applyIdentity(child, user, email); err != nil {
+			if err := applyIdentity(child, user, email, records); err != nil {
 				return err
 			}
 		}
 
-		points, _ := v["dataPoints"].([]any)
+		points, _ := v[records].([]any)
 
 		for _, point := range points {
 			if point, ok := point.(metricObject); ok {
@@ -153,14 +183,14 @@ func applyIdentity(value any, user, email string) error {
 	return nil
 }
 
-func applyServiceName(export metricObject, service string) {
+func applyServiceName(export metricObject, service, resources string) {
 	if service == "" {
 		return
 	}
 
-	resources, _ := export["resourceMetrics"].([]any)
+	resourceBlocks, _ := export[resources].([]any)
 
-	for _, item := range resources {
+	for _, item := range resourceBlocks {
 		rm, ok := item.(metricObject)
 
 		if !ok {
@@ -175,11 +205,11 @@ func applyServiceName(export metricObject, service string) {
 		}
 
 		attrs, _ := resource["attributes"].([]any)
-		filtered := make([]any, 0, len(attrs)+1)
+		filtered := make([]any, 0, len(attrs)+2)
 
 		for _, attr := range attrs {
 			if obj, ok := attr.(metricObject); ok {
-				if key, _ := obj["key"].(string); key == "service.name" {
+				if key, _ := obj["key"].(string); key == "service.name" || key == "wingman.telemetry.source" {
 					continue
 				}
 			}
@@ -187,7 +217,10 @@ func applyServiceName(export metricObject, service string) {
 			filtered = append(filtered, attr)
 		}
 
-		resource["attributes"] = append(filtered, metricObject{"key": "service.name", "value": metricObject{"stringValue": service}})
+		resource["attributes"] = append(filtered,
+			metricObject{"key": "service.name", "value": metricObject{"stringValue": service}},
+			metricObject{"key": "wingman.telemetry.source", "value": metricObject{"stringValue": "chat"}},
+		)
 	}
 }
 
@@ -202,7 +235,7 @@ func withoutIdentity(value any) any {
 
 	for _, attr := range attrs {
 		if obj, ok := attr.(metricObject); ok {
-			if key, _ := obj["key"].(string); key == "user.id" || key == "user.email" {
+			if key, _ := obj["key"].(string); key == "user.id" || key == "user.email" || key == "service.peer.name" {
 				continue
 			}
 		}

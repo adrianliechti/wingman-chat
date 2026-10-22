@@ -7,6 +7,9 @@ import {
   createOpenaiTranscription,
 } from "@tanstack/ai-openai";
 
+import type { AgentContext } from "../types/telemetry";
+import { telemetryHeaders } from "./otel";
+
 import { GatewayTextAdapter } from "./gatewayText";
 
 function createGatewayChat<TModel extends OpenAIChatModel>(
@@ -30,7 +33,7 @@ export const gatewaySpeech = extendAdapter(createOpenaiSpeech, gatewayModels);
 export const gatewayTranscription = extendAdapter(createOpenaiTranscription, gatewayModels);
 
 /** The Go proxy supplies deployment credentials. No server key is bundled into the SPA. */
-export function browserProviderConfig(signal?: AbortSignal) {
+export function browserProviderConfig(signal?: AbortSignal, requestContext?: () => AgentContext) {
   return {
     baseURL: new URL("/api/v1", window.location.origin).href,
     dangerouslyAllowBrowser: true,
@@ -39,8 +42,10 @@ export function browserProviderConfig(signal?: AbortSignal) {
       // An empty model selects the gateway's default deployment. Multipart
       // requests previously omitted it; the provider SDK always writes it.
       if (init?.body instanceof FormData && init.body.get("model") === "") init.body.delete("model");
+      const headers = init?.headers ?? (input instanceof Request ? input.headers : undefined);
       return fetch(input, {
         ...init,
+        headers: requestContext ? telemetryHeaders(requestContext(), headers) : headers,
         signal: signal && init?.signal ? AbortSignal.any([signal, init.signal]) : (signal ?? init?.signal),
       });
     },

@@ -10,12 +10,17 @@ import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
 
-const IGNORE_URLS = [/\/otel\//];
+import { installClassificationMetrics } from "@/shared/lib/classificationMetrics";
+
+// Provider requests carry explicit model/tool context. Automatic fetch tracing
+// would overwrite their traceparent with an unrelated browser HTTP span.
+const IGNORE_URLS = [/\/telemetry\//, /\/api\/v1(?:\/|$)/];
 
 export function initTelemetry(serviceName: string) {
   const resource = defaultResource().merge(
     resourceFromAttributes({
       "service.name": serviceName,
+      "wingman.telemetry.source": "chat",
       "user_agent.original": navigator.userAgent,
     }),
   );
@@ -42,6 +47,11 @@ export function initTelemetry(serviceName: string) {
   });
   const meterProvider = new MeterProvider({
     resource,
+    // Preserve client-loop measurements separately from gateway provider calls.
+    views: ["gen_ai.client.operation.duration", "gen_ai.client.token.usage"].map((instrumentName) => ({
+      instrumentName,
+      name: instrumentName.replace("gen_ai.", "wingman.chat."),
+    })),
     readers: [
       new PeriodicExportingMetricReader({
         exporter: metricExporter,
@@ -49,6 +59,20 @@ export function initTelemetry(serviceName: string) {
       }),
     ],
   });
+
+  const classificationMeterProvider = new MeterProvider({
+    resource,
+    readers: [
+      new PeriodicExportingMetricReader({
+        exporter: new OTLPMetricExporter({
+          url: "/telemetry/v1/metrics",
+          temporalityPreference: AggregationTemporalityPreference.DELTA,
+        }),
+        exportIntervalMillis: 60_000,
+      }),
+    ],
+  });
+  const disposeClassifications = installClassificationMetrics(classificationMeterProvider);
 
   const logExporter = new OTLPLogExporter({ url: "/telemetry/v1/logs" });
   const loggerProvider = new LoggerProvider({
@@ -67,5 +91,19 @@ export function initTelemetry(serviceName: string) {
   metrics.setGlobalMeterProvider(meterProvider);
   logs.setGlobalLoggerProvider(loggerProvider);
 
-  return { tracerProvider, meterProvider, loggerProvider };
+  return {
+    tracerProvider,
+    meterProvider,
+    loggerProvider,
+    classificationMeterProvider,
+    shutdown: async () => {
+      disposeClassifications();
+      await Promise.all([
+        classificationMeterProvider.shutdown(),
+        meterProvider.shutdown(),
+        tracerProvider.shutdown(),
+        loggerProvider.shutdown(),
+      ]);
+    },
+  };
 }

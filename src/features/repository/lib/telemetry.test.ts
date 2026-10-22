@@ -7,16 +7,15 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { AggregationTemporality, DataPointType, type HistogramMetricData } from "@opentelemetry/sdk-metrics";
 import { recordClassification } from "@/features/chat/lib/classificationTelemetry";
 import { Client } from "@/shared/lib/client";
+import { runMessages } from "@/shared/lib/agent";
+import { callItem, finished, output, response, textItem } from "@/shared/lib/test-support/ai";
+import { z } from "zod";
 import { initTelemetry } from "./telemetry";
 
 vi.mock("@opentelemetry/instrumentation", () => ({ registerInstrumentations: vi.fn() }));
 let providers: ReturnType<typeof initTelemetry> | undefined;
 afterEach(async () => {
-  await Promise.all([
-    providers?.meterProvider.shutdown(),
-    providers?.tracerProvider.shutdown(),
-    providers?.loggerProvider.shutdown(),
-  ]);
+  await providers?.shutdown();
   metrics.disable();
   trace.disable();
   logs.disable();
@@ -24,7 +23,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("exports classification and model usage as new observations on each metrics interval", async () => {
+it("exports classifications immediately and leaves model usage on its own interval", async () => {
   const exported: HistogramMetricData[][] = [];
   vi.spyOn(OTLPTraceExporter.prototype, "export").mockImplementation((_spans, callback) => callback({ code: 0 }));
   vi.spyOn(OTLPMetricExporter.prototype, "export").mockImplementation((resourceMetrics, callback) => {
@@ -61,15 +60,12 @@ it("exports classification and model usage as new observations on each metrics i
       [{ id: "legal", description: "Private criterion" }],
     );
     recordClassification(result, rules, reporting);
-    await providers.meterProvider.forceFlush();
+    await vi.waitFor(() => expect(exported).toHaveLength(interval + 1));
   }
 
   expect(exported).toHaveLength(2);
   for (const batch of exported) {
-    expect(batch.map((metric) => metric.descriptor.name).sort()).toEqual([
-      "gen_ai.client.operation.duration",
-      "wingman.classification.score",
-    ]);
+    expect(batch.map((metric) => metric.descriptor.name).sort()).toEqual(["wingman.classification.score"]);
     for (const metric of batch) {
       expect(metric.aggregationTemporality).toBe(AggregationTemporality.DELTA);
       expect(metric.dataPoints).toHaveLength(1);
@@ -79,10 +75,17 @@ it("exports classification and model usage as new observations on each metrics i
     expect(classification.dataPoints[0].value.sum).toBe(0.9);
     expect(classification.dataPoints[0].attributes).toMatchObject({
       "gen_ai.conversation.id": "chat-1",
+      "wingman.classification.event_id": expect.any(String),
       "wingman.classification.id": "legal",
       "wingman.classification.matched": true,
     });
   }
+  const ids = exported.map((batch) => batch[0].dataPoints[0].attributes["wingman.classification.event_id"]);
+  expect(new Set(ids).size).toBe(2);
+  await providers.meterProvider.forceFlush();
+  expect(exported).toHaveLength(3);
+  expect(exported[2].map((metric) => metric.descriptor.name)).toEqual(["wingman.chat.client.operation.duration"]);
+  expect(exported[2][0].dataPoints[0].value.count).toBe(2);
 });
 
 it("reports the given service name", async () => {
@@ -96,4 +99,49 @@ it("reports the given service name", async () => {
   metrics.getMeter("test").createCounter("test.counter").add(1);
   await providers.meterProvider.forceFlush();
   expect(names).toEqual(["acme-assistant"]);
+});
+
+it("parents SDK requests to each model iteration across an asynchronous tool call", async () => {
+  const exported: { attributes: Record<string, unknown>; spanContext: () => { spanId: string } }[] = [];
+  vi.spyOn(OTLPTraceExporter.prototype, "export").mockImplementation((spans, callback) => {
+    exported.push(...spans);
+    callback({ code: 0 });
+  });
+  vi.spyOn(OTLPMetricExporter.prototype, "export").mockImplementation((_batch, callback) => callback({ code: 0 }));
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(finished(response([callItem("tool-1", "lookup")])))
+    .mockResolvedValueOnce(finished(response([textItem("Done")])));
+  vi.stubGlobal("fetch", fetchMock);
+  providers = initTelemetry("custom-chat-service");
+  await runMessages(
+    new Client(),
+    "model",
+    "",
+    [],
+    [
+      {
+        name: "lookup",
+        description: "Look up information",
+        inputSchema: z.object({}),
+        execute: async () => {
+          await Promise.resolve();
+          return output("Tool result");
+        },
+      },
+    ],
+  );
+  await providers.tracerProvider.forceFlush();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  const parents = fetchMock.mock.calls.map(([, init]) => {
+    const headers = new Headers(init.headers);
+    expect(headers.has("X-Wingman-Conversation-Id")).toBe(false);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    const spanId = headers.get("traceparent")?.split("-")[2];
+    const span = exported.find((span) => span.spanContext().spanId === spanId);
+    expect(span?.attributes["gen_ai.operation.name"]).toBe("chat");
+    expect(span?.attributes).not.toHaveProperty("gen_ai.conversation.id");
+    return spanId;
+  });
+  expect(new Set(parents).size).toBe(2);
 });

@@ -350,7 +350,7 @@ export class MCPClient implements ToolProvider {
       execute: async (args, execution) => {
         const context = execution?.context;
         if (this.needsApproval && !context?.interruptible) await this.approve(tool, title, args, context);
-        annotateMcpSpan(this.url, context);
+        annotateMcpSpan(this.url, this.id, tool.name, context);
         const result = await this.callTool(client, { name: tool.name, arguments: args }, context);
         context?.signal?.throwIfAborted();
         if (result.isError) {
@@ -673,11 +673,13 @@ async function processContent(
   return result.length ? result : [{ type: "text", content: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }
 
-function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
+function annotateMcpSpan(serverUrl: string, serverId: string, toolName: string, toolContext?: ToolContext): void {
   const span = toolContext?.agentContext ? trace.getSpan(toolContext.agentContext) : trace.getActiveSpan();
   if (!span) return;
 
   span.setAttribute("mcp.method.name", "tools/call");
+  span.setAttribute("wingman.mcp.server.id", serverId);
+  span.setAttribute("mcp.tool.name", toolName);
   span.setAttribute("url.full", serverUrl);
 
   try {

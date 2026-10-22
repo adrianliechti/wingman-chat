@@ -276,8 +276,8 @@ export async function* streamRun(
 
   try {
     abortController.signal.throwIfAborted();
-    const adapter = client.textAdapter(model, abortController.signal);
     const telemetry = aiTelemetry(hooks.agentName ?? "chat", hooks.parentContext);
+    const adapter = client.textAdapter(model, abortController.signal, telemetry.requestContext);
     let terminal: RunFinishedEvent | undefined;
     let failure: Error | undefined;
     let aborted = false;

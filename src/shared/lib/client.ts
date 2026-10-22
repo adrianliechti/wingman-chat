@@ -1,3 +1,4 @@
+import { context } from "@opentelemetry/api";
 import { playAudioBlob } from "./audioPlayback";
 import mime from "mime";
 import { chat, decide, embed, generateSpeech, generateTranscription } from "@tanstack/ai";
@@ -19,7 +20,7 @@ import type { ImageQuality, Model, ModelType, ReasoningEffort } from "@/shared/t
 import type { AgentContext } from "@/shared/types/telemetry";
 import { type Embedding, validateEmbeddingVector } from "./embeddings";
 import { modelFromAPI, modelMaxOutputTokens, outputTokenAllowance } from "./models";
-import { aiTelemetry } from "./otel";
+import { aiTelemetry, telemetryHeaders } from "./otel";
 import { aiDebug } from "./aiStream";
 import {
   browserProviderConfig,
@@ -138,8 +139,8 @@ export class Client {
     this.apiKey = apiKey;
   }
 
-  textAdapter(model: string, signal?: AbortSignal) {
-    return gatewayText(model, this.apiKey, browserProviderConfig(signal));
+  textAdapter(model: string, signal?: AbortSignal, requestContext?: () => AgentContext) {
+    return gatewayText(model, this.apiKey, browserProviderConfig(signal, requestContext));
   }
 
   async listModels(type?: ModelType): Promise<Model[]> {
@@ -234,6 +235,7 @@ export class Client {
   ): Promise<{ categories: ClassificationMatch[]; risks: ClassificationMatch[] }> {
     const request = classificationRequest(input, categories, risks);
     if (!request) return { categories: [], risks: [] };
+    const telemetry = aiTelemetry("classify_chat", requestOptions.parentContext);
     const result = await decide({
       adapter: new GatewayEvaluateAdapter(model, (body, signal) =>
         this.postRaw(
@@ -242,14 +244,14 @@ export class Client {
           (resp) => resp.json(),
           { "Content-Type": "application/json" },
           30_000,
-          { signal },
+          { ...requestOptions, signal, parentContext: telemetry.requestContext() },
         ),
       ),
       ...request,
       modelOptions: { effort: requestOptions.effort },
       abortSignal: requestOptions.signal,
       debug: aiDebug,
-      middleware: [aiTelemetry("classify_chat", requestOptions.parentContext)],
+      middleware: [telemetry],
     });
     return {
       categories: result.category ? [{ id: result.category.value, confidence: result.category.confidence }] : [],
@@ -343,7 +345,8 @@ export class Client {
   async embedText(model: string, text: string, requestOptions: ClientRequestOptions = {}): Promise<Embedding> {
     requestOptions.signal?.throwIfAborted();
     let resolvedModel = model;
-    const config = browserProviderConfig(requestOptions.signal);
+    const telemetry = aiTelemetry("embedding", requestOptions.parentContext);
+    const config = browserProviderConfig(requestOptions.signal, telemetry.requestContext);
     const result = await embed({
       adapter: gatewayEmbedding(model, this.apiKey, {
         ...config,
@@ -358,7 +361,7 @@ export class Client {
         },
       }),
       input: text,
-      middleware: [aiTelemetry("embedding", requestOptions.parentContext)],
+      middleware: [telemetry],
     }).catch((error: unknown) => {
       requestOptions.signal?.throwIfAborted();
       throw error;
@@ -460,15 +463,20 @@ export class Client {
   ): Promise<Blob> {
     requestOptions.signal?.throwIfAborted();
     if (!input.trim()) throw new Error("Input text cannot be empty");
+    const telemetry = aiTelemetry("audio", requestOptions.parentContext);
     const result = await generateSpeech({
       debug: aiDebug,
-      adapter: gatewaySpeech(model, this.apiKey, browserProviderConfig(requestOptions.signal)),
+      adapter: gatewaySpeech(
+        model,
+        this.apiKey,
+        browserProviderConfig(requestOptions.signal, telemetry.requestContext),
+      ),
       text: input,
       voice: voice ?? "",
       format: "wav",
       modelOptions: { instructions: "Speak in a clear and natural tone." },
       abortSignal: requestOptions.signal,
-      middleware: [aiTelemetry("audio", requestOptions.parentContext)],
+      middleware: [telemetry],
     });
     const bytes = decodeBase64(result.audio);
     if (!bytes.byteLength) throw new Error("The speech service returned empty audio");
@@ -493,12 +501,17 @@ export class Client {
     const baseType = blob.type.split(";")[0].trim();
     const extension = TRANSCRIBE_EXTENSIONS[baseType] || mime.getExtension(baseType) || "audio";
     const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
+    const telemetry = aiTelemetry("audio", requestOptions.parentContext);
     const result = await generateTranscription({
       debug: aiDebug,
-      adapter: gatewayTranscription(model, this.apiKey, browserProviderConfig(requestOptions.signal)),
+      adapter: gatewayTranscription(
+        model,
+        this.apiKey,
+        browserProviderConfig(requestOptions.signal, telemetry.requestContext),
+      ),
       audio: file,
       abortSignal: requestOptions.signal,
-      middleware: [aiTelemetry("audio", requestOptions.parentContext)],
+      middleware: [telemetry],
     });
     if (typeof result.text !== "string") throw new Error("The transcription service returned an invalid response");
     return result.text;
@@ -562,15 +575,16 @@ export class Client {
       name === "title_chat" ? 8_000 : 16_000,
     );
     options.signal?.throwIfAborted();
+    const telemetry = aiTelemetry(name, options.parentContext);
     const result = await chat({
-      adapter: this.textAdapter(model, options.signal),
+      adapter: this.textAdapter(model, options.signal, telemetry.requestContext),
       debug: aiDebug,
       systemPrompts: [instructions],
       messages: [{ role: "user", content: input }],
       outputSchema: schema,
       stream: false,
       ...this.chatOptions(model, { ...options, maxOutputTokens }),
-      middleware: [aiTelemetry(name, options.parentContext)],
+      middleware: [telemetry],
     }).catch((error: unknown) => {
       if (error && typeof error === "object" && "code" in error && error.code === "structured-output-missing-result")
         return null;
@@ -627,7 +641,7 @@ export class Client {
     try {
       const resp = await fetch(new URL(path, window.location.origin), {
         method: "POST",
-        headers,
+        headers: telemetryHeaders(requestOptions.parentContext ?? context.active(), headers),
         body: data,
         signal,
       });
