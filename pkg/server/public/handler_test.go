@@ -1,8 +1,10 @@
 package public
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -108,5 +110,69 @@ func TestConfigRevalidates(t *testing.T) {
 	}
 	if got := res.Header().Get("Cache-Control"); got != cacheRevalidate {
 		t.Errorf("Cache-Control = %q, want %q", got, cacheRevalidate)
+	}
+}
+
+func TestServeLibrary(t *testing.T) {
+	dist := fstest.MapFS{
+		"artifact-libraries.json":     &fstest.MapFile{Data: []byte(`{"three.js":"assets/three-abc12345.js","bad.js":"../outside.js"}`)},
+		"assets/three-abc12345.js":    &fstest.MapFile{Data: []byte("window.THREE={}")},
+		"assets/three-abc12345.js.br": &fstest.MapFile{Data: []byte("brotli")},
+	}
+	h := New(&config.Config{}, dist)
+
+	serve := func(name, encoding string) (*httptest.ResponseRecorder, bool) {
+		req := httptest.NewRequest(http.MethodGet, "/artifacts/x/.lib/"+name, nil)
+		if encoding != "" {
+			req.Header.Set("Accept-Encoding", encoding)
+		}
+		res := httptest.NewRecorder()
+		return res, h.ServeLibrary(res, req, name)
+	}
+
+	res, ok := serve("three.js", "")
+	if !ok || res.Body.String() != "window.THREE={}" || !strings.HasPrefix(res.Header().Get("Content-Type"), "text/javascript") {
+		t.Fatalf("three.js = %v %q %q", ok, res.Header().Get("Content-Type"), res.Body)
+	}
+	// The name is stable across builds, so the response must revalidate.
+	if got := res.Header().Get("Cache-Control"); got != cacheRevalidate {
+		t.Errorf("Cache-Control = %q", got)
+	}
+
+	if res, _ := serve("three.js", "br"); res.Header().Get("Content-Encoding") != "br" {
+		t.Errorf("precompressed variant not used: %q", res.Header().Get("Content-Encoding"))
+	}
+
+	for _, name := range []string{"bad.js", "missing.js"} {
+		if _, ok := serve(name, ""); ok {
+			t.Errorf("%s was served", name)
+		}
+	}
+
+	// Without a manifest (development builds) nothing is served.
+	empty := New(&config.Config{}, fstest.MapFS{})
+	if empty.ServeLibrary(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), "three.js") {
+		t.Error("served a library without a manifest")
+	}
+}
+
+func TestServeFile(t *testing.T) {
+	dist := fstest.MapFS{
+		"share.html":    &fstest.MapFile{Data: []byte("<viewer>")},
+		"share.html.br": &fstest.MapFile{Data: []byte("brotli")},
+		"assets":        &fstest.MapFile{Mode: fs.ModeDir},
+	}
+	h := New(&config.Config{}, dist)
+
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/artifacts/x/", nil)
+	if !h.ServeFile(res, req, "share.html") || res.Body.String() != "<viewer>" || res.Header().Get("Cache-Control") != cacheRevalidate {
+		t.Fatalf("share.html = %q %v", res.Body, res.Header())
+	}
+
+	for _, name := range []string{"missing.html", "assets"} {
+		if h.ServeFile(httptest.NewRecorder(), req, name) {
+			t.Errorf("%s was served", name)
+		}
 	}
 }

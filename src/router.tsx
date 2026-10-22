@@ -14,6 +14,10 @@ import { AppLayout } from "./shell/AppLayout";
 // The other active pages are loaded on demand.
 const CanvasPage = lazyRouteComponent(() => import("./features/canvas/pages/CanvasPage"), "CanvasPage");
 const TranslatePage = lazyRouteComponent(() => import("./features/translate/pages/TranslatePage"), "TranslatePage");
+const SharedArtifactPage = lazyRouteComponent(
+  () => import("./features/artifacts/pages/SharedArtifactPage"),
+  "SharedArtifactPage",
+);
 const OAuthCallbackPage = lazyRouteComponent(
   () => import("./features/settings/pages/OAuthCallbackPage"),
   "OAuthCallbackPage",
@@ -98,10 +102,20 @@ const oauthCallbackRoute = createRoute({
   component: OAuthCallbackPage,
 });
 
+// Shared artifact viewer — full page, no app shell. `page` opens another page of the share.
+const sharedArtifactRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/artifacts/$shareId",
+  validateSearch: (search: Record<string, unknown>): { page?: string } =>
+    typeof search.page === "string" ? { page: search.page } : {},
+  component: SharedArtifactPage,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([indexRoute, chatRoute, chatIdRoute, translateRoute, canvasRoute]),
   oauthLayoutRoute.addChildren([oauthCallbackRoute]),
+  sharedArtifactRoute,
 ]);
 
 // Create and export router

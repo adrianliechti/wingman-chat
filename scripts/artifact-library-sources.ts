@@ -155,6 +155,8 @@ function buildSource(library: Library): Promise<LibrarySource> {
  */
 export function artifactLibrarySourcesPlugin(): Plugin {
   const sources = new Map<Library, Promise<LibrarySource>>();
+  /** `.lib/` file name → emitted asset, for the server's published workspaces. */
+  const emitted = new Map<string, string>();
   let base = "/";
   let building = false;
   const sourceOf = (library: Library) => {
@@ -179,7 +181,7 @@ export function artifactLibrarySourcesPlugin(): Plugin {
         const url = (req.url ?? "").split("?")[0];
         if (!url.startsWith(devPath)) return next();
         const library = url.slice(devPath.length).replace(/\.(js|css)$/, "") as Library;
-        if (!LIBRARIES.includes(library)) return next();
+        if (!LIBRARIES.includes(library) && library !== "wingman-sdk") return next();
         try {
           const { source } = await sourceOf(library);
           res.setHeader("Content-Type", contentTypeOf(library));
@@ -206,6 +208,7 @@ export function artifactLibrarySourcesPlugin(): Plugin {
         const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 8);
         const fileName = `assets/${library}-${hash}.${extensionOf(library)}`;
         this.emitFile({ type: "asset", fileName, source });
+        emitted.set(`${library}.${extensionOf(library)}`, fileName);
         return `export default ${JSON.stringify(`${base}${fileName}`)};`;
       }
       if (!id.startsWith(`\0${prefix}`)) return undefined;
@@ -214,6 +217,18 @@ export function artifactLibrarySourcesPlugin(): Plugin {
       for (const file of files) this.addWatchFile(file);
       // A library's string literals must not terminate an inline HTML script.
       return `export default ${JSON.stringify(source.replace(/<\/script/gi, "<\\/script"))};`;
+    },
+    async generateBundle() {
+      // The Go server serves `.lib/<name>` and the SDK to shared workspaces from this manifest (pkg/server/public).
+      if (emitted.size === 0) return;
+      const { source } = await sourceOf("wingman-sdk");
+      const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 8);
+      const sdkFile = `assets/wingman-sdk-${hash}.js`;
+      this.emitFile({ type: "asset", fileName: sdkFile, source });
+      const manifest = Object.fromEntries(
+        [...emitted, ["__wingman__/sdk.js", sdkFile] as const].sort(([a], [b]) => a.localeCompare(b)),
+      );
+      this.emitFile({ type: "asset", fileName: "artifact-libraries.json", source: JSON.stringify(manifest, null, 2) });
     },
     watchChange() {
       sources.clear();

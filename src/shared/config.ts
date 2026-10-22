@@ -84,6 +84,15 @@ interface ArtifactsConfig {
   bridge?: boolean;
   /** Host DuckDB-WASM for SQL over workspace data. Defaults to on. */
   duckdb?: boolean;
+  /** Publish workspaces as web pages under /artifacts/. Present only when the server stores shares. */
+  share?: ArtifactsShareConfig;
+}
+
+interface ArtifactsShareConfig {
+  /** Days a published link stays available. */
+  retentionDays?: number;
+  /** Max uncompressed workspace size in bytes. */
+  maxSize?: number;
 }
 
 interface RepositoryConfig {

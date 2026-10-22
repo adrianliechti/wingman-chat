@@ -115,6 +115,17 @@ type Artifacts struct {
 	Bridge *bool `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 	// DuckDB hosts DuckDB-WASM for SQL over workspace files. Nil means enabled.
 	DuckDB *bool `json:"duckdb,omitempty" yaml:"duckdb,omitempty"`
+	// Share publishes workspaces as web pages under /artifacts/. Nil means disabled.
+	Share *ArtifactsShare `json:"share,omitempty" yaml:"share,omitempty"`
+}
+
+type ArtifactsShare struct {
+	// Path is the server directory holding published workspaces; never sent to browsers.
+	Path string `json:"-" yaml:"path,omitempty"`
+	// RetentionDays is how long a share stays available after publishing.
+	RetentionDays int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	// MaxSize caps the uncompressed size of one share in bytes.
+	MaxSize int64 `json:"maxSize,omitempty" yaml:"maxSize,omitempty"`
 }
 
 type Repository struct {

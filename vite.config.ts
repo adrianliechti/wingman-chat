@@ -176,6 +176,8 @@ function pdfjsAssetsPlugin(): Plugin {
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:4242";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
 const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
+// Shared workspaces are stored and hosted by the Go server (`task serve`); see pkg/server/share.
+const serverUrl = process.env.SERVER_URL?.replace(/\/$/, "") || "http://localhost:8000";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -213,6 +215,10 @@ export default defineConfig({
       ignored: ["**/test-results/**", "**/playwright-report/**"],
     },
     proxy: {
+      // Publishing, share.json and the shared files; the viewer at /artifacts/{id} is an app route.
+      "^/artifacts(?:\\?|$|/[^/]+/)": {
+        target: serverUrl,
+      },
       "/telemetry/v1": {
         target: "http://localhost:4318",
         changeOrigin: true,

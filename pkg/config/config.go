@@ -3,6 +3,7 @@ package config
 import (
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -102,6 +103,30 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("ARTIFACTS_ENABLED", &cfg.Artifacts, nil)
+
+	if cfg.Artifacts != nil {
+		withFeature("ARTIFACTS_SHARE_ENABLED", &cfg.Artifacts.Share, func(s *ArtifactsShare) {
+			envOverride("ARTIFACTS_SHARE_PATH", &s.Path)
+			if days := envPositiveInt("ARTIFACTS_SHARE_RETENTION_DAYS", nil); days != nil {
+				s.RetentionDays = *days
+			}
+			if size := envPositiveInt("ARTIFACTS_SHARE_MAX_SIZE", nil); size != nil {
+				s.MaxSize = int64(*size)
+			}
+		})
+
+		if s := cfg.Artifacts.Share; s != nil {
+			if s.Path == "" {
+				s.Path = filepath.Join(os.TempDir(), "wingman-chat-shares")
+			}
+			if s.RetentionDays <= 0 {
+				s.RetentionDays = 7
+			}
+			if s.MaxSize <= 0 {
+				s.MaxSize = 100 << 20
+			}
+		}
+	}
 
 	withFeature("REPOSITORY_ENABLED", &cfg.Repository, func(r *Repository) {
 		envOverride("REPOSITORY_EMBEDDER", &r.Embedder)

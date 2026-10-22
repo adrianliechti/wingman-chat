@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/server/api"
@@ -13,6 +14,7 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/me"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
+	"github.com/adrianliechti/wingman-chat/pkg/server/share"
 )
 
 func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.FS, skillsDir string) http.Handler {
@@ -34,7 +36,15 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 		library.NewSkills(skillsDir).Attach(mux)
 	}
 
-	public.New(cfg, dist).Attach(mux)
+	assets := public.New(cfg, dist)
+
+	if cfg.Artifacts != nil && cfg.Artifacts.Share != nil {
+		shares := share.New(cfg, assets)
+		shares.Attach(mux)
+		shares.StartSweeper(time.Hour)
+	}
+
+	assets.Attach(mux)
 
 	return mux
 }

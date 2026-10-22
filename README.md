@@ -50,7 +50,9 @@ runtime references load on demand. Ask for a deliverable and Wingman saves it in
 ### Artifacts workspace
 
 A per-conversation file system where generated and uploaded files live, with native in-app rendering
-and download. Browse, preview, and iterate on artifacts side-by-side with the chat.
+and download. Browse, preview, and iterate on artifacts side-by-side with the chat. When the server
+stores shares, **Share** publishes the workspace under an unguessable `/artifacts/<id>` link that colleagues open
+in the app, bundled libraries, SQL and AI helpers included (see [Artifact sharing](#configuration)).
 
 ### Data analysis & workflows
 
@@ -191,8 +193,12 @@ export WINGMAN_URL=http://localhost:4242      # or OPENAI_BASE_URL
 export WINGMAN_TOKEN=...                      # or OPENAI_API_KEY
 
 # Frontend dev server (bundles Pyodide packages on first run)
-npm run dev
+npm run dev        # or: task dev
 ```
+
+`task --list` shows the other shortcuts: `build`, `serve`, `test`, `docker` and `publish`. Task loads an
+untracked `.env`, so `WINGMAN_URL` and `WINGMAN_TOKEN` can live there. `serve` and `docker` turn on the
+optional features listed in `Taskfile.yml`; disable one from the shell, e.g. `VOICE_ENABLED=false task serve`.
 
 ### Gateway end-to-end tests
 
@@ -250,9 +256,13 @@ To run the Go server against the built frontend:
 
 ```bash
 npm run build
-PORT=8080 PREFIX=/ WINGMAN_URL=http://localhost:4242 go run .
-# or: task serve
+WINGMAN_URL=http://localhost:4242 go run .
+# or: task serve — builds, then runs on :8000 with every optional feature (and sharing) enabled
 ```
+
+The dev server proxies publishing and shared files under `/artifacts` to this server (`SERVER_URL`, default
+`http://localhost:8000`), so sharing also works from `npm run dev` with `"artifacts": { "share": {} }` in
+`public/config.json`.
 
 Keep `vite-plus`, its core package and the `vite` alias at the same version, and
 pin Vitest to the version bundled with Vite+. Babel stays on 7 until React Compiler
@@ -269,7 +279,7 @@ docker build -t wingman-chat .
 docker run -it --rm -p 8000:8000 \
   -e WINGMAN_URL=http://host.docker.internal:4242 \
   wingman-chat
-# or: task run
+# or: task docker
 ```
 
 ## Configuration
@@ -369,10 +379,33 @@ a plugin preserves endpoint logins; clearing browser site data removes them.
 - `CHAT_MODEL` (`CHAT_EFFORT`) — the model every new chat starts on; the reset next to the model picker returns to it. `chat.yaml` also accepts `verbosity`
 - `CHAT_COMPACTION_ENABLED` (`CHAT_COMPACTION_THRESHOLD` — deployment-wide ceiling on the estimated-token budget before older turns are summarized; per-model/family values apply below it)
 
+**Artifact sharing** (`ARTIFACTS_SHARE_ENABLED=true`, requires `ARTIFACTS_ENABLED`)
+
+- `ARTIFACTS_SHARE_PATH` — directory holding published workspaces (default: `wingman-chat-shares` in the system temp
+  directory; mount a volume to keep shares across restarts)
+- `ARTIFACTS_SHARE_RETENTION_DAYS` (default `7`) — links expire after this many days and are deleted hourly; lowering
+  it also shortens existing shares
+- `ARTIFACTS_SHARE_MAX_SIZE` (default `104857600`) — max uncompressed workspace size in bytes
+
+The same settings go under `share` in `artifacts.yaml` (`path`, `retentionDays`, `maxSize`). **Share** uploads every
+workspace file and opens the page being viewed (or `index.html`). Each publish creates a new link, which opens in
+the app: a minimal header and the page, with no file browser and no download. Opening one of the share's files in
+a tab leads back to that view.
+
+The page runs in a sandboxed frame with an opaque origin, so it cannot read the viewer's chats, storage or
+cookies. Through `window.wingman` the app answers for it: the bundled `/.lib/` libraries, its files read-only,
+SQL over them (`wingman.duckdb`), a store for the visit, and `llm`, `vision`, `ocr`, `translate` and `transcribe`
+as the signed-in viewer. Helpers that save files (`render`, `synthesize`, writes) and chat tools are unavailable.
+
+Behind an authenticating proxy, keep the app, `/artifacts/<id>` and uploads signed in. The sandboxed page requests
+its own files without the proxy's `SameSite=Lax` cookie, so let those through; the 128-bit link stays the secret
+(for oauth2-proxy: `--skip-auth-route=GET=^/artifacts/[0-9a-f]{32}/files/`). Setting the proxy cookie to
+`SameSite=None` works too.
+
 YAML files loaded from the working directory (when present) configure models, tools, drives,
 backgrounds, account menu links, and per-feature settings: `models.yaml`, `tools.yaml`, `drives.yaml`, `links.yaml`,
 `backgrounds.yaml`, `chat.yaml`, `translator.yaml`, `vision.yaml`, `text.yaml`,
-`extractor.yaml`, `renderer.yaml`, `repository.yaml`.
+`extractor.yaml`, `renderer.yaml`, `repository.yaml`, `artifacts.yaml`.
 
 Web search, page fetch, and research are gateway MCP tools. Replace `internet.yaml`
 and `INTERNET_*` settings with an entry in `tools.yaml`:

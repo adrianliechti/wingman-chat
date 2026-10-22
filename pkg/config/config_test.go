@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -222,6 +224,47 @@ func TestTelemetryNameReachesBrowserConfig(t *testing.T) {
 
 			if !reflect.DeepEqual(cfg.Telemetry, test.want) {
 				t.Fatalf("telemetry = %+v, want %+v", cfg.Telemetry, test.want)
+			}
+		})
+	}
+}
+
+func TestArtifactsShareConfig(t *testing.T) {
+	for _, test := range []struct {
+		name, artifacts, share, path, days, size string
+		want                                     *ArtifactsShare
+	}{
+		{name: "defaults", artifacts: "true", share: "true", want: &ArtifactsShare{Path: filepath.Join(os.TempDir(), "wingman-chat-shares"), RetentionDays: 7, MaxSize: 100 << 20}},
+		{name: "overrides", artifacts: "true", share: "true", path: "/data/shares", days: "30", size: "1048576", want: &ArtifactsShare{Path: "/data/shares", RetentionDays: 30, MaxSize: 1 << 20}},
+		{name: "requires artifacts", share: "true"},
+		{name: "off by default", artifacts: "true", path: "/data/shares"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ARTIFACTS_ENABLED", test.artifacts)
+			t.Setenv("ARTIFACTS_SHARE_ENABLED", test.share)
+			t.Setenv("ARTIFACTS_SHARE_PATH", test.path)
+			t.Setenv("ARTIFACTS_SHARE_RETENTION_DAYS", test.days)
+			t.Setenv("ARTIFACTS_SHARE_MAX_SIZE", test.size)
+
+			var cfg Config
+			applyEnvOverrides(&cfg)
+
+			var got *ArtifactsShare
+			if cfg.Artifacts != nil {
+				got = cfg.Artifacts.Share
+			}
+
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("share = %+v, want %+v", got, test.want)
+			}
+
+			// The browser learns the limits, never the server's storage path.
+			data, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.path != "" && strings.Contains(string(data), test.path) {
+				t.Fatalf("browser config exposes the share path: %s", data)
 			}
 		})
 	}

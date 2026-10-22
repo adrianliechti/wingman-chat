@@ -2,21 +2,62 @@
 
 version: "3"
 
+# WINGMAN_URL and WINGMAN_TOKEN can live in an untracked .env.
+dotenv: [".env"]
+
 vars:
   REPOSITORY: ghcr.io/adrianliechti/wingman-chat
 
-tasks:
-  serve:
-    env:
-      PORT: "8080"
-      PREFIX: "/"
-    cmds:
-      - go run .
+# Optional features for `serve` and `docker`; `dev` reads public/config.json instead.
+# These win over .env; turn one off from the shell: `VOICE_ENABLED=false task serve`.
+env:
+  ARTIFACTS_ENABLED: "true"
+  ARTIFACTS_SHARE_ENABLED: "true"
+  EXTRACTOR_ENABLED: "true"
+  MEMORY_ENABLED: "true"
+  RENDERER_ENABLED: "true"
+  REPOSITORY_ENABLED: "true"
+  STT_ENABLED: "true"
+  TRANSLATOR_ENABLED: "true"
+  TTS_ENABLED: "true"
+  VISION_ENABLED: "true"
+  VOICE_ENABLED: "true"
 
-  run:
+tasks:
+  dev:
+    desc: Vite dev server with hot reload; /api goes to WINGMAN_URL, /artifacts to `task serve`
     cmds:
-      - docker run -it --rm -p 8000:8000 -e WINGMAN_URL=http://host.docker.internal:4242 $(docker build -q .)
+      - npm run dev
+
+  build:
+    desc: Production build of the web app into dist/
+    cmds:
+      - npm run build
+
+  serve:
+    desc: Build, then run the Go server on :8000 as deployed
+    deps: [build]
+    cmds:
+      - WINGMAN_URL="${WINGMAN_URL:-http://localhost:4242}" go run .
+
+  test:
+    desc: Go and unit tests (browser specs run with `npm run test:e2e:browser`)
+    cmds:
+      - go test ./...
+      - npx vp test run
+
+  docker:
+    desc: Build the image and run it on :8000 against a gateway on the host
+    cmds:
+      - >-
+        docker run -it --rm -p 8000:8000
+        -e WINGMAN_URL=http://host.docker.internal:4242 -e WINGMAN_TOKEN
+        -e ARTIFACTS_ENABLED -e ARTIFACTS_SHARE_ENABLED -e EXTRACTOR_ENABLED -e MEMORY_ENABLED
+        -e RENDERER_ENABLED -e REPOSITORY_ENABLED -e STT_ENABLED -e TRANSLATOR_ENABLED
+        -e TTS_ENABLED -e VISION_ENABLED -e VOICE_ENABLED
+        $(docker build -q .)
 
   publish:
+    desc: Build and push the multi-arch image
     cmds:
       - docker buildx build . --push --platform linux/amd64,linux/arm64 --tag {{.REPOSITORY}}

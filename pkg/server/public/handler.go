@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 )
@@ -13,6 +14,9 @@ import (
 type Handler struct {
 	config *config.Config
 	dist   fs.FS
+
+	librariesOnce sync.Once
+	libraries     map[string]string
 }
 
 func New(cfg *config.Config, dist fs.FS) *Handler {
@@ -67,7 +71,7 @@ func (h *Handler) spaHandler() http.Handler {
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			h.serveAsset(w, r, p, info)
+			h.serveAsset(w, r, p, info, cacheControl(p))
 			return
 		}
 
@@ -86,6 +90,6 @@ func (h *Handler) spaHandler() http.Handler {
 			return
 		}
 
-		h.serveAsset(w, r, "index.html", info)
+		h.serveAsset(w, r, "index.html", info, cacheRevalidate)
 	})
 }

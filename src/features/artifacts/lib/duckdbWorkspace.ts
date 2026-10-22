@@ -1,44 +1,20 @@
-/** A consumer owns its worker, file namespace and connections for exactly its lifetime. */
-import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { withAbort } from "@/shared/lib/abortSignals";
-import { DuckDbRuntime, runDuckDbQuery } from "@/shared/lib/duckdb";
+/** A workspace's SQL consumer: mounts the chat's committed data files, remounting after changes. */
+import { createDuckDbHost, type DuckDbHost, mountNames } from "@/shared/lib/duckdbHost";
 import type { DuckDbQueryResult } from "@/shared/lib/duckdbResult";
 import { isMountablePath } from "@/shared/lib/dataFiles";
 import { getArtifactNativeFile, listArtifactEntries } from "@/shared/lib/opfs-artifacts";
 import { FileSystemManager } from "./fs";
 
-const isDataPath = isMountablePath;
+export { mountNames };
 
-/** Names a workspace path is mounted under: its path without the leading slash, plus the bare name when unique. */
-export function mountNames(paths: string[]): Map<string, string[]> {
-  const basenames = new Map<string, number>();
-  for (const path of paths) {
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    basenames.set(name, (basenames.get(name) ?? 0) + 1);
-  }
-  const names = new Map<string, string[]>();
-  for (const path of paths) {
-    const full = path.replace(/^\/+/, "");
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    names.set(path, full === name || basenames.get(name) !== 1 ? [full] : [full, name]);
-  }
-  return names;
-}
+const isDataPath = isMountablePath;
 
 /** Every name SQL can address right now, for the model's runtime context. */
 export function queryableMountNames(paths: string[]): string[] {
   return [...mountNames(paths.filter(isDataPath)).values()].flat().sort();
 }
 
-export interface DuckDbWorkspaceHost {
-  readonly signal: AbortSignal;
-  connect(): Promise<string>;
-  close(connectionId: string): Promise<void>;
-  query(connectionId: string | null, sql: string, params?: unknown[]): Promise<DuckDbQueryResult>;
-  files(): Promise<string[]>;
-  /** Cancel pending work and terminate this consumer's worker. Safe even during initialization. */
-  dispose(): void;
-}
+export type DuckDbWorkspaceHost = DuckDbHost;
 
 export interface DuckDbWorkspaceOptions {
   signal?: AbortSignal;
@@ -46,42 +22,17 @@ export interface DuckDbWorkspaceOptions {
   snapshot?: { path: string; file: globalThis.File };
 }
 
-/** Synchronous ownership, lazy initialization: cleanup never has to wait for acquisition. */
 export function createDuckDbWorkspace(
   fs: FileSystemManager,
   options: DuckDbWorkspaceOptions = {},
 ): DuckDbWorkspaceHost {
-  const runtime = new DuckDbRuntime(options.signal);
-  const connections = new Map<string, AsyncDuckDBConnection>();
-  let shared: AsyncDuckDBConnection | undefined;
-  const registered = new Set<string>();
   let revision = 0;
   let mountedRevision = -1;
-  let pending: Promise<unknown> = Promise.resolve();
   const onChange = () => {
     revision++;
   };
-  const subscriptions =
-    options.snapshot || runtime.signal.aborted
-      ? []
-      : [
-          fs.subscribe("fileCreated", onChange),
-          fs.subscribe("fileUpdated", onChange),
-          fs.subscribe("fileDeleted", onChange),
-          fs.subscribe("fileRenamed", onChange),
-        ];
-  runtime.signal.addEventListener(
-    "abort",
-    () => {
-      subscriptions.forEach((off) => off());
-      connections.clear();
-      shared = undefined;
-      registered.clear();
-    },
-    { once: true },
-  );
 
-  async function refresh(db: AsyncDuckDB): Promise<void> {
+  const host = createDuckDbHost(async (db, registered, signal) => {
     if (mountedRevision === revision) return;
     const { DuckDBDataProtocol } = await import("@duckdb/duckdb-wasm");
     const nextRevision = revision;
@@ -92,7 +43,7 @@ export function createDuckDbWorkspace(
       : (await listArtifactEntries(fs.chatId)).map((entry) => entry.path).filter(isDataPath);
     const wanted = mountNames(paths);
     for (const name of registered) {
-      runtime.signal.throwIfAborted();
+      signal.throwIfAborted();
       await db.dropFile(name);
       registered.delete(name);
     }
@@ -100,59 +51,27 @@ export function createDuckDbWorkspace(
       const file = options.snapshot?.file ?? (await getArtifactNativeFile(fs.chatId, path));
       if (!file) continue;
       for (const name of names) {
-        runtime.signal.throwIfAborted();
+        signal.throwIfAborted();
         await db.registerFileHandle(name, file, DuckDBDataProtocol.BROWSER_FILEREADER, true);
-        runtime.signal.throwIfAborted();
+        signal.throwIfAborted();
         registered.add(name);
       }
     }
     mountedRevision = nextRevision;
-  }
+  }, options.signal);
 
-  // One command stream per worker: native streams, close and file registration
-  // cannot overlap. Other consumers have independent workers and never wait here.
-  function command<T>(operation: (db: AsyncDuckDB) => Promise<T>): Promise<T> {
-    const result = withAbort(runtime.signal, () => pending.then(() => runtime.run(operation)));
-    pending = result.catch(() => undefined);
-    return result;
-  }
+  const subscriptions =
+    options.snapshot || host.signal.aborted
+      ? []
+      : [
+          fs.subscribe("fileCreated", onChange),
+          fs.subscribe("fileUpdated", onChange),
+          fs.subscribe("fileDeleted", onChange),
+          fs.subscribe("fileRenamed", onChange),
+        ];
+  host.signal.addEventListener("abort", () => subscriptions.forEach((off) => off()), { once: true });
 
-  return {
-    signal: runtime.signal,
-    connect: () =>
-      command(async (db) => {
-        const id = crypto.randomUUID();
-        const connection = await db.connect();
-        runtime.signal.throwIfAborted();
-        connections.set(id, connection);
-        return id;
-      }),
-    close: (id) =>
-      command(async () => {
-        const connection = connections.get(id);
-        connections.delete(id);
-        await connection?.close();
-      }),
-    query: (id, sql, params) =>
-      command(async (db) => {
-        await refresh(db);
-        runtime.signal.throwIfAborted();
-        if (id === null && !shared) {
-          const connection = await db.connect();
-          runtime.signal.throwIfAborted();
-          shared = connection;
-        }
-        const connection = id === null ? shared : connections.get(id);
-        if (!connection) throw new Error("Unknown DuckDB connection; call connect() first.");
-        return runDuckDbQuery(connection, sql, params, runtime.signal);
-      }),
-    files: () =>
-      command(async (db) => {
-        await refresh(db);
-        return [...registered].sort();
-      }),
-    dispose: () => runtime.dispose(),
-  };
+  return host;
 }
 
 // The interpreter's execution signal is its lifetime, including successful

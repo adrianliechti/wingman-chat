@@ -26,6 +26,7 @@ import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { DropdownMenu, DropdownMenuItem, Menu, MenuButton, MenuItem, MenuItems } from "@/shared/ui/DropdownMenu";
 import { ArtifactHistoryPopover } from "./ArtifactHistoryPopover";
 import { ArtifactRevisionBanner } from "./ArtifactRevisionBanner";
+import { ArtifactSharePopover } from "./ArtifactSharePopover";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 import { ArtifactsNavigator } from "./ArtifactsNavigator";
 
@@ -923,6 +924,16 @@ export function ArtifactsDrawer() {
                         </Menu>
                       );
                     })()}
+                  {/* Publish the workspace as a web page */}
+                  {config.artifacts?.share && fs && (
+                    <ArtifactSharePopover
+                      fs={fs}
+                      files={files}
+                      activePath={activeFile}
+                      retentionDays={config.artifacts.share.retentionDays}
+                      maxSize={config.artifacts.share.maxSize}
+                    />
+                  )}
                   {/* File column toggle (wide drawers only) */}
                   {wide && files.length > 0 && (
                     <button

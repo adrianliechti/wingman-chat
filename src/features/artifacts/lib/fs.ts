@@ -59,6 +59,12 @@ export interface MutationOptions {
   origin?: RevisionOrigin;
 }
 
+export interface ExportZipOptions {
+  /** Include the bundled `.lib/` files the pages reference. Defaults to true. */
+  libraries?: boolean;
+  compression?: "STORE" | "DEFLATE";
+}
+
 /** A revision log entry plus whether it matches the live file. */
 export type ArtifactRevisionListing = ArtifactRevisionEntry & { current: boolean };
 
@@ -708,8 +714,11 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
     await downloadBlob(await this.exportZip(), filename);
   }
 
-  /** The workspace as a zip: pages with relative library references plus the referenced libraries. */
-  async exportZip(): Promise<Blob> {
+  /**
+   * The workspace as a zip: pages with relative library references plus the
+   * referenced libraries. Publishing leaves the libraries out; the server has them.
+   */
+  async exportZip(options: ExportZipOptions = {}): Promise<Blob> {
     const files = await this.listFiles();
     if (files.length === 0) {
       throw new Error("No files to download");
@@ -727,12 +736,14 @@ class ArtifactWorkspace implements ArtifactWorkspaceAccess {
       zip.file(cleanPath, contentToZipValue(file));
     }
     // Bundled libraries exist only in the preview; ship them where the pages expect them.
-    for (const [path, source] of await collectReferencedLibraries(exported)) {
-      zip.file(path.replace(/^\//, ""), source);
+    if (options.libraries !== false) {
+      for (const [path, source] of await collectReferencedLibraries(exported)) {
+        zip.file(path.replace(/^\//, ""), source);
+      }
     }
 
     try {
-      return await zip.generateAsync({ type: "blob" });
+      return await zip.generateAsync({ type: "blob", compression: options.compression ?? "STORE" });
     } catch (error) {
       throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
@@ -869,8 +880,8 @@ export class FileSystemManager implements FileSystem {
     return this.coordinate((access) => access.downloadAsZip(filename));
   }
 
-  exportZip() {
-    return this.coordinate((access) => access.exportZip());
+  exportZip(options?: ExportZipOptions) {
+    return this.coordinate((access) => access.exportZip(options));
   }
 
   downloadFile(path: string) {

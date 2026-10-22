@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 
@@ -33,5 +35,13 @@ func main() {
 	}
 
 	handler := server.New(cfg, prefix, url, token, dist, skillsDir)
-	http.ListenAndServe(":"+port, handler)
+
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "listen on :%s: %v\n", port, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("listening on http://localhost:%s\n", port)
+	http.Serve(listener, handler)
 }

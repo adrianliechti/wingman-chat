@@ -12,7 +12,7 @@ import (
 // Serve build-time compression variants directly from disk. The OS page cache
 // keeps hot files in memory without retaining another copy in the Go heap or
 // spending CPU compressing large WASM runtimes during requests.
-func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request, name string, original fs.FileInfo) {
+func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request, name string, original fs.FileInfo, cache string) {
 	w.Header().Add("Vary", "Accept-Encoding")
 
 	encodings := acceptedEncodings(r.Header.Values("Accept-Encoding"))
@@ -55,7 +55,7 @@ func (h *Handler) serveAsset(w http.ResponseWriter, r *http.Request, name string
 		}
 		defer file.Close()
 
-		w.Header().Set("Cache-Control", cacheControl(name))
+		w.Header().Set("Cache-Control", cache)
 		if encoding != "identity" {
 			w.Header().Set("Content-Encoding", encoding)
 			// ServeContent otherwise omits the length for encoded responses.
