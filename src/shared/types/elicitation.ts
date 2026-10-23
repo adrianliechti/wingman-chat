@@ -95,6 +95,8 @@ export type FormElicitation = {
     /** JSON object keys may be reordered while an interrupt is serialized. */
     fieldOrder?: string[];
     fields: Record<string, QuestionPresentation>;
+    /** "carousel" shows one question at a time, then a review step. */
+    layout?: "form" | "carousel";
   };
 };
 
